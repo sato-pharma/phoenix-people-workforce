@@ -26,8 +26,10 @@
 --      day to the decided days through phx_attendance_mark_digest_line (the existing tick path), or —
 --      for a FIELD day only — adds the day to the week waiting for release, ticked, at the decided days.
 --      It never adds an office day: one the review does not hold yet waits for the daily job to add it.
---      It refuses a day in a released week, a day already answered, and days that differ from the
---      recorded decision.
+--      It refuses a day in a released week and a day already answered. It locks the report line FOR
+--      UPDATE first and carries it only while its decision, days and decided_at are still the ones sent
+--      (otherwise `superseded`, nothing written); when it sets or adds the review's day it writes the
+--      report line's bridge_ref in the same transaction, so the decision can no longer change under it.
 -- WHY: owner, 2026-10-20 — the HR ops reports are reviewed by her and decided by him "in days only",
 --   and a decision must reach the employee's weekly attendance review and payroll the way a fingerprint
 --   day does: the employee chooses salary or annual balance, may dispute, and the answer is applied to
@@ -46,6 +48,9 @@
 -- added, one category row is inserted, and three functions are replaced or added.
 
 begin;
+
+-- The CHECK swaps below take ACCESS EXCLUSIVE locks on attendance_digest_lines and deductions_categories, which the attendance-weekly-digest cron uses: fail fast and roll back rather than queue every reader behind a running cron.
+set local lock_timeout = '10s';
 
 -- ---------------------------------------------------------------------------
 -- 1. The one new day kind
@@ -571,6 +576,12 @@ grant execute on function public.phx_attendance_settle_digest_line(bigint, text[
 --                 the employee's week has already gone out with nothing of it still waiting for
 --                 release — nothing written
 --   conflict      the day is held by another decision or as the other kind of day — nothing written
+--   superseded    the report line no longer approves these days at this decided_at (decided again, or
+--                 rejected, since the app read it) — nothing written; the new decision is carried on its own
+--
+-- Every `bridged` path writes the report line's bridge_ref (the review day's id) in this transaction,
+-- under the report line's own FOR UPDATE lock, so decide.ts (which refuses a line with a bridge_ref)
+-- can never change a decision after its day is ticked. Lock order: report line, advisory lock, week, day.
 create or replace function public.phx_hr_ops_bridge_digest_day(
   p_hr_ops_line_id uuid,
   p_section text,
@@ -597,6 +608,7 @@ declare
   v_actor text := btrim(coalesce(p_decided_by_hr_id, ''));
   v_days numeric := round(p_days, 3);
   v_found_id bigint;
+  v_report_line public.hr_ops_report_lines;
   v_line public.attendance_digest_lines;
   v_digest public.attendance_weekly_digests;
   v_round smallint;
@@ -617,18 +629,21 @@ begin
   if v_days is null or v_days <= 0 or v_days > 3 then
     raise exception 'One day can deduct more than 0 and at most 3 days.' using errcode = '22023';
   end if;
-  -- The days carried are the days decided — the database refuses anything else.
-  if not exists (
-    select 1
-    from public.hr_ops_report_lines r
-    where r.id = p_hr_ops_line_id
-      and r.section = p_section
-      and r.work_date = p_work_date
-      and (r.hr_key = lower(v_hr) or upper(btrim(r.hr_id)) = upper(v_hr))
-      and r.decision = 'approved'
-      and round(r.decided_days, 3) = v_days
-  ) then
-    raise exception 'That HR operations decision was not found, or does not approve these days for this person and day.' using errcode = 'P0002';
+  -- The report line FIRST, locked for the whole transaction: a decision saved at the same moment
+  -- (decide.ts) waits for this carry to finish, and then finds the bridge_ref written below and refuses.
+  select * into v_report_line from public.hr_ops_report_lines where id = p_hr_ops_line_id for update;
+  if v_report_line.id is null
+     or v_report_line.section is distinct from p_section
+     or v_report_line.work_date is distinct from p_work_date
+     or not coalesce(v_report_line.hr_key = lower(v_hr) or upper(btrim(v_report_line.hr_id)) = upper(v_hr), false) then
+    raise exception 'That HR operations decision was not found for this person and day.' using errcode = 'P0002';
+  end if;
+  -- The days carried are the days decided, and only the decision that was sent: one changed or undone
+  -- since the app read it is not carried — nothing is written, and the new decision travels on its own.
+  if v_report_line.decision is distinct from 'approved'
+     or round(v_report_line.decided_days, 3) is distinct from v_days
+     or v_report_line.decided_at is distinct from p_decided_at then
+    return jsonb_build_object('outcome', 'superseded');
   end if;
 
   -- The same lock the daily job takes for this employee-week, so the two never interleave.
@@ -663,6 +678,9 @@ begin
          and round(v_line.deduction_days, 3) <> v_days then
         perform public.phx_attendance_mark_digest_line(v_line.id, true, v_days, v_actor);
       end if;
+      -- The report line points at its review day, in this transaction (an earlier run's save may not have).
+      update public.hr_ops_report_lines set bridge_ref = v_line.id::text, updated_at = now()
+      where id = p_hr_ops_line_id and bridge_ref is distinct from v_line.id::text;
       return jsonb_build_object(
         'outcome', 'bridged', 'lineId', v_line.id, 'digestId', v_digest.id,
         'digestEmployeeHrId', v_digest.employee_hr_id, 'lineStatus', v_line.status,
@@ -700,6 +718,9 @@ begin
     -- The existing tick path: ticked, at the decided days, recorded as his change when it differs from
     -- what the report detected, and the week's total recomputed.
     perform public.phx_attendance_mark_digest_line(v_line.id, true, v_days, v_actor);
+    -- The report line points at its review day, in this transaction: its decision is now fixed.
+    update public.hr_ops_report_lines set bridge_ref = v_line.id::text, updated_at = now()
+    where id = p_hr_ops_line_id;
 
     return jsonb_build_object(
       'outcome', 'bridged', 'lineId', v_line.id, 'digestId', v_digest.id,
@@ -789,6 +810,10 @@ begin
     updated_at = now()
   where id = v_digest.id;
 
+  -- The report line points at the day it added, in this transaction: its decision is now fixed.
+  update public.hr_ops_report_lines set bridge_ref = v_line.id::text, updated_at = now()
+  where id = p_hr_ops_line_id;
+
   return jsonb_build_object(
     'outcome', 'bridged', 'lineId', v_line.id, 'digestId', v_digest.id,
     'digestEmployeeHrId', v_digest.employee_hr_id, 'lineStatus', v_line.status,
@@ -829,6 +854,12 @@ begin
      or (select prosrc from pg_proc where oid = 'public.phx_attendance_sync_digest_days(text, text, integer, date, date, boolean, jsonb, date[])'::regprocedure)
      not like '%l.hr_ops_line_id is null and l.status <> ''field_review''%' then
     raise exception 'the daily job does not protect a day decided in the HR operations report';
+  end if;
+  if (select prosrc from pg_proc where oid = 'public.phx_hr_ops_bridge_digest_day(uuid, text, text, date, text, integer, date, date, numeric, numeric, text, jsonb, text, timestamptz, boolean)'::regprocedure)
+     not like '%where id = p_hr_ops_line_id for update%'
+     or (select prosrc from pg_proc where oid = 'public.phx_hr_ops_bridge_digest_day(uuid, text, text, date, text, integer, date, date, numeric, numeric, text, jsonb, text, timestamptz, boolean)'::regprocedure)
+     not like '%''superseded''%' then
+    raise exception 'the bridge does not lock the report line and re-check its decision';
   end if;
   foreach v_fn in array array[
     'public.phx_attendance_sync_digest_days(text, text, integer, date, date, boolean, jsonb, date[])',

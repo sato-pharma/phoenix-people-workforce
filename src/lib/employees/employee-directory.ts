@@ -24,6 +24,7 @@ import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
 import { isMissingColumnError } from "./missing-column";
 import { resolveEmployeeDisplayName } from "./display-name";
+import { storedPayFlagsFromRow, type StoredPayFlags } from "./salary-blind-pay-flags";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -992,6 +993,25 @@ async function loadCompensationByHrId(hrIds: string[]) {
 
     throw error;
   }
+}
+
+/**
+ * One employee's payment mode and payroll eligibility, read FRESH from the database (never the
+ * directory cache) and derived exactly as the directory derives them. Null when the employee is
+ * not there. The salary-blind seat's save writes these straight back (salary-blind-pay-flags.ts),
+ * so a stale read would quietly undo a change the HR Manager had just made.
+ */
+export async function readStoredPayFlags(hrId: string): Promise<StoredPayFlags | null> {
+  const storedHrId = normalizeHrId(hrId);
+  if (!storedHrId) return null;
+
+  const rows = await supabaseRest<
+    Array<{ employment_status: string | null; payment_mode: string | null; payroll_eligible: boolean | null }>
+  >(`employees?hr_id=eq.${encodeURIComponent(storedHrId)}&select=employment_status,payment_mode,payroll_eligible`);
+  if (rows.length === 0) return null;
+
+  const compensation = (await loadCompensationByHrId([storedHrId])).get(storedHrId);
+  return storedPayFlagsFromRow(rows[0], compensation?.payment_mode);
 }
 
 /**

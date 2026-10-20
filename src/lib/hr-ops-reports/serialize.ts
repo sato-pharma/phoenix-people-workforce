@@ -7,7 +7,19 @@
 // `findMoneyKeys` is the tripwire tests/hr-ops-reports.test.ts runs over a built payload.
 
 import { formatDayLong, parsePeriodKey, periodTitle } from "./periods";
-import { decisionIsOpen, defaultDecisionDays, isDecidable, lineFlags, needsReview, reportProgress, type ReportProgress } from "./rules";
+import {
+  decidedElsewhereText,
+  decisionIsOpen,
+  defaultDecisionDays,
+  isCarried,
+  isDecidable,
+  lineFlags,
+  needsReview,
+  NOT_CARRIED_MESSAGE,
+  reachesWeeklyReview,
+  reportProgress,
+  type ReportProgress,
+} from "./rules";
 import {
   HR_OPS_BRIDGE_STATUS_LABELS,
   HR_OPS_FLAG_LABELS,
@@ -67,6 +79,14 @@ export type HrOpsLineView = {
   needsReview: boolean;
   decidable: boolean;
   carried: boolean;
+  /** Where a carried row was decided: "Decided in its daily report", "Decided in the weekly report of …". */
+  carriedLabel: string | null;
+  /**
+   * True on an office row the weekly attendance review can never hold (rules.ts `reachesWeeklyReview`):
+   * it is decided here for the record, and nothing of it is carried. `notCarriedNote` says so in full.
+   */
+  notCarried: boolean;
+  notCarriedNote: string | null;
   review: {
     action: HrOpsReviewAction;
     actionLabel: string;
@@ -171,18 +191,34 @@ export function viewReport(report: HrOpsReportRow, lines?: readonly HrOpsReportL
   };
 }
 
+function carriedLabelOf(line: HrOpsReportLineRow): string | null {
+  if (line.carried_from_line_id) return "Decided in its daily report";
+  if (!line.decision && line.decided_elsewhere) {
+    const text = decidedElsewhereText(line.decided_elsewhere);
+    return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+  }
+  return null;
+}
+
 export function viewLine(line: HrOpsReportLineRow): HrOpsLineView {
   const flags = lineFlags(line);
+  const decidable = isDecidable(line);
+  const notCarried = decidable && !reachesWeeklyReview(line);
+  const settledNotCarried = notCarried && line.bridge_status === "not_needed" && line.decision === "approved";
   return {
     areaName: line.area_name,
     bridge: {
-      label: HR_OPS_BRIDGE_STATUS_LABELS[line.bridge_status] ?? line.bridge_status,
+      label: settledNotCarried ? "Not carried to payroll" : HR_OPS_BRIDGE_STATUS_LABELS[line.bridge_status] ?? line.bridge_status,
       locked: !decisionIsOpen(line),
-      message: line.bridge_message,
+      // The not-carried sentence is drawn once, from `notCarriedNote`.
+      message: settledNotCarried && line.bridge_message === NOT_CARRIED_MESSAGE ? null : line.bridge_message,
       status: line.bridge_status,
     },
-    carried: Boolean(line.carried_from_line_id),
-    decidable: isDecidable(line),
+    carried: isCarried(line),
+    carriedLabel: carriedLabelOf(line),
+    decidable,
+    notCarried,
+    notCarriedNote: notCarried ? NOT_CARRIED_MESSAGE : null,
     decision: line.decision
       ? {
           days: toDays(line.decided_days),

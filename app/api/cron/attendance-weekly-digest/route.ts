@@ -56,8 +56,10 @@ export const maxDuration = 300;
  *
  * THE HR DAILY & WEEKLY REPORTS RIDE ON THIS RUN (2026-10-20) — src/lib/hr-ops-reports/schedule.ts
  * builds yesterday's report (and last week's on a Sunday), then retries every decided day still
- * waiting to reach this review. It runs AFTER the sync, so a day the sync has just added is there
- * for the retry to set, and it runs even when this review is switched off, because the reports are
+ * waiting to reach this review. It runs LAST — after the sync, so a day the sync has just added is
+ * there for the retry to set, and after the deadline sweep and the apply loop, so the review's own
+ * steps run before it and a slow report build can never hold them up or leave them for the next
+ * run. It runs even when this review is switched off, because the reports are
  * the HR Operations Specialist's own work. It is fenced in its own try/catch and NEVER fails this
  * run: its failures are logged and returned as `hrOpsReports`, and the digest steps go on.
  */
@@ -108,9 +110,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // After the sync, before the deadline sweep — see runHrOpsReportsStep. Never fails this run.
-    const hrOpsReports = await runHrOpsReportsStep(todayIso);
-
     // The sync has already committed by this point, so a failure below must not be
     // reported as though the whole run failed — but it must not be swallowed either.
     // Every result is returned, and the status goes 500 so a broken step is loud
@@ -144,6 +143,10 @@ export async function GET(request: Request) {
         error,
       });
     }
+
+    // LAST — after the sync, the deadline sweep and the apply loop — see runHrOpsReportsStep. Never
+    // fails this run, and never counts toward `failed` below.
+    const hrOpsReports = await runHrOpsReportsStep(todayIso);
 
     // Also loud: a day the sweep could not settle, and a day paid from annual balance that payroll
     // had already approved (taken twice). Each is retried or needs a person, and a 200 would hide it.

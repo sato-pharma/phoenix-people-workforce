@@ -189,6 +189,8 @@ export function HrOpsReportsWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [prices, setPrices] = useState<Map<string, RowPrice> | null>(null);
   const [priceTotal, setPriceTotal] = useState<number | null>(null);
+  // Why there is no total, in words — a total that could not be worked out is never shown as EGP 0.00.
+  const [priceTotalNote, setPriceTotalNote] = useState<string | null>(null);
 
   const reportId = payload?.report.id ?? null;
 
@@ -196,19 +198,24 @@ export function HrOpsReportsWorkspace({
     async (id: string) => {
       if (mode !== "decider") return;
       try {
-        const priced = await hrOpsApi<{ prices: RowPrice[]; total: number }>("GET", `/api/hr-ops-reports/${id}/priced`);
+        const priced = await hrOpsApi<{ prices: RowPrice[]; total: number | null; totalNote: string | null }>("GET", `/api/hr-ops-reports/${id}/priced`);
         setPrices(new Map(priced.prices.map((price) => [price.lineId, price])));
         setPriceTotal(priced.total);
+        setPriceTotalNote(priced.total === null ? (priced.totalNote ?? "No total: some rows could not be priced.") : null);
       } catch {
         setPrices(null);
         setPriceTotal(null);
+        setPriceTotalNote("No total: the amounts could not be read.");
       }
     },
     [mode],
   );
 
   useEffect(() => {
-    if (reportId) void loadPrices(reportId);
+    if (!reportId) return;
+    // Defer out of the synchronous effect body to satisfy react-hooks/set-state-in-effect.
+    const id = setTimeout(() => void loadPrices(reportId), 0);
+    return () => clearTimeout(id);
   }, [loadPrices, reportId]);
 
   const refresh = useCallback(async (id: string | null) => {
@@ -278,7 +285,7 @@ export function HrOpsReportsWorkspace({
     });
   };
 
-  const lines = payload?.lines ?? [];
+  const lines = useMemo(() => payload?.lines ?? [], [payload]);
   const sectionLines = useMemo(() => lines.filter((line) => line.section === section), [lines, section]);
   const visible = useMemo(
     () => (filter === "all" ? sectionLines : sectionLines.filter((line) => needsAttention(line, mode))),
@@ -369,6 +376,9 @@ export function HrOpsReportsWorkspace({
                   <p className="text-sm text-slate-700">
                     Approved and proposed days in this report come to <span className="font-black text-slate-900">{formatEgp(priceTotal)}</span>.
                   </p>
+                ) : null}
+                {mode === "decider" && priceTotal === null && priceTotalNote ? (
+                  <p className="text-sm font-semibold text-rose-700">{priceTotalNote}</p>
                 ) : null}
 
                 {mode === "reviewer" && report.status === "in_review" ? (

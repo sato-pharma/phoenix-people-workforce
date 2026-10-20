@@ -13,7 +13,13 @@ import {
   rowHasMoneyValue,
   SALARY_BLIND_MONEY_COLUMNS_CODE,
   withoutMoney,
+  withoutPayFlags,
 } from "@/lib/imports/employee-import-salary-blind";
+import {
+  PAY_FLAG_KEPT_CODE,
+  PAY_FLAGS_NOT_COMPARED_MESSAGE,
+  payFlagChangesFromSeat,
+} from "@/lib/employees/salary-blind-pay-flags";
 import type {
   DetectedEmployeeColumn,
   EmployeeImportField,
@@ -778,6 +784,10 @@ export function validateEmployeeImportRows(
     records,
   });
 
+  // Set when the salary-blind seat's file carries a payment mode or payroll eligible cell and the
+  // master's values could not be read to compare it with — said once, after the rows.
+  let payFlagCellsIgnoredUnchecked = false;
+
   for (const record of records) {
     if (record.rowType === "employee" && !record.hrId) {
       validationErrors.push({
@@ -951,6 +961,35 @@ export function validateEmployeeImportRows(
         });
       }
       withoutMoney(record);
+
+      // PAYMENT MODE, PAYROLL ELIGIBLE AND EMPLOYMENT STATUS STAY WITH THE HR MANAGER
+      // (salary-blind-pay-flags.ts). A cell equal to the master is ignored; one that changes it
+      // blocks the row by name. Then all three are blanked, so whatever the cell held — equal,
+      // unchecked or refused — is never written.
+      const storedPayFlags = options.existingState?.storedPayFlagsByCanonicalKey;
+      if (record.compensation.paymentMode !== null || record.payrollEligible !== null || record.employmentStatus) {
+        if (!storedPayFlags) {
+          payFlagCellsIgnoredUnchecked = true;
+        } else if (record.hrId) {
+          const changes = payFlagChangesFromSeat(
+            {
+              employmentStatus: record.employmentStatus,
+              paymentMode: record.compensation.paymentMode,
+              payrollEligible: record.payrollEligible,
+            },
+            storedPayFlags.get(canonicalHrIdKey(record.hrId) ?? ""),
+          );
+          for (const change of changes) {
+            validationErrors.push({
+              rowNumber: record.rowNumber,
+              field: change.field,
+              code: PAY_FLAG_KEPT_CODE,
+              message: change.message,
+            });
+          }
+        }
+      }
+      withoutPayFlags(record);
     } else {
       for (const field of numericImportFields) {
         const rawNumber = normalizeTextValue(valueFor(record.source, mapping, field));
@@ -1144,6 +1183,13 @@ export function validateEmployeeImportRows(
       field: warning.field,
       code: warning.code,
       message: warning.message,
+    });
+  }
+
+  if (payFlagCellsIgnoredUnchecked) {
+    validationWarnings.push({
+      code: PAY_FLAG_KEPT_CODE,
+      message: PAY_FLAGS_NOT_COMPARED_MESSAGE,
     });
   }
 

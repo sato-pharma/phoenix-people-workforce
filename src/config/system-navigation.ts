@@ -1099,7 +1099,15 @@ export const adminNavigationSectionSeeds = [
         // Finance Manager excluded 2026-08-10 (owner) — same empty hub, same reasoning. His
         // attendance:read/export grant stays: it feeds the payroll and day-report surfaces he
         // keeps, so only the row goes.
-        excludedRoles: ["SFE Manager", "Finance Manager"],
+        //
+        // HR Administration (the HR Operations Specialist) excluded 2026-10-20. The hub page is
+        // fenced for her (seat-page-fences.ts), so she never could open this door — but the fence
+        // reads a row's HREF, and promoteHubRows carries only this row's permissions and roles onto
+        // the promoted bands as their gate. Her employees:read passed that gate, and the bands
+        // handed her admin rail Daily & Weekly Reports and HR Reminders through a hub she cannot
+        // open. Excluding her here is what the copied gate can carry. She works in the /hr shell,
+        // where /hr/hr-reports and /hr/hr-reminders already give her both pages.
+        excludedRoles: ["SFE Manager", "Finance Manager", "HR Administration"],
         permissions: [
           { resource: "employees" },
           { resource: "employees", action: "update" },
@@ -3487,7 +3495,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: ClipboardCheck,
     label: "Daily & Weekly Reports",
     description:
-      "The daily and weekly fingerprint and field-visit reports: every flagged day confirmed, rejected or given recommended days by HR, then decided by the HR Manager. Days only until he decides.",
+      "The daily and weekly fingerprint and field-visit reports: every flagged day confirmed, rejected or given recommended days by HR, then decided by the HR Manager. Days only until the HR Manager decides.",
     permissions: [{ resource: "hr_ops_reports", action: "read" }],
     roles: ["Super Admin", "HR Administration"],
   },

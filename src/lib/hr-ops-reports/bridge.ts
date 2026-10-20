@@ -20,13 +20,31 @@
 //     and disputed like a fingerprint day. The CRM connector leaves out any day such a deduction claims
 //     (connectors/crm.ts, loadFieldReviewClaimedDays), so the day is never charged twice.
 //
+//   • NOT CARRIED. An office row the review can NEVER hold — no fingerprint row at all, a single punch
+//     or a late/early day the policy charges 0 days (rules.ts `reachesWeeklyReview`) — is final at
+//     once: `not_needed`, "Not carried to payroll", no call to the review and nothing written (owner
+//     decision, 2026-10-20). It is decided for the record and handled outside this report, as before.
+//
 // WHAT IT NEVER DOES
 //   • It never releases a week, never tells anybody anything, and never decides a deduction. The day
 //     waits for the Super Admin's own release, like every other day.
 //   • It never writes into a released week. A day whose week is out (or that is already answered) is
 //     `week_released`, with nothing written; changing it is a person's job on the review page.
+//   • It never charges a field day twice, or into a closed month. Before a field day's deduction can be
+//     written, a live `crm` / `crm_half_day` / `fingerprint` deduction already charging that person-day,
+//     or a payroll month already final (dispute-center/payroll-month.ts — published, or Part 2
+//     confirmed), fails the line with the reason, and nothing is written. A read that fails, fails it too.
 //   • It never throws out of the loop. One day that fails is `failed` with its reason, and every other
 //     day is still carried. A failed or waiting day is retried by retryWaitingBridges.
+//
+// A DECISION THAT CHANGES WHILE IT IS CARRIED. phx_hr_ops_bridge_digest_day locks the report line
+// (FOR UPDATE) and carries it only while its decision, days and decided_at are still the ones sent —
+// otherwise it answers `superseded` and writes nothing. When it does set or add the review's day it
+// writes the line's `bridge_ref` in the SAME transaction, so from that instant the decision can no
+// longer be changed here (decide.ts refuses a row with a `bridge_ref`) and no ticked day is ever left
+// behind a later rejection. The outcome is then saved only on the line as it was read — same
+// `decided_at`, still waiting or failed — and a save that matches no row is a logged failure, never
+// a silent one.
 //
 // IDEMPOTENT. The review day carries the report line's id (unique), so a second run finds its own day;
 // the deduction's candidate key is deterministic, so a second insert is skipped. And the daily job never
@@ -34,18 +52,22 @@
 // (20261020072217_hr_ops_bridge_field_review.sql), so a decision is never undone by the next refresh.
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrIdForStorage } from "@/lib/hr-id.ts";
 import { HR_OPS_REPORT_SOURCE_SYSTEM } from "@/lib/attendance/digest-rules.ts";
 import { getDigestSettings } from "@/lib/attendance/digest-service.ts";
 import { refreshableReviewWeek, tileReviewMonth, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
 import { cairoTodayIso } from "@/lib/attendance/working-days.ts";
+import { monthKeyLabel, payrollMonthState } from "@/lib/dispute-center/payroll-month.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
+import { calculateDeductionAmountFromBaseSalary, resolveAppliedDeductionDates } from "@/lib/deductions/calculations.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { isDeductionExemptEmployee } from "@/lib/deductions/exempt-employees.ts";
 import { insertCandidateDrafts } from "@/lib/deductions/service.ts";
-import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
+import { deductionsCategoryNames, type DeductionsCandidateDraft, type DeductionsCategory } from "@/lib/deductions/types.ts";
+
+import { NOT_CARRIED_MESSAGE, reachesWeeklyReview } from "./rules";
 
 const BRIDGE_ACTOR = "system:hr-ops-report-bridge";
 const PAGE = 1000;
@@ -61,6 +83,8 @@ export type HrOpsBridgeLine = {
   hrKey: string;
   employeeName: string;
   flags: string[];
+  /** The policy's figure for the day, as the line records it — what decides whether an office day is carried. */
+  suggestedDays: number | null;
   reviewReason: string | null;
   decision: string | null;
   decidedDays: number | null;
@@ -100,7 +124,20 @@ export type BridgeDayOutcome =
     }
   | { outcome: "waiting" }
   | { outcome: "week_released"; lineId: number | null; lineAction: string | null }
-  | { outcome: "conflict"; lineId: number | null; message: string };
+  | { outcome: "conflict"; lineId: number | null; message: string }
+  /** The report line's decision, days or decided_at changed since it was read: nothing was written. */
+  | { outcome: "superseded" };
+
+/** The deduction categories that already charge a person-day a reviewed field day would also charge. */
+export const FIELD_DAY_CLAIM_CATEGORIES: readonly DeductionsCategory[] = ["crm", "crm_half_day", "fingerprint"];
+
+/** One live deduction of a person's month, as the claim check reads it. */
+export type DayClaim = {
+  category: string;
+  sourceSystem: string | null;
+  dates: readonly string[];
+  decision: { decisionStatus?: string | null; appliedDates?: readonly string[] | null } | null;
+};
 
 export type SavedBridgeOutcome = {
   status: "bridged" | "waiting" | "week_released" | "failed" | "not_needed";
@@ -122,7 +159,21 @@ export type HrOpsBridgeDeps = {
   bridgeDay: (request: BridgeDayRequest) => Promise<BridgeDayOutcome>;
   /** Writes a field day's one deduction (idempotent) and returns its id. */
   ensureCandidate: (draft: DeductionsCandidateDraft) => Promise<{ candidateId: string | null; warnings: string[] }>;
-  saveOutcome: (lineId: string, outcome: SavedBridgeOutcome) => Promise<void>;
+  /**
+   * The live (not superseded) `crm` / `crm_half_day` / `fingerprint` deductions of one person's month.
+   * Throws when they cannot be read — the field day then fails, never passes.
+   */
+  dayClaims: (input: { employeeHrId: string; monthKey: string }) => Promise<DayClaim[]>;
+  /** Whether a payroll month's money is already final (published, or Part 2 confirmed). Throws when unread. */
+  payrollMonthFinal: (monthKey: string) => Promise<boolean>;
+  /**
+   * Saves a line's outcome — only on the line as it was read (`expected.decidedAt`), while it is still
+   * waiting or failed. Throws when no row matched: the decision changed in between, and the save is
+   * a failure the run logs, never a silent success.
+   */
+  saveOutcome: (lineId: string, outcome: SavedBridgeOutcome, expected: { decidedAt: string | null }) => Promise<void>;
+  /** Where a failure the run absorbs is logged. Absent in the tests. */
+  log?: (message: string, error: unknown, labels: Record<string, string>) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -236,6 +287,22 @@ export function buildReviewedDayDraft(input: {
   };
 }
 
+/**
+ * Pure: the categories among a person's live deductions that still CHARGE `workDate`. A deduction
+ * cleared with "Do Not Take Action" charges nothing, and a day the reviewer unticked is not applied
+ * (resolveAppliedDeductionDates) — the same reading day-overlap.ts gives a charged day.
+ */
+export function chargingCategories(claims: readonly DayClaim[], workDate: string): string[] {
+  const charging = new Set<string>();
+  for (const claim of claims) {
+    if (!(FIELD_DAY_CLAIM_CATEGORIES as readonly string[]).includes(claim.category)) continue;
+    if ((claim.decision?.decisionStatus ?? "Pending") === "Do Not Take Action") continue;
+    const dates = resolveAppliedDeductionDates({ dates: claim.dates, decision: claim.decision });
+    if (dates.some((date) => typeof date === "string" && date.trim() === workDate)) charging.add(claim.category);
+  }
+  return [...charging].sort();
+}
+
 // ---------------------------------------------------------------------------
 // The walk
 // ---------------------------------------------------------------------------
@@ -246,16 +313,57 @@ type RunContext = {
   liveError: string | null;
   salaries: ReadonlyMap<string, number> | null;
   salaryError: string | null;
+  /** Whether each payroll month is final, read once per month per run. */
+  monthFinal: Map<string, Promise<boolean>>;
 };
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Why a field day's deduction may NOT be written, or null when it may: the payroll month is already
+ * final, or a live deduction of another category already charges the person-day. A read that fails is
+ * a reason too — the day is never charged on a check that did not run.
+ */
+async function fieldDayRefusal(line: HrOpsBridgeLine, context: RunContext, deps: HrOpsBridgeDeps): Promise<string | null> {
+  const monthKey = line.workDate.slice(0, 7);
+  let final: boolean;
+  try {
+    let pending = context.monthFinal.get(monthKey);
+    if (!pending) {
+      pending = deps.payrollMonthFinal(monthKey);
+      context.monthFinal.set(monthKey, pending);
+    }
+    final = await pending;
+  } catch (error) {
+    return `whether ${monthKeyLabel(monthKey)} payroll is already final could not be read (${messageOf(error)})`;
+  }
+  if (final) {
+    return `${monthKeyLabel(monthKey)} payroll is already final (published, or its Part 2 confirmed), so no deduction can be added to it`;
+  }
+  let claims: DayClaim[];
+  try {
+    claims = await deps.dayClaims({ employeeHrId: line.hrId, monthKey });
+  } catch (error) {
+    return `the deductions already charged on ${dayLabel(line.workDate)} could not be read (${messageOf(error)})`;
+  }
+  const charging = chargingCategories(claims, line.workDate);
+  if (charging.length) {
+    const names = charging.map((category) => `"${deductionsCategoryNames[category as DeductionsCategory] ?? category}"`).join(" and ");
+    return `${dayLabel(line.workDate)} is already charged for this person by ${names} in the month-end deductions, so a reviewed field day would take it twice`;
+  }
+  return null;
+}
+
 async function bridgeOne(line: HrOpsBridgeLine, context: RunContext, deps: HrOpsBridgeDeps): Promise<SavedBridgeOutcome> {
   const days = line.decidedDays;
   if (line.decision !== "approved" || days === null || !Number.isFinite(days) || days <= 0) {
     return { status: "not_needed", ref: null, message: "Nothing to carry: the decision deducts no days.", at: null };
+  }
+  // An office row the weekly review can never hold is final at once — no call, nothing written.
+  if (!reachesWeeklyReview({ flags: line.flags, section: line.section, suggested_days: line.suggestedDays })) {
+    return { status: "not_needed", ref: null, message: NOT_CARRIED_MESSAGE, at: null };
   }
   // Written to the review day as who decided it, so in the form an HR id is STORED in (hr-id.ts).
   const decidedBy = String(hrIdForStorage(String(line.decidedByHrId ?? "").trim() || null) ?? "").trim();
@@ -306,6 +414,15 @@ async function bridgeOne(line: HrOpsBridgeLine, context: RunContext, deps: HrOps
     }
   }
 
+  // A field day the bridge may add is checked BEFORE anything is written: not into a final payroll
+  // month, and not over a day another deduction already charges.
+  let fieldChecked = false;
+  if (allowInsert) {
+    const refusal = await fieldDayRefusal(line, context, deps);
+    if (refusal) return { status: "failed", ref: null, message: `Nothing was written: ${refusal}.`, at: null };
+    fieldChecked = true;
+  }
+
   const outcome = await deps.bridgeDay({
     hrOpsLineId: line.id,
     section: line.section,
@@ -354,6 +471,15 @@ async function bridgeOne(line: HrOpsBridgeLine, context: RunContext, deps: HrOps
       };
     case "conflict":
       return { status: "failed", ref: outcome.lineId === null ? null : String(outcome.lineId), message: outcome.message, at: null };
+    case "superseded":
+      // Saved only on the line as it was read, so this save matches nothing and is logged: the new
+      // decision is carried on its own run.
+      return {
+        status: "failed",
+        ref: null,
+        message: "The decision changed while it was being carried, so nothing was written; the new decision is carried on its own.",
+        at: null,
+      };
     case "bridged":
       break;
   }
@@ -369,6 +495,13 @@ async function bridgeOne(line: HrOpsBridgeLine, context: RunContext, deps: HrOps
         message: `The day is in the weekly attendance review, but its deduction was not written: ${unpricedWhy || "it could not be priced"}. It is retried.`,
         at: null,
       };
+    }
+    // The review already held the day (an earlier run added it): the same two checks, before the deduction.
+    if (!fieldChecked) {
+      const refusal = await fieldDayRefusal(line, context, deps);
+      if (refusal) {
+        return { status: "failed", ref, message: `The day is in the weekly attendance review, but its deduction was not written: ${refusal}. It is retried.`, at: null };
+      }
     }
     const written = await deps.ensureCandidate(buildReviewedDayDraft({ line, employeeHrId: outcome.digestEmployeeHrId, days, amount }));
     if (!written.candidateId) {
@@ -402,6 +535,7 @@ export async function runHrOpsBridge(lines: readonly HrOpsBridgeLine[], deps: Hr
     liveError: null,
     salaries: null,
     salaryError: null,
+    monthFinal: new Map(),
   };
   try {
     context.live = await deps.reviewLive();
@@ -428,9 +562,15 @@ export async function runHrOpsBridge(lines: readonly HrOpsBridgeLine[], deps: Hr
       saved = { status: "failed", ref: null, message: `Could not be carried into the weekly attendance review: ${messageOf(error)}`, at: null };
     }
     try {
-      await deps.saveOutcome(line.id, saved);
-    } catch {
-      // The line keeps its old status and is retried; the day itself is idempotent.
+      // Only on the line as it was read: a decision changed in between keeps what it now says.
+      await deps.saveOutcome(line.id, saved, { decidedAt: line.decidedAt });
+    } catch (error) {
+      // The line keeps its old status and is retried; the day itself is idempotent. Logged, never silent.
+      deps.log?.("HR Daily & Weekly Reports: a carried day's outcome could not be saved on its report line", error, {
+        event: "hr_ops_bridge_save_failed",
+        lineId: line.id,
+        outcome: saved.status,
+      });
       counts.failed += 1;
       continue;
     }
@@ -446,10 +586,12 @@ export async function runHrOpsBridge(lines: readonly HrOpsBridgeLine[], deps: Hr
 // The database
 // ---------------------------------------------------------------------------
 
-const LINE_SELECT = "id,section,work_date,hr_id,hr_key,employee_name,flags,review_reason,decision,decided_days,decided_by_hr_id,decided_at";
+const LINE_SELECT =
+  "id,section,work_date,hr_id,hr_key,employee_name,flags,suggested_days,review_reason,decision,decided_days,decided_by_hr_id,decided_at";
 
 function toBridgeLine(row: Record<string, unknown>): HrOpsBridgeLine {
   const days = row.decided_days === null || row.decided_days === undefined ? null : Number(row.decided_days);
+  const suggested = row.suggested_days === null || row.suggested_days === undefined ? null : Number(row.suggested_days);
   return {
     id: String(row.id),
     section: row.section === "field" ? "field" : "office",
@@ -458,6 +600,7 @@ function toBridgeLine(row: Record<string, unknown>): HrOpsBridgeLine {
     hrKey: String(row.hr_key ?? ""),
     employeeName: String(row.employee_name ?? ""),
     flags: Array.isArray(row.flags) ? (row.flags as unknown[]).map(String) : [],
+    suggestedDays: suggested === null || !Number.isFinite(suggested) ? null : suggested,
     reviewReason: typeof row.review_reason === "string" ? row.review_reason : null,
     decision: typeof row.decision === "string" ? row.decision : null,
     decidedDays: days === null || !Number.isFinite(days) ? null : days,
@@ -502,6 +645,8 @@ function parseOutcome(data: unknown): BridgeDayOutcome {
       return { outcome: "week_released", lineId, lineAction: typeof row.lineAction === "string" ? row.lineAction : null };
     case "conflict":
       return { outcome: "conflict", lineId, message: String(row.message ?? "The weekly attendance review holds this day differently.") };
+    case "superseded":
+      return { outcome: "superseded" };
     default:
       throw new Error(`The weekly attendance review answered "${String(row.outcome)}", which the bridge does not know.`);
   }
@@ -557,21 +702,59 @@ export function liveBridgeDeps(): HrOpsBridgeDeps {
       const id = ((data ?? []) as Array<{ id?: unknown }>)[0]?.id;
       return { candidateId: id ? String(id) : null, warnings: inserted.warnings };
     },
-    saveOutcome: async (lineId, outcome) => {
-      const { error } = await getSupabaseAdmin()
-        .from("hr_ops_report_lines")
-        .update({
-          bridge_status: outcome.status,
-          bridge_ref: outcome.ref,
-          bridge_message: outcome.message,
-          bridged_at: outcome.at,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", lineId)
-        // Only a line still on its way: a decision undone in between keeps what it now says.
-        .in("bridge_status", ["waiting", "failed"]);
+    dayClaims: async ({ employeeHrId, monthKey }) => {
+      const compact = compactDeductionsHrId(employeeHrId);
+      if (!compact) throw new Error("the person's HR id could not be read");
+      const { data, error } = await getSupabaseAdmin()
+        .from("deductions_candidates")
+        .select("category,source_system,dates,deductions_decisions(decision_status,applied_dates)")
+        .eq("month_key", monthKey)
+        .eq("employee_hr_id_compact", compact)
+        .in("category", [...FIELD_DAY_CLAIM_CATEGORIES])
+        .is("superseded_at", null);
       if (error) throw new Error(error.message);
+      return ((data ?? []) as Array<Record<string, unknown>>).map((row): DayClaim => {
+        const nested = row.deductions_decisions as Record<string, unknown> | Array<Record<string, unknown>> | null | undefined;
+        const decision = Array.isArray(nested) ? (nested[0] ?? null) : (nested ?? null);
+        return {
+          category: String(row.category ?? ""),
+          sourceSystem: typeof row.source_system === "string" ? row.source_system : null,
+          dates: Array.isArray(row.dates) ? (row.dates as unknown[]).map(String) : [],
+          decision: decision
+            ? {
+                decisionStatus: typeof decision.decision_status === "string" ? decision.decision_status : null,
+                appliedDates: Array.isArray(decision.applied_dates) ? (decision.applied_dates as unknown[]).map(String) : null,
+              }
+            : null,
+        };
+      });
     },
+    // "paid" — the run is published or its Part 2 confirmed — is the month the money is final for.
+    payrollMonthFinal: async (monthKey) => (await payrollMonthState(monthKey)) === "paid",
+    saveOutcome: async (lineId, outcome, expected) => {
+      const patch: Record<string, unknown> = {
+        bridge_status: outcome.status,
+        bridge_message: outcome.message,
+        bridged_at: outcome.at,
+        updated_at: new Date().toISOString(),
+      };
+      // The RPC writes bridge_ref itself the moment it touches the review; a null here never erases it.
+      if (outcome.ref !== null) patch.bridge_ref = outcome.ref;
+      let query = getSupabaseAdmin()
+        .from("hr_ops_report_lines")
+        .update(patch)
+        .eq("id", lineId)
+        // Only a line still on its way, and only the decision that was carried: a decision changed or
+        // undone in between keeps what it now says.
+        .in("bridge_status", ["waiting", "failed"]);
+      query = expected.decidedAt === null ? query.is("decided_at", null) : query.eq("decided_at", expected.decidedAt);
+      const { data, error } = await query.select("id");
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) {
+        throw new Error("The report line changed while its day was being carried (decided again, or no longer waiting), so this outcome was not saved.");
+      }
+    },
+    log: (message, error, labels) => logError(message, { error, labels }),
   };
 }
 

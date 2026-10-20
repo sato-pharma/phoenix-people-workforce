@@ -93,6 +93,7 @@ import {
   NEW_EMPLOYEE_NOT_ALLOWED_CODE,
   SALARY_BLIND_MONEY_COLUMNS_CODE,
 } from "@/lib/imports/employee-import-salary-blind";
+import { PAY_FLAG_KEPT_CODE } from "@/lib/employees/salary-blind-pay-flags";
 import { BASIC_SALARY_RATE } from "@/lib/payroll/policy";
 
 export type MasterLookups = {
@@ -1112,6 +1113,16 @@ function addUploadRulesSheet(
     }
     const blank = rules.find((rule) => rule.code === "—");
     if (blank) blank.detail = "Clearing a cell does not erase the stored value.";
+    // Payment mode is held with the HR Manager for this seat, so the "must be one of" check is
+    // replaced by the rule that she never changes it (salary-blind-pay-flags.ts).
+    const paymentModeRule = rules.findIndex((rule) => rule.code === "invalid_payment_mode");
+    if (paymentModeRule >= 0) rules.splice(paymentModeRule, 1);
+    rules.unshift({
+      effect: "Blocks the row",
+      code: PAY_FLAG_KEPT_CODE,
+      rule: "Payment Mode, Payroll Eligible and Employment Status stay as they are",
+      detail: "All three stay with the HR Manager. A cell that matches the master is ignored; a cell that changes it refuses that row. Bank name and bank account import as usual.",
+    });
     rules.unshift({
       effect: "Blocks the file",
       code: SALARY_BLIND_MONEY_COLUMNS_CODE,

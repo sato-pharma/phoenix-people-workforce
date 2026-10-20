@@ -18,12 +18,18 @@ import {
 } from "../src/lib/hr-ops-reports/field-section.ts";
 import { judgeOfficeDay, type OfficeDayInput } from "../src/lib/hr-ops-reports/office-section.ts";
 import { dailyPeriod, parsePeriodKey, periodTitle, scheduledPeriods, weeklyPeriod } from "../src/lib/hr-ops-reports/periods.ts";
+import { NOT_CARRIED_PRICE_NOTE, priceReport, SALARY_LIST_UNREAD_NOTE } from "../src/lib/hr-ops-reports/pricing.ts";
 import { buildQueue } from "../src/lib/hr-ops-reports/queue.ts";
 import {
+  bridgeStartForDecision,
   bridgeStatusForDecision,
   decisionIsOpen,
   defaultDecisionDays,
+  isCarried,
+  markDecidedElsewhere,
   MAX_DAYS,
+  NOT_CARRIED_MESSAGE,
+  reachesWeeklyReview,
   reportProgress,
   validateDecision,
   validateReview,
@@ -64,8 +70,12 @@ import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts"
  *   5. the migration and the code agree on every literal;
  *   6. the routes, the registry, the grants, the notification policy, the activity label and the rail;
  *   7. no payload she receives names money;
- *   8. the cron builds the reports AFTER the weekly-review sync, retries the decided days AFTER the
- *      build, and never fails the digest run.
+ *   8. the cron runs the reports step LAST — after the weekly-review sync, the deadline sweep and the
+ *      apply loop — retries the decided days AFTER the build, and never fails the digest run;
+ *   9. one day's row takes at most 3 days (the weekly review's own cap), and the editors say so;
+ *  10. an office row the weekly review never lists is "Not carried" — final at once, no amount;
+ *  11. a person-day decided in the daily or the weekly report is carried in the other when it is read;
+ *  12. an unread salary list prices nothing and totals nothing — never "EGP 0.00".
  */
 
 const ROOT = process.cwd();
@@ -417,7 +427,7 @@ function testReviewAndDecision() {
   refusal(() => validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "Half a day" }), /Recommend the number of days/, "an edit with no days");
   refusal(() => validateReview({ action: "recommend_edit", lineId: LINE_A }), /Say why you recommend/, "an edit with no reason");
   assert.equal(validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "Half a day", recommendedDays: "0.5" }).recommendedDays, 0.5);
-  refusal(() => validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "x", recommendedDays: MAX_DAYS + 1 }), /cannot be more than/, "more days than a month");
+  refusal(() => validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "x", recommendedDays: MAX_DAYS + 1 }), /cannot be more than/, "more days than the weekly review takes");
   refusal(() => validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "x", recommendedDays: -1 }), /zero or more/, "negative days");
   refusal(() => validateReview({ action: "approve", lineId: LINE_A }), /Confirm, Reject or Recommend/, "a decision word is not a review");
   refusal(() => validateReview({ action: "reject", lineId: LINE_A, reason: "x".repeat(501) }), /under 500/, "a reason past its cap");
@@ -469,6 +479,179 @@ function testReviewAndDecision() {
     lineRow({ carried_from_line_id: LINE_A, flags: ["no_punch"], id: LINE_D }),
   ]);
   assert.deepEqual(progress, { carried: 1, decided: 0, flagged: 3, reviewed: 1, toDecide: 2, toReview: 1, total: 4 }, "a carried row is shown, never reviewed or decided twice");
+}
+
+// ── 9. One day's row takes at most 3 days ──────────────────────────────────────────────────────
+function testDayCap() {
+  assert.equal(MAX_DAYS, 3, "the weekly attendance review's tick and bridge refuse more than 3 days for one day");
+  assert.equal(validateDecision({ days: 3, decision: "approved", lineId: LINE_A }).days, 3, "3 days stand");
+  assert.equal(validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "Three days", recommendedDays: 3 }).recommendedDays, 3);
+  for (const days of [3.25, 4, "31"]) {
+    refusal(
+      () => validateDecision({ days, decision: "approved", lineId: LINE_A }),
+      /^The approved days cannot be more than 3 days for one day's row — the weekly attendance review takes at most 3 days for a single day\.$/,
+      `an approval of ${String(days)} days`,
+    );
+    refusal(
+      () => validateReview({ action: "recommend_edit", lineId: LINE_A, reason: "x", recommendedDays: days }),
+      /^The recommended days cannot be more than 3 days/,
+      `a recommendation of ${String(days)} days`,
+    );
+  }
+
+  // The editors offer no more than the server takes, and refuse it in the server's own words.
+  const rows = code("src/components/hr-ops-reports/report-rows.tsx");
+  assert.doesNotMatch(rows, /max=\{31\}/, "no editor offers a month of days");
+  assert.equal(rows.match(/max=\{MAX_DAYS\}/g)?.length, 2, "both day fields stop at the cap");
+  assert.match(rows, /overCap\(next\.recommendedDays, "The recommended days"\)/);
+  assert.match(rows, /overCap\(draft\.days, "The approved days"\)/);
+}
+
+// ── 10. An office row the weekly review never lists is "Not carried" ──────────────────────────
+function testNotCarried() {
+  // Decided from what the row RECORDS: a fingerprint row whose policy charged days.
+  assert.equal(reachesWeeklyReview({ flags: ["no_punch"], section: "office", suggested_days: null }), false, "no fingerprint row: never in the review");
+  assert.equal(reachesWeeklyReview({ flags: ["no_punch"], section: "office", suggested_days: "1.0000" }), false, "no punch, whatever the figure");
+  assert.equal(reachesWeeklyReview({ flags: ["single_punch"], section: "office", suggested_days: "0.0000" }), false, "a single punch charged nothing");
+  assert.equal(reachesWeeklyReview({ flags: ["late"], section: "office", suggested_days: "0" }), false, "a late day charged 0");
+  assert.equal(reachesWeeklyReview({ flags: ["late"], section: "office", suggested_days: "0.2500" }), true, "a late day the policy charged is in the review");
+  assert.equal(reachesWeeklyReview({ flags: ["single_punch"], section: "office", suggested_days: "1.0000" }), true, "a single punch the policy charged is held as a missing punch");
+  assert.equal(reachesWeeklyReview({ flags: ["no_field_activity"], section: "field", suggested_days: null }), true, "a field day is added by the bridge itself");
+
+  const noPunch = { flags: ["no_punch"], section: "office" as const, suggested_days: null };
+  assert.deepEqual(bridgeStartForDecision(noPunch, "approved", 1), { message: NOT_CARRIED_MESSAGE, status: "not_needed" }, "approved: final at once, never waiting");
+  assert.deepEqual(bridgeStartForDecision(noPunch, "rejected", null), { message: null, status: "not_needed" });
+  assert.deepEqual(
+    bridgeStartForDecision({ flags: ["late"], section: "office", suggested_days: "0.2500" }, "approved", 1),
+    { message: null, status: "waiting" },
+    "an approved late day with a policy figure is still carried",
+  );
+  assert.equal(
+    NOT_CARRIED_MESSAGE,
+    "Not carried to payroll — the weekly attendance review never lists this day, so it is handled outside this report, as before.",
+  );
+
+  // The screen: listed with her answer and his decision, labelled "Not carried to payroll", no waiting.
+  const decided = viewLine(
+    lineRow({
+      bridge_message: NOT_CARRIED_MESSAGE,
+      bridge_status: "not_needed",
+      decided_at: "2026-10-20T09:00:00.000Z",
+      decided_days: "1.0000",
+      decision: "approved",
+      flags: ["no_punch"],
+      review_action: "confirm",
+    }),
+  );
+  assert.equal(decided.notCarried, true);
+  assert.equal(decided.notCarriedNote, NOT_CARRIED_MESSAGE);
+  assert.equal(decided.bridge.label, "Not carried to payroll");
+  assert.equal(decided.bridge.message, null, "the sentence is drawn once, from the note");
+  assert.equal(decided.bridge.locked, false, "nothing downstream holds it");
+  assert.equal(decided.review?.action, "confirm", "her answer stays on the row");
+  assert.equal(decided.decision?.days, 1, "his decision stays on the row");
+  const charged = viewLine(lineRow({ flags: ["late"], suggested_days: "0.2500" }));
+  assert.equal(charged.notCarried, false);
+  assert.equal(charged.notCarriedNote, null);
+
+  // decide.ts saves the decision with that start, and the bridge never calls the review for it.
+  const decide = code("src/lib/hr-ops-reports/decide.ts");
+  assert.match(decide, /bridgeStartForDecision\(line, decision\.decision, decision\.days\)/);
+  assert.match(decide, /bridge_status: start\.status/);
+  const bridge = code("src/lib/hr-ops-reports/bridge.ts");
+  assert.ok(
+    bridge.indexOf("if (!reachesWeeklyReview(") < bridge.indexOf("await deps.bridgeDay("),
+    "the bridge settles a not-carried row before it would call the review",
+  );
+}
+
+// ── 11. A person-day decided in the other report is carried when read ─────────────────────────
+function testDecidedElsewhere() {
+  const dailyId = "33333333-3333-4333-8333-333333333333";
+  const weeklyId = "44444444-4444-4444-8444-444444444444";
+  const reports = new Map([
+    [dailyId, { kind: "daily" as const, period_key: "daily:2026-10-19" }],
+    [weeklyId, { kind: "weekly" as const, period_key: "weekly:2026-10-17" }],
+  ]);
+  // The weekly report holds 19 October undecided; the daily report of 19 October decided it.
+  const weeklyLines = [
+    lineRow({ flags: ["late"], id: LINE_A, report_id: weeklyId, review_action: "confirm", suggested_days: "0.2500" }),
+    lineRow({ flags: ["late"], hr_id: "HO-9302", hr_key: "ho-9302", id: LINE_B, report_id: weeklyId, review_action: "confirm", suggested_days: "0.2500" }),
+  ];
+  const decidedRows = [
+    { decision: "approved" as const, hr_key: "ho-9301", id: LINE_C, report_id: dailyId, section: "office" as const, work_date: "2026-10-19" },
+  ];
+  const marked = markDecidedElsewhere(weeklyLines, decidedRows, reports);
+  assert.deepEqual(marked[0]?.decided_elsewhere, { anchor: "2026-10-19", kind: "daily", lineId: LINE_C, reportId: dailyId });
+  assert.equal(marked[1]?.decided_elsewhere, null, "another person's day is untouched");
+  assert.equal(isCarried(marked[0]!), true);
+  assert.deepEqual(
+    reportProgress(marked),
+    { carried: 1, decided: 0, flagged: 2, reviewed: 2, toDecide: 1, toReview: 0, total: 2 },
+    "the day decided in the daily report is carried here — not left for ever to decide",
+  );
+  const view = viewLine(marked[0]!);
+  assert.equal(view.carried, true);
+  assert.equal(view.carriedLabel, "Decided in the daily report of Monday 19 October 2026");
+  assert.equal(view.decidable, false, "never decided twice");
+
+  // A row decided in its own report, or a row of the deciding report itself, is not marked.
+  assert.equal(markDecidedElsewhere([lineRow({ decision: "approved", decided_days: "1", flags: ["late"], report_id: weeklyId })], decidedRows, reports)[0]?.decided_elsewhere, null);
+  assert.equal(markDecidedElsewhere([lineRow({ flags: ["late"], report_id: dailyId })], decidedRows, reports)[0]?.decided_elsewhere, null);
+
+  // The queue reads it the same way: a submitted report whose only open day was decided elsewhere has
+  // nothing left to decide.
+  const submitted = reportRow({ id: weeklyId, kind: "weekly", period_key: "weekly:2026-10-17", status: "submitted" });
+  const queue = buildQueue([submitted], [marked[0]!]);
+  assert.equal(queue.summary.rowsToDecide, 0);
+
+  // Every reader of progress or the queue asks for the marks.
+  // Both calls pass the report ids through `.map((report) => report.id)`, so the pin reads up to the
+  // columns argument rather than to the first ")".
+  const queueSource = code("src/lib/hr-ops-reports/queue.ts");
+  assert.equal(
+    (queueSource.match(/getLinesForReports\(.*, LINE_FACTS, true\)/g) ?? []).length,
+    2,
+    "both of the queue's reads ask for the marks",
+  );
+  assert.match(code("src/lib/hr-ops-reports/review.ts"), /withDecidedElsewhere\(/);
+  assert.match(code("src/lib/hr-ops-reports/decide.ts"), /settleOtherReports\(/, "deciding a day settles the other report that held it");
+}
+
+// ── 12. An unread salary list is never a zero ─────────────────────────────────────────────────
+function testPricing() {
+  const approvedLate = lineRow({ decided_days: "1.0000", decision: "approved", flags: ["late"], id: LINE_A, suggested_days: "0.2500" });
+  const approvedNoPunch = lineRow({ decided_days: "1.0000", decision: "approved", flags: ["no_punch"], id: LINE_B, suggested_days: null, work_date: "2026-10-18" });
+  const salaries = new Map([["ho9301", 3100]]);
+
+  // Read: the late day is priced (3,100 ÷ 31 October days × 1), the no-punch day is "Not carried".
+  const read = priceReport([approvedLate, approvedNoPunch], salaries);
+  assert.deepEqual(read.prices[0], { amount: 100, days: 1, lineId: LINE_A, note: null, status: "priced" });
+  assert.deepEqual(read.prices[1], { amount: null, days: 1, lineId: LINE_B, note: NOT_CARRIED_PRICE_NOTE, status: "not_carried" }, "Not carried — never 0");
+  assert.equal(read.total, 100);
+  assert.equal(read.totalNote, null);
+
+  // Unread — the feeder hands back an empty map on a failed read, or the read threw: nothing is priced.
+  for (const unread of [new Map<string, number>(), null]) {
+    const priced = priceReport([approvedLate, approvedNoPunch], unread);
+    assert.equal(priced.prices[0]?.status, "not_priced");
+    assert.equal(priced.prices[0]?.amount, null, "never 0");
+    assert.equal(priced.prices[0]?.note, SALARY_LIST_UNREAD_NOTE);
+    assert.equal(priced.prices[1]?.status, "not_carried");
+    assert.equal(priced.total, null, "no total — never EGP 0.00");
+    assert.match(String(priced.totalNote), /salary list could not be read/);
+  }
+
+  // One person with no salary: no total, and it says how many rows.
+  const stranger = lineRow({ decided_days: "1.0000", decision: "approved", flags: ["late"], hr_id: "HO-9999", hr_key: "ho-9999", id: LINE_C, suggested_days: "0.2500" });
+  const partial = priceReport([approvedLate, stranger], salaries);
+  assert.equal(partial.prices[1]?.status, "not_priced");
+  assert.equal(partial.total, null);
+  assert.equal(partial.totalNote, "No total: 1 row with days could not be priced.");
+
+  // A day decided in another report is priced there, never twice.
+  const elsewhere = { ...approvedLate, decided_days: null, decision: null, decided_elsewhere: { anchor: "2026-10-19", kind: "daily" as const, lineId: LINE_D, reportId: REPORT_ID } };
+  assert.equal(priceReport([elsewhere], salaries).prices[0]?.status, "nothing");
 }
 
 // ── 5. The migration and the code agree ─────────────────────────────────────────────────────────
@@ -672,7 +855,12 @@ function testCronOrder() {
   assert.ok(disabled > 0 && calls[0] > disabled && calls[0] < sync, "switched off, the reports still run — they are the HR Operations Specialist's own work");
   assert.ok(calls[1] > sync, "in the live run the reports are built AFTER the weekly-review sync, so a day the sync just added is there for the retry");
   const settle = cron.indexOf("settleOverdueAnswers(", sync);
-  assert.ok(settle === -1 || calls[1] < settle, "and before the deadline sweep");
+  assert.ok(settle > sync, "the digest cron still sweeps the deadline");
+  assert.ok(calls[1] > settle, "the reports step runs AFTER the deadline sweep, so a slow build never holds it up");
+  const apply = cron.indexOf("applyDigestAnswersForMonth(key)", sync);
+  assert.ok(apply > sync, "the digest cron still applies the answers");
+  assert.ok(calls[1] > apply, "and AFTER the apply loop — the reports step runs last");
+  assert.ok(calls[1] < cron.indexOf("const failed ="), "and before the run's own verdict, which it never joins");
 
   const step = cron.slice(cron.indexOf("async function runHrOpsReportsStep"), cron.indexOf("export async function GET"));
   assert.match(step, /try \{[\s\S]*runHrOpsReportsSchedule\(\{ todayIso \}\)[\s\S]*\} catch \(error\) \{[\s\S]*logError\(/, "the step is fenced and logs its failure");
@@ -695,6 +883,10 @@ export function runHrOpsReportsTests() {
   testOfficeJudgment();
   testManagerOwnVisits();
   testReviewAndDecision();
+  testDayCap();
+  testNotCarried();
+  testDecidedElsewhere();
+  testPricing();
   testMigrationParity();
   testWiring();
   testNoMoney();

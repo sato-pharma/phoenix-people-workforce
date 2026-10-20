@@ -128,27 +128,33 @@ export function periodEnd(period: Pick<HrOpsPeriod, "fieldTo" | "officeTo" | "an
   return [period.fieldTo, period.officeTo].filter((value): value is string => Boolean(value)).sort().at(-1) ?? period.anchor;
 }
 
-const LONG_DAY = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-  weekday: "long",
-  year: "numeric",
-});
-const SHORT_DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-const SHORT_DAY_YEAR = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" });
+// Spelled out rather than read from Intl: en-GB output moves with the engine's ICU version
+// ("Monday, 19 October" against "Monday 19 October", "Sept" against "Sep"), so the server and the
+// browser would print the same day two ways.
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function utcDay(dateIso: string) {
+  return new Date(`${dateIso}T00:00:00Z`);
+}
 
 export function formatDayLong(dateIso: string): string {
-  return LONG_DAY.format(new Date(`${dateIso}T00:00:00Z`));
+  const day = utcDay(dateIso);
+  return `${WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]} ${day.getUTCFullYear()}`;
 }
 
 export function formatDayShort(dateIso: string): string {
-  return SHORT_DAY.format(new Date(`${dateIso}T00:00:00Z`));
+  const day = utcDay(dateIso);
+  return `${day.getUTCDate()} ${MONTHS[day.getUTCMonth()].slice(0, 3)}`;
+}
+
+function formatDayShortYear(dateIso: string): string {
+  return `${formatDayShort(dateIso)} ${utcDay(dateIso).getUTCFullYear()}`;
 }
 
 /** "Daily report · Monday 19 October 2026" / "Weekly report · 10 Oct to 15 Oct 2026". */
 export function periodTitle(input: { kind: HrOpsReportKind; anchor: string; fieldTo?: string | null; officeTo?: string | null }): string {
   if (input.kind === "daily") return `Daily report · ${formatDayLong(input.anchor)}`;
   const end = periodEnd({ anchor: input.anchor, fieldTo: input.fieldTo ?? null, officeTo: input.officeTo ?? null });
-  return `Weekly report · ${formatDayShort(input.anchor)} to ${SHORT_DAY_YEAR.format(new Date(`${end}T00:00:00Z`))}`;
+  return `Weekly report · ${formatDayShort(input.anchor)} to ${formatDayShortYear(end)}`;
 }

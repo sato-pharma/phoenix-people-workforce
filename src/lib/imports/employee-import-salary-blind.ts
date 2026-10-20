@@ -21,9 +21,15 @@ import { normalizeHeaderName, normalizeTextValue } from "@/lib/imports/employee-
  *      her (it forces fuel and cost of living onto EVERY row, blank or not, and prints the amounts in
  *      its warnings), and the plan she gets back carries no figure.
  *
- * Both are decided from the SERVER's access context, never from anything the browser sends. Bank
- * name, bank account, has-bank-account and payment mode are not money and import as they always
- * have.
+ *   3. PAYMENT MODE, PAYROLL ELIGIBLE AND EMPLOYMENT STATUS ARE NEVER CHANGED BY HER (owner,
+ *      2026-10-20: "can change bank account but never a paymode"; payroll eligible decides whether
+ *      the person is paid at all, and an inactive status turns it off, so both are held the same
+ *      way). A cell equal to the master's value is ignored, a cell that differs blocks its row in
+ *      plain words (src/lib/employees/salary-blind-pay-flags.ts), and none of the three is ever
+ *      written from her file (withoutPayFlags, at the plan and again at the write).
+ *
+ * All three are decided from the SERVER's access context, never from anything the browser sends.
+ * Bank name, bank account and has-bank-account are not money and import as they always have.
  *
  * A separate rule rides beside these, keyed on `employees:create` rather than on this seat: an
  * importer who may not add an employee gets a row-level refusal for every Employee ID that is not
@@ -102,7 +108,23 @@ export function rowHasMoneyValue(row: RawEmployeeImportRow): boolean {
   });
 }
 
-/** Blank every money figure on a planned row. Payment mode is not money and stays. */
+/**
+ * Blank payment mode and payroll eligible on a planned row, so nothing her file holds in either
+ * column is written. Null is "the cell was left blank" to every writer: the confirm route writes
+ * payment_mode only for a non-null mode and payroll_eligible only for a recognised word (or a new
+ * hire, which she cannot add), and the change preview shows no line for a blank.
+ */
+export function withoutPayFlags(
+  record: Pick<EmployeeImportRecord, "compensation" | "employmentStatus" | "payrollEligible">,
+): void {
+  record.compensation = { ...record.compensation, paymentMode: null };
+  record.payrollEligible = null;
+  // A blank status is "keep what the master holds": the write sets employment_status only when the
+  // row carries one (imports/employees/confirm). An inactive status would turn pay off with it.
+  record.employmentStatus = null;
+}
+
+/** Blank every money figure on a planned row. Payment mode is not money; withoutPayFlags holds it. */
 export function withoutMoney<T extends Pick<EmployeeImportRecord, "compensation">>(record: T): T {
   record.compensation = {
     ...record.compensation,

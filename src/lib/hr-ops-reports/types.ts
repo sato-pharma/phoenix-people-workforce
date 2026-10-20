@@ -209,6 +209,21 @@ export type HrOpsReportLineRow = {
   carried_from_line_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * NOT A COLUMN. Set when a report is read (store.ts `withDecidedElsewhere`): the other report in
+   * which this row's person-day was decided, while this row itself is undecided. Such a row is shown
+   * as carried, never decided a second time (rules.ts `isCarried`).
+   */
+  decided_elsewhere?: HrOpsDecidedElsewhere | null;
+};
+
+/** Where a row's person-day was decided, when that was another report. */
+export type HrOpsDecidedElsewhere = {
+  lineId: string;
+  reportId: string;
+  kind: HrOpsReportKind;
+  /** The day the other report is named after: the day of a daily, the Saturday of a weekly. */
+  anchor: string;
 };
 
 export const HR_OPS_REPORT_COLUMNS =

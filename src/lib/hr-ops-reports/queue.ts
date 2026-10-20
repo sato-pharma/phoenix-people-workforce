@@ -45,7 +45,9 @@ export type HrOpsReportsQueue = {
   };
 };
 
-const LINE_FACTS = "id,report_id,flags,carried_from_line_id,review_action,decision";
+// The person-day columns ride along so each count treats a day decided in ANOTHER report as carried
+// (store.ts `withDecidedElsewhere`) — the same rows the report page counts.
+const LINE_FACTS = "id,report_id,section,hr_key,work_date,flags,carried_from_line_id,review_action,decision";
 
 const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -102,7 +104,7 @@ export function buildQueue(
 export async function loadReportList(input: { limit?: number } = {}): Promise<HrOpsQueueReport[]> {
   const reports = await listReports({ limit: input.limit ?? 60 });
   const open = reports.filter((report) => report.status !== "decided");
-  const lines = await getLinesForReports(open.map((report) => report.id), LINE_FACTS);
+  const lines = await getLinesForReports(open.map((report) => report.id), LINE_FACTS, true);
   return buildQueue(reports, lines as unknown as Parameters<typeof buildQueue>[1]).reports;
 }
 
@@ -116,6 +118,6 @@ export async function loadHrOpsReportsQueue(): Promise<HrOpsReportsQueue> {
   const open = recent.filter((report) => report.status !== "decided");
   const decided = recent.filter((report) => report.status === "decided").slice(0, Math.max(0, QUEUE_CHART_REPORTS - open.length));
   const chosen = [...open, ...decided].sort((left, right) => right.period_key.localeCompare(left.period_key) || right.built_at.localeCompare(left.built_at));
-  const lines = await getLinesForReports(chosen.map((report) => report.id), LINE_FACTS);
+  const lines = await getLinesForReports(chosen.map((report) => report.id), LINE_FACTS, true);
   return buildQueue(chosen, lines as unknown as Parameters<typeof buildQueue>[1]);
 }

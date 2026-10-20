@@ -5,12 +5,16 @@
 //   - HER review is one of three actions. A reject or a recommended edit always says WHY; only a
 //     recommended edit carries days, and only days.
 //   - HIS decision approves (with the days that stand) or rejects. Nothing she does decides a row.
-//   - A weekly row for a day already decided in its daily report is CARRIED: shown, never reviewed
-//     or decided a second time. The database refuses a second approval of one person's day anyway
-//     (hr_ops_report_lines_one_approved_day); this says it before a click gets that far.
+//   - A row for a day already decided in another report (its daily one, or the weekly one) is
+//     CARRIED: shown, never reviewed or decided a second time. The database refuses a second approval
+//     of one person's day anyway (hr_ops_report_lines_one_approved_day); this says it before a click
+//     gets that far.
+//   - At most MAX_DAYS (3) for one day's row — the weekly attendance review's own cap.
+//   - An office row the weekly review can never hold is decided for the record and "Not carried".
 // The migration's CHECK constraints say the same things; these run first so a person reads a
 // sentence instead of a constraint name.
 
+import { formatDayLong, parsePeriodKey } from "./periods";
 import {
   HR_OPS_DECISIONS,
   HR_OPS_REVIEW_ACTIONS,
@@ -18,25 +22,78 @@ import {
   isHrOpsFlag,
   toDays,
   type HrOpsBridgeStatus,
+  type HrOpsDecidedElsewhere,
   type HrOpsDecision,
   type HrOpsFlag,
+  type HrOpsReportKind,
   type HrOpsReportLineRow,
   type HrOpsReviewAction,
 } from "./types";
 
-/** No single day can carry more than a month of days, and a figure finer than a quarter-hour is noise. */
-export const MAX_DAYS = 31;
+/**
+ * The most days one day's row can carry — the weekly attendance review's own cap. Its tick
+ * (phx_attendance_mark_digest_line) and the bridge (phx_hr_ops_bridge_digest_day) refuse more than 3
+ * for one day, so an approval above that could never reach the review; it is refused here, in words,
+ * before it is saved.
+ */
+export const MAX_DAYS = 3;
 export const REASON_MAX = 500;
 export const COMMENT_MAX = 1000;
 
-type LineFacts = Pick<HrOpsReportLineRow, "flags" | "carried_from_line_id" | "review_action" | "decision">;
+type LineFacts = Pick<HrOpsReportLineRow, "flags" | "carried_from_line_id" | "review_action" | "decision" | "decided_elsewhere">;
 
 export function lineFlags(line: Pick<HrOpsReportLineRow, "flags">): HrOpsFlag[] {
   return (line.flags ?? []).filter(isHrOpsFlag);
 }
 
-export function isCarried(line: Pick<HrOpsReportLineRow, "carried_from_line_id">): boolean {
-  return Boolean(line.carried_from_line_id);
+/**
+ * Shown, never reviewed or decided here: a weekly row the build CARRIED from its daily report, or a
+ * row whose person-day was decided in ANOTHER report since (`decided_elsewhere`, set when the report
+ * is read). Without the second half, a day still open in its daily report when the weekly one was
+ * built sat in both; whichever was decided second was refused, so that report never reached "nothing
+ * left to decide" and stayed Submitted for ever.
+ */
+export function isCarried(line: Pick<HrOpsReportLineRow, "carried_from_line_id"> & Partial<Pick<HrOpsReportLineRow, "decision" | "decided_elsewhere">>): boolean {
+  if (line.carried_from_line_id) return true;
+  return !line.decision && Boolean(line.decided_elsewhere);
+}
+
+/** "decided in the daily report of Monday 19 October 2026". */
+export function decidedElsewhereText(elsewhere: HrOpsDecidedElsewhere): string {
+  return `decided in the ${elsewhere.kind} report of ${formatDayLong(elsewhere.anchor)}`;
+}
+
+/**
+ * Pure: mark every row of `lines` that is still undecided and not carried, whose person-day (section,
+ * person, day) was decided in ANOTHER report. `decided` is the decided rows of the window (any report);
+ * `reports` names each one's kind and period. A report that cannot be named is not used — the row then
+ * stays as it was rather than pointing at nothing.
+ */
+export function markDecidedElsewhere<T extends Pick<HrOpsReportLineRow, "report_id" | "section" | "hr_key" | "work_date" | "decision" | "carried_from_line_id">>(
+  lines: readonly T[],
+  decided: ReadonlyArray<Pick<HrOpsReportLineRow, "id" | "report_id" | "section" | "hr_key" | "work_date" | "decision">>,
+  reports: ReadonlyMap<string, { kind: HrOpsReportKind; period_key: string }>,
+): Array<T & { decided_elsewhere: HrOpsDecidedElsewhere | null }> {
+  const byDay = new Map<string, Array<Pick<HrOpsReportLineRow, "id" | "report_id">>>();
+  for (const row of decided) {
+    if (!row.decision) continue;
+    const key = `${row.section}|${row.hr_key}|${row.work_date}`;
+    const list = byDay.get(key) ?? [];
+    list.push(row);
+    byDay.set(key, list);
+  }
+  return lines.map((line) => {
+    if (line.decision || line.carried_from_line_id) return { ...line, decided_elsewhere: null };
+    const other = (byDay.get(`${line.section}|${line.hr_key}|${line.work_date}`) ?? [])
+      .filter((row) => row.report_id !== line.report_id)
+      .map((row) => ({ row, report: reports.get(row.report_id), period: parsePeriodKey(reports.get(row.report_id)?.period_key ?? "") }))
+      .find((entry) => entry.report && entry.period);
+    if (!other || !other.report || !other.period) return { ...line, decided_elsewhere: null };
+    return {
+      ...line,
+      decided_elsewhere: { anchor: other.period.anchor, kind: other.report.kind, lineId: other.row.id, reportId: other.row.report_id },
+    };
+  });
 }
 
 /** A row she must answer before she can submit: it has an issue and was not decided elsewhere. */
@@ -76,10 +133,15 @@ export function reportProgress(lines: readonly LineFacts[]): ReportProgress {
   return progress;
 }
 
+/** The refusal for days past the cap — one sentence, shared by the server and the editors. */
+export function maxDaysMessage(what: string): string {
+  return `${what} cannot be more than ${MAX_DAYS} days for one day's row — the weekly attendance review takes at most ${MAX_DAYS} days for a single day.`;
+}
+
 function parseDays(value: unknown, what: string): number {
   const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
   if (!Number.isFinite(parsed) || parsed < 0) throw new HrOpsReportsError(`${what} must be a number of days, zero or more.`);
-  if (parsed > MAX_DAYS) throw new HrOpsReportsError(`${what} cannot be more than ${MAX_DAYS} days for one day's row.`);
+  if (parsed > MAX_DAYS) throw new HrOpsReportsError(maxDaysMessage(what));
   return Math.round(parsed * 10_000) / 10_000;
 }
 
@@ -149,9 +211,51 @@ export function defaultDecisionDays(line: Pick<HrOpsReportLineRow, "review_actio
   return toDays(line.suggested_days);
 }
 
+/** What a decided office row the weekly attendance review can never hold says, in full. */
+export const NOT_CARRIED_MESSAGE =
+  "Not carried to payroll — the weekly attendance review never lists this day, so it is handled outside this report, as before.";
+
+/**
+ * Whether the weekly attendance review can ever hold this row's day — read off what the row RECORDS,
+ * never guessed.
+ *
+ * FIELD: always — the bridge adds a reviewed field day itself (`field_review`).
+ * OFFICE: the review lists an office day only from a fingerprint report row that charges days
+ * (digest-generator.ts `isDigestibleRow`: `deductionDays > 0`), and the bridge never adds one. A row's
+ * `suggested_days` IS that row's policy figure (office-section.ts copies `deductionDays` onto every
+ * flagged punched day), so the office day reaches the review exactly when it had a punch and the
+ * policy charged it. That leaves out, for good:
+ *   · a day with NO fingerprint row at all (`no_punch` — absent, or never judged);
+ *   · a single punch the policy charges nothing (the flexible-hours engine never deducts one);
+ *   · a late or early-leave day the policy charges 0 days;
+ *   · a clean or un-flagged row, which records no policy figure.
+ * Such a row is still decided here, for the record, but nothing of it travels: it is "Not carried".
+ */
+export function reachesWeeklyReview(line: Pick<HrOpsReportLineRow, "section" | "flags" | "suggested_days">): boolean {
+  if (line.section !== "office") return true;
+  if (lineFlags(line).includes("no_punch")) return false;
+  const policyDays = toDays(line.suggested_days);
+  return policyDays !== null && policyDays > 0;
+}
+
 /** Where a decided row starts on its way into the weekly attendance review. */
 export function bridgeStatusForDecision(decision: HrOpsDecision, days: number | null): HrOpsBridgeStatus {
   return decision === "approved" && (days ?? 0) > 0 ? "waiting" : "not_needed";
+}
+
+/**
+ * The bridge status and message a decision is saved with. An approval of days on an office row the
+ * weekly review can never hold is final at once — `not_needed`, saying so — instead of `waiting` for a
+ * day that will never come.
+ */
+export function bridgeStartForDecision(
+  line: Pick<HrOpsReportLineRow, "section" | "flags" | "suggested_days">,
+  decision: HrOpsDecision,
+  days: number | null,
+): { status: HrOpsBridgeStatus; message: string | null } {
+  const status = bridgeStatusForDecision(decision, days);
+  if (status === "waiting" && !reachesWeeklyReview(line)) return { message: NOT_CARRIED_MESSAGE, status: "not_needed" };
+  return { message: null, status };
 }
 
 /**

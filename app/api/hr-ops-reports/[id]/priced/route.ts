@@ -10,7 +10,10 @@ import { getReport, getReportLines } from "@/lib/hr-ops-reports/store";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRICED_COLUMNS = "id,hr_id,work_date,decision,decided_days,review_action,recommended_days,suggested_days,carried_from_line_id";
+// The person-day columns and the flags ride along: a day decided in another report is carried (priced
+// where it was decided), and an office day the weekly review never lists is "Not carried" (no amount).
+const PRICED_COLUMNS =
+  "id,report_id,section,hr_key,hr_id,work_date,flags,decision,decided_days,review_action,recommended_days,suggested_days,carried_from_line_id";
 
 // What each row's days would cost — THE HR MANAGER'S VIEW ONLY. `approve` is the Super Admin's
 // alone, and a salary-blind seat is refused on top of it, so the amount cannot reach the reviewer
@@ -27,7 +30,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!id) return NextResponse.json({ message: "That report does not exist." }, { status: 404 });
     const report = await getReport(id);
     if (!report) return NextResponse.json({ message: "That report does not exist." }, { status: 404 });
-    return NextResponse.json(await priceReportLines(await getReportLines(id, PRICED_COLUMNS)));
+    // A total that could not be worked out is null with its reason — never "EGP 0.00" (pricing.ts).
+    return NextResponse.json(await priceReportLines(await getReportLines(id, PRICED_COLUMNS, true)));
   } catch (error) {
     return hrOpsErrorResponse(error, "Failed to price the report.");
   }

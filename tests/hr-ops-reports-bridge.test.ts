@@ -6,14 +6,17 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import {
   buildReviewedDayDraft,
+  chargingCategories,
   reviewWeekForDay,
   runHrOpsBridge,
   type BridgeDayOutcome,
   type BridgeDayRequest,
+  type DayClaim,
   type HrOpsBridgeDeps,
   type HrOpsBridgeLine,
   type SavedBridgeOutcome,
 } from "../src/lib/hr-ops-reports/bridge.ts";
+import { NOT_CARRIED_MESSAGE } from "../src/lib/hr-ops-reports/rules.ts";
 import { deductionCategoryForDigestLine, deductionSourceForDigestLine, HR_OPS_REPORT_SOURCE_SYSTEM } from "../src/lib/attendance/digest-rules.ts";
 import { payrollStepsForCategory } from "../src/lib/automated-payroll/deduction-resync.ts";
 import {
@@ -49,7 +52,13 @@ import { DEDUCTION_CATEGORY_LABELS } from "../src/lib/hr/command-center.ts";
  *   · a released week is never written into; one failing day never stops the others; a second run
  *     adds nothing; the daily job never refreshes or removes a day the bridge wrote or set;
  *   · the new category is in every exhaustive table, and a reviewed day claimed by a second category
- *     is refused before publish.
+ *     is refused before publish;
+ *   · an approved OFFICE row the review can never hold (no punch, or a day the policy charges 0) is
+ *     "Not carried": final at once, no call to the review, nothing written (owner, 2026-10-20);
+ *   · a FIELD day is never written over a day a live crm / crm_half_day / fingerprint deduction already
+ *     charges, nor into a payroll month already final — and a read that fails, fails the day;
+ *   · a decision that changes while it is carried is never written (`superseded`), its outcome is saved
+ *     only on the line as it was read, and a save that matches nothing is logged, never silent.
  *
  * No database: every read and write the bridge makes goes through `HrOpsBridgeDeps`, faked here.
  */
@@ -66,6 +75,8 @@ function line(overrides: Partial<HrOpsBridgeLine> = {}): HrOpsBridgeLine {
     hrKey: "pd-0101",
     employeeName: "Test Employee",
     flags: ["late"],
+    // The policy charged the day, so the weekly review holds it (rules.ts reachesWeeklyReview).
+    suggestedDays: 0.25,
     reviewReason: "Arrived after the grace period twice this week.",
     decision: "approved",
     decidedDays: 1,
@@ -158,6 +169,9 @@ function deps(overrides: Partial<HrOpsBridgeDeps> & { saved?: Map<string, SavedB
     ensureCandidate: async () => {
       throw new Error("ensureCandidate was not expected in this case");
     },
+    // No other deduction charges the day, and no month is final, unless a case says so.
+    dayClaims: async () => [],
+    payrollMonthFinal: async () => false,
     saveOutcome: async (lineId, outcome) => {
       saved.set(lineId, outcome);
     },
@@ -195,7 +209,9 @@ async function anOfficeDayTheReviewDoesNotHoldYetWritesNothingAndWaits() {
   const review = fakeReview();
   const saved = new Map<string, SavedBridgeOutcome>();
   let salaryReads = 0;
-  const officeDay = line({ id: "line-2", workDate: "2026-10-13", flags: ["no_punch"] });
+  // Left early and charged half a day: a day the review WILL hold, once the daily job adds it. (A
+  // no-punch row never reaches the review at all — that is "Not carried", pinned below.)
+  const officeDay = line({ id: "line-2", workDate: "2026-10-13", flags: ["early_leave"], suggestedDays: 0.5 });
   const officeDeps = () =>
     deps({
       saved,
@@ -218,11 +234,11 @@ async function anOfficeDayTheReviewDoesNotHoldYetWritesNothingAndWaits() {
   assert.match(String(saved.get("line-2")?.message), /does not hold 13 October 2026 yet/);
 
   // The daily job adds the day from the fingerprint report; the retry then sets it, and only it.
-  review.seedDay({ employeeHrId: "PD-0101", workDate: "2026-10-13", status: "missing_punch", days: 1 });
+  review.seedDay({ employeeHrId: "PD-0101", workDate: "2026-10-13", status: "early_leave", days: 0.5 });
   const retried = await runHrOpsBridge([officeDay], officeDeps());
   assert.deepEqual(retried, { bridged: 1, waiting: 0, weekReleased: 0, failed: 0 });
   assert.equal(review.byPersonDay.size, 1, "still the one day the daily job added");
-  assert.equal(review.byPersonDay.get("PD-0101:2026-10-13")?.status, "missing_punch", "it stays a fingerprint day");
+  assert.equal(review.byPersonDay.get("PD-0101:2026-10-13")?.status, "early_leave", "it stays a fingerprint day");
   assert.equal(review.byPersonDay.get("PD-0101:2026-10-13")?.stampedBy, "B-10");
   assert.equal(saved.get("line-2")?.status, "bridged");
   assert.equal(salaryReads, 0);
@@ -315,7 +331,7 @@ async function aReleasedWeekIsNeverWritten() {
 async function oneFailingDayLeavesEveryOtherDayCarried() {
   // The daily job already holds both office days, so each is the bridge's to set.
   const review = fakeReview([
-    { employeeHrId: "PD-0101", workDate: "2026-10-13", status: "missing_punch", days: 1 },
+    { employeeHrId: "PD-0101", workDate: "2026-10-13", status: "late", days: 0.25 },
     { employeeHrId: "PD-0101", workDate: "2026-10-14", status: "late", days: 0.25 },
   ]);
   const ledger = fakeLedger();
@@ -448,6 +464,196 @@ async function whatWaitsAndWhatIsNotCarried() {
   const week = reviewWeekForDay("2026-10-22");
   assert.deepEqual(week, { index: 4, startIso: "2026-10-22", endIso: "2026-10-31", monthKey: "2026-10" });
   assert.equal(reviewWeekForDay("2026-07-15"), null, "the weekly review starts in August 2026");
+}
+
+async function anOfficeRowTheReviewNeverHoldsIsNotCarried() {
+  // Owner decision, 2026-10-20 ("Mark them not carried"): decided for the record, final at once.
+  const review = fakeReview([{ employeeHrId: "PD-0101", workDate: "2026-10-12", status: "late", days: 0.25 }]);
+  const saved = new Map<string, SavedBridgeOutcome>();
+  let salaryReads = 0;
+  const counts = await runHrOpsBridge(
+    [
+      // No fingerprint row at all: the review never lists a no-punch day.
+      line({ id: "no-punch", workDate: "2026-10-13", flags: ["no_punch"], suggestedDays: null, decidedDays: 1 }),
+      // A single punch the flexible-hours policy charges nothing.
+      line({ id: "single", workDate: "2026-10-14", flags: ["single_punch"], suggestedDays: 0, decidedDays: 0.5 }),
+      // Late, but the policy charged 0 days for it.
+      line({ id: "late-zero", workDate: "2026-10-15", flags: ["late"], suggestedDays: 0, decidedDays: 0.25 }),
+      // Late with a policy figure: the review holds it, and the approval IS carried.
+      line({ id: "late-charged", workDate: "2026-10-12", flags: ["late"], suggestedDays: 0.25, decidedDays: 1 }),
+    ],
+    deps({
+      saved,
+      bridgeDay: review.bridgeDay,
+      baseSalaries: async () => {
+        salaryReads += 1;
+        return new Map([["pd0101", 3100]]);
+      },
+      // ensureCandidate stays the throwing default: nothing is written for any of them.
+    }),
+  );
+
+  assert.deepEqual(counts, { bridged: 1, waiting: 0, weekReleased: 0, failed: 0 }, "a not-carried row is in no bucket — it never waits");
+  for (const id of ["no-punch", "single", "late-zero"]) {
+    assert.equal(saved.get(id)?.status, "not_needed", `${id} is final at once`);
+    assert.equal(saved.get(id)?.message, NOT_CARRIED_MESSAGE, `${id} says it is not carried, in full`);
+    assert.equal(saved.get(id)?.ref, null);
+    assert.equal(saved.get(id)?.at, null);
+  }
+  assert.deepEqual(
+    review.requests.map((request) => request.hrOpsLineId),
+    ["late-charged"],
+    "a not-carried row never calls the weekly review — no RPC, nothing written",
+  );
+  assert.equal(salaryReads, 0, "and nothing is priced");
+  assert.equal(saved.get("late-charged")?.status, "bridged");
+  assert.equal(review.byPersonDay.get("PD-0101:2026-10-12")?.days, 1, "the late day the policy charged carries the decided days");
+}
+
+async function aFieldDayIsNeverChargedTwiceOrIntoAFinalMonth() {
+  const field = (overrides: Partial<HrOpsBridgeLine> = {}) =>
+    line({ section: "field", workDate: "2026-10-14", flags: ["no_field_activity"], suggestedDays: 1, decidedDays: 1, ...overrides });
+  const crmOn = (dates: string[], decision: DayClaim["decision"] = null): DayClaim => ({ category: "crm", sourceSystem: "crm_visits_mirror", dates, decision });
+
+  // The pure reading: a cleared deduction, an unticked day and another category charge nothing.
+  assert.deepEqual(chargingCategories([crmOn(["2026-10-14"])], "2026-10-14"), ["crm"]);
+  assert.deepEqual(chargingCategories([crmOn(["2026-10-14"], { decisionStatus: "Do Not Take Action" })], "2026-10-14"), []);
+  assert.deepEqual(chargingCategories([crmOn(["2026-10-13", "2026-10-14"], { decisionStatus: "Pending", appliedDates: ["2026-10-13"] })], "2026-10-14"), []);
+  assert.deepEqual(chargingCategories([crmOn(["2026-10-13"])], "2026-10-14"), []);
+  assert.deepEqual(
+    chargingCategories([{ category: "field_review", sourceSystem: "hr_ops_report", dates: ["2026-10-14"], decision: null }], "2026-10-14"),
+    [],
+    "the field day's own deduction is not a second claim on it",
+  );
+  assert.deepEqual(
+    chargingCategories(
+      [crmOn(["2026-10-14"]), { category: "fingerprint", sourceSystem: "fingerprint_report", dates: ["2026-10-14"], decision: null }],
+      "2026-10-14",
+    ),
+    ["crm", "fingerprint"],
+  );
+
+  // A live CRM deduction already charges the day: nothing is written — no review day, no deduction.
+  const claimed = new Map<string, SavedBridgeOutcome>();
+  const claimedLedger = fakeLedger();
+  const claimedReview = fakeReview();
+  const claimedCounts = await runHrOpsBridge(
+    [field({ id: "claimed" })],
+    deps({
+      saved: claimed,
+      bridgeDay: claimedReview.bridgeDay,
+      ensureCandidate: claimedLedger.ensureCandidate,
+      dayClaims: async () => [crmOn(["2026-10-14"])],
+    }),
+  );
+  assert.deepEqual(claimedCounts, { bridged: 0, waiting: 0, weekReleased: 0, failed: 1 });
+  assert.equal(claimedReview.requests.length, 0, "the review is never called");
+  assert.equal(claimedLedger.writes(), 0, "no deduction is written");
+  assert.equal(claimed.get("claimed")?.ref, null);
+  assert.match(String(claimed.get("claimed")?.message), /^Nothing was written: 14 October 2026 is already charged for this person by "/);
+  assert.ok(String(claimed.get("claimed")?.message).includes(deductionsCategoryNames.crm), "the message names what charges the day");
+
+  // The payroll month is already final: nothing is written either.
+  const final = new Map<string, SavedBridgeOutcome>();
+  const finalReview = fakeReview();
+  let monthReads = 0;
+  const finalCounts = await runHrOpsBridge(
+    [field({ id: "final-a" }), field({ id: "final-b", workDate: "2026-10-15" })],
+    deps({
+      saved: final,
+      bridgeDay: finalReview.bridgeDay,
+      payrollMonthFinal: async (monthKey) => {
+        monthReads += 1;
+        assert.equal(monthKey, "2026-10");
+        return true;
+      },
+    }),
+  );
+  assert.deepEqual(finalCounts, { bridged: 0, waiting: 0, weekReleased: 0, failed: 2 });
+  assert.equal(finalReview.requests.length, 0);
+  assert.equal(monthReads, 1, "a month is read once per run");
+  assert.match(String(final.get("final-a")?.message), /^Nothing was written: October 2026 payroll is already final/);
+
+  // A read that fails, fails the day — never a pass.
+  for (const [id, override] of [
+    ["claims-unread", { dayClaims: async () => { throw new Error("the deductions table did not answer"); } }],
+    ["month-unread", { payrollMonthFinal: async () => { throw new Error("the payroll runs did not answer"); } }],
+  ] as Array<[string, Partial<HrOpsBridgeDeps>]>) {
+    const unread = new Map<string, SavedBridgeOutcome>();
+    const unreadReview = fakeReview();
+    const unreadCounts = await runHrOpsBridge([field({ id })], deps({ saved: unread, bridgeDay: unreadReview.bridgeDay, ...override }));
+    assert.deepEqual(unreadCounts, { bridged: 0, waiting: 0, weekReleased: 0, failed: 1 }, id);
+    assert.equal(unreadReview.requests.length, 0, `${id}: nothing is written on a check that did not run`);
+    assert.match(String(unread.get(id)?.message), /^Nothing was written: .*could not be read \(the .* did not answer\)/, id);
+  }
+
+  // A cleared CRM deduction does not stop the day.
+  const cleared = new Map<string, SavedBridgeOutcome>();
+  const clearedLedger = fakeLedger();
+  const clearedCounts = await runHrOpsBridge(
+    [field({ id: "cleared" })],
+    deps({
+      saved: cleared,
+      bridgeDay: fakeReview().bridgeDay,
+      ensureCandidate: clearedLedger.ensureCandidate,
+      dayClaims: async () => [crmOn(["2026-10-14"], { decisionStatus: "Do Not Take Action" })],
+    }),
+  );
+  assert.deepEqual(clearedCounts, { bridged: 1, waiting: 0, weekReleased: 0, failed: 0 });
+  assert.equal(clearedLedger.rows.size, 1);
+
+  // The review already holds the day from an earlier run, in a week now closed: the same checks run
+  // before its deduction is written.
+  const late = new Map<string, SavedBridgeOutcome>();
+  const lateLedger = fakeLedger();
+  const lateReview = fakeReview([{ employeeHrId: "PD-0101", workDate: "2026-08-11", status: "field_review", days: 1 }]);
+  const lateCounts = await runHrOpsBridge(
+    [field({ id: "late-final", workDate: "2026-08-11" })],
+    deps({
+      saved: late,
+      bridgeDay: lateReview.bridgeDay,
+      ensureCandidate: lateLedger.ensureCandidate,
+      payrollMonthFinal: async (monthKey) => monthKey === "2026-08",
+    }),
+  );
+  assert.deepEqual(lateCounts, { bridged: 0, waiting: 0, weekReleased: 0, failed: 1 });
+  assert.equal(lateReview.requests[0]?.allowInsert, false, "a closed week never takes a new day");
+  assert.equal(lateLedger.writes(), 0, "no deduction is written into a final month");
+  assert.equal(late.get("late-final")?.ref, "1", "the review day is named, so a retry finds it");
+  assert.match(
+    String(late.get("late-final")?.message),
+    /^The day is in the weekly attendance review, but its deduction was not written: August 2026 payroll is already final/,
+  );
+}
+
+async function aDecisionThatChangesWhileItIsCarriedIsNeverWritten() {
+  // The database answered `superseded`: the report line's decision changed after the app read it.
+  const expected: Array<string | null> = [];
+  const logged: Array<{ message: string; labels: Record<string, string> }> = [];
+  const counts = await runHrOpsBridge(
+    [line({ id: "moved" })],
+    deps({
+      bridgeDay: async () => ({ outcome: "superseded" }),
+      // The line now holds a newer decided_at, so a save on the one that was read matches no row.
+      saveOutcome: async (_lineId, _outcome, read) => {
+        expected.push(read.decidedAt);
+        throw new Error("The report line changed while its day was being carried");
+      },
+      log: (message, _error, labels) => logged.push({ message, labels }),
+    }),
+  );
+  assert.deepEqual(counts, { bridged: 0, waiting: 0, weekReleased: 0, failed: 1 });
+  assert.deepEqual(expected, ["2026-10-19T19:30:00.000Z"], "the outcome is saved only on the decision that was carried");
+  assert.equal(logged.length, 1, "a save that matches nothing is logged, never silent");
+  assert.equal(logged[0]?.labels.event, "hr_ops_bridge_save_failed");
+  assert.equal(logged[0]?.labels.outcome, "failed");
+
+  // Saved where it does match, the outcome says what happened.
+  const saved = new Map<string, SavedBridgeOutcome>();
+  await runHrOpsBridge([line({ id: "moved" })], deps({ saved, bridgeDay: async () => ({ outcome: "superseded" }) }));
+  assert.equal(saved.get("moved")?.status, "failed");
+  assert.equal(saved.get("moved")?.ref, null);
+  assert.match(String(saved.get("moved")?.message), /decision changed while it was being carried, so nothing was written/);
 }
 
 function theAnswerReachesTheRightDeduction() {
@@ -597,9 +803,24 @@ function theDailyJobNeverUndoesADecision() {
   const settle = fn("phx_attendance_settle_digest_line");
   assert.match(settle, /c\.category = case when v_line\.status = 'field_review' then 'field_review' else 'fingerprint' end/);
 
+  // A production apply that meets a running cron fails fast and rolls back instead of queueing readers.
+  assert.match(migration, /begin;\s+set local lock_timeout = '10s';/, "the lock timeout is set first thing in the transaction");
+
   const bridge = fn("phx_hr_ops_bridge_digest_day");
   assert.match(bridge, /security definer/);
-  assert.match(bridge, /round\(r\.decided_days, 3\) = v_days/, "the database refuses days that differ from the recorded decision");
+  // The report line is locked FIRST, and the decision re-checked under that lock.
+  const lineLock = bridge.indexOf("select * into v_report_line from public.hr_ops_report_lines where id = p_hr_ops_line_id for update;");
+  assert.ok(lineLock > 0, "the report line is locked FOR UPDATE");
+  assert.ok(lineLock < bridge.indexOf("pg_advisory_xact_lock"), "before the employee-week lock, so the lock order never cycles");
+  assert.match(bridge, /v_report_line\.decision is distinct from 'approved'/);
+  assert.match(bridge, /round\(v_report_line\.decided_days, 3\) is distinct from v_days/, "the days carried are the days decided");
+  assert.match(bridge, /v_report_line\.decided_at is distinct from p_decided_at/, "and only the decision that was sent");
+  assert.match(bridge, /return jsonb_build_object\('outcome', 'superseded'\);/, "a changed decision writes nothing");
+  assert.equal(
+    bridge.match(/update public\.hr_ops_report_lines set bridge_ref = v_line\.id::text, updated_at = now\(\)/g)?.length,
+    3,
+    "every bridged path writes the report line's bridge_ref in the same transaction",
+  );
   assert.match(bridge, /perform public\.phx_attendance_mark_digest_line\(v_line\.id, true, v_days, v_actor\);/, "an existing day is set through the tick path");
   assert.match(bridge, /'outcome', 'week_released'/);
   assert.match(
@@ -625,8 +846,14 @@ function theDailyJobNeverUndoesADecision() {
   assert.equal(declared.length, 15, "the parser, not the function, is wrong if this is not fifteen");
   assert.deepEqual(sent, declared);
 
-  // A report line is written back only while it is still on its way.
-  assert.match(app, /\.in\("bridge_status", \["waiting", "failed"\]\);/);
+  // A report line is written back only while it is still on its way, only on the decision that was
+  // carried, a save that matches nothing throws (and is logged), and a null ref never erases one.
+  assert.match(app, /\.in\("bridge_status", \["waiting", "failed"\]\)/);
+  assert.match(app, /query\.is\("decided_at", null\) : query\.eq\("decided_at", expected\.decidedAt\)/);
+  assert.match(app, /if \(!data \|\| data\.length === 0\) \{\s*throw new Error\(/);
+  assert.match(app, /if \(outcome\.ref !== null\) patch\.bridge_ref = outcome\.ref;/);
+  assert.match(app, /deps\.saveOutcome\(line\.id, saved, \{ decidedAt: line\.decidedAt \}\)/);
+  assert.match(app, /case "superseded":\s*return \{ outcome: "superseded" \};/, "the app knows the database's superseded answer");
   assert.match(app, /readLines\(\{ reportId, statuses: \["waiting"\] \}\)/, "a decided report carries its waiting days");
   assert.match(app, /readLines\(\{ statuses: \["waiting", "failed"\] \}\)/, "the retry carries every waiting and failed day");
 }
@@ -638,6 +865,9 @@ export async function runHrOpsReportsBridgeTests(): Promise<void> {
   await aReleasedWeekIsNeverWritten();
   await oneFailingDayLeavesEveryOtherDayCarried();
   await whatWaitsAndWhatIsNotCarried();
+  await anOfficeRowTheReviewNeverHoldsIsNotCarried();
+  await aFieldDayIsNeverChargedTwiceOrIntoAFinalMonth();
+  await aDecisionThatChangesWhileItIsCarriedIsNeverWritten();
   theAnswerReachesTheRightDeduction();
   theCategoryIsInEveryExhaustiveTable();
   aSecondClaimOnAReviewedDayIsRefusedBeforePublish();

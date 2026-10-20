@@ -5,12 +5,13 @@
 --   Specialist" by HR_SEAT_JOB_TITLES).
 --   1. The three CHECK constraints that enumerate phoenixRoles admit the one new value, in
 --      phoenixRoles order, and public.roles gets its lookup row.
---   2. Six workflow-registry actions let the seat act: her own vacation request
+--   2. Five workflow-registry actions let the seat act: her own vacation request
 --      (leave_requests.submit) and calendar dispute (private_calendar_data_disputes.submit), the
 --      contract HR review and signed upload (contracts.contract_hr_review, contract_upload_signed),
---      and following a resignation through (resignations.resignation_mark_review,
---      resignation_complete). Approving, rejecting, cancelling, creating, renewing or not renewing
---      stay with the roles that hold them today.
+--      and following a resignation through (resignations.resignation_mark_review). Completing a
+--      resignation stays the Super Admin's, like approving and rejecting it (owner, 2026-10-20:
+--      "You press Complete"). Approving, rejecting, completing, cancelling, creating, renewing or
+--      not renewing stay with the roles that hold them today.
 --   3. The resignation_workflow_alert audience gains the seat, so she is told when one is submitted,
 --      and its description and the probation-milestone email policy's description say who is told
 --      now (probation milestones go to the owner alone since this change).
@@ -21,9 +22,14 @@
 --   future hire. Keyed by capability, not job title, for the reason
 --   20260828140000_hr_role_keys_replace_talent_acquisition.sql gives.
 -- ROLLBACK: nobody may hold the role first (move the account back), then remove 'HR Administration'
---   from the six actions' allowedRoles and from resignation_workflow_alert.roles, delete the roles
+--   from the five actions' allowedRoles and from resignation_workflow_alert.roles, delete the roles
 --   row 'hr_administration', and re-add the three constraints without it — the exact lists in
 --   20261008193000_hr_resourcing_role_key.sql.
+--   ORDER MATTERS BOTH WAYS: apply this migration only after the new code is serving (the workflow
+--   registry runs every role through parseRoleStrict, so on code that does not know
+--   'HR Administration' a whole module is skipped and every leave, contract and resignation
+--   transition answers workflow_module_not_found); on a rollback, strip 'HR Administration' from the
+--   registry rows BEFORE reverting the code.
 --
 -- Nothing is assigned here: no account holds the role until the owner's login moves after deploy.
 -- Additive only — every value the constraints allowed before is still allowed, and each list is
@@ -31,7 +37,7 @@
 --
 -- Production has NO point-in-time recovery — 7 daily backups are the whole recovery story.
 -- Anything destructive or bulk is announced to the owner in plain words BEFORE it is applied.
--- This is neither: three constraints widened, one lookup row, six jsonb arrays and one role list.
+-- This is neither: three constraints widened, one lookup row, five jsonb arrays and one role list.
 
 begin;
 
@@ -76,7 +82,7 @@ on conflict (key) do update
   set name        = excluded.name,
       description = excluded.description;
 
--- The six workflow actions. One statement per module keeps each row's other actions untouched.
+-- The five workflow actions. One statement per module keeps each row's other actions untouched.
 update public.workflow_registry_modules as m
 set
     actions = (
@@ -87,8 +93,7 @@ set
                     ('private_calendar_data_disputes', 'submit'),
                     ('contracts', 'contract_hr_review'),
                     ('contracts', 'contract_upload_signed'),
-                    ('resignations', 'resignation_mark_review'),
-                    ('resignations', 'resignation_complete')
+                    ('resignations', 'resignation_mark_review')
                 )
                 and not (elements.action->'allowedRoles') ? 'HR Administration'
                 then jsonb_set(
@@ -161,12 +166,11 @@ begin
            ('private_calendar_data_disputes', 'submit'),
            ('contracts', 'contract_hr_review'),
            ('contracts', 'contract_upload_signed'),
-           ('resignations', 'resignation_mark_review'),
-           ('resignations', 'resignation_complete')
+           ('resignations', 'resignation_mark_review')
          )
      and (a->'allowedRoles') ? 'HR Administration';
-  if v_actions <> 6 then
-    raise exception 'expected HR Administration on 6 workflow actions, found %', v_actions;
+  if v_actions <> 5 then
+    raise exception 'expected HR Administration on 5 workflow actions, found %', v_actions;
   end if;
 
   select count(*) into v_alert

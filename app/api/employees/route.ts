@@ -21,9 +21,11 @@ import {
   isEmployeeDirectoryEnvMissing,
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
+  readStoredPayFlags,
   upsertEmployee,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
+import { PAY_FLAGS_UNREADABLE_MESSAGE, withStoredPayFlags } from "@/lib/employees/salary-blind-pay-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -161,21 +163,39 @@ export async function POST(request: Request) {
     // figure survives), but upsertEmployeeCompensation writes `salary_details` for anything that is
     // not undefined, and a null there is normalised to `[]`, wiping the stored details. Undefined is
     // "this save says nothing about pay", which is exactly what she is entitled to say.
+    //
+    // PAYMENT MODE AND PAYROLL ELIGIBLE are hers to see and never to change (owner, 2026-10-20:
+    // "can change bank account but never a paymode"). They are NOT dropped as undefined:
+    // employeePayload always writes both, and an absent value means "two parts" and "eligible" —
+    // a change for anyone paid in one part or kept off payroll. EMPLOYMENT STATUS is held the same
+    // way: an inactive status turns payroll eligible off with it. The master's own values are read
+    // fresh and written back instead (salary-blind-pay-flags.ts); if they cannot be read, nothing
+    // is saved. Bank name and bank account are not touched here and save as she typed them.
     if (isSalaryBlindRole(access.role)) {
-      payload.employee = {
-        ...payload.employee,
-        baseSalary: undefined,
-        basicSalary: undefined,
-        extraCostOfLiving: undefined,
-        fuelAllowance: undefined,
-        grossSalary: undefined,
-        medicalInsurance: undefined,
-        netSalary: undefined,
-        salaryDetails: undefined,
-        socialInsurance: undefined,
-        socialInsuranceWage: undefined,
-        taxes: undefined,
-      };
+      const storedPayFlags = await readStoredPayFlags(payload.employee.originalHrId ?? "");
+      if (!storedPayFlags) {
+        return NextResponse.json(
+          { error: "pay_flags_unreadable", message: PAY_FLAGS_UNREADABLE_MESSAGE },
+          { status: 409 },
+        );
+      }
+      payload.employee = withStoredPayFlags(
+        {
+          ...payload.employee,
+          baseSalary: undefined,
+          basicSalary: undefined,
+          extraCostOfLiving: undefined,
+          fuelAllowance: undefined,
+          grossSalary: undefined,
+          medicalInsurance: undefined,
+          netSalary: undefined,
+          salaryDetails: undefined,
+          socialInsurance: undefined,
+          socialInsuranceWage: undefined,
+          taxes: undefined,
+        },
+        storedPayFlags,
+      );
     } else if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
       // A viewer whose read access to this row's salary is redacted (see
       // isSalaryRedactedForViewer) never has the real figures to submit — their

@@ -21,6 +21,13 @@
 // `factsInputForViewer` drops a salary she might send. The one money exception the owner made is
 // the renewal annex itself, which prints the salary — and that is rendered on the server from the
 // full record, never from what her browser holds.
+//
+// THE PAPERS ARE DRAWN FROM THE BLANKED PACK TOO (`packForPaper`, called in renderHiringPaper — the
+// one place print, `inventory=1`, the hand-typed paper and the signed-copy filing all render). Her
+// other seven papers print no salary in their own text, but every renderer still puts the figure in
+// its values map (BASE_SALARY on a house paper, SALARY_FIGURES on the non-renewal notice), and a
+// field the Super Admin places in the layout editor prints whatever that map holds. Drawn from the
+// blanked pack, such a field prints nothing for her; the annex alone is drawn from the full record.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
@@ -168,6 +175,31 @@ export function packForViewer(access: Pick<AccessContext, "role">, pack: HiringP
           .filter((gap) => gap.documents.length > 0)
       : pack.gaps,
   };
+}
+
+/**
+ * The one paper the salary-blind seat is shown a salary on: the contract renewal ANNEX (ملحق تجديد
+ * سنوي), which renews on the base salary — the owner's one money exception for her, 2026-10-20. NOT
+ * the non-renewal notice (`contractNonRenewal`), whose values map carries the same figures.
+ */
+export const SALARY_BLIND_MONEY_PAPER: HiringPackDocument = "contractRenewal";
+
+/**
+ * The pack a paper is DRAWN from for this viewer — what renderHiringPaper renders, and what the
+ * print route's `inventory=1` and the hand-typed paper's inputs are read from.
+ *
+ * For the salary-blind seat every paper but the renewal annex is drawn from `packForViewer`, so no
+ * value a renderer builds — and no field placed on the layout — can carry a salary, a gross or an
+ * insurance wage to her. Every other viewer, and the annex itself, gets the pack untouched (the
+ * same object, not a copy).
+ */
+export function packForPaper(
+  access: Pick<AccessContext, "role">,
+  document: string,
+  pack: HiringPackData,
+): HiringPackData {
+  if (!isSalaryBlindRole(access.role) || document === SALARY_BLIND_MONEY_PAPER) return pack;
+  return packForViewer(access, pack);
 }
 
 /**

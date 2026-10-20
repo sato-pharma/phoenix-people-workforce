@@ -72,6 +72,21 @@ type Props = {
    * never starts one; POST /api/resignations asserts the same permission itself.
    */
   canCreate?: boolean;
+  /**
+   * resignations:approve, resolved on the server by the page. It decides whether Approve, Complete
+   * and Reject render — POST /api/resignations/[id]/workflow asserts that same permission for all
+   * three. Completing a resignation is the Super Admin's, like approving and rejecting it (owner,
+   * 2026-10-20: "You press Complete"), so the HR Operations Specialist, who follows it through, is
+   * never offered any of them.
+   */
+  canDecide?: boolean;
+  /**
+   * canChangeResignationDates, resolved on the server by the page. It decides whether "Dates"
+   * renders — re-dating writes the leaver's last working day, which his final pay is computed from,
+   * so the salary-blind seat is never offered it; PATCH /api/resignations/[id]/dates refuses her
+   * itself.
+   */
+  canEditDates?: boolean;
   initialData: ResignationDashboardData | null;
   initialError: string | null;
   /** The portal route supplies its own page header, so it suppresses the hero. */
@@ -95,6 +110,8 @@ function newForm(): CreateResignationInput {
 export function ResignationsWorkspace({
   canExportHistory = false,
   canCreate = false,
+  canDecide = false,
+  canEditDates = false,
   initialData,
   initialError,
   surface = "admin",
@@ -260,47 +277,56 @@ export function ResignationsWorkspace({
     if (tab === "history") {
       return <span className="text-phx-xs text-slate-400">{resignationActorLabel(record)}</span>;
     }
+    // A seat with neither control (the HR Operations Specialist follows the record; the HR Manager
+    // re-dates and decides it) gets the same quiet dash an empty cell carries elsewhere on this page.
+    if (!canEditDates && !canDecide) return <span className="text-slate-300">—</span>;
     return (
       <span className="inline-flex flex-wrap justify-end gap-1">
-        <RgButton
-          disabled={rowBusy}
-          onClick={() => {
-            setEditing(record);
-            setEditDates({
-              effectiveDate: record.effectiveDate,
-              submittedDate: record.submittedDate,
-            });
-          }}
-        >
-          Dates
-        </RgButton>
-        {record.status === "approved" ? (
+        {canEditDates ? (
           <RgButton
             disabled={rowBusy}
-            kind="primary"
-            onClick={() => void runAction(record, "complete")}
+            onClick={() => {
+              setEditing(record);
+              setEditDates({
+                effectiveDate: record.effectiveDate,
+                submittedDate: record.submittedDate,
+              });
+            }}
           >
-            Complete
+            Dates
           </RgButton>
-        ) : (
-          <RgButton
-            disabled={rowBusy}
-            kind="primary"
-            onClick={() => void runAction(record, "approve")}
-          >
-            Approve
-          </RgButton>
-        )}
-        <RgButton
-          disabled={rowBusy}
-          kind="danger"
-          onClick={() => {
-            setRejecting(record);
-            setRejectReason(record.rejectedReason ?? "");
-          }}
-        >
-          Reject
-        </RgButton>
+        ) : null}
+        {canDecide ? (
+          <>
+            {record.status === "approved" ? (
+              <RgButton
+                disabled={rowBusy}
+                kind="primary"
+                onClick={() => void runAction(record, "complete")}
+              >
+                Complete
+              </RgButton>
+            ) : (
+              <RgButton
+                disabled={rowBusy}
+                kind="primary"
+                onClick={() => void runAction(record, "approve")}
+              >
+                Approve
+              </RgButton>
+            )}
+            <RgButton
+              disabled={rowBusy}
+              kind="danger"
+              onClick={() => {
+                setRejecting(record);
+                setRejectReason(record.rejectedReason ?? "");
+              }}
+            >
+              Reject
+            </RgButton>
+          </>
+        ) : null}
       </span>
     );
   }

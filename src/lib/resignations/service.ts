@@ -1,7 +1,14 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
-import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
+import {
+  canAccess,
+  canSeeEmployee,
+  hrIdsMatch,
+  normalizeHrId,
+  systemAccessContext,
+  type AccessContext,
+} from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
@@ -2114,6 +2121,27 @@ async function auditResignationDateUpdate(
     },
     summary: "Resignation dates updated.",
   });
+}
+
+/**
+ * RE-DATING A RESIGNATION MOVES MONEY. `updateResignationDates` writes `employees.last_working_date`,
+ * which the leaver's payroll basis reads (a last day past the 25th pays the month in full), so the
+ * salary-blind seat — the HR Operations Specialist, who never sees or decides a figure — may not
+ * change it, though she holds resignations:update to follow a resignation through. The PATCH route
+ * refuses her with this sentence; both resignation pages hide the Dates control on the same answer.
+ */
+export const RESIGNATION_DATES_KEPT_FROM_SEAT_MESSAGE =
+  "Changing resignation dates changes the leaver's pay, so it stays with the HR Manager.";
+
+/** True when the viewer is refused re-dating whatever her grants say — the salary-blind seat. */
+export function isResignationDatesKeptFromViewer(access: Pick<AccessContext, "role">): boolean {
+  return isSalaryBlindRole(access.role);
+}
+
+/** Whether the Dates control is offered: resignations:update, and not the salary-blind seat. */
+export async function canChangeResignationDates(access: AccessContext): Promise<boolean> {
+  if (isResignationDatesKeptFromViewer(access)) return false;
+  return canAccess(access, "resignations", "update");
 }
 
 export async function updateResignationDates(

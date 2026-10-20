@@ -18,6 +18,7 @@ import {
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { MAX_DAYS, maxDaysMessage } from "@/lib/hr-ops-reports/rules";
 import type { HrOpsLineView } from "@/lib/hr-ops-reports/serialize";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,20 @@ import { formatDays, formatEgp, formatStamp, formatWorkDay } from "./format";
 
 export type RowMode = "reviewer" | "decider" | "reader";
 
-export type RowPrice = { amount: number | null; days: number | null; lineId: string; note: string | null };
+/** One row's figure from /priced (pricing.ts). Only `priced` carries an amount — never a zero for the rest. */
+export type RowPrice = {
+  amount: number | null;
+  days: number | null;
+  lineId: string;
+  note: string | null;
+  status: "priced" | "nothing" | "not_carried" | "exempt" | "not_priced";
+};
+
+/** The editors' own check of the cap, so the refusal reads the same before and after the save. */
+function overCap(value: string, what: string): string | null {
+  const typed = Number(value);
+  return value.trim() !== "" && Number.isFinite(typed) && typed > MAX_DAYS ? maxDaysMessage(what) : null;
+}
 
 export type ReviewDraft = { action: "confirm" | "reject" | "recommend_edit" | null; reason: string; comment: string; recommendedDays: string };
 export type DecisionDraft = { decision: "approved" | "rejected"; days: string };
@@ -119,7 +133,10 @@ function Person({ line }: { line: HrOpsLineView }) {
 function AnswerSummary({ line, mode, price }: { line: HrOpsLineView; mode: RowMode; price: RowPrice | null }) {
   return (
     <div className="space-y-1 text-xs text-slate-700">
-      {line.carried ? <p className="font-semibold text-slate-500">Decided in its daily report</p> : null}
+      {line.carried ? <p className="font-semibold text-slate-500">{line.carriedLabel ?? "Decided in another report"}</p> : null}
+      {line.notCarried && line.decision?.decision !== "rejected" && line.notCarriedNote ? (
+        <p className="text-slate-500">{line.notCarriedNote}</p>
+      ) : null}
       {line.review ? (
         <p>
           <span className="font-black text-slate-900">HR: {line.review.actionLabel}</span>
@@ -140,10 +157,13 @@ function AnswerSummary({ line, mode, price }: { line: HrOpsLineView; mode: RowMo
           {line.bridge.message ? <span className="block text-rose-700">{line.bridge.message}</span> : null}
         </p>
       ) : null}
-      {mode === "decider" && price && price.amount !== null ? (
+      {mode === "decider" && price?.status === "priced" && price.amount !== null ? (
         <p className="font-bold text-slate-900">{formatEgp(price.amount)} for {formatDays(price.days)}</p>
       ) : null}
-      {mode === "decider" && price?.note ? <p className="text-slate-500">{price.note}</p> : null}
+      {mode === "decider" && price?.status === "not_carried" ? <p className="font-bold text-slate-500">Not carried</p> : null}
+      {mode === "decider" && price?.status === "not_priced" ? <p className="font-bold text-rose-700">Not priced</p> : null}
+      {/* The not-carried sentence is already drawn above from the row itself. */}
+      {mode === "decider" && price?.note && price.status !== "not_carried" ? <p className="text-slate-500">{price.note}</p> : null}
     </div>
   );
 }
@@ -175,6 +195,11 @@ function ReviewEditor({ line, busy, onSave, onClose }: { line: HrOpsLineView; bu
   const [error, setError] = useState<string | null>(null);
   const save = async (next: ReviewDraft) => {
     setError(null);
+    const capped = next.action === "recommend_edit" ? overCap(next.recommendedDays, "The recommended days") : null;
+    if (capped) {
+      setError(capped);
+      return;
+    }
     try {
       await onSave(next);
       onClose();
@@ -201,11 +226,11 @@ function ReviewEditor({ line, busy, onSave, onClose }: { line: HrOpsLineView; bu
         ))}
       </div>
       {draft.action === "recommend_edit" ? (
-        <FormField label="Recommended days" required hint="Days only — a half day is 0.5.">
+        <FormField label="Recommended days" required hint={`Days only — a half day is 0.5, and one day's row takes at most ${MAX_DAYS}.`}>
           <input
             className={phxFieldClassName}
             inputMode="decimal"
-            max={31}
+            max={MAX_DAYS}
             min={0}
             step={0.25}
             type="number"
@@ -257,11 +282,22 @@ function ReviewEditor({ line, busy, onSave, onClose }: { line: HrOpsLineView; bu
 function DecisionEditor({ line, price, busy, onSave, onClose }: { line: HrOpsLineView; price: RowPrice | null; busy: boolean; onSave: (draft: DecisionDraft) => Promise<void>; onClose: () => void }) {
   const [draft, setDraft] = useState<DecisionDraft>(() => initialDecision(line));
   const [error, setError] = useState<string | null>(null);
-  const perDay = price && price.amount !== null && price.days && price.days > 0 ? price.amount / price.days : null;
+  const perDay = price && price.status === "priced" && price.amount !== null && price.days && price.days > 0 ? price.amount / price.days : null;
   const typed = Number(draft.days);
-  const preview = perDay !== null && draft.decision === "approved" && Number.isFinite(typed) ? Math.round(perDay * typed * 100) / 100 : null;
+  const preview =
+    perDay !== null && draft.decision === "approved" && Number.isFinite(typed) && typed <= MAX_DAYS ? Math.round(perDay * typed * 100) / 100 : null;
+  const hint = line.notCarried
+    ? "Saved for the record only: the weekly attendance review never lists this day, so nothing of it is carried to payroll."
+    : preview !== null
+      ? `${formatEgp(preview)} at this person's day rate.`
+      : `Zero approves the row with no deduction. At most ${MAX_DAYS} days for one day's row.`;
   const save = async () => {
     setError(null);
+    const capped = draft.decision === "approved" ? overCap(draft.days, "The approved days") : null;
+    if (capped) {
+      setError(capped);
+      return;
+    }
     try {
       await onSave(draft);
       onClose();
@@ -294,15 +330,11 @@ function DecisionEditor({ line, price, busy, onSave, onClose }: { line: HrOpsLin
         ))}
       </div>
       {draft.decision === "approved" ? (
-        <FormField
-          label="Days that stand"
-          required
-          hint={preview !== null ? `${formatEgp(preview)} at this person's day rate.` : "Zero approves the row with no deduction."}
-        >
+        <FormField label="Days that stand" required hint={hint}>
           <input
             className={phxFieldClassName}
             inputMode="decimal"
-            max={31}
+            max={MAX_DAYS}
             min={0}
             step={0.25}
             type="number"

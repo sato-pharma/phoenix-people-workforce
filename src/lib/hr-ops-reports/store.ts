@@ -6,6 +6,7 @@
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { markDecidedElsewhere } from "./rules";
 import {
   HR_OPS_LINE_COLUMNS,
   HR_OPS_REPORT_COLUMNS,
@@ -55,29 +56,71 @@ export async function findReportByPeriod(periodKey: string): Promise<HrOpsReport
   return (data ?? null) as unknown as HrOpsReportRow | null;
 }
 
-/** Every line of a report — a weekly report runs past PostgREST's 1,000-row page, so it is paged. */
-export async function getReportLines(reportId: string, columns = HR_OPS_LINE_COLUMNS): Promise<HrOpsReportLineRow[]> {
+/**
+ * Every line of a report — a weekly report runs past PostgREST's 1,000-row page, so it is paged.
+ *
+ * READ AS THE SCREENS SEE IT: with `decidedElsewhere` (on by default for the full row) every row whose
+ * person-day was decided in another report is marked (`withDecidedElsewhere`), so progress, the queue
+ * and the decision all count it as carried. A narrow read that feeds a count passes `true` and selects
+ * `report_id,section,hr_key,work_date,decision,carried_from_line_id` with it.
+ */
+export async function getReportLines(
+  reportId: string,
+  columns = HR_OPS_LINE_COLUMNS,
+  decidedElsewhere = columns === HR_OPS_LINE_COLUMNS,
+): Promise<HrOpsReportLineRow[]> {
+  let lines: HrOpsReportLineRow[];
   try {
-    return await fetchAllRowsKeyset<HrOpsReportLineRow>(
+    lines = await fetchAllRowsKeyset<HrOpsReportLineRow>(
       () => getSupabaseAdmin().from(LINES_TABLE).select(columns).eq("report_id", reportId),
       { cursorColumn: "id", cursorOf: (row) => row.id },
     );
   } catch (error) {
     throw storeError(error as DbError, "read the report's rows");
   }
+  return decidedElsewhere ? withDecidedElsewhere(lines) : lines;
 }
 
 /** The lines of several reports at once, for the counts the queue and the overview show. */
-export async function getLinesForReports(reportIds: readonly string[], columns: string): Promise<HrOpsReportLineRow[]> {
+export async function getLinesForReports(reportIds: readonly string[], columns: string, decidedElsewhere = false): Promise<HrOpsReportLineRow[]> {
   if (reportIds.length === 0) return [];
+  let lines: HrOpsReportLineRow[];
   try {
-    return await fetchAllRowsKeyset<HrOpsReportLineRow>(
+    lines = await fetchAllRowsKeyset<HrOpsReportLineRow>(
       () => getSupabaseAdmin().from(LINES_TABLE).select(columns).in("report_id", [...reportIds]),
       { cursorColumn: "id", cursorOf: (row) => row.id },
     );
   } catch (error) {
     throw storeError(error as DbError, "read the reports' rows");
   }
+  return decidedElsewhere ? withDecidedElsewhere(lines) : lines;
+}
+
+/** The named reports, by id. */
+export async function getReportsByIds(ids: readonly string[]): Promise<HrOpsReportRow[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin().from(REPORTS_TABLE).select(HR_OPS_REPORT_COLUMNS).in("id", [...ids]);
+  if (error) throw storeError(error, "read the reports");
+  return (data ?? []) as unknown as HrOpsReportRow[];
+}
+
+/**
+ * Mark each undecided, uncarried row whose person-day was decided in ANOTHER report (rules.ts
+ * `markDecidedElsewhere`). Reads the decided rows of the rows' own date window and names their
+ * reports. A read that fails throws: a report drawn with a day "to decide" that is in fact decided
+ * elsewhere is the defect this closes, so it is never drawn that way on a failed read.
+ */
+export async function withDecidedElsewhere(lines: HrOpsReportLineRow[]): Promise<HrOpsReportLineRow[]> {
+  const open = lines.filter((line) => !line.decision && !line.carried_from_line_id && line.work_date && line.hr_key && line.report_id);
+  if (open.length === 0) return lines.map((line) => ({ ...line, decided_elsewhere: null }));
+  const dates = open.map((line) => line.work_date).sort();
+  const wanted = new Set(open.map((line) => `${line.section}|${line.hr_key}|${line.work_date}`));
+  const decided = (await getDecidedLinesInWindow({ excludeReportId: null, from: dates[0]!, to: dates[dates.length - 1]! })).filter((row) =>
+    wanted.has(`${row.section}|${row.hr_key}|${row.work_date}`),
+  );
+  if (decided.length === 0) return lines.map((line) => ({ ...line, decided_elsewhere: null }));
+  const reports = await getReportsByIds([...new Set(decided.map((row) => row.report_id))]);
+  return markDecidedElsewhere(lines, decided, new Map(reports.map((report) => [report.id, report])));
 }
 
 /** Lines of OTHER reports on the given days — what a weekly report carries from its daily ones. */

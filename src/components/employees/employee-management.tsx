@@ -120,7 +120,9 @@ type EmployeeManagementProps = {
    * True for the salary-blind seat (isSalaryBlindRole). The server already sends this viewer no
    * money and drops any money she sends; this hides the boxes that would only ever be empty, skips
    * the net-salary calculation, and makes the save carry no money key at all. Bank name, bank
-   * account, has-bank-account and payment mode are not money and stay.
+   * account and has-bank-account are not money and stay editable. Payment mode and payroll
+   * eligible stay VISIBLE but read only (owner, 2026-10-20: "can change bank account but never a
+   * paymode"); the server writes the stored values back whatever is sent.
    */
   salaryBlind?: boolean;
 };
@@ -3924,6 +3926,7 @@ export function EmployeeManagement({
                     value={form.probationEndDate}
                   />
                   <SelectField
+                    disabled={salaryBlind}
                     label="Employment Status"
                     onChange={(value) => updateForm("employmentStatus", value)}
                     options={lookups.statuses}
@@ -3948,7 +3951,11 @@ export function EmployeeManagement({
                     type="date"
                     value={form.contractRenewalDate}
                   />
+                  {/* Shown to the salary-blind seat, never changed by her (owner, 2026-10-20: "can
+                      change bank account but never a paymode"). The server writes the stored value
+                      back whatever this sends (app/api/employees/route.ts). */}
                   <SelectField
+                    disabled={salaryBlind}
                     label="Salary Payout Mode"
                     onChange={(value) => updateForm("salaryPaymentMode", value)}
                     options={salaryPaymentModeOptions}
@@ -4342,8 +4349,9 @@ export function EmployeeManagement({
                   <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Lifecycle / System</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Held with the HR Manager for the salary-blind seat, like the payout mode. */}
                   <SelectField
-                    disabled={!canSelectPayrollEligibility}
+                    disabled={salaryBlind || !canSelectPayrollEligibility}
                     label="Payroll Eligible"
                     onChange={(value) => updateForm("payrollEligible", value)}
                     options={yesNoOptions}

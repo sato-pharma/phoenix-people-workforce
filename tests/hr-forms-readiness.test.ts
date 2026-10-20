@@ -421,15 +421,15 @@ function testTheOwnersOwnWordingIsNotTidiedAway(): void {
     assert.equal(resolveJobTitleAr(en), ar, `the owner's own wording for "${en}" must reach the contract`);
   }
 
-  // Every seed was answered on 2026-09-03 — and exactly ONE question has been open since 2026-10-20:
-  // the Arabic for "HR Generalist", the old seat's new title. Nobody holds it yet, so nothing prints
-  // it, and the safety pin above keeps its proposal from ever resolving. Pinned BY NAME, so the day he
-  // gives his wording this line must change with it, and a second unanswered seed still fails here.
-  const OPEN_SINCE_THE_RENAME = ["HR Generalist"];
+  // Every seed was answered on 2026-09-03. The one question the 2026-10-20 rename opened — the
+  // Arabic for "HR Generalist", the old seat's new title — he answered the same day: أخصائي موارد
+  // بشرية. The list stays, empty, so the next unanswered seed is named here rather than slipped in.
+  assert.equal(resolveJobTitleAr("HR Generalist"), "أخصائي موارد بشرية", "the owner's own wording for HR Generalist, 2026-10-20");
+  const OPEN_SINCE_THE_RENAME: string[] = [];
   assert.equal(
     arabicAnswersOutstanding(),
     OPEN_SINCE_THE_RENAME.length,
-    "every Arabic question was answered on 2026-09-03 except the one the 2026-10-20 rename opened",
+    "every Arabic question the owner was asked has his answer",
   );
   for (const seed of JOB_TITLE_AR_SEEDS) {
     if (OPEN_SINCE_THE_RENAME.includes(seed.en)) {

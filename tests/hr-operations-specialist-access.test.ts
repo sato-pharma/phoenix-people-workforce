@@ -24,16 +24,27 @@ import {
   SEAT_PRINTABLE_DOCUMENTS,
   seatPapersFor,
 } from "../src/lib/hiring-pack/document-registry.ts";
+import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
+import type { DocumentFieldRow } from "../src/lib/hiring-pack/field-layout.ts";
 import { buildFormsDrive, type DriveTemplate } from "../src/lib/hiring-pack/forms-drive.ts";
+import { HR_PAPER_DEEMED_RESIGNATION_V2 } from "../src/lib/hiring-pack/hr-paper-text.ts";
+import { buildManualHiringPack } from "../src/lib/hiring-pack/manual-pack.ts";
 import {
   assertMayPrintPaper,
   assertMayUseHrForms,
   factsInputForViewer,
   hrFormsAccessFor,
   isSeatPaperViewer,
+  packForPaper,
   packForViewer,
   paperIssuesForViewer,
+  SALARY_BLIND_MONEY_PAPER,
 } from "../src/lib/hiring-pack/paper-access.ts";
+import { buildHrPaperValues, renderHrPaperHtml } from "../src/lib/hiring-pack/render-hr-paper.ts";
+import {
+  renderContractNonRenewalHtml,
+  renderContractRenewalHtml,
+} from "../src/lib/hiring-pack/render-renewal.ts";
 import {
   HIRING_PACK_DOCUMENTS,
   type HiringPackData,
@@ -254,6 +265,110 @@ function testThePackReachesHerWithoutMoney() {
   assert.equal(paperIssuesForViewer(accessFor(HR_OPERATIONS), issues).length, 3);
 }
 
+/** A field the Super Admin placed in the layout editor, printing one value of the paper's map. */
+function placedField(document: HiringPackDocument, key: string): DocumentFieldRow {
+  return {
+    align: "right",
+    anchor: { dx: 12, dy: 12, selector: ".copy" },
+    defaultKey: null,
+    document,
+    h: 14,
+    hidden: false,
+    id: `placed-${key}`,
+    page: null,
+    size: 11,
+    source: { key, kind: "value" },
+    templateVersionId: "test-version",
+    updatedAt: "2026-10-20T08:00:00Z",
+    updatedByHrId: "B-10",
+    w: 160,
+    x: 0,
+    y: 0,
+  };
+}
+
+/**
+ * THE PAPER ITSELF, NOT ONLY THE JSON. Her seven non-annex papers print no salary in their own text,
+ * but each renderer still puts the figure in its values map — BASE_SALARY on a house paper,
+ * SALARY_FIGURES / SALARY_WORDS / INSURANCE_WAGE on the non-renewal notice — and a field placed in
+ * the layout editor prints whatever that map holds. renderHiringPaper draws every paper from
+ * `packForPaper`, so this renders through the same function with such a field placed.
+ */
+function testHerPapersAreDrawnWithoutMoney() {
+  const pack = buildManualHiringPack(
+    {
+      "employee.baseSalary": "18000",
+      "employee.hireDate": "2023-03-01",
+      "employee.hrId": "T-1",
+      "employee.nameAr": "شخص عيّنة",
+      "employee.nationalId": "29001011234567",
+    },
+    COMPANY_DETAILS_DEFAULT,
+  );
+  assert.equal(pack.employee.baseSalary, 18000, "the fixture carries a salary, or nothing below is tested");
+  const figure = "18,000";
+  const words = buildHrPaperValues(pack).BASE_SALARY_WORDS ?? "";
+  assert.ok(words.length > 0, "the salary in words is on the full record");
+
+  const seat = accessFor(SEAT);
+  const operations = accessFor(HR_OPERATIONS);
+  assert.equal(SALARY_BLIND_MONEY_PAPER, "contractRenewal", "the annex is the one money paper — not the non-renewal notice");
+
+  // The data selection, for every paper.
+  for (const paper of HIRING_PACK_DOCUMENTS) {
+    const drawn = packForPaper(seat, paper, pack);
+    if (paper === "contractRenewal") {
+      assert.equal(drawn, pack, "the renewal annex is drawn from the full record");
+      continue;
+    }
+    assert.equal(drawn.employee.baseSalary, null, `${paper}: no base salary for her`);
+    assert.equal(drawn.employee.grossSalary, null, `${paper}: no gross`);
+    assert.equal(drawn.employee.socialInsuranceWage, null, `${paper}: no insurance wage`);
+    assert.equal(drawn.employee.nameAr, pack.employee.nameAr, `${paper}: everything else stays`);
+  }
+  for (const role of [HR_OPERATIONS, SUPER_ADMIN]) {
+    for (const paper of HIRING_PACK_DOCUMENTS) {
+      assert.equal(packForPaper(accessFor(role), paper, pack), pack, `${role} ${paper}: the pack untouched`);
+    }
+  }
+
+  // A house paper: the deemed-resignation notice with BASE_SALARY and its words placed on it.
+  const houseFields = [placedField("deemedResignation", "BASE_SALARY"), placedField("deemedResignation", "BASE_SALARY_WORDS")];
+  const renderDeemed = (role: PhoenixRole) =>
+    renderHrPaperHtml(packForPaper(accessFor(role), "deemedResignation", pack), 1, HR_PAPER_DEEMED_RESIGNATION_V2, null, houseFields);
+  const deemedControl = renderDeemed(HR_OPERATIONS);
+  assert.ok(deemedControl.includes('data-hp-field="placed-BASE_SALARY"'), "the control: the placed field prints for HR Operations");
+  assert.ok(deemedControl.includes(figure) && deemedControl.includes(words), "the control: it prints the figure and its words");
+  const deemedHers = renderDeemed(SEAT);
+  assert.ok(!deemedHers.includes('data-hp-field="placed-BASE_SALARY"'), "the placed salary field prints nothing for her");
+  assert.ok(!deemedHers.includes('data-hp-field="placed-BASE_SALARY_WORDS"'), "nor the salary in words");
+  assert.ok(!deemedHers.includes(figure), "the figure is nowhere on her deemed-resignation notice");
+  assert.ok(!deemedHers.includes(words), "nor its words");
+
+  // The non-renewal notice shares the annex's values map — it must be blanked too.
+  const renewalKeys = ["SALARY_FIGURES", "SALARY_WORDS", "INSURANCE_WAGE"];
+  const noticeFields = renewalKeys.map((key) => placedField("contractNonRenewal", key));
+  const noticeControl = renderContractNonRenewalHtml(packForPaper(operations, "contractNonRenewal", pack), 1, null, noticeFields);
+  assert.ok(noticeControl.includes('data-hp-field="placed-SALARY_FIGURES"'), "the control: the notice's placed field prints");
+  assert.ok(noticeControl.includes(figure), "the control: with the figure");
+  const noticeHers = renderContractNonRenewalHtml(packForPaper(seat, "contractNonRenewal", pack), 1, null, noticeFields);
+  for (const key of renewalKeys) {
+    assert.ok(!noticeHers.includes(`data-hp-field="placed-${key}"`), `${key} placed on the non-renewal notice prints nothing for her`);
+  }
+  assert.ok(!noticeHers.includes(figure), "the figure is nowhere on her non-renewal notice");
+  assert.ok(!noticeHers.includes(words), "nor its words");
+
+  // The annex is the owner's exception: she prints it with the salary, placed field and all.
+  const annexHers = renderContractRenewalHtml(
+    packForPaper(seat, "contractRenewal", pack),
+    1,
+    null,
+    [placedField("contractRenewal", "SALARY_FIGURES")],
+  );
+  assert.ok(annexHers.includes(figure), "the renewal annex still prints the salary for her");
+  assert.ok(annexHers.includes('data-hp-field="placed-SALARY_FIGURES"'), "and a field placed on it");
+}
+
 function testTheDriveHoldsHerPapersOnly() {
   const templates: DriveTemplate[] = [
     { id: "t-1", document: "custom:11111111-1111-1111-1111-111111111111", name: "Company paper", group: "other", status: "current" },
@@ -275,6 +390,33 @@ function testTheDriveHoldsHerPapersOnly() {
 function testEveryDoorGoesThroughTheHelpers() {
   const render = code("src/lib/hiring-pack/render-paper.ts");
   assert.ok(render.includes("isPaperOpenToRole(access.role, requested)"), "renderHiringPaper refuses her other papers itself");
+  // THE CHOKE POINT DRAWS FROM THE BLANKED PACK: the one `data` every renderer, the inventory and
+  // the filing read is the value packForPaper returns, and no renderer is handed anything else.
+  assert.match(
+    render,
+    /const data = packForPaper\(\s*access,\s*requested,\s*withPrintAddress\(/,
+    "renderHiringPaper draws the paper from packForPaper",
+  );
+  assert.equal((render.match(/getHiringPack\(/g) ?? []).length, 1, "the full pack is read once, inside packForPaper's argument");
+  assert.ok(
+    /\.render\(\s*data,/.test(render) && render.includes("renderCustomTemplateHtml(template, data,"),
+    "every renderer is handed that drawn data",
+  );
+  assert.ok(render.includes("return { copies, data, fields, html, ok: true, template, versionId };"), "and so is every caller");
+  // Every route that renders a paper goes through renderHiringPaper (the filing store for signing).
+  for (const caller of [
+    "app/api/hiring-pack/[hrId]/print/route.ts",
+    "app/api/hiring-pack/manual/route.ts",
+    "src/lib/hiring-pack/paper-filing-store.ts",
+  ]) {
+    assert.ok(code(caller).includes("renderHiringPaper({"), `${caller} renders through renderHiringPaper`);
+  }
+  const print = code("app/api/hiring-pack/[hrId]/print/route.ts");
+  assert.ok(
+    print.includes("documentFieldInventory(requested, paper.data, paper.html)"),
+    "inventory=1 lists the drawn data, not a pack of its own",
+  );
+  assert.ok(code("app/api/hiring-pack/[hrId]/sign/route.ts").includes("fileSignedPaper({"), "signing files through the same render");
 
   for (const route of [
     "app/api/hiring-pack/[hrId]/route.ts",
@@ -340,6 +482,7 @@ export async function runHrOperationsSpecialistAccessTests() {
   testHerAttendanceReportIsHerOwn();
   await testSheGetsHerEightPapersAndNoOther();
   testThePackReachesHerWithoutMoney();
+  testHerPapersAreDrawnWithoutMoney();
   testTheDriveHoldsHerPapersOnly();
   testEveryDoorGoesThroughTheHelpers();
 }

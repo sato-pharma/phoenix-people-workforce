@@ -69,7 +69,7 @@ export default async function HrOpsReportsPage({
           description={
             mode === "decider"
               ? "Every flagged day from the fingerprint and field-visit reports, with HR's answer beside it. Approve the days that stand or reject the row; approved days go on to the weekly attendance review."
-              : "Yesterday's fingerprint and field-visit report, and last week's on a Sunday. Confirm, reject or recommend days on every flagged row, with a reason, then submit it to the HR Manager. Days only — he decides."
+              : "Yesterday's fingerprint and field-visit report, and last week's on a Sunday. Confirm, reject or recommend days on every flagged row, with a reason, then submit it to the HR Manager. Days only — the HR Manager decides."
           }
           eyebrow="Attendance & field review"
           icon={<ClipboardCheck className="h-3.5 w-3.5" />}

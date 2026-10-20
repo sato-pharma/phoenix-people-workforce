@@ -797,7 +797,7 @@ const TILES_BY_FUNCTION: Record<
     return [
       tile("hr-reports-to-review", "Reports To Review", inReview, "still with you", "/hr/hr-reports", inReview > 0 ? "amber" : "emerald"),
       tile("hr-reports-rows", "Rows To Answer", rowsToAnswer, "flagged, no answer yet", "/hr/hr-reports", rowsToAnswer > 0 ? "amber" : "emerald"),
-      tile("hr-reports-submitted", "With The HR Manager", submitted, "waiting on his decision", "/hr/hr-reports"),
+      tile("hr-reports-submitted", "With The HR Manager", submitted, "waiting on the HR Manager's decision", "/hr/hr-reports"),
     ];
   },
   // The people_records tiles with every link pointed at a page this seat opens (SOURCES_BY_FUNCTION).

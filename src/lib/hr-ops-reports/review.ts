@@ -6,13 +6,14 @@
 // The route has already asserted `hr_ops_reports:update`; this enforces the report's own state.
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { assertNotTestAccount } from "@/lib/auth/test-persona";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { notifyReportSubmitted } from "./notify";
-import { isCarried, needsReview, reportProgress, validateReview, type ReviewInput } from "./rules";
-import { getReport, getReportLines, LINES_TABLE, REPORTS_TABLE, storeError } from "./store";
-import { HrOpsReportsError, type HrOpsReportRow } from "./types";
+import { decidedElsewhereText, isCarried, needsReview, reportProgress, validateReview, type ReviewInput } from "./rules";
+import { getReport, getReportLines, LINES_TABLE, REPORTS_TABLE, storeError, withDecidedElsewhere } from "./store";
+import { HrOpsReportsError, type HrOpsReportLineRow, type HrOpsReportRow } from "./types";
 
 async function openReportForReview(reportId: string): Promise<HrOpsReportRow> {
   const report = await getReport(reportId);
@@ -39,15 +40,20 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
   const ids = [...new Set(reviews.map((review) => review.lineId))];
   const { data, error } = await getSupabaseAdmin()
     .from(LINES_TABLE)
-    .select("id,carried_from_line_id")
+    .select("id,report_id,section,hr_key,work_date,decision,carried_from_line_id")
     .eq("report_id", reportId)
     .in("id", ids);
   if (error) throw storeError(error, "read the rows");
-  const lines = new Map(((data ?? []) as Array<{ id: string; carried_from_line_id: string | null }>).map((line) => [line.id, line]));
+  // A day decided in another report since this one was built is carried too (store.ts).
+  const read = await withDecidedElsewhere((data ?? []) as unknown as HrOpsReportLineRow[]);
+  const lines = new Map(read.map((line) => [line.id, line]));
   for (const review of reviews) {
     const line = lines.get(review.lineId);
     if (!line) throw new HrOpsReportsError("A row you answered is not in this report.", 404);
-    if (isCarried(line)) throw new HrOpsReportsError("That day was already decided in its daily report — it is shown here, not reviewed again.", 409);
+    if (isCarried(line)) {
+      const where = !line.carried_from_line_id && line.decided_elsewhere ? decidedElsewhereText(line.decided_elsewhere) : "decided in its daily report";
+      throw new HrOpsReportsError(`That day was already ${where} — it is shown here, not reviewed again.`, 409);
+    }
   }
 
   const now = new Date().toISOString();
@@ -75,7 +81,9 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
 export async function submitReport(access: AccessContext, reportId: string): Promise<{ report: HrOpsReportRow }> {
   assertNotTestAccount(access);
   await openReportForReview(reportId);
-  const lines = await getReportLines(reportId, "id,flags,carried_from_line_id,review_action,decision");
+  // With the person-day columns, so a day decided in another report since the build is carried, not
+  // a row still waiting for her answer.
+  const lines = await getReportLines(reportId, "id,report_id,section,hr_key,work_date,flags,carried_from_line_id,review_action,decision", true);
   const waiting = lines.filter((line) => needsReview(line) && !line.review_action).length;
   if (waiting > 0) {
     throw new HrOpsReportsError(`${waiting} flagged ${waiting === 1 ? "row still needs" : "rows still need"} your answer before you can submit.`, 409);
@@ -83,7 +91,7 @@ export async function submitReport(access: AccessContext, reportId: string): Pro
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from(REPORTS_TABLE)
-    .update({ status: "submitted", submitted_at: now, submitted_by_hr_id: access.hrId ?? access.loginId ?? null, updated_at: now })
+    .update({ status: "submitted", submitted_at: now, submitted_by_hr_id: hrIdForStorage(access.hrId) ?? access.loginId ?? null, updated_at: now })
     .eq("id", reportId)
     .eq("status", "in_review")
     .select("*")
