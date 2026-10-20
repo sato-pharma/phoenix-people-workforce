@@ -105,6 +105,9 @@ const EVENT_TYPES = [
   "manager_plan_edit_expired",
   "manager_list_removal_waiting",
   "manager_list_removal_decided",
+  "manager_single_visit_day_waiting",
+  "manager_single_visit_day_decided",
+  "manager_single_visit_day_expired",
   // Every type that once emailed — now ordinary: never email, the phone allowed.
   ...FORMERLY_EMAILED_EVENT_TYPES,
 ];
@@ -117,6 +120,9 @@ const PUSH_BLOCKED_EVENT_TYPES = [
   "plan_edit_expired",
   // The district manager's ask to edit, ended with its week (2026-10-16): the rep's expiry's twin.
   "manager_plan_edit_expired",
+  // A district manager's ask for another day of single visits, ended unanswered with its date (2026-10-20):
+  // the same expiry, so the same barring.
+  "manager_single_visit_day_expired",
   // The SFE Manager's copy of a rep's day start (2026-10-03). On this list rather than merely off the
   // email list because the Telegram-failure fallback re-sends as email, and an unlinked Telegram is
   // the expected case — so "off the email list" alone would mail him once per rep on exactly the days
@@ -143,7 +149,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // calls createSystemNotificationForRecipients directly, so none comes through the notifier and
     // none is harvested into EVENT_TYPES; all three are in-app and Telegram only.
     ["crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", ...PUSH_BLOCKED_EVENT_TYPES].sort(),
-    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the SFE day-start copy, the activity mirror, and the SFE's copy of a re-send",
+    "and exactly these are barred from the phone too — the 06:55 digest, the hourly visit rollup, the weekly fraud scan, the plan-edit expiry, the single-visit day expiry, the SFE day-start copy, the activity mirror, and the SFE's copy of a re-send",
   );
   for (const eventType of EVENT_TYPES) {
     const phoneBarred = PUSH_BLOCKED_EVENT_TYPES.includes(eventType);

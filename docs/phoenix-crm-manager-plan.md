@@ -202,6 +202,42 @@ the cap, the actual-versus-planned report and the visit details all read through
 And the full week no longer hides the button silently: a warn note stands where it was, saying the
 unplanned log is closed for the week and a planned single visit can still be logged.
 
+### A second or third day, approved by his managers (2026-10-20)
+
+His words, in chat on 20 Oct 2026: *"Make it as it now. One per week. With no approval. But if you need to
+do the second or the third day maximum, he need to send an approval from his manager, national sales
+manager or regional manager. If regional manager, then he need to approval. Regional manager and the
+national sales manager. If no regional manager, then approval direct from national sales manager. And not
+from the first day, from the second day."* Asked how, he chose **"Ask first, then plan"**, **"One named
+date"**, and **"Yes, planned and unplanned"**.
+
+- **The free day is unchanged.** Two half-days a week, any mix, need nobody's approval.
+- **He asks for one named date.** On the board's Single visit part (once the free day is spent and that
+  date is not approved) and under "Not planned" on My single visits: the day, and why if he wants to — the
+  reason is optional (owner, 2026-10-20: *"make writing why optional"*; migration 20261020213000). A refusal
+  by his managers still needs a note. A field day of this
+  week or the coming one, from today on, never a holiday or a Friday, one ask a date, and **two asked or
+  approved a week at most** — the second and the third day (`DM_SINGLE_VISIT_EXTRA_DAYS_MAX`,
+  `singleVisitDayAskError`; the database refuses the same in `phoenix_crm_raise_manager_single_visit_day`
+  under the week's own advisory lock).
+- **Who approves.** Read from the organogram at the ask and stored on it (`managerApproversFor`), exactly
+  as his week: his regional manager first, then the national sales manager above him; the national sales
+  manager alone where there is no regional manager. The Administrator may decide either step in their
+  place. It waits in the Approvals Hub beside his week (stage `single_visit_day`, "Day of single visits —
+  decide"); a refusal needs a note.
+- **What an approval opens.** That date holds single visits on **both its halves**, planned and logged,
+  and its half-days never spend the free day (`dmSingleVisitCapError(…, approvedDates)`,
+  `freeSingleVisitHalves`). The limit line says how many more days are approved.
+- **An ask nobody finished deciding closes with its day.** No queue holds it once the date has passed
+  (`isSingleVisitDayAskLive`), and the 12:57/17:57 plan-reminder tick closes it in the database
+  (`phoenix_crm_expire_manager_single_visit_days`) and tells him in-app and by Telegram only.
+- **Who is told.** The approver (and the national sales manager once the regional manager agrees) by
+  `manager_single_visit_day_waiting`; he is told the answer by `manager_single_visit_day_decided`, and an
+  expiry by `manager_single_visit_day_expired`. Never email, never a rep.
+- **Where it lives.** `phoenix_crm_manager_single_visit_days` (migration 20261020210546),
+  `server/manager-single-visit-day-rows.ts` (reads, no notices — the Hub's queue reads it) and
+  `server/manager-single-visit-days.ts` (the ask, the decision, the expiry).
+
 ## A rep who still works in the old CRM
 
 Owner, 2026-10-17: *"if the district manager's reps are still working on the old CRM … their weekly plans

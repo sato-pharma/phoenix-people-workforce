@@ -324,6 +324,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "phoenix_crm.manager_plan_edit_expired": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.manager_list_removal_waiting": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.manager_list_removal_decided": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.manager_single_visit_day_waiting": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.manager_single_visit_day_decided": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  "phoenix_crm.manager_single_visit_day_expired": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
   // reviewing manager, and the decision back to the rep — in-app, Telegram and (since 2026-10-02) the
   // phone; email only for the event types named above (since 2026-10-08).

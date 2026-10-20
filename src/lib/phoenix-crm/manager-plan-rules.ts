@@ -81,22 +81,52 @@ export const MANAGER_PLAN_NOTE_MAX = 500;
 export const MANAGER_PLAN_REASON_MAX = 500;
 
 /**
- * 🔴 A DISTRICT SALES MANAGER HAS ONE DAY OF SINGLE VISITS A WEEK AT MOST — TWO HALF-DAYS, ANY MIX (owner,
- * 2026-10-19: "currently the single visits are accepted in 2 days in a week no cap it to 1 day in the week",
- * lowering his 2026-10-17 limit of two days, "four halves or 2 full days"; the limit covers the visits he
- * logs, not only the plan). A morning on Saturday and an afternoon on Monday are one day together. It binds
- * the district manager only — a regional, national or product manager's single visits are not limited.
+ * 🔴 A DISTRICT SALES MANAGER HAS ONE DAY OF SINGLE VISITS A WEEK WITHOUT APPROVAL — TWO HALF-DAYS, ANY MIX
+ * (owner, 2026-10-19: "currently the single visits are accepted in 2 days in a week no cap it to 1 day in the
+ * week"; the limit covers the visits he logs, not only the plan). A morning on Saturday and an afternoon on
+ * Monday are one day together. It binds the district manager only — a regional, national or product
+ * manager's single visits are not limited.
+ *
+ * 🔴 THE SECOND AND THIRD DAY ARE HIS MANAGERS' TO APPROVE, ONE NAMED DATE AT A TIME (owner, 2026-10-20: "if
+ * you need to do the second or the third day maximum, he need to send an approval … not from the first day,
+ * from the second day"; asked, "Ask first, then plan", "One named date", "Yes, planned and unplanned"). He asks
+ * for a date; his regional manager and then the national sales manager above him approve it (or the national
+ * sales manager alone where there is no regional manager), and an APPROVED date then holds single visits —
+ * planned and logged — on both its halves without spending the free day. Two such dates a week at most
+ * (`DM_SINGLE_VISIT_EXTRA_DAYS_MAX`).
  */
 export const DM_SINGLE_VISIT_HALF_DAYS_MAX = 2;
 
+/** The second and the third day: dates asked or approved in one week, at most. */
+export const DM_SINGLE_VISIT_EXTRA_DAYS_MAX = 2;
+
 /** The line his screens show under the limit: the board's Single visit part and "My single visits". */
-export function dmSingleVisitLimitLine(used: number): string {
-  return `Single visits are limited to one day a week, which is two half-days. This week holds ${used} of ${DM_SINGLE_VISIT_HALF_DAYS_MAX}.`;
+export function dmSingleVisitLimitLine(used: number, approvedDays = 0): string {
+  const free = `One day of single visits a week needs no approval, which is two half-days. This week holds ${used} of ${DM_SINGLE_VISIT_HALF_DAYS_MAX}.`;
+  if (approvedDays > 0) return `${free} ${plural(approvedDays, "more day is", "more days are")} approved by your managers.`;
+  return `${free} A second or third day needs your managers' approval first.`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 /** One half-day of one date, the unit the limit counts. */
 export function singleVisitHalfKey(date: string, half: ManagerHalf): string {
   return `${date}|${half}`;
+}
+
+/** The date a half-day key names. */
+export function singleVisitDateOfKey(key: string): string {
+  return key.split("|")[0] ?? "";
+}
+
+/**
+ * The half-days that spend the FREE day: every one the week holds, less those on a date his managers
+ * approved — an approved date is paid for by its own approval.
+ */
+export function freeSingleVisitHalves(used: ReadonlySet<string>, approvedDates: ReadonlySet<string>): Set<string> {
+  return new Set([...used].filter((key) => !approvedDates.has(singleVisitDateOfKey(key))));
 }
 
 /**
@@ -125,14 +155,78 @@ export function managerVisitWindow(weekStart: string): { from: string; to: strin
 
 /**
  * Whether one more half-day of single visits fits the week. `used` holds the half-days the week already
- * spends on them (planned ones and visits already logged); one that is among them is no new half-day.
- * Null when it fits, else the words he is shown.
+ * spends on them (planned ones and visits already logged); one that is among them is no new half-day. A
+ * half-day on a date his managers APPROVED always fits, and the approved dates' half-days never count
+ * against the free day. Null when it fits, else the words he is shown.
  */
-export function dmSingleVisitCapError(used: ReadonlySet<string>, next: string, what: "plan" | "visit"): string | null {
-  if (used.has(next) || used.size < DM_SINGLE_VISIT_HALF_DAYS_MAX) return null;
+export function dmSingleVisitCapError(
+  used: ReadonlySet<string>,
+  next: string,
+  what: "plan" | "visit",
+  approvedDates: ReadonlySet<string> = new Set(),
+): string | null {
+  if (approvedDates.has(singleVisitDateOfKey(next))) return null;
+  const free = freeSingleVisitHalves(used, approvedDates);
+  if (free.has(next) || free.size < DM_SINGLE_VISIT_HALF_DAYS_MAX) return null;
+  const head = "A district manager has one day of single visits a week without approval, which is two half-days. Your week already holds two";
   return what === "plan"
-    ? "A district manager has one day of single visits a week at most, which is two half-days. Your week already holds two, so this half-day cannot be a single visit."
-    : "A district manager has one day of single visits a week at most, which is two half-days. Your week already holds two, so this visit cannot be logged.";
+    ? `${head}, so this half-day cannot be a single visit until your managers approve another day of single visits on this date. Ask for it under Single visit.`
+    : `${head}, so this visit cannot be logged until your managers approve another day of single visits on this date. Ask for it under My single visits.`;
+}
+
+// ── His ask for a second or third day (owner, 2026-10-20) ───────────────────────────────────────────
+
+export type SingleVisitDayAskStatus = "pending" | "first_approved" | "approved" | "refused" | "expired";
+
+export function isSingleVisitDayAskStatus(value: unknown): value is SingleVisitDayAskStatus {
+  return value === "pending" || value === "first_approved" || value === "approved" || value === "refused" || value === "expired";
+}
+
+/** Waiting on someone, or approved: the asks that hold one of the week's two extra dates. */
+export function holdsAnExtraDay(status: SingleVisitDayAskStatus): boolean {
+  return status === "pending" || status === "first_approved" || status === "approved";
+}
+
+/**
+ * 🔴 AN ASK FOR A DAY IS LIVE ONLY WHILE ITS DATE HAS NOT PASSED. The database closes one nobody finished
+ * deciding the day after (`phoenix_crm_expire_manager_single_visit_days`), and every reader asks this too, so
+ * a row the pass has not closed yet never reaches an approver's queue or offers an Approve that would fail.
+ */
+export function isSingleVisitDayAskLive(status: unknown, visitDate: string, cairoToday: string): boolean {
+  return (status === "pending" || status === "first_approved") && visitDate >= cairoToday;
+}
+
+/** What his screen says about one ask, given who it waits on. */
+export function singleVisitDayAskStatusLabel(status: SingleVisitDayAskStatus, waitingOnName: string | null, live: boolean): string {
+  if ((status === "pending" || status === "first_approved") && !live) return "Closed when the day passed";
+  if (status === "pending" || status === "first_approved") return `Waiting for ${waitingOnName ?? "your manager"}`;
+  if (status === "approved") return "Approved";
+  if (status === "expired") return "Closed when the day passed";
+  return "Refused";
+}
+
+/**
+ * The dates he may ask for: a field day of this week or the coming one, from today on, not a holiday, and
+ * not one already asked or approved. Null when this date may be asked, else why not.
+ */
+export function singleVisitDayAskError(input: {
+  date: string;
+  cairoToday: string;
+  holiday: string | null;
+  heldDates: ReadonlySet<string>;
+}): string | null {
+  if (!isIsoDay(input.date) || !managerPlanWeeks(input.cairoToday).includes(fieldWeekStart(input.date))) {
+    return "Choose a day of this week or the coming one.";
+  }
+  if (input.date < input.cairoToday) return "This day has passed. Choose today or a later day.";
+  if (input.holiday) return `${input.holiday} is a public holiday, so it holds no plan.`;
+  if (managerDayHalves(input.date, null).length === 0) return "Choose a field day — Saturday to Thursday.";
+  if (input.heldDates.has(input.date)) return "This day is already asked for. Its answer shows below.";
+  const sameWeek = [...input.heldDates].filter((date) => fieldWeekStart(date) === fieldWeekStart(input.date)).length;
+  if (sameWeek >= DM_SINGLE_VISIT_EXTRA_DAYS_MAX) {
+    return "A week holds two more days of single visits at most — the second and the third. Both are already asked for.";
+  }
+  return null;
 }
 
 /** The grades he gives a customer he adds himself (owner, 2026-10-16: "A/B/C and potential grade"). */

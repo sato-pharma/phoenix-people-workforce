@@ -1114,6 +1114,25 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // and the 139 existing digest rows are untouched (0 field_review rows). Safe before the deploy: the
   // serving code never names the new status, columns, category or function.
   "20261020072217_hr_ops_bridge_field_review.sql",
+  // A district manager's ask for a second or third day of single visits (owner, 2026-10-20). The
+  // Supabase MCP's apply_migration answered `declined` on staging, so both projects went through the
+  // standing route: `node scripts/apply-sql-file.mjs <file> staging` (cifwmndunmlxjhyjugxa), then
+  // production (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) at
+  // about 21:10 Cairo on 2026-10-20, {"applied":true,"count":0} on each; neither ledger carries this
+  // version. Verified by digest on production: md5(prosrc) phoenix_crm_raise_manager_single_visit_day
+  // 25d102f7965b9cd41393bfa6299f6d0d (3,483 chars), phoenix_crm_decide_manager_single_visit_day
+  // ac62711fc91edbb22b13d91096733c1f (4,265), phoenix_crm_expire_manager_single_visit_days
+  // 0b34f85280708c74295dcaf651edb0ca (808) — each the same hash at the same length as this file's own
+  // LF body. All three are new names, so no older generation could have satisfied a probe; prosecdef
+  // true and anon EXECUTE false on all three, and the new table has RLS on with 0 rows. Purely additive.
+  "20261020210546_phoenix_crm_manager_single_visit_day_asks.sql",
+  // 20 Oct 2026, ~21:45 Cairo — the owner's "make writing why optional", applied by
+  // scripts/apply-sql-file.mjs to staging and production ({"applied":true,"count":0} on each), so no
+  // ledger row. Proven on production (ozucdzovmcqvepbozvqf): `reason` is_nullable YES, the check reads
+  // `reason IS NULL OR char_length(reason) between 1 and 500`, the raise function keeps its 500-character
+  // guard with prosecdef true and anon EXECUTE false (prosrc md5 e50de77e0a4e0b22103d92a1272c00bd); on
+  // staging an ask with no reason raised inside a rolled-back block came back `pending` with a null reason.
+  "20261020213000_phoenix_crm_manager_single_visit_day_reason_optional.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

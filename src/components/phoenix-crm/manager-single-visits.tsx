@@ -30,6 +30,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
+import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
 import { countText } from "@/components/phoenix-crm/format";
 import {
   CrmBlock,
@@ -218,7 +219,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                 so a full week is not learned from a refusal after the form (owner, 2026-10-19). */}
             {view.singleVisitLimit ? (
               <p className="mb-3 break-words text-xs font-semibold leading-5 text-slate-500">
-                {dmSingleVisitLimitLine(view.singleVisitLimit.used)}
+                {dmSingleVisitLimitLine(view.singleVisitLimit.used, view.singleVisitLimit.approvedDays)}
               </p>
             ) : null}
             {view.unplanned.length > 0 ? (
@@ -260,13 +261,19 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
               // Where the button would be, in words — a button that silently vanished read as a missing
               // button (owner, 2026-10-20: "no button to add the single unplanned visit").
               <CrmNote tone="warn">
-                Log an unplanned customer is closed for the rest of this week: your week already holds its two half-days of single visits. A planned single visit can still be logged.
+                Log an unplanned customer is closed for now: your week already holds its two half-days of single visits without approval. Ask
+                your managers for another day below; once they approve it, you can log on that day. A planned single visit can still be logged.
               </CrmNote>
             ) : (
               <CrmButton onClick={() => setFinding(true)} size="sm">
                 Log an unplanned customer
               </CrmButton>
             )}
+            {view.singleVisitLimit ? (
+              <div className="mt-3 min-w-0">
+                <ManagerSingleVisitDayAsk test={test} />
+              </div>
+            ) : null}
           </CrmBlock>
         </>
       ) : null}

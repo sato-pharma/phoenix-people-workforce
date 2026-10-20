@@ -439,7 +439,10 @@ export type ManagerPlanNotice = {
     | "edit_refused"
     | "edit_expired"
     | "removal_waiting"
-    | "removal_decided";
+    | "removal_decided"
+    | "single_visit_day_waiting"
+    | "single_visit_day_decided"
+    | "single_visit_day_expired";
   recipientHrId: string;
   managerHrId: string;
   /** Who took the step — null for the system (an expired ask). */
@@ -460,6 +463,8 @@ export type ManagerPlanNotice = {
   late?: boolean;
   /** An ask reaching its SECOND approver: the actor is the regional manager who agreed first. */
   secondStep?: boolean;
+  /** The date an ask for another day of single visits names (owner, 2026-10-20). */
+  visitDate?: string | null;
 };
 
 /** The Approvals Hub page a waiting district-manager step opens on. */
@@ -484,6 +489,7 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
   const base = { recipients: [notice.recipientHrId], idempotencyKey: key, subjectHrId: notice.managerHrId };
   const planMeta = notice.planId ? { planId: notice.planId } : undefined;
   const customer = notice.customerName ? bidiIsolate(notice.customerName) : "a customer";
+  const visitDay = notice.visitDate ? formatPhoenixLongDate(notice.visitDate) : "a day";
   const agreedFirst = notice.secondStep ? ` ${actor} approved it first; it needs your approval too.` : "";
 
   switch (notice.step) {
@@ -588,6 +594,39 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
           message: notice.approved
             ? `${actor} approved taking ${customer} off Manager's own list.${note}`
             : `${actor} refused taking ${customer} off Manager's own list.${note}`,
+        },
+      ];
+    case "single_visit_day_waiting":
+      return [
+        {
+          ...base,
+          ...toHub,
+          eventType: "manager_single_visit_day_waiting",
+          title: `Another day of single visits to approve: ${manager}`,
+          message: `${manager} asks for ${visitDay} as another day of single visits this week.${note}${agreedFirst} Approve or refuse it in the Approvals Hub.`,
+          metadata: { requestId: notice.recordId },
+        },
+      ];
+    case "single_visit_day_decided":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_single_visit_day_decided",
+          title: notice.approved ? `${visitDay} is approved for single visits` : `${visitDay} is refused for single visits`,
+          message: notice.approved
+            ? `${actor} approved ${visitDay} as another day of single visits. Plan or log single visits on it.${note}`
+            : `${actor} refused ${visitDay} as another day of single visits.${note}`,
+        },
+      ];
+    case "single_visit_day_expired":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_single_visit_day_expired",
+          title: "Your ask for a day of single visits ended with the day",
+          message: `Nobody finished deciding your ask for ${visitDay} before the day passed, so it is closed.`,
         },
       ];
   }

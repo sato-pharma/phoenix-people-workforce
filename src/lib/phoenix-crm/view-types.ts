@@ -163,3 +163,4 @@ export type {
   ManagerReportView as ManagerPlanReportView,
 } from "@/lib/phoenix-crm/server/manager-plan-report";
 export type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/server/manager-day-detail";
+export type { SingleVisitDayAskView, SingleVisitDaysView } from "@/lib/phoenix-crm/server/manager-single-visit-days";

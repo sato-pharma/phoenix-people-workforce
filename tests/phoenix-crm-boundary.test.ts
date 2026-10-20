@@ -291,6 +291,10 @@ const ROUTE_GATES: RouteGate[] = [
   { route: "manager-plans/customers/locate", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   post("manager-plans/customers/removal", "read"),
   post("manager-plans/customers/removal/decide", "read"),
+  // His ask for a second or third day of single visits (owner, 2026-10-20).
+  get("manager-plans/single-visit-days"),
+  post("manager-plans/single-visit-days", "read"),
+  post("manager-plans/single-visit-days/decide", "read"),
   get("manager-plans/visits"),
   post("manager-plans/visits", "read"),
   get("manager-plans/report"),
@@ -948,6 +952,12 @@ const LATER_MIGRATIONS = [
   // ask's decision (earlier definer 20261017120000, above it) — and changes no table, column or row, so it
   // appends at the end.
   "supabase/migrations/20261018234000_phoenix_crm_manager_plan_ask_closes_with_its_week.sql",
+  // A district manager's ask for a second or third day of single visits (owner, 2026-10-20). One new table,
+  // locked by the same four statements, and three new functions replacing nothing — it appends at the end.
+  "supabase/migrations/20261020210546_phoenix_crm_manager_single_visit_day_asks.sql",
+  // Writing why is optional on that ask (owner, 2026-10-20). It REPLACES the raise function just above and
+  // widens the reason column and its CHECK, so it appends at the end.
+  "supabase/migrations/20261020213000_phoenix_crm_manager_single_visit_day_reason_optional.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

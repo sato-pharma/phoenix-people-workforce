@@ -7,6 +7,7 @@ import type {
   ManagerHubDetail,
   ManagerHubPlanDetail,
   ManagerHubRemovalDetail,
+  ManagerHubSingleVisitDayDetail,
   ManagerHubStep,
   ManagerHubStepState,
 } from "@/lib/phoenix-crm/server/manager-plan-hub";
@@ -15,8 +16,8 @@ import type {
  * The Approvals Hub page of a district manager's Phoenix CRM week (owner, 2026-10-16): the week day by
  * day and half by half — with a rep and the customers he ticked (each flagged when it is not on the rep's
  * sent day), an admin activity, or a single visit and its customers — plus the tracker and, for the step's
- * holder or the Administrator, the decision. The same page shows his ask to edit a week and his ask to take
- * a customer off his own list.
+ * holder or the Administrator, the decision. The same page shows his ask to edit a week, his ask to take
+ * a customer off his own list, and his ask for another day of single visits.
  */
 
 const STEP_TONE: Record<ManagerHubStepState, { dot: string; text: string; label: string }> = {
@@ -25,7 +26,7 @@ const STEP_TONE: Record<ManagerHubStepState, { dot: string; text: string; label:
   waiting: { dot: "bg-slate-300", text: "text-slate-500", label: "Later" },
   returned: { dot: "bg-amber-500", text: "text-amber-700", label: "Returned" },
   refused: { dot: "bg-rose-500", text: "text-rose-700", label: "Refused" },
-  closed: { dot: "bg-slate-400", text: "text-slate-600", label: "Closed when the week ended" },
+  closed: { dot: "bg-slate-400", text: "text-slate-600", label: "Closed before it was decided" },
 };
 
 const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
@@ -252,9 +253,50 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
   );
 }
 
+function SingleVisitDayDetail({ detail, backHref }: { detail: ManagerHubSingleVisitDayDetail; backHref: string }) {
+  return (
+    <div className="space-y-4">
+      <Back href={backHref} />
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-black text-slate-900">{detail.visitDateText}</h2>
+          <p className="text-sm text-slate-600">{detail.managerName} asks for this day as another day of single visits</p>
+        </div>
+        <span className="border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">{detail.statusLabel}</span>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className={adminPanelClassName}>
+          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
+            <h3 className={headerText}>The ask</h3>
+          </header>
+          <dl className="px-4 py-2">
+            <Fact label={detail.managerTitle} value={detail.managerName} />
+            <Fact label="Day" value={detail.visitDateText} />
+            <Fact label="Week" value={detail.weekText} />
+            <Fact label="This week so far" value={detail.weekLine} />
+            <Fact label="Why it is asked" value={detail.reason} />
+            {detail.decisionNote ? <Fact label="Note" value={detail.decisionNote} /> : null}
+          </dl>
+        </section>
+        <div className="space-y-4">
+          <Tracker title="Approval tracker" steps={detail.steps} />
+          {detail.decideAs ? (
+            <ManagerPlanDecisionActions
+              target={{ kind: "single_visit_day", requestId: detail.requestId, version: detail.version, stage: detail.stage, thenName: detail.thenName }}
+              byAdministrator={detail.decideAs === "administrator"}
+              backHref={backHref}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ManagerPlanRequestDetail({ detail, backHref, plannerHref }: { detail: ManagerHubDetail; backHref: string; plannerHref: string }) {
   if (detail.kind === "plan") return <PlanDetail detail={detail} backHref={backHref} plannerHref={plannerHref} />;
   if (detail.kind === "removal") return <RemovalDetail detail={detail} backHref={backHref} />;
+  if (detail.kind === "single_visit_day") return <SingleVisitDayDetail detail={detail} backHref={backHref} />;
   return (
     <div className="space-y-4">
       <Back href={backHref} />

@@ -10,6 +10,9 @@
  * A read that fails throws: a limit that cannot be counted must not quietly let a third half-day through,
  * and the save or the log is the one place that can tell him to try again.
  *
+ * 🔴 A DATE HIS MANAGERS APPROVED IS PAID FOR BY ITS APPROVAL (owner, 2026-10-20): it holds single visits on
+ * both its halves, and its half-days never spend the free day (`manager-single-visit-days.ts`).
+ *
  * 🔴 His two screens show the count from these same functions — the board's "This week holds N of 2"
  * (`buildBoard`, planned halves plus logged ones) and "My single visits" (`loadSingleVisitAllowance`). A
  * screen that counted only the plan said "1 of 2" while the save refused a second half-day because a visit
@@ -20,6 +23,7 @@ import { validationError } from "@/lib/http/api-errors";
 import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   dmSingleVisitCapError,
+  freeSingleVisitHalves,
   managerVisitWindow,
   singleVisitHalfKey,
   singleVisitHalfOfHour,
@@ -27,6 +31,7 @@ import {
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { loadManagerSlotRows } from "@/lib/phoenix-crm/server/manager-plan-rows";
+import { loadApprovedSingleVisitDates } from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -98,28 +103,38 @@ export async function loadLoggedSingleVisitHalves(input: { managerHrId: string; 
   return used;
 }
 
-/** What "My single visits" shows him: the half-days the week holds, the most it may, and whether an unplanned visit logged now fits. */
-export type SingleVisitAllowance = { used: number; max: number; unplannedFitsNow: boolean };
+/**
+ * What "My single visits" shows him: the half-days of the free day the week holds, the most it may, the
+ * days his managers approved besides, and whether an unplanned visit logged now fits.
+ */
+export type SingleVisitAllowance = { used: number; max: number; approvedDays: number; unplannedFitsNow: boolean };
+
+/** The half-days the week holds and the dates his managers approved, read together. */
+async function loadWeekSingleVisits(input: { managerHrId: string; weekStart: string; isTest: boolean }): Promise<{ used: Set<string>; approvedDates: Set<string> }> {
+  const [used, approvedDates] = await Promise.all([loadSingleVisitHalvesUsed(input), loadApprovedSingleVisitDates(input)]);
+  return { used, approvedDates };
+}
 
 export async function loadSingleVisitAllowance(input: { managerHrId: string; weekStart: string; date: string; isTest: boolean }): Promise<SingleVisitAllowance> {
-  const used = await loadSingleVisitHalvesUsed(input);
+  const { used, approvedDates } = await loadWeekSingleVisits(input);
   return {
-    used: used.size,
+    used: freeSingleVisitHalves(used, approvedDates).size,
     max: DM_SINGLE_VISIT_HALF_DAYS_MAX,
-    unplannedFitsNow: dmSingleVisitCapError(used, singleVisitHalfKey(input.date, halfNow()), "visit") === null,
+    approvedDays: approvedDates.size,
+    unplannedFitsNow: dmSingleVisitCapError(used, singleVisitHalfKey(input.date, halfNow()), "visit", approvedDates) === null,
   };
 }
 
-/** Refuses a single-visit half-day in a plan when the week already holds two others. */
+/** Refuses a single-visit half-day in a plan when the week already holds two others and the date is not approved. */
 export async function assertSingleVisitPlanFits(input: { managerHrId: string; weekStart: string; date: string; half: ManagerHalf; isTest: boolean }): Promise<void> {
-  const used = await loadSingleVisitHalvesUsed(input);
-  const error = dmSingleVisitCapError(used, singleVisitHalfKey(input.date, input.half), "plan");
+  const { used, approvedDates } = await loadWeekSingleVisits(input);
+  const error = dmSingleVisitCapError(used, singleVisitHalfKey(input.date, input.half), "plan", approvedDates);
   if (error) throw validationError(error);
 }
 
-/** Refuses an unplanned visit when it would open a third half-day of single visits in the week. */
+/** Refuses an unplanned visit when it would open a third half-day of single visits on a date not approved. */
 export async function assertSingleVisitLogFits(input: { managerHrId: string; weekStart: string; date: string; isTest: boolean }): Promise<void> {
-  const used = await loadSingleVisitHalvesUsed(input);
-  const error = dmSingleVisitCapError(used, singleVisitHalfKey(input.date, halfNow()), "visit");
+  const { used, approvedDates } = await loadWeekSingleVisits(input);
+  const error = dmSingleVisitCapError(used, singleVisitHalfKey(input.date, halfNow()), "visit", approvedDates);
   if (error) throw validationError(error);
 }
