@@ -183,4 +183,51 @@ export function runWaitPrTests(): void {
     assert.equal(mainRed.code, 0, "shipped-with-a-red-main still shipped");
     assert.match(mainRed.out, /SHIPPED \(verify-shipped exit 6\)/);
   }
+
+  // ── 10. A required check with NO ROW YET is unfinished — never "nothing pending among the rows
+  //       that exist" ────────────────────────────────────────────────────────────────────────────
+  // 20 Oct 2026, #6194, head e580286fe: the required `checks` job only starts after `static` and the
+  // three `unit` jobs finish, so `gh pr checks` listed no row for it. The buckets were filtered down
+  // to the names that existed, nothing in them was pending, and the script printed GREEN and exited 0
+  // while `static` was still running and mergeStateStatus was BLOCKED. Each poll carries its own head
+  // so the assertion can say WHICH reading produced a GREEN.
+  {
+    const validateOnly = (head: string): Poll => ({ head, checks: [{ name: "validate", bucket: "pass" }] });
+    for (const extra of [[], ["--green"]]) {
+      const { code, out } = run(10, [validateOnly("absent111"), validateOnly("absent222"), green("present33")], extra);
+      assert.doesNotMatch(
+        out,
+        /GREEN on absent/,
+        `a required check that has not reported yet must keep the wait going (${extra.join(" ") || "settle"}). Got: ${out}`,
+      );
+      assert.equal(code, 0, `the wait must still end green once the last required check reports, got ${code}: ${out}`);
+      assert.match(out, /GREEN on present33: validate=pass checks=pass/, "and the GREEN line lists EVERY required name");
+    }
+
+    // It never reports (static never finished): the wait gives up loudly, naming the absent one.
+    const never = run(11, [validateOnly("absent111"), validateOnly("absent222")]);
+    assert.equal(never.code, 7, `a required check that never reports must end at the timeout (7), got ${never.code}: ${never.out}`);
+    assert.doesNotMatch(never.out, /GREEN/, "and must never use the word GREEN");
+    assert.match(never.out, /last reading: validate=pass checks=absent on absent222/, "and says which one it was missing");
+
+    // A red is not SETTLED while a required name has yet to report — settle means "finished".
+    const redWhileAbsent = run(12, [
+      { head: "redabsent1", checks: [{ name: "validate", bucket: "fail" }] },
+      { head: "redabsent2", checks: [{ name: "validate", bucket: "fail" }] },
+    ]);
+    assert.equal(redWhileAbsent.code, 7, `a red beside a required check that has not reported is not settled, got ${redWhileAbsent.code}: ${redWhileAbsent.out}`);
+    assert.doesNotMatch(redWhileAbsent.out, /SETTLED RED/);
+
+    // The same allow-list covers every other bucket that is not a pass: skipped, cancelled (a
+    // superseded run), or one this script has never heard of.
+    for (const bucket of ["skipping", "cancel", "queued-by-a-future-gh"]) {
+      const { code, out } = run(13, [{ head: "oddbucket1", checks: [{ name: "validate", bucket: "pass" }, { name: "checks", bucket }] }]);
+      assert.equal(code, 7, `a required check in bucket \`${bucket}\` is not a pass and must not read as green, got ${code}: ${out}`);
+      assert.doesNotMatch(out, /GREEN/, `\`${bucket}\` must never be called GREEN`);
+    }
+
+    // No required row at all (an empty gate) is unfinished too, not vacuously green.
+    const emptyGate = run(14, [{ head: "emptygate1", checks: [{ name: "validate", bucket: "pass" }] }], [], []);
+    assert.equal(emptyGate.code, 7, `an empty required list must never read as green, got ${emptyGate.code}: ${emptyGate.out}`);
+  }
 }

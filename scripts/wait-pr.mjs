@@ -113,6 +113,28 @@ const required = (() => {
 const polls = fixturePath ? (JSON.parse(readFileSync(fixturePath, 'utf8')).polls ?? []) : null;
 let pollIndex = 0;
 
+/** What a required check that has no row at all is shown as — it has not reported, so it is NOT done. */
+const ABSENT = 'absent';
+
+/**
+ * One row per required context, in the gate's order — and a context that has not reported yet gets a
+ * row of its own, bucket `absent`, instead of silently not being there.
+ *
+ * 🔴 THE HOLE THIS CLOSES (20 Oct 2026, #6194, head e580286fe): the required `checks` job only starts
+ * after `static` and the three `unit` jobs finish, so for most of a run `gh pr checks` lists NO row for
+ * it. Filtering the listing down to the names that exist made "nothing pending among the rows that
+ * exist" true, and the script printed GREEN on a head whose `static` was still running while
+ * mergeStateStatus was BLOCKED. A name that is not in the listing is an unfinished check, not an
+ * absent one. Every row of a name is kept (a re-run can list one twice), so a stale fail is never
+ * collapsed away behind a pass.
+ */
+function requiredRows(checks) {
+  return required.flatMap((name) => {
+    const rows = checks.filter((c) => c.name === name);
+    return rows.length > 0 ? rows : [{ name, bucket: ABSENT }];
+  });
+}
+
 /** One reading: whether it is merged, its head, and the bucket of each REQUIRED check. */
 function read() {
   if (polls) {
@@ -121,7 +143,7 @@ function read() {
     return {
       mergedAt: p.mergedAt ?? null,
       head: p.head ?? '',
-      buckets: (p.checks ?? []).filter((c) => required.includes(c.name)),
+      buckets: requiredRows(p.checks ?? []),
     };
   }
   const view = JSON.parse(gh(['pr', 'view', pr, '--repo', REPO, '--json', 'mergedAt,headRefOid']) || '{}');
@@ -129,7 +151,7 @@ function read() {
   return {
     mergedAt: view.mergedAt ?? null,
     head: view.headRefOid ?? '',
-    buckets: checks.filter((c) => required.includes(c.name)),
+    buckets: requiredRows(checks),
   };
 }
 
@@ -190,14 +212,19 @@ for (let i = 0; i < deadline; i += 1) {
   }
   const state = summarise(r.buckets);
   last = `${state || 'no reading'} on ${String(r.head).slice(0, 9)}`;
-  const anyPending = r.buckets.length === 0 || r.buckets.some((c) => c.bucket === 'pending');
+  // ALLOW-LIST `pass`, never deny-list the unfinished states (docs/testing.md, "Waiting for the
+  // gate"): green is every required row literally `pass`; red is a `fail`; anything else — pending,
+  // absent, skipping, cancel, a bucket this script has never heard of, or no required row at all —
+  // means keep waiting. Wrong in that direction only ever costs a minute.
+  const allPass = r.buckets.length > 0 && r.buckets.every((c) => c.bucket === 'pass');
   const anyFail = r.buckets.some((c) => c.bucket === 'fail');
+  const anyUnfinished = r.buckets.length === 0 || r.buckets.some((c) => c.bucket !== 'pass' && c.bucket !== 'fail');
 
-  if (!anyPending && !anyFail) {
+  if (allPass) {
     say(`GREEN on ${String(r.head).slice(0, 9)}: ${state}`);
     process.exit(0);
   }
-  if (!anyPending && anyFail && mode === 'settle') {
+  if (!anyUnfinished && anyFail && mode === 'settle') {
     // SETTLED RED. Said as its own verdict rather than as a green that happens to be false — and it
     // exits 3, not 0, so a notification reporting the shell's status cannot read as success.
     say(`SETTLED RED on ${String(r.head).slice(0, 9)}: ${state}`);
