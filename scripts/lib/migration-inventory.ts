@@ -1114,6 +1114,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // and the 139 existing digest rows are untouched (0 field_review rows). Safe before the deploy: the
   // serving code never names the new status, columns, category or function.
   "20261020072217_hr_ops_bridge_field_review.sql",
+  // The HR Operations Specialist seat itself (role "HR Administration", PR 6194), applied to
+  // production AFTER that PR's deploy was serving (revision f8248352b, 10:01 Cairo on 2026-10-20) and
+  // before HR-009 moved onto the seat, by the standing route: `node scripts/apply-sql-file.mjs <file>
+  // production` (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com),
+  // {"applied":true,"count":1}. Staging (cifwmndunmlxjhyjugxa) holds it WITH a ledger row; production's
+  // ledger carries neither this version nor a name like hr_operations_specialist_seat. No function, so
+  // no prosrc digest — read by shape on production instead: "HR Administration" in all 3 role CHECKs
+  // (app_auth_users_role_check, user_access_profiles_phoenix_role_check,
+  // notification_role_policies_roles_check); public.roles row hr_administration, 1; exactly 5 workflow
+  // actions admit it — contracts.contract_hr_review, contracts.contract_upload_signed,
+  // leave_requests.submit, private_calendar_data_disputes.submit, resignations.resignation_mark_review
+  // (before: none); resignations.resignation_complete still ["Super Admin","CEO","HR Operations"],
+  // untouched by design; resignation_workflow_alert reads Super Admin, HR Operations, HR
+  // Administration; 4 modules carry updated_by migration:20261020064831. Purely additive.
+  "20261020064831_hr_operations_specialist_seat.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
