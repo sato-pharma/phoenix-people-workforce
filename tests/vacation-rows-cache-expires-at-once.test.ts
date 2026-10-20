@@ -22,4 +22,10 @@ export function runVacationRowsCacheExpiresAtOnceTests() {
     /revalidateTag\(\s*VACATION_REPORT_ROWS_CACHE_TAG\s*,\s*"max"\s*\)/,
     'revalidateTag(rows tag, "max") serves the old rows to the refresh that follows a save',
   );
+
+  assert.match(
+    code,
+    /revalidateTag\(\s*COMPANY_VACATION_REPORT_CACHE_TAG\s*,\s*\{\s*expire:\s*0\s*\}\s*\)/,
+    "the Company Vacation Report tag is read by the same refresh after a leave write and must expire at once too",
+  );
 }

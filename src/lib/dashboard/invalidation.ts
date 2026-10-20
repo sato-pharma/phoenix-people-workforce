@@ -98,7 +98,7 @@ export function invalidateExecutiveDashboardCache(
     // there for up to HISTORICAL_REVALIDATE_SECONDS (6h). Previously only the CRM-signal approve
     // route busted this tag, so every other mutation path went stale silently.
     if (uniqueModules.includes("leave")) {
-      revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
+      revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, { expire: 0 });
       // Also bust the cross-request base read that every vacation-report surface shares. Every
       // vacation write already routes through here with ['leave'], so this one line gives complete
       // write-path coverage for the cached loadAllVacationRequestRowsCached rows.
