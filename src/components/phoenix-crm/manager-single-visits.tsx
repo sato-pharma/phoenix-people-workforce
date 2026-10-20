@@ -29,6 +29,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
+import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
 import { countText } from "@/components/phoenix-crm/format";
 import {
   CrmBlock,
@@ -56,6 +57,7 @@ import type {
   AreaCustomersView,
   CustomerMatch,
   ManagerAreaBricks,
+  ManagerCustomerView,
   ManagerCustomerLocated,
   ManagerTodayCustomer,
   ManagerTodayOwnCustomer,
@@ -304,6 +306,10 @@ function FindCustomer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [areaSeatId, setAreaSeatId] = useState<string | null>(null);
+  // A customer nobody has yet is added right here, on the same Add-a-customer form Team uses, and the
+  // visit is logged next — never a trip to Team first (owner, 2026-10-20: "make him able to create
+  // from the same screen the same way").
+  const [adding, setAdding] = useState(false);
 
   async function find() {
     if (name.trim().length < 2) {
@@ -338,6 +344,29 @@ function FindCustomer({
     });
   }
 
+  /** The customer just added joins Manager's own list; the visit opens on what the form entered. */
+  function added(customer: ManagerCustomerView) {
+    setAdding(false);
+    onPick(ownLogging({ ...customer, vacant: areas.find((entry) => entry.seatId === customer.areaSeatId)?.vacant === true }));
+  }
+
+  if (adding) {
+    return (
+      <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Add a new customer to Manager&apos;s own list, then log the visit</p>
+        <ManagerCustomerForm
+          areas={areas.map((entry) => ({ seatId: entry.seatId, areaName: entry.areaName }))}
+          defaultAreaSeatId={areaSeatId}
+          defaultName={name.trim()}
+          onAdded={added}
+          onCancel={() => setAdding(false)}
+          onPickExisting={pick}
+          test={test}
+        />
+      </div>
+    );
+  }
+
   const areaOptions: Array<CrmChoiceOption<string>> = areas.map((entry) => ({
     value: entry.seatId,
     label: entry.areaName,
@@ -370,7 +399,14 @@ function FindCustomer({
       </CrmField>
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       {matches !== null && matches.length === 0 ? (
-        <CrmNote tone="neutral">No customer of the districts you plan in goes by that name. Add the customer to Manager&apos;s own list from Team first.</CrmNote>
+        <div className="grid min-w-0 gap-2">
+          <CrmNote tone="neutral">No customer of the districts you plan in goes by that name. Add the customer here: the customer joins Manager&apos;s own list, and the visit is logged next.</CrmNote>
+          <div>
+            <CrmButton onClick={() => setAdding(true)} size="sm" variant="primary">
+              Add a new customer
+            </CrmButton>
+          </div>
+        </div>
       ) : null}
       {(matches ?? []).map((match) => (
         <CrmCard
@@ -411,7 +447,12 @@ function FindCustomer({
           ))}
         </div>
       ) : null}
-      <div>
+      <div className="flex flex-wrap gap-2">
+        {matches !== null && matches.length === 0 ? null : (
+          <CrmButton onClick={() => setAdding(true)} size="sm">
+            Add a new customer
+          </CrmButton>
+        )}
         <CrmButton onClick={onCancel} size="sm" variant="ghost">
           Cancel
         </CrmButton>

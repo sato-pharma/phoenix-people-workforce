@@ -42,6 +42,7 @@ const MATCH_FROM = 3;
 export function ManagerCustomerForm({
   areas,
   defaultAreaSeatId,
+  defaultName,
   onAdded,
   onCancel,
   onPickExisting,
@@ -49,6 +50,8 @@ export function ManagerCustomerForm({
 }: {
   areas: ReadonlyArray<{ seatId: string; areaName: string }>;
   defaultAreaSeatId?: string | null;
+  /** The name he already typed in a search that found nobody, so he does not type it twice. */
+  defaultName?: string;
   onAdded: (customer: ManagerCustomerView) => void;
   onCancel: () => void;
   /** Where a match can be chosen instead (a single visit's customers). Absent, a match is only shown. */
@@ -56,7 +59,7 @@ export function ManagerCustomerForm({
   test: boolean;
 }) {
   const idPrefix = useId();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(defaultName ?? "");
   const [speciality, setSpeciality] = useState("");
   const [phone, setPhone] = useState("");
   const [contactNote, setContactNote] = useState("");
