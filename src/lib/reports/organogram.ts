@@ -257,6 +257,8 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "Marketing Manager" ||
     access.role === "Training Manager" ||
     access.role === "HR Operations" ||
+    // The HR Operations Specialist (2026-10-20): "show organogram", with salary hidden.
+    access.role === "HR Administration" ||
     // The Talent Acquisition seat (2026-10-08), ticked by the owner. The company chart and its
     // vacancies are what she recruits against. NOT added to canViewOrganogramSensitiveFields: the
     // money on a node stays with the seats that hold payroll.

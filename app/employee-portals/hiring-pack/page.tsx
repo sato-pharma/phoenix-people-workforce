@@ -58,7 +58,7 @@ export default async function EmployeePortalHiringPackPage({
   if (!isHrAuthorityRole(access.role) || !canRead) {
     return (
       <EmployeePortalEmptyState
-        message="The hiring pack is available to the HR Operations Coordinator and the Super Admin only."
+        message="The hiring pack is available to the HR Generalist and the Super Admin only."
         title="HR Forms Unavailable"
       />
     );

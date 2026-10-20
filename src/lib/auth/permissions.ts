@@ -39,6 +39,9 @@ export const phoenixRoles = [
   "HR Operations",
   // Shown everywhere as "Talent Acquisition" (HR_SEAT_JOB_TITLES). Opened 2026-10-08.
   "HR Resourcing",
+  // Shown everywhere as "HR Operations Specialist" (HR_SEAT_JOB_TITLES). Opened 2026-10-20 for the
+  // attendance and field review, the people master without salary, renewals and resignations.
+  "HR Administration",
   "Manager",
   "CEO",
   "Super Admin",
@@ -85,12 +88,15 @@ export const phoenixCompanyJobTitles = [
   "Office Co-ordinator",
   "Regulatory Affairs",
   "Talent Acquisition",
-  // HR Operations Coordinator is a JOB TITLE and belongs here; the ACCESS it carries is
-  // "HR Operations" in phoenixRoles above, which is a different list on purpose. Office
-  // Co-ordinator and Talent Acquisition stay listed because employee records, offers and candidate
-  // applications still name them historically. "HR Business Partner" is NOT listed since
+  // HR Generalist and HR Operations Specialist are JOB TITLES and belong here; the ACCESS each
+  // carries is "HR Operations" and "HR Administration" in phoenixRoles above, which is a different
+  // list on purpose. "HR Generalist" replaced "HR Operations Coordinator" on 2026-10-20 (owner: "make
+  // the old account HR genralist" — everywhere), the day the HR Operations Specialist seat opened.
+  // Office Co-ordinator and Talent Acquisition stay listed because employee records, offers and
+  // candidate applications still name them historically. "HR Business Partner" is NOT listed since
   // 2026-10-08 — the owner: "no more HR business partner. This title, no more."
-  "HR Operations Coordinator",
+  "HR Generalist",
+  "HR Operations Specialist",
   "Finance Manager",
   "CEO",
   "HR Manager",
@@ -191,6 +197,12 @@ export type PermissionResource =
   // reaches a teammate's note. The Super Admin sees every item (the HR Manager's oversight) and
   // edits none that is not his own.
   | "hr_reminders"
+  // HR Reports (owner, 2026-10-20): the daily and weekly fingerprint and field reports the HR
+  // Operations Specialist reviews row by row. `read` opens them; `update` is HER review (confirm,
+  // reject or recommend an edit, with a reason) and her Submit; `approve` is the decision, and only
+  // the Super Admin holds it. Days only — the EGP beside a row is computed on the server and shown
+  // to the approver alone.
+  | "hr_ops_reports"
   | "outstation"
   | "leave"
   | "admin"
@@ -402,6 +414,9 @@ export const permissionResources: PermissionResource[] = [
   // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
   // view of every one of them — to every role in the company. Mechanism at the head of this array.
   "hr_reminders",
+  // HR Reports. Omitting this would offer every person's attendance and visit review — and the
+  // decision on it — to every role in the company. Mechanism at the head of this array.
+  "hr_ops_reports",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -434,7 +449,7 @@ export type NavigationMode = "admin" | "employee-portal" | "hr";
  * resource, which is the fail-OPEN direction. Adding a seat here is a decision someone makes on
  * purpose.
  */
-export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Operations", "HR Resourcing"]);
+export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Operations", "HR Resourcing", "HR Administration"]);
 
 export function usesHrNamespace(role: PhoenixRole): boolean {
   return hrNamespaceRoles.has(role);
@@ -518,6 +533,8 @@ export const adminShellEmployeeRoles = [
   // Talent Acquisition, 2026-10-08: the owner chose the admin shell on the access blueprint, the
   // same side as both other HR seats.
   "HR Resourcing",
+  // HR Operations Specialist, 2026-10-20: the same HR shell as the other seats.
+  "HR Administration",
 ] as const satisfies readonly PhoenixRole[];
 const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
 
@@ -739,6 +756,15 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       // records that survive an audit, so destruction stays Super Admin. This cap is belt-and-braces
       // over HR_ROLE_BOUNDARIES. (HR Advisory read them until the seat was retired, 2026-10-08.)
       if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
+      // The HR Operations Specialist keeps the master up to date and moves it in and out by sheet,
+      // with every money field withheld server-side (isSalaryBlindRole). She does not ADD a person.
+      if (role === "HR Administration") return ["read", "update", "export", "import"];
+      return [];
+    case "hr_ops_reports":
+      // Her review is `update`; the decision is `approve`, the Super Admin's alone, so an override
+      // can never hand a reviewer the right to decide her own recommendation.
+      if (role === "Super Admin") return ["read", "update", "approve"];
+      if (role === "HR Administration") return ["read", "update"];
       return [];
     case "mailbox_offboarding":
       // ops 6 - Resignation & Offboarding. HR Operations runs it; the CEO observes.
@@ -1023,6 +1049,8 @@ const defaultPermissionMatrix: PermissionMap = {
     hr_calendar: allActions,
     // Reads every HR team item and comments on any; creates, edits and removes only his own.
     hr_reminders: ["read", "create", "update", "delete"],
+    // Reads every daily and weekly HR report, and decides each recommended row (approve).
+    hr_ops_reports: ["read", "update", "approve"],
     outstation: allActions,
     leave: allActions,
     organogram: allActions,
@@ -1197,6 +1225,9 @@ const defaultPermissionMatrix: PermissionMap = {
   //   HR Resourcing  recruiting · cv_lookup · employee_requests · workforce_context · recognition
   //                  (shown as Talent Acquisition; built from the owner's 2026-10-08 blueprint)
   "HR Resourcing": hrBundleGrants("HR Resourcing"),
+  //   HR Administration  attendance_review · people_master · team_reminders
+  //                      (shown as HR Operations Specialist; built from the owner's 2026-10-20 answers)
+  "HR Administration": hrBundleGrants("HR Administration"),
   // Finance Manager (Ahmed El Maraghy, B-185 — the only holder): the company's finance execution
   // point. He EXECUTES money movements that others have already approved; he does not approve the
   // spend itself. Retuned 2026-08-10 on owner instruction, when the account was activated for the
@@ -1906,6 +1937,7 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
       return 300;
     case "HR Operations":
     case "HR Resourcing":
+    case "HR Administration":
       return 150;
     case "Finance Manager":
       return 200;
@@ -2364,6 +2396,9 @@ export function canSeeEmployee(
   // self-scoped because they key off role, not this helper. HR Advisory had it too, for workforce
   // insight, until the seat was retired on 2026-10-08.
   if (context.role === "HR Operations") return true;
+  // The HR Operations Specialist keeps the whole Employee Master and reviews everyone's attendance —
+  // the same company-wide people view, by name, with salary withheld wherever it would show.
+  if (context.role === "HR Administration") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);

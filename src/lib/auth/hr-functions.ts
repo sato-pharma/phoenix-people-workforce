@@ -55,7 +55,9 @@ export type HrFunctionKey =
   | "employee_requests"
   | "workforce_context"
   | "recognition"
-  | "team_reminders";
+  | "team_reminders"
+  | "attendance_review"
+  | "people_master";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -564,6 +566,45 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       hr_reminders: ["read", "create", "update", "delete"],
     },
   },
+  {
+    key: "attendance_review",
+    label: "Attendance & Field Review",
+    summary:
+      "Review the daily and weekly fingerprint and field-visit reports and recommend deduction days, row by row, for the HR Manager to decide. Days only — never an amount, never payroll.",
+    // Owner, 2026-10-20, building the HR Operations Specialist seat: "daily and weekly reports for
+    // fingerprints and for the field force", from which she "recommends deductions" — every row
+    // "confirm or rejct or recommend edit with reason" — and "she will never take desicion".
+    jdSections: ["owner 2026-10-20 — HR Operations Specialist seat: attendance and field review"],
+    grants: {
+      // `update` is HER review of a row (confirm / reject / recommend an edit, with a reason) and her
+      // Submit. Deciding a row is `approve`, which only the Super Admin holds; nothing here reaches
+      // `deductions` or `payroll`, which HR_ROLE_BOUNDARIES keeps absent from every seat.
+      hr_ops_reports: ["read", "update"],
+    },
+  },
+  {
+    key: "people_master",
+    label: "People Master (No Salary)",
+    summary:
+      "Keep the Employee Master up to date — edit, import and export it — and follow contracts, renewals and resignations, with every salary figure withheld.",
+    // Owner, 2026-10-20: "Contract renewals, resignations, Employee Master import and export, all
+    // with no salary", the organogram "hides salary", renewals are "track and prepare papers", and
+    // for resignations "i submit the emp resigned she recieves notification and start folloeing up
+    // until he comes to office to do fillfill resignation cycle".
+    jdSections: ["owner 2026-10-20 — HR Operations Specialist seat: people master without salary"],
+    grants: {
+      // No `create`: adding an employee stays with the HR Generalist seat and the Super Admin. The
+      // salary is withheld server-side for this seat (isSalaryBlindRole), not by these actions.
+      employees: ["read", "update", "export", "import"],
+      organogram: READ_ONLY,
+      // Track and prepare: read every contract and move it through HR review and the signed upload.
+      // Creating, renewing, not renewing or cancelling one stays his decision.
+      contracts: ["read", "update"],
+      // Follow a resignation he submitted through to the completed cycle. No `create` (he submits)
+      // and no `export` (a resignation export carries the settlement).
+      resignations: ["read", "update"],
+    },
+  },
 ] as const;
 
 /**
@@ -627,6 +668,12 @@ export const HR_ROLE_BUNDLES = {
     "recognition",
     "team_reminders",
   ],
+  // Shown as HR Operations Specialist (owner, 2026-10-20). Salary-blind by name — isSalaryBlindRole.
+  "HR Administration": [
+    "attendance_review",
+    "people_master",
+    "team_reminders",
+  ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 
 export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
@@ -668,9 +715,27 @@ export const UNASSIGNED_HR_FUNCTIONS: readonly HrFunctionKey[] = [
  * two agree, so they cannot drift apart.
  */
 export const HR_SEAT_JOB_TITLES = {
-  "HR Operations": "HR Operations Coordinator",
+  // Renamed from "HR Operations Coordinator" on 2026-10-20 (owner: "make the old account HR
+  // genralist" — everywhere). Display only: the key and every grant are unchanged.
+  "HR Operations": "HR Generalist",
   "HR Resourcing": "Talent Acquisition",
+  "HR Administration": "HR Operations Specialist",
 } as const satisfies Record<HrBundleName, PhoenixCompanyJobTitle>;
+
+/** The HR Operations Specialist seat's key, named once so no caller spells it by hand. */
+export const HR_OPERATIONS_SPECIALIST_SEAT = "HR Administration" as const satisfies HrBundleName;
+
+/**
+ * The seat that never sees a salary, an allowance, an insurance or a tax amount — anywhere (owner,
+ * 2026-10-20: "she never touches payroll or salary"). The one exception he made is the contract
+ * renewal annex she prepares. Bank name, account and payment mode stay visible to her.
+ *
+ * Every server path that returns or accepts a money field asks this, so the withholding is
+ * enforced where the data leaves the server — the screens only follow it.
+ */
+export function isSalaryBlindRole(role: string | null | undefined): boolean {
+  return String(role ?? "") === HR_OPERATIONS_SPECIALIST_SEAT;
+}
 
 /**
  * The label to SHOW for a role. Returns the seat's job title for the two HR bundles and the role

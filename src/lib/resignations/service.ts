@@ -664,7 +664,10 @@ function isCompanyResignationReader(access: AccessContext) {
     access.scope === "company" ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    // The HR Operations Specialist follows every resignation he submits through to the completed
+    // cycle (owner, 2026-10-20). Settlement amounts are withheld from her — isSalaryBlindRole.
+    access.role === "HR Administration"
   );
 }
 

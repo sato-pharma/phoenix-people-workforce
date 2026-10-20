@@ -24,7 +24,7 @@ export default async function EmployeePortalSupportRequestsPage() {
   if (!canRead) {
     return (
       <EmployeePortalEmptyState
-        message="HR support ticket management is available to the HR Operations Coordinator and the Super Admin only."
+        message="HR support ticket management is available to the HR Generalist and the Super Admin only."
         title="HR Support Requests Unavailable"
       />
     );
