@@ -274,7 +274,8 @@ export async function runWhatsAppUsernameSenderTests() {
   const recordAt = webhook.indexOf("recordUnattributedWhatsAppMessage(");
   const unattributedAt = webhook.indexOf("for (const node of delivery.unattributed)");
   assert.ok(videoAt > 0 && idAt > 0 && recordAt > 0 && unattributedAt > 0, "the webhook captures videos, ids and unattributed messages");
-  for (const replying of ["handleClassifyText({", "bufferWhatsAppMessage(message.from", "handleTextOnlyMessage({", "startClassification({"]) {
+  // The classify calls are not in this list: since 20 Oct 2026 a username sender is ASKED the questions, keyed on the user id (checked below).
+  for (const replying of ["bufferWhatsAppMessage(message.from", "handleTextOnlyMessage({"]) {
     const at = webhook.indexOf(replying);
     assert.ok(at > 0, `expected the webhook to still call ${replying}`);
     assert.ok(videoAt < at && recordAt < at, `a phone-less sender is settled before ${replying}, which can message them`);
@@ -289,9 +290,11 @@ export async function runWhatsAppUsernameSenderTests() {
   assert.match(noPhoneBlock, /if \(message\.document\)[\s\S]*enqueueInbound\(/, "a username sender's CV is queued for intake, not only recorded");
   assert.doesNotMatch(
     noPhoneBlock,
-    /startClassification|bufferWhatsAppMessage|takeRecentWhatsAppMessages|handleTextOnlyMessage|sendWhatsApp/,
-    "the username CV branch calls nothing that answers the sender",
+    /bufferWhatsAppMessage|takeRecentWhatsAppMessages|handleTextOnlyMessage|sendWhatsApp/,
+    "the username CV branch sends nothing itself; only the question flow answers, and only by the user id",
   );
+  assert.match(noPhoneBlock, /startClassification\(\{[\s\S]*?waId: message\.userId/, "a username sender's CV opens the questions keyed on the user id");
+  assert.match(noPhoneBlock, /handleClassifyText\(\{[\s\S]*?waId: message\.userId/, "a username sender's typed answer is read by the user id");
 
   // The worker acts on the follow-up decision, so the acknowledgement cannot reach a sender with no number.
   const worker = readFileSync(new URL("../src/lib/recruitment/inbound/intake-worker.ts", import.meta.url), "utf8");
