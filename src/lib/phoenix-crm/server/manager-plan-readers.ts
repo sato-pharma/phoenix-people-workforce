@@ -37,6 +37,8 @@ import {
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
+import { loadManagerOwnVisitDetails as readOwnVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
+import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -479,6 +481,31 @@ export async function loadManagerOwnVisitDays(input: {
     counts.set(key, current);
   }
   return [...counts.values()].sort((left, right) => left.date.localeCompare(right.date) || left.hrId.localeCompare(right.hrId));
+}
+
+/**
+ * 🔴 HIS OWN VISITS AS ROWS UNDER HIS OWN NAME (owner, 2026-10-20, multiple choice: "Show, keep out of reps — his
+ * own visits appear under his name in the Visit Report and the Field Activity day, never in a rep's totals. Still
+ * no GPS or photo required").
+ *
+ * The second carve-out from "his own single visits count in his own report only", and like the first it is read
+ * through this door alone. Each row is one single visit he logged alone — a vacant area's doctor included — with
+ * the customer, the place and the half filled in (`loadManagerOwnVisitDetails`). They are DISPLAY rows: the Visit
+ * report prints them under the manager's name (its dashboard figures leave them out), the Field Activity day lists
+ * them on his day and adds them to none of its counts, and neither ever puts one on a rep's row or in a rep's
+ * total. A row never carries a distance, a GPS verdict or a photo verdict — his own visit needs none of them.
+ *
+ * Who may read them is the CALLER's question, answered before it asks: the Visit report only for a manager its
+ * own picker offered the viewer, the Field Activity report only for the person its own access already admitted.
+ */
+export async function loadManagerOwnVisitRows(input: {
+  managerHrIds: ReadonlyArray<string>;
+  start: string;
+  end: string;
+  isTest?: boolean;
+}): Promise<ManagerDayVisit[]> {
+  if (input.managerHrIds.length === 0 || input.end < input.start) return [];
+  return readOwnVisitDetails({ end: input.end, isTest: input.isTest ?? false, managerHrIds: input.managerHrIds, start: input.start });
 }
 
 // His visits in full — who, where, which half, when, single or double (owner, 2026-10-20). The count above says

@@ -80,6 +80,22 @@ export type FieldForceSeatIndex = {
    * manager. Absent when the map was not read, and then no area may be treated as ownerless.
    */
   managedAreaKeys?: Set<string>;
+  /**
+   * `${normalizedLine}|${AREA}` -> the district manager who owns an area that has NO rep seat. Such an
+   * area's sales are shown under his name instead of "Not attributed to a rep" (owner, 2026-10-20,
+   * asked and answering "Show under his name"). Only a named manager on a real, occupied district seat
+   * is listed: a vacant district seat has no name to show, so its area stays in the residue.
+   */
+  managerOnlyAreas?: Map<string, FieldForceManagerArea>;
+};
+
+/** An area a district manager owns with no rep seat under it. */
+export type FieldForceManagerArea = {
+  managerName: string;
+  lineCode: string;
+  lineName: string;
+  areaCode: string;
+  areaName: string;
 };
 
 /** One current `au_v_line_area_map` row, narrowed to what the index reads. */
@@ -188,7 +204,58 @@ export function selectFieldForceSeats(
   }
 
   if (!lineAreas) return { byLineArea, seats };
-  return { byLineArea, seats, managedAreaKeys: selectManagedAreaKeys(rows, lineAreas) };
+  return {
+    byLineArea,
+    seats,
+    managedAreaKeys: selectManagedAreaKeys(rows, lineAreas),
+    managerOnlyAreas: selectManagerOnlyAreas(rows, lineAreas, nameOf, byLineArea),
+  };
+}
+
+/**
+ * Pure: every (line, area) a NAMED district manager owns where no rep seat sits — keyed exactly like
+ * `byLineArea`, so the grid can look it up the same way it looks up a rep.
+ */
+function selectManagerOnlyAreas(
+  rows: FieldForceSeatRow[],
+  lineAreas: FieldForceLineAreaRow[],
+  nameOf: (hrId: string | null) => string | null,
+  byLineArea: Map<string, FieldForceSeat>,
+): Map<string, FieldForceManagerArea> {
+  const managerSeats = new Map<string, FieldForceSeatRow>();
+  const areaNameByCode = new Map<string, string>();
+  for (const row of rows) {
+    const areaCode = upper(row.area_code);
+    if (areaCode && norm(row.area_name) && !areaNameByCode.has(areaCode)) areaNameByCode.set(areaCode, norm(row.area_name));
+    const tier = upper(row.seat_tier);
+    if (tier !== "DM" && tier !== "ACTING_DM") continue;
+    if (row.is_other_pseudo_dm === true || !norm(row.seat_id)) continue;
+    managerSeats.set(norm(row.seat_id), row);
+  }
+
+  const result = new Map<string, FieldForceManagerArea>();
+  for (const area of lineAreas) {
+    const seat = managerSeats.get(norm(area.dm_seat_id));
+    if (!seat || seat.is_vacant === true) continue;
+    const hrId = normalizeHrId(seat.occupant_hr_id) || null;
+    const managerName = hrId ? nameOf(hrId) : null;
+    const areaCode = upper(area.area_code);
+    if (!managerName || !areaCode) continue;
+    const lineKeys = [area.line_code];
+    if (fieldForceLineKey(seat.line_code) === fieldForceLineKey(area.line_code)) lineKeys.push(seat.line_name);
+    for (const line of lineKeys) {
+      const key = fieldForceKey(line, areaCode);
+      if (!key || byLineArea.has(key) || result.has(key)) continue;
+      result.set(key, {
+        managerName,
+        lineCode: norm(area.line_code),
+        lineName: norm(seat.line_name) || norm(area.line_code),
+        areaCode,
+        areaName: areaNameByCode.get(areaCode) ?? areaCode,
+      });
+    }
+  }
+  return result;
 }
 
 /**
@@ -283,7 +350,7 @@ export type FieldForceProduct = {
 export type FieldForceRep = {
   /** Stable row key: `${lineKey}|${AREA}`, or `unattributed:<line>` for the residue bucket. */
   key: string;
-  kind: "rep" | "vacant" | "unattributed";
+  kind: "rep" | "vacant" | "manager" | "unattributed";
   /** The rep's name, "Vacant", or the residue bucket's label. Never an HR id, never a seat id. */
   label: string;
   repName: string | null;
@@ -412,6 +479,35 @@ export function buildPortalWeeklyFieldForce(input: {
     // and it must still be reported under a named bucket. Dropping it would make the reps on screen
     // add to less than the KPI strip above them, which is the one discrepancy a reader cannot
     // explain and will not forgive.
+    // An area its district manager covers with no rep seat: his row, under his name (owner, 2026-10-20).
+    const managerArea = !seat && areaCode ? seatIndex.managerOnlyAreas?.get(fieldForceKey(row.line, areaCode)) : undefined;
+    if (managerArea) {
+      const key = `manager:${fieldForceLineKey(managerArea.lineCode)}|${managerArea.areaCode}`;
+      const rep = ensureRep(key, () => ({
+        key,
+        kind: "manager",
+        label: `${managerArea.managerName} — ${managerArea.areaName}, no rep seat`,
+        repName: null,
+        repHrId: null,
+        areaCode: managerArea.areaCode,
+        areaName: managerArea.areaName,
+        lineCode: managerArea.lineCode,
+        lineName: lineNameOf(row),
+        regionCode: null,
+        regionName: null,
+        managerName: managerArea.managerName,
+        value: 0,
+        valueByWeek: {},
+        gapWeekNumbers: [],
+        exactValue: 0,
+        allocatedValue: 0,
+        products: [],
+      }));
+      accumulate(rep, productsByKey.get(key)!, row, value, units, week);
+      if (spansDepotGap) addGapWeek(depotGapWeeksByKey, key, week);
+      continue;
+    }
+
     if (!seat) {
       unattributedValue += value;
       const line = lineNameOf(row);
@@ -475,7 +571,7 @@ export function buildPortalWeeklyFieldForce(input: {
 
   const reps = [...byKey.values()].sort((a, b) => {
     // Real reps first, then vacant seats, then the residue — the residue is never the headline.
-    const rank = (row: FieldForceRep) => (row.kind === "rep" ? 0 : row.kind === "vacant" ? 1 : 2);
+    const rank = (row: FieldForceRep) => (row.kind === "rep" ? 0 : row.kind === "vacant" || row.kind === "manager" ? 1 : 2);
     return rank(a) - rank(b) || b.value - a.value || a.label.localeCompare(b.label);
   });
 

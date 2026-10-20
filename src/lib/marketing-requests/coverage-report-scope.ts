@@ -10,6 +10,7 @@ import {
   reportsUpToViewer,
   sameEmployeeDepartment,
 } from "@/lib/marketing-requests/service";
+import { resolveViewerLineRouteNames } from "@/lib/marketing-requests/roi-report-scope";
 import type {
   CoverageFilterDimension,
   MarketingCoverageFilterKey,
@@ -28,13 +29,19 @@ import type {
 // Manager and Financial Advisor on their own, empty, subtree. Everyone else is
 // scoped via the SAME manager-chain walk ROI Tracking uses (reportsUpToViewer /
 // sameEmployeeDepartment, both exported from service.ts) so the two reports never
-// disagree on what "own subtree" means. The one remaining difference is the
-// Medical Rep's territory route, which only ROI Tracking runs (see emptyScope).
+// disagree on what "own subtree" means. The National Sales Manager's LINE route
+// (owner, 2026-10-20: "He sees every campaign on his line, whoever ran it") runs
+// here exactly as in ROI Tracking — the same `resolveViewerLineRouteNames` and the
+// same `lineRouteAdmitsRequest` — so a Product Manager's campaign on his line is in
+// both reports or in neither. The one remaining difference is the Medical Rep's
+// territory route, which only ROI Tracking runs (see emptyScope).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ResolveMarketingCoverageScopeOptions = {
   ownedProductCodes?: Set<string> | null;
   ownedLineNames?: Set<string> | null;
+  /** The NSM's `line_scope_override` — see ResolveMarketingRoiScopeOptions.lineScopeOverride. */
+  lineScopeOverride?: Iterable<string | null | undefined> | null;
 };
 
 /**
@@ -86,6 +93,9 @@ function emptyScope(access: AccessContext, overrides: Partial<MarketingRoiScope>
     // That is also why the 2026-09-30 cross-line leak never reached this tab of the same page.
     visibleAreaIds: new Set<number>(),
     visibleAreaLineNames: new Set<string>(),
+    // The National Sales Manager's line route DOES run here (owner, 2026-10-20) — filled in by
+    // resolveMarketingCoverageScope below; empty, and inert, for every other seat.
+    visibleLineRouteNames: new Set<string>(),
     canRevealRestricted: canViewRestrictedProducts(access.role),
     ...overrides,
   };
@@ -158,6 +168,7 @@ export function resolveMarketingCoverageScope(
     visibleRsmHrIds,
     visibleLineNames: visibleLineNames.size > 0 ? visibleLineNames : new Set<string>(),
     visibleProductCodes: null,
+    visibleLineRouteNames: resolveViewerLineRouteNames(access, employeeRows, viewerHrId, opts.lineScopeOverride),
     canRevealRestricted,
   });
 }

@@ -156,6 +156,8 @@ function dayChip(day: FieldActivityDay): string {
       return "Field record with no GPS";
     case "leave":
       return "Approved leave";
+    case "own-visits":
+      return "Own visits, made alone";
     case "office":
       return "Head office day";
     case "weekend":
@@ -334,6 +336,8 @@ export function buildFieldActivityDocument(input: {
             ? `Approved ${escapeHtml((day.leave?.type ?? "leave").toLowerCase())} leave${day.countedTotal > 0 ? " &mdash; and a visit recorded anyway" : ""}`
             : day.kind === "field-no-gps"
               ? "Field record with no GPS"
+              : day.kind === "own-visits"
+                ? `Own visits, made alone (${day.ownVisits.length}) &mdash; counted in no figure`
               : day.kind === "office"
                 ? "Head office &mdash; fingerprint attendance"
                 : day.kind === "weekend"
@@ -406,6 +410,19 @@ export function buildFieldActivityDocument(input: {
               )
               .join("")}</ul>`
           : "";
+      // Owner, 2026-10-20 ("Show, keep out of reps"): a manager's own single visits, listed on the manager's own day
+      // and counted in nothing — no figure on this document includes them, and none is asked for a position or a photo.
+      const own =
+        day.ownVisits.length > 0
+          ? `<h2 class="h2">Own visits, made alone &mdash; listed, counted in no figure</h2><ul class="list">${day.ownVisits
+              .map((item) => {
+                const detail = [item.speciality, item.grade ? `Grade ${item.grade}` : null, item.where, item.products.join(", ") || null, item.comment]
+                  .filter(Boolean)
+                  .join(" · ");
+                return `<li><strong>${clock12(item.loggedAt)}</strong> &middot; ${escapeHtml(item.half)} half &middot; ${item.planned ? "Planned" : "Not on the plan"}${item.inVacantTerritory ? " &middot; vacant area" : ""} &middot; ${bidi(item.customerName)}${detail ? `<br><span class="thin">${bidi(detail)}</span>` : ""}</li>`;
+              })
+              .join("")}</ul>`
+          : "";
       const notes = day.notes.length > 0 ? `<p class="warn">${day.notes.map((note) => escapeHtml(note)).join(" ")}</p>` : "";
       const solo =
         day.partnerSoloCalls > 0
@@ -414,8 +431,8 @@ export function buildFieldActivityDocument(input: {
 
       const stopsBlock = day.stops.length > 0 ? `<h2 class="h2">Every stop, in the order their phone recorded it</h2>${stopsTable(day, dense)}` : "";
       const body = dense
-        ? `<div class="cols cols--even"><div>${mapBlock}</div><div>${tripBlock(day)}${unlocated}</div></div>`
-        : `<div class="cols"><div>${stopsBlock}${unlocated}</div><div>${mapBlock}${tripBlock(day)}</div></div>`;
+        ? `<div class="cols cols--even"><div>${mapBlock}</div><div>${tripBlock(day)}${unlocated}${own}</div></div>`
+        : `<div class="cols"><div>${stopsBlock}${unlocated}${own}</div><div>${mapBlock}${tripBlock(day)}</div></div>`;
 
       const spill = dense
         ? `

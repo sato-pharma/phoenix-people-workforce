@@ -93,4 +93,18 @@ export function runSalesNotificationExclusionsTests() {
     1,
     "one filter on the shared seat list — a per-bucket filter is what forgets the next bucket",
   );
+
+  // ── The Regional Sales Manager is cc'd beside the National Sales Manager ─────────────────────
+  // Owner, 2026-10-20, asked who receives it: "Add him in cc".
+  assert.match(code(WEEKLY_SOURCE), /const RSM_SEAT_TIER = "RSM";/);
+  assert.match(
+    code(WEEKLY_SOURCE),
+    /\.\.\.collect\(rsmHrIds, `\$\{line\} Regional Sales Manager`, seen\)/,
+    "the line's Regional Sales Manager is in the weekly upload's cc",
+  );
+  assert.equal(
+    /const to = collect\(dmHrIds,/.test(code(WEEKLY_SOURCE)),
+    true,
+    "the To line stays the District Managers alone",
+  );
 }

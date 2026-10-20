@@ -3,7 +3,15 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import { assignablePhoenixRoles, buildPermissionLookup, permissionMatrix } from "../src/lib/auth/permissions.ts";
-import { sosPeriodDisplayLabel, type CeoCommandCenterData } from "../src/lib/ceo/command-center.ts";
+import {
+  ceoDvManagerRows,
+  managerOnLeaveCandidates,
+  managersOnLeaveToday,
+  sosPeriodDisplayLabel,
+  type CeoCommandCenterData,
+} from "../src/lib/ceo/command-center.ts";
+import type { DoubleVisitIdleManager, DoubleVisitManagerSummary } from "../src/lib/double-visit-analytics/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { getSections } from "../src/lib/navigation/active-path.ts";
 import {
@@ -742,4 +750,100 @@ export function runCeoCommandCenterTests() {
     "no period means no label, so the card falls back to its own 'no monthly sales loaded' copy",
   );
   assert.equal(sosPeriodDisplayLabel(null), null, "a missing SoS payload must not throw");
+
+  assertCeoManagerCoverage();
+}
+
+/**
+ * Owner, 2026-10-20: "when filter by manager u find no manager". The double-visit table listed only
+ * managers who did a double visit, and "Managers on leave today" only those same field managers —
+ * so the worst managers and every head-office manager could never appear.
+ */
+function assertCeoManagerCoverage() {
+  const active = {
+    managerHrId: "b-10",
+    managerName: "Saad Salama",
+    role: "District Sales Manager",
+    roleCode: "DSM",
+    lineName: "CNS",
+    distinctMrs: 3,
+    overFocusedMrCount: 1,
+    neglectedMrCount: 2,
+    teamMrCount: 5,
+    daysSinceLastDv: 4,
+    coveragePct: 60,
+  } as unknown as DoubleVisitManagerSummary;
+  const idle = (hrId: string, name: string, teamMrCount: number | null): DoubleVisitIdleManager => ({
+    areaName: null,
+    hrId,
+    lineName: "CNS",
+    name,
+    role: "District Sales Manager",
+    roleCode: "DSM",
+    teamMrCount,
+  });
+  const dvRows = ceoDvManagerRows([active], [idle("b-99", "Idle Boss", 4), idle("b-10", "Saad Salama", 5), idle("b-98", "No Team", 0)]);
+  assert.deepEqual(
+    dvRows.map((row) => row.managerName),
+    ["Saad Salama", "Idle Boss", "No Team"],
+    "a manager with zero double visits must appear in the CEO table, and a manager already listed must not appear twice",
+  );
+  const idleRow = dvRows.find((row) => row.managerHrId === "b-99");
+  assert.equal(idleRow?.distinctMrs, 0, "an idle manager visited nobody");
+  assert.equal(idleRow?.neglectedMrCount, 4, "an idle manager's whole team is neglected");
+  assert.equal(idleRow?.neglectIndex, 1, "an idle manager with a team reads 100% neglected, so the default sort puts him first");
+  assert.equal(idleRow?.coveragePct, 0, "an idle manager with a team covered 0%");
+  const noTeamRow = dvRows.find((row) => row.managerHrId === "b-98");
+  assert.equal(noTeamRow?.neglectIndex, null, "with no team there is no neglect ratio to invent");
+  assert.equal(dvRows[0].neglectIndex, 0.4, "an active manager's row is unchanged");
+
+  const directory = [
+    { hrId: "AA", managerHrId: null, displayName: "Anwar Gaweesh", fullName: "Anwar Gaweesh", jobTitle: "Chief Executive Officer" },
+    { hrId: "B-20", managerHrId: "AA", displayName: "Head Office Lead", fullName: "Head Office Lead", jobTitle: "Finance Manager" },
+    { hrId: "B-21", managerHrId: "B-20", displayName: "Accountant", fullName: "Accountant", jobTitle: "Accountant" },
+    { hrId: "D-1", managerHrId: "AA", displayName: "Field Manager", fullName: "Field Manager", jobTitle: "District Sales Manager" },
+    { hrId: "M-1", managerHrId: "d1", displayName: "Rep", fullName: "Rep", jobTitle: "Medical Representative" },
+    { hrId: "S-1", managerHrId: "S-1", displayName: "Self Report", fullName: "Self Report", jobTitle: null },
+  ];
+  const candidates = managerOnLeaveCandidates(directory);
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.hrId),
+    ["AA", "D-1", "B-20"],
+    "every active person someone reports to is a candidate — head office and field force alike — and nobody else",
+  );
+  assert.equal(
+    candidates.find((candidate) => candidate.hrId === "B-20")?.role,
+    "Finance Manager",
+    "a candidate is labelled with his job title",
+  );
+  const onLeave = managersOnLeaveToday(
+    candidates,
+    new Map([
+      ["B20", new Set(["2026-10-20"])],
+      ["D1", new Set(["2026-10-19"])],
+    ]),
+    "2026-10-20",
+  );
+  assert.deepEqual(
+    onLeave.map((candidate) => candidate.name),
+    ["Head Office Lead"],
+    "a head-office manager on leave today must be counted; leave on another day must not",
+  );
+
+  const source = stripComments(readFileSync("src/lib/ceo/command-center.ts", "utf8"));
+  assert.match(
+    source,
+    /managerRows: ceoDvManagerRows\(dv\.managerSummaries, dv\.executiveSummary\.idleManagers\)/,
+    "the CEO double-visit table must be built with the idle managers",
+  );
+  assert.match(
+    source,
+    /getEmployeeDirectoryRows\(\{ includeInactive: false \}\)/,
+    "the managers-on-leave candidates must come from the active employee directory",
+  );
+  assert.doesNotMatch(
+    source,
+    /dv\.managerSummaries\.map\(\(s\) => s\.managerHrId\)/,
+    "the managers-on-leave lookup must never again be limited to the double visitors",
+  );
 }

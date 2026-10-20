@@ -82,6 +82,8 @@ export type FieldWorkforceEmployeeReference = {
   lineName?: string | null;
   managerHrId?: string | null;
   managerName?: string | null;
+  /** Every manager above `managerName`, nearest first (live path only). */
+  managersAbove?: string[] | null;
   regionName?: string | null;
   roleName?: string | null;
   teamName?: string | null;
@@ -285,6 +287,12 @@ export type FieldWorkforceEmployeeSummary = {
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
+  /**
+   * Every manager above `managerName` on the org tree, nearest first — so the Manager filter can
+   * offer a Regional or National Sales Manager who has no row of his own on this report (owner,
+   * 2026-10-20: "when you filter by manager you find no manager"). Live path only.
+   */
+  managersAbove?: string[] | null;
   matchedEmployeeName: string | null;
   matchedHrId: string | null;
   matchStatus: "matched" | "unmatched";

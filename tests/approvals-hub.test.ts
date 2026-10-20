@@ -265,10 +265,16 @@ export function runApprovalsHubTests() {
   // A Super Admin / system-scope actor (e.g. a shared HR login with no personal HR_ID) must always
   // resolve to the true company-wide bucket — nothing in the visibility chain may key off hrId.
   const vacationSvc = readFileSync("src/lib/vacation/service.ts", "utf8");
+  const vacationScope = readFileSync("src/lib/vacation/visibility-scope.ts", "utf8");
+  assert.match(
+    vacationScope,
+    /function isAllVacationVisibilityAccess\(access: Pick<AccessContext, "role" \| "scope">\) \{\s*return access\.scope === "system" \|\| access\.role === "Super Admin";/,
+    "vacation visibility is role/scope-gated, never hrId-gated — a blank hrId Super Admin must still see company-wide",
+  );
   assert.match(
     vacationSvc,
-    /function isAllVacationVisibility\(access: AccessContext\) \{\s*return access\.scope === "system" \|\| access\.role === "Super Admin";/,
-    "vacation visibility is role/scope-gated, never hrId-gated — a blank hrId Super Admin must still see company-wide",
+    /function isAllVacationVisibility\(access: AccessContext\) \{\s*return isAllVacationVisibilityAccess\(access\);/,
+    "the service's company-wide check is the same role/scope rule, delegated — never an hrId test",
   );
   assert.match(
     vacationSvc,

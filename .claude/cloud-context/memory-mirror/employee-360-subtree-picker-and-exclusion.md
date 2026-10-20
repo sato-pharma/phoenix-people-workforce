@@ -1,12 +1,14 @@
 ---
 name: employee-360-subtree-picker-and-exclusion
-description: "Employee 360 rules — every role sees self + full reporting subtree via a picker; canViewEmployee360Subject is THE single gate; PD-0001 is excluded from E360 for everyone including himself (PR #1477)"
+description: "Employee 360 rules — every role sees self + full reporting subtree via a picker; canViewEmployee360Subject is THE single gate; the PD-0001 exclusion (PR #1477, 2026-07-30) was REVERSED by the owner on 2026-10-20 — the Regional Sales Manager is back with a tailored report"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 0c89c9a5-f1c8-425b-89b2-be9cac82f4a2
   modified: 2026-07-30T02:28:13.103Z
 ---
+
+🔴 **REVERSED 2026-10-20 (owner: "bring him back but do not show empty data, tailor the report on him")** — `EMPLOYEE_360_EXCLUDED_HR_IDS` is now empty and the Regional Sales Manager is an Employee 360 subject again; his report draws only the sections that hold data (`planEmployee360Sections`). The exclusion described below is history.
 
 Owner rules for Employee 360, implemented 2026-07-30 in PR #1477 (branch
 `codex/rm-region-command-center`, worktree `_wt-rm-region`).

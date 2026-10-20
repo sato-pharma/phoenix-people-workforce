@@ -8,6 +8,7 @@ import {
   type HeadOfficeVacancyRow,
 } from "../src/lib/reports/organogram-head-office.ts";
 import { scopeAuOrganogramRows } from "../src/lib/reports/organogram-au-source.ts";
+import { filterOrganogramRows } from "../src/lib/reports/organogram-view-model.ts";
 import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
 
 /**
@@ -147,17 +148,74 @@ export function runOrganogramHeadOfficeMarketingAndOpenSeatsTests() {
 
   // ── 5. A marketer is stamped Head Office, so line mode never orphans her ─────────────
   // Tempting to stamp Nahed "Anti Infective" — it is her real line. But her manager is a Head
-  // Office row, and line mode strips those: she would survive onto an Anti Infective chart
-  // hanging off a parent that had been removed. The branch appears or disappears as one piece.
+  // Office row: stamped with her line, she would survive onto an Anti Infective chart hanging off
+  // a parent that had been removed. So `lineId`/`lineName` stay Head Office for the gates…
   const nahed = byHrId(marketing, "A-10")!;
   assert.equal(nahed.lineId, HEAD_OFFICE_LINE_ID, "stamped Head Office, not her product line");
   assert.equal(nahed.lineName, HEAD_OFFICE_LINE_NAME, "both fields — isHeadOfficeRow keys off either");
-  const lineScoped = scopeAuOrganogramRows(marketing, { mode: "line", lineName: "Anti Infective" });
+  assert.equal(nahed.ownLineName ?? null, null, "with no line resolver passed, no row claims an own line");
   assert.equal(
-    lineScoped.length,
+    scopeAuOrganogramRows(marketing, { mode: "line", lineName: "Anti Infective" }).length,
     0,
-    "the whole marketing branch leaves a line-scoped chart together; one row surviving without its manager is an orphan",
+    "without an own line the marketing branch leaves a line chart together, never one row without its manager",
   );
+
+  // ── 5b. …and a line chart still finds its own marketers (owner, 2026-10-20) ───────────
+  // "every single role that is applicable to appear in a module — find it and show it": the Pedia
+  // Product and Group Product Managers were on no Pedia chart, their own included. Each marketer
+  // carries `ownLineName`; line mode keeps her AND the Head Office managers above her, so she is
+  // still drawn under a manager who is on the chart. Revert scopeAuOrganogramRows to lineName
+  // alone and the Pedia assert below fires.
+  const LINE_NAMES = new Map<number, string>([
+    [1, "Anti infective"],
+    [2, "Pedia"],
+    [3, "CNS"],
+  ]);
+  const withOwnLines = buildHeadOfficeOrganogramRows(MARKETING, {
+    ceoNodeKey: "AA",
+    occupiedHrIds: new Set<string>(),
+    lineNameFor: (lineId) => LINE_NAMES.get(lineId) ?? null,
+  });
+  assert.equal(byHrId(withOwnLines, "A-8")?.ownLineName, "Pedia", "the Group Product Manager carries her own line");
+  assert.equal(byHrId(withOwnLines, "A-8")?.lineName, HEAD_OFFICE_LINE_NAME, "…while still stamped Head Office");
+  assert.equal(byHrId(withOwnLines, "A-9")?.ownLineName ?? null, null, "Head Office proper (line 4) carries no own line");
+  const ceoRow = { ...byHrId(withOwnLines, "A-9")!, hrId: "AA", lineId: null, lineName: null, managerHrId: null, ownLineName: null };
+  const chart = [ceoRow, ...withOwnLines];
+  const ids = (rows: OrganogramReportRow[]) => rows.map((row) => row.hrId).sort();
+  const pediaChart = scopeAuOrganogramRows(chart, { mode: "line", lineNames: ["Pedia"] });
+  assert.deepEqual(
+    ids(pediaChart),
+    ["A-8", "A-9", "AA", "B-155"],
+    "the Pedia chart holds its Group Product Manager and Product Manager, the Marketing Manager above them, and the CEO — and nothing else of Head Office",
+  );
+  for (const row of pediaChart) {
+    if (!row.managerHrId) continue;
+    assert.ok(
+      pediaChart.some((candidate) => candidate.hrId === row.managerHrId),
+      `${row.hrId} must hang off a manager who is on the chart — the placement rule the Head Office stamp exists for`,
+    );
+  }
+  assert.deepEqual(
+    ids(scopeAuOrganogramRows(chart, { mode: "line", lineName: "Anti Infective" })),
+    ["A-10", "A-9", "AA"],
+    "the Anti Infective chart holds its own Product Manager and her manager, never the Pedia marketers",
+  );
+  assert.equal(
+    pediaChart.some((row) => row.hrId === "A-7"),
+    false,
+    "the Training Manager (line 4) is no marketer of any line and never rides onto a line chart",
+  );
+  // The portal and admin charts filter again by the picked line (organogram-view-model.ts) — the
+  // marketers must survive that filter too, with their Head Office manager.
+  const viewModelPedia = filterOrganogramRows(chart, "Pedia", "");
+  for (const hrId of ["A-8", "B-155", "A-9"]) {
+    assert.ok(
+      viewModelPedia.some((row) => row.hrId === hrId),
+      `${hrId} must survive the chart's own Pedia filter`,
+    );
+  }
+  assert.equal(viewModelPedia.some((row) => row.hrId === "A-10"), false, "…and the Anti Infective PM does not");
+  assert.equal(viewModelPedia.some((row) => row.hrId === "A-7"), false, "…nor the Training Manager");
 
   // ── 6. HEADLINE B: an open Head Office seat is drawn ─────────────────────────────────
   // Stop emitting vacancies and this fires. HR is the live case: both seats vacated

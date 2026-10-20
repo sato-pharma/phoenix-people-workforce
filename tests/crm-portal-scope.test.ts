@@ -7,7 +7,8 @@ import {
   intersectHrIdAllowLists,
   intersectHrIdKeySets,
 } from "../src/lib/crm/viewer-scope.ts";
-import { PORTAL_CRM_ROLES, isPortalCrmRole, toPortalCrmScopeView } from "../src/lib/crm/portal-crm-scope.ts";
+import { LINE_SCOPED_PORTAL_CRM_ROLES, PORTAL_CRM_ROLES, isPortalCrmRole, toPortalCrmScopeView } from "../src/lib/crm/portal-crm-scope.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Guards for the scoped portal CRM (/employee-portals/crm). Two kinds:
@@ -24,13 +25,25 @@ import { PORTAL_CRM_ROLES, isPortalCrmRole, toPortalCrmScopeView } from "../src/
  */
 export function runCrmPortalScopeTests() {
   // ── (A) role set ────────────────────────────────────────────────────────────
-  assert.equal(PORTAL_CRM_ROLES.length, 4, "PORTAL_CRM_ROLES must be exactly the four field roles");
-  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"]) {
+  // The four field roles, and since 2026-10-20 the Product and Group Product Manager on their own line
+  // (owner: every role a module applies to must find its people).
+  assert.equal(PORTAL_CRM_ROLES.length, 6, "PORTAL_CRM_ROLES must be exactly the four field roles plus the two line-scoped product seats");
+  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"]) {
     assert.ok(isPortalCrmRole(role), `${role} must be a portal CRM role`);
   }
-  for (const role of ["Manager", "Employee", "CEO", "Super Admin", "SFE Manager", "Training Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "HR Advisory", "HR Operations"]) {
+  for (const role of ["Manager", "Employee", "CEO", "Super Admin", "SFE Manager", "Training Manager", "Marketing Manager", "HR Advisory", "HR Operations"]) {
     assert.ok(!isPortalCrmRole(role), `${role} must NOT be a portal CRM role`);
   }
+  assert.deepEqual([...LINE_SCOPED_PORTAL_CRM_ROLES], ["Product Manager", "Group Product Manager"], "only the two product seats resolve by line");
+  // Their line scope is the doctor-coverage resolver (downward only, line overrides honoured), and a
+  // non-list answer from it fails CLOSED, exactly like the {all:true} DV answer below.
+  const portalScopeCode = stripComments(readFileSync("src/lib/crm/portal-crm-scope.ts", "utf8"));
+  assert.match(
+    portalScopeCode,
+    /if \(lineScopedPortalCrmRoleSet\.has\(access\.role\)\) \{\s*const lineScope = await getDoctorCoverageScope\(access\);\s*if \(lineScope\.kind !== "agents"\) return crmScopeNothing\(\);/,
+    "a product seat must resolve through getDoctorCoverageScope and fail closed on anything but an agent list",
+  );
+  assert.equal(toPortalCrmScopeView({ kind: "hr-ids", hrIds: ["A", "B"], keys: new Set(["a", "b"]), lineNames: [] }, "Product Manager").scopeSummary, "Your line · 2 team member(s)", "a product seat's chip names his line");
   // The Head-Office "Manager" rung is the specific regression risk (isDistrictManager matches it).
   assert.ok(!isPortalCrmRole("Manager"), "the Head-Office Manager rung must be excluded (no field reps → empty grid)");
 

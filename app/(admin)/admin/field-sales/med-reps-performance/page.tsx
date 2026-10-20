@@ -267,7 +267,8 @@ export default async function CompanyMedRepsPerformancePage({
                 {groups.map((group) => (
                   <details className="group border border-slate-100" key={group.managerHrId}>
                     <summary className="cursor-pointer bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600 hover:text-orange-700">
-                      {group.managerName} district — {group.members.length} reps ·{" "}
+                      {/* "Vacant — Alex-BHR" already names the district (owner, 2026-10-20). */}
+                      {group.isVacantSeat ? group.managerName : `${group.managerName} district`} — {group.members.length} reps ·{" "}
                       <span className={achievementColor(group.achievementPercent)}>
                         {group.achievementPercent.toFixed(1)}%
                       </span>

@@ -14,10 +14,10 @@ import {
 } from "@/lib/coaching/analytics";
 import { buildCoachingAnalyticsFilterOptions } from "@/lib/coaching/analytics-options";
 import {
-  canAccessCoachingEmployee,
   getCoachingQuarterlySummary,
   getCoachingReports,
   getCoachingScoreAnalyticsForReports,
+  scopeCoachingDirectoryForAccess,
 } from "@/lib/coaching/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
@@ -57,8 +57,9 @@ export default async function PortalCoachingAnalyticsPage() {
   // PM/GPM are line-scoped: getCoachingReports already filters the per-rep reports to the viewer's
   // line, but the full directory would otherwise leak every line into the Training-Manager coverage
   // comparison and the line/area filter options. Scope the directory with the SAME canonical coaching
-  // access rule so the whole page stays within the viewer's line.
-  const scopedEmployees = employees.filter((employee) => canAccessCoachingEmployee(access, employee, employees));
+  // access rule so the whole page stays within the viewer's line — the one helper the admin page and
+  // the analytics API share (owner, 2026-10-20).
+  const scopedEmployees = scopeCoachingDirectoryForAccess(access, employees);
   const payload: CoachingAnalyticsPayload = {
     analytics: buildCoachingReportAnalytics(reports),
     ...scoreAnalytics,

@@ -5,7 +5,9 @@
 // TO  — every currently active District Manager (including an acting DM) seated on that line, from
 //       the live organogram (au_v_org_tree). A vacant seat or an inactive employee is skipped
 //       silently, never sent to and never rendered as a blank row.
-// CC  — that line's own National Sales Manager, resolved the same way.
+// CC  — that line's own National Sales Manager and, since 2026-10-20, its Regional Sales Manager,
+//       resolved the same way (owner, 2026-10-20, asked who receives it and answering "Add him in
+//       cc": the Regional Sales Manager was the one field manager the upload told nothing).
 //
 // Nobody's address is baked in here. Everything resolves live against the organogram and the HR
 // record, so a seat change or a leaver updates the audience with no code change. The one exception
@@ -41,6 +43,7 @@ export type WeeklyUploadLineRecipients = {
 /** Seat tiers that count as "District Manager" for this send — an acting DM is a DM here. */
 const DM_SEAT_TIERS = new Set(["DM", "ACTING_DM"]);
 const NSM_SEAT_TIER = "NSM";
+const RSM_SEAT_TIER = "RSM";
 
 type EmployeeRow = { hr_id: string; full_name: string; work_email: string | null; employment_status: string | null };
 
@@ -99,8 +102,9 @@ export async function resolveWeeklyUploadLineRecipients(officialLine: string): P
 
     const dmHrIds = occupantsOfTier((tier) => DM_SEAT_TIERS.has(tier));
     const nsmHrIds = occupantsOfTier((tier) => tier === NSM_SEAT_TIER);
+    const rsmHrIds = occupantsOfTier((tier) => tier === RSM_SEAT_TIER);
 
-    const allHrIds = [...new Set([...dmHrIds, ...nsmHrIds])];
+    const allHrIds = [...new Set([...dmHrIds, ...nsmHrIds, ...rsmHrIds])];
     if (allHrIds.length === 0) {
       return { to: [], cc: [], warnings: [`No occupied District Manager or NSM seat on ${line} — check the organogram.`] };
     }
@@ -137,7 +141,10 @@ export async function resolveWeeklyUploadLineRecipients(officialLine: string): P
 
     const seen = new Set<string>();
     const to = collect(dmHrIds, `${line} District Manager`, seen);
-    const cc = collect(nsmHrIds, `${line} National Sales Manager`, seen);
+    const cc = [
+      ...collect(nsmHrIds, `${line} National Sales Manager`, seen),
+      ...collect(rsmHrIds, `${line} Regional Sales Manager`, seen),
+    ];
 
     if (to.length === 0 && cc.length === 0) {
       warnings.push(`No active District Manager or NSM resolved for ${line} — nothing sent.`);

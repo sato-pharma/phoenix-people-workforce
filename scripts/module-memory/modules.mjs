@@ -323,6 +323,26 @@ export const MODULES = [
     keywords: ["visit report", "integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
     tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
   },
+  // 🔴 SPLIT 2026-10-20, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `phoenix-crm-boards`'s
+  // injected pointer measured 4,098 bytes against the 4,000-byte margin the moment the Visit Report's
+  // manager choice landed (owner, 2026-10-20: "when you filter by manager you find no manager"). The
+  // Visit Report generator is the clean cut: its audience, its fields by reader tier, its manager and
+  // district kinds and its own-visit rows are read while editing the generator, never while editing a
+  // silent detector. `phoenix-crm-boards` KEEPS EVERY GLOB IT HAD, so a visit-report file loads the PAIR.
+  {
+    id: "phoenix-crm-visit-report",
+    title: "Phoenix CRM — the Visit Report generator",
+    scope: "The Visit Report: who may run it and for whom (a rep, a district or a manager), the fields each reader tier may see, the participants filter, and a manager's own visits listed but counted nowhere.",
+    globs: [
+      "src/lib/phoenix-crm/{visit-report-*,server/visit-report*}.ts",
+      "src/components/phoenix-crm/visit-report/**",
+      "app/**/phoenix-crm/visit-report/**",
+      "app/employee-portals/visit-report/**",
+      "tests/phoenix-crm-visit-report*",
+    ],
+    keywords: ["visit report", "who visited", "visit report generator", "manager's own visit"],
+    tables: [],
+  },
   // 🔴 SPLIT AGAIN, 2026-10-13, ONE BYTE OVER: `phoenix-crm-boards` reached 33 rules and its injected
   // pointer measured 4,001 bytes against the 4,000-byte margin, the moment a browser-blocked
   // permission added its two rules. The refusals a capture leaves behind are one family — the table,
@@ -509,6 +529,25 @@ export const MODULES = [
     ],
     keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type", "doctor list changes", "drop a doctor", "contact list"],
     tables: ["crm_", "ireports", "visit"],
+  },
+  // 🔴 SPLIT 2026-10-20, FOR THE REASON `rep-ranks` BELOW RECORDS: `crm`'s injected pointer measured
+  // 4,029 bytes against the 4,000-byte margin the moment the KPIs board's manager rows landed (owner,
+  // 2026-10-20: "every dm kpis is calculated based on his reps average and nsm based on dsms av"). The
+  // KPIs board is the clean cut: its summary and three reports, their filters and the manager rows are
+  // read while editing the board, never while editing an iReports360 sync or a doctor list. `crm` KEEPS
+  // EVERY GLOB IT HAD, so a KPIs file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "crm-kpis",
+    title: "KPIs — the board, its three reports and the manager rows",
+    scope: "The KPIs board: the Summary and the Frequency, Coverage and Call Rate reports, their filters and links, and the manager rows built by averaging the rows beneath each manager.",
+    globs: [
+      "src/lib/crm/kpis*",
+      "src/components/crm/kpis*",
+      "app/**/kpis/**",
+      "tests/*kpi*",
+    ],
+    keywords: ["kpis board", "kpi reports", "manager rows", "reports to"],
+    tables: [],
   },
   // 🔴 SPLIT 2026-10-12, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `crm` reached 34 rules
   // and its injected pointer measured 4,121 bytes against the 4,000-byte margin

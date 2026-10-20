@@ -8,6 +8,7 @@ import {
   resolveEmployeePortalNavVisibility,
   shouldShowEmployeePortalMarketingQuickAction,
 } from "../src/lib/employee-portal/navigation.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function collectSourceFiles(root: string): string[] {
   return readdirSync(root)
@@ -293,8 +294,60 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(
     regionalManager.showTeamPerformanceTab,
     false,
-    "RM must NOT gain Team Performance — getDsmTeamPerformance still returns null for RM, so the tab would dead-end",
+    "RM must NOT gain Team Performance — it is the single-district view; his several districts are MRs Performance, and the page sends him there",
   );
+
+  // ── The Regional Manager's roll-up pages (owner, 2026-10-20) ────────────────────
+  // His landing page listed his districts and his top reps, but he had no MRs Performance or DSMs
+  // Performance page, and Team Performance told him it was "only available for District Sales
+  // Managers". Both tabs are his now, and the tab, the page gate and the data gate must agree — a
+  // tab whose page bounces him is the "visible row he cannot open" bug.
+  {
+    assert.equal(regionalManager.showMedRepsPerformanceTab, true, "RM must see MRs Performance — his own region's reps");
+    assert.equal(regionalManager.showDsmsPerformanceTab, true, "RM must see DSMs Performance — his own region's district managers");
+    const dsmNav = resolveEmployeePortalNavVisibility("District Manager");
+    assert.equal(dsmNav.showMedRepsPerformanceTab, false, "a District Manager keeps Team Performance, not the roll-up pages");
+    assert.equal(dsmNav.showDsmsPerformanceTab, false, "a District Manager is not offered DSMs Performance");
+
+    for (const page of ["app/employee-portals/med-reps-performance/page.tsx", "app/employee-portals/dsms-performance/page.tsx"]) {
+      const source = stripComments(readFileSync(page, "utf8"));
+      assert.match(
+        source,
+        /const PERFORMANCE_ROLLUP_ROLES = new Set\(\["National Sales Manager", "Regional Manager"\]\)/,
+        `${page} must admit exactly the two roles its tab is offered to`,
+      );
+      assert.match(source, /if \(!PERFORMANCE_ROLLUP_ROLES\.has\(access\.role\)\)/, `${page} must gate on that set`);
+      assert.doesNotMatch(source, /isNationalSalesManager\(access\.role\)/, `${page} must not keep the NSM-only gate`);
+    }
+
+    const serviceSource = stripComments(readFileSync("src/lib/employee-portal/service.ts", "utf8"));
+    const bodyOf = (name: string) => {
+      const start = serviceSource.indexOf(`export async function ${name}(`);
+      assert.ok(start > -1, `${name} must exist`);
+      return serviceSource.slice(start, serviceSource.indexOf("\n}\n", start));
+    };
+    assert.match(bodyOf("getMedRepsPerformance"), /currentRole !== "Regional Manager"/, "MRs Performance's data must admit the RM");
+    assert.match(bodyOf("getNsmDsmPerformance"), /currentRole !== "Regional Manager"/, "DSMs Performance's data must admit the RM");
+    // getDsmTeamPerformance also fills the expense forms' medical-trip rep list; the RM's pages
+    // must not reach him through it, or his expense form changes as a side effect.
+    assert.doesNotMatch(
+      bodyOf("getDsmTeamPerformance"),
+      /Regional Manager/,
+      "the expense forms' team read stays District Manager / National Sales Manager only",
+    );
+    assert.match(
+      stripComments(readFileSync("app/employee-portals/med-reps-performance/page.tsx", "utf8")),
+      /await getMedRepsPerformance\(access,/,
+      "MRs Performance reads through the roll-up function that admits the RM",
+    );
+
+    const teamPerformanceSource = stripComments(readFileSync("app/employee-portals/team-performance/page.tsx", "utf8"));
+    assert.match(
+      teamPerformanceSource,
+      /if \(access\.role === "Regional Manager"\) \{\s*redirect\("\/employee-portals\/med-reps-performance"\);/,
+      "Team Performance must send an RM to his roll-up page rather than tell him it is for DSMs only",
+    );
+  }
 
   // Owner decision 2026-07-30: DSM and RM are out of the Excuse module entirely — no submit tab
   // and no approvals tab. Excuse is a Head-Office / fingerprint-attendance module and is
@@ -379,15 +432,16 @@ export function runEmployeePortalNavigationTests() {
   }
 
   // Scoped CRM Master (/employee-portals/crm) — new surface. Role set must equal PORTAL_CRM_ROLES in
-  // src/lib/crm/portal-crm-scope.ts (Medical Rep / DSM / RM / NSM), the page's own gate.
-  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"]) {
+  // src/lib/crm/portal-crm-scope.ts (Medical Rep / DSM / RM / NSM, and since 2026-10-20 the Product
+  // and Group Product Manager on their own line), the page's own gate.
+  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"]) {
     assert.equal(
       resolveEmployeePortalNavVisibility(role).showCrmMasterTab,
       true,
       `${role} should see the scoped CRM Master link`,
     );
   }
-  for (const role of ["Manager", "Employee", "Product Manager", "Marketing Manager", "the retired HR seat"]) {
+  for (const role of ["Manager", "Employee", "Marketing Manager", "the retired HR seat"]) {
     assert.equal(
       resolveEmployeePortalNavVisibility(role).showCrmMasterTab,
       false,
@@ -605,7 +659,7 @@ export function runEmployeePortalNavigationTests() {
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
   assert.equal(marketingManagerDefault.showDirectOrdersTab, false, "Marketing Manager is NOT a Direct Orders requester role");
-  // MM mirrors GPM on every nav surface EXCEPT five intentional differences:
+  // MM mirrors GPM on every nav surface EXCEPT these intentional differences:
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
   // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
@@ -620,6 +674,9 @@ export function runEmployeePortalNavigationTests() {
   //   the oversight trio only (Marketing Manager / SFE Manager / Super Admin), owner instruction
   //   2026-08-03. A GPM keeps its bounded subtree through the normal workspace, so this is a
   //   deliberate divergence — see canUseEmployeePortalMarketingAllRequests.
+  // - Phoenix CRM is VISIBLE to GPM but not MM (owner, 2026-10-20): a GPM reads his own product
+  //   line through the doctor-coverage line scope; the Marketing Manager holds no one line, the
+  //   portal grid would resolve her to nothing, and she reads the CRM in the admin shell instead.
   //
   // Monthly Closing was a sixth difference until 2026-08-12, when the owner gave the Marketing
   // Manager her own Monthly Closing tab. It is deliberately NOT overridden below any more: both
@@ -634,11 +691,14 @@ export function runEmployeePortalNavigationTests() {
       showFieldActivityTab: groupProductManagerDefault.showFieldActivityTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
       showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
+      showCrmMasterTab: groupProductManagerDefault.showCrmMasterTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report and Field Activity tabs, Direct Orders submit/report, and the company-wide All Marketing Requests register)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report and Field Activity tabs, Direct Orders submit/report, the company-wide All Marketing Requests register, and the line-scoped Phoenix CRM grid)",
   );
   assert.equal(marketingManagerDefault.showMarketingAllRequestsTab, true, "Marketing Manager sees the company-wide request register");
+  assert.equal(groupProductManagerDefault.showCrmMasterTab, true, "Group Product Manager reads his own line in the portal CRM grid");
+  assert.equal(marketingManagerDefault.showCrmMasterTab, false, "Marketing Manager holds no one line, so the line-scoped portal CRM grid is not offered to her");
   assert.equal(groupProductManagerDefault.showMarketingAllRequestsTab, false, "Group Product Manager stays scoped to its own subtree — no company-wide register");
   assert.equal(groupProductManagerDefault.showDoubleVisitReportTab, true, "Group Product Manager sees the Double Visit Report tab (in DV_FOCUS_ROLES)");
   assert.equal(marketingManagerDefault.showDoubleVisitReportTab, false, "Marketing Manager does NOT get the Double Visit Report tab (not in DV_FOCUS_ROLES — its page would redirect)");

@@ -6,7 +6,7 @@ import { PerformanceReconciliationNote } from "@/components/employee-portal/perf
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getNsmDsmPerformance, normalizeTeamComparisonPeriods } from "@/lib/employee-portal/service";
@@ -62,9 +62,16 @@ function achievementColor(pct: number): string {
 const statBorders: Record<string, string> = {
   "Line Target": "border-l-orange-400",
   "Line Sales": "border-l-emerald-400",
+  "Region Target": "border-l-orange-400",
+  "Region Sales": "border-l-emerald-400",
   Achievement: "border-l-amber-400",
   "Eligible DSMs": "border-l-sky-400",
 };
+
+// The National Sales Manager reads his line here; the Regional Manager, since 2026-10-20 (owner),
+// reads the district managers of his own region — the same builder, bounded to his seat's areas.
+// The nav flag (showDsmsPerformanceTab) offers the page to exactly these two roles.
+const PERFORMANCE_ROLLUP_ROLES = new Set(["National Sales Manager", "Regional Manager"]);
 
 // Print stylesheet + dir="auto" + page-level error boundary are now
 // provided automatically by EmployeePortalPageShell.
@@ -82,11 +89,15 @@ export default async function DsmsPerformancePage({
     redirect("/overview");
   }
 
-  if (!isNationalSalesManager(access.role)) {
+  if (!PERFORMANCE_ROLLUP_ROLES.has(access.role)) {
     redirect("/employee-portals");
   }
 
   await assertPermission(access, "sales", "read");
+
+  const isRegionView = access.role === "Regional Manager";
+  const scopeWord = isRegionView ? "Region" : "Line";
+  const inScope = isRegionView ? "in your region" : "in line";
 
   const resolvedParams = await searchParams;
   const requestedPeriod = resolvedParams.period?.trim() ?? null;
@@ -95,14 +106,22 @@ export default async function DsmsPerformancePage({
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Unable to load district managers performance data for your line."
+        message={`Unable to load district managers performance data for your ${isRegionView ? "region" : "line"}.`}
         title="DSMs Performance Data Unavailable"
       />
     );
   }
 
-  const { dsms, periods, lineAchievementPercent, dsmCount, lineTotalSales, lineTotalTarget, unattributedSales } =
-    data;
+  const {
+    dsms,
+    regionalManagers,
+    periods,
+    lineAchievementPercent,
+    dsmCount,
+    lineTotalSales,
+    lineTotalTarget,
+    unattributedSales,
+  } = data;
 
   // Supports a single period, several comma-separated periods, or none (all periods).
   const selectedPeriods = normalizeTeamComparisonPeriods(requestedPeriod).filter((period) =>
@@ -122,8 +141,8 @@ export default async function DsmsPerformancePage({
   const totalDsms = dsms.length || 1;
 
   const stats = [
-    { label: "Line Target", value: egp(lineTotalTarget) },
-    { label: "Line Sales", value: egp(lineTotalSales) },
+    { label: `${scopeWord} Target`, value: egp(lineTotalTarget) },
+    { label: `${scopeWord} Sales`, value: egp(lineTotalSales) },
     { label: "Achievement", value: `${lineAchievementPercent.toFixed(1)}%` },
     { label: "Eligible DSMs", value: `${eligibleCount} / ${dsmCount}` },
   ];
@@ -132,7 +151,7 @@ export default async function DsmsPerformancePage({
     <EmployeePortalPageShell
       badge="Team Performance"
       description={`${periodsSummaryLabel(selectedPeriods)} across ${
-        dsmCount > 0 ? `${dsmCount} district managers in line` : "no available district data"
+        dsmCount > 0 ? `${dsmCount} district managers ${inScope}` : "no available district data"
       }.`}
       errorBoundaryTitle="DSMs Performance unavailable"
       title="DSMs Performance"
@@ -149,18 +168,18 @@ export default async function DsmsPerformancePage({
                 District Managers View
               </span>
               <h2 className="mt-3 break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
-                Line Snapshot
+                {scopeWord} Snapshot
               </h2>
               <p className="mt-1.5 max-w-2xl text-sm font-medium text-slate-500">
                 {periodsSummaryLabel(selectedPeriods)}
                 {" | "}
-                {dsmCount > 0 ? `${dsmCount} district managers in line` : "No data"}
+                {dsmCount > 0 ? `${dsmCount} district managers ${inScope}` : "No data"}
               </p>
             </div>
 
             <div className="w-full rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-left sm:w-auto sm:text-right">
               <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
-                Line achievement
+                {scopeWord} achievement
               </p>
               <p className={`mt-1 text-2xl font-bold ${achievementColor(lineAchievementPercent)}`}>
                 {lineAchievementPercent.toFixed(1)}%
@@ -220,7 +239,7 @@ export default async function DsmsPerformancePage({
           {/* Reconciliation: Line Sales includes Direct Orders + vacant seats no DSM below carries */}
           <PerformanceReconciliationNote
             className="mt-3 rounded-md"
-            totalLabel="Line Sales"
+            totalLabel={`${scopeWord} Sales`}
             unattributedSales={unattributedSales}
           />
         </Card>
@@ -313,6 +332,25 @@ export default async function DsmsPerformancePage({
           </div>
           <TeamLeaderboardTable members={dsms} />
         </Card>
+
+        {/* ── Regional Managers (owner, 2026-10-20) — each row is the sum of the seated districts
+            under his seat, listed apart so no district is counted twice in the figures above. ── */}
+        {regionalManagers.length > 0 && (
+          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+            <div className="mb-4 min-w-0 sm:mb-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
+                Regional roll-up
+              </p>
+              <h2 className="mt-1 break-words text-lg font-bold text-slate-900">
+                Regional Managers
+              </h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">
+                Each row totals the sales and target of the district managers in that region.
+              </p>
+            </div>
+            <TeamLeaderboardTable members={regionalManagers} />
+          </Card>
+        )}
 
         {/* ── Product Depth Section Divider ── */}
         <div className="flex items-center gap-3 px-1">

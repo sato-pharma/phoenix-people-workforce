@@ -65,7 +65,7 @@ import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
-import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { heldManagerSeats, managersInScope, personKey, territoriesBelow, territoriesUnderManager, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   locationReportSeats,
   readsFieldHeardByProduct,
@@ -88,6 +88,7 @@ import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { loadScopeProductManagers } from "@/lib/phoenix-crm/server/scope-product-managers";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -180,6 +181,11 @@ export type ReportFilterInput = {
   month?: unknown;
   /** C3: what the figures are read against — off (the default), previous, or peers. */
   compare?: unknown;
+  /**
+   * One of the viewer's managers, by HR id: the territories under the seats he holds (owner, 2026-10-20: "when
+   * filter by manager u find no manager"). Refused when he is not one of the viewer's managers.
+   */
+  managerHrId?: unknown;
 };
 
 export type ChosenTerritories = { seats: OrgSeat[]; includeTest: boolean };
@@ -200,6 +206,14 @@ export function chooseTerritories(viewer: PhoenixCrmViewer, raw: ReportFilterInp
   if (lineCode) {
     seats = seats.filter((seat) => seat.lineCode === lineCode);
     if (seats.length === 0) throw forbiddenError("This line is outside your scope.");
+  }
+  // The manager filter (owner, 2026-10-20: "when filter by manager u find no manager"): the territories under the
+  // seats he holds, and only ever a narrowing of the viewer's own — a manager outside his reach is refused.
+  const managerHrId = trimmed(raw.managerHrId);
+  if (managerHrId) {
+    const under = territoriesUnderManager(viewer.org, viewer.hrId, viewer.basis, managerHrId);
+    if (under) seats = seats.filter((seat) => under.has(seat.seatId));
+    if (!under || seats.length === 0) throw forbiddenError("This manager is outside your scope.");
   }
   const seatId = trimmed(raw.seatId);
   if (seatId) {
@@ -320,6 +334,21 @@ export function peerTerritories(viewer: PhoenixCrmViewer): OrgSeat[] {
 
 export type ReportTerritory = { seatId: string; name: string; lineCode: string | null; lineName: string | null; repName: string | null };
 
+/**
+ * A manager the report screen's "Manager" filter offers (owner, 2026-10-20: "when filter by manager u find no
+ * manager") — every manager the viewer reads who holds a seat above one of his territories, with the territories
+ * under him so the screen can narrow its territory list without asking again. Names, never codes: `hrId` is the
+ * filter's value only.
+ */
+export type ReportScopeManager = {
+  hrId: string;
+  name: string;
+  title: string;
+  lineCode: string | null;
+  lineName: string | null;
+  seatIds: string[];
+};
+
 export type ReportScopeView = {
   cairoToday: string;
   /**
@@ -334,6 +363,8 @@ export type ReportScopeView = {
   defaults: { from: string; to: string; month: string };
   lines: Array<{ lineCode: string; lineName: string }>;
   territories: ReportTerritory[];
+  /** The managers the "Manager" filter offers — empty when there is nobody but the viewer's own reps to choose. */
+  managers: ReportScopeManager[];
   /** Whether the manager section has anyone to show (the viewer or managers below them). */
   hasManagers: boolean;
   /**
@@ -368,9 +399,32 @@ export type ReportScopeView = {
 // alias here so every call site still reads as what it is testing.
 const canReadLocationReport = readsPlaceVsActual;
 
+/** The viewer's managers who stand above at least one of his territories, each with the territories under him. */
+function reportScopeManagers(viewer: PhoenixCrmViewer): Array<Omit<ReportScopeManager, "name">> {
+  const inScope = new Set(viewer.scopeTerritories.map((seat) => seat.seatId));
+  const out: Array<Omit<ReportScopeManager, "name">> = [];
+  for (const member of managersInScope(viewer.org, viewer.hrId, viewer.basis)) {
+    if (member.seat.isOtherPseudoDm) continue;
+    const held = heldManagerSeats(viewer.org, member.hrId).map((seat) => seat.seatId);
+    const seatIds = territoriesBelow(viewer.org, held)
+      .map((seat) => seat.seatId)
+      .filter((seatId) => inScope.has(seatId));
+    if (seatIds.length === 0) continue;
+    out.push({
+      hrId: member.hrId,
+      lineCode: member.seat.lineCode,
+      lineName: member.seat.lineName,
+      seatIds,
+      title: seatTierTitle(member.seat.tier),
+    });
+  }
+  return out;
+}
+
 export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportScopeView> {
   const seats = viewer.scopeTerritories;
-  const names = await loadPeopleNames(seats.map((seat) => seat.occupantHrId));
+  const managerEntries = reportScopeManagers(viewer);
+  const names = await loadPeopleNames([...seats.map((seat) => seat.occupantHrId), ...managerEntries.map((entry) => entry.hrId)]);
   const lines = new Map<string, string>();
   for (const seat of seats) {
     if (seat.lineCode) lines.set(seat.lineCode, seat.lineName ?? seat.lineCode);
@@ -392,6 +446,9 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
         repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
+    managers: managerEntries
+      .map((entry) => ({ ...entry, name: nameOf(names, entry.hrId, "Unnamed manager") }))
+      .sort((left, right) => (left.lineName ?? "").localeCompare(right.lineName ?? "") || left.name.localeCompare(right.name)),
     // A product manager has one "manager" to show on that report and it is HIMSELF — the visits he
     // rode (`readsOwnRideAlongs`, owner 2026-10-07). Without this the chip is hidden and the tab
     // falls back to the one report he had before.
@@ -888,15 +945,28 @@ export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFil
   if (readsOwnRideAlongs(viewer)) return loadOwnRideAlongReport(viewer, raw);
   const chosen = chooseTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
-  // A manager above a chosen territory through any seat they hold (a person on two seats is listed once).
+  // A manager above a chosen territory through any seat they hold (a person on two seats is listed once). With the
+  // "Manager" filter set, the chosen manager and the managers under him — never the ones above him, whose rows would
+  // only repeat his team's visits (owner, 2026-10-20).
+  const chosenManager = personKey(trimmed(raw.managerHrId));
+  const underChosen = chosenManager ? new Set(managersInScope(viewer.org, chosenManager, "tree").map((member) => member.hrId)) : null;
   const managers = managersInScope(viewer.org, viewer.hrId, viewer.basis).filter((member) => {
+    if (underChosen && !underChosen.has(member.hrId)) return false;
     const held = new Set(heldManagerSeats(viewer.org, member.hrId).map((seat) => seat.seatId));
     return chosen.seats.some((territory) => territory.path.some((seatId) => seatId !== territory.seatId && held.has(seatId)));
   });
-  if (managers.length === 0) return { period, includeTest: chosen.includeTest, own: false, rows: [] };
+  // The lines' product managers, for a viewer who reads the company or a national sales manager
+  // (`loadScopeProductManagers`): they hold no seat, so `managersInScope` never named them and the visits they rode
+  // stood on no row of this board (owner, 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR"). Not with the
+  // "Manager" filter set: that names a seat holder, and a product manager is under nobody's seat.
+  const seatHolders = new Set(managers.map((member) => member.hrId));
+  const productManagers = chosenManager
+    ? []
+    : (await loadScopeProductManagers(viewer, chosen.seats)).filter((manager) => !seatHolders.has(manager.hrId));
+  if (managers.length === 0 && productManagers.length === 0) return { period, includeTest: chosen.includeTest, own: false, rows: [] };
 
   const data = await callPhoenixCrm<unknown>("phoenix_crm_report_manager_visits", {
-    p_hr_ids: managers.map((member) => member.hrId),
+    p_hr_ids: [...managers.map((member) => member.hrId), ...productManagers.map((manager) => manager.hrId)],
     p_from: period.from,
     p_to: period.to,
     p_include_test: chosen.includeTest,
@@ -905,23 +975,32 @@ export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFil
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const grouped = groupManagerVisits(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
   const repIds = [...grouped.values()].flatMap((found) => found.entries.map((entry) => entry.repHrId));
-  const names = await loadPeopleNames([...managers.map((member) => member.hrId), ...repIds]);
+  const names = await loadPeopleNames([...managers.map((member) => member.hrId), ...productManagers.map((manager) => manager.hrId), ...repIds]);
+  const entriesOf = (hrId: string) =>
+    (grouped.get(hrId)?.entries ?? []).map((entry) => {
+      const seat = seatsById.get(entry.seatId) as OrgSeat;
+      return { ...entry, territoryName: territoryName(seat), repName: entry.repHrId ? nameOf(names, entry.repHrId) : null };
+    });
 
-  const rows = managers
-    .map((member) => {
-      const found = grouped.get(member.hrId);
-      return {
-        ...(found?.summary ?? emptyManagerSummary()),
-        hrId: member.hrId,
-        name: nameOf(names, member.hrId),
-        title: seatTierTitle(member.seat.tier),
-        lineName: member.seat.lineName,
-        entries: (found?.entries ?? []).map((entry) => {
-          const seat = seatsById.get(entry.seatId) as OrgSeat;
-          return { ...entry, territoryName: territoryName(seat), repName: entry.repHrId ? nameOf(names, entry.repHrId) : null };
-        }),
-      };
-    })
+  const rows = [
+    ...managers.map((member) => ({
+      ...(grouped.get(member.hrId)?.summary ?? emptyManagerSummary()),
+      hrId: member.hrId,
+      name: nameOf(names, member.hrId),
+      title: seatTierTitle(member.seat.tier),
+      lineName: member.seat.lineName,
+      entries: entriesOf(member.hrId),
+    })),
+    // His title is his APP ROLE and his line every line he is named on — he holds no seat to read either from.
+    ...productManagers.map((manager) => ({
+      ...(grouped.get(manager.hrId)?.summary ?? emptyManagerSummary()),
+      hrId: manager.hrId,
+      name: nameOf(names, manager.hrId),
+      title: manager.role,
+      lineName: manager.lineNames.join(" + ") || null,
+      entries: entriesOf(manager.hrId),
+    })),
+  ]
     .sort((left, right) => (left.lineName ?? "").localeCompare(right.lineName ?? "") || left.name.localeCompare(right.name));
   return { period, includeTest: chosen.includeTest, own: false, rows };
 }

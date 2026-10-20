@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { getUserLineScopeOverride } from "@/lib/auth/scope-visibility";
 import { describeUnexpectedError, errorMessageOf, notFoundError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
@@ -13,7 +14,10 @@ import {
   resolveStoredEmployeeHrId,
 } from "@/lib/marketing-requests/service";
 import {
+  LINE_ROUTE_ROLE,
+  collectRequestLineNames,
   computeMarketingFilterOptions,
+  lineRouteAdmitsRequest,
   resolveMarketingRoiScope,
   territoryRouteAdmitsRequest,
 } from "@/lib/marketing-requests/roi-report-scope";
@@ -377,6 +381,18 @@ export async function resolveOwnedProductScope(
 }
 
 /**
+ * The National Sales Manager's `line_scope_override`, for the LINE route (owner, 2026-10-20: "He
+ * sees every campaign on his line, whoever ran it"). Read only for that role — every other seat
+ * answers null without a database read, and `resolveMarketingRoiScope` /
+ * `resolveMarketingCoverageScope` ignore the value for any other role anyway. A login with no
+ * override (or no login at all, e.g. a dev-auth header session) still has his own seat line.
+ */
+export async function resolveLineRouteOverride(access: AccessContext): Promise<string[] | null> {
+  if (access.role !== LINE_ROUTE_ROLE) return null;
+  return getUserLineScopeOverride(access.loginId ?? "");
+}
+
+/**
  * The last month whose sales are actually LOADED — the ROI report's completeness flag.
  *
  * 🔴 IT IS NOT "the newest month any validated batch mentions", AND THE DIFFERENCE IS A VERDICT.
@@ -478,6 +494,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
   const scope = resolveMarketingRoiScope(access, employeeRows, {
     ownedProductCodes,
     ownedLineNames,
+    lineScopeOverride: await resolveLineRouteOverride(access),
   });
 
   const requestsResult = await supabase
@@ -713,20 +730,17 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
     const derivedLine = productLines.length > 0 ? productLines.join(" / ") : null;
 
     /**
-     * Which line(s) this request belongs to, for the territory route's line half. Both signals are
-     * unioned rather than ranked: the requester's own seat line and the promoted products' lines
-     * agree on all 45 production requests carrying a pay date, and either one alone has a gap the
-     * other covers. Built from `rawProducts`, never `visibleProducts`, so masking a confidential
-     * product can never widen or narrow who may see the row.
+     * Which line(s) this request belongs to, for the territory route's line half AND the National
+     * Sales Manager's line route. Both signals are unioned rather than ranked: the requester's own
+     * seat line and the promoted products' lines agree on all 45 production requests carrying a pay
+     * date, and either one alone has a gap the other covers. Built from `rawProducts`, never
+     * `visibleProducts`, so masking a confidential product can never widen or narrow who may see
+     * the row.
      *
-     * A request spanning two lines is on BOTH, so the rep of either line on that patch sees it.
-     * Empty means the line is unknown — the territory route then refuses it.
+     * A request spanning two lines is on BOTH, so the rep of either line on that patch sees it, and
+     * so does the NSM of either line. Empty means the line is unknown — both routes then refuse it.
      */
-    const requestLineNames = new Set<string>();
-    for (const candidate of [requesterRow?.lineName ?? null, ...productLines]) {
-      const lineName = (candidate ?? "").trim().toLowerCase();
-      if (lineName) requestLineNames.add(lineName);
-    }
+    const requestLineNames = collectRequestLineNames(requesterRow?.lineName ?? null, productLines);
 
     // Scope gate.
     if (!scope.isCompanyWide) {
@@ -735,9 +749,13 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
         const owned = scope.visibleProductCodes;
         if (!rawProducts.some((product) => owned.has(product.code))) continue;
       } else if (scope.visibleRequesterHrIds) {
+        // Three doors, any one admits: the requester route (his chain raised it), the Medical
+        // Rep's territory route, and the National Sales Manager's line route (owner, 2026-10-20 —
+        // a Product / Group Product / Marketing Manager's campaign on his line, whoever ran it).
         if (
           !scope.visibleRequesterHrIds.has(requesterKey) &&
-          !requestIsInViewerArea(request.customerId, requestLineNames)
+          !requestIsInViewerArea(request.customerId, requestLineNames) &&
+          !lineRouteAdmitsRequest(scope, requestLineNames)
         ) {
           continue;
         }
@@ -1754,7 +1772,10 @@ export async function getMarketingRequestViewSales(
   if (access.role === "Product Manager" || access.role === "Group Product Manager") {
     ownedProductCodes = (await resolveOwnedProductScope(supabase, access, byHrId)).ownedProductCodes;
   }
-  const scope = resolveMarketingRoiScope(access, employeeRows, { ownedProductCodes });
+  const scope = resolveMarketingRoiScope(access, employeeRows, {
+    ownedProductCodes,
+    lineScopeOverride: await resolveLineRouteOverride(access),
+  });
   let visible = scope.isCompanyWide
     ? true
     : scope.visibleProductCodes
@@ -1762,11 +1783,23 @@ export async function getMarketingRequestViewSales(
       : scope.visibleRequesterHrIds
         ? scope.visibleRequesterHrIds.has(requesterKey)
         : false;
+  // Line names come from the requester's seat and EVERY promoted product (never the masked list),
+  // exactly as the report builds them — the one builder both routes below read.
+  const requestLineNames = collectRequestLineNames(
+    byHrId.get(requesterKey)?.lineName ?? null,
+    Array.from(productByIdMap.values()).map((product) => product.line),
+  );
+  // The National Sales Manager's LINE route (owner, 2026-10-20) — the very rule the report admits
+  // rows by (lineRouteAdmitsRequest), so a Product Manager's campaign on his line that he can see in
+  // ROI Tracking also opens its View Sales, and the ROI Tracking export keeps its matched-sales
+  // lines. Empty for every other seat.
+  if (!visible && scope.visibleRequesterHrIds && scope.visibleLineRouteNames.size > 0) {
+    visible = lineRouteAdmitsRequest(scope, requestLineNames);
+  }
   // The Medical Rep's TERRITORY route — the very area-AND-line rule the report admits rows by
   // (territoryRouteAdmitsRequest). Without it a rep saw a District Manager's request on his own
   // patch in ROI Tracking, was refused its View Sales, and the ROI Tracking export dropped its
-  // matched-sales lines without a word. Line names come from the requester's seat and EVERY
-  // promoted product (never the masked list), exactly as the report builds them.
+  // matched-sales lines without a word.
   if (!visible && scope.visibleRequesterHrIds && scope.visibleAreaIds.size > 0) {
     const customerArea = await supabase
       .from("marketing_customers")
@@ -1776,10 +1809,6 @@ export async function getMarketingRequestViewSales(
     if (customerArea.error) throw customerArea.error;
     const rawAreaId = (customerArea.data as { area_id?: number | string | null } | null)?.area_id;
     const areaId = rawAreaId === null || rawAreaId === undefined ? null : Number(rawAreaId);
-    const requestLineNames = [
-      byHrId.get(requesterKey)?.lineName ?? null,
-      ...Array.from(productByIdMap.values()).map((product) => product.line),
-    ];
     visible = territoryRouteAdmitsRequest(scope, Number.isFinite(areaId) ? areaId : null, requestLineNames);
   }
   if (!visible) throw new Error("Forbidden: you cannot view this marketing request.");
@@ -2003,6 +2032,19 @@ async function buildReverseLookup(params: {
   if (candidateIds.length === 0) return [];
 
   // load candidate requests (requester + code + status) and scope-filter
+  type ReverseCandidate = { id: string; request_code: string; requester_hr_id: string; status: MarketingRoiReportRow["status"] };
+  const toResult = (row: ReverseCandidate, requesterKey: string): MarketingRoiReverseLookupRow => ({
+    requestId: row.id,
+    requestCode: row.request_code,
+    requesterName: params.byHrId.get(requesterKey)?.displayName ?? null,
+    status: row.status,
+    sharedPharmacyCodes: Array.from(sharedByRequest.get(row.id) ?? []),
+  });
+  // The National Sales Manager's LINE route (owner, 2026-10-20) admits here too, by the same
+  // `lineRouteAdmitsRequest` the report uses, so a shared-pharmacy hit on a campaign he can already
+  // open in ROI Tracking is listed rather than silently hidden. Only those the requester route
+  // refused wait for it, and only when the viewer HAS a line route — nobody else pays the read.
+  const lineRouteCandidates: Array<{ row: ReverseCandidate; requesterKey: string }> = [];
   const results: MarketingRoiReverseLookupRow[] = [];
   for (const part of chunk(candidateIds, 200)) {
     const { data, error } = await supabase
@@ -2010,7 +2052,7 @@ async function buildReverseLookup(params: {
       .select("id, request_code, requester_hr_id, status")
       .in("id", part);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ id: string; request_code: string; requester_hr_id: string; status: MarketingRoiReportRow["status"] }>) {
+    for (const row of (data ?? []) as ReverseCandidate[]) {
       const requesterKey = normalizeHrId(row.requester_hr_id) ?? "";
       // scope: company sees all; requester-scoped by visible set; PM/GPM product-scope is
       // omitted from reverse-lookup (a cross-product pharmacy hit is not theirs to see).
@@ -2021,14 +2063,54 @@ async function buildReverseLookup(params: {
           : scope.visibleRequesterHrIds
             ? scope.visibleRequesterHrIds.has(requesterKey)
             : false;
-      if (!allowed) continue;
-      results.push({
-        requestId: row.id,
-        requestCode: row.request_code,
-        requesterName: params.byHrId.get(requesterKey)?.displayName ?? null,
-        status: row.status,
-        sharedPharmacyCodes: Array.from(sharedByRequest.get(row.id) ?? []),
-      });
+      if (!allowed) {
+        if (
+          !scope.isCompanyWide &&
+          !scope.visibleProductCodes &&
+          scope.visibleRequesterHrIds &&
+          scope.visibleLineRouteNames.size > 0
+        ) {
+          lineRouteCandidates.push({ row, requesterKey });
+        }
+        continue;
+      }
+      results.push(toResult(row, requesterKey));
+    }
+  }
+  if (lineRouteCandidates.length > 0) {
+    // Lines exactly as the report reads them: the requester's seat line plus EVERY promoted
+    // product's line (never the masked list) — `collectRequestLineNames`.
+    const links = await loadByRequestIds<{ request_id: string; product_id: number | string }>(
+      supabase,
+      "marketing_request_products",
+      "request_id, product_id",
+      lineRouteCandidates.map((candidate) => candidate.row.id),
+    );
+    const productIds = Array.from(new Set(links.map((link) => Number(link.product_id)).filter(Boolean)));
+    const lineByProductId = new Map<number, string | null>();
+    for (const part of chunk(productIds)) {
+      if (part.length === 0) continue;
+      const { data, error } = await supabase.from("marketing_products").select("id, product_code, line").in("id", part);
+      if (error) throw error;
+      for (const productRow of (data ?? []) as Array<{ id: number | string; product_code?: string | null; line?: string | null }>) {
+        // The report skips a product with no code before it reads its line; so does this.
+        if (!(productRow.product_code ?? "").trim()) continue;
+        lineByProductId.set(Number(productRow.id), (productRow.line ?? "").trim() || null);
+      }
+    }
+    const productLinesByRequest = new Map<string, Array<string | null>>();
+    for (const link of links) {
+      if (!lineByProductId.has(Number(link.product_id))) continue;
+      const list = productLinesByRequest.get(link.request_id) ?? [];
+      list.push(lineByProductId.get(Number(link.product_id)) ?? null);
+      productLinesByRequest.set(link.request_id, list);
+    }
+    for (const { row, requesterKey } of lineRouteCandidates) {
+      const requestLineNames = collectRequestLineNames(
+        params.byHrId.get(requesterKey)?.lineName ?? null,
+        productLinesByRequest.get(row.id) ?? [],
+      );
+      if (lineRouteAdmitsRequest(scope, requestLineNames)) results.push(toResult(row, requesterKey));
     }
   }
 

@@ -80,4 +80,21 @@ export function runCompanyCalendarTests() {
     !/row\.type\b/.test(leaveSource),
     "the mapper must read row.vacation_type — row.type is undefined and would silently drop the leave label",
   );
+
+  // ── THE CALENDAR DESK SEES EVERY LINE'S BIRTHDAYS ─────────────────────────────────────────────
+  // Everybody who publishes company-wide sits on the Head Office line, so filtering birthdays by the
+  // viewer's own line showed the desk Head Office birthdays and not one of the field force's (owner,
+  // 2026-10-20: "others only for head office employees and you find no field force").
+  const birthdayBody = /async function loadBirthdayItems[\s\S]*?\n\}/.exec(leaveSource)?.[0] ?? "";
+  assert.ok(birthdayBody, "loadBirthdayItems must still be findable");
+  assert.match(
+    birthdayBody,
+    /const companyWide = canPublishCompanyWide\(access\.role\);/,
+    "the birthday read decides company-wide from the same rule that lets a viewer publish company-wide",
+  );
+  assert.match(
+    birthdayBody,
+    /row\.birthDate && \(companyWide \|\| sameLine\(row\.lineName, viewerLineName\)\)/,
+    "a company-wide viewer gets every line's birthdays; everyone else keeps their own line",
+  );
 }

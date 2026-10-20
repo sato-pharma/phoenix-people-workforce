@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { isPayrollIneligibleEmployee } from "../src/lib/payroll/eligibility.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * WP-4 regression coverage for the payroll eligibility rule and the Payslips Center
@@ -166,6 +167,21 @@ export function runPayrollLifecycleScopeTests() {
     /export async function getPayslipCenterEmployeeOptions\(access: AccessContext\)/,
     "getPayslipCenterEmployeeOptions must accept AccessContext",
   );
+  // The picker is one row per person per published month and PostgREST answers at most 1,000 rows
+  // however large the limit — 989 rows for 188 people on 20 Oct 2026 — so it must PAGE, or the people
+  // at the end of the alphabet silently drop out of it (owner, 2026-10-20).
+  const optionsBody = stripComments(
+    payslipCenterSource.slice(
+      payslipCenterSource.indexOf("export async function getPayslipCenterEmployeeOptions"),
+      payslipCenterSource.indexOf("export function escapeLikePattern"),
+    ),
+  );
+  assert.match(
+    optionsBody,
+    /await fetchAllRows<unknown>\(\(\) => \{[\s\S]*?\}, "id"\);/,
+    "the Payslips Center employee picker reads every published row through the paged reader",
+  );
+  assert.equal(/\.limit\(\d+\)/.test(optionsBody), false, "the picker never relies on a single capped read");
   assert.match(
     payslipCenterSource,
     /export async function searchPayslipCenter\(access: AccessContext,/,

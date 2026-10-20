@@ -98,9 +98,15 @@ async function readMonthlyClosingPartsWithStoreSplit(input?: {
 
 // Every closing read in the app comes through this gate: a few at a time, and one shared read per
 // line and month while it is loading (closing-load-gate.ts). `reuseMs` is for the read-only screens.
-const closingLoadGate = createClosingLoadGate<MonthlyClosingParts>({
+//
+// Both calls are marked pure. The Phoenix MCP reader (infra/phoenix-mcp/build.mjs) bundles this
+// file's portal-policy siblings and must tree-shake the closing loader away. A bare top-level call
+// is a side effect esbuild must keep, and it kept the whole loader, service-role REST client
+// included, so "Administrative Phoenix IO survived bundling" failed the mcp-security check
+// (2026-10-20). Building the gate touches nothing outside itself, so dropping it when unused is safe.
+const closingLoadGate = /* @__PURE__ */ createClosingLoadGate<MonthlyClosingParts>({
   load: readMonthlyClosingPartsWithStoreSplit,
-  maxConcurrent: closingLoadConcurrency(),
+  maxConcurrent: /* @__PURE__ */ closingLoadConcurrency(),
 });
 
 export function loadMonthlyClosingPartsWithStoreSplit(

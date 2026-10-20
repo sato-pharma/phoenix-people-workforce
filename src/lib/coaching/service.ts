@@ -91,15 +91,26 @@ const companyRoles = new Set<AccessContext["role"]>(["Super Admin", "CEO"]);
 // This widens read/list visibility only — write authority still flows through
 // canManageCoachingReports + assertOwnDraftOrOverride + the workflow registry, so these oversight
 // roles never gain edit rights on others' reports (Marketing Manager is view-only by design).
-const coachingOversightRoles = new Set<AccessContext["role"]>([...companyRoles, "Training Manager", "Marketing Manager"]);
-// Line-scoped coaching READ roles. Marketing Manager is intentionally NOT here: it is in
-// coachingOversightRoles, which short-circuits to full company-wide read above (line ~187)
-// before this branch is reached — so a line entry was dead code that misrepresented its scope.
+//
+// SFE Manager joined the oversight set on 2026-10-20 (owner: every role a module applies to must
+// find its people). He sat in lineRoles, but his own seat is on the Head Office line, so "same line
+// AND same department" matched no field rep at all — 0 of 122 coaching reports in production. He is
+// company-wide everywhere else he reads field work (double-visit analytics, doctor coverage), and he
+// holds coaching:read only, so this widens what he can READ and nothing he can write.
+const coachingOversightRoles = new Set<AccessContext["role"]>([
+  ...companyRoles,
+  "Training Manager",
+  "Marketing Manager",
+  "SFE Manager",
+]);
+// Line-scoped coaching READ roles. Marketing Manager and SFE Manager are intentionally NOT here:
+// both are in coachingOversightRoles, which short-circuits to full company-wide read in
+// canAccessCoachingEmployee before this branch is reached — so a line entry is dead code that
+// misrepresents the scope.
 const lineRoles = new Set<AccessContext["role"]>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
-  "SFE Manager",
 ]);
 // These bound a COMPANY-WIDE read whose per-viewer scope (filterSummariesForAccess) is applied
 // afterwards, in memory. The window therefore truncates the wrong end: once the company's report
@@ -262,12 +273,15 @@ export function canAccessCoachingEmployee(
   if (lineRoles.has(access.role)) {
     const accessor = findEmployee(directory, currentHrId);
     if (!accessor) return false;
-    // GPM sees ALL employees on their product line regardless of department,
-    // so they get a full cross-department line view in coaching.
-    // All other line roles (NSM, PM): department-safe — same line AND same
-    // department only, so a Sales role never sees Marketing on a shared line.
+    // GPM and PM see ALL employees on their product line regardless of department, so they get a
+    // full cross-department line view in coaching. A Product Manager sits in the Marketing
+    // department while the reps he coaches sit in Sales, so "same department" hid every rep on his
+    // own line from him (owner, 2026-10-20: every role a module applies to must find its people).
+    // The ladder below still keeps him to the seats strictly beneath his own.
+    // National Sales Manager stays department-safe — same line AND same department only, so a Sales
+    // role never sees Marketing on a shared line.
     const onLine =
-      access.role === "Group Product Manager"
+      access.role === "Group Product Manager" || access.role === "Product Manager"
         ? sameWorkforceLine(accessor, employee)
         : lineScopeIncludesEmployee(accessor, employee);
     if (!onLine) return false;
@@ -283,6 +297,21 @@ export function canAccessCoachingEmployee(
     });
   }
   return false;
+}
+
+/**
+ * The people a coaching analytics page may put in front of this viewer: the directory narrowed by
+ * the SAME rule that scopes the reports (canAccessCoachingEmployee). The rep comparison, the
+ * coverage table and the line/area filter options are built from the directory, not from the
+ * reports, so handing them the whole company listed every line's reps as "never coached" to a
+ * manager who may open only his own (owner, 2026-10-20). Oversight roles get the directory as-is.
+ */
+export function scopeCoachingDirectoryForAccess(
+  access: AccessContext,
+  employees: EmployeeDirectoryRow[],
+): EmployeeDirectoryRow[] {
+  if (access.scope === "system" || coachingOversightRoles.has(access.role)) return employees;
+  return employees.filter((employee) => canAccessCoachingEmployee(access, employee, employees));
 }
 
 // filterSummariesForAccess calls canAccessCoachingEmployee once per report against the same

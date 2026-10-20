@@ -71,14 +71,20 @@ function bufferOf(workbook: ExcelJS.Workbook): Promise<ArrayBuffer> {
   return workbook.xlsx.writeBuffer() as unknown as Promise<ArrayBuffer>;
 }
 
-/** Human-readable summary of the applied filters for the cover sheet. */
-export function describeMonthlyDashboardFilters(filters: SalesDashboardFilters): string {
+/**
+ * Human-readable summary of the applied filters for the cover sheet. `managerLabels` turns the
+ * Manager filter's key into the manager's name (owner, 2026-10-20, names never codes).
+ */
+export function describeMonthlyDashboardFilters(
+  filters: SalesDashboardFilters,
+  managerLabels?: Record<string, string>,
+): string {
   const parts: string[] = [];
   if (filters.periods?.length) parts.push(`Months: ${filters.periods.join(", ")}`);
   if (filters.line) parts.push(`Line: ${filters.line}`);
   if (filters.salesType) parts.push(`Sales type: ${filters.salesType}`);
   if (filters.territory) parts.push(`Territory: ${filters.territory}`);
-  if (filters.manager) parts.push(`Manager: ${filters.manager}`);
+  if (filters.manager) parts.push(`Manager: ${managerLabels?.[filters.manager] ?? filters.manager}`);
   if (filters.products?.length) parts.push(`Products: ${filters.products.join(", ")}`);
   if (filters.family) parts.push(`Family: ${filters.family}`);
   return parts.length > 0 ? parts.join("   ·   ") : "No filters applied (full scope)";
@@ -112,7 +118,7 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
       houseGeneratedRow(meta.generatedAtIso),
       ["Exported by", `${meta.exportedByName} (${meta.exportedByHrId})`],
       ["Role", meta.role],
-      ["Applied filters", describeMonthlyDashboardFilters(meta.filters)],
+      ["Applied filters", describeMonthlyDashboardFilters(meta.filters, data.filters?.managerLabels)],
       ["Total sales (EGP)", totalSales.toLocaleString("en-US")],
       ["Total target (EGP)", totalTarget.toLocaleString("en-US")],
       ["Achievement", `${Math.round(Number(summary.achievementRate ?? 0) * 100)}%`],

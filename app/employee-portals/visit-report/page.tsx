@@ -54,7 +54,7 @@ export default async function TeamVisitReportPage({
   return (
     <EmployeePortalPageShell
       badge="CRM"
-      description={`Choose one of your reps, or your whole district, and a period, then the fields you want from the ${visitReportFieldsFor(scope.sight).length} you can choose. The dashboard, the map, the visits and the Excel file are all built from exactly that choice.`}
+      description={`Choose one of your reps, yourself, or your whole district, and a period, then the fields you want from the ${visitReportFieldsFor(scope.sight).length} you can choose. The dashboard, the map, the visits and the Excel file are all built from exactly that choice.`}
       title="Visit report"
     >
       <CrmSurfaceProvider surface="portal">

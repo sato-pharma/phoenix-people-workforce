@@ -18,6 +18,7 @@ import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine 
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
+import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
@@ -296,7 +297,28 @@ function descendantHrIds(managerKey: string, employees: EmployeeDirectoryRow[]) 
   return allowed;
 }
 
-export function resolveDoubleVisitAccessScope(access: AccessContext, employees: EmployeeDirectoryRow[]) {
+/**
+ * What the scope needs that the employee directory does not carry. Optional everywhere, so a caller
+ * that passes nothing gets exactly the pre-2026-10-20 scope.
+ */
+export type DoubleVisitScopeOptions = {
+  /** doctor_coverage_config.line_overrides (normalizeHrIdForAccess key → line ids) — the lines a
+   * Product / Group Product Manager covers when it is more than the one on his employee record. */
+  lineOverrides?: DoctorCoverageLineOverrides;
+};
+
+/** The IO half of {@link DoubleVisitScopeOptions}: the same cached config doctor coverage reads, so
+ * it costs no extra read on a warm cache, and it never throws (it degrades to "no overrides"). */
+export async function loadDoubleVisitScopeOptions(): Promise<DoubleVisitScopeOptions> {
+  const config = await getDoctorCoverageConfig();
+  return { lineOverrides: config.lineOverrides };
+}
+
+export function resolveDoubleVisitAccessScope(
+  access: AccessContext,
+  employees: EmployeeDirectoryRow[],
+  options: DoubleVisitScopeOptions = {},
+) {
   if (
     access.scope === "system" ||
     access.role === "CEO" ||
@@ -391,14 +413,26 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   // sameWorkforceLine (line_id preferred, line-name fallback) and add every line member to
   // allowedHrIds, so a DV is in scope whenever the double-visitor OR the visited MR sits on
   // the line. Without this a GPM saw only their direct chain (≈30 of ≈1,900 line visits).
+  //
+  // A line OVERRIDE wins when one exists, read exactly as doctor coverage reads it (its `line`
+  // basis): some managers cover more than one line — Ahmed Sharaf (B-155) is recorded on Pedia and
+  // owns brands on Anti Infective too (owner, 2026-08-09) — and the employee record alone lost every
+  // rep on his second line from this board (owner, 2026-10-20). The ladder above already runs over
+  // the whole directory, so a second line's DSMs and RSMs are cut exactly like the first's.
+  const overrideLineIds = viewerKey ? options.lineOverrides?.[viewerKey] : undefined;
+  const scopedLineIds = overrideLineIds && overrideLineIds.length > 0 ? overrideLineIds : null;
   if (
     (access.role === "Product Manager" ||
      access.role === "Group Product Manager") &&
     viewer &&
-    (viewer.lineId != null || viewer.lineName)
+    (scopedLineIds || viewer.lineId != null || viewer.lineName)
   ) {
+    const onScopedLine = (employee: EmployeeDirectoryRow) =>
+      scopedLineIds
+        ? employee.lineId != null && scopedLineIds.includes(employee.lineId)
+        : sameWorkforceLine(viewer, employee);
     for (const employee of employees) {
-      if (!sameWorkforceLine(viewer, employee)) continue;
+      if (!onScopedLine(employee)) continue;
       const key = normalizedHrKey(employee.hrId);
       if (key && !isExcluded(key)) allowedHrIds.add(key);
       // Keep any non-null line label too, so line-tagged rows with no mapped employee
@@ -417,8 +451,13 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   };
 }
 
-export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, employees: EmployeeDirectoryRow[]) {
-  const scope = resolveDoubleVisitAccessScope(access, employees);
+export function filterRowsForAccess(
+  rows: DoubleVisitDbRow[],
+  access: AccessContext,
+  employees: EmployeeDirectoryRow[],
+  options: DoubleVisitScopeOptions = {},
+) {
+  const scope = resolveDoubleVisitAccessScope(access, employees, options);
   if (scope.all) return rows;
   const admitted: DoubleVisitDbRow[] = [];
   for (const original of rows) {
@@ -449,8 +488,12 @@ export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessCont
   return admitted;
 }
 
-export function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectoryRow[], access: AccessContext) {
-  const scope = resolveDoubleVisitAccessScope(access, employees);
+export function filterEmployeesForDoubleVisitAccess(
+  employees: EmployeeDirectoryRow[],
+  access: AccessContext,
+  options: DoubleVisitScopeOptions = {},
+) {
+  const scope = resolveDoubleVisitAccessScope(access, employees, options);
   if (scope.all) return employees;
   // PEOPLE are admitted by identity only. allowedLines/allowedAreas are ROW rules — they exist so a
   // line-tagged visit with no mapped employee (a vacant territory) still counts. Letting them admit
@@ -1005,7 +1048,10 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
   });
 }
 
-const functionalDoubleVisitorRoles = ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] as const;
+// SFE Manager joined on 2026-10-20: he is an allowed double visitor (allowedDoubleVisitorRoles) with
+// his own leaderboard code, yet the By Manager tab never listed him, because he sits in no org-chart
+// chain above a rep and was missing here (owner: every role a module applies to must appear in it).
+const functionalDoubleVisitorRoles = ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "SFE Manager"] as const;
 
 function isFunctionalDoubleVisitorRole(employee: EmployeeDirectoryRow): boolean {
   const posRole = resolveJobFunctionRole(employee.positionTitle);
@@ -1050,15 +1096,17 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       posRole === "Group Product Manager" ||
       posRole === "Marketing Manager" ||
       posRole === "Training Manager" ||
+      posRole === "SFE Manager" ||
       jobRole === "Product Manager" ||
       jobRole === "Group Product Manager" ||
       jobRole === "Marketing Manager" ||
-      jobRole === "Training Manager";
+      jobRole === "Training Manager" ||
+      jobRole === "SFE Manager";
 
-    // PM/GPM/MM/TM have no fixed org-chart team, so scope their executive report to
+    // PM/GPM/MM/TM/SFE have no fixed org-chart team, so scope their executive report to
     // exactly the MRs they actually visited. This is self-scoping: a PM covering two
     // lines (e.g. Pedia + Anti Inf) automatically gets both sets of MR scores, and a
-    // TM does not get incorrectly assigned the entire MR universe.
+    // TM or SFE Manager does not get incorrectly assigned the entire MR universe.
     const dvVisitedMrKeys = isLineScopedRole
       ? new Set(
           visitorRows
@@ -1163,6 +1211,15 @@ export function buildManagerSummariesDetailed(
       .map((employee) => normalizedHrKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),
   );
+  // The team's HR ids travel with the summary so the manager profile's "not visited" list names the
+  // SAME whole team the coverage figure counts — every rep beneath a DSM, RM or NSM, not only the
+  // ones reporting to him directly (owner, 2026-10-20). Mapped back from this key domain to the
+  // directory's own HR id, so the client can re-key it however it likes.
+  const hrIdByTeamKey = new Map<string, string>();
+  for (const employee of employees) {
+    const key = normalizedHrKey(employee.hrId);
+    if (key && !hrIdByTeamKey.has(key)) hrIdByTeamKey.set(key, employee.hrId);
+  }
   const teamMrKeysMemo = new Map<string, Set<string>>();
   const teamMrKeysFor = (managerNormKey: string) => {
     if (!managerNormKey) return new Set<string>();
@@ -1264,6 +1321,11 @@ export function buildManagerSummariesDetailed(
       role: dv?.role ?? null,
       roleCode: dv?.roleCode ?? null,
       teamMrCount,
+      teamMrHrIds: teamMrKeys
+        ? Array.from(teamMrKeys)
+            .map((key) => hrIdByTeamKey.get(key))
+            .filter((hrId): hrId is string => Boolean(hrId))
+        : null,
       totalDvs,
     });
   }
@@ -1434,6 +1496,15 @@ export function buildExecutiveSummary(
   }
 
   const activeVisitorKeys = new Set(summaries.map((summary) => summary.managerHrId));
+  // The team an idle field manager left unvisited, counted exactly as buildManagerSummariesDetailed
+  // counts an active one's (same domain, same active-rep rule), so the CEO's double-visit table can
+  // show him at 100% neglected instead of a row of blanks (owner, 2026-10-20).
+  const activeMrKeys = new Set(
+    scopedEmployees
+      .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
+      .map((employee) => normalizedHrKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
   const idleManagers: DoubleVisitIdleManager[] = [];
   for (const employee of scopedEmployees) {
     if (!isActiveEmployee(employee)) continue;
@@ -1441,6 +1512,10 @@ export function buildExecutiveSummary(
     if (!dv) continue;
     const key = canonicalHrIdKey(employee.hrId);
     if (!key || activeVisitorKeys.has(key)) continue;
+    const normKey = normalizedHrKey(employee.hrId);
+    const teamMrCount = HIERARCHY_ROLE_CODES.has(dv.roleCode) && normKey
+      ? Array.from(descendantHrIds(normKey, scopedEmployees)).filter((member) => member !== normKey && activeMrKeys.has(member)).length
+      : null;
     idleManagers.push({
       areaName: employee.areaName,
       hrId: key,
@@ -1448,6 +1523,7 @@ export function buildExecutiveSummary(
       name: employee.displayName || employee.hrId || key,
       role: dv.role,
       roleCode: dv.roleCode,
+      teamMrCount,
     });
   }
   idleManagers.sort((left, right) =>
@@ -1621,10 +1697,11 @@ export function buildScopedDoubleVisitDashboardCore(input: {
   dateTo: string;
   employees: EmployeeDirectoryRow[];
   rows: DoubleVisitDbRow[];
+  scopeOptions?: DoubleVisitScopeOptions;
 }) {
-  const { access, dateTo, employees, rows } = input;
-  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
-  const scopedRows = filterRowsForAccess(rows, access, employees);
+  const { access, dateTo, employees, rows, scopeOptions } = input;
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access, scopeOptions);
+  const scopedRows = filterRowsForAccess(rows, access, employees, scopeOptions);
   // Visitor ROLE classification reads the FULL directory, never the scope. Built from the scope it
   // failed OPEN for anyone outside it (isAllowedDoubleVisitor(null) is true), so it only ever
   // worked for a scoped viewer while an out-of-scope visitor happened to be readmitted.
@@ -1668,7 +1745,10 @@ export async function getDoubleVisitDashboardData(input: {
   const dateFrom = input.dateFrom || month.start;
   const dateTo = input.dateTo || month.end;
 
-  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const [employees, scopeOptions] = await Promise.all([
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    loadDoubleVisitScopeOptions(),
+  ]);
   const rows = await getLiveDoubleVisitRows(dateFrom, dateTo, employees);
   const {
     executiveReports,
@@ -1678,7 +1758,7 @@ export async function getDoubleVisitDashboardData(input: {
     managerSummaries,
     mrScores,
     scopedEmployees,
-  } = buildScopedDoubleVisitDashboardCore({ access: input.access, dateTo, employees, rows });
+  } = buildScopedDoubleVisitDashboardCore({ access: input.access, dateTo, employees, rows, scopeOptions });
   const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
   const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();
   const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
@@ -2137,8 +2217,13 @@ export async function getDoubleVisitReportData(input: {
     };
   }
 
-  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access);
+  // The scope options carry a Product Manager's second line (doctor-coverage line overrides), so the
+  // report and the analytics board name the same people (owner, 2026-10-20).
+  const [employees, scopeOptions] = await Promise.all([
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    loadDoubleVisitScopeOptions(),
+  ]);
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access, scopeOptions);
   const hireDateByKey = new Map(
     employees
       .map((employee) => [canonicalHrIdKey(employee.hrId), employee.hireDate] as const)
@@ -2173,7 +2258,7 @@ export async function getDoubleVisitReportData(input: {
   // resolution is same-day, access scope is date-independent). NEVER widen scopedRows in place: it
   // feeds probationDvCountByKey, neverVisited, visitCount and the in-window history.
   const rawRows = await getLiveDoubleVisitRows(scanFrom, dateTo, employees);
-  const scopedRowsWide = filterRowsForAccess(rawRows, input.access, employees).filter((row) => {
+  const scopedRowsWide = filterRowsForAccess(rawRows, input.access, employees, scopeOptions).filter((row) => {
     if (!row.visited_employee_hr_id) return true;
     return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
   });

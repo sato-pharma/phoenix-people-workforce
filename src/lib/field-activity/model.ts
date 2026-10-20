@@ -209,7 +209,42 @@ export type FieldActivityUnlocatedVisit = {
   phoenix: PhoenixVisitDetail | null;
 };
 
-export type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "office" | "weekend" | "empty";
+/**
+ * A single visit the subject logged ALONE as a manager, on his own (owner, 2026-10-20, multiple choice: "Show, keep
+ * out of reps — his own visits appear under his name in the Visit Report and the Field Activity day, never in a
+ * rep's totals. Still no GPS or photo required").
+ *
+ * 🔴 A DISPLAY ROW, NEVER A COUNT. It is listed on his day and added to none of the day's AM, PM or pharmacy
+ * figures, none of the period's totals and no field-day count. It carries no position and no photo verdict — his own
+ * visit is asked for neither — so nothing on this report can read its absence as something he failed to do. The
+ * loader reads it through `manager-plan-readers.ts`, the one door out of his own visits' table.
+ */
+export type FieldActivityOwnVisitRow = {
+  /** The Cairo calendar day, YYYY-MM-DD. */
+  date: string;
+  /** The half of the day it was planned in, or the Cairo half it was logged in. */
+  half: "AM" | "PM";
+  /** When it was logged, as a CAIRO WALL CLOCK (`cairoWallClockIso` of the real instant), or null. */
+  loggedAt: string | null;
+  customerName: string;
+  speciality: string | null;
+  grade: string | null;
+  /** The street, the brick and the area, as one line, or null when none was kept. */
+  where: string | null;
+  planned: boolean;
+  /** A doctor of a vacant area, logged by the manager while the seat was empty. */
+  inVacantTerritory: boolean;
+  products: string[];
+  comment: string | null;
+};
+
+/** One of his own visits as the day prints it: the row, with its log time read as a clock. */
+export type FieldActivityOwnVisit = Omit<FieldActivityOwnVisitRow, "loggedAt" | "date"> & {
+  /** Wall clock "HH:MM:SS" of the log, or null. */
+  loggedAt: string | null;
+};
+
+export type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "own-visits" | "office" | "weekend" | "empty";
 
 export type FieldActivityDay = {
   dateIso: string;
@@ -235,6 +270,11 @@ export type FieldActivityDay = {
   leave: FieldActivityLeaveRow | null;
   /** Calls the partner recorded that day WITHOUT the subject on them. Never counted here. */
   partnerSoloCalls: number;
+  /**
+   * The single visits he logged alone that day, as a manager — listed, counted in nothing (owner, 2026-10-20).
+   * Empty for anybody who is not a manager, and on every day he logged none.
+   */
+  ownVisits: FieldActivityOwnVisit[];
   /** Anything the report should say out loud about this day. */
   notes: string[];
 };
@@ -386,6 +426,12 @@ export function buildFieldActivityReport(input: {
   toIso: string;
   visits: FieldActivityVisitRow[];
   checkins: FieldActivityCheckinRow[];
+  /**
+   * The single visits the subject logged alone as a manager — DISPLAY ONLY: each is listed on its day and none is
+   * added to any count, total or field-day figure (owner, 2026-10-20: "Show, keep out of reps"). Optional, so a
+   * caller with none passes nothing.
+   */
+  ownVisits?: FieldActivityOwnVisitRow[];
   /** Every visit recorded by the partners on those days, used ONLY to count their solo calls. */
   partnerVisits?: FieldActivityVisitRow[];
   trips: FieldActivityTripRow[];
@@ -446,6 +492,28 @@ export function buildFieldActivityReport(input: {
   const tripsByDay = new Map(input.trips.map((trip) => [calendarDay(trip.tripDate) ?? trip.tripDate, trip]));
   const punchesByDay = new Map(input.punches.map((punch) => [punch.dateIso, punch]));
 
+  const ownVisitsByDay = new Map<string, FieldActivityOwnVisit[]>();
+  for (const own of input.ownVisits ?? []) {
+    const day = calendarDay(own.date);
+    if (!day) continue;
+    const shown: FieldActivityOwnVisit = {
+      comment: own.comment,
+      customerName: own.customerName,
+      grade: own.grade,
+      half: own.half,
+      inVacantTerritory: own.inVacantTerritory,
+      loggedAt: wallClock(own.loggedAt),
+      planned: own.planned,
+      products: own.products,
+      speciality: own.speciality,
+      where: own.where,
+    };
+    ownVisitsByDay.set(day, [...(ownVisitsByDay.get(day) ?? []), shown]);
+  }
+  for (const list of ownVisitsByDay.values()) {
+    list.sort((left, right) => left.half.localeCompare(right.half) || String(left.loggedAt ?? "").localeCompare(String(right.loggedAt ?? "")));
+  }
+
   const partnerSoloByDay = new Map<string, number>();
   for (const visit of input.partnerVisits ?? []) {
     if (subjectIsOn(visit, subjectHrId)) continue;
@@ -459,6 +527,7 @@ export function buildFieldActivityReport(input: {
 
   for (const dateIso of eachDateIso(fromIso, toIso)) {
     const dayVisits = visitsByDay.get(dateIso) ?? [];
+    const ownVisits = ownVisitsByDay.get(dateIso) ?? [];
     const leave = input.leave.find((row) => row.startDate <= dateIso && row.endDate >= dateIso) ?? null;
     const punches = punchesByDay.get(dateIso) ?? null;
     const trip = tripsByDay.get(dateIso) ?? null;
@@ -566,6 +635,9 @@ export function buildFieldActivityReport(input: {
     if (stops.length > 0) kind = "field";
     else if (dayVisits.length > 0) kind = "field-no-gps";
     else if (leave) kind = "leave";
+    // A day he spent on his own visits alone is a day he WORKED (rule 5), never "no activity" — and never a
+    // "field record with no GPS": his own visit is asked for no position at all.
+    else if (ownVisits.length > 0) kind = "own-visits";
     else if (punches) kind = "office";
     else if (isWeekendIso(dateIso)) kind = "weekend";
     else kind = "empty";
@@ -617,6 +689,7 @@ export function buildFieldActivityReport(input: {
       punches,
       leave,
       partnerSoloCalls: partnerSoloByDay.get(dateIso) ?? 0,
+      ownVisits,
       notes,
     });
   }

@@ -12,37 +12,81 @@
 // (`deduction_candidates`, source_module = FIELD_WORKFORCE). That is the populated,
 // meaningful signal, so that is what this reports. Probation is computed purely
 // from hire_date + 90 (the canonical rule) — no extra query.
+//
+// WHO IS ON THE TEAM (owner, 2026-10-20: "every single role that is applicable to appear in a
+// module — find it and show it"): the Medical Reps AND the district and regional managers anywhere
+// beneath the subject, never the subject himself. Until then only Medical Reps were kept, so a
+// Regional or National Sales Manager's page said nothing about the district managers under him —
+// their probation, their weekly plans or their no-activity flags. A manager's weekly plan is his
+// Phoenix CRM manager week (`phoenix_crm_manager_plans`), counted by the same pure rule as a rep's.
+// Team Health (team-health.ts) stays rep-only on purpose: its figures are per-rep field work.
 
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
-import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
+import { resolveEmployee360RoleCategory, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 import { countTeamPlanCompliance, type RepWeekPlanRow } from "@/lib/employee-360/team-plan-compliance";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { loadManagerPlansInRange } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
-import { ownTerritories } from "@/lib/phoenix-crm/scope";
+import { ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamProbationRep = { hrId: string; name: string; daysRemaining: number };
 
 export type TeamLifecycleSummary = {
   hasData: boolean;
-  repCount: number;
-  // Weekly-plan compliance in the window — the reps' Phoenix CRM weeks (team-plan-compliance.ts)
-  planSubmittedCount: number; // reps with >=1 week sent (submitted, approved or returned)
-  planApprovedCount: number; // reps with >=1 approved week
-  planCoverageRate: number; // planSubmittedCount / repCount
+  repCount: number; // Medical Reps beneath the subject
+  managerCount: number; // district and regional managers beneath the subject (owner, 2026-10-20)
+  // Weekly-plan compliance in the window — the reps' Phoenix CRM weeks and the managers' Phoenix
+  // CRM manager weeks (team-plan-compliance.ts)
+  planSubmittedCount: number; // people with >=1 week sent (submitted, approved or returned)
+  planApprovedCount: number; // people with >=1 approved week
+  planCoverageRate: number; // planSubmittedCount / (repCount + managerCount)
   // Field discipline — confirmed no-activity deduction flags in the window's months.
   disciplineHasData: boolean;
-  disciplineFlaggedReps: number; // distinct reps with any live field-workforce flag
+  disciplineFlaggedReps: number; // distinct team members with any live field-workforce flag
   disciplineNoActivityDays: number; // total confirmed no-activity days across the team
   // Probation (hire_date + 90 > today)
   probationCount: number;
   probationReps: TeamProbationRep[];
 };
 
+/** The managers kept on a manager's team beside his Medical Reps. */
+const TEAM_MANAGER_CATEGORIES = new Set<Employee360RoleCategory>(["district-manager", "regional-manager"]);
+
+/**
+ * Split the subject's subtree into the Medical Reps and the district/regional managers beneath him.
+ * The subject himself is never his own team member, and a person listed twice is counted once.
+ * Pure, so the membership rule is pinned without a database.
+ */
+export function selectTeamLifecycleMembers(input: {
+  subjectHrId: string;
+  teamHrIds: string[];
+  employees: EmployeeDirectoryRow[];
+}): { reps: EmployeeDirectoryRow[]; managers: EmployeeDirectoryRow[] } {
+  const subjectKey = canonicalHrIdKey(input.subjectHrId);
+  const teamKeys = new Set(
+    input.teamHrIds.map((h) => canonicalHrIdKey(h)).filter((k): k is string => Boolean(k)),
+  );
+  const seen = new Set<string>();
+  const reps: EmployeeDirectoryRow[] = [];
+  const managers: EmployeeDirectoryRow[] = [];
+  for (const e of input.employees) {
+    const key = canonicalHrIdKey(e.hrId);
+    if (key == null || !teamKeys.has(key) || key === subjectKey || seen.has(key)) continue;
+    const category = resolveEmployee360RoleCategory(e.jobTitle ?? e.positionTitle);
+    if (category === "medical-rep") reps.push(e);
+    else if (category && TEAM_MANAGER_CATEGORIES.has(category)) managers.push(e);
+    else continue;
+    seen.add(key);
+  }
+  return { reps, managers };
+}
+
 const EMPTY: TeamLifecycleSummary = {
   hasData: false,
   repCount: 0,
+  managerCount: 0,
   planSubmittedCount: 0,
   planApprovedCount: 0,
   planCoverageRate: 0,
@@ -72,42 +116,42 @@ function monthKeysIn(from: string, to: string): string[] {
 }
 
 export async function getEmployee360TeamLifecycle(input: {
+  /** The manager whose report this is — never counted on his own team. */
+  subjectHrId: string;
+  /** The subject's whole subtree (the subject may be in it; he is left out). */
   teamHrIds: string[];
   employees: EmployeeDirectoryRow[];
   window: { from: string; to: string };
   now?: string;
 }): Promise<TeamLifecycleSummary> {
-  const teamKeys = new Set(
-    input.teamHrIds.map((h) => canonicalHrIdKey(h)).filter((k): k is string => Boolean(k)),
-  );
-  const teamReps = input.employees.filter((e) => {
-    const key = canonicalHrIdKey(e.hrId);
-    return (
-      key != null &&
-      teamKeys.has(key) &&
-      resolveEmployee360RoleCategory(e.jobTitle ?? e.positionTitle) === "medical-rep"
-    );
-  });
-  if (teamReps.length === 0) return EMPTY;
+  const { reps: teamReps, managers: teamManagers } = selectTeamLifecycleMembers(input);
+  const teamPeople = [...teamReps, ...teamManagers];
+  if (teamPeople.length === 0) return EMPTY;
 
   // Map the deduction-pipeline compact key back to a canonical HR_ID key.
   const compactToKey = new Map<string, string>();
-  for (const e of teamReps) {
+  for (const e of teamPeople) {
     const key = canonicalHrIdKey(e.hrId);
     const compact = compactDeductionsHrId(e.hrId);
     if (key && compact) compactToKey.set(compact, key);
   }
   const months = monthKeysIn(input.window.from, input.window.to);
 
-  const [plans, discipline] = await Promise.all([
+  const [repPlans, managerPlans, discipline] = await Promise.all([
     fetchPlanCompliance(teamReps, input.window),
+    fetchManagerPlanCompliance(teamManagers, input.window),
     fetchFieldDiscipline([...compactToKey.keys()], months, compactToKey),
   ]);
+  // Two disjoint sets of people, so the counts add.
+  const plans = {
+    submitted: repPlans.submitted + managerPlans.submitted,
+    approved: repPlans.approved + managerPlans.approved,
+  };
 
   // Probation — canonical rule: hire_date + 90 days > today.
   const today = input.now ? new Date(input.now) : new Date();
   const probationReps: TeamProbationRep[] = [];
-  for (const e of teamReps) {
+  for (const e of teamPeople) {
     if (!e.hireDate) continue;
     const end = new Date(`${String(e.hireDate).slice(0, 10)}T00:00:00Z`);
     if (Number.isNaN(end.getTime())) continue;
@@ -119,10 +163,11 @@ export async function getEmployee360TeamLifecycle(input: {
   }
   probationReps.sort((a, b) => a.daysRemaining - b.daysRemaining);
 
-  const total = teamReps.length;
+  const total = teamPeople.length;
   return {
     hasData: true,
-    repCount: total,
+    repCount: teamReps.length,
+    managerCount: teamManagers.length,
     planSubmittedCount: plans.submitted,
     planApprovedCount: plans.approved,
     planCoverageRate: total > 0 ? plans.submitted / total : 0,
@@ -189,6 +234,49 @@ async function fetchPlanCompliance(
     });
   } catch {
     // The org tree or phoenix_crm_plans unavailable — leave empty.
+    return { submitted: 0, approved: 0 };
+  }
+}
+
+/**
+ * The team managers' Phoenix CRM manager weeks starting inside the window, counted by the same rule as
+ * a rep's week (owner, 2026-10-20). A manager's week is keyed by HIS HR id, never a seat, so each row
+ * is credited to the manager who owns it. Best-effort like the rest of this panel.
+ */
+async function fetchManagerPlanCompliance(
+  teamManagers: EmployeeDirectoryRow[],
+  window: { from: string; to: string },
+): Promise<{ submitted: number; approved: number }> {
+  if (teamManagers.length === 0) return { submitted: 0, approved: 0 };
+  try {
+    // The manager-plan readers store and return a personKey; the team is keyed by canonicalHrIdKey.
+    const teamKeyByPerson = new Map<string, string>();
+    for (const manager of teamManagers) {
+      const person = personKey(manager.hrId);
+      const key = canonicalHrIdKey(manager.hrId);
+      if (person && key) teamKeyByPerson.set(person, key);
+    }
+    const from = window.from.slice(0, 10);
+    const to = window.to.slice(0, 10);
+    const plans = await loadManagerPlansInRange({ from, to, managerHrIds: [...teamKeyByPerson.keys()] });
+    const rows: RepWeekPlanRow[] = plans
+      // The reader returns every week that TOUCHES the window; a rep's tile counts the weeks that
+      // START inside it, so the manager's does too.
+      .filter((plan) => plan.weekStart >= from && plan.weekStart <= to)
+      .map((plan) => ({
+        seatId: `manager-week:${plan.managerHrId}`,
+        weekStart: plan.weekStart,
+        status: plan.status,
+        submittedAt: plan.submittedAt,
+        submittedByHrId: plan.managerHrId,
+      }));
+    return countTeamPlanCompliance({
+      rows,
+      repKeyBySeat: new Map(),
+      repKeyOf: (hrId) => teamKeyByPerson.get(personKey(hrId) ?? "") ?? null,
+    });
+  } catch {
+    // phoenix_crm_manager_plans unavailable — leave the managers' weeks uncounted.
     return { submitted: 0, approved: 0 };
   }
 }

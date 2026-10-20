@@ -451,7 +451,7 @@ export function runWeeklySalesRepViewTests() {
     const source = readSource(route);
     assert.match(
       source,
-      /if \(!isPortalWeeklyRole\(access\.role\) && !isCompanyExecutive\)/,
+      /if \(!mayReadManagersWeeklySales\(access\.role\)\)/,
       `${route} still gates on the managers' role list`,
     );
     assert.doesNotMatch(source, /portal-weekly-rep|isPortalWeeklyRepRole/, `${route} has no rep path — no region-level data or export for a rep`);

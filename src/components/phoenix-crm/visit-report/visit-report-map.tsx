@@ -276,7 +276,10 @@ export function VisitReportMap({
     };
   }, [fitKey, googleMaps, highlightId, numberOf, routes, shown]);
 
-  const missing = rows.length - located.length;
+  // A manager's own single visit carries no position BY RULE — none is asked of it (owner, 2026-10-20) — so it is
+  // never counted among the visits that "have no position", which reads as a reading that failed.
+  const ownVisits = rows.filter((row) => row.ownVisit === true).length;
+  const missing = rows.length - ownVisits - located.length;
   const routeKm = useMemo(
     () => (routes.length === 0 ? null : routes.reduce((sum, path) => sum + straightLineMetres(path), 0)),
     [routes],
@@ -345,6 +348,9 @@ export function VisitReportMap({
                 : `Each line joins one person's visits that day in the order they were saved: ${formatDistance(routeKm)} in a straight line, all lines together. `}
             Save order is how the day was logged, not the order the doors were reached.
             {missing > 0 ? ` ${countText(missing)} visit${missing === 1 ? " has" : "s have"} no position and ${missing === 1 ? "is" : "are"} not drawn.` : ""}
+            {ownVisits > 0
+              ? ` ${countText(ownVisits)} ${ownVisits === 1 ? "visit is the manager's own and is" : "visits are the manager's own and are"} listed in the table, not on the map: no position is asked of a manager's own visit.`
+              : ""}
           </p>
         </CrmBlock>
       )}

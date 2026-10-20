@@ -634,7 +634,38 @@ function emptyPlansSummary(): EmployeePlansSummary {
   };
 }
 
-function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
+/**
+ * The submitters whose District Manager APP ROLE changes who decides a plan resting at
+ * manager_approved: a rep-titled submitter (an acting District Manager keeps a Medical
+ * Representative title) whose manager has a configured second approver. Such a plan waits on that
+ * approver, never on the CEO (resolveApproverPlanStage), but the title alone counted it as CEO
+ * pending (owner, 2026-10-20: every role that applies must be found). Only those few submitters pay
+ * a login-row read; any failure reads as "not an acting District Manager", the title-only answer
+ * every plan had before.
+ */
+async function loadActingDistrictManagerKeys(plans: EmployeePlan[]): Promise<Set<string>> {
+  const candidates = new Map<string, string>();
+  for (const plan of plans) {
+    if (plan.status !== "manager_approved") continue;
+    if (isDistrictManagerPlanTitle(plan.employeeJobTitle)) continue;
+    if (!planHasSecondApprover(plan.managerHrId, true)) continue;
+    const key = normalizeHrId(plan.employeeHrId);
+    if (key && !candidates.has(key)) candidates.set(key, plan.employeeHrId);
+  }
+  const keys = new Set<string>();
+  await Promise.all(
+    Array.from(candidates.entries()).map(async ([key, hrId]) => {
+      const role = await authRoleForHrId(hrId).catch(() => null);
+      if (role === "District Manager") keys.add(key);
+    }),
+  );
+  return keys;
+}
+
+function summarizePlans(
+  plans: EmployeePlan[],
+  actingDistrictManagerKeys: ReadonlySet<string> = new Set(),
+): EmployeePlansSummary {
   const summary = emptyPlansSummary();
   for (const plan of plans) {
     if (plan.status === "draft") summary.drafts += 1;
@@ -644,7 +675,19 @@ function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
     }
     if (plan.status === "details_requested") summary.detailsRequested += 1;
     if (plan.status === "manager_approved") {
-      if (!isDistrictManagerPlanTitle(plan.employeeJobTitle)) {
+      // CEO pending is what the CEO stage actually decides (resolveApproverPlanStage): never a
+      // District Manager plan by title, and never a District Manager plan — title OR app role
+      // (isDistrictManagerPlanSubmitter) — that waits on its manager's second approver. An acting
+      // District Manager's plan with no second approver stays counted: that is the legacy plan the
+      // CEO stage is still the only path for (the ceo_approve guard is title-only on purpose).
+      const isDistrictManagerPlan = isDistrictManagerPlanSubmitter(
+        plan.employeeJobTitle,
+        actingDistrictManagerKeys.has(normalizeHrId(plan.employeeHrId)) ? "District Manager" : null,
+      );
+      if (
+        !isDistrictManagerPlanTitle(plan.employeeJobTitle) &&
+        !planHasSecondApprover(plan.managerHrId, isDistrictManagerPlan)
+      ) {
         summary.ceoPending += 1;
       }
     }
@@ -2601,6 +2644,10 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const adherenceById = ownPlanIds.length > 0
       ? await loadPlanAdherenceForPlans(ownPlanIds).catch(() => new Map<string, PlanAdherenceScore>())
       : new Map<string, PlanAdherenceScore>();
+    // summarizePlans' CEO-pending count needs the acting District Managers' app role. It reads
+    // nothing at all unless a rep-titled plan waits on a second approver, and a failure leaves the
+    // title-only answer.
+    const actingDistrictManagerKeys = await loadActingDistrictManagerKeys(mapped).catch(() => new Set<string>());
     const plans = mapped.map((plan) => {
       const adherence = adherenceById.get(plan.id);
       return adherence ? { ...plan, adherence } : plan;
@@ -2637,7 +2684,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       planLimit: WORKSPACE_PLAN_LIMIT,
       plans,
       schemaReady: true,
-      summary: summarizePlans(plans),
+      summary: summarizePlans(plans, actingDistrictManagerKeys),
     };
   } catch (error) {
     if (!isSchemaMissing(error)) throw error;

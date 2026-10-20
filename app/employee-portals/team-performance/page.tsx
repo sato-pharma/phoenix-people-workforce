@@ -42,6 +42,13 @@ export default async function EmployeePortalTeamPerformancePage({
     redirect("/overview");
   }
 
+  // A Regional Manager's team is several districts, so his page is MRs Performance (owner,
+  // 2026-10-20) — this one is the single-district view and used to tell him it was for District
+  // Sales Managers only.
+  if (access.role === "Regional Manager") {
+    redirect("/employee-portals/med-reps-performance");
+  }
+
   if (!(await canAccess(access, "sales", "read"))) {
     return (
       <EmployeePortalEmptyState

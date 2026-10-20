@@ -6,6 +6,15 @@
  * answer — the workbook. It is a READER: it writes nothing, and every figure is a fact the rep's own
  * entries already hold.
  *
+ * 🔴 A MANAGER IS A TARGET TOO (owner, 2026-10-20: "when filter by manager u find no manager"). The picker offers
+ * every manager the viewer reads (`managersInScope`, never upward) who stands above one of his territories, and
+ * the lines' product managers where he is given them (`loadScopeProductManagers`). A manager's report holds every
+ * visit a rep logged naming him — as the double or chain visit's manager or senior, or as the product manager —
+ * on the territories the viewer reads, PLUS the single visits he logged alone, as rows under his own name (owner,
+ * 2026-10-20, multiple choice: "Show, keep out of reps"). Those come through `manager-plan-readers.ts`, the one
+ * door out of his own visits' table, are marked `ownVisit`, sit on no rep's row and in no dashboard figure, and
+ * are never asked for a location or a photo.
+ *
  * 🔴 WHO READS IT: the Super Admin and the SFE Manager across the company and the district manager across his
  * own team (`canReadVisitReport`; the team is `readableSeats`), refused with a 404 so the
  * report's existence is not confirmed to anybody else. The SFE Manager reads every field except the
@@ -26,20 +35,25 @@
  * short, confident answer.
  */
 
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { dedupeIds, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { dedupeIds, IN_ID_CHUNK, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { readDoubleVisitPlansForReport } from "@/lib/phoenix-crm/server/double-visit-plans";
-import { readManagerWithRepSlotsForReport } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadManagerOwnVisitRows, readManagerWithRepSlotsForReport } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadScopeProductManagers } from "@/lib/phoenix-crm/server/scope-product-managers";
+import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { managerOwnVisitReportRow } from "@/lib/phoenix-crm/visit-report-own-visits";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadVisitReportEvidence, type VisitReportEvidence } from "@/lib/phoenix-crm/server/integrity-board";
 import { buildVisitReportValues, visitLocationFlagLabel, type Row, type VisitReportContext } from "@/lib/phoenix-crm/server/visit-report-values";
 import { personOnTheVisit } from "@/lib/phoenix-crm/location-integrity";
+import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
-import { managerChain, territoriesBelow, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { heldManagerSeats, managerChain, managersInScope, personKey, territoriesBelow, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
 import { phoenixVisitKindLabel } from "@/lib/phoenix-crm/visit-kind-labels";
 import { addDays, computeVisitSequence, firstDayOfPreviousMonth, monthKey, type SequenceInput } from "@/lib/phoenix-crm/visit-report-compute";
@@ -51,9 +65,11 @@ import {
   type VisitReportReaderTier,
   type VisitReportRow,
   type VisitReportScopeDistrict,
+  type VisitReportScopeManager,
   type VisitReportScopeRep,
   type VisitReportScopeView,
   type VisitReportTarget,
+  type VisitReportTargetKind,
   type VisitReportValue,
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
@@ -102,11 +118,42 @@ function monthStart(day: string): string {
   return `${day.slice(0, 7)}-01`;
 }
 
-/** Who and which districts the picker offers, and the default period. */
+/** A manager the picker offers, before he is named: the person, and his title and line. */
+type ScopeManagerEntry = { hrId: string; title: string };
+
+/**
+ * The managers this viewer may report on (owner, 2026-10-20: "when filter by manager u find no manager"): every
+ * manager he reads (`managersInScope` — never one above him) who holds a seat above one of his readable
+ * territories, then the lines' product managers where he is given them (`loadScopeProductManagers`). The person is
+ * the key: a product manager holds no seat, and a manager on two seats is offered once, at the nearer.
+ */
+async function scopeManagers(viewer: PhoenixCrmViewer, seats: ReadonlyArray<OrgSeat>): Promise<ScopeManagerEntry[]> {
+  const readable = new Set(seats.map((seat) => seat.seatId));
+  const out: ScopeManagerEntry[] = [];
+  const seen = new Set<string>();
+  for (const member of managersInScope(viewer.org, viewer.hrId, viewer.basis)) {
+    if (member.seat.isOtherPseudoDm || seen.has(member.hrId)) continue;
+    const held = heldManagerSeats(viewer.org, member.hrId)
+      .filter((seat) => !seat.isOtherPseudoDm)
+      .map((seat) => seat.seatId);
+    if (!territoriesBelow(viewer.org, held).some((seat) => readable.has(seat.seatId))) continue;
+    seen.add(member.hrId);
+    out.push({ hrId: member.hrId, title: [seatTierTitle(member.seat.tier), member.seat.lineName].filter(Boolean).join(" · ") });
+  }
+  for (const manager of await loadScopeProductManagers(viewer, seats)) {
+    if (seen.has(manager.hrId)) continue;
+    seen.add(manager.hrId);
+    out.push({ hrId: manager.hrId, title: [manager.role, manager.lineNames.join(" + ")].filter(Boolean).join(" · ") });
+  }
+  return out;
+}
+
+/** Who and which districts and managers the picker offers, and the default period. */
 export async function loadVisitReportScope(viewer: PhoenixCrmViewer): Promise<VisitReportScopeView> {
   assertReader(viewer);
   const seats = readableSeats(viewer);
-  const names = await loadPeopleNames(seats.map((seat) => seat.occupantHrId));
+  const managerEntries = await scopeManagers(viewer, seats);
+  const names = await loadPeopleNames([...seats.map((seat) => seat.occupantHrId), ...managerEntries.map((entry) => entry.hrId)]);
 
   const reps: VisitReportScopeRep[] = [];
   const districts = new Map<string, VisitReportScopeDistrict>();
@@ -138,24 +185,37 @@ export async function loadVisitReportScope(viewer: PhoenixCrmViewer): Promise<Vi
     }
   }
   reps.sort((left, right) => left.label.localeCompare(right.label));
-  const districtList = [...districts.values()].filter((entry) => entry.repCount > 0).sort((left, right) => left.label.localeCompare(right.label));
+  // Every district, an all-vacant one too (owner, 2026-10-20): its visits — a manager's double visit on a vacant
+  // seat, a rep entered for later — are still somebody's work, and hiding the district hid them.
+  const districtList = [...districts.values()].sort((left, right) => left.label.localeCompare(right.label));
+  const managers: VisitReportScopeManager[] = managerEntries
+    .map((entry) => {
+      const name = nameOf(names, entry.hrId, "Unnamed manager");
+      return { id: entry.hrId, label: [name, entry.title].filter(Boolean).join(" · "), name, title: entry.title };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
   return {
     cairoToday: viewer.cairoToday,
     defaults: { from: monthStart(viewer.cairoToday), to: viewer.cairoToday },
     districts: districtList,
+    managers,
     sight: visitReportTierOf(viewer),
     reps,
   };
 }
 
-type Resolved = { kind: "rep" | "district"; name: string; seats: OrgSeat[] };
+/**
+ * Who the report is about. `personHrId` is set for a manager only: his visits are read by HIM, never by a seat, and
+ * the day's order is worked out along his own day.
+ */
+type Resolved = { kind: VisitReportTargetKind; name: string; seats: OrgSeat[]; personHrId: string | null };
 
 function resolveTarget(viewer: PhoenixCrmViewer, target: VisitReportTarget, names: PeopleNames): Resolved {
   const readable = new Map(readableSeats(viewer).map((seat) => [seat.seatId, seat]));
   if (target.kind === "rep") {
     const seat = readable.get(String(target.id));
     if (!seat) throw notFoundError("This rep is not in the organogram. Reload the page.");
-    return { kind: "rep", name: nameOf(names, seat.occupantHrId, "Vacant seat"), seats: [seat] };
+    return { kind: "rep", name: nameOf(names, seat.occupantHrId, "Vacant seat"), personHrId: null, seats: [seat] };
   }
   const dm = viewer.org.seats.get(String(target.id));
   // One sentence for "no such district" and "not yours", so a district manager asking for another
@@ -164,7 +224,18 @@ function resolveTarget(viewer: PhoenixCrmViewer, target: VisitReportTarget, name
   if (!dm || !DISTRICT_TIERS.has(dm.tier) || dm.isOtherPseudoDm) throw notFoundError(missing);
   const seats = territoriesBelow(viewer.org, [dm.seatId]).filter((seat) => readable.has(seat.seatId));
   if (seats.length === 0) throw notFoundError(viewer.isSuperAdmin || viewer.isSfeManager ? "This district has no territories to report on." : missing);
-  return { kind: "district", name: [dm.regionName ?? "District", dm.lineName].filter(Boolean).join(" · "), seats };
+  return { kind: "district", name: [dm.regionName ?? "District", dm.lineName].filter(Boolean).join(" · "), personHrId: null, seats };
+}
+
+/**
+ * A manager the picker would offer this viewer, or a 404 — one sentence for "no such manager" and "not yours", so a
+ * viewer asking for a manager outside his reach learns nothing about whether that person exists.
+ */
+async function resolveManager(viewer: PhoenixCrmViewer, id: string): Promise<ScopeManagerEntry> {
+  const key = personKey(id);
+  const found = key ? (await scopeManagers(viewer, readableSeats(viewer))).find((entry) => entry.hrId === key) : undefined;
+  if (!found) throw notFoundError("This manager is not in the organogram. Reload the page.");
+  return found;
 }
 
 // ── Paged reads ──────────────────────────────────────────────────────────────────────────────────
@@ -188,6 +259,8 @@ async function readSeatRange(
   window: { column: string; from: string; to: string },
   includeTest: boolean,
 ): Promise<Row[]> {
+  // A manager with no visit a rep logged on a readable territory has no seats to ask about — nothing to read.
+  if (seatIds.length === 0) return [];
   return fetchAllRowsKeyset<Row>(
     () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,6 +271,48 @@ async function readSeatRange(
     },
     { cursorColumn, cursorOf: (row) => (row[cursorColumn] == null ? null : String(row[cursorColumn])) },
   );
+}
+
+/** The person columns a rep's visit names a manager in — the double or chain visit's two, and the product manager's. */
+const MANAGER_VISIT_COLUMNS = ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const;
+
+/**
+ * Every visit a rep logged naming this manager between two dates, on the territories this viewer reads — read by
+ * the PERSON, never by a seat, because a regional, national or product manager rides on territories no single seat
+ * holds. Each column is read in full and the answers are joined by id, so a chain visit naming him twice is one row.
+ */
+async function readManagerVisitRange(
+  hrId: string,
+  readable: ReadonlySet<string>,
+  window: { from: string; to: string },
+  includeTest: boolean,
+): Promise<Row[]> {
+  const keys = hrIdLookupKeys(hrId);
+  const answers = await Promise.all(
+    MANAGER_VISIT_COLUMNS.map((column) =>
+      fetchAllRowsKeyset<Row>(
+        () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let query: any = getSupabaseAdmin()
+            .from("phoenix_crm_visits")
+            .select(VISIT_COLUMNS)
+            .in(column, keys)
+            .gte("visit_date", window.from)
+            .lte("visit_date", window.to);
+          if (!includeTest) query = query.eq("is_test", false);
+          return query;
+        },
+        { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+      ),
+    ),
+  );
+  const byId = new Map<string, Row>();
+  for (const rows of answers) {
+    for (const row of rows) {
+      if (readable.has(String(row.seat_id))) byId.set(String(row.id), row);
+    }
+  }
+  return [...byId.values()];
 }
 
 function tuneByIds(includeTest: boolean) {
@@ -227,6 +342,23 @@ function whoseVisit(visit: Row): string | null {
   return personOnTheVisit({ managerHrId: textOrNull(visit.manager_hr_id), repHrId: textOrNull(visit.rep_hr_id) });
 }
 
+/**
+ * Everyone on the visit, by name — the person it is credited to first, then the rep, the manager, the senior manager
+ * and the product manager, each once (owner, 2026-10-20: "when filter by manager u find no manager"). "Who visited"
+ * offers and matches any of them; `repName` still says whose visit it is.
+ */
+function visitParticipantNames(visit: Row, creditedHrId: string | null, names: PeopleNames): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const hrId of [creditedHrId, visit.rep_hr_id, visit.manager_hr_id, visit.senior_hr_id, visit.product_manager_hr_id]) {
+    const key = personKey(textOrNull(hrId));
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(nameOf(names, key, "Unknown person"));
+  }
+  return out;
+}
+
 /** Sort rows by a timestamp column: `newest` first, or `oldest` first so a thread reads in the order it was written. */
 const byTime =
   (column: string, order: "newest" | "oldest") =>
@@ -247,8 +379,9 @@ export type LoadVisitReportInput = {
 
 export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisitReportInput): Promise<VisitReportView> {
   assertReader(viewer);
-  const kind = input.kind === "district" ? "district" : input.kind === "rep" ? "rep" : null;
-  if (!kind || typeof input.id !== "string") throw validationError("Choose a rep or a district.");
+  const kind: VisitReportTargetKind | null =
+    input.kind === "district" ? "district" : input.kind === "rep" ? "rep" : input.kind === "manager" ? "manager" : null;
+  if (!kind || typeof input.id !== "string") throw validationError("Choose a rep, a manager or a district.");
 
   const fields = resolveVisitReportSelection(Array.isArray(input.fields) ? input.fields : [], visitReportTierOf(viewer));
   if (fields.length === 0) throw validationError("Choose at least one field to report.");
@@ -261,22 +394,54 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const has = (...keys: string[]) => keys.some((key) => chosen.has(key));
   const categories = new Set(fields.map((field) => field.category));
 
-  const scopeNames = await loadPeopleNames(readableSeats(viewer).map((seat) => seat.occupantHrId));
-  const target = resolveTarget(viewer, { id: input.id, kind }, scopeNames);
-  const seatIds = target.seats.map((seat) => seat.seatId);
-  const seatById = new Map(target.seats.map((seat) => [seat.seatId, seat]));
-
   // ── The visits: the period, plus the month before it only when a repeat-visit field was chosen ──
   const wantsHistory = has("customerVisitsThisMonth", "daysSinceCustomerVisit");
   const readFrom = wantsHistory ? firstDayOfPreviousMonth(period.from) : period.from;
-  const everyVisit = await readSeatRange(
-    "phoenix_crm_visits",
-    VISIT_COLUMNS,
-    "id",
-    seatIds,
-    { column: "visit_date", from: readFrom, to: period.to },
-    includeTest,
-  );
+
+  let target: Resolved;
+  let everyVisit: Row[];
+  let ownVisits: ManagerDayVisit[] = [];
+  if (kind === "manager") {
+    // A manager is read by HIMSELF: every visit a rep logged naming him on a territory this viewer reads, and the
+    // single visits he logged alone — through the one door out of their table, as display rows under his name.
+    const manager = await resolveManager(viewer, input.id);
+    const readable = new Set(readableSeats(viewer).map((seat) => seat.seatId));
+    const [named, own, managerNames] = await Promise.all([
+      readManagerVisitRange(manager.hrId, readable, { from: readFrom, to: period.to }, includeTest),
+      loadManagerOwnVisitRows({ end: period.to, isTest: includeTest, managerHrIds: [manager.hrId], start: period.from }),
+      loadPeopleNames([manager.hrId]),
+    ]);
+    const seatsOfHis = dedupeIds(named.map((visit) => idOf(visit.seat_id)))
+      .map((seatId) => viewer.org.seats.get(seatId))
+      .filter((seat): seat is OrgSeat => Boolean(seat));
+    if (seatsOfHis.length > IN_ID_CHUNK) {
+      throw validationError(
+        `This manager was on visits in ${seatsOfHis.length} territories in the period, more than ${IN_ID_CHUNK}. Choose fewer days.`,
+        "visit_report_too_large",
+      );
+    }
+    target = {
+      kind: "manager",
+      name: [nameOf(managerNames, manager.hrId, "Unnamed manager"), manager.title].filter(Boolean).join(" · "),
+      personHrId: manager.hrId,
+      seats: seatsOfHis,
+    };
+    everyVisit = named;
+    ownVisits = own;
+  } else {
+    const scopeNames = await loadPeopleNames(readableSeats(viewer).map((seat) => seat.occupantHrId));
+    target = resolveTarget(viewer, { id: input.id, kind }, scopeNames);
+    everyVisit = await readSeatRange(
+      "phoenix_crm_visits",
+      VISIT_COLUMNS,
+      "id",
+      target.seats.map((seat) => seat.seatId),
+      { column: "visit_date", from: readFrom, to: period.to },
+      includeTest,
+    );
+  }
+  const seatIds = target.seats.map((seat) => seat.seatId);
+  const seatById = new Map(target.seats.map((seat) => [seat.seatId, seat]));
   const visits = everyVisit
     .filter((visit) => String(visit.visit_date) >= period.from)
     .sort(
@@ -285,9 +450,10 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
         String(left.captured_at).localeCompare(String(right.captured_at)) ||
         String(left.id).localeCompare(String(right.id)),
     );
-  if (visits.length > VISIT_REPORT_MAX_ROWS) {
+  const rowCount = visits.length + ownVisits.length;
+  if (rowCount > VISIT_REPORT_MAX_ROWS) {
     throw validationError(
-      `This choice holds ${visits.length.toLocaleString("en-US")} visits, more than ${VISIT_REPORT_MAX_ROWS.toLocaleString("en-US")}. Narrow the period or choose one rep.`,
+      `This choice holds ${rowCount.toLocaleString("en-US")} visits, more than ${VISIT_REPORT_MAX_ROWS.toLocaleString("en-US")}. Narrow the period or choose one rep.`,
       "visit_report_too_large",
     );
   }
@@ -381,7 +547,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   let dayActivities: Row[] = [];
   let doublePlans: Row[] = [];
   let leave: { days: ReadonlySet<string>; unread: boolean } = { days: new Set<string>(), unread: true };
-  if (needsDay) {
+  // A manager with no visit a rep logged on a readable territory has no seat whose day there is to read.
+  if (needsDay && seatIds.length > 0) {
     const plans = await fetchAllRowsKeyset<Row>(
       () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -443,6 +610,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   }
 
   // ── The sequence facts ──
+  // Whose day a visit is ordered in: the rep's (or the manager on his own call) — or, on a manager's report, the
+  // MANAGER's own day, since he moves from one rep to the next and the order, the gap and the distance are his.
+  const sequencePerson = (visit: Row): string | null => target.personHrId ?? whoseVisit(visit);
   const provenanceByVisit = new Map(provenanceRows.map((row) => [String(row.visit_id), row]));
   const sequence = needsSequence
     ? computeVisitSequence(
@@ -455,7 +625,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
               lat: typeof visit.lat === "number" ? visit.lat : null,
               lon: typeof visit.lon === "number" ? visit.lon : null,
               // Nobody named at all (none on production) keeps the seat, so it is still a day of its own.
-              person: whoseVisit(visit) ?? `seat:${String(visit.seat_id)}`,
+              person: sequencePerson(visit) ?? `seat:${String(visit.seat_id)}`,
               savedAtMs: Date.parse(String(visit.captured_at)),
               visitDate: String(visit.visit_date),
               visitId: String(visit.id),
@@ -506,6 +676,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     ...unplannedRows.flatMap((row) => [row.manager_decided_by_hr_id, row.sfe_decided_by_hr_id, row.admin_decided_by_hr_id]),
     ...reviews.map((review) => review.decided_by_hr_id),
     ...doublePlans.map((row) => row.manager_hr_id),
+    target.personHrId,
   ].map((value) => (typeof value === "string" ? value : null)));
 
   // The districts under the same regional manager, as "Alex-BHR + Delta (1) + Delta (2)".
@@ -585,6 +756,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       placeLon: typeof place?.lon === "number" ? place.lon : null,
       planned: visit.is_unplanned !== true,
       repName: nameOf(people, personHrId, "Unknown person"),
+      participants: visitParticipantNames(visit, personHrId, people),
       savedAtIso: String(visit.captured_at ?? ""),
       values,
       visitDate,
@@ -594,6 +766,17 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       visitType: phoenixVisitKindLabel(visit.kind) ?? "",
     };
   });
+
+  // His own single visits, under his own name and on nobody else's row (owner, 2026-10-20: "Show, keep out of
+  // reps"), then everything in the order it happened. A rep or district report holds none, and keeps its order.
+  if (ownVisits.length > 0) {
+    const managerName = nameOf(people, target.personHrId, "Unnamed manager");
+    rows.push(...ownVisits.map((own) => managerOwnVisitReportRow(own, managerName, fields)));
+    rows.sort(
+      (left, right) =>
+        left.visitDate.localeCompare(right.visitDate) || left.savedAtIso.localeCompare(right.savedAtIso) || left.visitId.localeCompare(right.visitId),
+    );
+  }
 
   // The same two helpers the screen's filters use, so a narrowed screen and a narrowed file count alike.
   const filled = countVisitReportFilled(rows, fields);

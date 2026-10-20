@@ -1828,8 +1828,9 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/spotlight", icon: Sparkles, label: "Spotlight", permissions: [{ resource: "spotlight_self", action: "read" }], roles: ["Medical Rep", "District Manager"] },
       // Scoped CRM Master. Catalog entry (so Modules Control can curate it); the rendered sidebar
       // link lives in the Fieldforce section of employee-portal-layout.tsx. Mirrors PORTAL_CRM_ROLES
-      // in src/lib/crm/portal-crm-scope.ts (adds Medical Rep to the DSM/RM/NSM set above).
-      { href: "/employee-portals/crm", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      // in src/lib/crm/portal-crm-scope.ts (adds Medical Rep to the DSM/RM/NSM set above, and since
+      // 2026-10-20 the Product and Group Product Manager, each on his own line).
+      { href: "/employee-portals/crm", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       // Reps List — the portal twin of /admin/reps-list, added 2026-08-31 with it ("every manager in
       // the employee portal has a scoped reps list"). Catalog entry so the command palette can find
       // it and the browser tab gets its label; the rendered sidebar link sits under CRM in the Field

@@ -75,7 +75,12 @@ export type EarlyBirdsScopeRow = {
   lineId: number | null;
   jobTitle: string | null;
   positionTitle: string | null;
+  /** Names a district whose manager has left: "Vacant — <its reps' region>". */
+  regionName?: string | null;
 };
+
+/** What the viewer's own district is called on his board — the reps who report straight to him. */
+export const DIRECT_REPORTS_DISTRICT_NAME = "Reporting to you directly";
 
 /** The scope when the directory cannot be read. Empty, but for a reason the caller must surface. */
 const DIRECTORY_UNAVAILABLE_SCOPE: EarlyBirdsScope = {
@@ -121,7 +126,11 @@ export function resolveEarlyBirdsScopeFrom(
   const nameByKey = new Map<string, string>();
   const hrIdByKey = new Map<string, string>();
   const lineIdByKey = new Map<string, number | null>();
+  const regionByKey = new Map<string, string>();
+  const managerHrIdByKey = new Map<string, string>();
   const districtKeys = new Set<string>();
+  /** District (manager) key → the medical reps reporting to it. */
+  const repKeysByDistrictKey = new Map<string, string[]>();
   let viewerIsMedicalRep = false;
   let viewerLineId: number | null = null;
 
@@ -132,21 +141,52 @@ export function resolveEarlyBirdsScopeFrom(
     nameByKey.set(key, row.displayName);
     hrIdByKey.set(key, row.hrId);
     lineIdByKey.set(key, typeof row.lineId === "number" ? row.lineId : null);
+    const regionName = typeof row.regionName === "string" ? row.regionName.trim() : "";
+    if (regionName) regionByKey.set(key, regionName);
     if (key === viewerKey) {
       viewerIsMedicalRep = isMedicalRepDirectoryEmployee(row);
       viewerLineId = typeof row.lineId === "number" ? row.lineId : null;
     }
     if (isMedicalRepDirectoryEmployee(row)) {
       const managerKey = normalizeHrIdForAccess(row.managerHrId);
-      if (managerKey) districtKeys.add(managerKey);
+      if (managerKey) {
+        districtKeys.add(managerKey);
+        // The stored spelling, for a district whose manager has no row of his own: the board and
+        // the recommendations read match `manager_hr_id` as stored, never the normalised key.
+        if (!managerHrIdByKey.has(managerKey) && row.managerHrId) managerHrIdByKey.set(managerKey, row.managerHrId.trim());
+        const repKeys = repKeysByDistrictKey.get(managerKey);
+        if (repKeys) repKeys.push(key);
+        else repKeysByDistrictKey.set(managerKey, [key]);
+      }
     }
   }
 
+  // A district whose manager has no active directory row — he left, and his reps still report to
+  // his seat — is a VACANT district. It is named by its reps' region, never by the departed
+  // manager's HR id (owner, 2026-10-20: every applicable person appears, by name).
+  const vacantDistrictName = (key: string): string => {
+    const region = (repKeysByDistrictKey.get(key) ?? []).map((repKey) => regionByKey.get(repKey)).find(Boolean);
+    return region ? `Vacant — ${region}` : "Vacant district";
+  };
+
   const toDistrict = (key: string): EarlyBirdsDistrict => ({
-    hrId: hrIdByKey.get(key) ?? key,
+    hrId: hrIdByKey.get(key) ?? managerHrIdByKey.get(key) ?? key,
     hrIdKey: key,
-    name: nameByKey.get(key) ?? key,
+    name: nameByKey.get(key) ?? vacantDistrictName(key),
   });
+
+  /**
+   * Whether the viewer is a district in his own right: at least one medical rep reports straight
+   * to him who is NOT herself a district. An acting DM still titled "Medical Representative"
+   * (B-1's case, below) does not count — she has her own district — so an NSM whose only direct
+   * rep-titled report is that acting DM is still never his own district.
+   */
+  const managesRepsDirectly = (managerKey: string) =>
+    (repKeysByDistrictKey.get(managerKey) ?? []).some((repKey) => !districtKeys.has(repKey));
+
+  /** The viewer's own district reads as "Reporting to you directly", never as his own name. */
+  const toScopedDistrict = (key: string): EarlyBirdsDistrict =>
+    key === viewerKey ? { ...toDistrict(key), name: DIRECT_REPORTS_DISTRICT_NAME } : toDistrict(key);
 
   const byName = (a: EarlyBirdsDistrict, b: EarlyBirdsDistrict) => a.name.localeCompare(b.name);
 
@@ -183,13 +223,21 @@ export function resolveEarlyBirdsScopeFrom(
   // The deeper fix is to derive districts from au_v_org_tree (the declared source of truth for org
   // structure) instead of from job titles and employees.manager_hr_id. That is a larger change; this
   // ordering closes the hole meanwhile.
+  //
+  // Owner, 2026-10-20 ("u find no field force"): reps under a VACANT district seat report straight
+  // to the NSM in the directory (AI-0029 under the vacant Alex-BHR seat reports to AI-0008), and
+  // dropping the NSM's own key unconditionally dropped them from every board he can open. So his own
+  // key stays when he directly manages a rep who is not herself a district, and a district whose
+  // manager has left counts as on his line when its reps are.
   if (viewerLineId !== null && access.role === "National Sales Manager") {
-    const onMyLine = new Set(
-      Array.from(districtKeys).filter((districtKey) => lineIdByKey.get(districtKey) === viewerLineId),
-    );
-    onMyLine.delete(viewerKey);
+    const isOnMyLine = (districtKey: string) =>
+      hrIdByKey.has(districtKey)
+        ? lineIdByKey.get(districtKey) === viewerLineId
+        : (repKeysByDistrictKey.get(districtKey) ?? []).some((repKey) => lineIdByKey.get(repKey) === viewerLineId);
+    const onMyLine = new Set(Array.from(districtKeys).filter(isOnMyLine));
+    if (!managesRepsDirectly(viewerKey)) onMyLine.delete(viewerKey);
     return {
-      districts: Array.from(onMyLine, toDistrict).sort(byName),
+      districts: Array.from(onMyLine, toScopedDistrict).sort(byName),
       viewerHrIdKey: viewerKey,
       isCompanyWide: false,
       scopeLabel: "your line",
@@ -197,8 +245,10 @@ export function resolveEarlyBirdsScopeFrom(
     };
   }
 
-  // A District Manager sees his own district and nothing else.
-  if (districtKeys.has(viewerKey)) {
+  // A District Manager sees his own district and nothing else. Never a Regional Manager: one with a
+  // rep reporting straight to him is a district too, and stopping here would hide every district
+  // under him (owner, 2026-10-20) — he falls through to his subtree, which includes his own key.
+  if (districtKeys.has(viewerKey) && access.role !== "Regional Manager") {
     return {
       districts: [toDistrict(viewerKey)],
       viewerHrIdKey: viewerKey,
@@ -228,8 +278,10 @@ export function resolveEarlyBirdsScopeFrom(
   // Regional managers: the districts that genuinely roll up to them. Fails CLOSED — an empty
   // subtree shows nothing rather than the whole company.
   const owned = districtsUnder(viewerKey, managerKeyByEmployeeKey, Array.from(districtKeys));
+  // The same rule as the NSM's: his own key only for reps who report straight to him.
+  if (!managesRepsDirectly(viewerKey)) owned.delete(viewerKey);
   return {
-    districts: Array.from(owned, toDistrict).sort(byName),
+    districts: Array.from(owned, toScopedDistrict).sort(byName),
     viewerHrIdKey: viewerKey,
     isCompanyWide: false,
     scopeLabel: owned.size > 1 ? "your line" : "your team",

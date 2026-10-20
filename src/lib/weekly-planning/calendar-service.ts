@@ -1,6 +1,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadManagerPlanHalfDays, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -108,10 +109,16 @@ function isAllowedCalendarOwnerTitle(employeeJobTitle: string | null) {
   return hasManager && hasTerritory;
 }
 
-function isAllowedCalendarOwner(item: PlanningCalendarPlanItem) {
+function isAllowedCalendarOwner(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext) {
   if (isHeadOfficeLine(item.lineName)) return true;
   const title = normalizeLowerText(item.employeeJobTitle);
-  return ALLOWED_CALENDAR_OWNER_ROLES.has(title) || isAllowedCalendarOwnerTitle(item.employeeJobTitle);
+  if (ALLOWED_CALENDAR_OWNER_ROLES.has(title) || isAllowedCalendarOwnerTitle(item.employeeJobTitle)) return true;
+  // An acting District Manager keeps a Medical Representative title, so the title test above dropped
+  // her plans from every viewer's calendar — her own Regional and National Manager included. Her
+  // District Manager APP role makes her an owner too (owner, 2026-10-20: every role that applies must
+  // appear; isDistrictManagerPlanSubmitter reads the same pair). A viewer context built without the
+  // set keeps the title-only answer.
+  return Boolean(viewer.districtManagerHrIds?.has(normalizeHrId(item.employeeHrId)));
 }
 
 function sameLine(left: string | null | undefined, right: string | null | undefined) {
@@ -163,6 +170,10 @@ export type CalendarViewerContext = {
   // Manager rules currently use this; computed for every viewer regardless since
   // it's a cheap filter over the already-loaded directory.
   directReportHrIds: ReadonlySet<string>;
+  // Normalized HR_IDs of every active District Manager APP role holder (app_auth_users), so a plan
+  // owner whose title is still a rep's — an acting District Manager — is still a calendar owner.
+  // Optional: left out, ownership is decided by title alone, as it was before.
+  districtManagerHrIds?: ReadonlySet<string>;
 };
 
 // Role/line-scoped visibility (owner decision 2026-07-20, refined twice same-day —
@@ -194,7 +205,7 @@ export type CalendarViewerContext = {
 //   - Anyone else with calendar access (any role/line not named above) keeps the
 //     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
-  if (!isAllowedCalendarOwner(item)) return false;
+  if (!isAllowedCalendarOwner(item, viewer)) return false;
 
   const role = normalizeLowerText(viewer.role);
   if (role === "ceo" || role === "super admin") return true;
@@ -484,9 +495,14 @@ export async function getSharedPlanningCalendarWorkspace(
       items: rawPlanItems,
       loadedHeaderCount,
       loadedItemCount,
-    }, holidays] = await Promise.all([
+    }, holidays, districtManagerHrIds] = await Promise.all([
       loadSubmittedPlanItems(start, end),
       loadHolidayItems(year, month, start, end),
+      // The acting District Managers (app role, rep title) — see isAllowedCalendarOwner. A failed
+      // read leaves the title-only answer, never a broken calendar.
+      activeRoleSignIns(["District Manager"])
+        .then((signIns) => new Set(signIns.map((signIn) => normalizeHrId(signIn.hrId)).filter(Boolean)))
+        .catch(() => new Set<string>()),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
     const directReportHrIds = new Set(
@@ -494,7 +510,13 @@ export async function getSharedPlanningCalendarWorkspace(
         .filter((row) => hrIdsMatch(row.managerHrId, access.hrId))
         .map((row) => normalizeHrId(row.hrId)),
     );
-    const viewerContext: CalendarViewerContext = { hrId: viewerHrId, role: access.role, lineName: viewer?.lineName ?? null, directReportHrIds };
+    const viewerContext: CalendarViewerContext = {
+      hrId: viewerHrId,
+      role: access.role,
+      lineName: viewer?.lineName ?? null,
+      directReportHrIds,
+      districtManagerHrIds,
+    };
     const planItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);

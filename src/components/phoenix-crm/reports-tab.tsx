@@ -1804,6 +1804,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const scope = useCrmGet<ReportScopeView>(crmUrl(REPORTS_PATH, { section: "scope" }), "report");
   const [section, setSection] = useState<ReportSection>("visits");
   const [lineCode, setLineCode] = useState("");
+  // One of the viewer's managers (owner, 2026-10-20: "when filter by manager u find no manager") — the territories
+  // under the seats he holds. The server refuses one who is not the viewer's; this only narrows the lists.
+  const [managerHrId, setManagerHrId] = useState("");
   const [seatId, setSeatId] = useState("");
   const [preset, setPreset] = useState<PeriodPreset | null>("this_month");
   const [period, setPeriod] = useState<Period>(() => presetPeriod("this_month", cairoToday));
@@ -1825,7 +1828,14 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   // The daily plan keeps its own days: they reach FORWARD, which the shared period refuses.
   const dailyDays = useDailyPlanDays(today);
   const territories = view?.territories ?? [];
-  const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
+  const onLine = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
+  const onLineIds = new Set(onLine.map((territory) => territory.seatId));
+  // The managers the filter offers: the viewer's, with a territory on the chosen line. A product or marketing manager
+  // reads his products company-wide and is offered none.
+  const managerOptions = view?.audience === "products" ? [] : (view?.managers ?? []).filter((manager) => manager.seatIds.some((id) => onLineIds.has(id)));
+  const chosenManager = managerHrId ? (managerOptions.find((manager) => manager.hrId === managerHrId) ?? null) : null;
+  const underManager = chosenManager ? new Set(chosenManager.seatIds) : null;
+  const lineTerritories = underManager ? onLine.filter((territory) => underManager.has(territory.seatId)) : onLine;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
   // A product or marketing manager reads what the field heard about his own products, company-wide
   // (owner, 2026-10-02) — and, since 2026-10-07, the double and chain visits HE WAS ON: his own row
@@ -1874,7 +1884,14 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     //  is left OUT of the URL rather than sent: the server reads a missing value as off, and a
     // URL that carries every default is a URL nobody can read.
     const comparing = COMPARABLE_SECTIONS.includes(name) && compare !== "off" ? compare : null;
-    const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest, compare: comparing };
+    const filters = {
+      section: name,
+      lineCode: lineCode || null,
+      managerHrId: chosenManager ? chosenManager.hrId : null,
+      seatId: seatId || null,
+      includeTest: withTest,
+      compare: comparing,
+    };
     if (name === "daily") {
       return dailyProblem || dailyNeedsTerritory ? null : crmUrl(REPORTS_PATH, { ...filters, from: dailyDays.period.from, to: dailyDays.period.to });
     }
@@ -1891,13 +1908,20 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     if (name === "heard") {
       return problem
         ? null
-        : crmUrl(REPORTS_PATH, { ...filters, lineCode: productsAudience ? null : filters.lineCode, seatId: null, from: period.from, to: period.to });
+        : crmUrl(REPORTS_PATH, {
+            ...filters,
+            lineCode: productsAudience ? null : filters.lineCode,
+            managerHrId: productsAudience ? null : filters.managerHrId,
+            seatId: null,
+            from: period.from,
+            to: period.to,
+          });
     }
     // A product manager's own ride-alongs are company-wide for the same reason: he rides across every
     // line he owns a product on, so a line or territory filter would hide a visit he was on. The
     // server ignores both for him; sending neither keeps the URL honest about what was asked.
     if (name === "managers" && productsAudience) {
-      return problem ? null : crmUrl(REPORTS_PATH, { ...filters, lineCode: null, seatId: null, from: period.from, to: period.to });
+      return problem ? null : crmUrl(REPORTS_PATH, { ...filters, lineCode: null, managerHrId: null, seatId: null, from: period.from, to: period.to });
     }
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
@@ -1950,6 +1974,19 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   function chooseLine(next: string) {
     setLineCode(next);
     if (seatId && next && !territories.some((territory) => territory.seatId === seatId && territory.lineCode === next)) setSeatId("");
+    // A manager with no territory on the new line is not a choice there any more.
+    if (managerHrId && next) {
+      const lineIds = new Set(territories.filter((territory) => territory.lineCode === next).map((territory) => territory.seatId));
+      const manager = (view?.managers ?? []).find((entry) => entry.hrId === managerHrId);
+      if (!manager || !manager.seatIds.some((id) => lineIds.has(id))) setManagerHrId("");
+    }
+  }
+
+  function chooseManager(next: string) {
+    setManagerHrId(next);
+    // A territory that is not under the new manager is not a choice under him.
+    const manager = next ? (view?.managers ?? []).find((entry) => entry.hrId === next) : null;
+    if (seatId && manager && !manager.seatIds.includes(seatId)) setSeatId("");
   }
 
   function choosePreset(next: PeriodPreset) {
@@ -1992,6 +2029,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
           from: period.from,
           includeTest: withTest,
           lineCode: lineCode || null,
+          managerHrId: chosenManager ? chosenManager.hrId : null,
           month,
           seatId: seatId || null,
           to: period.to,
@@ -2079,11 +2117,13 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const presetLabel = preset ? (PRESETS.find((option) => option.value === preset)?.label ?? null) : null;
   const chosenLine = lineCode ? (view.lines.find((line) => line.lineCode === lineCode)?.lineName ?? null) : null;
   const chosenTerritory = seatId ? (lineTerritories.find((territory) => territory.seatId === seatId)?.name ?? null) : null;
-  const dailySummary = [dailyPlanDaysSummary(dailyDays), chosenLine, chosenTerritory].filter((part): part is string => Boolean(part)).join(" · ");
+  const chosenManagerText = chosenManager ? `${chosenManager.name} · ${chosenManager.title}` : null;
+  const dailySummary = [dailyPlanDaysSummary(dailyDays), chosenLine, chosenManagerText, chosenTerritory].filter((part): part is string => Boolean(part)).join(" · ");
   const filterSummary = [
     MONTHLY_SECTIONS.includes(activeSection) ? monthLabel(activeSection === "capacity" ? capacityMonthChosen : month) : presetLabel,
     MONTHLY_SECTIONS.includes(activeSection) ? null : periodText(period),
     chosenLine,
+    chosenManagerText,
     activeSection === "heard" ? null : chosenTerritory,
   ]
     .filter((part): part is string => Boolean(part))
@@ -2249,7 +2289,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
             </CrmField>
           ) : null}
 
-          {view.lines.length > 1 || lineTerritories.length > 1 ? (
+          {view.lines.length > 1 || lineTerritories.length > 1 || managerOptions.length > 1 ? (
             <div className="grid min-w-0 gap-3 md:grid-cols-2">
               {view.lines.length > 1 ? (
                 <CrmField htmlFor={`${idPrefix}-line`} label="Line">
@@ -2258,6 +2298,18 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
                     {view.lines.map((line) => (
                       <option key={line.lineCode} value={line.lineCode}>
                         {line.lineName}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
+              ) : null}
+              {managerOptions.length > 1 ? (
+                <CrmField htmlFor={`${idPrefix}-manager`} label="Manager">
+                  <CrmSelect id={`${idPrefix}-manager`} onChange={(event) => chooseManager(event.target.value)} value={chosenManager ? chosenManager.hrId : ""}>
+                    <option value="">Every manager</option>
+                    {managerOptions.map((manager) => (
+                      <option key={manager.hrId} value={manager.hrId}>
+                        {[manager.name, manager.title, manager.lineName].filter(Boolean).join(" · ")}
                       </option>
                     ))}
                   </CrmSelect>

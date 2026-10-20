@@ -93,7 +93,7 @@ function ChartTooltipContent({
 
 // ── Hierarchy table ──────────────────────────────────────────────────────────
 
-type LevelKey = "teams" | "regions" | "areas" | "reps" | "managers" | "products";
+type LevelKey = "teams" | "regions" | "areas" | "reps" | "managers" | "regionalManagers" | "products";
 
 const LEVEL_META: Record<LevelKey, { label: string; column: string; icon: typeof Target }> = {
   teams: { label: "Teams", column: "Team", icon: Boxes },
@@ -101,6 +101,8 @@ const LEVEL_META: Record<LevelKey, { label: string; column: string; icon: typeof
   areas: { label: "Areas", column: "Area", icon: Building2 },
   reps: { label: "Medical Reps", column: "Medical Rep", icon: Users },
   managers: { label: "District Managers", column: "District Manager", icon: Users },
+  // Owner, 2026-10-20: each row is the sum of the District Managers under that Regional Manager.
+  regionalManagers: { label: "Regional Managers", column: "Regional Manager", icon: Users },
   products: { label: "Products", column: "Product", icon: Package },
 };
 
@@ -525,9 +527,10 @@ export function VsTargetDashboard({
     if (data.levels.region) levels.push("regions");
     if (data.levels.area) levels.push("areas");
     if (data.levels.rep) levels.push("reps", "managers");
+    if (data.regionalManagers.length > 0) levels.push("regionalManagers");
     if (data.products.length > 0) levels.push("products");
     return levels;
-  }, [data.levels, data.products.length]);
+  }, [data.levels, data.regionalManagers.length, data.products.length]);
 
   const nodesForLevel: Record<LevelKey, VsTargetNode[]> = {
     teams: data.teams,
@@ -535,6 +538,7 @@ export function VsTargetDashboard({
     areas: data.areas,
     reps: data.reps,
     managers: data.managers,
+    regionalManagers: data.regionalManagers,
     products: data.products,
   };
 
@@ -966,9 +970,16 @@ export function VsTargetDashboard({
               bricks={bricks}
               bricksLoading={bricksLoading}
             />
+            {level === "regionalManagers" ? (
+              <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500">
+                Each Regional Manager&apos;s figures are the totals of the District Managers under that Regional Manager. Districts that
+                report straight to the National Sales Manager, and vacant districts, are not under any Regional Manager.
+              </p>
+            ) : null}
             {(data.areaUnattributedValue !== 0 || data.unplacedValue !== 0) &&
             level !== "teams" &&
             level !== "regions" &&
+            level !== "regionalManagers" &&
             level !== "products" ? (
               <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500">
                 This level totals {formatEgpFull(nodesForLevel[level].reduce((sum, node) => sum + node.current.actualValue, 0))}.

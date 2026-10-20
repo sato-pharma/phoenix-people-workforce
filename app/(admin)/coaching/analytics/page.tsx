@@ -26,6 +26,7 @@ import {
   getCoachingQuarterlySummary,
   getCoachingReports,
   getCoachingScoreAnalyticsForReports,
+  scopeCoachingDirectoryForAccess,
 } from "@/lib/coaching/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
@@ -57,13 +58,17 @@ export default async function CoachingAnalyticsPage() {
   const currentYear = new Date().getFullYear();
   const initialReportFilters = { year: currentYear };
 
-  const [reports, quarterlySummary, optionReports, optionQuarterlySummary, employees] = await Promise.all([
+  const [reports, quarterlySummary, optionReports, optionQuarterlySummary, directory] = await Promise.all([
     getCoachingReports(initialReportFilters, access),
     getCoachingQuarterlySummary(initialReportFilters, access),
     getCoachingReports({}, access),
     getCoachingQuarterlySummary({}, access),
     getEmployeeDirectoryRows(),
   ]);
+  // The rep comparison and the filter options are built from the directory, so it is narrowed by
+  // the same rule as the reports — the whole company here listed every line's reps as uncoached to
+  // a line or team manager (owner, 2026-10-20). Oversight roles keep the full directory.
+  const employees = scopeCoachingDirectoryForAccess(access, directory);
 
   const visibleQuarterlySummary = filterCoachingQuarterlySummaryByReports(quarterlySummary, reports, true);
   const scoreAnalytics = await getCoachingScoreAnalyticsForReports(reports);

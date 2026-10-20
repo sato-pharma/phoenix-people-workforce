@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 const coachingServiceSource = readFileSync(
   new URL("../src/lib/coaching/service.ts", import.meta.url),
   "utf8",
@@ -43,6 +45,19 @@ export function runCoachingAccessScopeTests() {
     /Training Manager/,
     "Training Manager must be part of the org-wide coaching oversight set",
   );
+
+  // SFE Manager (owner, 2026-10-20): his seat is on the Head Office line, so the line-scoped branch
+  // ("same line AND same department") matched no field rep at all — 0 of 122 reports. He reads
+  // coaching company-wide, like the other oversight seats. Read through stripComments so a comment
+  // naming him can never satisfy (or break) the check.
+  const strippedService = stripComments(coachingServiceSource);
+  const strippedOversight = strippedService.match(
+    /const coachingOversightRoles = new Set<AccessContext\["role"\]>\(\[[\s\S]*?\]\);/,
+  )?.[0];
+  const strippedLineRoles = strippedService.match(/const lineRoles = new Set<AccessContext\["role"\]>\(\[[\s\S]*?\]\);/)?.[0];
+  assert.ok(strippedOversight && strippedLineRoles, "both coaching role blocks must exist in code");
+  assert.match(strippedOversight, /"SFE Manager"/, "SFE Manager must be part of the org-wide coaching oversight set");
+  assert.doesNotMatch(strippedLineRoles, /"SFE Manager"/, "SFE Manager must not sit on the line-scoped coaching branch");
 
   // The oversight set must gate both the per-employee access check and the summary list filter,
   // so TM (and the company roles) bypass line/own-only scoping for read/list.

@@ -80,6 +80,7 @@ import {
   KPI_DOCTOR_SORT_LABEL,
 } from "@/lib/crm/kpis-doctor-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
+import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerMeasure, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 import type { DoctorFrequencyStatus } from "@/lib/crm/phoenix-kpi-rules";
@@ -88,6 +89,15 @@ import { KPI_TREND_METRICS, KPI_TREND_SCALES, type KpiTrendMetric, type KpiTrend
 
 /**
  * The KPIs board — Summary, Call Rate, Coverage and Frequency over one rep list.
+ *
+ * ## The rep rows are medical reps; the managers sit below them, as averages
+ *
+ * Owner, 2026-10-20: "add manager row and every dm kpis is calculated based on his reps averag and
+ * nsm based on dsms av and so on". The rep list, its tiles, podiums and bands still count medical
+ * reps only. Under the rep table, on the four tabs that print one, a "Managers" section lists
+ * `board.managers`: one row per manager, each figure the average of the rows directly beneath him
+ * (crm/kpis-manager-rows.ts). It wears the Summary table's own columns and widths and the rep
+ * card's own cells, so it is measured by the same numbers.
  *
  * ## The owner's vocabulary, not the code's
  *
@@ -859,8 +869,9 @@ function MeasureCell({
 }
 
 /** The coverage-floor badge (owner, 2026-09-05: "coverage no less than 95%"). Null when there is no
- * plan to measure against — the same guard every coverage reading on this board honours. */
-function coverageFloorBadge(row: KpiRepRow): React.ReactNode {
+ * plan to measure against — the same guard every coverage reading on this board honours. A manager
+ * row hands in its averaged coverage against the same floor. */
+function coverageFloorBadge(row: Pick<KpiRepRow, "meetsCoverageFloor">): React.ReactNode {
   if (row.meetsCoverageFloor == null) return null;
   // Reuses the SAME tokens as the five-value band — "elite" green when it clears, "behind" rose
   // when it does not — rather than a one-off pair of colours, per the shared-chrome rule at the
@@ -2907,6 +2918,272 @@ function SessionCard({
   );
 }
 
+// ── The managers ──────────────────────────────────────────────────────────────────────────────
+
+/*
+ * THE MANAGER ROWS — owner, 2026-10-20: "add manager row and every dm kpis is calculated based on his
+ * reps averag and nsm based on dsms av and so on".
+ *
+ * Every figure here is an AVERAGE of the rows directly beneath the manager, and each cell says how
+ * many rows it averaged, so a reader can tell a district of five from a district where four of the
+ * five had anything to measure. AM and PM are two columns and two averages, exactly as on the rep
+ * rows. The rows are not sortable and carry no rank: they are in tree order (each manager before the
+ * managers beneath him), and a rank across levels would compare a district with a nation.
+ */
+
+/** The sub-line under a plain (unsortable) head — the Summary table's own Overall spelling. */
+const HEAD_SUB = "mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400";
+
+/** "reps", "managers" or "rows" — what a manager's figures are averages OF. */
+function averagedNoun(row: KpiManagerRow, count: number): string {
+  const noun = row.directManagers === 0 ? "rep" : row.directReps === 0 ? "manager" : "row";
+  return count === 1 ? noun : `${noun}s`;
+}
+
+/** "Average of 5 reps", or "Average of 4 of 5 reps" when one row beneath him had nothing to measure. */
+function averagedCaption(row: KpiManagerRow, measure: KpiManagerMeasure, none: string): string {
+  const measured = row.measured[measure];
+  if (measured === 0) return none;
+  return measured === row.averagedRows
+    ? `Average of ${measured} ${averagedNoun(row, measured)}`
+    : `Average of ${measured} of ${row.averagedRows} ${averagedNoun(row, row.averagedRows)}`;
+}
+
+/** An averaged percentage, or the marker when no row beneath him had one. */
+function managerPct(value: number | null, none: string): string {
+  return value == null ? none : `${value}%`;
+}
+
+/** The AM or PM line under a manager's attainment: the averaged rate, then what it averaged. */
+function managerSessionCaption(row: KpiManagerRow, session: "am" | "pm", target: number): string {
+  const measure = session === "am" ? "amAttainmentPct" : "pmAttainmentPct";
+  const averaged = averagedCaption(row, measure, "No calls in this team");
+  if (row.measured[measure] === 0) return averaged;
+  return `${rate(session === "am" ? row.amRate : row.pmRate)} of ${target} a day · ${averaged}`;
+}
+
+/** The coverage floor, judged on the manager's averaged coverage. */
+function managerFloor(board: KpisBoard, row: KpiManagerRow): React.ReactNode {
+  return coverageFloorBadge({
+    meetsCoverageFloor: row.coveragePct == null ? null : row.coveragePct >= board.coverageFloorPct,
+  });
+}
+
+/** Who the manager is — the name in the rep name's own type, then his seat and his reach. */
+function ManagerName({ row }: { row: KpiManagerRow }) {
+  const seat = row.jobTitle ?? KPI_MANAGER_LEVEL_LABEL[row.level];
+  const where = [row.lineName, row.regionName].filter((part): part is string => Boolean(part?.trim())).join(" · ");
+  return (
+    <span className="block min-w-0">
+      <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+        {row.name}
+      </span>
+      <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where ? `${seat} · ${where}` : seat}</span>
+      <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">
+        {row.repsBeneath} medical {row.repsBeneath === 1 ? "rep" : "reps"} beneath · averages {row.averagedRows}{" "}
+        {averagedNoun(row, row.averagedRows)}
+      </span>
+      {row.reportsTo ? (
+        <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs" dir="auto">
+          Reports to {row.reportsTo}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ManagersTable({ context, rows }: { context: ViewContext; rows: KpiManagerRow[] }) {
+  const { board } = context;
+  const phoenix = isPhoenix(board);
+  return (
+    <table className="hidden w-full table-fixed md:table">
+      {/* THE SUMMARY TABLE'S SIX COLUMNS, at its own measured widths (tests/kpis-board-tables-fit.test.ts
+          pins those): the same heads over the same cells, the name head a shorter word than
+          "Medical rep" and no head carrying a sort arrow, so every head here needs no more room than
+          the one it copies. */}
+      <colgroup>
+        <col style={{ width: "23%" }} />
+        <col style={{ width: "17%" }} />
+        <col style={{ width: "19%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "17%" }} />
+      </colgroup>
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+        <tr>
+          <th className={TH} scope="col">
+            Manager
+            <span className={HEAD_SUB}>Seat · reach</span>
+          </th>
+          <th className={TH} scope="col">
+            Coverage
+            <span className={HEAD_SUB}>Average</span>
+          </th>
+          <th className={TH} scope="col">
+            Frequency
+            <span className={HEAD_SUB}>{phoenix ? "Grade norm" : "Exact only"}</span>
+          </th>
+          <th className={TH} scope="col">
+            AM
+            <span className={HEAD_SUB}>{`Of ${board.amTarget}`}</span>
+          </th>
+          <th className={TH} scope="col">
+            PM
+            <span className={HEAD_SUB}>{`Of ${board.pmTarget}`}</span>
+          </th>
+          <th className={TH} scope="col">
+            Overall
+            <span className={HEAD_SUB}>Average</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
+        {rows.map((row) => (
+          <tr key={row.hrId}>
+            <td className={TD}>
+              <ManagerName row={row} />
+            </td>
+            <MeasureCell
+              band={kpiBandOf(row.coveragePct)}
+              caption={averagedCaption(row, "coveragePct", "Nothing planned in this team")}
+              extra={managerFloor(board, row)}
+              fill={row.coveragePct}
+              value={managerPct(row.coveragePct, "No plan")}
+            />
+            <MeasureCell
+              band={kpiBandOf(row.frequencyPct)}
+              caption={averagedCaption(row, "frequencyPct", "Nothing planned in this team")}
+              fill={row.frequencyPct}
+              value={managerPct(row.frequencyPct, "No plan")}
+            />
+            <MeasureCell
+              band={kpiBandOf(row.amAttainmentPct)}
+              caption={managerSessionCaption(row, "am", board.amTarget)}
+              fill={row.amAttainmentPct}
+              value={managerPct(row.amAttainmentPct, "No calls")}
+            />
+            <MeasureCell
+              band={kpiBandOf(row.pmAttainmentPct)}
+              caption={managerSessionCaption(row, "pm", board.pmTarget)}
+              fill={row.pmAttainmentPct}
+              value={managerPct(row.pmAttainmentPct, "No calls")}
+            />
+            <MeasureCell
+              band={kpiBandOf(row.overallPct)}
+              caption={averagedCaption(row, "overallPct", "Nothing to score in this team")}
+              fill={row.overallPct}
+              value={managerPct(row.overallPct, "No score")}
+            />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** The phone card: the rep card's own six cells, read off the manager's averages. */
+function ManagerCard({ board, row }: { board: KpisBoard; row: KpiManagerRow }) {
+  const measures: Array<{
+    band: KpiBand;
+    caption: string;
+    extra?: React.ReactNode;
+    fill: number | null;
+    label: string;
+    value: string;
+  }> = [
+    {
+      band: kpiBandOf(row.coveragePct),
+      caption: averagedCaption(row, "coveragePct", "Nothing planned in this team"),
+      extra: managerFloor(board, row),
+      fill: row.coveragePct,
+      label: "Coverage",
+      value: managerPct(row.coveragePct, "No plan"),
+    },
+    {
+      band: kpiBandOf(row.frequencyPct),
+      caption: averagedCaption(row, "frequencyPct", "Nothing planned in this team"),
+      fill: row.frequencyPct,
+      label: "Frequency",
+      value: managerPct(row.frequencyPct, "No plan"),
+    },
+    {
+      band: kpiBandOf(row.amAttainmentPct),
+      caption: managerSessionCaption(row, "am", board.amTarget),
+      fill: row.amAttainmentPct,
+      label: "AM call rate",
+      value: managerPct(row.amAttainmentPct, "No calls"),
+    },
+    {
+      band: kpiBandOf(row.pmAttainmentPct),
+      caption: managerSessionCaption(row, "pm", board.pmTarget),
+      fill: row.pmAttainmentPct,
+      label: "PM call rate",
+      value: managerPct(row.pmAttainmentPct, "No calls"),
+    },
+    {
+      // No pharmacy target exists (see PHARMACY_CALL_RATE_TARGET): a rate, never a percentage, and
+      // the quiet band — exactly as on the rep card.
+      band: "noplan",
+      caption:
+        row.pharmacyRate == null
+          ? "No calls in this team"
+          : `no target set yet · ${averagedCaption(row, "pharmacyRate", "No calls in this team")}`,
+      fill: null,
+      label: "Pharmacy",
+      value: row.pharmacyRate == null ? "No calls" : rate(row.pharmacyRate),
+    },
+    {
+      band: kpiBandOf(row.overallPct),
+      caption: averagedCaption(row, "overallPct", "Nothing to score in this team"),
+      fill: row.overallPct,
+      label: "Overall",
+      value: managerPct(row.overallPct, "No score"),
+    },
+  ];
+  return (
+    <div className="px-4 py-3">
+      <ManagerName row={row} />
+      <dl className="mt-2.5 grid grid-cols-3 gap-2">
+        {measures.map((measure) => (
+          <div className="min-w-0" key={measure.label}>
+            <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
+            <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
+            <KpiMeter band={measure.band} value={measure.fill} />
+            <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+            {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * The Managers section, under the rep table. Nothing when the viewer has no manager in reach — a
+ * medical rep's own board, or a filter that leaves none — rather than an empty frame.
+ */
+function ManagersSection({ context }: { context: ViewContext }) {
+  const { board } = context;
+  if (board.managers.length === 0) return null;
+  return (
+    <div className="border-t border-slate-100">
+      <KpiSection
+        description="One row per manager, built from the medical reps in your reach. Each figure is the simple average of the rows directly beneath that manager: a district manager's own reps, or the managers who report to a manager higher up. Every measure is averaged on its own, AM and PM apart, and a row with nothing to measure is left out of that measure rather than counted as zero."
+        title="Managers"
+      >
+        <div className="divide-y divide-slate-100 md:hidden">
+          {board.managers.map((row) => (
+            <ManagerCard board={board} key={row.hrId} row={row} />
+          ))}
+        </div>
+        <div className="hidden md:block">
+          <ManagersTable context={context} rows={board.managers} />
+        </div>
+      </KpiSection>
+    </div>
+  );
+}
+
 // ── The board ─────────────────────────────────────────────────────────────────────────────────
 
 export function KpisBoardView({
@@ -3444,6 +3721,10 @@ export function KpisBoardView({
                   {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} /> : null}
                 </div>
               </div>
+
+              {/* THE MANAGER ROWS (owner, 2026-10-20), apart from the reps and after them: averages of
+                  the rows beneath each manager, never counted in anything above. */}
+              <ManagersSection context={context} />
             </>
           )}
 

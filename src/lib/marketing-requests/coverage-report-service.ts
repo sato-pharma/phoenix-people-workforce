@@ -10,6 +10,7 @@ import {
   resolveMarketingCoverageScope,
 } from "@/lib/marketing-requests/coverage-report-scope";
 import { coverageFilterLabels, entryMatchesCoverageFilters } from "@/lib/marketing-requests/coverage-report-facets";
+import { collectRequestLineNames, lineRouteAdmitsRequest } from "@/lib/marketing-requests/roi-report-scope";
 import type { RoiAttributionLine } from "@/lib/marketing-requests/roi-report-types";
 import {
   chunk,
@@ -21,6 +22,7 @@ import {
   mapRoiRequest,
   presetOwnerHrId,
   resolveChainSeats,
+  resolveLineRouteOverride,
   resolveOwnedProductScope,
   resolveRoiResultStatus,
   resolveRoiStatusScope,
@@ -62,8 +64,9 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // Tracking. It reuses ROI Tracking's expensive/well-tested internals (KPI math,
 // attribution loading, per-request pharmacy sales) unchanged, but builds its OWN
 // role-scoped request index via `resolveMarketingCoverageScope` (the same
-// company-wide roles as ROI Tracking since 2026-10-09, but no Medical Rep
-// territory route). Kept as a fully separate
+// company-wide roles as ROI Tracking since 2026-10-09, the same National Sales
+// Manager line route since 2026-10-20, but no Medical Rep territory route).
+// Kept as a fully separate
 // index + cache from ROI Tracking's so the two reports' scope decisions can
 // never leak into each other via a shared cache key.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,10 +166,16 @@ function getCachedDistributorRollup(supabase: SupabaseAdmin): Promise<Map<string
  * Narrows the per-request product/pharmacy/approval-step fan-out (the expensive
  * `loadByRequestIds` calls in `buildCoverageIndex`) to just the visible subset for
  * manager-chain-scoped viewers — a concrete, finite `visibleRequesterHrIds` Set (District/
- * Regional/National Sales Manager and similar). Company-wide roles and Product Manager/Group
+ * Regional Manager and similar). Company-wide roles and Product Manager/Group
  * Product Manager are returned unchanged: PM/GPM's own filter (in the entries loop, further
  * down in `buildCoverageIndex`) depends on product data that hasn't been fetched yet at this
  * point, so it can't be safely pre-narrowed here.
+ *
+ * 🔴 A viewer with a LINE route (the National Sales Manager, owner 2026-10-20) is returned
+ * unchanged for the same reason: the route admits a request raised by ANYBODY whose promoted
+ * products are on his line, and those products are exactly what has not been fetched yet. Narrowing
+ * him by requester here would drop every Product / Group Product / Marketing Manager campaign
+ * before the entries loop's line check could ever see it — the route would exist and admit nothing.
  *
  * This is the EXACT SAME comparison (`normalizeHrId` + `Set.has`) the entries-loop filter in
  * `buildCoverageIndex` already performs — just run once earlier, purely to shrink what gets
@@ -184,6 +193,7 @@ export function narrowRequestsForFanOut(
   scope: MarketingRoiScope,
 ): MappedRoiRequest[] {
   if (scope.isCompanyWide || !scope.visibleRequesterHrIds) return requests;
+  if (scope.visibleLineRouteNames.size > 0) return requests;
   const visible = scope.visibleRequesterHrIds;
   return requests.filter((request) => visible.has(normalizeHrId(request.requesterHrId) ?? ""));
 }
@@ -211,7 +221,11 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
     ownedLineNames = owned.ownedLineNames;
   }
 
-  const scope = resolveMarketingCoverageScope(access, employeeRows, { ownedProductCodes, ownedLineNames });
+  const scope = resolveMarketingCoverageScope(access, employeeRows, {
+    ownedProductCodes,
+    ownedLineNames,
+    lineScopeOverride: await resolveLineRouteOverride(access),
+  });
 
   const requestsResult = await supabase
     .from("marketing_requests")
@@ -396,7 +410,15 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
         const owned = scope.visibleProductCodes;
         if (!rawProducts.some((product) => owned.has(product.code))) continue;
       } else if (scope.visibleRequesterHrIds) {
-        if (!scope.visibleRequesterHrIds.has(requesterKey)) continue;
+        // The requester route, or the National Sales Manager's line route (owner, 2026-10-20) —
+        // the request's lines read exactly as ROI Tracking reads them (requester's seat line plus
+        // every promoted product's line, from `rawProducts`, never the masked list).
+        if (
+          !scope.visibleRequesterHrIds.has(requesterKey) &&
+          !lineRouteAdmitsRequest(scope, collectRequestLineNames(requesterRow?.lineName ?? null, productLines))
+        ) {
+          continue;
+        }
       } else {
         continue;
       }

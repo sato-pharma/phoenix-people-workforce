@@ -32,7 +32,8 @@ export const maxDuration = 60;
 
 // Portal-scoped CRM Master. The SAME grid and streaming export as /admin/crm, but every row is
 // bounded server-side to the caller's own scope (Medical Rep = self, DSM = district, RM = region
-// subtree, NSM = line subtree — see resolvePortalCrmScope). Deliberately does NOT implement a
+// subtree, NSM = line subtree, PM / GPM = his own line's reps, downward only — see
+// resolvePortalCrmScope). Deliberately does NOT implement a
 // `view` param, so the four unscoped Super-Admin governance panels (?view=unmapped/recovered/…) are
 // unreachable here even by hand-typed URL; CrmTabBar is passed extraTabs={[]} for the same reason.
 
@@ -193,7 +194,7 @@ export default async function PortalCrmPage({
   if (!isPortalCrmRole(access.role)) {
     redirect(resolveLandingPathForRole(access.role));
   }
-  // assertPermission THROWS on denial. All four portal roles hold crm_visits:read today, but the
+  // assertPermission THROWS on denial. Every portal CRM role holds crm_visits:read today, but the
   // matrix is runtime-overridable via role_permission_overrides, so a revoked permission must land
   // the caller on their own role's page — the SAME graceful redirect the role gate above uses —
   // never as an uncaught 500. This runs before EmployeePortalPageShell, so its error boundary would

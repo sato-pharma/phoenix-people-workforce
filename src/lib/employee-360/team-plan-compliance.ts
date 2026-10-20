@@ -19,7 +19,11 @@ export type RepWeekPlanRow = {
   submittedByHrId: string | null;
 };
 
-const SUBMITTED_STATUSES = new Set(["submitted", "approved", "returned"]);
+// `first_approved` is a MANAGER's week (phoenix_crm_manager_plans) approved by his first approver and
+// waiting on the second — sent, not yet approved. A rep's week never carries it. Managers' weeks are
+// counted through this same rule since the team tiles took in the district and regional managers
+// under the subject (owner, 2026-10-20 — team-lifecycle.ts).
+const SUBMITTED_STATUSES = new Set(["submitted", "first_approved", "approved", "returned"]);
 
 export function countTeamPlanCompliance(input: {
   rows: readonly RepWeekPlanRow[];

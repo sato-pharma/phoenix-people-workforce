@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { pickServingRoster } from "../src/lib/employee-portal/serving-roster.ts";
+import { pickServingRoster, servingRosterManagers } from "../src/lib/employee-portal/serving-roster.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { stripComments as stripCommentsShared } from "./support/comment-strip.ts";
 
 /**
  * 🔴 A MANAGER'S TEAM ROSTER COMES FROM THE ORG TREE, NEVER FROM PUBLISHED SALES.
@@ -145,4 +146,96 @@ export function runPortalServingRosterTests() {
     rosterBranch < allClear,
     "AN EMPTY ROSTER MUST BE ANSWERED BEFORE THE ALL-CLEAR. Nobody can be missing from a roster of nobody, so the green 'everyone has submitted' line is what an empty roster renders as otherwise — it did, beside 'Reps submitted 0/0', on 2026-10-12.",
   );
+
+  // ── 7. the Regional Manager is on his National Sales Manager's roster (owner, 2026-10-20) ──
+  // "When you filter by manager you find no manager": the split knew reps and district managers only,
+  // so the Regional Sales Manager between them on a line's tree was dropped, and the National Sales
+  // Manager's CRM First Visit board never listed, counted or ranked him.
+  const lineDirectory = [
+    row({ hrId: "B-300", displayName: "Line Head", jobTitle: "National Sales Manager" }),
+    row({ hrId: "B-310", displayName: "Region North Manager", jobTitle: "Regional Sales Manager" }),
+    row({ hrId: "B-311", displayName: "Region South Manager", jobTitle: "Employee", positionTitle: "Regional Manager" }),
+    row({ hrId: "B-94", displayName: "Taha Mohamed", jobTitle: "Senior District Manager" }),
+    row({ hrId: "B-12", displayName: "Another District", jobTitle: "District Sales Manager" }),
+    row({ hrId: "B-59", displayName: "Giza Centers Rep" }),
+    row({ hrId: "HR-009", displayName: "Yasmeena Elsafory", jobTitle: "HR Specialist" }),
+  ];
+  const nationalLine = pickServingRoster({
+    agentHrIds: ["B-310", "B-311", "B-94", "B-12", "B-59", "HR-009"],
+    directoryRows: lineDirectory,
+    viewerHrId: "B-300",
+  });
+  assert.deepEqual(
+    nationalLine.regionalManagers.map((r) => r.hrId),
+    ["B-310", "B-311"],
+    "THE REGIONAL MANAGER MUST BE ON HIS NATIONAL SALES MANAGER'S ROSTER — read off the job title or the position title, as every other split here is.",
+  );
+  assert.equal(nationalLine.regionalManagers[0]?.name, "Region North Manager", "carried by his display name, never his HR code");
+  assert.deepEqual(
+    nationalLine.dsms.map((r) => r.hrId),
+    ["B-94", "B-12"],
+    "a Regional Manager is NOT a district manager: the line's district count must stay a count of districts",
+  );
+  assert.deepEqual(nationalLine.reps.map((r) => r.hrId), ["B-59"], "reps stay reps");
+  assert.deepEqual(
+    servingRosterManagers(nationalLine).map((r) => r.hrId),
+    ["B-310", "B-311", "B-94", "B-12"],
+    "the board's manager tier holds the Regional Managers first, then the district managers",
+  );
+  assert.ok(
+    !servingRosterManagers(nationalLine).some((r) => r.hrId === "HR-009"),
+    "somebody who manages nobody in the field is still on no field roster",
+  );
+
+  const ownRegion = pickServingRoster({
+    agentHrIds: ["B-310", "B-94", "B-59"],
+    directoryRows: lineDirectory,
+    viewerHrId: "B-310",
+  });
+  assert.deepEqual(ownRegion.regionalManagers, [], "a Regional Manager is never on his own region's roster");
+  assert.deepEqual(
+    pickServingRoster({ agentHrIds: ["B-310"], directoryRows: lineDirectory, viewerHrId: "B-900" }).regionalManagers.map(
+      (r) => r.hrId,
+    ),
+    ["B-310"],
+    "a roster holding only a Regional Manager is still a roster",
+  );
+
+  const rosterSource = stripCommentsShared(
+    readFileSync(new URL("../src/lib/employee-portal/serving-roster.ts", import.meta.url), "utf8"),
+  ).replace(/\s+/g, " ");
+  assert.ok(
+    rosterSource.includes(
+      "roster.reps.length === 0 && roster.dsms.length === 0 && roster.regionalManagers.length === 0",
+    ),
+    "a seat whose subtree holds only a Regional Manager must not resolve to 'no roster' and fall back to the sales rows",
+  );
+
+  const snapshotCode = stripCommentsShared(
+    readFileSync(new URL("../src/lib/employee-portal/home-snapshot.ts", import.meta.url), "utf8"),
+  );
+  const nationalBranch = snapshotCode.slice(
+    snapshotCode.indexOf('if (role === "National Sales Manager")'),
+    snapshotCode.indexOf('if (role === "Regional Manager")'),
+  );
+  assert.ok(nationalBranch.length > 0, "the National Sales Manager branch is found in home-snapshot.ts");
+  assert.match(
+    nationalBranch,
+    /dsms: servingRoster\s*\?\s*servingRosterManagers\(servingRoster\)/,
+    "THE NATIONAL SALES MANAGER'S CRM BOARD CHECKS EVERY MANAGER ON HIS LINE — the Regional Manager with the district managers, off the org tree",
+  );
+  assert.match(
+    nationalBranch,
+    /dsmCount: servingRoster\?\.dsms\.length/,
+    "while his districts keycard still counts districts only",
+  );
+
+  const boardCode = stripCommentsShared(
+    readFileSync(
+      new URL("../src/components/employee-portal/dashboards/crm-first-visit-board.tsx", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.match(boardCode, /label: "Managers submitted"/, "the board names its manager tier for what it holds");
+  assert.doesNotMatch(boardCode, /DSMs submitted|> DSMs \(/, "never 'DSMs' over a tier that holds a Regional Manager");
 }
