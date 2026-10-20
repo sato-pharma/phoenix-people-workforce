@@ -309,6 +309,94 @@ export function excludeProvenWorkedDays(
   };
 }
 
+/**
+ * Every person-day a live `field_review` candidate already claims in the month, keyed
+ * `${compactHrId}:${dateIso}`.
+ *
+ * A field day the Super Admin decided in the HR operations report is charged — or cleared — by THAT
+ * decision (src/lib/hr-ops-reports/bridge.ts writes the candidate, the weekly attendance review's
+ * answer decides it). The same day must never also be charged here as a day with no CRM activity, so
+ * the CRM connector leaves it out. A cleared field_review day ("Do Not Take Action") is still a claim:
+ * the day was reviewed and decided, and not charging it is the decision.
+ *
+ * Fails CLOSED: an unreadable claim list throws, which the collector turns into a warning before any
+ * ledger write — guessing "nothing is claimed" would charge a day HR already decided.
+ */
+export async function loadFieldReviewClaimedDays(input: { month: number; year: number }): Promise<Set<string>> {
+  const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
+  const claimed = new Set<string>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("deductions_candidates")
+      .select("id,employee_hr_id,dates")
+      .eq("category", "field_review")
+      .eq("month_key", monthKey)
+      .is("superseded_at", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(
+        `Failed to load the field days decided in the HR operations report: ${error.message}. ` +
+          "Without them a reviewed field day could be charged a second time as a day with no CRM activity.",
+      );
+    }
+    const rows = (data ?? []) as Array<{ employee_hr_id: string | null; dates: unknown }>;
+    for (const row of rows) {
+      const compactKey = compactDeductionsHrId(String(row.employee_hr_id ?? ""));
+      if (!compactKey || !Array.isArray(row.dates)) continue;
+      for (const date of row.dates) claimed.add(`${compactKey}:${String(date).slice(0, 10)}`);
+    }
+    if (rows.length < PAGE) break;
+  }
+  return claimed;
+}
+
+/**
+ * Removes the days a live `field_review` candidate already claims ({@link loadFieldReviewClaimedDays})
+ * from a CRM candidate, re-pricing the survivors exactly as {@link excludeProvenWorkedDays} does — the
+ * same weighted-day rule, the same raw-count-stays-raw split between the evidence and the charge.
+ * Returns null when nothing is left to charge; a draft with no per-day `dates` is returned untouched.
+ */
+export function excludeFieldReviewClaimedDays(
+  draft: DeductionsCandidateDraft,
+  claimed: ReadonlySet<string>,
+  baseSalaryByCompact: Map<string, number>,
+  jobTitle: string | null,
+): DeductionsCandidateDraft | null {
+  const compactKey = compactDeductionsHrId(draft.employeeHrId);
+  if (!compactKey || draft.dates.length === 0 || claimed.size === 0) return draft;
+  const claimedOn = (date: string) => claimed.has(`${compactKey}:${date}`);
+
+  const hit = draft.dates.filter(claimedOn);
+  if (hit.length === 0) return draft;
+  const chargeableDates = draft.dates.filter((date) => !claimedOn(date));
+  if (chargeableDates.length === 0) return null;
+
+  const baseSalary = baseSalaryByCompact.get(compactKey) ?? null;
+  const weightedDays = sumFieldWorkforceDeductionDayWeights(chargeableDates, jobTitle);
+  const estimatedAmount = calculateDeductionAmountFromBaseSalary({
+    baseSalary,
+    deductionDays: weightedDays,
+    month: draft.month,
+    year: draft.year,
+  });
+
+  return {
+    ...draft,
+    rawValue: chargeableDates.length,
+    estimatedAmount,
+    calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
+    dates: chargeableDates,
+    evidence: {
+      ...draft.evidence,
+      excludedFieldReviewDays: hit,
+      fieldReviewDayReason:
+        "HR operations reviewed these field days in its daily or weekly report and they were decided there. They are charged, or cleared, by that decision — never a second time here.",
+    },
+  };
+}
+
 type LeaverRosterEntry = { hrId: string; lastWorkingDate: string };
 
 async function loadLeaversInPeriod(month: number, year: number): Promise<Map<string, LeaverRosterEntry>> {
@@ -843,7 +931,7 @@ export async function collectCrmCandidates(input: {
   const periodStart = `${input.year}-${monthStr}-01`;
   const periodEnd = `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
 
-  const [leaverRoster, baseSalaryByCompact, suspectDates, monthVisits, provenWorked] = await Promise.all([
+  const [leaverRoster, baseSalaryByCompact, suspectDates, monthVisits, provenWorked, fieldReviewClaimed] = await Promise.all([
     loadLeaversInPeriod(input.month, input.year),
     getBaseSalaryMap(),
     // Throws on a CRM outage rather than silently returning "no anomalies" —
@@ -872,6 +960,9 @@ export async function collectCrmCandidates(input: {
     // outstation trip tables not at all. Throws on a failed read, like every other fail-closed load
     // in this connector: swallowing it would charge a day someone provably worked.
     loadProvenWorkedDays({ end: periodEnd, start: periodStart }),
+    // The field days the Super Admin decided in the HR operations report: that decision charges them,
+    // never this connector as well. Throws on a failed read, for the same reason.
+    loadFieldReviewClaimedDays({ month: input.month, year: input.year }),
   ]);
   // Fail closed: without salaries every amount resolves to null, and the old
   // publish path turned that into a 0.00 EGP deduction that looked successful.
@@ -964,7 +1055,9 @@ export async function collectCrmCandidates(input: {
   const afterProven: DeductionsCandidateDraft[] = [];
   for (const draft of [...leaverDrafts, ...continuingDrafts]) {
     const result = excludeProvenWorkedDays(draft, provenWorked, baseSalaryByCompact, jobTitleOf(draft));
-    if (result) afterProven.push(result);
+    // A day already decided as a reviewed field day is that decision's to charge, never this one's too.
+    const unclaimed = result ? excludeFieldReviewClaimedDays(result, fieldReviewClaimed, baseSalaryByCompact, jobTitleOf(draft)) : null;
+    if (unclaimed) afterProven.push(unclaimed);
   }
 
   if (suspectDates.size === 0) {

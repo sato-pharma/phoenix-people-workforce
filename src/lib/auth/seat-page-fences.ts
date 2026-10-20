@@ -6,7 +6,7 @@
  * at a time, he can want one page behind a key and not its neighbour. This list is the second half
  * of that choice: the pages a key carries in that the owner left OUT.
  *
- * The Talent Acquisition seat (`HR Resourcing`) is the first and only entry, built 2026-10-08 from
+ * The Talent Acquisition seat (`HR Resourcing`) was the first entry, built 2026-10-08 from
  * the owner's own ticks on the access blueprint. Every path below is a page one of her keys opens
  * that he did not tick. Each is EXACT — `/probation` closes the Probation Tracker and leaves
  * `/probation/dashboard` and `/probation/analytics`, which he ticked, open — except where a page's
@@ -55,11 +55,30 @@ export const SEAT_PAGE_FENCES: Partial<Record<PhoenixRole, readonly string[]>> =
     // He did not tick it; her own payslip is on My Workspace.
     "/admin/payslips-center",
   ],
+  // The HR Operations Specialist seat (`HR Administration`), built 2026-10-20 from the owner's
+  // answers: she reviews attendance through her own Daily & Weekly Reports and never sees a salary,
+  // so the company attendance pages (several price a day in EGP), Employee 360, the deduction pages
+  // and the Payslips Center are closed to her even where a key she holds would open them. Her own
+  // fingerprint report, payslip, deductions and vacation request stay on My Workspace.
+  "HR Administration": [
+    // Attendance — carried in by attendance:read and, for the fingerprint report, employees:read.
+    "/attendance",
+    // Employee 360 — carried in by employees:read; it shows pay.
+    "/employee-360",
+    // Deductions — the company tallies, priced in EGP.
+    "/admin/daily-deductions",
+    "/admin/deductions",
+    // Leave — the company request desk. Her own Request Vacation (My Workspace) is hers.
+    "/leave-management/vacation-request",
+    // Payroll — the Payslips Center, carried in by the payslips:read every seat holds for itself.
+    "/admin/payslips-center",
+  ],
 };
 
 /** Fenced paths whose sub-pages are fenced too (a detail page of a fenced list). */
 const FENCED_SUBTREES: Partial<Record<PhoenixRole, readonly string[]>> = {
   "HR Resourcing": ["/admin/approvals/plan", "/admin/field-workforce-compliance"],
+  "HR Administration": ["/attendance", "/employee-360", "/admin/deductions"],
 };
 
 /** `/hr/probation?x=1` -> `/probation`. The `/hr` namespace serves the same pages. */

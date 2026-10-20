@@ -82,6 +82,7 @@ export async function runDeductionsModulePublishTests(): Promise<void> {
       "insufficient_balance_vacation",
       "loan",
       "other",
+      "field_review",
     ];
     for (const category of nonMandatory) {
       assert.equal(isEligibleForPublish(candidate(category, "Approved for Payroll")), true, `${category}: approved must publish`);

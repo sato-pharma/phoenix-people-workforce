@@ -21,7 +21,13 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordDecision } from "@/lib/deductions/service.ts";
 import type { DeductionsDecisionStatus } from "@/lib/deductions/types.ts";
-import { decisionForSettlement, editedDaysApplyToCandidate, effectiveSettlement, payrollDaysForSettledLine } from "@/lib/attendance/digest-rules.ts";
+import {
+  decisionForSettlement,
+  deductionSourceForDigestLine,
+  editedDaysApplyToCandidate,
+  effectiveSettlement,
+  payrollDaysForSettledLine,
+} from "@/lib/attendance/digest-rules.ts";
 
 const SYSTEM_ACTOR = "system:weekly-attendance-digest";
 
@@ -119,17 +125,21 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
   const detectedDaysByLine = new Map<number, number>();
   // The day's CURRENT outcome — a reopened dispute re-decided since its settlement was written.
   const lineNowById = new Map<number, { action: string | null; chosenMethod: string | null }>();
+  // Which month-end deduction each day's answer belongs to: `fingerprint`, or — for a day decided in the
+  // HR operations report (src/lib/hr-ops-reports/bridge.ts) — the row that bridge wrote.
+  const deductionByLine = new Map<number, ReturnType<typeof deductionSourceForDigestLine>>();
   const lineIds = settlements.map((row) => row.digest_line_id);
   for (let index = 0; index < lineIds.length; index += 200) {
     const { data: dryData, error: dryError } = await supabase
       .from("attendance_digest_lines")
-      .select("id,deduction_days,detected_days,action,chosen_method,attendance_weekly_digests!inner(dry_run)")
+      .select("id,status,deduction_days,detected_days,action,chosen_method,attendance_weekly_digests!inner(dry_run)")
       .in("id", lineIds.slice(index, index + 200));
     if (dryError) throw dryError;
     for (const raw of (dryData ?? []) as Array<Record<string, unknown>>) {
       const nested = raw.attendance_weekly_digests as { dry_run?: boolean } | Array<{ dry_run?: boolean }> | null;
       const flag = Array.isArray(nested) ? nested[0]?.dry_run : nested?.dry_run;
       dryByLine.set(Number(raw.id), flag !== false);
+      deductionByLine.set(Number(raw.id), deductionSourceForDigestLine(raw.status == null ? null : String(raw.status)));
       lineNowById.set(Number(raw.id), {
         action: raw.action == null ? null : String(raw.action),
         chosenMethod: raw.chosen_method == null ? null : String(raw.chosen_method),
@@ -157,14 +167,16 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
     }
 
     const sourceRecordId = `${settlement.employee_hr_id}:${settlement.work_date}`;
-    const { data: candidateData, error: candidateError } = await supabase
+    const target = deductionByLine.get(settlement.digest_line_id) ?? deductionSourceForDigestLine(null);
+    let candidateQuery = supabase
       .from("deductions_candidates")
       .select("id,unit,raw_value")
-      .eq("category", "fingerprint")
+      .eq("category", target.category)
       .eq("month_key", monthKey)
       .eq("source_record_id", sourceRecordId)
-      .is("superseded_at", null)
-      .maybeSingle();
+      .is("superseded_at", null);
+    if (target.sourceSystem) candidateQuery = candidateQuery.eq("source_system", target.sourceSystem);
+    const { data: candidateData, error: candidateError } = await candidateQuery.maybeSingle();
     if (candidateError) throw candidateError;
     const candidateId = (candidateData as { id: string } | null)?.id ?? null;
     const candidateUnit = (candidateData as { unit?: string } | null)?.unit ?? null;

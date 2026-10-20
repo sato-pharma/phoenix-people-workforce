@@ -209,9 +209,11 @@ function bucketFor(category: DeductionsCategory): keyof DeductionBuckets {
   switch (category) {
     case "fingerprint":
       return "fingerprint";
-    // A CRM half day lands in the CRM column (owner, 2026-10-08).
+    // A CRM half day lands in the CRM column (owner, 2026-10-08), and so does a field day reviewed in
+    // the HR operations report (owner, 2026-10-20).
     case "crm":
     case "crm_half_day":
+    case "field_review":
       return "crm";
     case "unpaid_vacation":
     case "insufficient_balance_vacation":

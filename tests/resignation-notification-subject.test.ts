@@ -151,8 +151,10 @@ export function runResignationNotificationSubjectTests() {
 
   assert.match(
     roleRecipientsSource,
-    /resignation_workflow_alert: \{[\s\S]{0,400}roles: \["Super Admin", "HR Operations"\]/,
-    "Resignation notifications must go to Super Admin and HR Operations.",
+    // The window is 1,200 characters, not 400: since 2026-10-20 the description names the HR
+    // Operations Specialist and a comment explains her seat, and both sit between the key and roles.
+    /resignation_workflow_alert: \{[\s\S]{0,1200}roles: \["Super Admin", "HR Operations", "HR Administration"\]/,
+    "Resignation notifications must go to Super Admin, HR Operations (HR Generalist) and HR Administration (HR Operations Specialist).",
   );
 
   assert.doesNotMatch(

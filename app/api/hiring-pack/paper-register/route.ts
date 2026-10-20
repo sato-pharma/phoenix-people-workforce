@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import {
+  assertMayPrintPaper,
+  assertMayUseHrForms,
+  paperIssuesForViewer,
+} from "@/lib/hiring-pack/paper-access";
 import { asPrintableDocument, documentLabel } from "@/lib/hiring-pack/document-registry";
 import {
   issuePaperNumber,
@@ -47,9 +51,12 @@ async function namesFor(hrIds: string[]): Promise<Record<string, string>> {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS — which then reads only
+    // the register rows of its own papers.
+    await assertMayUseHrForms(access, "read");
 
-    const issues = await listRecentPaperIssues(25);
+    const listed = await listRecentPaperIssues(25);
+    const issues = listed ? paperIssuesForViewer(access, listed) : null;
     if (!issues) {
       return NextResponse.json(
         { issues: [], ready: false },
@@ -79,7 +86,8 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
+    // Gated like printing — numbering a paper is the first half of printing it.
+    await assertMayUseHrForms(access, "read");
 
     const payload = (await request.json()) as {
       copies?: unknown;
@@ -97,6 +105,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    await assertMayPrintPaper(access, document, "read");
     const mode: PaperIssueMode = payload.mode === "manual" ? "manual" : "employee";
     const copies = Number.parseInt(String(payload.copies ?? "1"), 10);
     // A built-in paper is named from the registry, never from the request. Only an uploaded

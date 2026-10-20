@@ -72,7 +72,7 @@ export type WorkbookScreen = {
 };
 
 export type WorkbookLine = {
-  /** Stable, seat-and-section scoped: `ops-1-3` is the third line of HR Operations Coordinator § 1. */
+  /** Stable, seat-and-section scoped: `ops-1-3` is the third line of the HR Generalist's § 1. */
   id: string;
   /** VERBATIM from the job description. Never edit to fit a screen — change the mapping instead. */
   responsibility: string;
@@ -198,7 +198,7 @@ const S = {
 // Recruiting is the Talent Acquisition seat's; the rest is the Super Admin's for now
 // (UNASSIGNED_HR_FUNCTIONS in hr-functions.ts). git history holds the lines verbatim.
 
-// ── HR Operations Coordinator (seat: HR Operations) — 37 lines across 9 sections
+// ── HR Generalist (seat: HR Operations; titled HR Operations Coordinator until 2026-10-20) — 37 lines across 9 sections
 
 const OPS_SECTIONS: readonly WorkbookSection[] = [
   {
@@ -747,9 +747,11 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
 export const HR_SEAT_WORKBOOKS: readonly SeatWorkbook[] = [
   {
     seat: "HR Operations",
-    jobTitle: "HR Operations Coordinator",
+    // The job description the owner supplied as "HR Operations Coordinator" moved with the seat when
+    // he renamed it HR Generalist on 2026-10-20; only the title changed.
+    jobTitle: "HR Generalist",
     mission:
-      "Own the day-to-day operating discipline of the HR function. The HR Operations Coordinator ensures employee records, attendance, leave, contracts, payroll inputs, onboarding/offboarding, HR requests and system data are complete, accurate, approved and traceable. The role is designed to make HR operations reliable: every action should have a clear owner, deadline, document, system record and follow-up status.",
+      "Own the day-to-day operating discipline of the HR function. The HR Generalist ensures employee records, attendance, leave, contracts, payroll inputs, onboarding/offboarding, HR requests and system data are complete, accurate, approved and traceable. The role is designed to make HR operations reliable: every action should have a clear owner, deadline, document, system record and follow-up status.",
     sections: OPS_SECTIONS,
     boundaries: [
       "The role is responsible for operational control, preparation and verification — not final policy decisions.",
@@ -822,10 +824,19 @@ export type CompanyRoleWorkbook = {
 
 export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
   {
-    jobTitle: "HR Operations Coordinator",
+    jobTitle: "HR Generalist",
     role: "HR Operations",
     purpose: "Personnel records, attendance and leave, payroll inputs, contracts, onboarding and offboarding.",
     hasWrittenJd: true,
+  },
+  {
+    // Opened 2026-10-20 from the owner's answers in chat — no written job description was supplied,
+    // so this records access and purpose only (the anti-fabrication rule below).
+    jobTitle: "HR Operations Specialist",
+    role: "HR Administration",
+    purpose:
+      "Reviews the daily and weekly fingerprint and field reports and recommends deduction days for the HR Manager's decision; keeps the Employee Master, contract renewals and resignations moving — never a salary figure.",
+    hasWrittenJd: false,
   },
   {
     jobTitle: "Medical Representative",

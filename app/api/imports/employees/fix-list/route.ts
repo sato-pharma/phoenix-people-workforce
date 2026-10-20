@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   buildEmployeeImportFixListWorkbook,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/employees/employee-import-fix-list-workbook";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
+import { salaryBlindImportRefusal } from "@/lib/imports/employee-import-salary-blind";
 import type { RawEmployeeImportRow } from "@/lib/imports/employee-import-types";
 import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -63,13 +65,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
+    // Exactly what the dry run decides, so the two can never disagree (dry-run/route.ts).
+    const salaryBlind = isSalaryBlindRole(access.role);
+    if (salaryBlind) {
+      const refusal = salaryBlindImportRefusal(parsed.rows);
+      if (refusal) return NextResponse.json(refusal, { status: 400 });
+    }
+    const allowNewEmployees = await canAccess(access, "employees", "create");
+
     const existingState = await loadEmployeeImportExistingState();
     const result = createEmployeeImportPlan(parsed.rows, {
+      allowNewEmployees,
       existingState,
       firstDataRowNumber: parsed.firstDataRowNumber,
+      salaryBlind,
     });
 
     const workbook = await buildEmployeeImportFixListWorkbook({
+      omitMoney: salaryBlind,
       result,
       sourceFileName: file.name,
     });

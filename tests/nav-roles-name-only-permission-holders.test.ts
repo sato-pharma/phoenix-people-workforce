@@ -297,9 +297,10 @@ export async function runNavRolesNameOnlyPermissionHoldersTests(): Promise<void>
 
   assert.equal(
     phoenixRoles.length,
-    // 18 since 2026-10-08: HR Resourcing, the Talent Acquisition seat.
-    18,
-    `expected 18 roles; got ${phoenixRoles.length}. If a role was genuinely added or retired, ` +
+    // 18 since 2026-10-08: HR Resourcing, the Talent Acquisition seat. 19 since 2026-10-20: HR
+    // Administration, the HR Operations Specialist seat.
+    19,
+    `expected 19 roles; got ${phoenixRoles.length}. If a role was genuinely added or retired, ` +
       `update this number — it is here so a truncated role list cannot quietly shrink the sweep`,
   );
 

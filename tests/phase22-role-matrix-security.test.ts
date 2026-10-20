@@ -395,6 +395,18 @@ export async function runPhase22RoleMatrixSecurityTests() {
         );
       }
     }
+    // The one non-authority seat that keeps the Employee Master: the HR Operations Specialist
+    // (HR Administration, owner 2026-10-20 — "Employee Master import and export, all with no
+    // salary"). Pinned EXACTLY: no `create` (adding a person stays with the HR Generalist and the
+    // Super Admin) and no `delete`. The salary is withheld server-side for her (isSalaryBlindRole).
+    if (role === "HR Administration") {
+      assert.deepEqual(
+        [...(permissionMatrix[role].employees ?? [])].sort(),
+        ["export", "import", "read", "update"],
+        `${role} keeps the Employee Master without create or delete`,
+      );
+      continue;
+    }
     assert.equal(permissionMatrix[role].employees, undefined, `${role} has no employee master permissions`);
   }
 

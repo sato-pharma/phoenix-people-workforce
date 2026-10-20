@@ -338,6 +338,7 @@ export function runInstantFormatTimezoneRatchetTests() {
     ["src/lib/double-visit-analytics/audit-export.ts", "the coaching sheet's check-in span — vendor check_date"],
     ["src/lib/field-activity/document.ts", "clock12 — every value the field-activity model hands it is already a Cairo wall clock"],
     ["src/lib/field-activity/model.ts", "wallClock (vendor) and minutesOfDay (an already-extracted HH:MM, not a timestamp)"],
+    ["src/lib/hr-ops-reports/field-section.ts", "wallClockTime — the vendor's crm_save_date, already a Cairo wall clock, read as written; the one true instant (a manager's own loggedAt) goes through cairoClockTime's Africa/Cairo formatter"],
     ["src/lib/field-workforce-compliance/ireports360-source.ts", "clockStringToMinutes — parses an HH:MM this module formatted itself"],
     ["src/lib/outstation/expense-fraud-checks.ts", "vendorClockMinutes — the vendor half of the pair whose other half, cairoClockMinutes, converts a real instant"],
     ["src/lib/sales/offline-lookup-workbook.ts", "the workbook's build stamp, whose own text says UTC"],

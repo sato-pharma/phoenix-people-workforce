@@ -26,6 +26,8 @@ const STATUS_LABEL: Record<string, string> = {
   short_hours: "Short hours",
   early_leave: "Left early",
   missing_punch: "Missing punch",
+  // A field day decided in the HR operations report (src/lib/hr-ops-reports/bridge.ts).
+  field_review: "Field day (reviewed by HR)",
 };
 
 function formatDay(iso: string, withWeekday = true): string {

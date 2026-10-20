@@ -42,17 +42,26 @@ type CandidateRow = ChargeCandidateRow & {
   month_key: string | null;
 };
 
-/** The month-end fingerprint candidate for one employee-day, keyed the way the connector writes it. */
-async function findFingerprintCandidate(employeeHrId: string, workDate: string): Promise<CandidateRow | null> {
+/**
+ * The month-end fingerprint candidate for one employee-day, keyed the way the connector writes it — or,
+ * for a day decided in the HR operations report, the row its bridge wrote, keyed the same way
+ * (deductionSourceForDigestLine — the same target the month-end bridge applies the answer to).
+ */
+async function findFingerprintCandidate(
+  employeeHrId: string,
+  workDate: string,
+  target: { category: "fingerprint" | "field_review"; sourceSystem: string | null } = { category: "fingerprint", sourceSystem: null },
+): Promise<CandidateRow | null> {
   const monthKey = normalizeMonthKey(workDate.slice(0, 7));
-  const { data, error } = await getSupabaseAdmin()
+  let query = getSupabaseAdmin()
     .from("deductions_candidates")
     .select("id, month_key, raw_value, locked_at, employee_hr_id, category, unit, estimated_amount, dates")
-    .eq("category", "fingerprint")
+    .eq("category", target.category)
     .eq("month_key", monthKey)
     .eq("source_record_id", `${employeeHrId}:${workDate}`)
-    .is("superseded_at", null)
-    .maybeSingle();
+    .is("superseded_at", null);
+  if (target.sourceSystem) query = query.eq("source_system", target.sourceSystem);
+  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   return (data as CandidateRow | null) ?? null;
 }
@@ -109,9 +118,11 @@ export async function applyDigestRevisionToDeduction(input: {
   // it, and a widened string here is what made the typecheck refuse this file.
   actor: { hrId: string | null; loginId: string | null; role: AccessContext["role"] };
   reviewerHrId: string | null;
+  /** The day's month-end deduction (deductionSourceForDigestLine). Omitted = a `fingerprint` day, as before. */
+  deduction?: { category: "fingerprint" | "field_review"; sourceSystem: string | null };
 }): Promise<RevisionMoneyResult> {
   const notices: string[] = [];
-  const candidate = await findFingerprintCandidate(input.employeeHrId, input.workDate);
+  const candidate = await findFingerprintCandidate(input.employeeHrId, input.workDate, input.deduction);
   if (!candidate) {
     // Normal for a recent week: the connector builds a month's candidates only after the month
     // closes. The bridge then reads the LINE's current action (effectiveSettlement), so the revision

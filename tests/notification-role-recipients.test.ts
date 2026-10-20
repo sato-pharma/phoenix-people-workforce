@@ -46,7 +46,10 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // inside its description too), and the stored row WINS over this constant. The migration in
   // this PR rewrites both columns; until it is applied, changing this line alone changes nothing
   // in production, which is precisely the drift this guard exists to make visible.
-  resignation_workflow_alert: { roles: ["Super Admin", "HR Operations"], enabled: true },
+  // HR Administration (the HR Operations Specialist seat) joined on 2026-10-20 on the owner's word:
+  // she follows each resignation up until the leaver completes the cycle at the office. The same
+  // stored-row caveat applies, so the seat's migration rewrites the row's roles and description too.
+  resignation_workflow_alert: { roles: ["Super Admin", "HR Operations", "HR Administration"], enabled: true },
   // 15th key, added 2026-08-09. Oversight audience for a completed employee import; the
   // admin who ran the import is notified in addition to these roles, from the route itself.
   employee_import_alert: { roles: ["Super Admin"], enabled: true },

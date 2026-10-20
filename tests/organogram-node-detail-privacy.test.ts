@@ -85,7 +85,9 @@ function findItem(
 export function runOrganogramNodeDetailPrivacyTests() {
   // ---- The allowlist: exactly HR / Finance / executive / system see everything ----
   // HR Advisory was on this list until the owner retired the seat on 2026-10-08 (now below).
-  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Operations"]) {
+  // HR Administration (the HR Operations Specialist, 2026-10-20) sees the personal and bank rows; the
+  // organogram employee routes drop every money row for her with omitSalary (isSalaryBlindRole).
+  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Operations", "HR Administration"]) {
     assert.equal(
       canViewOrganogramSensitiveFields(access(role)),
       true,

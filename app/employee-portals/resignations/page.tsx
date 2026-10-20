@@ -8,6 +8,7 @@ import {
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  canChangeResignationDates,
   getResignationsDashboardData,
   isResignationsSchemaMissing,
   resignationErrorMessage,
@@ -32,7 +33,7 @@ export default async function EmployeePortalResignationsPage() {
   if (!(await canAccess(access, "resignations", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Resignations are available to HR Operations and Super Admin only."
+        message="Resignations are available to the HR seats and the Super Admin only."
         title="Resignations Unavailable"
       />
     );
@@ -56,6 +57,9 @@ export default async function EmployeePortalResignationsPage() {
     >
       <ResignationsWorkspace
         canExportHistory={await canAccess(access, "resignations", "export")}
+        canCreate={await canAccess(access, "resignations", "create")}
+        canDecide={await canAccess(access, "resignations", "approve")}
+        canEditDates={await canChangeResignationDates(access)}
         initialData={initialData}
         initialError={initialError}
         surface="portal"

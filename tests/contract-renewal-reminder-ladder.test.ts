@@ -58,10 +58,11 @@ export function runContractRenewalReminderLadderTests() {
   // HR Operations is the seat that maintains contracts (contracts: read/create/update/export in
   // the HR function catalogue), added on the owner's instruction so the HR Generalist running
   // renewals is told at the same time as the manager chain. It is resolved by ROLE, so the
-  // reminder follows the seat rather than whoever holds it today.
+  // reminder follows the seat rather than whoever holds it today. HR Administration (the HR
+  // Operations Specialist seat) joined on 2026-10-20: she tracks renewals and prepares their papers.
   assert.ok(
-    flatRouteSource.includes('const contractRenewalHrApproverRoles = ["Super Admin", "HR Operations"]'),
-    "contract renewal reminders reach the Super Admin and the HR Operations seat, by role and not by hr id",
+    flatRouteSource.includes('const contractRenewalHrApproverRoles = ["Super Admin", "HR Operations", "HR Administration"]'),
+    "contract renewal reminders reach the Super Admin, the HR Operations seat and the HR Administration seat, by role and not by hr id",
   );
   // Read the array literal itself rather than sweeping the whole file for the string: the comment
   // above it explains WHY HR Advisory is excluded, so a bare `includes("HR Advisory")` check would

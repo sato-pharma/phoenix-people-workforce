@@ -1,16 +1,18 @@
 // HR Reminders — who is on the team and who is looking.
 //
 // The module is for the HR team and nobody else: the HR Manager (the Super Admin seat), HR
-// Operations and HR Resourcing. The seats are named here once; `tests/hr-reminders.test.ts` pins
-// this list to the matrix grant, so a seat that gains the permission cannot be left off the team
-// picker and a seat on the picker cannot lack the permission.
+// Operations (shown as HR Generalist), HR Resourcing (Talent Acquisition) and, since 2026-10-20,
+// HR Administration (HR Operations Specialist), whose bundle carries `team_reminders`. The seats are
+// named here once; `tests/hr-reminders.test.ts` pins this list to the matrix grant, so a seat that
+// gains the permission cannot be left off the team picker and a seat on the picker cannot lack the
+// permission.
 
 import { canonicalPersonHrId } from "@/lib/auth/identity-aliases";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { ReminderAudience } from "@/lib/hr-reminders/logic";
 
 /** The roles whose holders make up the team a note can be shared with. */
-export const REMINDER_TEAM_ROLES = ["Super Admin", "HR Operations", "HR Resourcing"] as const;
+export const REMINDER_TEAM_ROLES = ["Super Admin", "HR Operations", "HR Resourcing", "HR Administration"] as const;
 
 /** The seat that reads every item whatever its sharing — the HR Manager's, per the brief. */
 export const REMINDER_OVERSEER_ROLE = "Super Admin" as const;

@@ -121,7 +121,8 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
 import { filterVacationRowsInMemory } from "@/lib/vacation/report-filter";
 import { packVacationReportRows, unpackVacationReportRows } from "@/lib/vacation/report-rows-pack";
-import { resolveVacationInformedHrId } from "@/lib/vacation/informed-recipients";
+import { resolveVacationInformedHrIds, VACATION_INFORMED_SEAT, isVacationInformedType } from "@/lib/vacation/informed-recipients";
+import { resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
 import { listLeaveBalanceChargesForEmployees } from "@/lib/deductions/leave-balance-ledger";
 
 const vacationRequestsTable = "v2_vacation_requests";
@@ -2318,75 +2319,87 @@ async function notifyVacationSubmittedByGovernance(input: {
  * The INFORMED party's copy of a submitted annual vacation (owner, 2026-09-29: "in any av request
  * on phx make yasmeena informed").
  *
- * SHE IS NOT AN APPROVER, and this function is where that distinction lives. It is deliberately
- * NOT a line added to `approvalRecipients` — every name in that list gets an approval step, an SLA
- * clock and Approve/Reject buttons, so putting her there would have made every annual vacation in
- * the company wait on a third signature. This is one notification, addressed to her, that says so
- * in its own copy: no action is needed.
+ * THE INFORMED PARTY IS A SEAT (owner, 2026-10-20: "Both to you until the hire") — whoever holds the
+ * HR Generalist seat, and while nobody does, the Super Admin standing in for it
+ * (`resolveSeatOrStandInHrIds`, src/lib/notifications/vacant-seat.ts). A seat that could not be
+ * read informs nobody this time rather than guessing; the request and its approvals are untouched.
+ *
+ * THE INFORMED PARTY IS NOT AN APPROVER, and this function is where that distinction lives. It is
+ * deliberately NOT a line added to `approvalRecipients` — every name in that list gets an approval
+ * step, an SLA clock and Approve/Reject buttons, so putting the seat there would have made every
+ * annual vacation in the company wait on a third signature. This is one notification per informed
+ * person that says so in its own copy: no action is needed.
  *
  * ALL THREE CHANNELS — in-app, email and Telegram (owner, 2026-09-30, asked and answered: "yasmine
  * informed in app email telegram"). It shipped on 2026-09-29 as in-app + Telegram only, because §4
  * requires an email recipient to be asked about before it is wired; he was asked, and this is the
- * answer. It still carries no Telegram approve/reject button: there is nothing for her to decide.
+ * answer. It still carries no Telegram approve/reject button: there is nothing to decide.
  *
  * NO `email` BLOCK IS PASSED, deliberately. With only `recipientHrId` set, the notification layer
- * resolves HER OWN work address from her employee record and sets `recipientMode: "candidate"` — and
+ * resolves the person's OWN work address from the employee record and sets `recipientMode: "candidate"` — and
  * when an address cannot be resolved it records `recipientAddressUnresolved` and skips. Writing an
  * address here, or leaving `recipients` empty for the stored policy to fill, is how the shared
  * `hr_notifications` inbox ends up standing in for a person and the send is logged as a success.
  *
- * THE LINK IS HER OWN ADDRESS. `/hr/leave-management/vacation-report` is the Vacation Report row the
- * HR Operations sidebar actually offers her; `/admin/approvals/vacation/<id>` is the approver's page
- * and would open on a decision surface that is not hers.
+ * THE LINK IS THE VACATION REPORT. `/hr/leave-management/vacation-report` is the row the HR
+ * Generalist's sidebar offers, and the same address opens for the Super Admin standing in (under the
+ * HR chrome, by AppShell's design); `/admin/approvals/vacation/<id>` is the approver's page and would open on a
+ * decision surface that is not the informed party's.
  */
 async function dispatchVacationInformed(input: {
   approvalRecipients: VacationApprovalRecipient[];
   request: VacationRequestRecord;
 }) {
-  const informedHrId = resolveVacationInformedHrId({
-    // Everyone this request already notifies. When she is one of them — she raised it, or she sits
-    // in its chain — the resolver returns null rather than sending her a second, weaker copy.
+  // Annual only, decided before the seat is read, so no other request type costs a lookup.
+  if (!isVacationInformedType(input.request.vacationType)) return;
+  const seat = await resolveSeatOrStandInHrIds(VACATION_INFORMED_SEAT, "Vacation informed recipients");
+  const informedHrIds = resolveVacationInformedHrIds({
+    // Everyone this request already notifies. An informed person who is one of them — raised it, or
+    // sits in its chain — is dropped rather than sent a second, weaker copy.
     alreadyNotifiedHrIds: [
       input.request.employeeHrId,
       input.request.managerHrId,
       input.request.managerOfManagerHrId,
       ...input.approvalRecipients.map((recipient) => recipient.hrId),
     ],
+    informedHrIds: seat.hrIds,
     vacationType: input.request.vacationType,
   });
-  if (!informedHrId) return;
+  if (informedHrIds.length === 0) return;
 
   const href = `/hr/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
-  await createSystemNotification({
-    actionUrl: href,
-    category: "vacation_request",
-    channels: ["in_app", "email", "telegram"],
-    eventType: "request_submitted_informed",
-    message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). No decision is needed from you — you are informed so leave administration has it on the day it is raised.`,
-    metadata: {
-      details: [
-        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
-        { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
-        { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
-        { label: "Manager", value: input.request.managerName ?? "Direct manager" },
-        { label: "Status", value: "Informed — no action needed" },
-      ],
-      employeeHrId: input.request.employeeHrId,
-      employeeName: input.request.employeeName,
-      // Per (request, informed recipient), so a re-dispatch tells her once and not twice.
-      idempotencyKey: `vacation:${input.request.id}:request_submitted_informed:${informedHrId.toUpperCase()}`,
-      requestId: input.request.id,
-      status: input.request.status,
-    },
-    module: "vacation",
-    // `normal`, not `high`: a high-priority notification is one somebody has to act on, and the
-    // whole point of this one is that nobody does.
-    priority: "normal",
-    recipientHrId: informedHrId,
-    recordId: input.request.id,
-    subjectHrId: input.request.employeeHrId,
-    title: `${input.request.employeeName} requested ${vacationTypeLabel(input.request.vacationType)}`,
-  });
+  for (const informedHrId of informedHrIds) {
+    await createSystemNotification({
+      actionUrl: href,
+      category: "vacation_request",
+      channels: ["in_app", "email", "telegram"],
+      eventType: "request_submitted_informed",
+      message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). No decision is needed from you — you are informed so leave administration has it on the day it is raised.`,
+      metadata: {
+        details: [
+          { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+          { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+          { label: "Period", value: `${input.request.startDate} → ${input.request.endDate}` },
+          { label: "Manager", value: input.request.managerName ?? "Direct manager" },
+          { label: "Status", value: "Informed — no action needed" },
+        ],
+        employeeHrId: input.request.employeeHrId,
+        employeeName: input.request.employeeName,
+        // Per (request, informed recipient), so a re-dispatch tells each informed person once, not twice.
+        idempotencyKey: `vacation:${input.request.id}:request_submitted_informed:${informedHrId.toUpperCase()}`,
+        requestId: input.request.id,
+        status: input.request.status,
+      },
+      module: "vacation",
+      // `normal`, not `high`: a high-priority notification is one somebody has to act on, and the
+      // whole point of this one is that nobody does.
+      priority: "normal",
+      recipientHrId: informedHrId,
+      recordId: input.request.id,
+      subjectHrId: input.request.employeeHrId,
+      title: `${input.request.employeeName} requested ${vacationTypeLabel(input.request.vacationType)}`,
+    });
+  }
 }
 
 async function dispatchVacationSubmitted(input: {

@@ -1033,7 +1033,9 @@ export async function runAttendanceDigestRulesTests() {
 
   const deductions = readFileSync("src/lib/deductions/service.ts", "utf8");
   const record = deductions.slice(deductions.indexOf("export async function recordDecision"));
-  const approvalGuard = /if \(input\.decisionStatus === "Approved for Payroll" && candidateRow\.category === "fingerprint"\) \{[^}]*\};\s*await assertDayNotPaidFromAnnualBalance\(reviewedDay\);\s*await assertDayNotClearedInAttendanceReview\(reviewedDay\);/;
+  // A field day reviewed in the HR operations report (category field_review, 2026-10-20) travels the
+  // weekly review exactly as a fingerprint day does, so the same two checks hold it.
+  const approvalGuard = /if \(\s*input\.decisionStatus === "Approved for Payroll" &&\s*\(candidateRow\.category === "fingerprint" \|\| candidateRow\.category === "field_review"\)\s*\) \{[^}]*\};\s*await assertDayNotPaidFromAnnualBalance\(reviewedDay\);\s*await assertDayNotClearedInAttendanceReview\(reviewedDay\);/;
   assert.match(
     record,
     approvalGuard,

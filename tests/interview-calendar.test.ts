@@ -406,6 +406,10 @@ function runRoleTests() {
   // THE CEO SEES THE WHOLE CALENDAR (owner, 2026-09-26): a Viewer, not an owner. Only the CEO — no
   // other executive is widened, and the Super Admin/HR Operations reach it as owners already.
   assert.equal(seesWholeInterviewCalendar(createAccessContext({ hrId: "A-99", role: "CEO" })), true, "the CEO reads the whole calendar");
+  // The HR Operations Specialist seat, 2026-10-20 — the owner's answer: "She can view it only".
+  const specialist = createAccessContext({ hrId: "A-99", role: "HR Administration" });
+  assert.equal(seesWholeInterviewCalendar(specialist), true, "the HR Operations Specialist reads the whole calendar");
+  assert.equal(isInterviewCalendarOwner(specialist), false, "the HR Operations Specialist does not own the calendar");
   for (const role of ["Finance Manager", "HR Advisory", "National Sales Manager", "District Manager", "Medical Representative", "Employee"]) {
     assert.equal(seesWholeInterviewCalendar(createAccessContext({ hrId: "A-99", role })), false, `${role} does not get the whole calendar from this seat`);
   }

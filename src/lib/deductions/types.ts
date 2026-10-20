@@ -19,6 +19,10 @@ export const visibleDeductionsCategories = [
   // Its own tab beside CRM: the morning or afternoon a district manager or rep left unaccounted
   // for (owner, 2026-10-08). Approval-required, paid through the CRM column.
   "crm_half_day",
+  // A field day the Super Admin decided in the HR operations report (owner, 2026-10-20), carried into
+  // the weekly attendance review by src/lib/hr-ops-reports/bridge.ts. Approval-required, paid through
+  // the CRM column.
+  "field_review",
   "unpaid_vacation",
   "insufficient_balance_vacation",
   "loan",
@@ -38,6 +42,11 @@ export const deductionsCategories = [
   "no_weekly_plan",
   "loan",
   "other",
+  // A field day decided in the HR operations report (owner, 2026-10-20). Its ONLY writer is
+  // src/lib/hr-ops-reports/bridge.ts — never a month-scan collector — and the weekly attendance
+  // review's answer reaches it through digest-bridge.ts like a fingerprint day
+  // (20261020072217_hr_ops_bridge_field_review.sql).
+  "field_review",
 ] as const;
 export type DeductionsCategory = (typeof deductionsCategories)[number];
 
@@ -57,6 +66,7 @@ export type DeductionsCategory = (typeof deductionsCategories)[number];
 export const deductionsCategoryNames: Record<DeductionsCategory, string> = {
   crm: "CRM — no visit activity recorded",
   crm_half_day: "CRM — half day",
+  field_review: "Field day — reviewed by HR",
   fingerprint: "Fingerprint attendance — no punch recorded",
   insufficient_balance_vacation: "Vacation with insufficient leave balance",
   loan: "Loan instalment",

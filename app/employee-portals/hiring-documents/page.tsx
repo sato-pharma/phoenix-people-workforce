@@ -39,7 +39,7 @@ export default async function EmployeePortalHiringDocumentsPage() {
   if (!isHrAuthorityRole(access.role) || !canRead) {
     return (
       <EmployeePortalEmptyState
-        message="Hiring documents are available to the HR Operations Coordinator and the Super Admin only."
+        message="Hiring documents are available to the HR Generalist and the Super Admin only."
         title="Hiring Documents Unavailable"
       />
     );

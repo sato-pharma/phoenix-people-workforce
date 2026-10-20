@@ -77,6 +77,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   hiring_interviews: "Hiring Interviews",
   hr_calendar: "HR Calendar",
   hr_reminders: "HR Reminders",
+  hr_ops_reports: "HR Daily & Weekly Reports",
   imports: "Data Imports",
   incentive: "Incentive",
   leave: "Leave & Vacations",

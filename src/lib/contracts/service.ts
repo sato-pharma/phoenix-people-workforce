@@ -143,7 +143,9 @@ function isCompanyContractReader(access?: AccessContext) {
     access.scope === "company" ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    // The HR Operations Specialist tracks every renewal and prepares its papers (owner, 2026-10-20).
+    access.role === "HR Administration"
   );
 }
 

@@ -13,6 +13,7 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError, logWarning } from "@/lib/observability/log";
+import { withVacantSeatStandIns } from "@/lib/notifications/vacant-seat";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const notificationRoleKeys = [
@@ -159,8 +160,12 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "resignation_workflow_alert",
     label: "Resignation workflow alert",
     description:
-      "Who is told when a resignation is submitted or changes state. Owner-set 2026-08-09 (the Talent Acquisition seat, retired 2026-08-28, now HR Operations): Super Admin and HR Operations only — deliberately NOT the CEO and NOT the leaver's manager chain. Editable here rather than in code.",
-    roles: ["Super Admin", "HR Operations"],
+      "Who is told when a resignation is submitted or changes state. Owner-set 2026-08-09 (the Talent Acquisition seat, retired 2026-08-28, now HR Generalist): Super Admin and HR Generalist, and since 2026-10-20 the HR Operations Specialist, who follows each resignation through until the leaver completes the cycle at the office. Deliberately NOT the CEO and NOT the leaver's manager chain. While the HR Generalist seat is empty its copy is the Super Admin's. Editable here rather than in code.",
+    // "HR Administration" is the HR Operations Specialist seat (owner, 2026-10-20: once a resignation
+    // is submitted she is told, and follows it up until the leaver comes to the office). The stored
+    // notification_role_policies row WINS over this default, so the same change is in that seat's
+    // migration — this line alone would change nothing in production.
+    roles: ["Super Admin", "HR Operations", "HR Administration"],
     enabled: true,
   },
   attendance_ingestion_alert: {
@@ -287,10 +292,21 @@ export async function getNotificationRolePolicies(): Promise<NotificationRolePol
   }
 }
 
-export async function resolveNotificationRoleRecipients(key: NotificationRoleKey): Promise<PhoenixRole[]> {
+/**
+ * The roles a notification goes to right now: the policy's own list, empty when it is switched off,
+ * plus the stand-in for any listed seat nobody holds (owner, 2026-10-20: every notice addressed to
+ * the empty HR Generalist seat goes to the Super Admin until the hire — vacant-seat.ts). This is the
+ * one door every role-addressed delivery passes through, so the rule reaches all of them at once.
+ * Still never throws; a seat that could not be read keeps today's list and adds to `warnings`.
+ */
+export async function resolveNotificationRoleRecipients(
+  key: NotificationRoleKey,
+  warnings?: string[],
+): Promise<PhoenixRole[]> {
   const policies = await getNotificationRolePolicies();
   const policy = policies.find((p) => p.key === key) ?? DEFAULT_NOTIFICATION_ROLE_POLICIES[key];
-  return policy.enabled ? policy.roles : [];
+  if (!policy.enabled) return [];
+  return withVacantSeatStandIns(policy.roles, `Notification "${key}" recipients`, warnings);
 }
 
 // Lets a digest function short-circuit BEFORE it scans any data, for the hybrid keys below
@@ -538,7 +554,7 @@ export async function resolveNotificationPersonRecipients(
 ): Promise<{ recipients: NotificationRoleRecipient[]; warnings: string[] }> {
   const warnings: string[] = [];
   try {
-    const roles = await resolveNotificationRoleRecipients(key);
+    const roles = await resolveNotificationRoleRecipients(key, warnings);
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,is_active")
@@ -661,6 +677,9 @@ export async function updateNotificationRolePolicy(
  * configuration problem to see, not a row to force into a foreign key.
  */
 export async function resolveRoleRecipientHrIds(key: NotificationRoleKey): Promise<string[]> {
+  // Already carries the vacant-seat stand-in (see resolveNotificationRoleRecipients). It never names
+  // a role twice, and pickRecipientHrIds below merges one person's accounts, so a stand-in who is
+  // already a recipient is still told once.
   const notifyRoles = await resolveNotificationRoleRecipients(key);
   if (notifyRoles.length === 0) return [];
 

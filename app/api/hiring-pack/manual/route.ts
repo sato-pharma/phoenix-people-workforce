@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertMayPrintPaper, assertMayUseHrForms } from "@/lib/hiring-pack/paper-access";
 import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import { isCustomTemplateLayerMissing } from "@/lib/hiring-pack/custom-template-store";
 import { asPrintableDocument, documentGroup } from "@/lib/hiring-pack/document-registry";
@@ -39,7 +39,9 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
+    // Gated like printing: employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on
+    // its own papers only (checked below once the document is known).
+    await assertMayUseHrForms(access, "read");
 
     const payload = (await request.json()) as {
       address?: unknown;
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    await assertMayPrintPaper(access, document, "read");
 
     const values = sanitizeManualValues(payload.values);
     const company = await loadCompanyDetails();

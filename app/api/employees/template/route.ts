@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
+import { assertPermission, canAccess, filterEmployeeDirectoryForAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
@@ -139,10 +140,20 @@ export async function GET(request: Request) {
       loadInsuranceJobTitles(directory.employees),
     ]);
 
+    // The seat that never sees a salary exports the master "with no salary" (owner, 2026-10-20):
+    // every money column stays in place — hidden, locked and empty — so the column letters the
+    // importer reads never move, and nothing in the file, its guidance or its row check names a
+    // figure. Its Start Here and Upload Rules also stop offering to add people when the seat
+    // cannot create one. Both decided here, from the server's access context.
+    const omitMoney = isSalaryBlindRole(access.role);
+    const canCreate = await canAccess(access, "employees", "create");
+
     const workbook = await buildEmployeeMasterWorkbook({
+      canCreate,
       employees: directory.employees,
       hiringDocuments,
       lookups,
+      omitMoney,
       scopeNote: "Scoped to your access",
       socialInsuranceJobTitles,
     });

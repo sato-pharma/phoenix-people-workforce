@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { generateMonthlyAttendanceSummaryWorkbook } from "@/lib/attendance/monthly-summary-export";
 import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendance/monthly-summary";
 import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceMonthlySummaryPermission, assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -28,6 +28,9 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "read");
+    // The workbook carries each employee's total deduction value in EGP: closed to the salary-blind
+    // seat, who holds employees:read for the Employee Master only (owner, 2026-10-20).
+    await assertAttendanceMonthlySummaryPermission(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:attendance:monthly-summary" });
     const scopeHrIds = await resolveAttendanceScopeHrIds(access);
 

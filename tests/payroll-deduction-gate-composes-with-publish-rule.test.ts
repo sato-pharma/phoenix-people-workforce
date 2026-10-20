@@ -62,6 +62,7 @@ const ALL_CATEGORIES: DeductionsCategory[] = [
   "insufficient_balance_vacation",
   "loan",
   "other",
+  "field_review",
 ];
 
 /** Every source system that currently writes candidates, plus an unknown one. */
@@ -74,6 +75,7 @@ const ALL_SOURCE_SYSTEMS = [
   "dsm_no_record",
   "holiday_bridge",
   "crm_half_day",
+  "hr_ops_report",
   "some_future_connector",
 ] as const;
 

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
+import { salaryBlindImportRefusal } from "@/lib/imports/employee-import-salary-blind";
 import type {
   EmployeeImportDryRunResponse,
   EmployeeImportRecord,
@@ -83,11 +85,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
+    // The seat that never sees a salary (employee-import-salary-blind.ts): a file carrying a figure
+    // is refused whole, naming its columns, before anything is planned. Both flags come from the
+    // server's access context, never from the request.
+    const salaryBlind = isSalaryBlindRole(access.role);
+    if (salaryBlind) {
+      const refusal = salaryBlindImportRefusal(parsed.rows);
+      if (refusal) return NextResponse.json(refusal, { status: 400 });
+    }
+    const allowNewEmployees = await canAccess(access, "employees", "create");
+
     const existingState = await loadEmployeeImportExistingState();
 
     const plan = createEmployeeImportPlan(parsed.rows, {
+      allowNewEmployees,
       existingState,
       firstDataRowNumber: parsed.firstDataRowNumber,
+      salaryBlind,
     });
 
     const response: EmployeeImportDryRunResponse = {

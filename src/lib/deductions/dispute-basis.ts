@@ -102,6 +102,11 @@ const SOURCE_PROFILES: Record<string, SourceProfile> = {
     detectedBy: "Entered by hand by HR",
     explanation: "This deduction was typed in by HR rather than detected by a check.",
   },
+  hr_ops_report: {
+    detectedBy: "HR operations daily or weekly report",
+    explanation:
+      "HR operations reviewed the field day's visits in its daily or weekly report, and the deduction was then decided in days. The day went to the employee in the weekly attendance review, where they chose salary or annual balance, or disputed it.",
+  },
   no_activity_engine: {
     detectedBy: "No-activity check (retired)",
     explanation: "Raised by the earlier no-activity check, since retired; kept as history.",
@@ -275,6 +280,15 @@ const FACT_SPECS: Record<string, FactSpec[]> = {
     { key: "holidayEndDate", label: "Holiday ends", format: asDate },
     { key: "adjacentTo", label: "The day is", format: (value) => (str(value) ? `${humanize(String(value))} the holiday` : null) },
     { key: "cause", label: "Cause" },
+  ],
+  // Written by src/lib/hr-ops-reports/bridge.ts. Names and words only: who decided is provenance
+  // (an HR code) and is deliberately not a fact.
+  hr_ops_report: [
+    { key: "section", label: "Reviewed as" },
+    { key: "issuesFound", label: "What the report found", format: plainList },
+    { key: "reviewNote", label: "HR operations note" },
+    { key: "decidedDays", label: "Days decided" },
+    { key: "decidedOn", label: "Decided on", format: asDate },
   ],
 };
 function toNumber(value: unknown): number | null {

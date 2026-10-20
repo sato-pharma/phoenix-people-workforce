@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertMayPrintPaper, assertMayUseHrForms, packForViewer } from "@/lib/hiring-pack/paper-access";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { fileSignedPaper, type FilingOutcome } from "@/lib/hiring-pack/paper-filing-store";
 import {
@@ -68,7 +68,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ hrI
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "update");
+    // employee_documents:update as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its update
+    // grants — and then only for its own papers, checked below once the document is known.
+    await assertMayUseHrForms(access, "update");
     const { hrId } = await params;
     const payload = (await request.json()) as {
       document?: HiringPackDocument;
@@ -87,6 +89,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ hrI
         { status: 400 },
       );
     }
+    // The HR Operations Specialist records a signature on her own leaving papers only — the
+    // resignation, the mutual termination and the two clearances (owner, 2026-10-20). A contract,
+    // Form 1, Form 6 or the NDA stays with the seats that hold employee_documents.
+    await assertMayPrintPaper(access, payload.document, "update");
 
     const signedDate = payload.signedDate?.trim() ?? "";
     if (!ISO_DATE.test(signedDate)) {
@@ -126,7 +132,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ hrI
       };
     }
 
-    return NextResponse.json({ filing, pack });
+    return NextResponse.json({ filing, pack: packForViewer(access, pack) });
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_sign_failed", message }, { status });

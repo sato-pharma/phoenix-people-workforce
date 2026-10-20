@@ -49,7 +49,9 @@ export default async function VacanciesPage() {
 
   // The same capability POST /api/employees asserts. Decides only whether an OPEN row
   // offers the one-press hire — the vacancies report is readable by roles that may not hire.
-  const canAddEmployee = await canAccess(access, "employees", "update");
+  // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
+  // the master but does not add to it, and POST /api/employees asserts create on every add.
+  const canAddEmployee = await canAccess(access, "employees", "create");
 
   return (
     <VacanciesReport

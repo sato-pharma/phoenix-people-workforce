@@ -90,6 +90,30 @@ export function normalizeTextValue(value: unknown) {
   return normalized;
 }
 
+// Parse a spreadsheet yes/no-style flag into a boolean. Returns null when the cell is blank or
+// unrecognized, so callers can tell "not provided" apart from an explicit true/false and avoid
+// clobbering a value the org set deliberately (e.g. an executive's payroll_eligible=false).
+// ONE vocabulary for the whole import: the confirm route writes with it, and the salary-blind
+// seat's pay-flag check (src/lib/employees/salary-blind-pay-flags.ts) compares with it, so a word
+// the write would honour can never slip past the comparison.
+export function parseImportBooleanFlag(value: string | null): boolean | null {
+  if (value === null) {
+    return null;
+  }
+
+  const text = value.trim().toLowerCase();
+
+  if (["yes", "y", "true", "1", "eligible", "visible", "active", "enabled"].includes(text)) {
+    return true;
+  }
+
+  if (["no", "n", "false", "0", "ineligible", "hidden", "inactive", "disabled"].includes(text)) {
+    return false;
+  }
+
+  return null;
+}
+
 export function normalizeOrganizationName(value: unknown) {
   const rawValue = normalizeTextValue(value);
 

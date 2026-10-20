@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
@@ -9,7 +10,13 @@ import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-direc
 import { isMissingColumnError } from "@/lib/employees/missing-column";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
+import {
+  salaryBlindImportRefusal,
+  withoutMoney,
+  withoutPayFlags,
+} from "@/lib/imports/employee-import-salary-blind";
 import { hrIdsForManagerLinks, managerLinksToWrite } from "@/lib/imports/employee-manager-links";
+import { parseImportBooleanFlag } from "@/lib/imports/employee-normalizers";
 import { saveSocialInsuranceJobTitles } from "@/lib/hiring-pack/social-insurance-job-title";
 import { splitInsertOnly } from "@/lib/imports/org-entity-write-guard";
 import { upsertByColumnSet } from "@/lib/imports/upsert-by-column-set";
@@ -43,27 +50,6 @@ function truncate(value: string | null, maxLength: number) {
 
 function compactCodePart(value: string | null) {
   return value?.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") ?? null;
-}
-
-// Parse a spreadsheet yes/no-style flag into a boolean. Returns null when the cell is blank or
-// unrecognized, so callers can tell "not provided" apart from an explicit true/false and avoid
-// clobbering a value the org set deliberately (e.g. an executive's payroll_eligible=false).
-function parseImportBooleanFlag(value: string | null): boolean | null {
-  if (value === null) {
-    return null;
-  }
-
-  const text = value.trim().toLowerCase();
-
-  if (["yes", "y", "true", "1", "eligible", "visible", "active", "enabled"].includes(text)) {
-    return true;
-  }
-
-  if (["no", "n", "false", "0", "ineligible", "hidden", "inactive", "disabled"].includes(text)) {
-    return false;
-  }
-
-  return null;
 }
 
 function vacancyCodeFor(record: VacantPositionImportRecord) {
@@ -1166,12 +1152,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
+    // The same two server-side decisions the dry run makes (dry-run/route.ts): the salary-blind
+    // seat's file carries no figure or it is refused whole, and an importer without
+    // `employees:create` updates the master without adding anyone to it.
+    const salaryBlind = isSalaryBlindRole(access.role);
+    if (salaryBlind) {
+      const refusal = salaryBlindImportRefusal(parsed.rows);
+      if (refusal) return NextResponse.json(refusal, { status: 400 });
+    }
+    const allowNewEmployees = await canAccess(access, "employees", "create");
+
     const supabase = getSupabaseAdmin();
     const existingState = await loadEmployeeImportExistingState(supabase);
     const dryRunResult = createEmployeeImportPlan(parsed.rows, {
+      allowNewEmployees,
       existingState,
       firstDataRowNumber: parsed.firstDataRowNumber,
+      salaryBlind,
     });
+
+    if (salaryBlind) {
+      // Belt and braces at the write: the plan already carries no figure for this seat, and every
+      // writer below (employeeValues, compensationValues) writes a money column only when its
+      // value is non-null — so blanking here again means no salary, allowance, insurance or tax
+      // column can reach the database from her upload, whatever the plan does in future. The same
+      // for PAYMENT MODE and PAYROLL ELIGIBLE (owner, 2026-10-20: "can change bank account but
+      // never a paymode"): employeeValues writes payroll_eligible only for a recognised word and
+      // payment_mode only for a non-null mode, so nulling both here means her upload never
+      // writes either — a differing cell has already blocked its row in the validator.
+      for (const record of [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate]) {
+        withoutMoney(record);
+        withoutPayFlags(record);
+      }
+    }
 
     if (shouldRejectImport(dryRunResult)) {
       return NextResponse.json(validationRejection(dryRunResult), {

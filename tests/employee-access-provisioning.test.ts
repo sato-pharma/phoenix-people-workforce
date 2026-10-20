@@ -132,7 +132,11 @@ export function runEmployeeAccessProvisioningTests() {
     // exactly like every other non-field-force title: a job title has never been a permission
     // source here, which is the mistake being corrected — twice now, after "HR Specialist".
     "Talent Acquisition",
-    "HR Operations Coordinator",
+    // "HR Operations Coordinator" left the title list on 2026-10-20, renamed "HR Generalist" (owner:
+    // "make the old account HR genralist"); "HR Operations Specialist" is the new seat's title. Both
+    // are display labels: neither may provision the "HR Operations" or "HR Administration" role.
+    "HR Generalist",
+    "HR Operations Specialist",
     "Finance Manager",
     "CEO",
     "HR Manager",

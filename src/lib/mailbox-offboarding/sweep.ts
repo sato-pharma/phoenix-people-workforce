@@ -23,13 +23,15 @@
  * existing operational alerts use — and email can be added the moment he names recipients. The
  * recipients themselves are not a new decision either: this reuses `resignation_workflow_alert`,
  * which he set to Super Admin and HR Operations on 2026-08-09 and which is editable at
- * /admin/notification-recipients. A leaver's mailbox is resignation workflow.
+ * /admin/notification-recipients. A leaver's mailbox is resignation workflow. The HR Operations
+ * Specialist seat joined that audience on 2026-10-20 and is filtered back out here — see the sweep.
  *
  * BUCKETED PER CAIRO DAY AND PER EXACT SET, mirroring the drain-stranded alarm. A backlog that
  * persists across days alerts once a day rather than every run, while a NEWLY overdue mailbox
  * changes the set and therefore still gets through the same day it appears.
  */
 
+import { HR_OPERATIONS_SPECIALIST_SEAT } from "@/lib/auth/hr-functions";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
@@ -44,9 +46,9 @@ import {
 import type { MailboxOffboardingTask } from "./types";
 
 /**
- * The page this alert links to. Gated on `mailbox_offboarding` read — which both recipient roles
- * of `resignation_workflow_alert` hold (Super Admin has everything; HR Operations owns the
- * register).
+ * The page this alert links to. Gated on `mailbox_offboarding` read — which every role this alert
+ * is sent to holds (Super Admin has everything; HR Operations owns the register). The HR Operations
+ * Specialist seat, which is on `resignation_workflow_alert` but holds no such grant, is dropped.
  * Checked deliberately: an actionUrl pointing at a screen the recipient is 403'd from is a defect
  * this repository has shipped before.
  */
@@ -148,7 +150,14 @@ export async function runMailboxOffboardingSweep(): Promise<MailboxSweepResult> 
   const today = currentCairoDateOnlyIso();
   const bucket = signatureKey(buildMailboxAlertSignature(flagged));
 
-  const roles = await resolveNotificationRoleRecipients("resignation_workflow_alert");
+  // The resignation audience MINUS the HR Operations Specialist seat (owner, 2026-10-20). That seat
+  // joined `resignation_workflow_alert` to follow each resignation through, but closing a leaver's
+  // mailbox is the register the HR Generalist and the Super Admin keep: the seat holds no
+  // `mailbox_offboarding` grant, so this alert's link would only open a refusal for her. The HR
+  // Generalist's copy, while that seat is empty, is the Super Admin's (vacant-seat.ts).
+  const roles = (await resolveNotificationRoleRecipients("resignation_workflow_alert")).filter(
+    (role) => role !== HR_OPERATIONS_SPECIALIST_SEAT,
+  );
   const supabase = getSupabaseAdmin();
   const { data: recipients } = await supabase
     .from("app_auth_users")

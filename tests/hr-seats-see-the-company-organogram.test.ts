@@ -54,10 +54,15 @@ export async function runHrSeatsCompanyOrganogramTests() {
   const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
   assert.deepEqual(
     [...seats].sort(),
-    ["HR Operations", "HR Resourcing"],
-    "this test pins the two HR seats by name (HR Advisory was the third until the owner retired it on " +
-      "2026-10-08); a new seat needs its own decision, not a silent pass",
+    ["HR Administration", "HR Operations", "HR Resourcing"],
+    "this test pins the three HR seats by name (HR Advisory was retired by the owner on 2026-10-08; " +
+      "HR Administration was added 2026-10-20); a new seat needs its own decision, not a silent pass",
   );
+  // HR Administration — the HR Operations Specialist seat, 2026-10-20. The owner's word for her was
+  // "show organogram", with salary hidden. Same verdict as the other two: company mode, Head Office
+  // kept (she is Head Office staff herself), and no power over the skeleton. The salary half is not
+  // this test's — she is admitted to canViewOrganogramSensitiveFields for the personal and bank rows,
+  // and the organogram employee routes pass omitSalary for isSalaryBlindRole, so no money row reaches her.
   // HR Resourcing — the Talent Acquisition seat, 2026-10-08. The owner ticked the Organogram for
   // her on the access blueprint: the company chart and its vacancies are what she recruits against.
   // Same verdict as the other two seats, so the loop below asks her every question it asks them —

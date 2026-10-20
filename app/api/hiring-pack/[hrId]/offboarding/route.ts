@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertMayUseHrForms, packForViewer } from "@/lib/hiring-pack/paper-access";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   hiringPackErrorMessage,
@@ -52,14 +52,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "update");
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its update grants: the
+    // HR Operations Specialist follows a resignation through to the clearance (owner, 2026-10-20),
+    // and these are the exit details her leaving papers print.
+    await assertMayUseHrForms(access, "update");
     const { hrId } = await params;
     const payload = (await request.json()) as OffboardingProfileInput;
 
     // The whole pack is returned rather than an acknowledgement, so the screen redraws from what
     // the database actually holds — including the recalculated gap list and the resolved last
-    // working day — instead of from what the form believed it sent.
-    return NextResponse.json(await saveOffboardingProfile(hrId, payload, access.hrId ?? null));
+    // working day — instead of from what the form believed it sent. Blanked of money for the
+    // salary-blind seat.
+    return NextResponse.json(
+      packForViewer(access, await saveOffboardingProfile(hrId, payload, access.hrId ?? null)),
+    );
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "offboarding_profile_save_failed", message }, { status });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertMayPrintPaper, assertMayUseHrForms } from "@/lib/hiring-pack/paper-access";
 import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
 import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
 import {
@@ -79,7 +79,9 @@ function apiError(error: unknown) {
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
+    // employee_documents for everyone it always was; a seat in SEAT_PRINTABLE_DOCUMENTS (the HR
+    // Operations Specialist, owner 2026-10-20) on its own papers' grants instead — see paper-access.
+    await assertMayUseHrForms(access, "read");
     const { hrId } = await params;
 
     const url = new URL(request.url);
@@ -99,6 +101,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
         { status: 400 },
       );
     }
+    // This one paper, for a seat limited to a list. renderHiringPaper refuses the same papers again
+    // as the choke point; this is the answer said where the route can shape it.
+    await assertMayPrintPaper(access, requested, "read");
 
     // WHICH COMPANY ADDRESS THE PAPER PRINTS, chosen at the desk before printing (`address=registered`
     // or `office`). Absent — every link that predates the prompt — is the registered head office.

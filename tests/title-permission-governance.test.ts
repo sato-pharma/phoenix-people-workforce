@@ -88,6 +88,11 @@ export function runTitlePermissionGovernanceTests() {
   // alias. If either is ever dropped from the union, this is what catches the silent fallback.
   assert.equal(normalizeRole("HR Advisory"), "HR Advisory");
   assert.equal(normalizeRole("HR Operations"), "HR Operations");
+  // The HR Operations Specialist seat (2026-10-20): the KEY is a union member and resolves to itself;
+  // its display TITLE, and the old seat's new title, are labels and resolve to nothing.
+  assert.equal(normalizeRole("HR Administration"), "HR Administration");
+  assert.equal(normalizeRole("HR Operations Specialist"), "Employee", "a seat's title is not its key");
+  assert.equal(normalizeRole("HR Generalist"), "Employee", "a seat's title is not its key");
 
   // --- Rule 7 (titles list): low-privilege titles never gain elevated access. -
   for (const title of [

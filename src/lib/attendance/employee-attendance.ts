@@ -216,8 +216,17 @@ export type AttendanceReportTarget = {
  * exactly Super Admin, CEO and Finance Manager, and the first two are named explicitly in the
  * disjunctions below — so the scope arm existed only for him anyway. HR Operations joined that
  * scope on 2026-08-29; the scope arm was not restored, and its one-person view is a named role line.
+ *
+ * The HR Operations Specialist seat (`HR Administration`) joined the list on 2026-10-20. The owner:
+ * she reviews attendance ONLY through her own Daily & Weekly Reports, and she never sees a salary
+ * or a deduction in EGP — and this report prices every late minute and absent day. Without this
+ * line she fell to the manager fallback (self + direct reports), so anyone ever placed under her
+ * would have been readable. Her own report stays hers, as his does.
  */
-const SELF_ONLY_ATTENDANCE_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["Finance Manager"]);
+const SELF_ONLY_ATTENDANCE_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
+  "Finance Manager",
+  "HR Administration",
+]);
 
 export function isSelfOnlyAttendanceViewer(context: Pick<AccessContext, "role">): boolean {
   return SELF_ONLY_ATTENDANCE_ROLES.has(context.role);

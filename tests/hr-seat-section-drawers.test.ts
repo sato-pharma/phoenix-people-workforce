@@ -35,11 +35,13 @@ const hrefs = (sections: readonly { items: readonly { href: string }[] }[]) =>
   sections.flatMap((section) => section.items.map((item) => item.href));
 
 export function runHrSeatSectionDrawersTests() {
-  // ── 1. Exactly the two seats, exactly the /hr shell ────────────────────────────────────────
-  assert.deepEqual([...sectionDrawerRoles].sort(), ["HR Operations", "HR Resourcing"]);
+  // ── 1. Exactly the three HR seats, exactly the /hr shell ───────────────────────────────────
+  // The HR Operations Specialist (HR Administration) joined the other two on 2026-10-20.
+  assert.deepEqual([...sectionDrawerRoles].sort(), ["HR Administration", "HR Operations", "HR Resourcing"]);
   for (const role of ROLES) {
     for (const mode of MODES) {
-      const expected = mode === "hr" && (role === "HR Resourcing" || role === "HR Operations");
+      const expected =
+        mode === "hr" && (role === "HR Resourcing" || role === "HR Operations" || role === "HR Administration");
       assert.equal(
         usesSectionDrawers(mode, role),
         expected,

@@ -34,6 +34,9 @@ const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>([
   "HR Operations",
   // The Talent Acquisition seat (2026-10-08) — same redirect to her own HR command centre.
   "HR Resourcing",
+  // The HR Operations Specialist seat (2026-10-20) — same redirect to her own HR command centre,
+  // named here so it happens before any grant is read rather than by the fall-through below.
+  "HR Administration",
 ]);
 
 export default async function AdminCommandPage() {

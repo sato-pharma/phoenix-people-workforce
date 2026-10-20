@@ -66,6 +66,27 @@ type Props = {
    * history" button renders — /api/resignations/export asserts the same permission itself.
    */
   canExportHistory?: boolean;
+  /**
+   * resignations:create, resolved on the server by the page. It only decides whether "New
+   * resignation" renders — the HR Operations Specialist follows resignations the owner submits and
+   * never starts one; POST /api/resignations asserts the same permission itself.
+   */
+  canCreate?: boolean;
+  /**
+   * resignations:approve, resolved on the server by the page. It decides whether Approve, Complete
+   * and Reject render — POST /api/resignations/[id]/workflow asserts that same permission for all
+   * three. Completing a resignation is the Super Admin's, like approving and rejecting it (owner,
+   * 2026-10-20: "You press Complete"), so the HR Operations Specialist, who follows it through, is
+   * never offered any of them.
+   */
+  canDecide?: boolean;
+  /**
+   * canChangeResignationDates, resolved on the server by the page. It decides whether "Dates"
+   * renders — re-dating writes the leaver's last working day, which his final pay is computed from,
+   * so the salary-blind seat is never offered it; PATCH /api/resignations/[id]/dates refuses her
+   * itself.
+   */
+  canEditDates?: boolean;
   initialData: ResignationDashboardData | null;
   initialError: string | null;
   /** The portal route supplies its own page header, so it suppresses the hero. */
@@ -88,6 +109,9 @@ function newForm(): CreateResignationInput {
 
 export function ResignationsWorkspace({
   canExportHistory = false,
+  canCreate = false,
+  canDecide = false,
+  canEditDates = false,
   initialData,
   initialError,
   surface = "admin",
@@ -110,6 +134,9 @@ export function ResignationsWorkspace({
   const records = React.useMemo(() => data?.records ?? [], [data]);
   const candidates = React.useMemo(() => data?.payrollCandidates ?? [], [data]);
   const employees = data?.employees ?? [];
+  // The server withheld every settlement figure for this seat (isSalaryBlindRole). The money
+  // columns go, and one plain line says why — never a 0 or a dash that reads like "nothing owed".
+  const settlementWithheld = data?.settlementWithheld === true;
 
   const search = query.trim().toLowerCase();
   const matches = (text: string) => !search || text.toLowerCase().includes(search);
@@ -250,47 +277,56 @@ export function ResignationsWorkspace({
     if (tab === "history") {
       return <span className="text-phx-xs text-slate-400">{resignationActorLabel(record)}</span>;
     }
+    // A seat with neither control (the HR Operations Specialist follows the record; the HR Manager
+    // re-dates and decides it) gets the same quiet dash an empty cell carries elsewhere on this page.
+    if (!canEditDates && !canDecide) return <span className="text-slate-300">—</span>;
     return (
       <span className="inline-flex flex-wrap justify-end gap-1">
-        <RgButton
-          disabled={rowBusy}
-          onClick={() => {
-            setEditing(record);
-            setEditDates({
-              effectiveDate: record.effectiveDate,
-              submittedDate: record.submittedDate,
-            });
-          }}
-        >
-          Dates
-        </RgButton>
-        {record.status === "approved" ? (
+        {canEditDates ? (
           <RgButton
             disabled={rowBusy}
-            kind="primary"
-            onClick={() => void runAction(record, "complete")}
+            onClick={() => {
+              setEditing(record);
+              setEditDates({
+                effectiveDate: record.effectiveDate,
+                submittedDate: record.submittedDate,
+              });
+            }}
           >
-            Complete
+            Dates
           </RgButton>
-        ) : (
-          <RgButton
-            disabled={rowBusy}
-            kind="primary"
-            onClick={() => void runAction(record, "approve")}
-          >
-            Approve
-          </RgButton>
-        )}
-        <RgButton
-          disabled={rowBusy}
-          kind="danger"
-          onClick={() => {
-            setRejecting(record);
-            setRejectReason(record.rejectedReason ?? "");
-          }}
-        >
-          Reject
-        </RgButton>
+        ) : null}
+        {canDecide ? (
+          <>
+            {record.status === "approved" ? (
+              <RgButton
+                disabled={rowBusy}
+                kind="primary"
+                onClick={() => void runAction(record, "complete")}
+              >
+                Complete
+              </RgButton>
+            ) : (
+              <RgButton
+                disabled={rowBusy}
+                kind="primary"
+                onClick={() => void runAction(record, "approve")}
+              >
+                Approve
+              </RgButton>
+            )}
+            <RgButton
+              disabled={rowBusy}
+              kind="danger"
+              onClick={() => {
+                setRejecting(record);
+                setRejectReason(record.rejectedReason ?? "");
+              }}
+            >
+              Reject
+            </RgButton>
+          </>
+        ) : null}
       </span>
     );
   }
@@ -416,9 +452,11 @@ export function ResignationsWorkspace({
 
   const toolbar = (
     <>
-      <RgButton kind={surface === "admin" ? "onDark" : "quiet"} onClick={() => setCreating(true)}>
-        New resignation
-      </RgButton>
+      {canCreate ? (
+        <RgButton kind={surface === "admin" ? "onDark" : "quiet"} onClick={() => setCreating(true)}>
+          New resignation
+        </RgButton>
+      ) : null}
       <RgButton
         disabled={busy === "reload"}
         kind={surface === "admin" ? "onDark" : "quiet"}
@@ -512,6 +550,12 @@ export function ResignationsWorkspace({
             </RgSelect>
           </div>
         </div>
+
+        {settlementWithheld && tab !== "candidates" ? (
+          <p className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
+            Salary and settlement amounts are not shown for your seat.
+          </p>
+        ) : null}
 
         {leaversHoldingDevices.length > 0 ? (
           <div className="border-b border-rose-200 bg-rose-50 px-3 py-3">
@@ -648,24 +692,28 @@ export function ResignationsWorkspace({
                   <PortalRecordFields
                     fields={[
                       { label: "Effective", value: formatResignationDate(record.effectiveDate) },
-                      { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
-                      {
-                        label: "Days paid",
-                        value: record.settlement ? record.settlement.daysWorked : "-",
-                      },
-                      { label: "Due this month", value: formatEgp(record.settlement?.total) },
-                      {
-                        label: "Split",
-                        value: record.settlement ? (
-                          <RgSplit
-                            covered={record.settlement.coveredByFirstPart}
-                            firstPart={formatEgp(record.settlement.firstPart)}
-                            secondPart={formatEgp(record.settlement.secondPart)}
-                          />
-                        ) : (
-                          "—"
-                        ),
-                      },
+                      ...(settlementWithheld
+                        ? []
+                        : [
+                            { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
+                            {
+                              label: "Days paid",
+                              value: record.settlement ? record.settlement.daysWorked : "-",
+                            },
+                            { label: "Due this month", value: formatEgp(record.settlement?.total) },
+                            {
+                              label: "Split",
+                              value: record.settlement ? (
+                                <RgSplit
+                                  covered={record.settlement.coveredByFirstPart}
+                                  firstPart={formatEgp(record.settlement.firstPart)}
+                                  secondPart={formatEgp(record.settlement.secondPart)}
+                                />
+                              ) : (
+                                "—"
+                              ),
+                            },
+                          ]),
                     ]}
                   />
                 </PortalRecordCard>
@@ -675,10 +723,14 @@ export function ResignationsWorkspace({
               <>
                 <RgTh>Employee</RgTh>
                 <RgTh>Effective</RgTh>
-                <RgTh align="right">Base salary</RgTh>
-                <RgTh align="right">Days paid</RgTh>
-                <RgTh align="right">Due this month</RgTh>
-                <RgTh>Split</RgTh>
+                {settlementWithheld ? null : (
+                  <>
+                    <RgTh align="right">Base salary</RgTh>
+                    <RgTh align="right">Days paid</RgTh>
+                    <RgTh align="right">Due this month</RgTh>
+                    <RgTh>Split</RgTh>
+                  </>
+                )}
                 <RgTh align="right">{tab === "action" ? "Actions" : "Closed by"}</RgTh>
               </>
             }
@@ -721,26 +773,30 @@ export function ResignationsWorkspace({
                     />
                   </RgTd>
                   <RgTd className="text-slate-500">{formatResignationDate(record.effectiveDate)}</RgTd>
-                  <RgTd className="text-right text-slate-500">
-                    {formatEgp(record.settlement?.baseSalary)}
-                  </RgTd>
-                  <RgTd className="text-right text-slate-500">
-                    {record.settlement ? record.settlement.daysWorked : "-"}
-                  </RgTd>
-                  <RgTd className="text-right font-bold text-slate-900">
-                    {formatEgp(record.settlement?.total)}
-                  </RgTd>
-                  <RgTd>
-                    {record.settlement ? (
-                      <RgSplit
-                        covered={record.settlement.coveredByFirstPart}
-                        firstPart={formatEgp(record.settlement.firstPart)}
-                        secondPart={formatEgp(record.settlement.secondPart)}
-                      />
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </RgTd>
+                  {settlementWithheld ? null : (
+                    <>
+                      <RgTd className="text-right text-slate-500">
+                        {formatEgp(record.settlement?.baseSalary)}
+                      </RgTd>
+                      <RgTd className="text-right text-slate-500">
+                        {record.settlement ? record.settlement.daysWorked : "-"}
+                      </RgTd>
+                      <RgTd className="text-right font-bold text-slate-900">
+                        {formatEgp(record.settlement?.total)}
+                      </RgTd>
+                      <RgTd>
+                        {record.settlement ? (
+                          <RgSplit
+                            covered={record.settlement.coveredByFirstPart}
+                            firstPart={formatEgp(record.settlement.firstPart)}
+                            secondPart={formatEgp(record.settlement.secondPart)}
+                          />
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </RgTd>
+                    </>
+                  )}
                   <RgTd className="text-right">{recordControls(record, rowBusy)}</RgTd>
                 </tr>
               );

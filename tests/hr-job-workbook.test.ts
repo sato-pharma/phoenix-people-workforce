@@ -39,7 +39,7 @@ import {
  *      pinned per section, not merely in total — a line moved from section 3 to section 4 keeps
  *      the total at 37 and is exactly the kind of drift a total cannot see.
  *   2. A SCREEN STOPS EXISTING, or stops being reachable by the seat whose line names it. A
- *      workbook that sends the new HR Operations Coordinator to a page that 404s, or to one her
+ *      workbook that sends the new HR Generalist to a page that 404s, or to one her
  *      own sidebar never offers her, is worse than no workbook: it teaches the wrong thing with
  *      authority. So every href is checked twice — the page file is on disk, AND the row is in
  *      that seat's real rendered sidebar.
@@ -63,6 +63,13 @@ const SECTION_LINE_COUNTS: Partial<Record<HrBundleName, readonly number[]>> = {
 const EXPECTED_TOTALS: Partial<Record<HrBundleName, number>> = {
   "HR Operations": 37,
 };
+
+/**
+ * The seats opened WITHOUT a written job description, so they hold no per-line book. Named, not
+ * derived from HR_SEAT_WORKBOOKS, so a seat cannot lose its book and pass by being treated as one
+ * that never had one.
+ */
+const SEATS_WITHOUT_A_WRITTEN_JD: readonly HrBundleName[] = ["HR Resourcing", "HR Administration"];
 
 /**
  * Four of the owner's own sentences, character for character. Not a byte window into the file (a
@@ -301,15 +308,25 @@ export function runHrJobWorkbookTests() {
   // nobody asked for, this is what catches it.
   assert.deepEqual(
     COMPANY_ROLE_WORKBOOKS.filter((entry) => entry.hasWrittenJd).map((entry) => entry.jobTitle),
-    ["HR Operations Coordinator"],
+    // "HR Generalist" since 2026-10-20: the owner renamed the HR Operations seat's title from HR
+    // Operations Coordinator, and the job description he supplied moved with it unchanged. The HR
+    // Operations Specialist seat opened the same day from his answers in chat, with NO written job
+    // description, so it must stay false here.
+    ["HR Generalist"],
     "hasWrittenJd must be true only for the titles whose job description the owner actually " +
       "supplied (the HR Business Partner's was the other, retired with the seat on 2026-10-08). Do " +
       "not invent responsibility lines for a role nobody has written one for",
   );
+  assert.equal(
+    COMPANY_ROLE_WORKBOOKS.find((entry) => entry.jobTitle === "HR Operations Specialist")?.role,
+    "HR Administration",
+    "the HR Operations Specialist title carries the HR Administration seat (owner, 2026-10-20)",
+  );
 
   // 7 ── The seat lookup used by the page, so a viewer's role resolves to their own book.
   assert.equal(workbookForSeat("HR Advisory"), null, "the HR Business Partner's book left with the retired seat");
-  assert.equal(workbookForSeat("HR Operations")?.jobTitle, "HR Operations Coordinator");
+  assert.equal(workbookForSeat("HR Operations")?.jobTitle, "HR Generalist");
+  assert.equal(workbookForSeat("HR Administration"), null, "the HR Operations Specialist has no written job description yet");
   assert.equal(workbookForSeat("Super Admin"), null, "only HR Operations holds a workbook of its own");
   assert.equal(workbookForSeat(null), null);
   assert.equal(workbookForSeat(undefined), null);
@@ -321,9 +338,10 @@ export function runHrJobWorkbookTests() {
   // are separate copies of one fact and CAN drift. This is what stops them.
   for (const seat of Object.keys(HR_ROLE_BUNDLES) as HrBundleName[]) {
     // A seat whose job description was never supplied has NO seat workbook (the anti-fabrication pin
-    // above) — the Talent Acquisition seat, HR Resourcing, opened 2026-10-08. Its title is still
-    // pinned to the company catalogue below; only the per-line book is absent, and that on purpose.
-    if (seat === "HR Resourcing") {
+    // above) — the Talent Acquisition seat, HR Resourcing, opened 2026-10-08, and the HR Operations
+    // Specialist seat, HR Administration, opened 2026-10-20. Each title is still pinned to the
+    // company catalogue below; only the per-line book is absent, and that on purpose.
+    if (SEATS_WITHOUT_A_WRITTEN_JD.includes(seat)) {
       assert.equal(workbookForSeat(seat), null, "no written job description, so no seat workbook");
     } else {
       assert.equal(
@@ -349,8 +367,11 @@ export function runHrJobWorkbookTests() {
   // And the helper the callers actually use, including the pass-through every other role relies
   // on — this must not become a company-wide relabelling.
   assert.notEqual(displayTitleForRole("HR Advisory"), "HR Business Partner", "the title retired with its seat");
-  assert.equal(displayTitleForRole("HR Operations"), "HR Operations Coordinator");
+  // Renamed 2026-10-20 (owner: "make the old account HR generalist" — everywhere).
+  assert.equal(displayTitleForRole("HR Operations"), "HR Generalist");
+  assert.notEqual(displayTitleForRole("HR Operations"), "HR Operations Coordinator", "the old title is gone from the account");
   assert.equal(displayTitleForRole("HR Resourcing"), "Talent Acquisition");
+  assert.equal(displayTitleForRole("HR Administration"), "HR Operations Specialist");
   assert.equal(displayTitleForRole("Finance Manager"), "Finance Manager", "a non-HR role is unchanged");
   assert.equal(displayTitleForRole("Super Admin"), "Super Admin", "a non-HR role is unchanged");
   assert.equal(displayTitleForRole(null), "", "a null role must not render the word 'null'");

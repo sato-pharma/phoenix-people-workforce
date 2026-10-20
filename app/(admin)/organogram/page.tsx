@@ -68,7 +68,9 @@ export default async function OrganogramPage() {
   // The same capability POST /api/employees asserts. Decides only whether an OPEN SEAT
   // popup offers the way through to a pre-filled Add Employee form — the organogram is
   // readable by plenty of roles that may not hire.
-  const canAddEmployee = await canAccess(access, "employees", "update");
+  // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
+  // the master but does not add to it, and POST /api/employees asserts create on every add.
+  const canAddEmployee = await canAccess(access, "employees", "create");
 
   return (
     <OrganogramReport

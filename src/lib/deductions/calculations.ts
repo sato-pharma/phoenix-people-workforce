@@ -102,6 +102,19 @@ export const DEDUCTIONS_CATEGORY_CONFIG: Record<DeductionsCategory, DeductionsCa
     salaryRecordsColumn: "other_deductions",
     sortOrder: 9,
   },
+  // Owner, 2026-10-20: a field day the Super Admin decided in the HR operations report. Written only
+  // by src/lib/hr-ops-reports/bridge.ts, beside the day it adds to the weekly attendance review, and
+  // decided by that review's answer through digest-bridge.ts — so nothing is charged until the
+  // employee has answered (or the answer deadline settles it to salary). Paid through the CRM column,
+  // like crm and crm_half_day. Mirrors 20261020072217_hr_ops_bridge_field_review.sql.
+  field_review: {
+    category: "field_review",
+    label: "Field Day (Reviewed)",
+    detectionEngine: "hr_ops_report",
+    requiresApproval: true,
+    salaryRecordsColumn: "crm",
+    sortOrder: 10,
+  },
 };
 
 export function deductionsCategoryLabel(category: DeductionsCategory): string {

@@ -65,7 +65,8 @@ export type ResignationRecord = {
    * Settlement preview for the month the employee resigned in — BEFORE fingerprint, medical
    * insurance and every other deduction. Computed server-side by getResignationsDashboardData
    * from the owner-locked helpers (computeResignationSettlement + calculateBasicSalary), never
-   * re-derived in the UI. Null when the employee row carries no salary.
+   * re-derived in the UI. Null when the employee row carries no salary, and always null for the
+   * seat that never sees one (ResignationDashboardData.settlementWithheld).
    */
   settlement: ResignationSettlementPreview | null;
   /**
@@ -142,6 +143,13 @@ export type ResignationDashboardData = {
   employees: ResignationEmployeeOption[];
   payrollCandidates: PayrollResignationCandidateRecord[];
   records: ResignationRecord[];
+  /**
+   * True for the seat that never sees a salary (isSalaryBlindRole). Every `settlement` is then null
+   * and every device's `agreedValueEgp` is null BY WITHHOLDING, not because nothing is owed — so the
+   * screen says so in a plain line and drops the money columns, and never prints a 0 or a dash in
+   * their place. Absent or false: a null settlement still means the employee row carries no salary.
+   */
+  settlementWithheld?: boolean;
   summary: {
     active: number;
     approved: number;

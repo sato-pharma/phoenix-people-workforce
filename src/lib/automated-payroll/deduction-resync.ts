@@ -113,8 +113,10 @@ export function payrollStepsForCategory(
     case "fingerprint":
       return [{ stepKey: "p1_fingerprint", columns: ["fingerprint_days", "fingerprint_value"] }];
     // A CRM half day is paid through the CRM column (owner, 2026-10-08), so it clears the same steps.
+    // So is a field day reviewed in the HR operations report (owner, 2026-10-20).
     case "crm":
     case "crm_half_day":
+    case "field_review":
       return settledInPart1
         ? [
             { stepKey: "p1_crm", columns: ["p1od_crm_days", "p1od_crm_value"] },

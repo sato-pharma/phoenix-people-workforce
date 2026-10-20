@@ -1090,6 +1090,30 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // `sha ~ '^[0-9a-f]{40}$'`; RLS on with the one policy phx_release_gates_service_role (ALL, role
   // service_role); select and insert granted to service_role and none to anon or authenticated; 0 rows.
   "20261019171347_release_gates.sql",
+  // 2026-10-20, the HR Daily & Weekly Reports tables (the HR Operations Specialist seat, PR 6194),
+  // applied BEFORE its PR merged — safe with the code then serving, which never reads them. The MCP
+  // `apply_migration` answered `declined` four times on staging, so both projects went through the
+  // standing route: `node scripts/apply-sql-file.mjs <file> staging` (cifwmndunmlxjhyjugxa) and then
+  // production (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) at
+  // about 09:10 Cairo; production printed {"applied":true,"count":0}, and neither ledger carries this
+  // version or a name like hr_ops_report. It defines NO function, so there is no prosrc digest: two
+  // NEW tables have no older generation a probe could mistake for them, and both were read by shape
+  // on production — hr_ops_reports and hr_ops_report_lines, RLS on, exactly one policy each, no
+  // SELECT for anon or authenticated, INSERT for service_role, 3 and 6 indexes. Purely additive.
+  "20261020065354_hr_ops_reports.sql",
+  // The bridge from those reports into the weekly attendance review, applied BEFORE its PR merged by
+  // the same standing route: staging (cifwmndunmlxjhyjugxa) re-applied after the risk-review edits,
+  // then production (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com)
+  // at 09:31 Cairo on 2026-10-20, {"applied":true,"count":1}; neither ledger carries this version.
+  // Read back on production, identical on staging, md5(prosrc): phx_hr_ops_bridge_digest_day
+  // 30454fec9baac625f5ee1b7dfff31dba, phx_attendance_sync_digest_days 0afcde125da5c3e724e3ae311c4249a8,
+  // phx_attendance_settle_digest_line 00fb5edc0a221712d243ab35648333df — the two rewritten bodies
+  // replaced 175dafd3e3b0da7682581514af63cff6 and 7ccd499a4c55e9920f5f42591b636e15, re-read unchanged
+  // just before the apply. attendance_digest_lines' status CHECK now admits field_review, its three
+  // hr_ops_* columns exist, the field_review category reads "Field Day (Reviewed)" paid through crm,
+  // and the 139 existing digest rows are untouched (0 field_review rows). Safe before the deploy: the
+  // serving code never names the new status, columns, category or function.
+  "20261020072217_hr_ops_bridge_field_review.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
