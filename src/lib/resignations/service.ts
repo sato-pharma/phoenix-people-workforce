@@ -1,6 +1,14 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
+import {
+  canAccess,
+  canSeeEmployee,
+  hrIdsMatch,
+  normalizeHrId,
+  systemAccessContext,
+  type AccessContext,
+} from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
@@ -664,7 +672,10 @@ function isCompanyResignationReader(access: AccessContext) {
     access.scope === "company" ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    // The HR Operations Specialist follows every resignation he submits through to the completed
+    // cycle (owner, 2026-10-20). Settlement amounts are withheld from her — isSalaryBlindRole.
+    access.role === "HR Administration"
   );
 }
 
@@ -756,26 +767,39 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     }
   }
 
+  const scopedAccess = access ?? systemAccessContext;
+  // THE SEAT THAT NEVER SEES A SALARY follows every resignation to the completed cycle and is shown
+  // no money on the way (owner, 2026-10-20). Withheld HERE, where the data leaves the server, so
+  // every caller of this read — the page, the API, the command centres, the approvals hub — carries
+  // the same nulls: no settlement preview (it is built from the base salary and allowances) and no
+  // signed value on a device still held. `settlementWithheld` tells the screen to say so in words,
+  // never to print a zero or a dash that reads like "nothing is owed".
+  const settlementWithheld = isSalaryBlindRole(scopedAccess.role);
+
   const allWorkflowRecords = mappedResignations.map((record) => {
+    const outstandingDevices =
+      outstandingDevicesByHrId.get(String(record.employeeHrId ?? "").trim().toLowerCase()) ?? [];
     return {
       ...record,
       createdByName: record.createdBy
         ? actorNameByHrId.get(normalizeHrId(record.createdBy) ?? "") ?? null
         : null,
       hireDate: hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-      settlement: buildResignationSettlementPreview(
-        salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-        record.effectiveDate,
-        employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
-        hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-      ),
+      settlement: settlementWithheld
+        ? null
+        : buildResignationSettlementPreview(
+            salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+            record.effectiveDate,
+            employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
+            hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+          ),
       // Beside the settlement, because the custody receipt says final dues follow the return.
-      outstandingDevices:
-        outstandingDevicesByHrId.get(String(record.employeeHrId ?? "").trim().toLowerCase()) ?? [],
+      outstandingDevices: settlementWithheld
+        ? outstandingDevices.map((device) => ({ ...device, agreedValueEgp: null }))
+        : outstandingDevices,
       employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
-  const scopedAccess = access ?? systemAccessContext;
   const workflowRecords = isCompanyResignationReader(scopedAccess)
     ? allWorkflowRecords
     : allWorkflowRecords.filter((record) => {
@@ -841,7 +865,7 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     total: records.length,
   };
 
-  return { employees, payrollCandidates, records, summary };
+  return { employees, payrollCandidates, records, settlementWithheld, summary };
 }
 
 /**
@@ -2097,6 +2121,27 @@ async function auditResignationDateUpdate(
     },
     summary: "Resignation dates updated.",
   });
+}
+
+/**
+ * RE-DATING A RESIGNATION MOVES MONEY. `updateResignationDates` writes `employees.last_working_date`,
+ * which the leaver's payroll basis reads (a last day past the 25th pays the month in full), so the
+ * salary-blind seat — the HR Operations Specialist, who never sees or decides a figure — may not
+ * change it, though she holds resignations:update to follow a resignation through. The PATCH route
+ * refuses her with this sentence; both resignation pages hide the Dates control on the same answer.
+ */
+export const RESIGNATION_DATES_KEPT_FROM_SEAT_MESSAGE =
+  "Changing resignation dates changes the leaver's pay, so it stays with the HR Manager.";
+
+/** True when the viewer is refused re-dating whatever her grants say — the salary-blind seat. */
+export function isResignationDatesKeptFromViewer(access: Pick<AccessContext, "role">): boolean {
+  return isSalaryBlindRole(access.role);
+}
+
+/** Whether the Dates control is offered: resignations:update, and not the salary-blind seat. */
+export async function canChangeResignationDates(access: AccessContext): Promise<boolean> {
+  if (isResignationDatesKeptFromViewer(access)) return false;
+  return canAccess(access, "resignations", "update");
 }
 
 export async function updateResignationDates(

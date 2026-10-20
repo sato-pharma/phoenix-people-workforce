@@ -4100,6 +4100,24 @@ offline **WORK** — the CRM outbox — is untouched.
 safory only cc omar.anwar after 30 and 60 and 75 days"*, then *"to her only bccc omar.anwar"*. BCC,
 not CC, so hers is the only address the delivered mail shows.
 
+**Changed 2026-10-20: to Omar Gawish (`B-10`) alone, no BCC and no CC.** That day Yasmeena moved
+to a seat of her own (the role key `HR Administration`, shown as HR Operations Specialist), the HR
+Generalist seat was left open for a future hire, and asked who receives the milestones now he
+picked *"To you only"*. Two things kept the change from re-sending anything:
+
+- **The dedup key is FROZEN.** It still ends `:HR-009` (`PROBATION_MILESTONE_KEY_SUFFIX`). It names
+  "this case's Day N milestone", not the recipient, and every milestone already delivered is
+  recorded under it.
+- **The frozen key alone was not enough.** The notification layer keys each DELIVERY by event,
+  channel AND recipient, so the same event addressed to a new person is a new delivery, and the
+  event upsert would also have moved her bell row onto him. The sweep therefore reads
+  `notification_events` for the due keys first and SKIPS a key whose row is addressed to anybody
+  but the current recipient (`milestoneKeysToSend`). A failed read sends nothing that run, which
+  costs nothing because a milestone stays due until day 90.
+
+Pinned by `tests/probation-milestone-emails.test.ts` and `tests/vacant-seat-recipients.test.ts`.
+The rest of this section is the account as it stood on 2026-09-29.
+
 **What was there before.** Nothing. The sweep was unwired on 2026-08-02 (#1624) and its module
 deleted (#1626); the version that existed fanned out to ~8 stakeholders per milestone (CEO + HR + DM
 + NSM + SFE + the evaluator), which is what he cut. And Yasmeena had received **none** of the 334
@@ -4160,6 +4178,28 @@ resigned, one terminated) yet still hold active cases.
 *"in any av request on phx make yasmeena informed and make on her landing page appear on a vacation
 today."* Two instructions in one sentence, about the same seat: Yasmeena Elsafory, `HR-009`, HR
 Operations — the seat that administers attendance and leave.
+
+### Changed 2026-10-20: the notice follows the SEAT, and the Super Admin stands in while it is empty
+
+That day she moved to a seat of her own (the role key `HR Administration`, shown as HR Operations
+Specialist), and `HR Operations` — shown as HR Generalist — was left open for a future hire. Asked
+where the informed notice goes meanwhile, he answered *"Both to you until the hire"*, and the same
+for the business-card request notice. Neither names a person by HR id any more:
+
+- **Both resolve the HR Generalist seat** through `resolveSeatOrStandInHrIds`
+  (`src/lib/notifications/vacant-seat.ts`). Whoever holds the seat is told; while nobody does, the
+  Super Admin is. The day somebody is seated the notice follows them, with nothing to undo.
+- **A failed read is never an empty seat.** It resolves nobody and logs a warning, rather than
+  handing the owner the seat's mail on every transient database error.
+- **Every role-addressed notice now works the same way.** `resolveNotificationRoleRecipients` puts
+  each policy's roles through `withVacantSeatStandIns`, so any notice addressed to the HR Operations
+  role reaches the Super Admin while the seat is empty. An audience that already names the Super
+  Admin needs no read and gets no second copy.
+
+Everything below about "her" describes the 2026-09-29 build. The approver rule, the channels, the
+annual-only scope and the panel are unchanged, and now apply to whoever holds the seat. Pinned by
+`tests/vacation-informed-hr.test.ts`, `tests/business-card-requests.test.ts` and
+`tests/vacant-seat-recipients.test.ts`.
 
 ### Informed, and why that is not an approval step
 

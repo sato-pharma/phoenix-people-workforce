@@ -108,6 +108,7 @@ function num(value: unknown): number {
 const CATEGORY_LABELS: Record<string, string> = {
   crm: "CRM visits",
   dsm_no_record: "No records for the day",
+  field_review: "Field day (reviewed by HR)",
   fingerprint: "Fingerprint",
   holiday_bridge: "Holiday bridge",
   insufficient_balance_vacation: "Vacation over balance",

@@ -143,6 +143,14 @@ export function canAccessHeadOffice(access: AccessContext) {
     // The Talent Acquisition seat (2026-10-08) — Head Office staff who recruits for Head Office too,
     // the reason the old Talent Acquisition role was added here on 2026-08-25.
     access.role === "HR Resourcing" ||
+    // The HR Operations Specialist seat (2026-10-20) — Head Office staff herself, given the company
+    // chart ("show organogram") the same day. Without this her chart would show the four sales lines
+    // and drop the one branch she sits in, the trap written up for the Finance Manager below. Not a
+    // new disclosure: she keeps the whole Employee Master (employees:read, canSeeEmployee true), so
+    // every Head Office record already opens for her. She IS in canViewOrganogramSensitiveFields —
+    // the popup shows her what her Employee Master already does — and every money figure on it is
+    // withheld for isSalaryBlindRole.
+    access.role === "HR Administration" ||
     // Training Manager added 2026-09-03 (owner: "the training manager ui want to make him able to
     // see full company organogram"). He is the THIRD person to hit the exact defect written up for
     // the Finance Manager above and for A-3 in the pin block above it: he IS Head Office staff, so
@@ -259,6 +267,8 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "Marketing Manager" ||
     access.role === "Training Manager" ||
     access.role === "HR Operations" ||
+    // The HR Operations Specialist (2026-10-20): "show organogram", with salary hidden.
+    access.role === "HR Administration" ||
     // The Talent Acquisition seat (2026-10-08), ticked by the owner. The company chart and its
     // vacancies are what she recruits against. NOT added to canViewOrganogramSensitiveFields: the
     // money on a node stays with the seats that hold payroll.
@@ -297,7 +307,12 @@ export function canViewOrganogramSensitiveFields(access: AccessContext) {
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     access.role === "Finance Manager" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    // The HR Operations Specialist (2026-10-20). She keeps the whole Employee Master — national ID,
+    // residence, bank, payment mode — so the popup shows her the same; "the organogram hides
+    // salary" (owner) is kept by the two routes, which withhold every money figure for
+    // isSalaryBlindRole (isSalaryRedactedForViewer is true for her, and `omitSalary` drops the rows).
+    access.role === "HR Administration"
   );
 }
 

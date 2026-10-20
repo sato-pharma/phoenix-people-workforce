@@ -1,4 +1,5 @@
 import { loadRegionCrosswalk } from "@/lib/employees/region-resolver";
+import { storedPayFlagsFromRow, type StoredPayFlags } from "@/lib/employees/salary-blind-pay-flags";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isActiveImportEmployee } from "@/lib/imports/employee-lifecycle";
 import { addFullNameHolder, addStoredNickname } from "@/lib/imports/employee-name-collision";
@@ -353,6 +354,45 @@ async function loadTeamState(
   return { teamCodeToTeam, teamCodes, teamNameAreaToTeam, teamNameToTeams };
 }
 
+// Each employee's stored payment mode and payroll eligibility, for the salary-blind seat's rule that
+// she never changes either (src/lib/employees/salary-blind-pay-flags.ts). Derived exactly as the
+// directory derives them for her export, so her own export compares equal cell for cell. A failed
+// read returns undefined: her two columns are then ignored unchecked and still never written — the
+// validator says so once — rather than failing every importer's file over a read only she needs.
+async function loadStoredPayFlags(supabase: SupabaseClient) {
+  const [employees, compensation] = await Promise.all([
+    supabase.from("employees").select("hr_id,employment_status,payment_mode,payroll_eligible"),
+    supabase.from("employee_compensation").select("employee_hr_id,payment_mode"),
+  ]);
+
+  if (employees.error) {
+    return undefined;
+  }
+
+  // The compensation row only matters where the employee row carries no mode; a missing table or
+  // column there leaves the employee row's own value (or the default) — the directory's fallback.
+  const compensationModeByHrId = new Map<string, string | null>();
+  if (!compensation.error) {
+    for (const row of (compensation.data ?? []) as Array<{ employee_hr_id: string | null; payment_mode: string | null }>) {
+      if (row.employee_hr_id) compensationModeByHrId.set(row.employee_hr_id, row.payment_mode);
+    }
+  }
+
+  const storedPayFlags = new Map<string, StoredPayFlags>();
+  for (const row of (employees.data ?? []) as Array<{
+    employment_status: string | null;
+    hr_id: string | null;
+    payment_mode: string | null;
+    payroll_eligible: boolean | null;
+  }>) {
+    const key = canonicalHrIdKey(row.hr_id);
+    if (!key || !row.hr_id || storedPayFlags.has(key)) continue;
+    storedPayFlags.set(key, storedPayFlagsFromRow(row, compensationModeByHrId.get(row.hr_id)));
+  }
+
+  return storedPayFlags;
+}
+
 // Each employee's saved nickname, for the nickname guard's one exception (employee-name-collision.ts).
 // A failed read returns an empty map, which only keeps the guard strict — the safe direction.
 async function loadStoredNicknames(supabase: SupabaseClient) {
@@ -385,6 +425,7 @@ export async function loadEmployeeImportExistingState(
     activeDepartments,
     regionCrosswalk,
     employeeNicknameKeyByCanonicalKey,
+    storedPayFlagsByCanonicalKey,
   ] = await Promise.all([
     loadCodeSet(supabase, "departments"),
     loadAreaState(supabase),
@@ -396,6 +437,7 @@ export async function loadEmployeeImportExistingState(
     // than failing the whole import (the validator keeps each row's free-text region_name).
     loadRegionCrosswalk(supabase).catch(() => undefined),
     loadStoredNicknames(supabase),
+    loadStoredPayFlags(supabase).catch(() => undefined),
   ]);
   const employees = await loadEmployeeState(supabase, {
     areaIdToCode: areaState.areaIdToCode,
@@ -407,6 +449,7 @@ export async function loadEmployeeImportExistingState(
   return {
     ...employees,
     employeeNicknameKeyByCanonicalKey,
+    storedPayFlagsByCanonicalKey,
     areaCodes: areaState.areaCodes,
     areaCodeToId: areaState.areaCodeToId,
     departmentCodes,

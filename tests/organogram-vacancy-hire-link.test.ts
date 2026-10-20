@@ -215,9 +215,15 @@ export async function runOrganogramVacancyHireLinkTests() {
     path.join("src", "components", "workspace", "admin-shell-employee-pages.tsx"),
   ]) {
     const source = fs.readFileSync(path.join(process.cwd(), page), "utf8");
+    // employees:create, not update (2026-10-20): the HR Operations Specialist edits the master and
+    // does not add to it, so an update gate offered her "Add employee to this seat" and a refusal.
     assert.ok(
-      source.includes('canAccess(access, "employees", "update")'),
-      `${page} must resolve canAddEmployee server-side from the real capability, never client-side`,
+      source.includes('const canAddEmployee = await canAccess(access, "employees", "create")'),
+      `${page} must resolve canAddEmployee server-side from employees:create — the grant POST /api/employees asserts on an add — never client-side`,
+    );
+    assert.ok(
+      !source.includes('const canAddEmployee = await canAccess(access, "employees", "update")'),
+      `${page} gates the hire on employees:update, which a seat that edits without adding holds`,
     );
   }
 
@@ -318,8 +324,8 @@ export async function runOrganogramVacancyHireLinkTests() {
     "utf8",
   );
   assert.ok(
-    portalPage.includes('canAccess(access, "employees", "update")'),
-    "the portal page must resolve the capability server-side — it is read by managers who cannot hire",
+    portalPage.includes('const canAddEmployee = await canAccess(access, "employees", "create")'),
+    "the portal page must resolve employees:create server-side — it is read by managers who cannot hire",
   );
   assert.ok(
     portalPage.includes('canAddEmployee && vacancy.status === "open"'),

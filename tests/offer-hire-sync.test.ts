@@ -127,7 +127,7 @@ export function runOfferHireSyncTests(): void {
   }
   const create = form.slice(form.indexOf('fetch("/api/employees", { body: JSON.stringify({'));
   assert.ok(
-    create.indexOf("offerId: offerLinkId") < create.indexOf("employee: formToPayload(form, editingHrId)"),
+    create.indexOf("offerId: offerLinkId") < create.indexOf("employee: formToPayload(form, editingHrId"),
     "the letter travels as a sibling of `employee`",
   );
   assert.ok(

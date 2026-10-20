@@ -179,6 +179,34 @@ export function editedDaysApplyToCandidate(input: { detectedDays: number; candid
   return Number.isFinite(input.candidateRawValue) && Math.abs(input.candidateRawValue - input.detectedDays) < 0.006;
 }
 
+/**
+ * Which month-end deduction a weekly-review day's answer belongs to. A field day decided in the HR
+ * operations report (`field_review`, added by src/lib/hr-ops-reports/bridge.ts) has its own category
+ * and is paid through the CRM column; every other day — every fingerprint status, including an office
+ * day whose days were set from that report — is a `fingerprint` day, exactly as before.
+ */
+export function deductionCategoryForDigestLine(status: string | null | undefined): "fingerprint" | "field_review" {
+  return status === "field_review" ? "field_review" : "fingerprint";
+}
+
+/** The source system that writes the deduction of a field day decided in the HR operations report (bridge.ts). */
+export const HR_OPS_REPORT_SOURCE_SYSTEM = "hr_ops_report";
+
+/**
+ * The month-end deduction a weekly-review day's answer is applied to: its category, and — for a field
+ * day the HR operations report decided — the one writer of it. That day's deduction is written by the
+ * bridge (source `hr_ops_report`), so the answer is applied to THAT row. Every other day, an office day
+ * whose days the report set included, is looked up exactly as before (`fingerprint`, any source): the
+ * month-end Fingerprint connector stays its only writer.
+ */
+export function deductionSourceForDigestLine(status: string | null | undefined): {
+  category: "fingerprint" | "field_review";
+  sourceSystem: string | null;
+} {
+  if (status === "field_review") return { category: "field_review", sourceSystem: HR_OPS_REPORT_SOURCE_SYSTEM };
+  return { category: "fingerprint", sourceSystem: null };
+}
+
 export type ReviewWeekStage ="not_built" | "trial" | "awaiting_release" | "released" | "closed";
 
 /** Where a week stands, from its digests. A trial-run digest never counts as a real one. */

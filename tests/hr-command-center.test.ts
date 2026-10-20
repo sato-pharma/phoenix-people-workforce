@@ -227,6 +227,10 @@ function emptySources(): HrCommandSources {
       },
     },
     supportRequests: [],
+    hrOpsReports: {
+      reports: [],
+      summary: { inReview: 0, rowsToAnswer: 0, rowsToDecide: 0, submitted: 0 },
+    },
   };
 }
 
@@ -264,7 +268,11 @@ const FUNCTIONS_WITH_NO_TILES = new Set([
   "recognition",
   // HR Reminders is the team's own notes page, not a queue this dashboard counts.
   "team_reminders",
+  // NOT the HR Operations Specialist seat's two functions any more: since 2026-10-20 attendance_review
+  // counts her Daily & Weekly Reports queue and people_master mirrors people_records' tiles with
+  // every link on a page her seat opens.
 ]);
+
 
 export async function runHrCommandCenterTests() {
   // ── The gate the page gates on ────────────────────────────────────────────────────────────────

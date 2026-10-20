@@ -38,6 +38,7 @@ function addSummarySheet(
   result: EmployeeImportValidationResult,
   entries: FixListEntry[],
   sourceFileName: string,
+  omitMoney = false,
 ) {
   const sheet = workbook.addWorksheet("Summary", { properties: { defaultRowHeight: 18 } });
   sheet.views = [{ showGridLines: false }];
@@ -131,14 +132,27 @@ function addSummarySheet(
   line("3 · Re-upload", "Upload the corrected file again. The dry run runs from scratch each time, so nothing from this attempt is remembered.");
 
   heading("Two things worth knowing");
-  line(
-    "A blank cell changes nothing",
-    "Clearing a cell does not erase the stored value — blanks are skipped entirely. If you need a number to become nothing, type 0.",
-  );
-  line(
-    "Salary figures are recalculated",
-    "Base, Basic, Net and Gross are normalized to payroll policy on upload. A \"Review\" finding about one of them means your figure differed and the policy figure won.",
-  );
+  if (omitMoney) {
+    // The salary-blind seat's upload carries no salary and refuses one, so neither money paragraph
+    // below applies to it — and "type 0" would be advice to type exactly what it refuses.
+    line(
+      "A blank cell changes nothing",
+      "Clearing a cell does not erase the stored value — blanks are skipped entirely.",
+    );
+    line(
+      "No salary figures",
+      "Salary, allowance, insurance and tax amounts are not part of this upload. Their columns must stay empty.",
+    );
+  } else {
+    line(
+      "A blank cell changes nothing",
+      "Clearing a cell does not erase the stored value — blanks are skipped entirely. If you need a number to become nothing, type 0.",
+    );
+    line(
+      "Salary figures are recalculated",
+      "Base, Basic, Net and Gross are normalized to payroll policy on upload. A \"Review\" finding about one of them means your figure differed and the policy figure won.",
+    );
+  }
 
   row += 1;
   sheet.mergeCells(row, 2, row, 3);
@@ -224,6 +238,8 @@ export type BuildFixListWorkbookInput = {
   result: EmployeeImportValidationResult;
   /** The name of the file the person uploaded, echoed back so two attempts cannot be confused. */
   sourceFileName?: string;
+  /** The salary-blind importer (isSalaryBlindRole): the guidance says nothing about salary figures. */
+  omitMoney?: boolean;
 };
 
 export async function buildEmployeeImportFixListWorkbook(
@@ -242,7 +258,7 @@ export async function buildEmployeeImportFixListWorkbook(
   workbook.title = "Employee Import — What To Fix";
 
   // Cover first: unlike the template, nothing parses this file, so the reading order is free.
-  addSummarySheet(workbook, result, entries, sourceFileName);
+  addSummarySheet(workbook, result, entries, sourceFileName, input.omitMoney === true);
   addFindingsSheet(workbook, entries, sourceFileName);
 
   return workbook;

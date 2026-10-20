@@ -28,8 +28,8 @@ import { emailKeepsLineBreaks } from "@/lib/notifications/attendance-digest-chan
 
 export const emailNotificationTypes = [
   "probation",
-  // The Day 30/60/75 milestone emails ONLY (owner, 2026-09-29: To Yasmeena Elsafory, CC Omar
-  // Gawish, BCC). Deliberately its OWN type rather than riding "probation": that policy is off by the
+  // The Day 30/60/75 milestone emails ONLY (owner, 2026-09-29: To Yasmeena Elsafory, BCC Omar
+  // Gawish; since 2026-10-20 To Omar Gawish alone). Deliberately its OWN type rather than riding "probation": that policy is off by the
   // owner's 2026-07-19 decision and still governs the legacy per-manager probation reminders, so
   // turning the milestones on must not turn those back on with them. See
   // src/lib/probation/intelligence/milestone-emails.ts.
@@ -285,9 +285,10 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
     type: "probation",
   },
   {
-    description: "Probation Day 30 / 60 / 75 milestone emails — To Yasmeena Elsafory, BCC Omar Gawish.",
+    description: "Probation Day 30 / 60 / 75 milestone emails — To Omar Gawish alone.",
     enabled: true,
-    // The recipients are fixed in code (owner, 2026-09-29), so the shared HR inbox is NOT added and
+    // The recipient is fixed in code (owner, 2026-10-20: "To you only"; from 2026-09-29 it was the
+    // HR Generalist with him on BCC), so the shared HR inbox is NOT added and
     // the mode is "candidate" — the mode that honours the caller's own explicit To address instead
     // of resolving a manager chain. Nothing here widens the recipient list.
     includeHrInbox: false,

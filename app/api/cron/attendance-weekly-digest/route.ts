@@ -4,6 +4,7 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { applyDigestAnswersForMonth } from "@/lib/attendance/digest-bridge.ts";
 import { getDigestSettings, settleOverdueAnswers, syncOpenReviewWeeks } from "@/lib/attendance/digest-service.ts";
 import { previousMonthKey } from "@/lib/attendance/digest-weeks.ts";
+import { runHrOpsReportsSchedule, type HrOpsScheduleResult } from "@/lib/hr-ops-reports/schedule";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -52,22 +53,50 @@ export const maxDuration = 300;
  * `skipped: "disabled"` rather than a cheerful zero, because "0 days added" and
  * "switched off" are indistinguishable otherwise — which is exactly how the outbox
  * drain ran perfectly and did nothing for 13 days.
+ *
+ * THE HR DAILY & WEEKLY REPORTS RIDE ON THIS RUN (2026-10-20) — src/lib/hr-ops-reports/schedule.ts
+ * builds yesterday's report (and last week's on a Sunday), then retries every decided day still
+ * waiting to reach this review. It runs LAST — after the sync, so a day the sync has just added is
+ * there for the retry to set, and after the deadline sweep and the apply loop, so the review's own
+ * steps run before it and a slow report build can never hold them up or leave them for the next
+ * run. It runs even when this review is switched off, because the reports are
+ * the HR Operations Specialist's own work. It is fenced in its own try/catch and NEVER fails this
+ * run: its failures are logged and returned as `hrOpsReports`, and the digest steps go on.
  */
+async function runHrOpsReportsStep(todayIso: string): Promise<{ result: HrOpsScheduleResult | null; error: string | null }> {
+  try {
+    const result = await runHrOpsReportsSchedule({ todayIso });
+    if (result.failures.length) {
+      logError("HR Daily & Weekly Reports run had failures", {
+        labels: { event: "cron_partial", job: "attendance-weekly-digest", step: "hr-ops-reports", failures: String(result.failures.length) },
+      });
+    }
+    return { error: null, result };
+  } catch (error) {
+    logError("HR Daily & Weekly Reports run failed", {
+      labels: { event: "cron_partial", job: "attendance-weekly-digest", step: "hr-ops-reports" },
+      error,
+    });
+    return { error: clientSafeErrorMessage(error, "The HR Daily & Weekly Reports run failed."), result: null };
+  }
+}
+
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/attendance-weekly-digest");
   if (denied) return denied;
 
   try {
-    const settings = await getDigestSettings();
-    if (!settings.enabled) {
-      return NextResponse.json({ success: true, skipped: "disabled", dryRun: settings.dryRun });
-    }
-
     // Cairo, never UTC: for the first two or three hours of a Cairo day the UTC date
     // is still yesterday, which would judge a week as closed a day late — or, at the
     // cycle boundary, put a digest in the wrong month entirely.
     const { year, month, day } = currentCairoDateParts();
     const todayIso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+    const settings = await getDigestSettings();
+    if (!settings.enabled) {
+      const hrOpsReports = await runHrOpsReportsStep(todayIso);
+      return NextResponse.json({ success: true, skipped: "disabled", dryRun: settings.dryRun, hrOpsReports });
+    }
 
     // A week that fails to sync does not stop the other weeks or the steps below; its failure is
     // returned and turns the run red.
@@ -115,6 +144,10 @@ export async function GET(request: Request) {
       });
     }
 
+    // LAST — after the sync, the deadline sweep and the apply loop — see runHrOpsReportsStep. Never
+    // fails this run, and never counts toward `failed` below.
+    const hrOpsReports = await runHrOpsReportsStep(todayIso);
+
     // Also loud: a day the sweep could not settle, and a day paid from annual balance that payroll
     // had already approved (taken twice). Each is retried or needs a person, and a 200 would hide it.
     const deadlineFailures = deadline?.failures ?? 0;
@@ -128,7 +161,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       // `notified: 0` stays literal: this job never notifies — the release does.
-      { success: !failed, dryRun: settings.dryRun, todayIso, synced, deadline, deadlineError, applied, bridgeError, notified: 0 },
+      { success: !failed, dryRun: settings.dryRun, todayIso, synced, deadline, deadlineError, applied, bridgeError, hrOpsReports, notified: 0 },
       { status: failed ? 500 : 200 },
     );
   } catch (error) {

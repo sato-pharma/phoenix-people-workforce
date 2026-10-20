@@ -62,6 +62,7 @@ import {
   canManageWeeklyReview,
   countsTowardAnswerWindow,
   deadlineApplies,
+  deductionCategoryForDigestLine,
   disputeSalaryFallbackText,
   heldAnswerDueDate,
   isAnswerOverdue,
@@ -583,12 +584,18 @@ async function readBalanceInputs(employeeHrId: string, periodStart: string, peri
 /**
  * The day's month-end fingerprint deduction, if the connector has built it yet. Keyed exactly as
  * the connector keys it (`${hrId}:${dateIso}`), matched case-insensitively like the settle function.
+ * A field day decided in the HR operations report reads its own `field_review` deduction instead
+ * (deductionCategoryForDigestLine); every other day reads `fingerprint`, as before.
  */
-async function readDayDeduction(employeeHrId: string, workDate: string): Promise<{ lockedAt: string | null; decisionStatus: string | null } | null> {
+async function readDayDeduction(
+  employeeHrId: string,
+  workDate: string,
+  category: "fingerprint" | "field_review" = "fingerprint",
+): Promise<{ lockedAt: string | null; decisionStatus: string | null } | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
     .select("id,locked_at,deductions_decisions(decision_status)")
-    .eq("category", "fingerprint")
+    .eq("category", category)
     .is("superseded_at", null)
     .ilike("source_record_id", `${employeeHrId}:${workDate}`.replace(/[\\%_]/g, (char) => `\\${char}`));
   if (error) throw error;
@@ -617,6 +624,8 @@ async function checkAnnualBalance(input: {
   hireDate: string | null;
   workDate: string;
   days: number;
+  /** The day's own month-end deduction category — `fingerprint` unless the day is a reviewed field day. */
+  category?: "fingerprint" | "field_review";
 }): Promise<BalanceCheck> {
   const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
   let seen: { requestDays: number; chargeDays: number; copilotDays: number } | null = null;
@@ -633,7 +642,7 @@ async function checkAnnualBalance(input: {
       startDate: input.workDate,
       vacationType: "annual",
     }).catch((error: unknown) => ({ failure: error })),
-    readDayDeduction(input.employeeHrId, input.workDate),
+    readDayDeduction(input.employeeHrId, input.workDate, input.category ?? "fingerprint"),
   ]);
   const payrollDecided = payrollDecisionBlocksBalance(dayDeduction);
   if ("failure" in snapshotOrFailure) {
@@ -1545,9 +1554,13 @@ export async function listMyDigests(employeeHrId: string): Promise<MyDigest[]> {
     for (const line of digest.lines) {
       let balance: BalanceOption | null = null;
       if (line.action === "pending" && !overdue) {
-        const check = await checkAnnualBalance({ employeeHrId: digest.employeeHrId, hireDate, workDate: line.workDate, days: line.deductionDays }).catch(
-          () => null,
-        );
+        const check = await checkAnnualBalance({
+          employeeHrId: digest.employeeHrId,
+          hireDate,
+          workDate: line.workDate,
+          days: line.deductionDays,
+          category: deductionCategoryForDigestLine(line.status),
+        }).catch(() => null);
         balance = check
           ? { covers: check.covers, availableDays: check.availableDays, unavailableReason: check.unavailableReason }
           : { covers: false, availableDays: null, unavailableReason: "Your annual balance could not be read right now. Try again shortly." };
@@ -1604,7 +1617,13 @@ export async function answerDigestLine(input: {
   let balance: BalanceCheck | null = null;
   if (input.method === "annual_balance") {
     const hireDate = directoryRowFor(await loadDirectoryByKey(), digest.employeeHrId)?.hireDate ?? null;
-    balance = await checkAnnualBalance({ employeeHrId: digest.employeeHrId, hireDate, workDate: line.workDate, days: line.deductionDays });
+    balance = await checkAnnualBalance({
+      employeeHrId: digest.employeeHrId,
+      hireDate,
+      workDate: line.workDate,
+      days: line.deductionDays,
+      category: deductionCategoryForDigestLine(line.status),
+    });
     if (!balance.covers) throw conflictError(balance.unavailableReason ?? "Your annual balance does not cover this day.");
   }
 
@@ -1730,12 +1749,20 @@ export async function reviewDispute(input: {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_lines")
-    .select("id,digest_id,work_date,deduction_days,action,chosen_method")
+    .select("id,digest_id,work_date,status,deduction_days,action,chosen_method")
     .eq("id", input.lineId)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw notFoundError("That day was not found.");
-  const line = data as { id: number; digest_id: number; work_date: string; deduction_days: unknown; action: string; chosen_method: unknown };
+  const line = data as {
+    id: number;
+    digest_id: number;
+    work_date: string;
+    status: string | null;
+    deduction_days: unknown;
+    action: string;
+    chosen_method: unknown;
+  };
   if (line.action !== "disputed") throw conflictError("That day is not under dispute.");
   const digest = await loadDigestOrThrow(Number(line.digest_id));
   if (digest.dryRun) throw conflictError("This day belongs to a trial-run week, which can never be settled.");
@@ -1786,6 +1813,7 @@ export async function reviewDispute(input: {
       hireDate,
       workDate: line.work_date,
       days: Number(line.deduction_days) || 0,
+      category: deductionCategoryForDigestLine(line.status),
     });
     if (!balance.covers) {
       // A read that failed is not an answer: settling now would move the day to salary for good

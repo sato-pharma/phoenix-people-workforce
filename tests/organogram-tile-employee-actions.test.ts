@@ -112,6 +112,12 @@ export async function runOrganogramTileEmployeeActionsTests() {
   assert.match(master, /readEmployeeMasterArrival\(\(key\) => searchParams\.get\(key\)\)/, "the master reads the arrival");
   assert.match(master, /if \(!canEdit\) \{\s*setError\(/, "a read-only viewer is told so instead of being given a form the API refuses");
   assert.match(master, /hrIdsMatch\(employee\.hrId, masterArrival\.hrId\)/, "the person is found in the directory the viewer already holds");
-  assert.match(master, /masterArrival\.action === "edit"\) \{\s*startEdit\(person\);\s*\} else \{\s*startResignation\(person\);/, "edit opens the edit form, resign opens the resignation dialog");
+  // A seat that may edit but not record a departure (the HR Operations Specialist) is told so instead
+  // of being handed the resignation form its API would refuse.
+  assert.match(
+    master,
+    /masterArrival\.action === "edit"\) \{\s*startEdit\(person\);\s*\} else if \(!canStartResignation\) \{\s*setError\([^;]*\);\s*\} else \{\s*startResignation\(person\);/,
+    "edit opens the edit form, resign opens the resignation dialog — or says it is not the viewer's to record",
+  );
   assert.match(master, /is not in the employee directory you can open/, "somebody outside the viewer's scope is reported, never opened");
 }

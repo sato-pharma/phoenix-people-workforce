@@ -82,6 +82,7 @@ import {
   paperStoreUrl,
   stripDirectionMarks,
   type PaperFieldBinding,
+  type PaperStore,
 } from "@/lib/hiring-pack/paper-fields";
 import {
   DEFAULT_ZOOM,
@@ -158,6 +159,9 @@ function applyLayoutClasses(doc: Document, layoutOn: boolean, addOn: boolean): v
 const NUDGE_SAVE_MS = 500;
 
 const PT_PER_PX = 0.75;
+
+/** The default for `readOnlyStores`: one stable empty list, so the frame wiring does not re-run. */
+const NO_READ_ONLY_STORES: readonly PaperStore[] = [];
 
 /**
  * The CSS path from `root` down to `el`, as a chain of `tag:nth-of-type(n)` steps.
@@ -307,6 +311,19 @@ type PaperEditorCommonProps = {
    * being broken rather than as a permission they do not have.
    */
   canEditCompany: boolean;
+  /**
+   * Whether this viewer may move, add or remove printed fields. Absent means yes, as it always was.
+   * False for a seat limited to its own papers (the HR Operations Specialist, 2026-10-20): the
+   * layout route is closed to her, so the control is not offered rather than offered and refused.
+   */
+  canEditLayout?: boolean;
+  /**
+   * Stores this viewer cannot save to — their values show LOCKED, exactly like a company value
+   * shown to a non-Super-Admin. Absent means none.
+   */
+  readOnlyStores?: readonly PaperStore[];
+  /** True for the salary-blind seat: the base salary on a paper shows locked, never editable. */
+  withholdSalary?: boolean;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
   /**
@@ -503,6 +520,9 @@ export function HiringPackPaperEditor({
   versionId,
   pack,
   canEditCompany,
+  canEditLayout = true,
+  readOnlyStores = NO_READ_ONLY_STORES,
+  withholdSalary = false,
   onPackChange,
   onClose,
   onIssueReference,
@@ -1646,6 +1666,18 @@ export function HiringPackPaperEditor({
         continue;
       }
 
+      // The same rule for a store this viewer cannot save (the HR Operations Specialist cannot write
+      // the hiring profile — the contract's own terms), and for the salary on a salary-blind seat:
+      // the server drops a salary she sends, so the figure must not look like one she can type over.
+      if (
+        readOnlyStores.includes(binding.store) ||
+        (withholdSalary && binding.store === "employee" && binding.field === "baseSalary")
+      ) {
+        element.setAttribute("data-hp-locked", "true");
+        element.title = `${binding.labelEn} — not changed from this seat. It prints as it stands on the record.`;
+        continue;
+      }
+
       // The scope is said BEFORE the edit, not only in the confirmation after it. A company value
       // reaches every employee's papers, and an operator who learns that from the "saved" message
       // has already changed all of them.
@@ -1716,7 +1748,7 @@ export function HiringPackPaperEditor({
     applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
 
     setLoadedKey(frameKey);
-  }, [canEditCompany, frameKey, onLayoutPointerDown]);
+  }, [canEditCompany, frameKey, onLayoutPointerDown, readOnlyStores, withholdSalary]);
 
   /** Turn free typing on or off, on the page and in the frame, in one action. */
   const toggleFreeEdit = useCallback(() => {
@@ -2173,16 +2205,18 @@ export function HiringPackPaperEditor({
             <PencilLine className="h-4 w-4" />
             {freeEdit ? "Free typing on" : "Type anywhere"}
           </Button>
-          <Button
-            className="gap-2"
-            onClick={toggleLayoutMode}
-            size="sm"
-            type="button"
-            variant={layoutMode ? "default" : "outline"}
-          >
-            <Move className="h-4 w-4" />
-            {layoutMode ? "Editing layout" : "Edit layout"}
-          </Button>
+          {canEditLayout ? (
+            <Button
+              className="gap-2"
+              onClick={toggleLayoutMode}
+              size="sm"
+              type="button"
+              variant={layoutMode ? "default" : "outline"}
+            >
+              <Move className="h-4 w-4" />
+              {layoutMode ? "Editing layout" : "Edit layout"}
+            </Button>
+          ) : null}
           <Button
             className="gap-2"
             onClick={() => setReloadToken((token) => token + 1)}

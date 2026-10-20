@@ -106,6 +106,10 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   workforce_context: Network,
   recognition: Award,
   team_reminders: StickyNote,
+  // The HR Operations Specialist seat's two functions (2026-10-20). Both draw a group on her
+  // Overview: the Daily & Weekly Reports queue, and the personnel records without money.
+  attendance_review: Fingerprint,
+  people_master: IdCard,
 };
 
 /**

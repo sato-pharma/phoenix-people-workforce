@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  canChangeResignationDates,
   getResignationsDashboardData,
   isResignationsSchemaMissing,
   resignationErrorMessage,
@@ -37,6 +38,9 @@ export default async function ResignationsPage() {
   return (
     <ResignationsWorkspace
       canExportHistory={await canAccess(access, "resignations", "export")}
+      canCreate={await canAccess(access, "resignations", "create")}
+      canDecide={await canAccess(access, "resignations", "approve")}
+      canEditDates={await canChangeResignationDates(access)}
       initialData={initialData}
       initialError={initialError}
     />

@@ -24,6 +24,8 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { systemContractDefaults } from "@/config/system-settings";
+// A TYPE only — this module runs in the browser and must not pull the permission matrix in.
+import type { PhoenixRole } from "@/lib/auth/permissions";
 import {
   isCustomTemplateGroup,
   type CustomTemplateGroup,
@@ -373,4 +375,63 @@ export function asPrintableDocument(value: string): PrintableDocument | null {
   if (isBuiltInDocument(value)) return value;
   if (isCustomDocument(value)) return value;
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// WHICH PAPERS A SEAT MAY PRINT — for a seat that prints papers WITHOUT holding employee_documents.
+//
+// The HR Operations Specialist (`HR Administration`, owner, 2026-10-20) prepares the contract
+// renewal and follows a resignation up "until he comes to office to fulfil the resignation cycle",
+// so she prints the papers of those two moments and nothing else. She is outside
+// `hrAuthorityRoles`, so `hardBoundaryAllowedActions` strips employee_documents from her and the
+// key cannot be the answer: it would open every paper, the company templates and the template
+// studio with it. A seat named here therefore prints exactly its listed BUILT-IN papers — never a
+// company template (`custom:<uuid>`), which may print anything at all — and every seat NOT named
+// here keeps the employee_documents check it had before.
+//
+// The renewal annex prints the salary, and that is the owner's one money exception for her. None of
+// the other seven prints an amount: the non-renewal notice, the deemed-resignation notice, the
+// handover record and the resignation carry no money field, the mutual-termination agreement fills
+// names, dates and the contract's start but no figure, and both clearances leave the settlement
+// line blank by design.
+//
+// Pure and dependency-free on purpose (a TYPE import only): the HR Forms screen reads it in the
+// browser, and the print, sign and paper-register routes read it on the server — one list, both
+// sides.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+export const SEAT_PRINTABLE_DOCUMENTS: Readonly<Partial<Record<PhoenixRole, readonly HiringPackDocument[]>>> = {
+  "HR Administration": [
+    "contractRenewal",
+    "contractNonRenewal",
+    "resignation",
+    "clearanceEmployee",
+    "clearanceCompany",
+    "handoverRecord",
+    // Added the same day by the owner: the absence-based notice that ends a service, and the
+    // agreed-exit alternative to a resignation.
+    "deemedResignation",
+    "mutualTermination",
+  ],
+};
+
+/**
+ * The papers `role` is limited to, or null when the role has no entry — which means "this table
+ * does not decide for you; employee_documents does", NOT "nothing".
+ */
+export function seatPapersFor(role: PhoenixRole | string | null | undefined): readonly HiringPackDocument[] | null {
+  if (!role) return null;
+  return SEAT_PRINTABLE_DOCUMENTS[role as PhoenixRole] ?? null;
+}
+
+/**
+ * Whether `document` is open to `role` AS FAR AS THIS TABLE IS CONCERNED. True for every role the
+ * table does not name (their employee_documents check still runs, elsewhere). For a named seat:
+ * true only for a listed built-in paper — a company template is always false.
+ */
+export function isPaperOpenToRole(role: PhoenixRole | string | null | undefined, document: string): boolean {
+  const papers = seatPapersFor(role);
+  if (!papers) return true;
+  if (!isBuiltInDocument(document)) return false;
+  return papers.includes(document);
 }

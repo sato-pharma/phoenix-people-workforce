@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { canReviewDisputes, reviewDispute } from "@/lib/attendance/digest-service.ts";
+import { deductionSourceForDigestLine } from "@/lib/attendance/digest-rules.ts";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
@@ -526,6 +527,8 @@ export async function decideDigestDispute(
 
   const money = await applyDigestRevisionToDeduction({
     actor: { hrId: reviewerHrId, loginId: access.loginId ?? null, role: access.role },
+    // A day decided in the HR operations report is charged by the deduction its bridge wrote.
+    deduction: deductionSourceForDigestLine(row.status),
     employeeHrId: head.employeeHrId,
     lineId: input.lineId,
     note,

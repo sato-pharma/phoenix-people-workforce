@@ -1,9 +1,11 @@
 // Owner instruction, 2026-09-29: "in any av request on phx make yasmeena informed and make on her
-// landing page appear on a vacation today."
+// landing page appear on a vacation today." Owner, 2026-10-20, when she moved to her own seat: the
+// informed notice belongs to the HR Generalist SEAT — "Both to you until the hire" — so it goes to
+// whoever holds that seat and, while nobody does, to the Super Admin standing in.
 //
 // Two rules are pinned here, and each has one way of going wrong that nothing else would catch:
 //
-//  1. INFORMED IS NOT AN APPROVER. The obvious-looking implementation is to add HR-009 to the
+//  1. INFORMED IS NOT AN APPROVER. The obvious-looking implementation is to add the informed party to the
 //     vacation approval chain, which would make every annual vacation in the company wait on a
 //     third signature. So the informed recipient must stay out of `approval-flow.ts` entirely, and
 //     its notification must carry no approve/reject affordance.
@@ -21,10 +23,10 @@ import {
   type OnVacationTodayRow,
 } from "../src/lib/vacation/on-vacation-today.ts";
 import {
-  VACATION_INFORMED_HR_ID,
+  VACATION_INFORMED_SEAT,
   VACATION_INFORMED_TYPES,
   isVacationInformedType,
-  resolveVacationInformedHrId,
+  resolveVacationInformedHrIds,
 } from "../src/lib/vacation/informed-recipients.ts";
 
 function src(path: string) {
@@ -42,9 +44,13 @@ function src(path: string) {
 export function runVacationInformedHrTests() {
   // ── 1. Who is informed, and of what ─────────────────────────────────────────────────────────
   assert.equal(
-    VACATION_INFORMED_HR_ID,
-    "HR-009",
-    "the informed party is Yasmeena Elsafory (HR-009) — owner, 2026-09-29",
+    VACATION_INFORMED_SEAT,
+    "HR Operations",
+    "the informed party is the HR Generalist seat (role key HR Operations), never a named person — owner, 2026-10-20",
+  );
+  assert.ok(
+    !/["']HR-\d/.test(stripComments(src("src/lib/vacation/informed-recipients.ts"))),
+    "no person is named by HR id: a named recipient strands the notice the day the seat changes hands",
   );
   assert.deepEqual(
     [...VACATION_INFORMED_TYPES],
@@ -59,30 +65,44 @@ export function runVacationInformedHrTests() {
     );
   }
 
-  assert.equal(
-    resolveVacationInformedHrId({ alreadyNotifiedHrIds: ["B-10", "A-7"], vacationType: "annual" }),
-    "HR-009",
-    "an annual vacation raised by somebody else informs her",
+  assert.deepEqual(
+    resolveVacationInformedHrIds({ alreadyNotifiedHrIds: ["C-4", "A-7"], informedHrIds: ["HR-020"], vacationType: "annual" }),
+    ["HR-020"],
+    "an annual vacation raised by somebody else informs the seat's holder",
   );
-  assert.equal(
-    resolveVacationInformedHrId({ alreadyNotifiedHrIds: [], vacationType: "sick" }),
-    null,
+  assert.deepEqual(
+    resolveVacationInformedHrIds({ alreadyNotifiedHrIds: [], informedHrIds: ["HR-020"], vacationType: "sick" }),
+    [],
     "a sick request informs nobody extra",
   );
   // The dedupe is on the hyphen-stripped, case-folded key: both spellings occur in this data, and
-  // a miss here sends her a second, weaker copy of a notification she is already getting.
-  for (const spelling of ["HR-009", "hr009", "hr-009", "HR009"]) {
-    assert.equal(
-      resolveVacationInformedHrId({ alreadyNotifiedHrIds: [spelling], vacationType: "annual" }),
-      null,
-      `"${spelling}" is already a recipient — she must not be informed twice`,
+  // a miss here sends a second, weaker copy of a notification that person is already getting.
+  for (const spelling of ["HR-020", "hr020", "hr-020", "HR020"]) {
+    assert.deepEqual(
+      resolveVacationInformedHrIds({ alreadyNotifiedHrIds: [spelling], informedHrIds: ["HR-020"], vacationType: "annual" }),
+      [],
+      `"${spelling}" is already a recipient — the informed party must not be told twice`,
     );
   }
+  // The stand-in for the empty seat is the Super Admin, who often sits in the approval chain — and
+  // whose console login is the same human. Either way the owner gets the decision copy only.
+  for (const chainId of ["B-10", "b10", "PHX-1", "phx-1"]) {
+    assert.deepEqual(
+      resolveVacationInformedHrIds({ alreadyNotifiedHrIds: [chainId], informedHrIds: ["B-10"], vacationType: "annual" }),
+      [],
+      `the owner standing in is already told as "${chainId}" — no second, informed-only copy`,
+    );
+  }
+  assert.deepEqual(
+    resolveVacationInformedHrIds({ alreadyNotifiedHrIds: ["A-7"], informedHrIds: ["HR-020", "hr-020", "HR-021"], vacationType: "annual" }),
+    ["HR-020", "HR-021"],
+    "every holder of the seat is informed, each person once",
+  );
 
   // ── 2. She is informed, NOT made an approver ─────────────────────────────────────────────────
   const approvalFlow = src("src/lib/vacation/approval-flow.ts");
   assert.ok(
-    !approvalFlow.includes("HR-009") && !approvalFlow.includes("informed-recipients"),
+    !approvalFlow.includes("HR-009") && !approvalFlow.includes("informed-recipients") && !approvalFlow.includes("VACATION_INFORMED_SEAT"),
     "the approval chain must never name the informed recipient — every name in it gets an approval " +
       "step, an SLA clock and Approve/Reject buttons, which is the opposite of 'informed'",
   );
@@ -106,6 +126,17 @@ export function runVacationInformedHrTests() {
   assert.ok(
     informedBlock.length > 200,
     "the informed dispatch body was not located — this test's other assertions would pass vacuously",
+  );
+  // The seat is resolved when the request is submitted — its holders, or its stand-in while empty.
+  assert.match(
+    informedBlock,
+    /await resolveSeatOrStandInHrIds\(VACATION_INFORMED_SEAT, /,
+    "the informed party is the seat's people at the moment of the request, falling back to the Super Admin while it is empty",
+  );
+  assert.match(
+    informedBlock,
+    /if \(!isVacationInformedType\(input\.request\.vacationType\)\) return;/,
+    "a request that informs nobody costs no seat lookup",
   );
   // All THREE channels, owner 2026-09-30 ("yasmine informed in app email telegram"). He was asked
   // before the email was wired, which is what §4 requires; the answer is what this pins.

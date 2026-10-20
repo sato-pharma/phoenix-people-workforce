@@ -64,6 +64,14 @@ import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-work
 // HR Resourcing — the Talent Acquisition seat — since 2026-10-08. HR Advisory left the namespace
 // the same evening, when the owner retired the HR Business Partner seat.
 const HR_ROLES: PhoenixRole[] = ["HR Operations", "HR Resourcing"];
+// Every seat that works in the /hr namespace. The HR Operations Specialist seat (HR Administration)
+// joined on 2026-10-20. It is NOT in HR_ROLES above: the leak claim (section 4) and the populated-rail
+// claim (section 7) were measured for the two wider seats, and her narrow seat (no recruiting, no
+// attendance, no payroll pages) is checked on its own in section 7 rather than diluting them. The
+// NARROW-ONLY claim (section 5) and the REACHABILITY claim (section 6) do take all three: her rows
+// are /hr rows like any other — some authored for her alone — so no /hr row may reach a page no
+// namespace seat's matrix admits, and none may be a row no namespace seat can open.
+const HR_NAMESPACE_SEATS: PhoenixRole[] = [...HR_ROLES, "HR Administration"];
 const ALL_MODES: NavigationMode[] = ["admin", "employee-portal", "hr"];
 
 function lookupFor(role: PhoenixRole): PermissionLookup {
@@ -270,7 +278,14 @@ export function runHrUrlNamespaceTests() {
   // that exists on disk, and (c) already inside what the permission matrix admits for at least one
   // seat. (c) is the fail-closed proof: the authored list cannot smuggle in a page the matrix would
   // have refused.
-  const closureByRole = new Map(HR_ROLES.map((role) => [role, derivedAdminClosure(role)] as const));
+  //
+  // (c) runs over EVERY namespace seat, the HR Operations Specialist included (2026-10-20). Her
+  // Daily & Weekly Reports row (/hr/hr-reports) reaches a page only she and the Super Admin hold, so
+  // a closure built for the two wider seats alone read it as a widening. Her closure is derived the
+  // same way as theirs — the admin rail plus every hub card her own grants admit — so including it
+  // admits nothing her matrix would refuse.
+  const closureByRole = new Map(HR_NAMESPACE_SEATS.map((role) => [role, derivedAdminClosure(role)] as const));
+  assert.equal(closureByRole.size, 3, "the narrow-only claim is checked against all three namespace seats");
   const notPrefixed: string[] = [];
   const missingPage: string[] = [];
   const widened: string[] = [];
@@ -305,14 +320,23 @@ export function runHrUrlNamespaceTests() {
   assert.deepEqual(
     widened,
     [],
-    "an /hr row points at a page NEITHER seat's permissions admit — the namespace may narrow the matrix, never widen it",
+    "an /hr row points at a page NO namespace seat's permissions admit — the namespace may narrow the matrix, never widen it",
+  );
+  // Her own row is admitted by HER closure — the hub card her grants pass — not borrowed from a
+  // wider seat's, so adding her seat above did not loosen the claim for her row.
+  assert.ok(
+    closureByRole.get("HR Administration")?.has("/hr-reports"),
+    "the HR Operations Specialist's Daily & Weekly Reports row is inside what her own matrix admits",
   );
 
   // 6 ── Every authored row is reachable by at least one seat, and every section renders non-empty
   // for at least one seat. A row nobody can open is a dead link with a permission gate on it.
+  // ALL THREE seats, since 2026-10-20: rows authored for the HR Operations Specialist alone (her HR
+  // Forms door, her Daily & Weekly Reports) are reachable by her and nobody else BY DESIGN, so
+  // measuring only the two wider seats called her own rows dead links.
   const unreachable: string[] = [];
   for (const item of hrItems) {
-    const reachable = HR_ROLES.some(
+    const reachable = HR_NAMESPACE_SEATS.some(
       (role) =>
         permissionAllowed(lookupFor(role), item.permissions) &&
         roleAllowed(role, item.roles) &&
@@ -320,11 +344,11 @@ export function runHrUrlNamespaceTests() {
     );
     if (!reachable) unreachable.push(`${item.href} (${item.label})`);
   }
-  assert.deepEqual(unreachable, [], "no /hr row may be invisible to BOTH seats");
+  assert.deepEqual(unreachable, [], "no /hr row may be invisible to EVERY namespace seat");
 
   const emptySections: string[] = [];
   for (const section of hrNavigationSections) {
-    const anyoneSeesIt = HR_ROLES.some((role) =>
+    const anyoneSeesIt = HR_NAMESPACE_SEATS.some((role) =>
       getSections(hrNavigationSections, "hr", lookupFor(role), role).some((rendered) => rendered.id === section.id),
     );
     if (!anyoneSeesIt) emptySections.push(section.id);
@@ -337,6 +361,18 @@ export function runHrUrlNamespaceTests() {
   for (const role of HR_ROLES) {
     const hrefs = sidebarHrefs(hrNavigationSections, "hr", role);
     assert.ok(hrefs.length >= 10, `${role} should see a populated /hr sidebar, got ${hrefs.length} rows`);
+    assert.equal(new Set(hrefs).size, hrefs.length, `${role}'s /hr sidebar must not repeat an href`);
+    for (const href of hrefs) {
+      assert.ok(isHrNamespacePath(href), `${role} sees a non-namespace href in /hr mode: ${href}`);
+    }
+  }
+  // The HR Operations Specialist (2026-10-20) is a deliberately narrow seat: read on that day her
+  // rail is nine rows (Overview, Employee Directory, Organogram, Contract Renewal, Resignations, HR
+  // Reminders, Request Vacation, Submit Excuse, Report It), so her floor is eight, not ten.
+  {
+    const role: PhoenixRole = "HR Administration";
+    const hrefs = sidebarHrefs(hrNavigationSections, "hr", role);
+    assert.ok(hrefs.length >= 8, `${role} should see a populated /hr sidebar, got ${hrefs.length} rows`);
     assert.equal(new Set(hrefs).size, hrefs.length, `${role}'s /hr sidebar must not repeat an href`);
     for (const href of hrefs) {
       assert.ok(isHrNamespacePath(href), `${role} sees a non-namespace href in /hr mode: ${href}`);
@@ -378,11 +414,12 @@ export function runHrUrlNamespaceTests() {
   const inNamespace = (Object.keys(permissionMatrix) as PhoenixRole[]).filter((role) => usesHrNamespace(role));
   assert.deepEqual(
     inNamespace.sort(),
-    [...HR_ROLES].sort(),
-    "exactly the two HR seats use the /hr namespace — HR Resourcing (the Talent Acquisition seat) " +
-      "joined and HR Advisory left on 2026-10-08, both the owner's decisions; adding a third is a decision, not a side effect",
+    [...HR_NAMESPACE_SEATS].sort(),
+    "exactly the three HR seats use the /hr namespace — HR Resourcing (the Talent Acquisition seat) " +
+      "joined and HR Advisory left on 2026-10-08, and HR Administration (the HR Operations Specialist " +
+      "seat) joined on 2026-10-20, each the owner's decision; adding a fourth is a decision, not a side effect",
   );
-  assert.equal(hrNamespaceRoles.size, 2);
+  assert.equal(hrNamespaceRoles.size, 3);
 
   // 11 ── The shell header cannot be forged, and `/hr` cannot become a second spelling of the API.
   //

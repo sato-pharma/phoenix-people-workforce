@@ -115,11 +115,15 @@ export function runHrRemindersTests() {
       );
     }
     assert.ok((REMINDER_TEAM_ROLES as readonly string[]).includes(REMINDER_OVERSEER_ROLE), "the overseer seat is on the team");
-    assert.ok(
-      (HR_ROLE_BUNDLES["HR Operations"] as readonly string[]).includes("team_reminders") &&
-        (HR_ROLE_BUNDLES["HR Resourcing"] as readonly string[]).includes("team_reminders"),
-      "both HR seats get the module through the function catalogue, not a literal role block",
-    );
+    // The HR Operations Specialist seat (HR Administration) joined on 2026-10-20 — "she keeps HR
+    // reminders" — through the same function, so it is on the team picker too.
+    for (const seat of ["HR Operations", "HR Resourcing", "HR Administration"] as const) {
+      assert.ok(
+        (HR_ROLE_BUNDLES[seat] as readonly string[]).includes("team_reminders"),
+        `${seat} gets the module through the function catalogue, not a literal role block`,
+      );
+      assert.ok((REMINDER_TEAM_ROLES as readonly string[]).includes(seat), `${seat} is on the team a note can be shared with`);
+    }
 
     assert.deepEqual(reminderAudienceFor({ hrId: "hr-011", role: "HR Resourcing" }), { hrId: "HR-011", isOverseer: false });
     assert.equal(reminderAudienceFor({ hrId: "B-10", role: "Super Admin" })?.isOverseer, true, "the Super Admin seat is the overseer");

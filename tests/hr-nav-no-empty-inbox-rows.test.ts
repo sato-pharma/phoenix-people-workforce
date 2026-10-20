@@ -59,8 +59,11 @@ function railFor(seat: HrBundleName) {
   );
   const rows = sections.flatMap((section) => section.items);
 
+  // Ten for every seat except the HR Operations Specialist (HR Administration, 2026-10-20), whose
+  // deliberately narrow rail read nine rows on that day.
+  const floor = seat === "HR Administration" ? 8 : 10;
   assert.ok(
-    rows.length >= 10,
+    rows.length >= floor,
     `"${seat}" is offered only ${rows.length} HR nav rows — the shell did not build, so every ` +
       "assertion below would pass vacuously",
   );
@@ -75,14 +78,15 @@ export function runHrNavNoEmptyInboxRowsTests() {
   const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
   assert.deepEqual(
     seats,
-    ["HR Operations", "HR Resourcing"],
-    "this file reasons about exactly two HR seats (there were three until " +
-      "the owner retired the HR Business Partner seat on 2026-10-08); a new bundle needs its own verdict here " +
-      "rather than being silently unchecked",
+    ["HR Operations", "HR Resourcing", "HR Administration"],
+    "this file reasons about exactly three HR seats (the owner retired the HR Business Partner seat on " +
+      "2026-10-08 and opened the HR Operations Specialist seat on 2026-10-20); a new bundle needs its " +
+      "own verdict here rather than being silently unchecked",
   );
 
   const operations = offeredHrefs("HR Operations");
   const resourcing = offeredHrefs("HR Resourcing");
+  const specialist = offeredHrefs("HR Administration");
 
   // The headline used to be the HR Business Partner's: offered "Other Approvals" (excluded
   // 2026-09-01) and the Leave Management hub (excluded 2026-08-29), both empty for her. Her seat was
@@ -99,7 +103,7 @@ export function runHrNavNoEmptyInboxRowsTests() {
   // since 2026-09-05, every promotion that dissolves the row it used to be reached through.
   assert.ok(
     leaveAdminRows(operations).length >= 2,
-    `the HR Operations Coordinator is offered ${leaveAdminRows(operations).length} ` +
+    `the HR Generalist (HR Operations) is offered ${leaveAdminRows(operations).length} ` +
       "leave-administration rows. Excluding another seat from a shared row must narrow it for that " +
       "seat only, and retiring the hub must move its children onto this seat's rail rather than take " +
       "leave off it — measured 2026-09-05, she is offered Vacation Report and Vacation Control",
@@ -131,7 +135,7 @@ export function runHrNavNoEmptyInboxRowsTests() {
   assert.equal(
     operations.has(OTHER_APPROVALS_HREF),
     false,
-    'the HR Operations Coordinator is offered "Other Approvals" again. The owner removed it from '
+    'the HR Generalist (HR Operations) is offered "Other Approvals" again. The owner removed it from '
       + "her rail on 2026-09-01. Her grants DO populate that queue, so do not restore the row on "
       + "the grounds that she can use it — that reverses an instruction rather than fixing a bug.",
   );
@@ -145,7 +149,7 @@ export function runHrNavNoEmptyInboxRowsTests() {
   assert.equal(
     operations.has("/hr/admin/field-workforce-compliance"),
     false,
-    'the HR Operations Coordinator is offered "Workforce Compliance" again. The owner removed it '
+    'the HR Generalist (HR Operations) is offered "Workforce Compliance" again. The owner removed it '
       + "on 2026-09-01, overruling the argument that the page calls itself Operational HR "
       + "Governance. Do not re-add it on that argument.",
   );
@@ -186,6 +190,37 @@ export function runHrNavNoEmptyInboxRowsTests() {
         'whether "Other Approvals" belongs on her rail rather than leaving the exclusion above stale',
     );
   }
+
+  // ── The HR Operations Specialist seat's verdict (2026-10-20) ────────────────
+  //
+  // HR Administration DOES hold actionable grants on two of the three Other Approvals modules —
+  // contracts:update (HR review and the signed upload) and resignations:update (following one through
+  // to the completed cycle) — and works both from their own rows, Contract Renewal and Resignations.
+  // Other Approvals is on no HR rail since 2026-09-01, so it is not offered to her either; that is
+  // asserted rather than assumed. She administers no leave: leave:read and leave:create are her own
+  // vacation, and the company leave pages stay with HR Operations.
+  assert.equal(
+    specialist.has(OTHER_APPROVALS_HREF),
+    false,
+    'the HR Operations Specialist is offered "Other Approvals". It is on no HR rail since the owner ' +
+      "removed it on 2026-09-01; her contracts and resignations work is on their own rows",
+  );
+  assert.deepEqual(
+    leaveAdminRows(specialist),
+    [],
+    "the HR Operations Specialist is offered a leave-administration row. leave:read is her own " +
+      "vacation; the company leave pages are not hers",
+  );
+  assert.equal(specialist.has(LEAVE_MANAGEMENT_HREF), false, 'the HR Operations Specialist is offered the "Leave Management" hub');
+  for (const href of ["/hr/contracts", "/hr/resignations"]) {
+    assert.ok(specialist.has(href), `the HR Operations Specialist works ${href} from its own row, so the row must be on her rail`);
+  }
+  const specialistGrants = permissionMatrix["HR Administration" as PhoenixRole];
+  assert.deepEqual(
+    (specialistGrants?.outstation ?? []).filter((action) => action === "update" || action === "approve"),
+    [],
+    "the HR Operations Specialist holds an actionable outstation grant — the third Other Approvals module is not hers",
+  );
 
   // The block that tied the Business Partner's exclusion to her holding no ACTIONABLE grant on
   // resignations, contracts or outstation left with her seat: the owner retired the HR Business Partner seat on 2026-10-08.

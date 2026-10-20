@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
@@ -108,22 +110,33 @@ export function runBusinessCardRequestsTests() {
     "the employee's own request list is scoped to their hr_id, in every spelling of it",
   );
 
-  // ── Notification: to B-10 AND HR-009, in-app + email + telegram, requester deduped ─
+  // ── Notification: to the owner AND the HR Generalist seat, in-app + email + telegram, requester deduped ─
+  // Owner, 2026-10-20: "Both to you until the hire". The second recipient is the SEAT, resolved at
+  // send time, so no person's HR id is written here; while the seat is empty its stand-in is the
+  // Super Admin, who collapses into the owner's own copy. tests/vacant-seat-recipients.test.ts pins
+  // the resolution itself.
+  assert.match(service, /const BUSINESS_CARD_REQUEST_OWNER_HR_ID = "B-10";/, "the owner is the fixed recipient");
   assert.match(
     service,
-    /BUSINESS_CARD_REQUEST_RECIPIENT_HR_IDS = \["B-10", "HR-009"\] as const/,
-    "the owner (B-10) and HR Operations (HR-009) are the two recipients",
+    /const BUSINESS_CARD_REQUEST_SEAT = HR_GENERALIST_SEAT;/,
+    "the second recipient is the HR Generalist seat, never a named person",
   );
+  assert.match(
+    service,
+    /await resolveSeatOrStandInHrIds\(BUSINESS_CARD_REQUEST_SEAT, /,
+    "the seat is resolved to its people when the request is sent",
+  );
+  assert.ok(!/["']HR-\d/.test(stripComments(service)), "no employee but the owner is named by HR id");
   assert.match(
     service,
     /channels: \["in_app", "email", "telegram"\]/,
     "the request notifies by in-app, email and telegram (owner, 2026-09-30)",
   );
   assert.match(service, /module: "business_card_requests"/, "notification uses the business_card_requests module");
-  assert.match(service, /createSystemNotificationForRecipients/, "notification fans out to the fixed recipient pair");
+  assert.match(service, /createSystemNotificationForRecipients/, "notification fans out to the owner and the seat's people");
   assert.match(
     service,
-    /!hrIdsMatch\(hrId, request\.hrId\)/,
+    /!hrIdsMatch\(hrId, requesterHrId\)/,
     "the requester is not notified of their own request",
   );
   // Persist first, then alert best-effort so a notification failure never loses the request.

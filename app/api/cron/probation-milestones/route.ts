@@ -13,8 +13,8 @@
 // job-heartbeat-assess as a job that has STOPPED and alarms every Super Admin for ever. This is a
 // manual trigger, not a schedule.
 //
-// Safe to call repeatedly: every email is keyed per (case, milestone, recipient), so a second call
-// sends nothing.
+// Safe to call repeatedly: every email is keyed per (case, milestone), so a second call sends
+// nothing — and a milestone an earlier recipient already received is not sent again.
 
 import { NextResponse } from "next/server";
 

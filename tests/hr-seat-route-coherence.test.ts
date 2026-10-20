@@ -24,6 +24,7 @@ import {
   permissionGateKeys,
   roleSetGates,
 } from "./support/page-gate-reader.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * HR SEAT ROUTE COHERENCE — "nothing they are offered will bounce them".
@@ -111,6 +112,29 @@ const NOT_A_HARD_GATE: Record<string, string> = {
   "app/api/approvals/badge-counts/route.ts":
     "every domain runs inside Promise.allSettled and a rejected assertion falls back to {count: 0}, " +
     "so a seat missing one of the three reads gets an unbadged row, never a 403",
+  // Added 2026-10-20 with the HR Operations Specialist seat (HR Administration), which holds
+  // employees:update and NOT employees:create (owner: she does not add an employee).
+  "app/api/employees/route.ts":
+    "POST asserts employees:update on every save and employees:create ONLY when the save carries no " +
+    "originalHrId, which is an ADD. An edit therefore needs update alone, so a seat holding update " +
+    "without create edits the master and is refused only the add, which the Employee screen hides " +
+    "from her (canCreate). GET asserts employees:read alone",
+};
+
+/**
+ * A seat that holds PART of a route's hard gate ON PURPOSE, keyed `<seat> <file> <METHOD>`. The
+ * grant it holds is for OTHER routes; the route itself is one the owner kept away from the seat, so
+ * what makes the split safe is that no screen offers her the button that calls it — and that is
+ * pinned below rather than trusted. Each entry must still be partial, or it fails as stale.
+ */
+const DELIBERATELY_PARTIAL: Record<string, string> = {
+  "HR Administration app/api/employees/[hrId]/resign/route.ts POST":
+    "employees:update is hers for editing the Employee Master (owner, 2026-10-20). Recording a " +
+    "resignation is not — the owner submits it and she follows it up — so she holds no " +
+    "resignations:create and no vacancies:create, and the Employee screen must not offer her Resign",
+  "HR Administration app/api/employees/[hrId]/decline-offer/route.ts POST":
+    "the same three grants as Resign, for a hire who never joined. Recording that departure is the " +
+    "owner's, like a resignation, and the Employee screen must not offer her Declined",
 };
 
 /** The dense resource:action lookup the shells build, so an absent grant reads false, never undefined. */
@@ -149,6 +173,15 @@ function pageFileFor(href: string): string | null {
  * for the same reason.
  */
 const NAV_SEP = String.fromCharCode(10) + "  ";
+
+/**
+ * The fewest HR rail rows a seat can be offered before the shell is assumed broken: 10, except for
+ * the HR Operations Specialist (HR Administration, 2026-10-20), a deliberately narrow seat. Her rail
+ * read on that day as Overview, Employee Directory, Organogram, Contract Renewal, Resignations, HR
+ * Reminders, Request Vacation, Submit Excuse and Report It — nine — with company attendance,
+ * Employee 360, the deductions and the Payslips Center fenced off her (seat-page-fences.ts).
+ */
+const HR_RAIL_FLOOR: Partial<Record<HrBundleName, number>> = { "HR Administration": 8 };
 
 /**
  * The gate patterns and both readers now live in tests/support/page-gate-reader.ts. They moved there
@@ -246,7 +279,8 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/attendance/fingerprint-report":
     "canAccessFingerprintReport(access) — TRUE for both seats, though only Operations is offered the " +
     "row. The page reads attendance punches and the deduction each one implies; there is no write " +
-    "path on it to withhold from her",
+    "path on it to withhold from her. FALSE for the HR Operations Specialist (HR Administration) " +
+    "since 2026-10-20 — she is salary-blind and is not offered the row",
   "/hr/attendance/holiday-calendar":
     'canAccessAttendanceSetup(access, "read") — the same predicate as the two rows below, true for ' +
     "Operations, the only seat offered it. She also holds the setup UPDATE the page reads separately " +
@@ -258,7 +292,13 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/admin/business-card-requests": "hoisted const canRead = await canAccess(access, business_card_requests, read) — true for both",
   "/hr/offers": "destructured Promise.all, gate is !canRead = offers:read — true for Advisory, the only seat offered it",
   "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
-  "/hr/hiring-pack": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
+  "/hr/hiring-pack":
+    "hrFormsAccessFor(access).canRead — for the HR authority seats the same isHrAuthorityRole && " +
+    "employee_documents:read as before — true for HR Operations; HR Resourcing holds no " +
+    "employee_documents and is not offered the row. Since 2026-10-20 it is " +
+    "ALSO true for the HR Operations Specialist (HR Administration), who is named in " +
+    "SEAT_PRINTABLE_DOCUMENTS and opens it on contracts:read or resignations:read; the page then " +
+    "shows only her eight papers with no salary, and every hiring-pack route re-checks the paper",
   // Both added 2026-08-29 with the owner's company-scope ruling, and both verified by CALLING the
   // predicate for each seat rather than by reading it: Operations true, Advisory false, on both.
   // Neither predicate is admitting her by scope — each short-circuits on scope === "system" only,
@@ -345,6 +385,7 @@ export async function runHrSeatRouteCoherenceTests() {
   let gatedHandlers = 0;
   let multiGrantHandlers = 0;
   const failures: string[] = [];
+  const partialSeen = new Set<string>();
 
   for (const file of files) {
     const relative = path.relative(REPO_ROOT, file).split(path.sep).join("/");
@@ -367,6 +408,11 @@ export async function runHrSeatRouteCoherenceTests() {
         const seatKeys = held.get(seat)!;
         const has = [...required].filter((key) => seatKeys.has(key));
         if (has.length === 0 || has.length === required.size) continue;
+        const partialKey = `${seat} ${relative} ${handler.method}`;
+        if (DELIBERATELY_PARTIAL[partialKey]) {
+          partialSeen.add(partialKey);
+          continue;
+        }
         const missing = [...required].filter((key) => !seatKeys.has(key));
         failures.push(
           `${relative} ${handler.method} requires ${[...required].sort().join(" + ")} — ` +
@@ -389,6 +435,25 @@ export async function runHrSeatRouteCoherenceTests() {
     failures,
     [],
     `HR seat(s) hold PART of a route's permission set:\n  ${failures.join("\n  ")}`,
+  );
+  assert.deepEqual(
+    Object.keys(DELIBERATELY_PARTIAL).filter((key) => !partialSeen.has(key)).sort(),
+    [],
+    "a DELIBERATELY_PARTIAL entry no longer matches a partial grant — the seat now holds all of the " +
+      "route's permissions, or none, or the route moved. Remove the stale entry",
+  );
+  // The condition every DELIBERATELY_PARTIAL entry rests on: the Employee screen offers Resign and
+  // Declined only to a viewer who can record a departure. Gated on canEdit (employees:update) alone,
+  // both buttons render for the HR Operations Specialist and 403 her on press, so the page that
+  // mounts the screen must read resignations:create and hand the screen that answer.
+  const employeesPage = stripComments(
+    readFileSync(path.join(REPO_ROOT, "app", "(admin)", "employees", "page.tsx"), "utf8"),
+  );
+  assert.ok(
+    /canAccess\(\s*access\s*,\s*"resignations"\s*,\s*"create"\s*\)/.test(employeesPage),
+    "app/(admin)/employees/page.tsx must read resignations:create and hide Resign and Declined from a " +
+      "viewer without it. The HR Operations Specialist holds employees:update (the screen's canEdit) " +
+      "and not resignations:create, so a Resign button gated on canEdit alone 403s her on press",
   );
 
   // The resignation route is why this test exists. Pin it by name so a refactor that moves the
@@ -442,7 +507,8 @@ export async function runHrSeatRouteCoherenceTests() {
     const keys = held.get(seat)!;
     const rows = getSections(catalog, "hr", lookupForSeat(seat), seat as unknown as PhoenixRole)
       .flatMap((section) => section.items);
-    assert.ok(rows.length >= 10, `"${seat}" is offered only ${rows.length} HR nav rows — the shell did not build`);
+    const floor = HR_RAIL_FLOOR[seat] ?? 10;
+    assert.ok(rows.length >= floor, `"${seat}" is offered only ${rows.length} HR nav rows (floor ${floor}) — the shell did not build`);
     for (const row of rows) {
       rowsOffered += 1;
       const file = pageFileFor(row.href);

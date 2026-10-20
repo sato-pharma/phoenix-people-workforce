@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import {
   assertPermission,
   isSalaryRedactedForViewer,
@@ -95,6 +96,8 @@ export async function GET(
     const canViewSensitive = canViewOrganogramSensitiveFields(access);
     const detail = buildOrganogramEmployeeDetail(employee, {
       canViewSensitive,
+      // The seat that never sees a salary gets no money row at all, not a column of blanks.
+      omitSalary: isSalaryBlindRole(access.role),
       redactSalary: canViewSensitive && isSalaryRedactedForViewer(access, employee.hrId),
     });
 

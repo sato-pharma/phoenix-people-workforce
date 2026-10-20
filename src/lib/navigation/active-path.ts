@@ -127,8 +127,11 @@ export function usesFlatSidebar(role?: PhoenixRole) {
  * drawer titled "More", rows stripped of their icons. Presentation only: it runs on the output of
  * `getSections` and cannot add or remove a row. The admin rail, and every other role in any mode,
  * is untouched — tests/hr-seat-section-drawers.test.ts pins both halves.
+ *
+ * The HR Operations Specialist seat (HR Administration, 2026-10-20) is the third: it is an `/hr`
+ * seat like the other two, and without it her rail would read as the one "More" drawer again.
  */
-export const sectionDrawerRoles: readonly PhoenixRole[] = ["HR Resourcing", "HR Operations"];
+export const sectionDrawerRoles: readonly PhoenixRole[] = ["HR Resourcing", "HR Operations", "HR Administration"];
 
 export function usesSectionDrawers(mode: NavigationMode | undefined, role?: PhoenixRole) {
   return mode === "hr" && Boolean(role && sectionDrawerRoles.includes(role));

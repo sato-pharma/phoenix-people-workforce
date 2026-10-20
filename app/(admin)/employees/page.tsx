@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { EmployeeManagement } from "@/components/employees/employee-management";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -70,12 +71,22 @@ async function EmployeesContent({ access }: { access: AccessContext }) {
   // row move from `update` to `read` (src/config/system-navigation.ts): before this prop existed,
   // offering the page to a reader meant offering her Save buttons the API refuses.
   const canEdit = await canAccess(access, "employees", "update");
+  // Adding a person is its own grant since the HR Operations Specialist seat, which edits the
+  // master but does not add to it; POST /api/employees asserts it on every create.
+  const canCreate = await canAccess(access, "employees", "create");
+  // Resign and Declined call routes that also assert resignations:create (and vacancies:create).
+  // The HR Operations Specialist edits the master without recording departures — the owner
+  // submits a resignation and she follows it up — so canEdit alone would offer her a 403.
+  const canStartResignation = await canAccess(access, "resignations", "create");
 
   return (
     <EmployeeManagement
+      canCreate={canCreate}
       canEdit={canEdit}
+      canStartResignation={canStartResignation}
       initialData={initialData}
       initialError={initialError}
+      salaryBlind={isSalaryBlindRole(access.role)}
     />
   );
 }

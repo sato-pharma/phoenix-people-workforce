@@ -140,6 +140,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // supplied explicitly (the note's author, the people it is shared with and everyone already in
   // the conversation), hence "cc".
   "hr_reminders.*": { actionUrlRequired: true, channels: ["in_app"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"] },
+  // HR Daily & Weekly Reports (2026-10-20, src/lib/hr-ops-reports/notify.ts). Three notices, each to
+  // the holders of one seat: a report is ready (the HR Operations Specialist, in-app), a report waits
+  // on the decision (the Super Admin, in-app and Telegram), every row is decided (back to her,
+  // in-app). Never email; the call site passes the channels, which is what binds.
+  "hr_ops_reports.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["role_based"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },

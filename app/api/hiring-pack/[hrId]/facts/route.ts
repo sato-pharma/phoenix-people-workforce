@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import {
+  assertMaySaveEmployeeFacts,
+  factsInputForViewer,
+  packForViewer,
+} from "@/lib/hiring-pack/paper-access";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   hiringPackErrorMessage,
@@ -54,14 +58,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "update");
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS holding employees:update.
+    await assertMaySaveEmployeeFacts(access);
     const { hrId } = await params;
-    const payload = (await request.json()) as HiringPackEmployeeFactsInput;
+    // The salary-blind seat never sets a salary: any base salary she sends is dropped here, and the
+    // save keeps the one on record (owner, 2026-10-20).
+    const payload = factsInputForViewer(access, (await request.json()) as HiringPackEmployeeFactsInput);
 
     // The saved pack is returned rather than an acknowledgement, so the screen redraws from what
     // the database actually holds — including the recalculated gap list — instead of from what the
-    // form believed it sent.
-    return NextResponse.json(await saveHiringPackEmployeeFacts(hrId, payload, access.hrId ?? null));
+    // form believed it sent. Blanked of money for the salary-blind seat.
+    return NextResponse.json(
+      packForViewer(access, await saveHiringPackEmployeeFacts(hrId, payload, access.hrId ?? null)),
+    );
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_facts_save_failed", message }, { status });
