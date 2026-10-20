@@ -3796,6 +3796,17 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
   again — the same rule the planned-visit check has always kept (a plan that had reached review BEFORE
   the visit). The request form and the reopened note say so.
 
+- 🔴 **Twice a week at most (owner, 2026-10-20).** His words: *"for reps cap weekly plan edit requests + plan it self to 2 to be the rep makes the plan and send s to manager after the approval he have only 2 times to request edit per week"*. Read as: one week, two
+  asks. Every request raised on the week counts, whatever became of it — a refused or expired one
+  included — because what he capped is the asking, not the edits granted. `PLAN_EDIT_ASKS_PER_WEEK`
+  (`plan-edit-rules.ts`); `raisePlanEdit` counts the week's requests with no status filter and refuses
+  the third with a sentence, before anything is written; the week's `canAskToEdit` needs an ask left,
+  the count left sits under the button ("1 ask left this week"), the confirmation says when it is the
+  last one, and once both are spent the button gives way to "No asks left this week". No migration: the
+  database already lets only one request wait on a week, under the plan's own lock, so two presses at
+  once still end at two. A district manager's own week (`phoenix_crm_manager_plan_edit_requests`) is not
+  capped by it — he named reps.
+
 **What this supersedes:** "the month is due the last Thursday of the month before" and the rep's own
 month send; "Take this week back"; the month-hopping "+ Make weekly plan" search; and "Copy last month"
 on the rep's board. A month SENT before 1 October still shows its status and its reviewer's decision.

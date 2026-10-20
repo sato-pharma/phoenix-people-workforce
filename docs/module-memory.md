@@ -99,6 +99,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `production-planning` — Production Planner (toll manufacturing — Ivyronc and Guamusin) | `src/lib/production-planning/**` and 5 more |
 | `phoenix-crm` — Phoenix CRM (the reps' own CRM) | `src/lib/phoenix-crm/**` and 4 more |
 | `phoenix-crm-approvals` — Phoenix CRM — lists, validation, plans and approvals | `src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts` and 4 more |
+| `phoenix-crm-week-plan` — Phoenix CRM — the rep's weekly plan, its review and asking to edit it | `src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules}.ts` and 4 more |
 | `phoenix-crm-boards` — Phoenix CRM — the silent detectors, the touch trail and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts` and 15 more |
 | `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 6 more |
 | `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 10 more |

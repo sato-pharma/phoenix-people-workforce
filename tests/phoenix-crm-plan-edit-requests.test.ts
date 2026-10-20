@@ -8,6 +8,10 @@ import {
   isPlanEditWaiting,
   nextPlanEditStatus,
   PHOENIX_CRM_ADMINISTRATOR_HR_ID,
+  PLAN_EDIT_ASKS_PER_WEEK,
+  planEditAsksLeft,
+  planEditAsksLeftLine,
+  planEditAsksNote,
   planEditDecisionsFor,
   planEditFirstStatus,
   planEditStageOf,
@@ -27,7 +31,9 @@ import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, ty
  *      world. HR's acknowledgement is one of the Super Admin's real-data acts, so it is B-10's alone;
  *   3. the database half: the plan's own lock, the order, the note on a refusal, the reopen inside the
  *      acknowledgement, and an expiry that is written rather than raised;
- *   4. the service half: the step is read from the row, never the body, and checked before the write.
+ *   4. the service half: the step is read from the row, never the body, and checked before the write;
+ *   6. twice a week at most (owner, 2026-10-20): every request raised on the week counts, and the third
+ *      is refused on the server before anything is written.
  */
 
 const NSM: OrgSeat = {
@@ -254,6 +260,39 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     assert.match(fn, /v_stage = 'administrator' and v_decision <> 'refuse'/, "the Administrator only declines");
     assert.doesNotMatch(fn, /v_to := 'hr_pending'/, "SFE's yes no longer goes to HR");
     assert.match(fn, /v_to := 'reopened';\s+v_event := 'approved';/, "SFE's yes opens the week");
+  }
+
+  // ── 6. Twice a week at most (owner, 2026-10-20) ─────────────────────────────────────────────────
+  // "for reps cap weekly plan edit requests + plan it self to 2 to be the rep makes the plan and send s to manager after the approval he have only 2 times to request edit per week"
+  {
+    assert.equal(PLAN_EDIT_ASKS_PER_WEEK, 2, "🔴 a rep asks to edit one week twice at most — the owner's number");
+    assert.deepEqual([0, 1, 2, 3].map(planEditAsksLeft), [2, 1, 0, 0], "every request raised counts, and the count never runs below none");
+    assert.match(planEditAsksNote(0), /twice/, "a rep who has spent both asks reads why the button is gone");
+    assert.match(planEditAsksNote(1), /last ask/, "and is told before pressing the last one");
+    assert.equal(planEditAsksLeftLine(1), "1 ask left this week");
+    assert.equal(planEditAsksLeftLine(2), "2 asks left this week");
+
+    const edits = source("src/lib/phoenix-crm/server/plan-edits.ts");
+    const raise = edits.slice(edits.indexOf("export async function raisePlanEdit("), edits.indexOf("export async function decidePlanEdit("));
+    const countAt = raise.indexOf('.from("phoenix_crm_plan_edit_requests")');
+    const refuseAt = raise.indexOf("if (planEditAsksLeft(asked ?? 0) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);");
+    const writeAt = raise.indexOf('callPhoenixCrm<Row>("phoenix_crm_raise_plan_edit_request"');
+    assert.ok(countAt > 0 && refuseAt > countAt && writeAt > refuseAt, "🔴 the third ask is refused on the server, before anything is written");
+    const count = raise.slice(countAt, refuseAt);
+    assert.match(count, /\.eq\("plan_id", planId\)/, "the asks are counted on this week's own plan");
+    assert.doesNotMatch(count, /"status"/, "and every request counts, whatever became of it — a refused one included");
+
+    const state = edits.slice(edits.indexOf("export async function loadPlanEditState("), edits.indexOf("export function editAcknowledgedAt("));
+    assert.match(state, /entry\.asked \+= 1;\s+if \(!entry\.latest\)/, "the week's own count takes every request it reads, before any status is looked at");
+
+    const monthly = source("src/lib/phoenix-crm/server/monthly-plans.ts");
+    assert.match(monthly, /const editAsksLeft = planEditAsksLeft\(edit\?\.asked \?\? 0\);/, "the week reads its asks from that same count");
+    assert.match(monthly, /canAskToEdit: repState === "sent" && weekPlan !== null && editAsksLeft > 0,/, "🔴 the button is gone once both asks are spent");
+
+    const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
+    assert.match(panel, /week\.repState === "sent" && week\.editAsksLeft === 0 \?/, "and the week says why it is gone");
+    assert.match(panel, /planEditAsksLeftLine\(week\.editAsksLeft\)/, "the count left sits under the button");
+    assert.match(panel, /planEditAsksNote\(week\.editAsksLeft\)/, "and the confirmation says when it is the last one");
   }
 
   console.log("phoenix-crm plan edit requests: OK");
