@@ -25,6 +25,7 @@ import {
   buildOrganogramAudienceOptions,
   buildOrganogramExportRows,
   collectOrganogramAudienceEmails,
+  isOrganogramCompanyEmail,
   filterOrganogramAudience,
   formatOrganogramEmailList,
   organogramAudienceKey,
@@ -373,8 +374,12 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                         <td className="break-all px-3 py-1.5 text-phx-sm font-medium">
                           {isOpenSeat ? (
                             <span className="text-slate-400">No occupant</span>
-                          ) : email ? (
+                          ) : email && isOrganogramCompanyEmail(email) ? (
                             <span className="text-slate-600">{email}</span>
+                          ) : email ? (
+                            <span className="font-bold text-rose-600">
+                              Not a company address — {email}
+                            </span>
                           ) : (
                             <span className="font-bold text-rose-600">No work email</span>
                           )}
@@ -425,12 +430,16 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                               "block break-all text-phx-xs font-medium",
                               isOpenSeat
                                 ? "text-slate-400"
-                                : email
+                                : email && isOrganogramCompanyEmail(email)
                                   ? "text-slate-500"
                                   : "font-bold text-rose-600",
                             )}
                           >
-                            {isOpenSeat ? "No occupant" : email || "No work email"}
+                            {isOpenSeat
+                              ? "No occupant"
+                              : email && !isOrganogramCompanyEmail(email)
+                                ? `Not a company address — ${email}`
+                                : email || "No work email"}
                           </span>
                         </span>
                       </label>
@@ -494,7 +503,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
             <p className="break-words text-phx-xs font-medium text-amber-700">
               Not in the copy:
               {missing.length > 0
-                ? ` ${missing.length} with no work email (${missing
+                ? ` ${missing.length} with no company email (${missing
                     .slice(0, 3)
                     .map((person) => person.name)
                     .join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""})`
