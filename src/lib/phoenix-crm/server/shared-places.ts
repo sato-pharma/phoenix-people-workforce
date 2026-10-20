@@ -781,6 +781,9 @@ export type SharedPlaceRefusalForCustomer = {
   sharedPlaceName: string;
   /** A key from `VALIDATION_REFUSAL_REASON_KEYS`, as chosen on the venue. */
   refusalReason: string | null;
+  /** Who rejected the venue and when (owner, 2026-10-20) — raw, so the caller names the person. */
+  decidedByHrId: string | null;
+  decidedAt: string | null;
 };
 
 /**
@@ -814,7 +817,7 @@ export async function loadSharedPlaceRefusalsForCustomers(
   }
   const venues = await selectByIds<Row>(
     "phoenix_crm_shared_places",
-    "id, name, status, refusal_reason",
+    "id, name, status, refusal_reason, decided_by_hr_id, decided_at",
     "id",
     [...latest.values()].map((place) => text(place.shared_place_id)),
   );
@@ -829,6 +832,8 @@ export async function loadSharedPlaceRefusalsForCustomers(
       sharedPlaceId: String(venue.id),
       sharedPlaceName: String(venue.name ?? "A polyclinic or centre"),
       refusalReason: text(venue.refusal_reason),
+      decidedByHrId: text(venue.decided_by_hr_id),
+      decidedAt: text(venue.decided_at),
     });
   }
   return byCustomer;

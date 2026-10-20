@@ -111,7 +111,7 @@ function checkLoadersGoThroughSelectByIds(): void {
   assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_visits",\s*"id, place_id"/, "the visits read carries id for the keyset walk");
   // Since 2026-10-08 it reads EVERY review of the customer (status tells held from merely reviewed),
   // so the select carries status beside the id the pager seeks on.
-  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status"/, "the review read carries id too");
+  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status(?:, decided_by_hr_id, decided_at)?"/, "the review read carries id too");
 }
 
 /**

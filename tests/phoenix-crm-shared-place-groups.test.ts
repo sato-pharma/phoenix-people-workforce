@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import { decisionStamp } from "../src/lib/phoenix-crm/decision-stamp.ts";
 import {
   narrowVenueGroups,
   seatedCustomersByVenue,
@@ -154,6 +155,8 @@ function validated(overrides: Partial<ValidatedPlaceRow>): ValidatedPlaceRow {
     visits: 0,
     otherPlaces: 0,
     reviewed: false,
+    decidedByName: null,
+    decidedAtText: null,
     signboard: null,
     photoKind: "schedule",
     sharedPlaceName: "Nile Polyclinic",
@@ -177,6 +180,8 @@ function reopened(overrides: Partial<ReopenedCustomerRow>): ReopenedCustomerRow 
     reopenedAtText: "14 Oct 2026, 11:00",
     waitingHours: 52,
     reasonLabel: "The sign does not name the building",
+    refusedByName: null,
+    refusedAtText: null,
     sharedPlaceName: "Delta Medical Centre",
     sharedPlaceId: "venue-delta",
     ...overrides,
@@ -480,5 +485,31 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.match(list, /if \(row\.timetableExempt\) \{/, "the building's timetable frame is replaced by the exception");
   assert.match(list, /\{mode === "team" \? null : \(\s*<>/, "🔴 a manager's board is told the building has no timetable and not who decided it");
   assert.ok(board.includes("adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null)"), "the Needs-you summary reads the same exception");
+
+  // Owner, 2026-10-20: every approval or refusal by Khaled Bedair appears to him, by name and timestamp.
+  assert.equal(decisionStamp("Approved", "Khaled Bedair", "19 Oct 2026, 14:43"), "Approved by Khaled Bedair · 19 Oct 2026, 14:43");
+  assert.equal(decisionStamp("Refused", "Khaled Bedair", "19 Oct 2026, 14:44"), "Refused by Khaled Bedair · 19 Oct 2026, 14:44");
+  assert.equal(decisionStamp("Approved", "The system", "19 Oct 2026, 23:32"), "Approved by the system · 19 Oct 2026, 23:32", "the system's own word reads as a word");
+  assert.equal(decisionStamp("Approved", null, null), null, "a decision that predates the record draws nothing");
+  assert.equal(decisionStamp("Refused", null, "19 Oct 2026, 14:44"), "Refused · 19 Oct 2026, 14:44", "a time with no name is still said");
+  const byKhaled = seatedCustomersByVenue({
+    pending: [],
+    decided: [],
+    validated: [validated({ decidedByName: "Khaled Bedair", decidedAtText: "19 Oct 2026, 14:43" })],
+    reopened: [reopened({ refusedByName: "Khaled Bedair", refusedAtText: "19 Oct 2026, 14:44" })],
+    venueIds: new Set(["venue-nile", "venue-delta"]),
+  });
+  assert.equal(byKhaled.get("venue-nile")?.[0]?.decidedByName, "Khaled Bedair", "🔴 a place that stays in use carries the name of whoever approved it");
+  assert.equal(byKhaled.get("venue-nile")?.[0]?.decidedAtText, "19 Oct 2026, 14:43", "and the time");
+  assert.equal(byKhaled.get("venue-delta")?.[0]?.decidedByName, "Khaled Bedair", "🔴 a customer sent back carries the name of whoever refused it");
+  assert.equal(byKhaled.get("venue-delta")?.[0]?.decidedAtText, "19 Oct 2026, 14:44", "and the time");
+
+  const reviewsSource = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  assert.ok(reviewsSource.includes('"id, place_id, status, decided_by_hr_id, decided_at"'), "🔴 the in-use read asks each place's review who decided it and when");
+  assert.ok(reviewsSource.includes("refusedByName: deciderLabel("), "🔴 the reopened read names who refused");
+  assert.ok(serverPlaces.includes("refusal_reason, decided_by_hr_id, decided_at"), "and a rejected building's own decider, for the customers it reopened");
+  assert.match(read("src/components/phoenix-crm/validated-place-list.tsx"), /mode === "team" \? null : decisionStamp\("Approved"/, "🔴 only the company board says who approved a place in use");
+  assert.match(read("src/components/phoenix-crm/reopened-customer-list.tsx"), /mode === "team" \? null : decisionStamp\("Refused"/, "🔴 only the company board says who refused a waiting customer");
+  assert.match(customersSource, /mode === "team" \|\| \(customer\.state === "rejected" && customer\.restorable\)/, "🔴 a manager's board names nobody above him on a seated customer either");
   console.log("phoenix-crm shared place groups: OK");
 }

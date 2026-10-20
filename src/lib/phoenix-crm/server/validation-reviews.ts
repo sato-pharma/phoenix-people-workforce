@@ -204,6 +204,12 @@ function reviewNoticeKey(reviewId: string): string {
  */
 const SYSTEM_DECIDER = "SYSTEM";
 
+/** Who decided a review, as a word the screen can print: the system's own word, a person's name, or nothing. */
+function deciderLabel(names: Awaited<ReturnType<typeof loadPeopleNames>>, hrId: string | null): string | null {
+  if (!hrId) return null;
+  return hrId === SYSTEM_DECIDER ? "The system" : nameOf(names, hrId, "") || null;
+}
+
 /** Answer the "waiting for you" notice of one review — when the system approved it first. Never throws. */
 export async function withdrawValidationReviewWaiting(reviewId: string): Promise<void> {
   if (!reviewId) return;
@@ -604,12 +610,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       listings: listingsOf(google, point),
       // The system approves a held signboard itself once a reading confirms the customer (2026-10-17,
       // server/signboard-holds.ts), as the actor SYSTEM — a word no person carries, shown as a word.
-      decidedByName:
-        text(row.decided_by_hr_id) === SYSTEM_DECIDER
-          ? "The system"
-          : text(row.decided_by_hr_id)
-            ? nameOf(names, text(row.decided_by_hr_id), "") || null
-            : null,
+      decidedByName: deciderLabel(names, text(row.decided_by_hr_id)),
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decidedAt: text(row.decided_at),
       decisionNote: text(row.decision_note),
@@ -773,6 +774,12 @@ export type ValidatedPlaceRow = {
    */
   reviewed: boolean;
   /**
+   * Who approved this place and when, from its one review row (owner, 2026-10-20). Null for a place
+   * nobody has decided, and for a decision that predates the record.
+   */
+  decidedByName: string | null;
+  decidedAtText: string | null;
+  /**
    * What the system read on this place's signboard: null when it has not been read yet. A verdict,
    * never a decision — the Super Admin decides each one himself (owner, 2026-10-08).
    */
@@ -860,7 +867,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
   // here, and ANY one at all means somebody has looked at that place.
   const [customers, reviewRows, visits, activePlaces] = await Promise.all([
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
-    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id, status", "customer_id", customerIds),
+    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id, status, decided_by_hr_id, decided_at", "customer_id", customerIds),
     selectByIds<Row>(
       "phoenix_crm_visits",
       "id, place_id",
@@ -872,6 +879,9 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
   const held = new Set(reviewRows.filter((row) => row.status === "pending").map((row) => String(row.place_id)));
   const reviewed = new Set(reviewRows.map((row) => String(row.place_id)));
+  // One review row per place, for all time (the UNIQUE index), so the approval that let a place stand is
+  // this row and no other; a pending or rejected one says nothing about who approved it.
+  const approvals = new Map(reviewRows.filter((row) => row.status === "approved").map((row) => [String(row.place_id), row] as const));
   const visitsByPlace = new Map<string, number>();
   for (const row of visits) {
     const placeId = String(row.place_id ?? "");
@@ -883,7 +893,10 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
     placesByCustomer.set(customerId, (placesByCustomer.get(customerId) ?? 0) + 1);
   }
   const [names, venues] = await Promise.all([
-    loadPeopleNames(places.map((row) => text(row.created_by_hr_id))),
+    loadPeopleNames([
+      ...places.map((row) => text(row.created_by_hr_id)),
+      ...[...approvals.values()].map((row) => text(row.decided_by_hr_id)),
+    ]),
     // The venue each seated place sits in, by name — the Super Admin reads names, never ids.
     loadSharedPlaceNames(places.map((row) => text(row.shared_place_id))),
   ]);
@@ -919,6 +932,10 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),
+        decidedByName: deciderLabel(names, text(approvals.get(String(row.id))?.decided_by_hr_id)),
+        decidedAtText: text(approvals.get(String(row.id))?.decided_at)
+          ? formatPhoenixDateTime(String(approvals.get(String(row.id))?.decided_at))
+          : null,
         signboard: signboardOf(row.signboard_check),
         photoKind: text(row.shared_place_id) ? "schedule" : "signboard",
         sharedPlaceName: venues.get(String(row.shared_place_id ?? ""))?.name ?? null,
@@ -1122,6 +1139,9 @@ export type ReopenedCustomerRow = {
   waitingHours: number;
   /** What was wrong with the photo, as chosen — null for a refusal that predates the reason. */
   reasonLabel: string | null;
+  /** Who refused it and when (owner, 2026-10-20) — null when the refusal predates the record. */
+  refusedByName: string | null;
+  refusedAtText: string | null;
   /**
    * The polyclinic or centre whose own refusal reopened him, when that is what happened — so the
    * reason above is read as being about the VENUE's photo and not about his own capture. Null for an
@@ -1165,7 +1185,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
 
   const reviews = await selectByIds<Row>(
     "phoenix_crm_validation_reviews",
-    "id, customer_id, status, refusal_reason, created_by_hr_id, decided_at",
+    "id, customer_id, status, refusal_reason, created_by_hr_id, decided_by_hr_id, decided_at",
     "customer_id",
     customers.map((row) => String(row.id)),
     (query) => query.eq("status", "rejected"),
@@ -1188,6 +1208,8 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
   const names = await loadPeopleNames([
     ...[...latest.values()].map((row) => text(row.created_by_hr_id)),
     ...[...viaVenue.values()].map((row) => row.repHrId),
+    ...[...latest.values()].map((row) => text(row.decided_by_hr_id)),
+    ...[...viaVenue.values()].map((row) => row.decidedByHrId),
   ]);
   const now = Date.now();
 
@@ -1196,6 +1218,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
     const venue = review ? undefined : viaVenue.get(String(row.id));
     const seat = viewer.org.seats.get(String(row.seat_id));
     const reopenedAt = String(row.reopened_at);
+    const refusedAt = review ? text(review.decided_at) : (venue?.decidedAt ?? null);
     const at = new Date(reopenedAt).getTime();
     return {
       customerId: String(row.id),
@@ -1211,6 +1234,8 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
       reopenedAtText: formatPhoenixDateTime(reopenedAt),
       waitingHours: Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now - at) / 3_600_000)),
       reasonLabel: validationRefusalLabel(review ? text(review.refusal_reason) : (venue?.refusalReason ?? null)),
+      refusedByName: deciderLabel(names, review ? text(review.decided_by_hr_id) : (venue?.decidedByHrId ?? null)),
+      refusedAtText: refusedAt ? formatPhoenixDateTime(refusedAt) : null,
       sharedPlaceName: venue?.sharedPlaceName ?? null,
       sharedPlaceId: venue?.sharedPlaceId ?? null,
     };

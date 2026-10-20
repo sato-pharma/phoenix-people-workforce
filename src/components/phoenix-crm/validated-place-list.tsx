@@ -45,6 +45,7 @@ import {
   crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
@@ -121,7 +122,10 @@ function readingText(label: string, reading: ValidatedPlaceRow["pin"]): string |
   return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
 }
 
-function Who({ row }: { row: ValidatedPlaceRow }) {
+function Who({ row, mode }: { row: ValidatedPlaceRow; mode: PlaceCheckNotesMode }) {
+  // Who approved it and when, on the company board only: a district manager's board names nobody above
+  // him (owner, 2026-10-13), and this is the SFE Manager's and the Super Admin's own record (2026-10-20).
+  const approved = mode === "team" ? null : decisionStamp("Approved", row.decidedByName, row.decidedAtText);
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900" dir="auto">
@@ -131,6 +135,7 @@ function Who({ row }: { row: ValidatedPlaceRow }) {
       <p className="break-words text-sm text-slate-700">{row.repName}</p>
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Validated {row.validatedAtText}</p>
+      {approved ? <p className="break-words text-xs font-semibold text-slate-700">{approved}</p> : null}
       <div className="flex min-w-0 flex-wrap gap-1">
         {row.reviewed ? null : <CrmPill tone="info">Never looked at</CrmPill>}
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
@@ -494,7 +499,7 @@ export function ValidatedPlaceList({
                 {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 {/* The photograph IS the question on this list, so on a phone it takes the card's whole width. */}
                 <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
-                <Who row={row} />
+                <Who mode={mode} row={row} />
                 <Place row={row} />
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </div>
@@ -519,7 +524,7 @@ export function ValidatedPlaceList({
                     </div>
                   </td>
                   <td className={crmTdClassName}>
-                    <Who row={row} />
+                    <Who mode={mode} row={row} />
                   </td>
                   <td className={crmTdClassName}>
                     <Place row={row} />

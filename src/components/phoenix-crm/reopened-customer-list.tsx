@@ -17,6 +17,8 @@
 import { useState } from "react";
 
 import { CrmCardsOnPhone, CrmPill, CrmShowMore, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import type { ReopenedCustomerRow } from "@/lib/phoenix-crm/view-types";
 
 const PAGE = 25;
@@ -45,11 +47,15 @@ function Who({ row }: { row: ReopenedCustomerRow }) {
   );
 }
 
-function Waiting({ row }: { row: ReopenedCustomerRow }) {
+function Waiting({ mode, row }: { mode: PlaceCheckNotesMode; row: ReopenedCustomerRow }) {
+  // Who refused it and when — the company board only (owner, 2026-10-20); a district manager's board
+  // names nobody above him, and the rep never reaches this list.
+  const refused = mode === "team" ? null : decisionStamp("Refused", row.refusedByName, row.refusedAtText);
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900">{waitText(row.waitingHours)}</p>
       <p className="break-words text-xs text-slate-500">Back under To validate since {row.reopenedAtText}</p>
+      {refused ? <p className="break-words text-xs font-semibold text-slate-700">{refused}</p> : null}
     </div>
   );
 }
@@ -74,7 +80,7 @@ function Reason({ row }: { row: ReopenedCustomerRow }) {
   );
 }
 
-export function ReopenedCustomerList({ rows }: { rows: ReopenedCustomerRow[] }) {
+export function ReopenedCustomerList({ mode, rows }: { mode: PlaceCheckNotesMode; rows: ReopenedCustomerRow[] }) {
   const [page, setPage] = useState(1);
   const shown = rows.slice(0, page * PAGE);
   return (
@@ -83,7 +89,7 @@ export function ReopenedCustomerList({ rows }: { rows: ReopenedCustomerRow[] }) 
         {shown.map((row) => (
           <div key={row.customerId} className="space-y-2 px-4 py-4">
             <Who row={row} />
-            <Waiting row={row} />
+            <Waiting mode={mode} row={row} />
             <Reason row={row} />
           </div>
         ))}
@@ -103,7 +109,7 @@ export function ReopenedCustomerList({ rows }: { rows: ReopenedCustomerRow[] }) 
                 <Who row={row} />
               </td>
               <td className={crmTdClassName}>
-                <Waiting row={row} />
+                <Waiting mode={mode} row={row} />
               </td>
               <td className={crmTdClassName}>
                 <Reason row={row} />

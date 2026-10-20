@@ -172,8 +172,8 @@ function fromValidated(row: ValidatedPlaceRow, sharedPlaceId: string): SeatedCus
     timetable: row.schedule,
     photoPath: row.photoPath,
     reasonLabel: null,
-    decidedByName: null,
-    decidedAtText: null,
+    decidedByName: row.decidedByName,
+    decidedAtText: row.decidedAtText,
     decisionNote: null,
     waitingHours: null,
   };
@@ -209,8 +209,8 @@ function fromReopened(row: ReopenedCustomerRow, sharedPlaceId: string): SeatedCu
     timetable: null,
     photoPath: null,
     reasonLabel: row.reasonLabel,
-    decidedByName: null,
-    decidedAtText: null,
+    decidedByName: row.refusedByName,
+    decidedAtText: row.refusedAtText,
     decisionNote: null,
     waitingHours: row.waitingHours,
   };
