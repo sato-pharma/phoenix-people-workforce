@@ -485,7 +485,7 @@ function runGeoTests() {
   const check = (fix: { lat: number; lon: number }, accuracyMeters: number | null, placeList = places) =>
     checkVisitLocation({ fix: { ...fix, accuracyMeters }, places: placeList, farMeters: 300, weakGpsMeters: 100 });
   assert.deepEqual(check(clinic, 20), { placeId: "clinic", distanceMeters: 0, flag: "ok" });
-  assert.equal(check(kmNorth, 20).flag, "far", "a visit beyond the distance setting is flagged (and still saved by the service)");
+  assert.equal(check(kmNorth, 20).flag, "far", "a visit beyond the distance setting is flagged (saved when a manager enters it; a rep's own is refused at the door since 2026-10-20, tests/phoenix-crm-visit-far-refusal.test.ts)");
   assert.equal(check(kmNorth, 500).flag, "far", "far beats weak: that is what the manager must look at");
   assert.equal(check(hundredMetres, 150).flag, "weak_gps");
   assert.equal(check(hundredMetres, null).flag, "ok", "an unknown accuracy is not called weak");

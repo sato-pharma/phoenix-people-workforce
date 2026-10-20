@@ -1940,6 +1940,7 @@ import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.tes
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
+import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
@@ -7003,6 +7004,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM refused-readings board, the SFE's view of who the location check turned away (owner, 2026-10-03: \"build the refused readings view for the SFE\", the night the table caught its first real case — nine refusals in 67 seconds from one rep whose phone was fine, and nothing but SQL could read them. Pinned: a refusal reads in plain English with BOTH a place's readings and the line it missed, a reading the phone never sent reads 'not reported' and never 0 m; 'got through afterwards' is strict — a save before the refusal proves nothing, another rep's, customer's or kind's does not count, ids compare upper-cased, and a refusal tied to no customer says so; one line per rep with the rep who cannot work before the one who got through, nine retries on one customer being one blocked customer and a later refusal never undoing a save; the audience is the Super Admin and the SFE Manager with a 404 before any database call; the phone's mock-location answer is named in the select only for the Super Admin; only the recorder and this reader name the table; the page asks gate one before the organogram, acts on nothing, fits the screen with a fixed-layout table and phone cards from shared components, uses Cairo time and no accusing words; and its card is in the CRM Data Quality band for exactly the two readers)",
   runPhoenixCrmRefusedReadingsBoardTests,
+);
+
+await runTest(
+  "a medical rep visit logged more than 300 m from the customer validated photo is REFUSED (owner, 2026-10-20: \"not accept medical reps visits logged away from the validated picture of the customer with maximum 300 m apart\"; 97 of 2,558 measurable rep visits sat past the line on 6-19 October). Pinned: the nearest validated place decides; the photograph anchors only when its reading is within the place line, else the place point; no place refuses nobody; the line is visit_far_meters with 300 m behind it; only the REP save is asked, before the recording claim and before any write; the attempt is kept for the SFE board as far_from_place with its metres and place; and the rep reads his own work, never the line, his metres or a check)",
+  runPhoenixCrmVisitFarRefusalTests,
 );
 
 await runTest(

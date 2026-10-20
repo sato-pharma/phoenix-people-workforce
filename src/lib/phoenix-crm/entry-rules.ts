@@ -21,7 +21,7 @@
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { isUsableFix } from "@/lib/phoenix-crm/geo";
+import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
@@ -237,6 +237,105 @@ export const VISIT_MAX_ACCURACY_METERS = 500;
 
 /** Shown on the validation screen before the photo — the rule, never his reading. */
 export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m. Turn on precise location for ${BROWSER_PLACEHOLDER} before you start, and take the photo and capture the location standing at the clinic.`;
+
+// ── A rep's visit is logged at the customer's validated place (owner, 2026-10-20) ───────────────────
+
+/**
+ * 🔴 A MEDICAL REP'S VISIT LOGGED MORE THAN 300 m FROM THE CUSTOMER'S VALIDATED PHOTOGRAPH IS REFUSED
+ * (owner, 2026-10-20: "MAKE THE SYSTEM NOT ACCEPT MEDICAL REPS VISITS LOGGED AWAY FROM THE VALIDATED
+ * PICTURE OF THE CUSTOMER WITH MAXIMUM 300 M APPART").
+ *
+ * Until that day the same 300 m line (`visit_far_meters`, read live) only FLAGGED a visit silently for
+ * the managers, and the rep was told nothing (Golden Rule #1). His word makes it the module's third
+ * refusal a rep can meet about where he stands, beside "no reading" and "too rough". Measured on
+ * production for 6-19 October 2026: 97 of 2,558 measurable rep visits (3.8%) sat past the line, 38 of
+ * them more than a kilometre out — those are what this now turns away.
+ *
+ * The sentence is about HIS OWN work — be at the customer when you log the call — and never states the
+ * line, his distance or the word for any check, exactly as `NO_FIX_FOR_A_VISIT` does. Its second clause
+ * is the way out for a rep who IS at the door on a reading that has not settled yet: the same advice
+ * the rough-reading refusal gives, so an honest rep is never dead-ended.
+ */
+export const VISIT_AWAY_FROM_PLACE =
+  "This visit can be logged only at the customer's place, and your location now is not there. If you are at the place, step outside, wait a moment for the location to settle, then tap Log visit again.";
+
+/** One active place of the customer on this seat, with both of its readings. */
+export type ValidatedPlaceReading = {
+  id: string;
+  /** The place's own point — the reading its validation settled on (`point_source`). */
+  lat: number;
+  lon: number;
+  /** The shutter's own reading at the door, when the photograph carried one. */
+  photoLat: number | null;
+  photoLon: number | null;
+  photoAccuracyMeters: number | null;
+};
+
+/**
+ * Where the customer's validated photograph says the place is — THE PHOTOGRAPH IS THE ANCHOR (owner,
+ * 2026-10-13, and again on 2026-10-20: "the validated picture of the customer").
+ *
+ * 🔴 BUT ONLY A SHARP PHOTOGRAPH READING ANCHORS. Since 2026-10-11 a place validates on its PIN alone,
+ * because iPhone Safari hands the camera an approximate position (650-2,000 m) while the pin reads
+ * 11-30 m — so a photograph's raw reading can sit a kilometre from the door it shows. Measuring a
+ * visit against that would refuse an honest rep standing at the door, for good, since a place never
+ * moves. A photograph reading within the place's own line (`PLACE_MAX_ACCURACY_METERS`), or one whose
+ * phone reported no accuracy, is the anchor; otherwise the place's own validated point is. Measured on
+ * production 2026-10-20: 2,510 of 2,627 active places anchor on the photograph, 11 carry a reading
+ * wider than 250 m, and the 104 seated in a polyclinic carry none and anchor on the building's point.
+ */
+export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: number; lon: number } | null {
+  if (isUsableFix(place.photoLat, place.photoLon) && withinAccuracy(place.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
+    return { lat: Number(place.photoLat), lon: Number(place.photoLon) };
+  }
+  if (isUsableFix(place.lat, place.lon)) return { lat: Number(place.lat), lon: Number(place.lon) };
+  return null;
+}
+
+export type VisitPlaceVerdict = {
+  /** True only when the customer HAS a validated place and every one of them is past the line. */
+  refused: boolean;
+  /** Metres to the NEAREST validated place — null when the customer has none to measure against. */
+  metres: number | null;
+  placeId: string | null;
+  /** The line the verdict was given against, kept with any refusal so a later change cannot rewrite it. */
+  farMeters: number;
+};
+
+/** The owner's 300 m, used only when the settings row hands over something that is not a distance. */
+export const VISIT_FAR_FROM_PLACE_DEFAULT_METERS = 300;
+
+/**
+ * Is this visit's reading within the line of the customer's validated place?
+ *
+ * - The NEAREST place decides: a customer with two clinics is at whichever door the rep stood at.
+ * - A customer with NO validated place is never refused — there is no photograph to be away from (a
+ *   pharmacy, which needs no validation, and a customer still waiting for one).
+ * - The line is `visit_far_meters` from the module's settings (300 m on production), the same figure a
+ *   visit's `location_flag` and the photograph detector are written with, so the refusal, the flag and
+ *   the board can never disagree about what far means.
+ * - 🔴 THE VISIT'S OWN ACCURACY EXCUSES NOTHING HERE. The integrity board drops a finding whose radius
+ *   reaches the door, because a board must not accuse; a door that let the radius widen the line would
+ *   let a rep log from 500 m on a rough reading (`VISIT_MAX_ACCURACY_METERS`). Measured 2026-10-20: not
+ *   one of the 97 visits past the line was within its own radius, so the guard would have excused none.
+ */
+export function visitAwayFromValidatedPlace(input: {
+  fix: { lat: number; lon: number };
+  places: readonly ValidatedPlaceReading[];
+  farMeters: number;
+}): VisitPlaceVerdict {
+  const farMeters = Number.isFinite(input.farMeters) && input.farMeters > 0 ? input.farMeters : VISIT_FAR_FROM_PLACE_DEFAULT_METERS;
+  if (!isUsableFix(input.fix.lat, input.fix.lon)) return { refused: false, metres: null, placeId: null, farMeters };
+  let nearest: { id: string; metres: number } | null = null;
+  for (const place of input.places) {
+    const anchor = validatedPlaceAnchor(place);
+    if (anchor === null) continue;
+    const metres = distanceMeters({ lat: input.fix.lat, lon: input.fix.lon }, anchor);
+    if (nearest === null || metres < nearest.metres) nearest = { id: place.id, metres };
+  }
+  if (nearest === null) return { refused: false, metres: null, placeId: null, farMeters };
+  return { refused: nearest.metres > farMeters, metres: nearest.metres, placeId: nearest.id, farMeters };
+}
 
 /**
  * What the frame drawn on the camera must contain, shown inside the frame itself.
