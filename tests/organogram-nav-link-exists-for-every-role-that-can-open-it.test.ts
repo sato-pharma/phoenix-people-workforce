@@ -131,7 +131,8 @@ export async function runOrganogramNavLinkExistsTests() {
   // Head Office for both seats.
   // HR Advisory was the first of these until the owner retired the seat on 2026-10-08; the Talent
   // Acquisition seat holds organogram:read and the company chart, so she takes its place here.
-  for (const role of ["HR Operations", "HR Resourcing", "Training Manager"] as const) {
+  // The HR Operations Specialist seat (HR Administration) joined 2026-10-20: "show organogram".
+  for (const role of ["HR Operations", "HR Resourcing", "HR Administration", "Training Manager"] as const) {
     const access = createAccessContext({ hrId: "T-1", role });
     const mode = resolveNavigationMode(access);
     assert.equal(

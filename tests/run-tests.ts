@@ -232,6 +232,7 @@ import { runProbationEmailsTests } from "./probation-emails.test.ts";
 import { runProbationMilestoneEmailsTests } from "./probation-milestone-emails.test.ts";
 import { runProbationReminderOutboxGuardTests } from "./probation-reminder-outbox-guard.test.ts";
 import { runVacationInformedHrTests } from "./vacation-informed-hr.test.ts";
+import { runVacantSeatRecipientsTests } from "./vacant-seat-recipients.test.ts";
 import { runProbationCairoTodayConsistencyTests } from "./probation-cairo-today-consistency.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
 import { runEmailRenderHarnessTests, runTokenRegistryConsistencyTests } from "./email-render-harness.test.ts";
@@ -1039,6 +1040,7 @@ import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
+import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
 import { runHrSeatSectionDrawersTests } from "./hr-seat-section-drawers.test.ts";
@@ -2346,6 +2348,8 @@ import { runNewHireMailboxTests } from "./new-hire-mailbox.test.ts";
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
 import { runAttendanceDigestNoticeChannelsTests } from "./attendance-digest-notice-channels.test.ts";
+import { runHrOpsReportsBridgeTests } from "./hr-ops-reports-bridge.test.ts";
+import { runHrOpsReportsTests } from "./hr-ops-reports.test.ts";
 import { runDisputeCenterStateTests } from "./dispute-center-state.test.ts";
 import { runDisputeCenterParticipantsTests } from "./dispute-center-participants.test.ts";
 import { runDisputeCenterAssistAccuracyTests } from "./dispute-center-assist-accuracy.test.ts";
@@ -2635,6 +2639,7 @@ import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
 import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
 import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
+import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -3152,7 +3157,8 @@ await runTest(
   "probation reminder outbox guard — a missing COLUMN on notification_events throws instead of silently creating no reminder; only the table being absent is tolerated",
   runProbationReminderOutboxGuardTests,
 );
-await runTest("vacation informed HR + on-a-vacation-today panel (owner 2026-09-29: HR-009 informed of every annual vacation without becoming an approver; her landing page names today's absences)", runVacationInformedHrTests);
+await runTest("vacation informed HR + on-a-vacation-today panel (owner 2026-09-29, re-addressed 2026-10-20: the HR Generalist seat, or the Super Admin while it is empty, is informed of every annual vacation without becoming an approver; the landing page names today's absences)", runVacationInformedHrTests);
+await runTest("vacant seat stand-ins (owner 2026-10-20): an empty HR Generalist seat hands its notices to the Super Admin and a failed read never does, nobody gets two copies, the probation milestones go to the owner alone without re-sending one already received, and no sender names a person for the seat", runVacantSeatRecipientsTests);
 await runTest("probation Cairo-today consistency (dashboard/report/emails share one Cairo-aware clock, not silent UTC default)", runProbationCairoTodayConsistencyTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
 await runTest("email render harness (functional contextVariables → interpolate + all-module token coverage)", runEmailRenderHarnessTests);
@@ -4484,7 +4490,7 @@ await runTest(
   runMarketingFieldCaptureGapsTests,
 );
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
-await runTest("business card requests: employee self-service card, edit name/number only (email never), request lands on the HR queue and notifies B-10 + HR-009 by in-app/email/telegram", runBusinessCardRequestsTests);
+await runTest("business card requests: employee self-service card, edit name/number only (email never), request lands on the HR queue and notifies B-10 + the HR Generalist seat (B-10 alone while it is empty) by in-app/email/telegram", runBusinessCardRequestsTests);
 await runTest("business card PDF: the employee sees the real front+back Sato card and downloads a high-quality printable PDF of their OWN card, scoped to the caller (no hrId), name/mobile only", runBusinessCardPdfTests);
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("position vacancy status integrity", runPositionVacancyStatusIntegrityTests);
@@ -4575,6 +4581,13 @@ await runTest(
   "HR seat route coherence (no HR seat holds PART of a route handler's permission set, so no page "
   + "its own sidebar offers can 403 it halfway)",
   runHrSeatRouteCoherenceTests,
+);
+await runTest(
+  "HR Operations Specialist access (the salary-blind seat is refused the company Fingerprint Report, "
+  + "the Monthly Summary, Attendance Setup and the machine sync while every other holder of the key keeps "
+  + "them; her attendance report is her own; she prints exactly her eight papers and never a company "
+  + "template; the pack reaches her without salary, gross or insurance wage, and a salary she sends is dropped)",
+  runHrOperationsSpecialistAccessTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
@@ -8895,6 +8908,14 @@ await runTest(
   runAttendanceDigestNoticeChannelsTests,
 );
 await runTest(
+  "HR operations report decisions reach the weekly attendance review once: an office day is only ever set on the review's own day and otherwise waits, writing nothing (week_released once its week is closed or out), a field day is added ticked with exactly one deduction in its own CRM-paid category, a released week is never written, one failing day leaves the rest carried, a second run adds nothing, the daily job never refreshes or removes a reviewed day, and a second claim on that day is refused before publish",
+  runHrOpsReportsBridgeTests,
+);
+await runTest(
+  "the HR Daily & Weekly Reports: field Saturday to Thursday and head office Sunday to Thursday with no Friday report, a day nobody can judge honestly is never flagged, a manager's own visits count in his own row only behind one named switch, a decided day the weekly review already holds is locked even when its last carry failed, the migration and the code agree on every literal, every route asserts its grant and only the Super Admin decides, no payload she receives names money, and the cron builds after the weekly-review sync, retries after the build and never fails the digest run",
+  runHrOpsReportsTests,
+);
+await runTest(
   "the Dispute Center's state is derived, never stored (an opening waits on the reviewer, a reply hands it back, nothing expires, a decided case stays decided until the REVIEWER reopens it, and the employee's request only flags it)",
   runDisputeCenterStateTests,
 );
@@ -10446,6 +10467,10 @@ await runTest(
 await runTest(
   "filter by manager finds the manager and his whole team: choosing a district manager shows his own row and his reps, choosing a National Sales Manager shows him, his district managers and every rep beneath them, the options carry every manager up the chain even on a reps-only list, a loop in the data never hangs, and every Field Workforce Compliance tab matches and offers its Manager filter through that chain",
   runManagerFilterTests,
+);
+await runTest(
+  "the HR Operations Specialist never sees a salary: her directory, export, organogram popup and resignations carry no figure while bank and payment mode stay; her own Employee Master export re-imports cleanly, one typed figure refuses the whole file by column name, the plan she approves holds no money and skips the position policy, an Employee ID not in the master is refused rather than created, her save drops every money key as undefined, and no screen offers her Add Employee, Resign or Declined, which the server refuses",
+  runSalaryBlindSeatTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -1686,7 +1686,12 @@ export async function recordDecision(input: {
       );
     }
   }
-  if (input.decisionStatus === "Approved for Payroll" && candidateRow.category === "fingerprint") {
+  // A field day reviewed in the HR operations report travels the weekly attendance review exactly as a
+  // fingerprint day does (src/lib/hr-ops-reports/bridge.ts), so it is held by the same two checks.
+  if (
+    input.decisionStatus === "Approved for Payroll" &&
+    (candidateRow.category === "fingerprint" || candidateRow.category === "field_review")
+  ) {
     const reviewedDay = {
       employeeHrId: candidateRow.employee_hr_id,
       dates: Array.isArray(candidateRow.dates) ? (candidateRow.dates as unknown[]).map(String) : [],

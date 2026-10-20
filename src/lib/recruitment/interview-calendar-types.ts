@@ -128,9 +128,14 @@ export function isInterviewCalendarOwner(access: { role: string | null; scope: s
  * The Talent Acquisition seat (HR Resourcing) reads it the same way since 2026-10-08 — the owner's
  * answer in chat, "Full view built into her seat". A Viewer, like the CEO: every interview, and still
  * able to request one by her HR seat. Booking, moving or cancelling for others needs an Editor share.
+ *
+ * The HR Operations Specialist seat (HR Administration) reads it the same way since 2026-10-20 — the
+ * owner's answer when her login left the HR Operations seat that owns the calendar: "She can view it
+ * only". A Viewer, like the CEO; the owner right stays with the HR Operations seat (empty until a
+ * hire, so the Super Admin runs it alone).
  */
 export function seesWholeInterviewCalendar(access: { role: string | null }): boolean {
-  return access.role === "CEO" || access.role === "HR Resourcing";
+  return access.role === "CEO" || access.role === "HR Resourcing" || access.role === "HR Administration";
 }
 
 /**

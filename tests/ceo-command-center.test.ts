@@ -165,7 +165,8 @@ export function runCeoCommandCenterTests() {
   // typed URL still reaches the dead page, and without the nav exclusion the sidebar still offers
   // a row that now bounces.
   // HR Advisory left the list when the owner retired the HR Business Partner seat on 2026-10-08; the Talent Acquisition seat has its own page too.
-  for (const role of ["HR Operations", "HR Resourcing"]) {
+  // The HR Operations Specialist seat (HR Administration) joined on 2026-10-20 — same landing.
+  for (const role of ["HR Operations", "HR Resourcing", "HR Administration"]) {
     assert.ok(
       adminRedirectRoles.includes(`"${role}"`),
       `/admin must redirect ${role} to /hr/admin/hr-command-center — the generic dashboard it used to `

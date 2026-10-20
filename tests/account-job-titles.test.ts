@@ -70,8 +70,11 @@ export function runAccountJobTitlesTests() {
   // The live HR seats specifically — the case displayTitleForRole exists for — must still map. The
   // HR Business Partner title is gone with its seat (the owner retired the HR Business Partner seat on 2026-10-08).
   assert.notEqual(displayTitleForAccount("XX-1", "HR Advisory"), "HR Business Partner");
-  assert.equal(displayTitleForAccount("XX-2", "HR Operations"), "HR Operations Coordinator");
+  // "HR Operations Coordinator" became "HR Generalist" on 2026-10-20 (owner: "make the old account HR
+  // genralist"), the day the HR Operations Specialist seat (key "HR Administration") opened.
+  assert.equal(displayTitleForAccount("XX-2", "HR Operations"), "HR Generalist");
   assert.equal(displayTitleForAccount("XX-3", "HR Resourcing"), "Talent Acquisition");
+  assert.equal(displayTitleForAccount("XX-4", "HR Administration"), "HR Operations Specialist");
 
   // 3. The wiring. Each caller must ask the account-aware function, and none of them may still
   //    reach for the role-only one — that is exactly how a fix reaches some pages and not others.

@@ -89,6 +89,11 @@ import {
   YES_NO,
   YES_NO_PENDING,
 } from "@/lib/employees/employee-master-columns";
+import {
+  NEW_EMPLOYEE_NOT_ALLOWED_CODE,
+  SALARY_BLIND_MONEY_COLUMNS_CODE,
+} from "@/lib/imports/employee-import-salary-blind";
+import { PAY_FLAG_KEPT_CODE } from "@/lib/employees/salary-blind-pay-flags";
 import { BASIC_SALARY_RATE } from "@/lib/payroll/policy";
 
 export type MasterLookups = {
@@ -268,6 +273,12 @@ export type RowCheckInput = {
   hasAreas: boolean;
   hasDepartments: boolean;
   hasManagers: boolean;
+  /**
+   * The sheet carries no money (a salary-blind export — see BuildEmployeeMasterWorkbookInput). The
+   * cleared-payroll advisory is dropped: there is nothing to clear, and its advice to "type 0" is
+   * exactly what that seat's upload refuses.
+   */
+  omitMoney?: boolean;
 };
 
 /**
@@ -333,7 +344,7 @@ export function buildRowCheckFormula(input: RowCheckInput): string {
     ]);
   }
 
-  const money = resolveMoneyRange();
+  const money = input.omitMoney ? null : resolveMoneyRange();
   if (money && originalMoneyFilled > 0) {
     const range = `${columnLetter(money.first)}${row}:${columnLetter(money.last)}${row}`;
     clauses.push([
@@ -444,7 +455,9 @@ function styleMasterSheet(
   rows: MasterRow[],
   scopeNote: string,
   sheetColumns: MasterColumn[],
+  options: { omitMoney?: boolean } = {},
 ) {
+  const omitMoney = options.omitMoney === true;
   const recordCount = rows.length;
   const lastDataRow = FIRST_DATA_ROW + recordCount - 1;
   const lastFormulaRow = lastDataRow + SPARE_ROWS;
@@ -567,6 +580,20 @@ function styleMasterSheet(
     if (column.kind === "date") excelColumn.numFmt = "yyyy-mm-dd";
   });
 
+  // ── a salary-blind export HIDES the money columns, it never REMOVES them ─────
+  //
+  // Every position on this sheet is computed from the static `columns` contract — `columnIndex`,
+  // `letterOf`, the row check, the formats, the protection loop — so dropping a column would shift
+  // every letter after it and point the importer's alias map and the row check at the wrong cells.
+  // Hidden, empty and locked keeps every letter where it is; the protected sheet does not offer
+  // "format columns", so they cannot be unhidden either. (The cells are already empty: this seat's
+  // directory reaches the builder with every figure redacted.)
+  if (omitMoney) {
+    sheetColumns.forEach((column, index) => {
+      if (column.kind === "money") sheet.getColumn(index + 1).hidden = true;
+    });
+  }
+
   // --- validations, on data and spare rows alike ---
   const areaLetter = letterOf("area");
   const listCell = (rowNumber: number, key: keyof MasterRow) => sheet.getCell(rowNumber, columnIndex(key));
@@ -661,6 +688,7 @@ function styleMasterSheet(
         hasDepartments: lookups.departments.length > 0,
         hasManagers: lookups.managerDirectory.length > 0,
         lastRow: lastFormulaRow,
+        omitMoney,
         originalMoneyFilled,
         rowNumber,
       }).slice(1),
@@ -740,7 +768,10 @@ function styleMasterSheet(
   for (let rowNumber = 1; rowNumber <= lastFormulaRow; rowNumber += 1) {
     sheetColumns.forEach((column, index) => {
       sheet.getCell(rowNumber, index + 1).protection = {
-        locked: FORMULA_KEYS.has(column.key) || isReadOnlyMasterColumn(column),
+        locked:
+          FORMULA_KEYS.has(column.key) ||
+          isReadOnlyMasterColumn(column) ||
+          (omitMoney && column.kind === "money"),
       };
     });
   }
@@ -781,7 +812,13 @@ function countMoneyFilled(row: MasterRow | undefined): number {
  * It is the second tab rather than the first because of constraint 1, and it is made the active tab
  * so that opening the file still lands here.
  */
-function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, lastFormulaRow: number) {
+function addStartHereSheet(
+  workbook: ExcelJS.Workbook,
+  recordCount: number,
+  lastFormulaRow: number,
+  options: { canCreate: boolean; omitMoney: boolean } = { canCreate: true, omitMoney: false },
+) {
+  const { canCreate, omitMoney } = options;
   // The four guide tabs take the lighter blue: same family as the sheet you work in, plainly not it.
   const sheet = workbook.addWorksheet("Start Here", {
     properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.light } },
@@ -872,26 +909,51 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
   );
 
   heading("How to use it");
-  line("1 · Edit in place", "Type over what is here, or add new people on the empty rows at the bottom. The dropdowns, the row check and the formats all reach the spare rows already.");
+  line(
+    "1 · Edit in place",
+    canCreate
+      ? "Type over what is here, or add new people on the empty rows at the bottom. The dropdowns, the row check and the formats all reach the spare rows already."
+      : "Type over what is here. Adding a new employee is not part of your seat, so a row whose Employee ID is not already in the master is refused on upload.",
+  );
   line("2 · Watch column A", "Column A on the Employee Master sheet checks each row as you type and names the first thing wrong with it. \"Ready\" means nothing will block it.");
   line("3 · Upload", "Employees → Import. The upload shows you a dry run first: what would change, per person, before anything is written.");
 
   heading("The things that actually block a row");
-  line("Employee ID", "It is the key. An existing HR_ID updates that person; a new one creates a new active employee. A missing or duplicated one blocks the row.");
+  line(
+    "Employee ID",
+    canCreate
+      ? "It is the key. An existing HR_ID updates that person; a new one creates a new active employee. A missing or duplicated one blocks the row."
+      : "It is the key. An existing HR_ID updates that person; one that is not in the master blocks the row, as does a missing or duplicated one.",
+  );
   line("Lifecycle", "Only active and on_leave can be uploaded. Resignation, termination and reactivation are workflows — an upload cannot do them, by design.");
   line("Area", "Must be one of the active areas in the dropdown. Areas are never created by an upload, so a typo blocks the row rather than quietly inventing a territory.");
   line("Department", "Must be an active global department. Legacy values already in the file are marked with a note rather than removed.");
   line("Nickname", "The upload blocks a nickname that is another employee's real name, because that would rename someone. It usually means the file is shifted by a row.");
 
-  heading("Two things that surprise people");
-  line(
-    "A blank cell changes nothing",
-    "Clearing a cell does NOT erase the value. Blanks are skipped entirely on upload, so emptying a salary cell leaves the salary exactly as it was. To actually set a number to nothing, type 0. Column A warns you when a row has fewer payroll figures than it was exported with.",
-  );
-  line(
-    "Salary figures are normalized",
-    `The upload recalculates Basic, Net and Gross from Base Salary using payroll policy — Basic is ${Math.round(BASIC_SALARY_RATE * 100)}% of Base — and tells you where your figure differed. Edit Base Salary; let the rest follow.`,
-  );
+  if (omitMoney) {
+    // The salary-blind export. Its money columns are hidden and empty, and its upload refuses any
+    // figure typed into them, so the two salary paragraphs below would be instructions it cannot
+    // follow — they are replaced, never merely skipped, so the file says why the money is absent.
+    heading("Two things to know");
+    line(
+      "A blank cell changes nothing",
+      "Clearing a cell does NOT erase the value. Blanks are skipped entirely on upload, so the stored value stays exactly as it was.",
+    );
+    line(
+      "No salary figures",
+      "Salary, allowance, insurance and tax amounts are not part of this file. Their columns are hidden and must stay empty: an upload with a figure in any of them is refused as a whole.",
+    );
+  } else {
+    heading("Two things that surprise people");
+    line(
+      "A blank cell changes nothing",
+      "Clearing a cell does NOT erase the value. Blanks are skipped entirely on upload, so emptying a salary cell leaves the salary exactly as it was. To actually set a number to nothing, type 0. Column A warns you when a row has fewer payroll figures than it was exported with.",
+    );
+    line(
+      "Salary figures are normalized",
+      `The upload recalculates Basic, Net and Gross from Base Salary using payroll policy — Basic is ${Math.round(BASIC_SALARY_RATE * 100)}% of Base — and tells you where your figure differed. Edit Base Salary; let the rest follow.`,
+    );
+  }
 
   heading("The other tabs");
   line("Employee Master", "The data. This must stay the first tab — the upload reads the first sheet in the file, by position, not by name.");
@@ -907,7 +969,17 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
 }
 
 /** "Field Guide" — one row per column, so nobody has to guess what a header means. */
-function addFieldGuideSheet(workbook: ExcelJS.Workbook, sheetColumns: MasterColumn[]) {
+function addFieldGuideSheet(
+  workbook: ExcelJS.Workbook,
+  allSheetColumns: MasterColumn[],
+  options: { omitMoney?: boolean } = {},
+) {
+  // A salary-blind export lists only the columns it shows: a guide row explaining how Base Salary
+  // is derived would describe a hidden column she must leave empty. This sheet holds no positions
+  // of the master sheet, so leaving rows out moves nothing there.
+  const sheetColumns = options.omitMoney
+    ? allSheetColumns.filter((column) => column.kind !== "money")
+    : allSheetColumns;
   const sheet = workbook.addWorksheet("Field Guide", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
   const widths = [26, 22, 12, 34, 74];
@@ -969,7 +1041,10 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook, sheetColumns: MasterColu
  * point: when someone gets an error back from a dry run, this sheet is what turns "invalid_hr_id"
  * into a sentence.
  */
-function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
+function addUploadRulesSheet(
+  workbook: ExcelJS.Workbook,
+  options: { canCreate: boolean; omitMoney: boolean } = { canCreate: true, omitMoney: false },
+) {
   const sheet = workbook.addWorksheet("Upload Rules", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
   const widths = [16, 30, 30, 76];
@@ -984,7 +1059,12 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
     columns: widths.length,
   });
 
-  type Rule = { effect: "Blocks the row" | "Warns only" | "Normalizes"; code: string; rule: string; detail: string };
+  type Rule = {
+    effect: "Blocks the file" | "Blocks the row" | "Warns only" | "Normalizes";
+    code: string;
+    rule: string;
+    detail: string;
+  };
   const rules: Rule[] = [
     { effect: "Blocks the row", code: "missing_hr_id", rule: "Employee ID is required", detail: "Every row needs an HR_ID — it is what the upload matches on." },
     { effect: "Blocks the row", code: "invalid_hr_id", rule: "Employee ID must be a valid HR_ID", detail: "HR_IDs are matched case-insensitively, so casing in the file does not matter." },
@@ -1015,6 +1095,50 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
     { effect: "Warns only", code: "—", rule: "A blank cell is skipped, never written", detail: "Clearing a cell does not erase the stored value. Type 0 to actually zero a number." },
   ];
 
+  // The salary-blind export's own rules, in the same codes its upload reports. Its money rules
+  // (the number check, the policy normalizations, "type 0") describe columns it hides and refuses,
+  // so they leave the list; the refusals that replace them join it.
+  const MONEY_RULE_CODES = new Set([
+    "invalid_numeric_value",
+    "base_salary_formula_mismatch",
+    "basic_salary_formula_mismatch",
+    "net_salary_formula_mismatch",
+    "gross_salary_formula_mismatch",
+    "fuel_allowance_policy_mismatch",
+    "extra_cost_of_living_policy_mismatch",
+  ]);
+  if (options.omitMoney) {
+    for (let index = rules.length - 1; index >= 0; index -= 1) {
+      if (MONEY_RULE_CODES.has(rules[index].code)) rules.splice(index, 1);
+    }
+    const blank = rules.find((rule) => rule.code === "—");
+    if (blank) blank.detail = "Clearing a cell does not erase the stored value.";
+    // Payment mode is held with the HR Manager for this seat, so the "must be one of" check is
+    // replaced by the rule that she never changes it (salary-blind-pay-flags.ts).
+    const paymentModeRule = rules.findIndex((rule) => rule.code === "invalid_payment_mode");
+    if (paymentModeRule >= 0) rules.splice(paymentModeRule, 1);
+    rules.unshift({
+      effect: "Blocks the row",
+      code: PAY_FLAG_KEPT_CODE,
+      rule: "Payment Mode, Payroll Eligible and Employment Status stay as they are",
+      detail: "All three stay with the HR Manager. A cell that matches the master is ignored; a cell that changes it refuses that row. Bank name and bank account import as usual.",
+    });
+    rules.unshift({
+      effect: "Blocks the file",
+      code: SALARY_BLIND_MONEY_COLUMNS_CODE,
+      rule: "No salary figures in this file",
+      detail: "Salary, allowance, insurance and tax columns must stay empty. One filled cell in any of them refuses the whole file.",
+    });
+  }
+  if (!options.canCreate) {
+    rules.unshift({
+      effect: "Blocks the row",
+      code: NEW_EMPLOYEE_NOT_ALLOWED_CODE,
+      rule: "Only employees already in the master",
+      detail: "Adding a new employee is not part of this seat, so a row whose Employee ID is not in the master is refused.",
+    });
+  }
+
   const headers = ["Effect", "Code", "Rule", "What it means"];
   sheet.getRow(SECTION_ROW).height = 6;
   const headerRow = sheet.getRow(HEADER_ROW);
@@ -1037,7 +1161,9 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
     });
     row.getCell(1).font = {
       bold: true,
-      color: { argb: rule.effect === "Blocks the row" ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.deep },
+      color: {
+        argb: rule.effect === "Blocks the row" || rule.effect === "Blocks the file" ? HOUSE_XLSX_COLORS.flag : HOUSE_XLSX_COLORS.deep,
+      },
       name: HOUSE_XLSX_FONT,
       size: 9,
     };
@@ -1145,6 +1271,17 @@ export type BuildEmployeeMasterWorkbookInput = {
    * so it is loaded by the caller and merged here.
    */
   socialInsuranceJobTitles?: Map<string, string | null>;
+  /**
+   * The salary-blind export (isSalaryBlindRole — the HR Operations Specialist). Every money column
+   * stays in its place, HIDDEN, LOCKED and EMPTY, and no guidance in the file tells the reader to
+   * fill one. Never removed: see the note in `styleMasterSheet`.
+   */
+  omitMoney?: boolean;
+  /**
+   * False for a viewer who may not add an employee. Only the guidance changes — the importer is
+   * what refuses a new Employee ID. Defaults to true, the sheet exactly as it always was.
+   */
+  canCreate?: boolean;
 };
 
 /** Builds the whole workbook. Sheet ORDER is load-bearing — see constraint 1 at the top. */
@@ -1153,6 +1290,8 @@ export async function buildEmployeeMasterWorkbook(
 ): Promise<ExcelJS.Workbook> {
   const { employees, lookups } = input;
   const scopeNote = input.scopeNote ?? "Scoped to your access";
+  const omitMoney = input.omitMoney === true;
+  const canCreate = input.canCreate !== false;
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemDocuments.workbookCreator;
@@ -1194,16 +1333,24 @@ export async function buildEmployeeMasterWorkbook(
         cell.value = formatHiringDocumentCell(documentCells?.get(documentId)) || null;
         return;
       }
+      // Belt and braces: the salary-blind directory arrives redacted, so this only ever writes the
+      // null that was already there — but the file must not depend on the caller having redacted.
+      if (omitMoney && column.kind === "money") {
+        cell.value = null;
+        return;
+      }
       cell.value = rows[index][column.key as keyof MasterRow] as ExcelJS.CellValue;
     });
   }
 
   addLookupSheet(workbook, lookups);
-  const { lastFormulaRow } = styleMasterSheet(workbook, sheet, lookups, rows, scopeNote, sheetColumns);
+  const { lastFormulaRow } = styleMasterSheet(workbook, sheet, lookups, rows, scopeNote, sheetColumns, {
+    omitMoney,
+  });
 
-  addStartHereSheet(workbook, rows.length, lastFormulaRow);
-  addFieldGuideSheet(workbook, sheetColumns);
-  addUploadRulesSheet(workbook);
+  addStartHereSheet(workbook, rows.length, lastFormulaRow, { canCreate, omitMoney });
+  addFieldGuideSheet(workbook, sheetColumns, { omitMoney });
+  addUploadRulesSheet(workbook, { canCreate, omitMoney });
   addReferenceDataSheet(workbook, lookups);
 
   // Everything but the data sheet is reference material — protect it from a stray keystroke while

@@ -122,7 +122,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `recruitment-interviews` — Recruitment — the interview calendar and interview outcomes | `src/lib/recruitment/interview*` and 3 more |
 | `recruitment-offers` — Recruitment — the job offer letter, its email and the hand-off to the Employee Master | `src/lib/offers/**` and 4 more |
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,email-signature,spotlight,pdf,export}/**` and 4 more |
-| `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
+| `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,hr-ops-reports,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
 | `probation` — Probation and employee milestones | `src/lib/{probation,milestones}/**` and 4 more |
 | `time-off` — Vacations, attendance and calendars | `src/lib/{vacation,attendance,excuses,early-birds,hr-calendar,private-calendar,calendar}/**` and 7 more |
 | `expenses` — Expenses and outstation trips | `src/lib/outstation/**` and 4 more |

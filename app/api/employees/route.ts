@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import {
   assertPermission,
   canReadEmployeeDirectory,
@@ -20,9 +21,11 @@ import {
   isEmployeeDirectoryEnvMissing,
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
+  readStoredPayFlags,
   upsertEmployee,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
+import { PAY_FLAGS_UNREADABLE_MESSAGE, withStoredPayFlags } from "@/lib/employees/salary-blind-pay-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -146,12 +149,59 @@ export async function POST(request: Request) {
       );
     }
 
-    // A viewer whose read access to this row's salary is redacted (see
-    // isSalaryRedactedForViewer) never has the real figures to submit — their
-    // edit form necessarily carries blanked-out values. Splice the CURRENT
-    // real values back in before the upsert so an unrelated edit (e.g. a
-    // phone number fix) can never silently wipe this employee's real salary.
-    if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
+    // `originalHrId` is only present when an EXISTING employee is being edited, so a blank one is a
+    // CREATE — and adding a person is `employees:create`, not `update`. Every seat that held update
+    // also held create until the HR Operations Specialist (owner, 2026-10-20: she does not add an
+    // employee), so this check refuses nobody who could create before.
+    if (!payload.employee.originalHrId?.trim()) {
+      await assertPermission(access, "employees", "create");
+    }
+
+    // THE SALARY-BLIND SEAT SENDS NO MONEY, AND WHATEVER IT SENDS IS DROPPED. Every money key is
+    // set to `undefined` — NEVER `null` — because the two mean different things downstream:
+    // employeeCompensationColumns omits an undefined/null money column on an update (the stored
+    // figure survives), but upsertEmployeeCompensation writes `salary_details` for anything that is
+    // not undefined, and a null there is normalised to `[]`, wiping the stored details. Undefined is
+    // "this save says nothing about pay", which is exactly what she is entitled to say.
+    //
+    // PAYMENT MODE AND PAYROLL ELIGIBLE are hers to see and never to change (owner, 2026-10-20:
+    // "can change bank account but never a paymode"). They are NOT dropped as undefined:
+    // employeePayload always writes both, and an absent value means "two parts" and "eligible" —
+    // a change for anyone paid in one part or kept off payroll. EMPLOYMENT STATUS is held the same
+    // way: an inactive status turns payroll eligible off with it. The master's own values are read
+    // fresh and written back instead (salary-blind-pay-flags.ts); if they cannot be read, nothing
+    // is saved. Bank name and bank account are not touched here and save as she typed them.
+    if (isSalaryBlindRole(access.role)) {
+      const storedPayFlags = await readStoredPayFlags(payload.employee.originalHrId ?? "");
+      if (!storedPayFlags) {
+        return NextResponse.json(
+          { error: "pay_flags_unreadable", message: PAY_FLAGS_UNREADABLE_MESSAGE },
+          { status: 409 },
+        );
+      }
+      payload.employee = withStoredPayFlags(
+        {
+          ...payload.employee,
+          baseSalary: undefined,
+          basicSalary: undefined,
+          extraCostOfLiving: undefined,
+          fuelAllowance: undefined,
+          grossSalary: undefined,
+          medicalInsurance: undefined,
+          netSalary: undefined,
+          salaryDetails: undefined,
+          socialInsurance: undefined,
+          socialInsuranceWage: undefined,
+          taxes: undefined,
+        },
+        storedPayFlags,
+      );
+    } else if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
+      // A viewer whose read access to this row's salary is redacted (see
+      // isSalaryRedactedForViewer) never has the real figures to submit — their
+      // edit form necessarily carries blanked-out values. Splice the CURRENT
+      // real values back in before the upsert so an unrelated edit (e.g. a
+      // phone number fix) can never silently wipe this employee's real salary.
       const currentRow = (await getEmployeeDirectory()).employees.find((employee) =>
         hrIdsMatch(employee.hrId, payload.employee?.hrId ?? ""),
       );

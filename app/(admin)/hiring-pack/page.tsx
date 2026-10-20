@@ -3,8 +3,9 @@ import { Suspense } from "react";
 
 import { HiringPackManager } from "@/components/hiring-pack/hiring-pack-manager";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
+import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { hrFormsAccessFor, packForViewer, type HrFormsAccess } from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
   hiringPackErrorMessage,
@@ -38,12 +39,12 @@ export default async function HiringPackPage({
   searchParams: Promise<{ hrId?: string }>;
 }) {
   const access = await resolveAccessContextFromPage();
-  const [canRead, canManage] = await Promise.all([
-    canAccess(access, "employee_documents", "read"),
-    canAccess(access, "employee_documents", "update"),
-  ]);
+  // An HR authority seat holding employee_documents, exactly as before — or a seat named in
+  // SEAT_PRINTABLE_DOCUMENTS (the HR Operations Specialist, owner 2026-10-20), who opens it on her
+  // contracts/resignations grants and sees only her own papers, with no salary on screen.
+  const forms = await hrFormsAccessFor(access);
 
-  if (!isHrAuthorityRole(access.role) || !canRead) {
+  if (!forms.canRead) {
     redirect("/employee-portals");
   }
 
@@ -58,16 +59,18 @@ export default async function HiringPackPage({
         />
       }
     >
-      <HiringPackContent canManage={canManage} hrId={hrId ?? null} />
+      <HiringPackContent access={access} forms={forms} hrId={hrId ?? null} />
     </Suspense>
   );
 }
 
 async function HiringPackContent({
-  canManage,
+  access,
+  forms,
   hrId,
 }: {
-  canManage: boolean;
+  access: AccessContext;
+  forms: HrFormsAccess;
   hrId: string | null;
 }) {
   let candidates: HiringPackCandidate[] = [];
@@ -94,7 +97,8 @@ async function HiringPackContent({
   // whole screen.
   if (hrId) {
     try {
-      initialPack = await getHiringPack(hrId);
+      // Blanked of money for the salary-blind seat, the same as the pack route answers her.
+      initialPack = packForViewer(access, await getHiringPack(hrId));
     } catch (error) {
       initialError = hiringPackPageError(error);
     }
@@ -102,11 +106,13 @@ async function HiringPackContent({
 
   return (
     <HiringPackManager
-      canManage={canManage}
+      canManage={forms.canManage}
       candidates={candidates}
       initialError={initialError}
       initialPack={initialPack}
       lines={lines}
+      paperScope={forms.paperScope}
+      withholdSalary={forms.withholdSalary}
     />
   );
 }

@@ -20,7 +20,13 @@ type EmployeeDirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>
 // time as the manager chain. HR Advisory is deliberately NOT here: her contracts grant is READ_ONLY
 // — she advises on a renewal and cannot change one — so a "pending recommendation" reminder is not
 // hers to act on.
-const contractRenewalHrApproverRoles = ["Super Admin", "HR Operations"];
+//
+// HR Administration — the HR Operations Specialist seat — joined on 2026-10-20: she tracks the
+// renewals and prepares their papers (owner: "track and prepare papers"; `contracts: read/update`
+// in her people_master function, every salary withheld). Renewing or not renewing stays his. The
+// HR Generalist seat (HR Operations) is empty until a hire, and the Super Admin is already on this
+// list, so its reminder still reaches the owner without a stand-in.
+const contractRenewalHrApproverRoles = ["Super Admin", "HR Operations", "HR Administration"];
 
 // The last rung of `contractRenewalReminderDaysAhead` is the one that escalates. It moved with the
 // ladder: while the rungs were 60/30/7/0 this was 7, and leaving it there after the ladder became

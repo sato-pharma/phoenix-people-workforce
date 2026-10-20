@@ -2,9 +2,9 @@
  * Employee business-card requests — server-side service.
  *
  * Persists requests opened from /employee-portals/business-cards to the
- * `public.business_card_requests` table, notifies the owner (B-10) and HR
- * Operations (HR-009) by in-app + email + Telegram, and serves the consolidated
- * HR queue at /business-card-requests.
+ * `public.business_card_requests` table, notifies the owner (B-10) and whoever
+ * holds the HR Generalist seat by in-app + email + Telegram, and serves the
+ * consolidated HR queue at /business-card-requests.
  *
  * Schema is in supabase/2026_business_card_requests.sql. If the table is missing
  * (migration not yet applied) the service degrades to a no-op empty list rather
@@ -21,6 +21,7 @@ import { cardFieldsFor, CARD_FIELD_MAX_LENGTH } from "@/lib/business-cards/card-
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { HR_GENERALIST_SEAT, onePerPerson, resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -50,11 +51,28 @@ export type {
 
 const tableName = "business_card_requests";
 
-// The two people every business-card request is announced to (owner, 2026-09-30):
-// B-10 (Omar Gawish, the owner / Super Admin) and HR-009 (Yasmeena Elsafory, HR
-// Operations). Passed as literal hr_ids; the notification layer resolves B-10's
-// identity aliases (PHX-1 / admin-HR) and each person's own work email.
-const BUSINESS_CARD_REQUEST_RECIPIENT_HR_IDS = ["B-10", "HR-009"] as const;
+// Who every business-card request is announced to. Owner, 2026-09-30: himself and the HR
+// Generalist of the day, by name. Owner, 2026-10-20, when she moved to her own seat: "Both to you
+// until the hire" — so the second recipient is now the SEAT, resolved at send time, and while it is
+// empty its stand-in is the Super Admin (src/lib/notifications/vacant-seat.ts), who is the owner
+// already on this list; the two collapse into one copy. A named HR id strands the notice the day the
+// chair changes hands, which is exactly what happened here.
+const BUSINESS_CARD_REQUEST_OWNER_HR_ID = "B-10";
+const BUSINESS_CARD_REQUEST_SEAT = HR_GENERALIST_SEAT;
+
+/**
+ * The people a request is announced to: the owner and the seat's people, each person once (the
+ * console login PHX-1 is B-10), minus the requester. Pure — the seat is resolved by the caller.
+ * A seat that could not be read leaves the owner's copy standing on its own.
+ */
+export function businessCardRequestRecipients(
+  seatHrIds: readonly string[],
+  requesterHrId: string,
+): string[] {
+  return onePerPerson([BUSINESS_CARD_REQUEST_OWNER_HR_ID, ...seatHrIds]).filter(
+    (hrId) => !hrIdsMatch(hrId, requesterHrId),
+  );
+}
 
 const BUSINESS_CARD_ADMIN_URL = "/admin/business-card-requests";
 
@@ -212,7 +230,7 @@ export async function updateBusinessCardRequestStatus(
 }
 
 /**
- * Alert the owner (B-10) and HR Operations (HR-009) that an employee asked for
+ * Alert the owner (B-10) and the HR Generalist seat that an employee asked for
  * business cards — in-app + email + Telegram. Best-effort: any failure here must
  * never prevent the request from being saved. Email is consolidated into ONE
  * envelope (primary To + cc), and no `email` block is passed so each recipient's
@@ -221,9 +239,8 @@ export async function updateBusinessCardRequestStatus(
 async function notifyBusinessCardRecipients(
   request: BusinessCardRequestRow,
 ): Promise<BusinessCardRequestNotificationStatus> {
-  const recipients = BUSINESS_CARD_REQUEST_RECIPIENT_HR_IDS.filter(
-    (hrId) => !hrIdsMatch(hrId, request.hrId),
-  );
+  const seat = await resolveSeatOrStandInHrIds(BUSINESS_CARD_REQUEST_SEAT, "Business card request recipients");
+  const recipients = businessCardRequestRecipients(seat.hrIds, request.hrId);
   if (recipients.length === 0) {
     return { errored: false, recipientCount: 0 };
   }

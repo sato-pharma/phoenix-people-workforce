@@ -7,7 +7,9 @@ import { isDevelopment } from "@/lib/env";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   getResignationsDashboardData,
+  isResignationDatesKeptFromViewer,
   isResignationsSchemaMissing,
+  RESIGNATION_DATES_KEPT_FROM_SEAT_MESSAGE,
   resignationErrorMessage,
   updateResignationDates,
 } from "@/lib/resignations/service";
@@ -49,6 +51,15 @@ export async function PATCH(
     const { id } = await params;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "resignations", "update");
+    // Re-dating writes the leaver's last working day, which his final pay is computed from, so the
+    // salary-blind seat (the HR Operations Specialist) may not do it although she holds
+    // resignations:update to follow the resignation through. Refused before anything is read.
+    if (isResignationDatesKeptFromViewer(access)) {
+      return NextResponse.json(
+        { error: "resignation_dates_kept_from_seat", message: RESIGNATION_DATES_KEPT_FROM_SEAT_MESSAGE },
+        { status: 403 },
+      );
+    }
 
     const payload = (await request.json()) as {
       dates?: UpdateResignationDatesInput;

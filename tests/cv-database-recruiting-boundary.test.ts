@@ -146,7 +146,7 @@ export async function runCvDatabaseRecruitingBoundaryTests() {
   assert.equal(
     operations.some((section) => section.label === "Recruitment"),
     false,
-    'the HR Operations Coordinator is offered a "Recruitment" section. She holds no recruiting '
+    'the HR Generalist (HR Operations) is offered a "Recruitment" section. She holds no recruiting '
       + "grant — that is the whole point of the CV Database block above — so the heading names a "
       + "function this seat does not have.",
   );

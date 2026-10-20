@@ -718,7 +718,9 @@ export async function WorkspaceVacanciesPage() {
     initialError = reportPageError(error);
   }
   // The same capability POST /api/employees asserts — see the vacancies report itself.
-  const canAddEmployee = await canAccess(access, "employees", "update");
+  // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
+  // the master but does not add to it, and POST /api/employees asserts create on every add.
+  const canAddEmployee = await canAccess(access, "employees", "create");
   return (
     <WorkspaceFrame
       description="View vacancies visible to your existing employee scope."

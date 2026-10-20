@@ -402,6 +402,9 @@ function testTheOwnersOwnWordingIsNotTidiedAway(): void {
     ["Group Product Manager", "مدير تسويق"],
     ["HR Business Partner", "مشرف موارد بشرية"],
     ["HR Operations Coordinator", "اخصائي موارد بشرية"],
+    // 2026-10-20: the holder of that title moved to the HR Operations Specialist seat and carries the
+    // same Arabic he confirmed for her.
+    ["HR Operations Specialist", "اخصائي موارد بشرية"],
     // His own title, 2026-10-09: "give HR Manager the Arabic مدير ادارة الموارد البشرية", after the
     // promotion moved `employees.job_title` for B-10 off HR Section Head. The old title keeps the
     // same wording while it is the seat he is recruiting for — the new holder's is his to give.
@@ -418,9 +421,23 @@ function testTheOwnersOwnWordingIsNotTidiedAway(): void {
     assert.equal(resolveJobTitleAr(en), ar, `the owner's own wording for "${en}" must reach the contract`);
   }
 
-  // Every seed is answered, so nothing is inert and the board has no Arabic question left to ask.
-  assert.equal(arabicAnswersOutstanding(), 0, "every Arabic question was answered on 2026-09-03");
+  // Every seed was answered on 2026-09-03. The one question the 2026-10-20 rename opened — the
+  // Arabic for "HR Generalist", the old seat's new title — he answered the same day: أخصائي موارد
+  // بشرية. The list stays, empty, so the next unanswered seed is named here rather than slipped in.
+  assert.equal(resolveJobTitleAr("HR Generalist"), "أخصائي موارد بشرية", "the owner's own wording for HR Generalist, 2026-10-20");
+  const OPEN_SINCE_THE_RENAME: string[] = [];
+  assert.equal(
+    arabicAnswersOutstanding(),
+    OPEN_SINCE_THE_RENAME.length,
+    "every Arabic question the owner was asked has his answer",
+  );
   for (const seed of JOB_TITLE_AR_SEEDS) {
+    if (OPEN_SINCE_THE_RENAME.includes(seed.en)) {
+      assert.equal(seed.confirmed, false, `"${seed.en}" is pinned as open — confirmed now? drop it from the list`);
+      assert.equal(seed.people, 0, `"${seed.en}" may stay unconfirmed only while nobody holds the title`);
+      assert.equal(resolveJobTitleAr(seed.en), null, `"${seed.en}" must not print an unconfirmed Arabic`);
+      continue;
+    }
     assert.equal(seed.confirmed, true, `"${seed.en}" must carry the owner's confirmation`);
   }
 }

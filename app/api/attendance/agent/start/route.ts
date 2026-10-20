@@ -6,7 +6,7 @@ import {
   LocalAttendanceAgentUnsupportedError,
   startLocalAttendanceAgent,
 } from "@/lib/attendance/local-agent";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertAttendanceSetupPermission, assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 
@@ -29,6 +29,9 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");
+    // Starting the fingerprint agent is Attendance Setup: closed to the salary-blind seat, who
+    // holds employees:update for the Employee Master only (owner, 2026-10-20).
+    await assertAttendanceSetupPermission(access, "update");
 
     if (!canManageLocalAttendanceAgent()) {
       return NextResponse.json(
