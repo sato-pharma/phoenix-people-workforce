@@ -22,6 +22,7 @@ import path from "node:path";
 
 type Poll = {
   mergedAt?: string | null;
+  state?: string;
   head?: string;
   checks?: Array<{ name: string; bucket: string }>;
   ship?: number;
@@ -229,5 +230,40 @@ export function runWaitPrTests(): void {
     // No required row at all (an empty gate) is unfinished too, not vacuously green.
     const emptyGate = run(14, [{ head: "emptygate1", checks: [{ name: "validate", bucket: "pass" }] }], [], []);
     assert.equal(emptyGate.code, 7, `an empty required list must never read as green, got ${emptyGate.code}: ${emptyGate.out}`);
+  }
+
+  // ── 11. A CLOSED, unmerged PR is its own verdict — never a GREEN on its frozen head ──────────
+  // 2026-10-04, #5305: the roll-up closed unmerged, its branch kept taking pushes, `headRefOid` stayed
+  // frozen at the sha it closed on and `gh pr checks` kept listing that sha's finished runs, so
+  // `--green` printed "GREEN on 12f73de35" for work that could never merge. The checks on a closed PR
+  // are true and say nothing about it, so the state has to be read on every poll.
+  {
+    for (const extra of [[], ["--green"]]) {
+      const { code, out } = run(15, [{ state: "CLOSED", ...green("frozen111") }], extra);
+      assert.equal(code, 5, `a closed PR must exit 5, never 0 (${extra.join(" ") || "settle"}), got ${code}: ${out}`);
+      assert.match(out, /CLOSED without merging \(frozen head frozen111\)/);
+      assert.doesNotMatch(out, /GREEN/, "and a closed PR's finished checks must never be called GREEN");
+    }
+
+    // Closed WHILE the wait runs (a roll-up folds the PR in and closes it): the earlier open readings
+    // wait, the closed one ends the wait — it does not fall through to a green on the frozen head.
+    const closedMidWait = run(16, [pending("open11111"), { state: "CLOSED", ...green("frozen222") }], ["--green"]);
+    assert.equal(closedMidWait.code, 5, `a PR closed mid-wait must end the wait at 5, got ${closedMidWait.code}: ${closedMidWait.out}`);
+    assert.doesNotMatch(closedMidWait.out, /GREEN/);
+
+    // A PR that is explicitly OPEN is graded exactly as before…
+    const open = run(17, [{ state: "OPEN", ...green("open22222") }]);
+    assert.equal(open.code, 0, `an OPEN PR must still go green, got ${open.code}: ${open.out}`);
+    assert.match(open.out, /GREEN on open22222/);
+
+    // …and so is a state the script could not read: unreadable is not closed, it keeps waiting.
+    const unread = run(18, [{ state: "", ...pending("unread111") }]);
+    assert.equal(unread.code, 7, `an unreadable state must fall through to the checks, got ${unread.code}: ${unread.out}`);
+
+    // MERGED keeps its own verdict and is not reported as a closed PR.
+    const merged = run(19, [{ state: "MERGED", mergedAt: "2026-10-20T08:00:00Z", head: "mergedxxx", checks: [] }]);
+    assert.equal(merged.code, 0);
+    assert.match(merged.out, /ALREADY MERGED at 2026-10-20T08:00:00Z/);
+    assert.doesNotMatch(merged.out, /CLOSED/);
   }
 }

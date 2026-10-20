@@ -35,7 +35,7 @@ import {
 import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateStatusLabels, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { interviewOutcomeLabels, type InterviewOutcome } from "@/lib/recruitment/interview-calendar-types";
-import { quickDatePickLabels, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
+import { decisionModeLabels, decisionModeOf, quickDatePickLabels, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
 import { workspaceCandidateHref } from "@/lib/recruitment/workspace/links";
 import {
   FOLDERS_TAB,
@@ -232,7 +232,10 @@ export function workspaceExportFilterLine(
   const parts: string[] = [tab ? workspaceTabLabels[tab] : "Every tab"];
   if (filters.region) parts.push(regionName(filters.region, rows));
   if (filters.area) parts.push(areaName(filters.area, rows));
-  if (filters.statuses.length > 0) {
+  const decision = decisionModeOf(filters.statuses);
+  if (decision === "decided" || decision === "undecided") {
+    parts.push(decisionModeLabels[decision].toLowerCase());
+  } else if (filters.statuses.length > 0) {
     parts.push(filters.statuses.map((status) => candidateStatusLabels[status as CandidateStatus] ?? "Other status").join(" or "));
   }
   if (filters.sources.length > 0) {

@@ -469,6 +469,17 @@ unverified code. A required context that is not in the listing is an unfinished 
 **every one of those rows is `pass`**; `skipping`, `cancel` and any bucket the script has not met also
 keep it waiting. Pinned by case 10 of `tests/wait-pr.test.ts`.
 
+**The fourth shape: the pull request is not open at all.** A CLOSED, unmerged PR keeps answering like an
+open one — its branch still takes pushes, its `headRefOid` stays frozen at the sha it closed on, and
+`gh pr checks` keeps listing that sha's finished runs. On 2026-10-04 `wait-pr.mjs 5305 --green` printed
+`GREEN on 12f73de35: validate=pass checks=pass` for a roll-up that had closed unmerged twenty minutes
+earlier; every line of it was true and none of it said the PR was dead. The script now reads `state`
+with `mergedAt` on every poll (a roll-up can close the PR mid-wait) and ends a closed PR at **exit 5**,
+`CLOSED without merging`, never grading its checks. A state it cannot read is not "closed" — it falls
+through and keeps waiting. `--ship` was already safe: `verify-shipped.mjs` answers NOT MERGED for any
+state but MERGED. A closed PR is not lost work either — a roll-up that carried its commits closes it —
+so read whether `main` holds its files before acting. Pinned by case 11 of `tests/wait-pr.test.ts`.
+
 **So the rule is about the shape, not the state names.** Read the required contexts live from
 `branches/main/protection/required_status_checks` (never from a doc — see the paragraph above), and
 treat the gate as green **only when every one of them is literally `SUCCESS`**. Absent, `QUEUED`,

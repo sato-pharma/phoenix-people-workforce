@@ -15,7 +15,7 @@ import {
   type WorkspaceViewer,
   allowedTabsForViewer,
 } from "@/lib/recruitment/workspace/role-tabs";
-import { candidateStatuses } from "@/lib/recruitment/candidate-status";
+import { DEFAULT_CANDIDATE_STATUS, candidateStatuses } from "@/lib/recruitment/candidate-status";
 import { isUuid } from "@/lib/http/uuid";
 import {
   OVERDUE_SENT_DAYS,
@@ -204,6 +204,51 @@ export function serializeWorkspaceFilters(filters: WorkspaceFilters): URLSearchP
   if (filters.search) params.set("q", filters.search);
   if (filters.candidate) params.set("candidate", filters.candidate);
   return params;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The decided toggle — All · Not decided · Decided (owner, 20 Oct 2026: "add a toggle in the screen
+// to filter by decided and all not decided")
+// ---------------------------------------------------------------------------------------------
+//
+// Not a new filter: it is the status filter, set in one press. "Not decided" is New — nobody has
+// moved the CV yet — and "Decided" is every other status (Shortlisted, Back-up, Sent to manager,
+// Rejected, Hired). The status column is NOT NULL and every stored value is on the fixed list
+// (read 20 Oct 2026), so the two halves cover every CV with nothing left between them. All is the
+// clean default, because the filters start clean on every visit.
+
+export const decisionModes = ["all", "undecided", "decided"] as const;
+export type DecisionMode = (typeof decisionModes)[number];
+export const decisionModeLabels: Record<DecisionMode, string> = {
+  all: "All",
+  undecided: "Not decided",
+  decided: "Decided",
+};
+
+export const UNDECIDED_STATUSES: readonly string[] = [DEFAULT_CANDIDATE_STATUS];
+export const DECIDED_STATUSES: readonly string[] = candidateStatuses.filter((status) => status !== DEFAULT_CANDIDATE_STATUS);
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && b.every((item) => a.includes(item));
+}
+
+/** Which press the status filter matches — null when the statuses were ticked one by one into some other set. */
+export function decisionModeOf(statuses: readonly string[]): DecisionMode | null {
+  if (statuses.length === 0) return "all";
+  if (sameSet(statuses, UNDECIDED_STATUSES)) return "undecided";
+  if (sameSet(statuses, DECIDED_STATUSES)) return "decided";
+  return null;
+}
+
+export function statusesForDecisionMode(mode: DecisionMode): string[] {
+  return mode === "undecided" ? [...UNDECIDED_STATUSES] : mode === "decided" ? [...DECIDED_STATUSES] : [];
+}
+
+/** The number beside each press, from the by-status counts (which ignore the status filter, so they hold still while he switches). */
+export function decisionModeCount(mode: DecisionMode, byStatus: Partial<Record<string, number>> | undefined): number | null {
+  if (!byStatus) return null;
+  const keys = mode === "all" ? Object.keys(byStatus) : mode === "undecided" ? UNDECIDED_STATUSES : DECIDED_STATUSES;
+  return keys.reduce((sum, key) => sum + (byStatus[key] ?? 0), 0);
 }
 
 /** How many filters beyond tab/place/candidate are set — the "Clear filters (3)" count. */
