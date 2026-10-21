@@ -854,6 +854,79 @@ only an urgent upload contains (it is never committed — the test refuses it). 
 first parent is `origin/main`, so `deploy-drift-check.yml`'s ancestry test reads production as in sync
 and does not alarm, and `verify-shipped.mjs` resolves the revision like any other.
 
+## The fallback route — an image built on GitHub, for the day Railway cannot build
+
+Built 2026-10-21 at the owner's instruction: *"i need to find a fallback way to deploy when railway is
+down urgently"*. Railway paused every build on 20 Oct (20:03 Cairo, five merges unserved) and again on
+21 Oct (10:17 Cairo, "Dashboard and API unavailable, builds paused", five more unserved). **Both times
+the old version kept serving — only NEW code could not go live.** The normal route and the urgent route
+(`railway up`) both need Railway's builder, so neither helped. This route moves the BUILD to GitHub's
+runners and lets Railway only RUN a finished image, which needs no builder.
+
+**How to use it** — Actions → "Fallback image" → Run workflow, or from a terminal:
+
+```
+gh workflow run fallback-image.yml -f deploy=none        # build, boot-test, push the image; touches nothing else
+gh workflow run fallback-image.yml -f deploy=rehearsal   # + a throwaway STAGING service pulls it, then is deleted
+gh workflow run fallback-image.yml -f deploy=production -f services=web          # or web,worker
+gh workflow run fallback-image.yml -f deploy=restore     # once Railway builds again: back to the git source
+```
+
+`ref` defaults to `main`. It is never a push or schedule trigger: an image per merge would double the
+build minutes for a route needed a few days a year. A pull request that touches the workflow, the
+script or the `Dockerfile` builds and boots the image (nothing pushed), which also gives the
+`Dockerfile` the pull-request build coverage `validate` skips.
+
+**What keeps it as safe as the normal route.**
+
+1. **The gate is not skipped.** The commit must already have a green `release-gate` job in its own
+   `ci.yml` push run — the same row Railway's readiness probe waits for. Only a commit that reached
+   `main` and passed `validate` + `checks` can be built for production.
+2. **The image carries `RAILWAY_GIT_COMMIT_SHA`.** Railway injects it only into a build it ran itself.
+   An image deploy would carry none, and `release-gate.ts` reads "no commit" as "nothing to wait for" —
+   the gate would silently open. The workflow adds one `ENV` layer, so `/api/readyz` still answers 503
+   until the row exists and `/api/healthz` `revision` names the commit.
+3. **It is booted before it is pushed**, and `/api/healthz` must report the commit.
+4. **The build values are Railway's own.** `NEXT_PUBLIC_*` are inlined into the client bundle at build
+   time, so the image needs the same values Railway's build used. `build-values` reads them from
+   Railway's production variables (exactly the `Dockerfile`'s `ARG` list — pinned by the test); only if
+   Railway cannot be read does it use GitHub's copies, and the run summary says so. Trimmed: the GitHub
+   copy of `NEXT_PUBLIC_APP_URL` has carried a leading space.
+5. **`SENTRY_AUTH_TOKEN` is not passed**, so a fallback build uploads no source maps and spends no
+   observability credential.
+
+**The Railway side** (`scripts/fallback-image-deploy.mjs`, public GraphQL, introspected 2026-10-21):
+`serviceInstanceUpdate(source: {image}, registryCredentials)` moves a service onto the image, then the
+script waits for the new deployment and, for the web service, for `/api/healthz` to report the commit.
+`restore` reconnects `Gawish-1997/phoenix-people-workforce@main` with `serviceConnect` and waits again.
+
+- 🔴 **The source is service-level, shared by every environment** (§2.3's `source connect` incident), so
+  `switch` and `restore` refuse `--env staging`: a "staging test" of a source change would change
+  PRODUCTION. The rehearsal creates a service of its own (`fallback-rehearsal-<sha>`, staging only),
+  deletes only what it created (re-checked by name), and `cleanup` removes a leftover.
+- **The private image needs a pull credential.** With the secret `GHCR_PULL_TOKEN` (a classic personal
+  access token with ONLY `read:packages`, stored by the owner himself:
+  `gh secret set GHCR_PULL_TOKEN --repo Gawish-1997/phoenix-people-workforce`) Railway can re-pull the
+  image for as long as the fallback is in use. Without it the run's own token is used: enough to start
+  the container now, **not** enough for a later restart on another node. The production job's summary
+  says which one was used. Never make the package public — it holds the compiled server code.
+- **What was there before is kept**: `fallback-snapshot.json` (source and root directory per service,
+  no credentials) is uploaded as an artifact for 30 days.
+- **web first, then the worker**; a failed web deployment stops before the worker is touched. Railway
+  keeps the previous version serving when a new deployment fails its health check. Never run two
+  workers: the CRM poller keeps in-memory state (`PHOENIX_LIVE_CRM_POLL`), and the switch is a normal
+  Railway deployment with the usual overlap, not a second copy.
+- **A migration is not covered** — apply it first (§8), as on every route. **Railway fully down is not
+  covered either**: the running container only keeps serving, and a second host with a DNS flip is a
+  separate piece of work (it needs another account and a copy of the variables kept outside Railway).
+
+**What is proven and what is not.** Proven by `tests/fallback-image-deploy.test.ts` and a live read-only
+run of `read` and `build-values` on 2026-10-21: the helpers, the workflow's triggers and gate, the
+Dockerfile/ARG parity, and that Railway's API answers both reads during the outage. **Not proven until
+`deploy=rehearsal` has run:** that Railway pulls and starts a private ghcr image with these
+credentials. **Not proven until the first real use:** the repo → image → repo transition on the real
+service (`restore` is the same `serviceConnect` path that repointed production in August).
+
 ## Production Verification
 
 The public production domain is https://phoenix-hr.satopharma.com (also reachable at

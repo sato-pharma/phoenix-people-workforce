@@ -1,0 +1,372 @@
+name: Fallback image
+
+# THE FALLBACK ROUTE (owner, 2026-10-21): when Railway cannot BUILD, GitHub builds the image instead and Railway only
+# runs it. On 20 Oct and again on 21 Oct 2026 Railway paused every build for hours; the old version kept serving, but
+# five merges each time could not go live. The normal route and the urgent route (`railway up`) both need Railway's
+# builder, so neither could help. A deploy of a FINISHED image needs no builder. Account and rules:
+# docs/deployment.md, "The fallback route". The script that talks to Railway: scripts/fallback-image-deploy.mjs.
+#
+# STARTED ONLY BY HAND — Actions → "Fallback image" → Run workflow — or by `gh workflow run fallback-image.yml`.
+# It is NOT on a schedule and NOT on a push to main: an image built per merge would double the build minutes for a
+# route that is needed a few days a year. A pull request that touches this file, the script or the Dockerfile builds
+# the image and boots it (nothing is pushed or deployed), which also gives the Dockerfile the pull-request build
+# coverage it otherwise lacks.
+#
+#   deploy = none        build + boot-test + push the image only (a dry run of everything but Railway)
+#   deploy = rehearsal   as none, then a THROWAWAY service in STAGING pulls it with the same credentials and is deleted
+#   deploy = production  as none, then switch the production web (and worker) service onto the image
+#   deploy = restore     no build: reconnect the services to the git source once Railway builds again
+#
+# 🔴 THE GATE IS NOT SKIPPED. The commit must already have a green `release-gate` job in its own `ci.yml` push run —
+# the same row Railway's readiness probe waits for. And the image carries RAILWAY_GIT_COMMIT_SHA, so the container's
+# own /api/readyz still refuses traffic until that row exists. An unchecked commit cannot be put live through here.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The commit to build — a main commit whose own CI is green (default: main)"
+        required: false
+        default: main
+      deploy:
+        description: "What to do with the image"
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - rehearsal
+          - production
+          - restore
+      services:
+        description: "production only — which services move onto the image"
+        required: false
+        default: web
+        type: choice
+        options:
+          - web
+          - web,worker
+  pull_request:
+    paths:
+      - .github/workflows/fallback-image.yml
+      - scripts/fallback-image-deploy.mjs
+      - Dockerfile
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+# Never cancel: a switch interrupted half way leaves a service on a source nobody chose. Two runs of the same kind queue.
+concurrency:
+  group: fallback-image-${{ github.event_name }}-${{ inputs.deploy || 'build' }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - name: Pick the commit and prove its own release gate passed
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          INPUT_REF: ${{ inputs.ref }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          DEPLOY: ${{ inputs.deploy }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "sha=${PR_SHA}" >> "$GITHUB_OUTPUT"
+            echo "A pull request builds and boots the image to prove it can; nothing is pushed or deployed."
+            exit 0
+          fi
+          if [ "$DEPLOY" = "restore" ]; then
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            echo "restore builds nothing, so there is no commit to gate."
+            exit 0
+          fi
+          ref="${INPUT_REF:-main}"
+          sha="$(gh api "repos/${REPO}/commits/${ref}" --jq .sha)"
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not resolve '${ref}' to a commit."
+            exit 1
+          fi
+          # The run of ci.yml that main's push started for THIS commit. Only such a run has a release-gate job
+          # that can succeed (the job is main-push only), so a branch commit has no verdict and is refused.
+          run_id="$(gh api "repos/${REPO}/actions/runs?head_sha=${sha}&event=push&per_page=30" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last | .id // empty')"
+          if [ -z "$run_id" ]; then
+            echo "::error::${sha} has no push run of ci.yml, so it never passed main's release gate. Only a commit that reached main can be put live."
+            exit 1
+          fi
+          verdict="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "release-gate")] | first | .conclusion // "missing"')"
+          if [ "$verdict" != "success" ]; then
+            echo "::error::${sha}: its release-gate job reads '${verdict}', not 'success'. Wait for its CI to finish green, or pick a commit whose CI already did. https://github.com/${REPO}/actions/runs/${run_id}"
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "${sha}: release-gate success (run ${run_id})."
+
+  image:
+    needs: gate
+    if: ${{ github.event_name == 'pull_request' || inputs.deploy != 'restore' }}
+    runs-on: ubuntu-latest
+    # A cold build of this app is ~8-12 minutes (install, `next build`, the runtime layers); the cap is generous because
+    # nothing here may be cancelled half-pushed.
+    timeout-minutes: 45
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
+      PUSH: ${{ github.event_name != 'pull_request' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # TWO commits are involved and they are not the same. The TOOLS (this workflow's script) come from the commit the workflow
+      # was started on; the SOURCE to build is whichever main commit was asked for, and an older or newer main commit may not
+      # contain the script at all (the first dispatch, on 2026-10-21, built main HEAD and could not find it). So the script is
+      # copied out of the first checkout before the second one replaces the tree, and it lives outside the Docker build context.
+      - name: Check out the tools (the commit this workflow runs from)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Keep the script outside the build context
+        run: |
+          set -euo pipefail
+          # The script and the one helper it imports, side by side as they are in the repository.
+          mkdir -p "${RUNNER_TEMP}/fallback-tools/lib"
+          cp scripts/fallback-image-deploy.mjs "${RUNNER_TEMP}/fallback-tools/fallback-image-deploy.mjs"
+          cp scripts/lib/refuse-arguments.mjs "${RUNNER_TEMP}/fallback-tools/lib/refuse-arguments.mjs"
+
+      - name: Check out the commit to build
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+
+      - name: Resolve the build-time NEXT_PUBLIC values
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # The same values, in the same order of precedence, that sync-railway-production-secrets.yml writes to Railway.
+          # They are only the FALLBACK source: the first choice is Railway's own current values (build-values below), because
+          # those are literally what Railway's last build used.
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL || secrets.NEXT_PUBLIC_APP_URL || vars.APP_URL || secrets.APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY || secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
+          NEXT_PUBLIC_SMI_USE_FACT_TABLES: ${{ vars.NEXT_PUBLIC_SMI_USE_FACT_TABLES || secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }}
+          NEXT_PUBLIC_ONESIGNAL_APP_ID: ${{ vars.NEXT_PUBLIC_ONESIGNAL_APP_ID || secrets.NEXT_PUBLIC_ONESIGNAL_APP_ID }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN || secrets.NEXT_PUBLIC_SENTRY_DSN || vars.SENTRY_DSN || secrets.SENTRY_DSN }}
+        run: |
+          set -uo pipefail
+          # Browser-visible by design (they are inlined into the client bundle), so printing the NAMES is harmless
+          # and the values are never printed. Railway's own current values first; GitHub's copies only if Railway
+          # cannot be read — and then say so, because the two can differ (NEXT_PUBLIC_SMI_USE_FACT_TABLES is set by
+          # hand in Railway and is not in the GitHub-to-Railway sync).
+          if node "${RUNNER_TEMP}/fallback-tools/fallback-image-deploy.mjs" build-values --out "${RUNNER_TEMP}/build-values.env"; then
+            echo "source=railway" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Railway's variables could not be read, so the build uses GitHub's copies of the NEXT_PUBLIC values. Compare them with Railway's before relying on this image."
+            node "${RUNNER_TEMP}/fallback-tools/fallback-image-deploy.mjs" build-values --from-env --out "${RUNNER_TEMP}/build-values.env"
+            echo "source=github (Railway unreadable — NOT verified against Railway)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Pull the base image, with fallbacks, under the name the Dockerfile uses
+        run: |
+          set -uo pipefail
+          # The Dockerfile pulls its base from AWS's public mirror, and a GitHub runner shares an address with thousands of
+          # others: on 2026-10-21 the first run of this workflow was refused with "429 toomanyrequests: Data limit exceeded"
+          # (the same class as the Docker Hub limit of 2026-10-09). The Dockerfile must not change, so the SAME official image
+          # is fetched from whichever mirror answers and tagged with the exact name the FROM line asks for; the build then
+          # finds it locally and never contacts the registry for it.
+          BASE="$(grep -m1 '^FROM ' Dockerfile | awk '{print $2}')"
+          TAG="${BASE#*/}"; TAG="${TAG#docker/}"        # library/node:24-alpine
+          echo "the Dockerfile's base: ${BASE}"
+          pulled=""
+          for source in "${BASE}" "mirror.gcr.io/${TAG}" "docker.io/${TAG}"; do
+            for attempt in 1 2 3; do
+              if docker pull "${source}"; then pulled="${source}"; break 2; fi
+              sleep $((attempt * 10))
+            done
+          done
+          if [ -z "${pulled}" ]; then
+            echo "::error::No registry would give out the base image (${BASE}); the build cannot start."
+            exit 1
+          fi
+          if [ "${pulled}" != "${BASE}" ]; then
+            docker tag "${pulled}" "${BASE}"
+            echo "::warning::The base image came from ${pulled}, not ${BASE} (rate-limited). It is the same official image, but check the digest below against Railway's last build log if it matters."
+          fi
+          docker image inspect "${BASE}" --format 'base image digest: {{index .RepoDigests 0}}' >> "$GITHUB_STEP_SUMMARY" || true
+          echo "base image source: ${pulled}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the image (the repository's own Dockerfile, unchanged)
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/phoenix-people-workforce"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          set -a
+          . "${RUNNER_TEMP}/build-values.env"
+          set +a
+          build_args=()
+          for name in $(cut -d= -f1 "${RUNNER_TEMP}/build-values.env"); do build_args+=(--build-arg "$name"); done
+          # No SENTRY_AUTH_TOKEN on purpose: next.config.ts uploads source maps only when it is set, and a fallback
+          # build must not depend on, or spend, an observability credential. RAILWAY_GIT_COMMIT_SHA only names the release.
+          docker build "${build_args[@]}" \
+            --build-arg "RAILWAY_GIT_COMMIT_SHA=${SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${SHA}" \
+            --tag "${IMAGE}:build" .
+
+      - name: Stamp the commit into the image
+        run: |
+          set -euo pipefail
+          # Railway injects RAILWAY_GIT_COMMIT_SHA only into a build it ran itself. An image deploy would carry none, and
+          # the release gate treats "no commit" as "nothing to wait for" — so the gate would silently open. Baking the
+          # commit in keeps /api/readyz waiting for the row, and keeps /api/healthz `revision` truthful.
+          printf 'FROM %s:build\nENV RAILWAY_GIT_COMMIT_SHA=%s\n' "${IMAGE}" "${SHA}" | docker build --tag "${IMAGE}:${SHA}" -
+
+      - name: Boot the image and read its revision
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 8080:8080 "${IMAGE}:${SHA}" > /dev/null
+          for attempt in $(seq 1 60); do
+            body="$(curl -fsS --max-time 5 http://127.0.0.1:8080/api/healthz 2>/dev/null || true)"
+            case "$body" in
+              *"\"revision\":\"${SHA}\""*)
+                echo "booted after about $((attempt * 3))s: ${body}"
+                echo "boot-test: ok (revision ${SHA:0:9})" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+                ;;
+            esac
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != "true" ]; then break; fi
+            sleep 3
+          done
+          echo "::error::The image did not answer /api/healthz with revision ${SHA} (last answer: ${body:-none})."
+          docker logs smoke 2>&1 | tail -60
+          exit 1
+
+      - name: Push the image to ghcr.io
+        if: ${{ env.PUSH == 'true' }}
+        run: |
+          set -euo pipefail
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker push "${IMAGE}:${SHA}"
+          echo "pushed ${IMAGE}:${SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+  rehearsal:
+    needs: [gate, image]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'rehearsal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      REGISTRY_USERNAME: ${{ github.repository_owner }}
+      REGISTRY_PASSWORD: ${{ secrets.GHCR_PULL_TOKEN || github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: A throwaway STAGING service pulls the image, then is deleted
+        run: node scripts/fallback-image-deploy.mjs rehearse --sha "${SHA}"
+      - name: Delete any rehearsal service this run left behind
+        if: always()
+        run: node scripts/fallback-image-deploy.mjs cleanup
+      - name: Tell the owner the rehearsal failed
+        if: failure()
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then echo "::warning::Telegram not configured."; exit 0; fi
+          curl -sS --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=FALLBACK REHEARSAL FAILED — read the run: ${RUN_URL}" -o /dev/null
+
+  production:
+    needs: [gate, image]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'production' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
+      SERVICES: ${{ inputs.services }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # A classic personal access token with ONLY read:packages (secret GHCR_PULL_TOKEN) is what lets Railway re-pull the
+      # image for as long as the fallback is in use. Without it the run's own short-lived token is used: enough to start the
+      # container now, NOT enough for a later restart on another host — the summary says which one was used.
+      REGISTRY_USERNAME: ${{ github.repository_owner }}
+      REGISTRY_PASSWORD: ${{ secrets.GHCR_PULL_TOKEN || github.token }}
+      PULL_TOKEN_KIND: ${{ secrets.GHCR_PULL_TOKEN != '' && 'long-lived (GHCR_PULL_TOKEN)' || 'short-lived (this run only)' }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Say which pull credential is in use
+        run: echo "registry credential for Railway - ${PULL_TOKEN_KIND}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Switch production onto the image and wait until it serves
+        run: node scripts/fallback-image-deploy.mjs switch --env production --sha "${SHA}" --services "${SERVICES}"
+      - name: Keep what was there before
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: railway-source-before-switch
+          path: fallback-snapshot.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Tell the owner the switch failed
+        if: failure()
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then echo "::warning::Telegram not configured."; exit 0; fi
+          curl -sS --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=FALLBACK SWITCH FAILED — the previous version still serves. Read the run: ${RUN_URL}" -o /dev/null
+
+  restore:
+    needs: gate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'restore' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Reconnect production to the git source
+        run: node scripts/fallback-image-deploy.mjs restore --env production --services web,worker
+      - name: Tell the owner the restore failed
+        if: failure()
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then echo "::warning::Telegram not configured."; exit 0; fi
+          curl -sS --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=FALLBACK RESTORE FAILED — production may still be on the image. Read the run: ${RUN_URL}" -o /dev/null
