@@ -1270,8 +1270,16 @@ function runRowShapeTests(code: string): void {
   const flagsItems = itemsOf(flagsView, "from public.crm_visits_unified v");
   assert.deepEqual(
     flagsItems,
-    [...names.slice(0, 30).map((name) => `v.${name}`), "ck.has_checkin", "(v.visit_type = 0 and not ck.has_checkin) as regular_no_checkin"],
-    "the flag view keeps its 32 columns, spelled out so the appended one never reaches it",
+    [
+      ...names.slice(0, 30).map((name) => `v.${name}`),
+      "ck.has_checkin",
+      "(v.visit_type = 0 and not ck.has_checkin) as regular_no_checkin",
+      // 20261021140001: the second manager and the Phoenix visit detail, APPENDED after the two flags. Frozen
+      // at 32 columns until then, which left CRM Master's Regular · No Check-in tabs asking for 32 it lacked.
+      // `phoenix_customer_validated` (names[30]) stays out: nothing reads it from this view.
+      ...names.slice(31).map((name) => `v.${name}`),
+    ],
+    "the flag view keeps its first 32 columns in place and APPENDS the second manager and the Phoenix visit detail",
   );
   assert.match(flat(flagsView), /select case when v\.source = 'phoenix' then true else exists \(/, "a Phoenix row is its own check-in, so it never sits on 'Regular · No Check-in'");
   const vendorCase = (sql: string) => {
