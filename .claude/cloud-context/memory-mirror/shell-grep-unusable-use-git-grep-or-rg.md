@@ -1,6 +1,6 @@
 ---
 name: shell-grep-unusable-use-git-grep-or-rg
-description: "Plain `grep -r` from the repo root, `.` or node_modules never finishes (walks ~346k files for ~3.8k real ones) — use `gg`/`git grep` or `rg` there; any other named folder, file, file glob or small absolute path is fast and bash-guard C1 allows it — a deny-list since 2026-10-22 that refuses only a repo/worktree root, `.claude`, node_modules, the workspace folder, Temp or a drive/home root"
+description: "Plain `grep -r` from the repo root, `.` or node_modules never finishes (walks ~346k files for ~3.8k real ones) — use `gg`/`git grep` or `rg` there; since 2026-10-22 bash-guard C1 ADDS --exclude-dir node_modules/.git/.next/worktrees/.codex-worktrees to a read-only grep of a repo root or its .claude (~3.5 s), refuses only node_modules, worktrees, the workspace folder and drive/home/Temp roots, and passes any other named folder, file or small path untouched"
 metadata: 
   node_type: memory
   type: project
@@ -34,6 +34,9 @@ and allows it when every path is under src/app/tests/scripts/supabase/docs/publi
 the 109 greps it refused over two days could not hang (`.claude/rules`, `docs/*.md`, `package.json`, the memory
 folder, a scratchpad). C1 is now a deny-list: each path is resolved where it runs (cwd moved by `cd`, `~` and
 variables set in the command expanded) and refused only on a big tree. Account: `docs/agents-session-traps.md`.
+The same night the 7 that remained (all a repo root or its `.claude`) became a REWRITE: the hook adds the
+excludes and allows the command when every segment is read-only. Never add `_wt-*` to those flags: GNU grep
+applies --exclude-dir to a folder named on the command line, so a worktree root by absolute path searches nothing.
 
 **How to apply:**
 - Use `gg` (alias for `git grep -n`) for anything committed, or `rg` for untracked files too.

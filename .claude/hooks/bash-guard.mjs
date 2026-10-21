@@ -741,26 +741,59 @@ function grepExpand(word, vars) {
   return out.includes('\u0000') || /[$`]/.test(out) ? null : out;
 }
 
-/** Is this grep operand safe to walk? cwd is an absolute parts object, or null when unknown. */
-function grepPathIsSafe(word, cwd, vars) {
+/**
+ * The folders a grep must skip to walk a repo root or its `.claude` in seconds: 3.5 s warm (11 s
+ * cold) over the primary on 2026-10-22, against 10-40 s+ without them. `_wt-*` is deliberately NOT
+ * here: GNU grep applies --exclude-dir to a folder NAMED on the command line too, so it would turn a
+ * grep of `F:/…/_wt-x` into a search of nothing (measured: 0 hits against 1).
+ */
+const GREP_ROOT_EXCLUDES = ['node_modules', '.git', '.next', 'worktrees', '.codex-worktrees'];
+
+const grepOsPath = ({ drive, parts }) => (drive ? `${drive}:/` : '/') + parts.join('/');
+
+/** A repo or worktree root, or the `.claude` inside one — big, but fast once the excludes are added. */
+function grepRootIsFixable(resolved) {
+  const { parts } = resolved;
+  // The primary and every `_wt-*` sit two folders deep (`F:/Phoenix Workforce/phoenix-workforce`).
+  if (parts.length < 2) return false;
+  const isRepoRoot = (p) => {
+    const last = p.parts[p.parts.length - 1]?.toLowerCase() ?? '';
+    if (last === 'phoenix-workforce' || last.startsWith('_wt-')) return true;
+    try { return existsSync(grepOsPath(p) + '/.git'); } catch { return false; }
+  };
+  if (parts[parts.length - 1].toLowerCase() === '.claude') return isRepoRoot({ ...resolved, parts: parts.slice(0, -1) });
+  return isRepoRoot(resolved);
+}
+
+/** 'ok' — walk it; 'fix' — a root that is fine with GREP_ROOT_EXCLUDES; 'big' — refuse. */
+function grepVerdictForResolved(resolved) {
+  // Any repo root — this one by name, another by its `.git` — gets the excludes, big list or not.
+  if (grepRootIsFixable(resolved)) return 'fix';
+  return grepTreeIsBig(resolved) ? 'big' : 'ok';
+}
+
+/** Judge one grep operand. cwd is an absolute parts object, or null when unknown. */
+function grepPathVerdict(word, cwd, vars) {
   const expanded = grepExpand(word, vars);
-  if (expanded === null) return false;
+  if (expanded === null) return 'big';
   const path = grepPathParts(expanded);
-  if (path.parts.includes('..') && !cwd && !path.abs) return false;
+  if (path.parts.includes('..') && !cwd && !path.abs) return 'big';
   const globAt = path.parts.findIndex((part) => GREP_GLOB.test(part));
   if (globAt >= 0) {
     // Only a glob in the LAST segment is placeable; `*.md` matches files, which never recurse.
-    if (globAt !== path.parts.length - 1) return false;
-    if (/^\*\.[\w.-]+$/.test(path.parts[globAt])) return true;
+    if (globAt !== path.parts.length - 1) return 'big';
+    if (/^\*\.[\w.-]+$/.test(path.parts[globAt])) return 'ok';
     const parent = { ...path, parts: path.parts.slice(0, -1) };
-    if (!parent.abs && !cwd) return parent.parts.length > 0 && !parent.parts.includes('..') && !grepTreeIsBig({ parts: ['?', '?', ...parent.parts] });
-    return !grepTreeIsBig(parent.abs ? parent : grepResolve(cwd, parent));
+    if (!parent.abs && !cwd) return parent.parts.length > 0 && !parent.parts.includes('..') && !grepTreeIsBig({ parts: ['?', '?', ...parent.parts] }) ? 'ok' : 'big';
+    return grepTreeIsBig(parent.abs ? parent : grepResolve(cwd, parent)) ? 'big' : 'ok';
   }
-  if (path.abs) return !grepTreeIsBig(grepResolve({ ...path, parts: [] }, path));
-  if (cwd) return !grepTreeIsBig(grepResolve(cwd, path));
+  if (path.abs) return grepVerdictForResolved(grepResolve({ ...path, parts: [] }, path));
+  if (cwd) return grepVerdictForResolved(grepResolve(cwd, path));
   // Unknown cwd: only a named, forward-only path can be judged — by its own last segment.
-  if (!path.parts.length || path.parts.includes('..') || path.parts.every((part) => part === '.')) return false;
-  return !grepTreeIsBig({ parts: ['?', '?', ...path.parts.filter((part) => part !== '.')] });
+  if (!path.parts.length || path.parts.includes('..') || path.parts.every((part) => part === '.')) return 'big';
+  const named = path.parts.filter((part) => part !== '.');
+  if (named.length === 1 && named[0].toLowerCase() === '.claude') return 'fix';
+  return grepTreeIsBig({ parts: ['?', '?', ...named] }) ? 'big' : 'ok';
 }
 
 /** Short flags whose value follows them (`-e PATTERN`, `-m 5`, `-A 3`); the rest of a cluster is that value. */
@@ -802,16 +835,22 @@ function shellWords(segment) {
 }
 
 /**
- * Judge one command segment. null = not a recursive grep (not this clause's business);
- * true = a recursive grep that is safe; false = one that walks somewhere it must not.
+ * Judge one command segment. null = not a recursive grep (not this clause's business); 'ok' = safe;
+ * 'fix' = a repo root or its `.claude`, safe once the excludes it still lacks (`missing`) are added;
+ * 'big' = it walks somewhere it must not.
  */
-function recursiveGrepIsSafe(segment, cwd, vars) {
+function recursiveGrepVerdict(segment, cwd, vars) {
   // `$(grep -r x .)` splits at the `(`, leaving the `)` glued to the last operand.
   const words = shellWords(segment.replace(/\)+\s*$/, ''));
   if (!words.length || !/^(?:e|f)?grep$/.test(words[0])) return null;
   let recursive = false;
   let patternGiven = false;
   const operands = [];
+  const excluded = new Set();
+  const noteExclude = (value) => {
+    const list = /^\{(.*)\}$/.exec(value);
+    for (const name of list ? list[1].split(',') : [value]) excluded.add(name.replace(/\/+$/, ''));
+  };
   for (let i = 1; i < words.length; i++) {
     const word = words[i];
     // A redirection is not an operand: `2>`, `>out.txt`, `< in`. The `&` of `2>&1` already split the segment.
@@ -827,6 +866,7 @@ function recursiveGrepIsSafe(segment, cwd, vars) {
       const name = word.split('=')[0];
       if (name === '--recursive' || name === '--dereference-recursive') recursive = true;
       if (name === '--regexp' || name === '--file') patternGiven = true;
+      if (name === '--exclude-dir') noteExclude(word.includes('=') ? word.slice(word.indexOf('=') + 1) : words[i + 1] ?? '');
       if (GREP_VALUE_LONG.has(name) && !word.includes('=')) i++;
       continue;
     }
@@ -846,20 +886,26 @@ function recursiveGrepIsSafe(segment, cwd, vars) {
   }
   if (!recursive) return null;
   const paths = patternGiven ? operands : operands.slice(1);
-  if (!paths.length) return false;
-  return paths.every((path) => grepPathIsSafe(path, cwd, vars));
+  // No path walks the cwd — the same as `.`.
+  const verdicts = (paths.length ? paths : ['.']).map((path) => grepPathVerdict(path, cwd, vars));
+  if (verdicts.includes('big')) return { verdict: 'big' };
+  const missing = GREP_ROOT_EXCLUDES.filter((name) => !excluded.has(name));
+  if (!verdicts.includes('fix') || !missing.length) return { verdict: 'ok' };
+  return { verdict: 'fix', missing };
 }
 
 /**
  * Walk the segments in order, as the shell would: a `cd` moves the cwd (to unknown when its target
  * cannot be resolved), a `NAME=value` / `export NAME=value` defines a variable, and every recursive
- * grep is judged where it actually runs. True when one of them walks a big tree.
+ * grep is judged where it actually runs. `big` when one walks a big tree; `fixes` lists, by segment
+ * index, the root greps that only lack excludes.
  */
-function someRecursiveGrepWalksABigTree(segments, startCwd) {
+function recursiveGrepVerdicts(segments, startCwd) {
   const vars = { HOME: homedir().replace(/\\/g, '/') };
   let cwd = startCwd ? grepPathParts(String(startCwd)) : null;
   if (cwd && !cwd.abs) cwd = null;
-  for (const segment of segments) {
+  const fixes = [];
+  for (const [index, segment] of segments.entries()) {
     const words = shellWords(segment.replace(/\)+\s*$/, ''));
     const head = words[0] === 'export' ? words.slice(1) : words;
     for (const word of head) {
@@ -875,9 +921,71 @@ function someRecursiveGrepWalksABigTree(segments, startCwd) {
       cwd = !parts ? null : parts.abs ? grepResolve({ ...parts, parts: [] }, parts) : cwd ? grepResolve(cwd, parts) : null;
       continue;
     }
-    if (recursiveGrepIsSafe(segment, cwd, vars) === false) return true;
+    const result = recursiveGrepVerdict(segment, cwd, vars);
+    if (result?.verdict === 'big') return { big: true, fixes };
+    if (result?.verdict === 'fix') fixes.push({ index, missing: result.missing });
   }
+  return { big: false, fixes };
+}
+
+/** The commands a rewritten grep may run beside — none of them writes, deletes or sends anything. */
+const GREP_READ_ONLY_COMMANDS = new Set([
+  'grep', 'egrep', 'fgrep', 'head', 'tail', 'sort', 'uniq', 'wc', 'cut', 'tr', 'cd', 'echo', 'ls', 'cat',
+  'printf', 'pwd', 'basename', 'dirname', 'true', 'date', 'stat', 'du', 'diff', 'cmp', 'realpath', 'nl', 'jq',
+]);
+/** git subcommands that only read — and even these lose the pass with an `--output` file. */
+const GREP_READ_ONLY_GIT = new Set([
+  'log', 'show', 'status', 'diff', 'grep', 'ls-files', 'ls-tree', 'rev-parse', 'blame', 'merge-base',
+  'cat-file', 'describe', 'shortlog', 'rev-list',
+]);
+
+/** One segment's words run a command that cannot write, delete or send anything. */
+function wordsAreReadOnly(words) {
+  if (GREP_READ_ONLY_COMMANDS.has(words[0])) return true;
+  // `sed -n '296,312p' f` reads; `-i`, or a `w`/`W`/`e` command in the script, writes or runs.
+  if (words[0] === 'sed') {
+    return words.slice(1).every((word) =>
+      word.startsWith('-') ? !/^-[a-zA-Z]*i|^--in-place/.test(word) : !/(?:^|[\s;{}\d,$/])[wWe](?:\s|$)/.test(word));
+  }
+  if (words[0] === 'git') return GREP_READ_ONLY_GIT.has(words[1]) && !words.some((word) => word.startsWith('--output'));
   return false;
+}
+
+/**
+ * True when EVERY segment runs a read-only command and nothing redirects into a file — so allowing
+ * the rewritten command outright approves nothing the auto-mode classifier would have weighed.
+ */
+function commandIsReadOnly(cmd) {
+  if (/[`]|<<|<\(|>\(/.test(cmd)) return false;
+  const segments = commandSegments(cmd.replace(/(\d*)>&\d/g, '$1>/dev/null'));
+  return segments.every((segment) => {
+    const words = shellWords(segment.replace(/\)+\s*$/, ''));
+    if (!words.length) return true;
+    if (!wordsAreReadOnly(words)) return false;
+    return words.every((word, i) => {
+      if (!/^\d*>>?/.test(word)) return true;
+      const target = word.replace(/^\d*>>?/, '') || words[i + 1];
+      return target === '/dev/null';
+    });
+  });
+}
+
+/** The command with each fixable grep given the excludes it lacks, right after its `grep` word. */
+function grepWithExcludes(cmd, segments, fixes) {
+  const starts = [];
+  let pos = 0;
+  for (const segment of segments) {
+    starts.push(pos);
+    pos += segment.length + 1; // commandSegments splits at exactly one separator character
+  }
+  let out = cmd;
+  for (const { index, missing } of [...fixes].sort((a, b) => b.index - a.index)) {
+    const head = /^\s*(?:e|f)?grep(?=\s|$)/.exec(segments[index]);
+    if (!head) return null;
+    const at = starts[index] + head[0].length;
+    out = out.slice(0, at) + missing.map((name) => ` --exclude-dir=${name}`).join('') + out.slice(at);
+  }
+  return out;
 }
 
 try {
@@ -893,17 +1001,44 @@ try {
   // it runs, is a big tree (see GREP_BIG_LAST_SEGMENT). A quoted mention is data, not a command: the
   // segments are split quote-aware, with heredoc and here-string bodies removed first.
   // `git grep` and `rg` are NOT matched (git grep honours .gitignore; rg isn't grep).
-  const grepSegments = commandSegments(withoutHereStringBodies(withoutHeredocBodies(cmd)));
-  if (someRecursiveGrepWalksABigTree(grepSegments, input?.cwd ?? process.cwd()) || /\balias\s+grep=/.test(cmd)) {
+  //
+  // A grep of a repo or worktree root (`.`, no path) or its `.claude` is NOT refused (2026-10-22):
+  // with GREP_ROOT_EXCLUDES it takes seconds, so the hook adds the ones it lacks. When every segment
+  // is read-only the rewritten command is allowed as is; otherwise it is refused WITH the rewritten
+  // command, so the retry is one copy away and the classifier still sees the rest.
+  const strippedForGrep = withoutHereStringBodies(withoutHeredocBodies(cmd));
+  const grepSegments = commandSegments(strippedForGrep);
+  const grepVerdicts = recursiveGrepVerdicts(grepSegments, input?.cwd ?? process.cwd());
+  if (grepVerdicts.big || /\balias\s+grep=/.test(cmd)) {
     deny(
-      'Recursive grep hangs from a repo or worktree root (`.`, `..`, no path), `node_modules`, ' +
-        '`.claude` or `.claude/worktrees`, the workspace folder, a drive/home/Temp root or ~/.claude/projects ' +
-        '(~346k path entries get scanned; 10-40s+). A recursive grep over NAMED folders or files is fine — ' +
-        '`grep -rn "x" src .claude/rules docs/*.md package.json`, an absolute path to a small folder, ' +
-        'or a variable set earlier in the same command. ' +
+      'Recursive grep hangs from a drive, home or Temp root, the workspace folder, `node_modules`, ' +
+        '`.claude/worktrees`, ~/.claude or ~/.claude/projects, or a path it cannot place ' +
+        '(an unknown variable, `$(…)`, `.`/`..` under an unknown cwd) — up to ~346k path entries, 10-40s+. ' +
+        'A recursive grep over NAMED folders or files is fine — `grep -rn "x" src .claude/rules docs/*.md ' +
+        'package.json`, an absolute path to a small folder, or a variable set earlier in the same command — ' +
+        'and so is a repo or worktree root (`.`) or its `.claude` with ' +
+        GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ') + ' (this hook adds them itself). ' +
         'For a whole tree use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
     );
+  }
+  let grepRewrite = null;
+  if (grepVerdicts.fixes.length) {
+    const rewritten =
+      input.tool_name === 'Bash' && strippedForGrep === cmd ? grepWithExcludes(cmd, grepSegments, grepVerdicts.fixes) : null;
+    const flags = GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ');
+    if (rewritten && commandIsReadOnly(cmd)) {
+      grepRewrite = rewritten;
+    } else {
+      deny(
+        'Recursive grep of a repo or worktree root (`.`, no path) or its `.claude` walks node_modules, .git ' +
+          'and the worktrees (~346k path entries, 10-40s+) — but with ' + flags + ' it takes about 3.5 s. ' +
+          (rewritten
+            ? 'Run it again with them added:\n' + rewritten
+            : 'Add those flags to each such grep and run it again.') +
+          '\nA grep of NAMED folders needs none of this, and `git grep` or the Grep tool honour .gitignore.',
+      );
+    }
   }
 
   // C14 — a FOREGROUND loop polling remote-check's output (2026-10-08 performance recovery, P0-3).
@@ -1993,6 +2128,24 @@ try {
         }
       }
     }
+  }
+
+  // C1's rewrite, emitted last so every other clause above has had its say first. Only read-only
+  // commands get here, so the removal logging below has nothing to log.
+  if (grepRewrite) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason:
+            'bash-guard C1 added ' + GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ') +
+            ' to a recursive grep of a repo root, so it takes seconds instead of walking ~346k path entries.',
+          updatedInput: { ...input.tool_input, command: grepRewrite },
+        },
+      }),
+    );
+    process.exit(0);
   }
 
   // `rd`/`ri`/`del`/`erase` are PowerShell's Remove-Item aliases (and cmd's own verbs).
