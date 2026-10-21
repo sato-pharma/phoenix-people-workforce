@@ -135,7 +135,7 @@ function aDayStartAloneProvesNothing(): void {
   assert.equal(
     phoenixWorkEvidenceProvesWorkedDay(evidence({ date: "2026-10-07", dayActivities: ["Meeting"], hrId: "MR-0101" })),
     true,
-    "a recorded day activity proves the day — all seven kinds are working time, and leave is not among them",
+    "a recorded day activity proves the day — all nine kinds are working time, and leave is not among them",
   );
 }
 

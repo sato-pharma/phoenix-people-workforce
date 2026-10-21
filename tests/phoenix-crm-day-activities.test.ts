@@ -38,8 +38,8 @@ function sql(path: string = MIGRATION): string {
   return stripSqlComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
 }
 
-/** The newest migration to restate the activity-type check: "Sales day" joined it on 2026-09-29. */
-const TYPE_CHECK_MIGRATION = "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql";
+/** The newest migration to restate the activity-type check: RTD and Group meeting joined it on 2026-10-21. */
+const TYPE_CHECK_MIGRATION = "supabase/migrations/20261021120000_phoenix_crm_day_activities_rtd_and_group_meeting.sql";
 
 export function runPhoenixCrmDayActivitiesTests(): void {
   // ── The vocabulary is Phoenix's own, and holds no leave ─────────────────────────────────────────
@@ -47,7 +47,7 @@ export function runPhoenixCrmDayActivitiesTests(): void {
     const keys = PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => entry.key);
     // The owner's order on the visit's first screen (2026-09-29): his four, then the other three — and
     // "Sales day" is new.
-    assert.deepEqual(keys, ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel"]);
+    assert.deepEqual(keys, ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel", "rtd", "group_meeting"]);
 
     for (const banned of ["leave", "annual", "vacation", "sick", "casual", "absent", "holiday"]) {
       assert.equal(keys.includes(banned as never), false, `${banned} is HR's, not the CRM's — one leave record, not two`);
@@ -57,6 +57,26 @@ export function runPhoenixCrmDayActivitiesTests(): void {
     assert.ok(check, "the column constrains its own values");
     for (const key of keys) assert.ok(check[1].includes(`'${key}'`), `${key} is allowed by the check constraint`);
     assert.equal(/leave|vacation|sick/i.test(check[1]), false, "no leave value reaches the database either");
+  }
+
+  // ── RTD and Group meeting: recordable AND plannable, in the database too ────────────────────────
+  //
+  // Owner, 2026-10-21: "add RTD and Group meeting" to Record the day, then "to the weekly plan too". One list
+  // feeds both, so every database door that names the kinds has to admit them or a save is refused.
+  {
+    assert.equal(dayActivityLabel("rtd"), "RTD");
+    assert.equal(dayActivityLabel("group_meeting"), "Group meeting");
+    assert.equal(isDayActivity("rtd"), true);
+    assert.equal(parseDayActivityDraft({ activityType: "group_meeting" }).ok, true);
+    assert.equal(parseDayActivityDraft({ activityType: "rtd" }).ok, true);
+
+    const dayMigration = sql("supabase/migrations/20261021120000_phoenix_crm_day_activities_rtd_and_group_meeting.sql");
+    const planMigration = sql("supabase/migrations/20261021130000_phoenix_crm_plan_activities_rtd_and_group_meeting.sql");
+    const lists = [...dayMigration.matchAll(/activity_type in \(([^)]+)\)/g), ...planMigration.matchAll(/activity_type in \(([^)]+)\)/g)];
+    assert.ok(lists.length >= 3, "the recorded day, the rep plan and the manager plan restate their checks");
+    for (const list of lists) assert.ok(list[1].includes("'rtd'") && list[1].includes("'group_meeting'"), "every restated check admits both");
+    assert.equal((planMigration.match(/(?:x\.activity_type|v_activity) not in \([^)]*'rtd', 'group_meeting'/g) ?? []).length, 2, "both plan save functions accept them");
+    assert.equal(/crm_visits_unified/.test(dayMigration + planMigration), false, "a record only: no worked-day code is given to either");
   }
 
   // ── An unknown kind is REFUSED, not coerced ─────────────────────────────────────────────────────

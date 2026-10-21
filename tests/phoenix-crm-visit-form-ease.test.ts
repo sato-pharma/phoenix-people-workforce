@@ -269,7 +269,7 @@ export function runPhoenixCrmVisitFormEaseTests(): void {
     const start = source(START);
     const visits = start.indexOf('<CrmBlock title="A customer visit">');
     const day = start.indexOf('title="Or record the day as"');
-    assert.ok(visits !== -1 && day > visits, "the two visit targets lead, and the seven day activities follow under their own heading");
+    assert.ok(visits !== -1 && day > visits, "the two visit targets lead, and the nine day activities follow under their own heading");
     assert.ok(start.indexOf('label="Planned visit"') > visits && start.indexOf('label="Planned visit"') < day, "Planned is in the visit group");
     assert.ok(start.indexOf("PHOENIX_CRM_DAY_ACTIVITIES.map") > day, "and the activities in theirs");
   }

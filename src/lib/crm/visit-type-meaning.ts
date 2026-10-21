@@ -21,6 +21,8 @@
  *   - 2026-08-21: the undocumented codes -7, -19, -20, -21, -30 are working time (CP). Their
  *     meanings were owner-confirmed 2026-07-14 from the reps' comment text; see
  *     src/lib/crm/visit-types.ts for the labels.
+ *   - 2026-10-21: RTD, recorded in Phoenix CRM, is working time under its own code -22 (the vendor never
+ *     sends it); a recorded Group meeting is served under the vendor's own Group Meeting (-2).
  *   - 2026-09-17: -16 is Training, a working day (CP). The vendor labels it "Unknown"; it first
  *     appeared on 2026-09-12 and every one of its first 54 visits (8 reps, to 2026-09-17) was
  *     commented "Training".
@@ -61,6 +63,7 @@ const CRM_VISIT_TYPE_MEANINGS: ReadonlyMap<number, CrmVisitTypeMeaning> = new Ma
   [-19, "CP"], // Meeting — undocumented twin of -11, same activity (owner ruling 2026-09-21)
   [-20, "CP"], // Admin Work
   [-21, "CP"], // Business Review (BRM)
+  [-22, "CP"], // RTD — a Phoenix-side code, never sent by the vendor (owner ruling 2026-10-21)
   [-30, "CP"], // Unlabelled field visit
 ]);
 

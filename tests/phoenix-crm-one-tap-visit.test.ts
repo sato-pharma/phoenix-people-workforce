@@ -201,7 +201,7 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     // The nine first choices, and ONE write of the day's activity.
     const start = source("src/components/phoenix-crm/visit-start.tsx");
     assert.ok(start.includes('label="Planned visit"') && start.includes('label="Unplanned visit"'), "Planned and Unplanned lead");
-    assert.ok(start.includes("PHOENIX_CRM_DAY_ACTIVITIES.map"), "then the seven day activities");
+    assert.ok(start.includes("PHOENIX_CRM_DAY_ACTIVITIES.map"), "then the nine day activities");
     assert.ok(start.includes('crmPost<DayActivitySaved>("/api/phoenix-crm/day-activities"'), "saved through the existing day-activity route");
     const tab = source("src/components/phoenix-crm/visits-tab.tsx");
     assert.ok(tab.includes("saveDayActivity(view.territory.seatId, view.isTest, choice)"), "the day list's own block writes through the same one save");

@@ -3,8 +3,8 @@
 /**
  * Phoenix CRM — the first screen of Add visit: what is he recording?
  *
- * Owner, 2026-09-29: the first choice is one of nine — Planned · Unplanned · Meeting · Conference ·
- * Health day · Sales day · Training · Admin work · Travel. Big targets, one tap each (Golden Rule #1,
+ * Owner, 2026-09-29: the first choice is one of eleven — Planned · Unplanned · Meeting · Conference ·
+ * Health day · Sales day · Training · Admin work · Travel · RTD · Group meeting. Big targets, one tap each (Golden Rule #1,
  * the EASY half): he is standing at a door with the phone in one hand.
  *
  *   - Planned offers only the customers on today's SENT plan.
@@ -14,7 +14,7 @@
  *   - Pharmacy (owner, 2026-10-03: "It is visit is logged normally") offers the pharmacies on his list
  *     and goes straight to the form: no plan, no reason, no approval and no validation, and it counts
  *     the moment he logs it.
- *   - The seven others are the day's ACTIVITY, a record only: it moves no call rate, no coverage and no
+ *   - The nine others are the day's ACTIVITY, a record only: it moves no call rate, no coverage and no
  *     plan-against-actual (owner, 2026-09-26). They go through the ONE day-activity save below, which the
  *     day screen's own block uses too — there is no second way to write a day.
  */
@@ -27,12 +27,14 @@ import {
   GraduationCap,
   HeartPulse,
   ListX,
+  MessagesSquare,
   Pill,
   Presentation,
   Route,
   ShoppingBag,
   UserSearch,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -68,6 +70,8 @@ const ACTIVITY_ICONS: Record<PhoenixCrmDayActivity, LucideIcon> = {
   training: GraduationCap,
   admin_work: ClipboardList,
   travel: Car,
+  rtd: MessagesSquare,
+  group_meeting: UsersRound,
 };
 
 /** The owner's own word on this screen ("Travel"); the record keeps the module's label. */
