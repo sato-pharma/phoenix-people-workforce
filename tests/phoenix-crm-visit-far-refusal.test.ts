@@ -9,6 +9,7 @@ import {
   VISIT_AWAY_FROM_PLACE,
   VISIT_FAR_FROM_PLACE_DEFAULT_METERS,
   validatedPlaceAnchor,
+  validatedPlaceReadings,
   visitAwayFromValidatedPlace,
   type ValidatedPlaceReading,
 } from "../src/lib/phoenix-crm/entry-rules.ts";
@@ -28,6 +29,9 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 // What this pins:
 //   · the rule — the nearest validated place decides, the photograph is the anchor when its reading is
 //     sharp, the place's own point when it is not, and no place means nothing to be away from;
+//   · 🔴 and within a place the NEARER of its two readings — the photograph's anchor and the validated pin
+//     — decides (owner, 2026-10-21), because a ±200 m photograph 327 m from the pin refused a rep 7-91 m
+//     from the pin 26 times in one afternoon;
 //   · the door — only the REP's own save is asked, and it is asked before the recording is claimed and
 //     before anything is written, with the refused attempt kept for the SFE's board;
 //   · the words — the rep reads about his own work, never the line, his metres or a check.
@@ -95,13 +99,51 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   assert.equal(verdict(DOOR, [blurredPhoto]).refused, false, "🔴 so an honest rep at the door is never refused against a blurred photograph");
   const sharpPhotoAway = place({ lat: north(1_000).lat, photoAccuracyMeters: PLACE_MAX_ACCURACY_METERS });
   assert.deepEqual(validatedPlaceAnchor(sharpPhotoAway), { lat: DOOR.lat, lon: DOOR.lon }, "a photograph reading within the place's line IS the anchor, over the point");
-  assert.equal(verdict(north(1_000), [sharpPhotoAway]).refused, true, "and the visit is measured against the photograph, not the point");
+  assert.equal(verdict(DOOR, [sharpPhotoAway]).refused, false, "a visit at the photograph is accepted, though the pin sits a kilometre off");
+  assert.equal(verdict(north(1_000), [sharpPhotoAway]).refused, false, "🔴 and one at the validated pin is accepted too — the NEARER reading decides (owner, 2026-10-21)");
+  assert.equal(verdict(north(2_000), [sharpPhotoAway]).refused, true, "while one a kilometre past the pin and two from the photograph is still refused");
   const unknownAccuracy = place({ lat: north(1_000).lat, photoAccuracyMeters: null });
   assert.deepEqual(validatedPlaceAnchor(unknownAccuracy), { lat: DOOR.lat, lon: DOOR.lon }, "a photograph whose phone reported no accuracy still anchors, as every door in this module takes an unknown accuracy");
   const noPhotoFix = place({ photoLat: null, photoLon: null, photoAccuracyMeters: null, lat: north(20).lat });
   assert.deepEqual(validatedPlaceAnchor(noPhotoFix), { lat: north(20).lat, lon: DOOR.lon }, "a place whose photograph carries no reading — a seat in a polyclinic — anchors on its point");
   assert.equal(validatedPlaceAnchor(place({ lat: Number.NaN, lon: Number.NaN, photoLat: null, photoLon: null })), null, "and a place with no usable reading at all anchors nothing");
   assert.equal(verdict(north(5_000), [place({ lat: Number.NaN, lon: Number.NaN, photoLat: null, photoLon: null })]).refused, false, "which refuses nobody");
+
+  // 🔴 THE NEARER OF THE TWO READINGS DECIDES (owner, 2026-10-21). Sehet Behteem Hospital: the photograph
+  // read ±200 m — inside the 250 m "sharp" line — and sat 327 m from the pin the rep captured at the door
+  // (±7.9 m). A rep standing 7-91 m from that pin was measured 324-401 m from the photograph and refused
+  // 26 times in an afternoon, three days after two visits there had read 52-54 m from the pin.
+  const hospital = place({ lat: north(327).lat, photoAccuracyMeters: 200 }); // the photograph is at DOOR; the pin is 327 m north of it
+  assert.deepEqual(validatedPlaceAnchor(hospital), { lat: DOOR.lat, lon: DOOR.lon }, "the ±200 m photograph is still the anchor by the sharpness line");
+  assert.equal(verdict(north(327), [hospital]).refused, false, "🔴 a rep AT the validated pin is accepted, though the photograph is 327 m away");
+  const hospitalMetres = verdict(north(327 + 91), [hospital]);
+  assert.equal(hospitalMetres.refused, false, "🔴 and so is one 91 m past the pin — the furthest he stood that afternoon — though he is 418 m from the photograph");
+  assert.ok(hospitalMetres.metres !== null && Math.abs(hospitalMetres.metres - 91) <= 1, `the verdict carries the metres to the NEARER reading (${hospitalMetres.metres})`);
+  assert.equal(verdict(DOOR, [hospital]).refused, false, "the photograph still counts as a reading: a rep at the photograph is accepted too");
+  assert.equal(verdict(north(163), [hospital]).refused, false, "between the two, within the line of both, is accepted");
+  const pastBoth = verdict(north(327 + 310), [hospital]);
+  assert.equal(pastBoth.refused, true, "🔴 310 m past the pin and 637 m from the photograph is still refused — the line is not widened");
+  assert.ok(pastBoth.metres !== null && Math.abs(pastBoth.metres - 310) <= 1, `and the refusal carries the NEARER reading's metres, not the photograph's (${pastBoth.metres})`);
+  assert.equal(verdict(north(327 + 299), [hospital]).refused, false, "299 m past the pin is still inside its line");
+
+  // The readings a visit is measured against, place by place.
+  assert.equal(validatedPlaceReadings(hospital).length, 2, "a sharp photograph that disagrees with the pin is one reading and the pin another");
+  assert.equal(validatedPlaceReadings(place()).length, 1, "a photograph taken at the very point is ONE reading, never counted twice");
+  assert.deepEqual(validatedPlaceReadings(blurredPhoto), [{ lat: DOOR.lat, lon: DOOR.lon }], "🔴 a photograph reading wider than the place's line is not a reading at all: the pin alone stands");
+  assert.deepEqual(validatedPlaceReadings(noPhotoFix), [{ lat: north(20).lat, lon: DOOR.lon }], "a place whose photograph carries no reading has its point and nothing else");
+  assert.deepEqual(validatedPlaceReadings(place({ lat: Number.NaN, lon: Number.NaN, photoLat: null, photoLon: null })), [], "and a place with no usable reading has none");
+  const photoOnly = validatedPlaceReadings(place({ lat: Number.NaN, lon: Number.NaN }));
+  assert.deepEqual(photoOnly, [{ lat: DOOR.lat, lon: DOOR.lon }], "a place whose point is unusable still has its sharp photograph");
+  const twoDoors = [place({ id: "across-town", lat: north(8_000).lat, photoLat: north(8_000).lat }), hospital];
+  assert.equal(verdict(north(327), twoDoors).placeId, "p1", "the nearest PLACE still decides, and the verdict names it");
+  assert.equal(verdict(north(327), twoDoors).refused, false, "with two places, the nearer reading of the nearer place is what counts");
+
+  // 🔴 The rule is ONE source line: the verdict walks the place's readings. A refactor back to the photograph
+  // alone would pass every behaviour above for a place whose photograph and pin agree, and fail only here.
+  const entryRulesSource = stripComments(read("src/lib/phoenix-crm/entry-rules.ts"));
+  const verdictSource = functionBody(entryRulesSource, /export function visitAwayFromValidatedPlace\(/);
+  assert.match(verdictSource, /for \(const reading of validatedPlaceReadings\(place\)\)/, "the verdict measures against every reading of the place, the pin included");
+  assert.doesNotMatch(verdictSource, /validatedPlaceAnchor\(/, "and never against the photograph's anchor alone");
 
   // The line is the module's own setting, with the owner's 300 m behind anything that is not a distance.
   assert.equal(VISIT_FAR_FROM_PLACE_DEFAULT_METERS, 300, "the owner's maximum");

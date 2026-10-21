@@ -3447,7 +3447,8 @@ photograph detector. The visit saved, counted, and the rep was told nothing.
 `visitAwayFromValidatedPlace` (`src/lib/phoenix-crm/entry-rules.ts`) on the REP's own save and refuses it
 when the reading is more than the line from every validated place of that customer on that seat.
 
-- **The anchor is the photograph** — the reading the shutter took at the door — **when it is sharp**:
+- **The anchor is the photograph** (one of TWO readings since 2026-10-21 — the nearer of it and the pin
+  decides; see the amendment below) — the reading the shutter took at the door — **when it is sharp**:
   within the place's own 250 m line, or with no accuracy reported. Since 2026-10-11 a place validates on
   its pin alone, because iPhone Safari hands the camera an approximate position (650-2,000 m) while the
   pin reads 11-30 m; measuring against such a photograph would refuse an honest rep at the door for good.
@@ -3490,6 +3491,35 @@ were logged more than 300 m from the validated photo, 38 of them over a kilometr
 customer-seats — about seven a day that will now be refused until logged at the place.
 
 Pinned by `tests/phoenix-crm-visit-far-refusal.test.ts`.
+
+### Amendment, 2026-10-21 — the NEARER of the photograph and the pin decides
+
+**What happened.** A medical rep was refused 26 times between 12:07 and 14:38 Cairo trying to log a planned
+visit at Sehet Behteem Hospital (Anti-Infective). His own GPS read ±3-11 m and sat **7-91 m** from the
+place's validated pin the whole time; the refusal measured him **324-401 m** from the photograph (line 300 m,
+so 24-101 m over it). The photograph's own reading was ±200 m — inside the 250 m "sharp" line, so it
+anchored — and sat 327 m from the pin captured at the door (±7.9 m). His two earlier visits there (13 and
+15 October, before the rule) had read 52-54 m from the pin and flagged ok: three separate days at the pin.
+
+**Why moving the place could not fix it.** `phoenix_crm_move_place` rewrites the place's point and never
+the photograph's reading, and the photograph outranked the point, so a move changed nothing.
+
+**His ruling, picked from three options the same afternoon:** a visit passes if it is within the line of
+**either** the photograph's anchor **or** the place's own validated pin — the nearer decides
+(`validatedPlaceReadings`, `entry-rules.ts`). The other options — keep the photograph as the only anchor
+but require it to be ±100 m or better, or leave the rule and have the Super Admin record each blocked visit
+by hand — were declined; never re-propose either.
+
+- A photograph reading wider than the place's 250 m line is still not a reading: the pin alone stands.
+- The line stays `visit_far_meters` (300 m) and is never widened by the photograph's accuracy circle or the
+  visit's own radius.
+- **The refused metres are now the NEARER reading's**, so the SFE board's "logged N m away from this
+  customer's validated photo" sentence can name the pin's distance; the wording was left as it was.
+- Measured the same day on production: 72 `far_from_place` refusals since 20 October across 10 reps and 13
+  customers; the 26 within 150 m of a pin were all this one rep at this one hospital, and the other 46 sat
+  further out. Of 2,720 places anchored on a photograph, 2,712 carry one within 100 m of the pin; 8 sit
+  104 m or more apart (this hospital 327 m, one other doctor's place 10,070 m — a data conflict for the
+  Place checks board, which the nearer-reading rule does not settle: it accepts either point).
 
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
