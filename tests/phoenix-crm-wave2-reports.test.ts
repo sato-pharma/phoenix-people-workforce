@@ -7,7 +7,14 @@ import {
   frequencyGradeTarget,
 } from "../src/lib/phoenix-crm/customer-frequency.ts";
 import { dayDetailCounts } from "../src/lib/phoenix-crm/day-detail.ts";
-import { buildTeamCalendar, dayShape, monthDays, teamCalendarTotals } from "../src/lib/phoenix-crm/team-calendar.ts";
+import {
+  buildTeamCalendar,
+  dayShape,
+  monthDays,
+  productManagerOfRowKey,
+  productManagerRowKey,
+  teamCalendarTotals,
+} from "../src/lib/phoenix-crm/team-calendar.ts";
 import { buildTrackingSheet, spacingNote } from "../src/lib/phoenix-crm/tracking-sheet.ts";
 import { readsCalendar, readsTeamReports, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -200,7 +207,11 @@ export function runPhoenixCrmWave2ReportTests(): void {
     );
     assert.match(service, /countsAsPlannersVisitWithRep\(visit, hrId\)/, "his ride-along is the visit naming him in his own slot");
     assert.match(service, /"id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id, product_manager_hr_id"/, "and that slot is read");
-    assert.match(service, /return `product-manager:\$\{hrId\}`;/, "his row is keyed by him, never by a seat");
+    assert.equal(productManagerRowKey("B-155"), "product-manager:B-155", "his row is keyed by him, never by a seat");
+    assert.equal(productManagerOfRowKey("product-manager:B-155"), "B-155", "and the key reads back to him, for his day page");
+    assert.equal(productManagerOfRowKey("4b1c2f0e-0000-4000-8000-000000000000"), null, "a seat id names no product manager");
+    assert.equal(productManagerOfRowKey("product-manager:"), null, "an empty key names nobody");
+    assert.match(service, /seatId: productManagerRowKey\(manager\.hrId\),/, "the calendar builds his row on that one key");
     assert.match(service, /seatless: true,/, "and marked as no seat");
     assert.match(service, /buildTeamCalendar\(month, \[\.\.\.managerPeople, \.\.\.productManagerPeople, \.\.\.people\]/, "drawn after the seat managers, before the reps");
     // A manager's row never opens a rep's day page — that page is a territory's. Since 2026-10-20 it opens ITS OWN
@@ -208,12 +219,23 @@ export function runPhoenixCrmWave2ReportTests(): void {
     const tab = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
     assert.match(tab, /const page = row\.kind === "manager" \? "manager-day" : "day";/, "a manager's cell links to the manager's own day page, never to a territory page");
     assert.equal((tab.match(/href=\{dayHref\(row, day\.day, test\)\}/g) ?? []).length, 2, "neither the desktop row nor the phone card builds the link any other way");
-    // A product manager's row opens nothing — there is no seat for a page to be opened on (owner, 2026-10-20).
+    // A product manager's worked day opens the manager's day page on his row key (owner, 2026-10-21: "Open a day
+    // page"), which resolves him by the calendar's own rule for his row.
     assert.match(
       tab,
-      /if \(row\.seatless\) return false;\s*if \(row\.kind === "manager"\) return opensTheDay\(day\);/,
-      "a seatless row is never a link, and the check comes before a manager's own",
+      /function cellOpens\([^)]*\): boolean \{\s*if \(row\.kind === "manager"\) return opensTheDay\(day\);/,
+      "a product manager's row is a manager's row: it opens on a worked day",
     );
+    assert.doesNotMatch(tab, /row\.seatless\) return false/, "and no seatless refusal is left in front of it");
+    const managerDay = stripComments(readFileSync("src/lib/phoenix-crm/server/manager-day-detail.ts", "utf8"));
+    assert.match(managerDay, /const productManagerHrId = personKey\(productManagerOfRowKey\(seatId\)\);/, "the manager's page reads the product manager off his row key");
+    assert.match(managerDay, /if \(viewer\.basis !== "all"\) return null;/, "a company reader only, as on the calendar");
+    assert.match(
+      managerDay,
+      /\(await loadScopeProductManagers\(viewer, seats\)\)\.find\(\(manager\) => manager\.hrId === productManagerHrId\)/,
+      "resolved through the calendar's one rule, never a second list",
+    );
+    assert.match(managerDay, /productManagerSlot: subject\.productManager,/, "and his ride-alongs are the visits naming him in his own slot");
   }
 
   // ── The reports' "Manager" filter (owner, 2026-10-20: "when filter by manager u find no manager") ─────────────

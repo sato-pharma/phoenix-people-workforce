@@ -2,7 +2,10 @@ import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { dayDetailCounts, type DayDetailCounts } from "@/lib/phoenix-crm/day-detail";
 import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
+import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
+import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadRepVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadVisitDay, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import { canAccess, type AccessContext } from "@/lib/auth/permissions";
@@ -58,6 +61,15 @@ export type PhoenixCrmDayDetail = VisitDayView &
      * (`territoryForVisitEdit`), so nothing on the screen decides who may.
      */
     editsVisits: boolean;
+    /**
+     * Every visit of the day as the record a manager's day carries — customer, type, half, clock, brick, area,
+     * address, single or double, who came along (owner, 2026-10-21: "everyone's visits in details … exactly as Mina
+     * Farouk"). Drawn as the same plan-against-actual table his day page draws. Read from the countable view, like
+     * the calendar cell; empty when `visitsInFullUnread`.
+     */
+    visitsInFull: ManagerDayVisit[];
+    /** That read failed: said on the page, and the visit cards below it still carry the day. */
+    visitsInFullUnread: boolean;
   };
 
 export async function loadPhoenixCrmDayDetail(
@@ -110,6 +122,26 @@ export async function loadPhoenixCrmDayDetail(
     }
   }
 
+  // The same day, visit by visit, as the record a manager's day page draws (owner, 2026-10-21). Only ever an addition
+  // to the cards below, which still carry the day: a failed read is said, never a reason to lose the page.
+  let visitsInFull: ManagerDayVisit[] = [];
+  let visitsInFullUnread = false;
+  try {
+    visitsInFull = await loadRepVisitDetails({
+      end: day.date,
+      isTest: day.isTest,
+      seatIds: [day.territory.seatId],
+      start: day.date,
+      territoryNameOf: (seatId) => {
+        const territorySeat = viewer.org.seats.get(seatId);
+        return territorySeat ? territoryName(territorySeat) : null;
+      },
+    });
+  } catch (error) {
+    visitsInFullUnread = true;
+    logError("Phoenix CRM day page could not read the visits in full", { error, labels: { event: "phoenix_crm_day_visits_in_full_unread" } });
+  }
+
   const seat = viewer.org.seats.get(day.territory.seatId);
   const missedRecords =
     seat && canEnterMissedRecordOn(viewer, seat, day.isTest) && isMissedRecordDay(day.date, viewer.visitDay)
@@ -127,6 +159,8 @@ export async function loadPhoenixCrmDayDetail(
     pharmacies,
     removesEnteredVisits: canEnterMissedRecords(viewer),
     editsVisits: canEnterMissedRecords(viewer),
+    visitsInFull,
+    visitsInFullUnread,
   };
 }
 

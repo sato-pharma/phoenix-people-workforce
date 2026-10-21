@@ -514,7 +514,10 @@ export {
   loadManagerOwnVisitDetails,
   loadManagerRideAlongDetails,
   loadManagerVisitDetails,
+  // Every rep's visits in full, the same record (owner, 2026-10-21: "everyone, exactly as Mina Farouk").
+  loadRepVisitDetails,
   type ManagerVisitDetailInput,
+  type RepVisitDetailInput,
 } from "@/lib/phoenix-crm/server/manager-visit-details";
 
 /**

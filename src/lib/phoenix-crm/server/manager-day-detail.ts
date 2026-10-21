@@ -5,12 +5,14 @@ import { managerDayFigures, type ManagerDayFigures, type ManagerDayVisit } from 
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
-import { managerChain, managersInScope, territoryName } from "@/lib/phoenix-crm/scope";
+import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
 import { readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadScopeProductManagers } from "@/lib/phoenix-crm/server/scope-product-managers";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { productManagerOfRowKey } from "@/lib/phoenix-crm/team-calendar";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 
 /**
@@ -35,6 +37,11 @@ import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
  *    manager's plan already uses — so this page and the report cannot say two things about one day. A week that was
  *    never sent is not judged (`isManagerPlanSent`); a read that fails is SAID (`planUnread`), never shown as
  *    "no plan".
+ *
+ * 🔴 A LINE'S PRODUCT MANAGER OPENS HERE TOO, ON HIS ROW KEY `product-manager:<hr id>` (owner, 2026-10-21, asked:
+ *    "Open a day page"). He holds no seat, so he is resolved by the calendar's own rule for his row — a company
+ *    reader, `loadScopeProductManagers` over the territories the viewer reads, never in test mode — and his
+ *    ride-alongs are the visits naming him in the product-manager slot (`productManagerSlot`).
  *
  * 🔴 NO LOCATION INTEGRITY, NO DISTANCE, NO FLAG. The page names where the doctor is and whether a pin was
  *    captured; the measured location line is the integrity board's and stays there.
@@ -82,19 +89,15 @@ export async function loadPhoenixCrmManagerDayDetail(
 
   const seats = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const reads = new Set(seats.map((seat) => seat.seatId));
-  const member = managersInScope(viewer.org, viewer.hrId, viewer.basis).find(
-    (candidate) =>
-      !candidate.seat.isOtherPseudoDm &&
-      candidate.seat.seatId === seatId &&
-      seats.some((territory) => territory.path.some((ancestor) => ancestor !== territory.seatId && ancestor === seatId)),
-  );
-  if (!member) throw forbiddenError(REFUSED);
+  const subject = await resolveSubject(viewer, seatId, seats);
+  if (!subject) throw forbiddenError(REFUSED);
 
   const [visits, names] = await Promise.all([
     loadManagerVisitDetails({
       end: date,
       isTest,
-      managerHrIds: [member.hrId],
+      managerHrIds: [subject.hrId],
+      productManagerSlot: subject.productManager,
       start: date,
       territoryNameOf: (territorySeatId) => {
         const seat = viewer.org.seats.get(territorySeatId);
@@ -102,7 +105,7 @@ export async function loadPhoenixCrmManagerDayDetail(
       },
       territorySeatIds: reads,
     }),
-    loadPeopleNames([member.hrId, managerChain(viewer.org, member.seat.seatId)[0]?.hrId]),
+    loadPeopleNames([subject.hrId, subject.aboveHrId]),
   ]);
 
   // Leave is HR's, read through HR's own module and only ever an annotation: losing it must not lose the day,
@@ -110,7 +113,7 @@ export async function loadPhoenixCrmManagerDayDetail(
   let onLeave = false;
   let leaveUnread = false;
   try {
-    onLeave = (await loadApprovedLeaveDays([member.hrId], { from: date, to: date })).length > 0;
+    onLeave = (await loadApprovedLeaveDays([subject.hrId], { from: date, to: date })).length > 0;
   } catch (error) {
     leaveUnread = true;
     logError("Phoenix CRM manager day could not read approved leave", { error, labels: { event: "phoenix_crm_manager_day_leave_unread" } });
@@ -121,7 +124,7 @@ export async function loadPhoenixCrmManagerDayDetail(
   let plan: ManagerDayPlan | null = null;
   let planUnread = false;
   try {
-    const report = (await computeManagerReports(viewer, [member.hrId], fieldWeekStart(date), isTest, names)).get(member.hrId) ?? null;
+    const report = (await computeManagerReports(viewer, [subject.hrId], fieldWeekStart(date), isTest, names)).get(subject.hrId) ?? null;
     plan = {
       halves: (report?.days.find((day) => day.date === date)?.halves ?? []).map((half) => ({ ...half })),
       sent: isManagerPlanSent(report?.status ?? null),
@@ -132,22 +135,67 @@ export async function loadPhoenixCrmManagerDayDetail(
     logError("Phoenix CRM manager day could not read the weekly plan", { error, labels: { event: "phoenix_crm_manager_day_plan_unread" } });
   }
 
-  const above = managerChain(viewer.org, member.seat.seatId)[0]?.hrId ?? null;
+  const above = subject.aboveHrId;
   return {
     date,
     figures: managerDayFigures(visits),
     isTest,
     leaveUnread,
     manager: {
-      name: nameOf(names, member.hrId),
+      name: nameOf(names, subject.hrId),
       reportsTo: above ? nameOf(names, above) : null,
-      seatId: member.seat.seatId,
-      title: [seatTierTitle(member.seat.tier), member.seat.lineName].filter(Boolean).join(" · "),
+      seatId: subject.seatId,
+      title: subject.title,
     },
     onLeave,
     plan,
     planUnread,
     visits,
+  };
+}
+
+/** Whose day the address names: a seat manager, or a line's product manager on his row key. */
+type ManagerDaySubject = { hrId: string; seatId: string; title: string; aboveHrId: string | null; productManager: boolean };
+
+/**
+ * The manager this address may open, or null — exactly the people the team calendar draws a row for. A seat manager
+ * is one `managersInScope` returns above a territory the viewer reads; a product manager is one the calendar gives a
+ * company reader (`loadScopeProductManagers`). A product manager who also holds a seat keeps the seat's page.
+ */
+async function resolveSubject(
+  viewer: PhoenixCrmViewer,
+  seatId: string,
+  seats: ReturnType<typeof testReadSeats>,
+): Promise<ManagerDaySubject | null> {
+  const productManagerHrId = personKey(productManagerOfRowKey(seatId));
+  if (productManagerHrId) {
+    if (viewer.basis !== "all") return null;
+    const holdsSeat = managersInScope(viewer.org, viewer.hrId, viewer.basis).some((candidate) => candidate.hrId === productManagerHrId);
+    if (holdsSeat) return null;
+    const found = (await loadScopeProductManagers(viewer, seats)).find((manager) => manager.hrId === productManagerHrId);
+    if (!found) return null;
+    const roster = viewer.productManagers.find((entry) => personKey(entry.hrId) === found.hrId);
+    return {
+      aboveHrId: personKey(roster?.managerHrId ?? null),
+      hrId: found.hrId,
+      productManager: true,
+      seatId,
+      title: [found.role, found.lineNames.join(" + ")].filter(Boolean).join(" · "),
+    };
+  }
+  const member = managersInScope(viewer.org, viewer.hrId, viewer.basis).find(
+    (candidate) =>
+      !candidate.seat.isOtherPseudoDm &&
+      candidate.seat.seatId === seatId &&
+      seats.some((territory) => territory.path.some((ancestor) => ancestor !== territory.seatId && ancestor === seatId)),
+  );
+  if (!member) return null;
+  return {
+    aboveHrId: managerChain(viewer.org, member.seat.seatId)[0]?.hrId ?? null,
+    hrId: member.hrId,
+    productManager: false,
+    seatId: member.seat.seatId,
+    title: [seatTierTitle(member.seat.tier), member.seat.lineName].filter(Boolean).join(" · "),
   };
 }
 

@@ -18,11 +18,16 @@ import { formatClockMinute } from "@/lib/phoenix-crm/timings";
  *   `ride_along` — a double or chain visit a rep logged naming him (`phoenix_crm_countable_visits`). "AM / PM"
  *                  for it is the customer's LIST, exactly as the rep's own row counts it, and a pharmacy is a
  *                  third list that is never added to either.
+ *   `rep`        — a visit a REP logged himself, on his own day (owner, 2026-10-21: "make everyone's visits appear
+ *                  in details in the private calendar and the Phoenix CRM calendar exactly as Mina Farouk"). The
+ *                  same record, read from the same countable view, so a rep's day and a manager's are one shape;
+ *                  "AM / PM" is the customer's list, as on a ride-along. `managerHrId` then holds the REP — the
+ *                  person whose day it is — whatever the field is called.
  *
  * Pure: no I/O, no permissions. A client component may import it as freely as a server read.
  */
 
-export type ManagerDayVisitSource = "own" | "ride_along";
+export type ManagerDayVisitSource = "own" | "ride_along" | "rep";
 
 export type ManagerDayVisitKind = "single" | "double" | "chain" | "product_manager";
 
@@ -131,7 +136,7 @@ export function managerVisitChipLine(visit: ManagerDayVisit): string {
 
 /** The half a visit is counted in, in words: "AM half" (his own), "PM list" (a rep's list), "Pharmacy" (a pharmacy, counted apart). */
 export function managerVisitHalfLabel(visit: Pick<ManagerDayVisit, "bucket" | "listType" | "source">): string {
-  if (visit.listType === "Pharmacy" && visit.source === "ride_along") return "Pharmacy";
+  if (visit.listType === "Pharmacy" && visit.source !== "own") return "Pharmacy";
   return visit.source === "own" ? `${visit.bucket} half` : `${visit.bucket} list`;
 }
 
@@ -189,6 +194,8 @@ export function groupManagerDayVisits(visits: readonly ManagerDayVisit[]): Map<s
 export type ManagerDayFigures = {
   /** Single visits he logged alone — counted in his own report only. */
   ownSingle: number;
+  /** A rep's own single visits (source `rep`, kind `single`) — his own calls, counted on his own row. */
+  singles: number;
   doubles: number;
   chains: number;
   productManagerVisits: number;
@@ -204,24 +211,25 @@ export type ManagerDayFigures = {
 };
 
 export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDayFigures {
-  const figures: ManagerDayFigures = { am: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, pharmacies: 0, pm: 0, productManagerVisits: 0 };
+  const figures: ManagerDayFigures = { am: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, pharmacies: 0, pm: 0, productManagerVisits: 0, singles: 0 };
   const pharmacyNames = new Set<string>();
   for (const visit of visits) {
     if (visit.source === "own") figures.ownSingle += 1;
     else if (visit.kind === "double") figures.doubles += 1;
     else if (visit.kind === "chain") figures.chains += 1;
     else if (visit.kind === "product_manager") figures.productManagerVisits += 1;
+    else figures.singles += 1;
 
     if (visit.awaitingValidation) {
       figures.awaitingValidation += 1;
       continue;
     }
-    // An own visit is bucketed by its half; a ride-along by the customer's list — through the golden rule's
+    // An own visit is bucketed by its half; a ride-along or a rep's own visit by the customer's list — through the golden rule's
     // own helper, so a pharmacy is never filed among the doctors.
     const bucket = visit.source === "own" ? visit.bucket : visitCountBucketForListType(visit.listType);
     if (bucket === "AM") figures.am += 1;
     else if (bucket === "PM") figures.pm += 1;
-    if (visit.source === "ride_along") {
+    if (visit.source !== "own") {
       for (const name of pharmacyNamesOnVisit(visit.listType, visit.pharmacyName ?? "")) {
         const key = pharmacyNameKey(name);
         if (key) pharmacyNames.add(key);
@@ -239,6 +247,7 @@ export function managerDaySummaryLine(figures: ManagerDayFigures): string {
     if (count > 0) parts.push(`${count} ${count === 1 ? one : many}`);
   };
   add(figures.ownSingle, "own single visit", "own single visits");
+  add(figures.singles, "single visit", "single visits");
   add(figures.doubles, "double visit", "double visits");
   add(figures.chains, "chain visit", "chain visits");
   add(figures.productManagerVisits, "product manager visit", "product manager visits");
