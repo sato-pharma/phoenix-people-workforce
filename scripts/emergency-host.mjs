@@ -120,6 +120,19 @@ export function servedBy(headers) {
   return "unknown";
 }
 
+/**
+ * Has Fly ISSUED a certificate for the domain? `configured` is NOT that: on 2026-10-21 setup read configured=true while
+ * the status said "Awaiting certificates" — the DNS was right, nothing was issued yet. Flipping then sends every user to
+ * a browser security error. Ready means the overall status says so, or a Fly-issued certificate is active with an issue.
+ */
+export function certificateReady(body) {
+  const state = String(body?.status ?? "").trim().toLowerCase();
+  if (["ready", "issued", "active"].includes(state)) return true;
+  return (body?.certificates ?? []).some(
+    (c) => String(c?.source ?? "").toLowerCase() === "fly" && ["active", "ready", "issued"].includes(String(c?.status ?? "").toLowerCase()) && (c?.issued ?? []).length > 0,
+  );
+}
+
 /** Refuse a flip from a state nobody chose, and a flip to where it already points (that is a no-op, said so). */
 export function planFlip({ current, to }) {
   if (!["fly", "railway"].includes(to)) throw new Error(`--to must be fly or railway, not ${to}`);
@@ -298,9 +311,8 @@ async function certificate() {
   }
   for (let i = 0; i < 30; i += 1) {
     const now = await fly(`/apps/${app}/certificates/${DOMAIN}`);
-    const state = String(now.body?.status ?? "").toLowerCase();
-    if (now.body?.configured || ["active", "ready", "issued"].includes(state)) {
-      note(`- certificate for ${DOMAIN}: ${now.body?.status ?? "configured"}`);
+    if (certificateReady(now.body)) {
+      note(`- certificate for ${DOMAIN}: ${now.body?.status ?? "issued"}`);
       return;
     }
     await sleep(10_000);
@@ -333,8 +345,7 @@ async function point(flags) {
   if (to === "fly") {
     // Never send users to a standby that cannot answer for this domain.
     const cert = await fly(`/apps/${app}/certificates/${DOMAIN}`);
-    const state = String(cert.body?.status ?? "").toLowerCase();
-    if (!(cert.body?.configured || ["active", "ready", "issued"].includes(state))) {
+    if (!certificateReady(cert.body)) {
       throw new Error(`The standby has no working certificate for ${DOMAIN} (${cert.body?.status ?? `HTTP ${cert.status}`}). Run the workflow with action = setup first. Nothing was changed.`);
     }
     const standby = await healthz(`https://${flyTarget(app)}`);
