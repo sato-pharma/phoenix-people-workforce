@@ -1133,6 +1133,51 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // guard with prosecdef true and anon EXECUTE false (prosrc md5 e50de77e0a4e0b22103d92a1272c00bd); on
   // staging an ask with no reason raised inside a rolled-back block came back `pending` with a null reason.
   "20261020213000_phoenix_crm_manager_single_visit_day_reason_optional.sql",
+  // Royanoxicam's toll manufacturer moves from Medizen to Egyphar (owner, 2026-10-21: "look the
+  // fctory changed from medizen to egyphar"). The Supabase MCP's apply_migration answered
+  // `declined` on BOTH projects, so both went through the standing route:
+  // `node scripts/apply-sql-file.mjs <file> staging` (cifwmndunmlxjhyjugxa), then production
+  // (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) at about
+  // 01:05 Cairo on 2026-10-21, {"applied":true,"count":1} on each; neither ledger carries this
+  // version. This migration is three UPDATEs and creates no object, so a catalog digest has nothing
+  // to hash — the ROWS are the stronger evidence, and they were read back on production after the
+  // apply: prodplan_locations holds code EGYPHAR / "At the factory (Egyphar)" / "مخزن المصنع —
+  // إيجيفار" and ZERO rows coded MEDIZEN, Royanoxicam's manufacturer_name is "Egyphar", zero
+  // prodplan_materials notes still name Medizen and seven carry "BOM code", and the geometry it must
+  // not have touched is unchanged — mg, 31,000,000 / 155 = 200,000 tablets, 10,000 boxes, 16 linked
+  // materials, 13 formula lines, 0.155000 g a tablet, 31.0000 kg a batch, and the aluminium blister
+  // foil still with NO composition row at all (he answered "leave empty for now"). Staging reads
+  // identically. Purely corrective: no DDL, no grant, no policy.
+  "20261021004800_production_planning_royanoxicam_egyphar.sql",
+  // ── Reconciled 2026-10-21, ~01:10 Cairo, while clearing the --no-grace drift list ─────────────
+  // Both files below were reported "merged to main but not found in schema_migrations" and both are
+  // LIVE on production (ozucdzovmcqvepbozvqf); neither needed applying, only recording here.
+  //
+  // The ATS job-post titles table. This file is the only thing that creates the name, so presence is
+  // not the weak `create or replace` case the header above warns about. Verified on production: the
+  // table exists with all 15 columns in this file's order (id, title, department, headline,
+  // reports_to, employment, location, duties, needs, menu_name, is_active, created_by_hr_id,
+  // updated_by_hr_id, created_at, updated_at), RLS on, the one policy
+  // phx_ats_job_post_titles_service_role, and the FUNCTIONAL unique index this file declares —
+  // `CREATE UNIQUE INDEX ats_job_post_titles_title_key ON public.ats_job_post_titles USING btree
+  // (lower(btrim(title)))` — which a different generation of the file could not have produced. It
+  // already holds 6 rows, so the feature is in use.
+  "20261015223405_ats_job_post_titles.sql",
+  // The HR Operations Specialist seat (role key 'HR Administration'). 🔴 A SESSION ALMOST APPLIED
+  // THIS A SECOND TIME ON A PROBE THAT ASKED THE WRONG QUESTION: it searched the three CHECK
+  // constraints and public.roles for the DISPLAY TITLE "hr_operations_specialist" and got nothing,
+  // because the stored key is 'hr_administration' and the phoenixRole string is 'HR Administration'.
+  // The file is explicitly re-runnable ("a re-run changes nothing") and the re-run was indeed a
+  // no-op, but the reading was wrong and the next session should not repeat it. The ONE decisive
+  // check is that an account already holds the role: `select count(*) from app_auth_users where role
+  // = 'HR Administration'` returned 1, and that row could not exist unless app_auth_users_role_check
+  // already admitted the value. Verified after: all three CHECKs (app_auth_users_role_check,
+  // user_access_profiles_phoenix_role_check, notification_role_policies_roles_check) admit it, the
+  // public.roles lookup row is present, resignation_workflow_alert names the seat exactly ONCE in
+  // its roles array, and the four workflow registry modules name it with no duplication (contracts
+  // twice, which is its two actions, and leave_requests, resignations and
+  // private_calendar_data_disputes once each).
+  "20261020064831_hr_operations_specialist_seat.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
