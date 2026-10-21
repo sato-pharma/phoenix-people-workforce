@@ -1,5 +1,5 @@
 // bash-guard C1: a recursive grep is refused where it hangs, and allowed where it cannot (2026-10-17,
-// turned into a deny-list 2026-10-22).
+// turned into a deny-list 2026-10-22, and a repo root rewritten instead of refused the same day).
 //
 // WHY THIS EXISTS. C1 refused EVERY recursive grep, on the measured ground that one from the repo
 // root walks ~346k path entries (the worktree payload and node_modules) and takes 10-40 s. A /doctor
@@ -9,17 +9,19 @@
 // more only QUOTED `grep -r` inside a search pattern. Every one of them cost the session a round
 // trip, and a guard that is wrong that often is the one that gets switched off.
 //
-// So the clause now refuses what hangs and allows what cannot: a recursive grep passes only when
-// every path is under one of those folders. No path (it walks the cwd), `.`, `..`, an absolute path,
-// a glob or a variable, `node_modules`, `.claude/worktrees` — all still refused, and so is anything
-// the parser cannot place. The allow half is asserted first and as hard as the deny half: it is the
-// half that fails if the narrowing is reverted.
-//
 // 2026-10-22 (owner: "fix"): the seven-folder allow-list was the next false positive — 20-21 Oct it
 // refused ~60 greps that could not hang (`.claude/rules`, `.github/workflows/*.yml`, `docs/*.md`,
 // `package.json`, the memory folder, a scratchpad). The clause now refuses only a BIG TREE, with every
 // path resolved where it runs: the cwd (moved by any `cd`), `~`, and variables set in the command.
-// The new ALLOWED rows below are those refused commands, cut down.
+// The ALLOWED rows below include those refused commands, cut down.
+//
+// 2026-10-22, later (owner: "fix the 7 grep refusals that remain"): the 7 left all searched a repo
+// root (`.`) or its `.claude`. With --exclude-dir for node_modules, .git, .next, worktrees and
+// .codex-worktrees that walk takes ~3.5 s warm over the primary, so the hook now ADDS those flags
+// itself and allows the command — when every segment is read-only. Anything else is refused WITH the
+// rewritten command in the message. `_wt-*` is not one of the flags: GNU grep 3.0 applies
+// --exclude-dir to a folder named on the command line too, and a grep of a worktree root by its
+// absolute path then searched nothing (measured: 0 hits against 1). The REWRITTEN rows pin both.
 //
 // It drives the real hook as a subprocess, exactly as settings.json runs it, because a test that
 // imported the matcher would pass against a hook wired to nothing.
@@ -32,11 +34,14 @@ import { join, resolve } from "node:path";
 
 const guardPath = resolve(".claude/hooks/bash-guard.mjs");
 
-type Decision = { decision: "allow" | "deny"; reason: string };
+type Decision = { decision: "allow" | "deny"; reason: string; command: string | null };
+
+/** The flags the hook adds, in its own order. */
+const EXCLUDES = "--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=worktrees --exclude-dir=.codex-worktrees";
 
 /** The tool payload on stdin, in a folder that is not a git repository, so no other clause answers. */
-function runGuard(cwd: string, command: string, tool = "Bash"): Decision {
-  command = command.replaceAll("<ROOT>", cwd.replace(/\\/g, "/"));
+function runGuard(cwd: string, scratch: string, command: string, tool = "Bash"): Decision {
+  command = command.replaceAll("<ROOT>", cwd.replace(/\\/g, "/")).replaceAll("<SCRATCH>", scratch.replace(/\\/g, "/"));
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   const raw = execFileSync(process.execPath, [guardPath], {
@@ -47,17 +52,21 @@ function runGuard(cwd: string, command: string, tool = "Bash"): Decision {
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 30000,
   });
-  if (!raw.trim()) return { decision: "allow", reason: "" };
+  if (!raw.trim()) return { decision: "allow", reason: "", command: null };
   const start = raw.indexOf('{"hookSpecificOutput"');
   assert.ok(start >= 0, `hook emitted something that is not a decision:\n${raw}`);
   const output = JSON.parse(raw.slice(start)).hookSpecificOutput;
-  return { decision: output.permissionDecision, reason: String(output.permissionDecisionReason ?? "") };
+  return {
+    decision: output.permissionDecision,
+    reason: String(output.permissionDecisionReason ?? ""),
+    command: output.updatedInput ? String(output.updatedInput.command) : null,
+  };
 }
 
 /** A heredoc BODY that documents the rule. Writing it down must not trip it. */
 const HEREDOC_NOTE = ["cat > note.md <<'EOF'", "Never run grep -r from the root:", "grep -rn x .", "EOF"].join("\n");
 
-/** Recursive greps over named folders. Each of these is a shape the 124 refusals contained. */
+/** Recursive greps that cannot hang, passed through untouched. */
 const ALLOWED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "one named folder", command: 'grep -rn "x" src' },
   { what: "several named folders", command: "grep -rln x src app tests" },
@@ -89,6 +98,8 @@ const ALLOWED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "a folder under home", command: "grep -rn x ~/.claude/hooks" },
   { what: "the dot after a cd into a named folder", command: "cd src && grep -rn x ." },
   { what: "the dot after a cd into a scratchpad", command: "cd \"C:/Users/someone/AppData/Local/Temp/claude/x/scratchpad\" && grep -rn x ." },
+  { what: "the root with every exclude already given", command: `grep -rn x ${EXCLUDES} .` },
+  { what: "the root with the excludes in one brace list", command: "grep -rn x --exclude-dir={node_modules,.git,.next,worktrees,.codex-worktrees} ." },
   { what: "a cd first", command: 'cd "F:/Phoenix Workforce/_wt-x" && grep -rn x src' },
   { what: "a pipe onward", command: "grep -rn x src | head -20" },
   { what: "stderr folded in", command: "grep -rn x src 2>&1 | head" },
@@ -104,14 +115,49 @@ const ALLOWED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "a PowerShell here-string documenting it", command: ["$m = @'", "grep -rn x .", "'@", "git commit -m $m"].join("\n"), tool: "PowerShell" },
 ];
 
-/** Recursive greps that walk somewhere they must not. All must be refused. */
+/**
+ * A repo or worktree root, or its `.claude`, in a read-only command: allowed, with the excludes the
+ * grep lacks added right after its `grep` word. `expect` is the exact command that must run.
+ */
+const REWRITTEN: Array<{ what: string; command: string; expect: string }> = [
+  { what: "the dot", command: "grep -rn x .", expect: `grep ${EXCLUDES} -rn x .` },
+  { what: "the dot with ./", command: "grep -rn x ./", expect: `grep ${EXCLUDES} -rn x ./` },
+  { what: "no path at all — it walks the cwd", command: "grep -rn x", expect: `grep ${EXCLUDES} -rn x` },
+  { what: "the long flag with no path", command: "grep --recursive x", expect: `grep ${EXCLUDES} --recursive x` },
+  { what: "-e with no path", command: "grep -r -e x", expect: `grep ${EXCLUDES} -r -e x` },
+  { what: "egrep", command: "egrep -r x", expect: `egrep ${EXCLUDES} -r x` },
+  { what: "fgrep", command: "fgrep -r x .", expect: `fgrep ${EXCLUDES} -r x .` },
+  { what: "a named folder plus the dot", command: "grep -rn x src .", expect: `grep ${EXCLUDES} -rn x src .` },
+  { what: "the .claude folder", command: "grep -rn x .claude", expect: `grep ${EXCLUDES} -rn x .claude` },
+  { what: "only the missing excludes are added", command: "grep -rn x --exclude-dir=node_modules --exclude-dir=.git .", expect: "grep --exclude-dir=.next --exclude-dir=worktrees --exclude-dir=.codex-worktrees -rn x --exclude-dir=node_modules --exclude-dir=.git ." },
+  { what: "no path, behind a cd to a worktree", command: 'cd "F:/Phoenix Workforce/_wt-x" && grep -rl x', expect: `cd "F:/Phoenix Workforce/_wt-x" && grep ${EXCLUDES} -rl x` },
+  { what: "the repo root by absolute path", command: 'grep -rn x "<ROOT>"', expect: `grep ${EXCLUDES} -rn x "<ROOT>"` },
+  { what: "a worktree root by absolute path — no _wt-* exclude, or it would search nothing", command: 'grep -rn x "F:\\Phoenix Workforce\\_wt-foo"', expect: `grep ${EXCLUDES} -rn x "F:\\Phoenix Workforce\\_wt-foo"` },
+  { what: "a folder that holds .git", command: 'grep -rn x "<SCRATCH>/somerepo"', expect: `grep ${EXCLUDES} -rn x "<SCRATCH>/somerepo"` },
+  { what: "the second grep of a pipeline", command: "grep -rn x src | grep -rn y .", expect: `grep -rn x src | grep ${EXCLUDES} -rn y .` },
+  { what: "after a semicolon", command: "echo hi; grep -rn x", expect: `echo hi; grep ${EXCLUDES} -rn x` },
+  { what: "inside a command substitution", command: "echo $(grep -rn x .)", expect: `echo $(grep ${EXCLUDES} -rn x .)` },
+  { what: "stderr folded in, still no path", command: "grep -rn x 2>&1 | head", expect: `grep ${EXCLUDES} -rn x 2>&1 | head` },
+  { what: "an escaped quote does not hide the dot", command: 'grep -rn "a\\"|b" --include=*.ts . 2>/dev/null', expect: `grep ${EXCLUDES} -rn "a\\"|b" --include=*.ts . 2>/dev/null` },
+  { what: "beside a sed that only prints", command: "sed -n '296,312p' src/a.ts && grep -rn x . | head", expect: `sed -n '296,312p' src/a.ts && grep ${EXCLUDES} -rn x . | head` },
+  { what: "beside a git log and an ls", command: 'ls -la *.pdf 2>/dev/null | head; git log --oneline -i --grep="x" | head; grep -ril x . 2>/dev/null', expect: `ls -la *.pdf 2>/dev/null | head; git log --oneline -i --grep="x" | head; grep ${EXCLUDES} -ril x . 2>/dev/null` },
+  { what: "the real refusal that skipped only node_modules", command: 'grep -rn "admin_work\\|dayActivit" --include=*.ts -l . --exclude-dir=node_modules --exclude-dir=.next | head -50; ls supabase/migrations | tail -3', expect: 'grep --exclude-dir=.git --exclude-dir=worktrees --exclude-dir=.codex-worktrees -rn "admin_work\\|dayActivit" --include=*.ts -l . --exclude-dir=node_modules --exclude-dir=.next | head -50; ls supabase/migrations | tail -3' },
+];
+
+/** A fixable root grep beside something that is not read-only: refused, WITH the fixed command. */
+const REFUSED_WITH_FIX: Array<{ what: string; command: string; expect: string | null; tool?: string }> = [
+  { what: "an output file", command: "grep -rln x . > hits.txt", expect: `grep ${EXCLUDES} -rln x . > hits.txt` },
+  { what: "a pipe into a writer", command: "grep -rln x . | xargs sed -i s/a/b/", expect: `grep ${EXCLUDES} -rln x . | xargs sed -i s/a/b/` },
+  { what: "a git command beside it", command: "git fetch -q && grep -rn x .", expect: `git fetch -q && grep ${EXCLUDES} -rn x .` },
+  { what: "a sed that edits in place", command: "grep -rl x . | head; sed -i s/a/b/ src/a.ts", expect: `grep ${EXCLUDES} -rl x . | head; sed -i s/a/b/ src/a.ts` },
+  { what: "a sed script that writes a file", command: "grep -rl x .; sed -n 's/a/b/w out.txt' src/a.ts", expect: `grep ${EXCLUDES} -rl x .; sed -n 's/a/b/w out.txt' src/a.ts` },
+  { what: "a git log into a file", command: "git log --output=log.txt; grep -rn x .", expect: `git log --output=log.txt; grep ${EXCLUDES} -rn x .` },
+  { what: "the PowerShell tool — no rewrite there", command: "grep -rn x .", expect: null, tool: "PowerShell" },
+];
+
+/** Recursive greps that walk somewhere they must not, excludes or not. All must be refused. */
 const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
-  { what: "no path at all — it walks the cwd", command: "grep -rn x" },
-  { what: "no path, behind a cd", command: 'cd "F:/Phoenix Workforce/_wt-x" && grep -rl x' },
-  { what: "the dot", command: "grep -rn x ." },
-  { what: "the dot with ./", command: "grep -rn x ./" },
-  { what: "the parent", command: "grep -rn x .." },
-  { what: "a named folder plus the dot", command: "grep -rn x src ." },
+  { what: "the parent — the workspace folder", command: "grep -rn x .." },
   { what: "a named folder plus the parent", command: "grep -r x src .." },
   { what: "an escape out of a named folder", command: "grep -r x src/../.." },
   { what: "a glob at the root", command: "grep -r x *" },
@@ -119,18 +165,11 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "the home shortcut", command: "grep -R x docs ~" },
   { what: "node_modules", command: "grep -r x node_modules" },
   { what: "the worktrees", command: "grep -rn x .claude/worktrees" },
-  { what: "the .claude folder", command: "grep -rn x .claude" },
   { what: "an escape through a named folder", command: "grep -rn x public/../node_modules" },
   { what: "an absolute path", command: "grep -rn x /f/Phoenix" },
   { what: "a drive path", command: "grep -rn x C:/Users" },
-  { what: "the long flag with no path", command: "grep --recursive x" },
-  { what: "-e with no path", command: "grep -r -e x" },
-  { what: "egrep", command: "egrep -r x" },
-  { what: "fgrep", command: "fgrep -r x ." },
-  { what: "the dot, excluding node_modules — the worktrees are still walked", command: "grep -rn x --exclude-dir=node_modules ." },
   { what: "the dot after a cd to the workspace folder", command: "cd .. && grep -rn x ." },
-  { what: "the repo root by absolute path", command: "grep -rn x \"<ROOT>\"" },
-  { what: "a worktree root by absolute path", command: "grep -rn x \"F:\\Phoenix Workforce\\_wt-foo\"" },
+  { what: "the workspace folder, even with every exclude", command: `grep -rn x ${EXCLUDES} ..` },
   { what: "a cd to an unknown variable, then the dot", command: "cd \"$NOWHERE\" && grep -rn x ." },
   { what: "an unset variable", command: "grep -rn x \"$TEMP\"" },
   { what: "home .claude", command: "grep -rn x ~/.claude" },
@@ -138,14 +177,9 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "Temp", command: "grep -rn x C:/Users/someone/AppData/Local/Temp" },
   { what: "every dot folder", command: "grep -rn x .*" },
   { what: "the pnpm store", command: "grep -rn x node_modules/.pnpm" },
-  { what: "an escaped quote does not hide the dot", command: 'grep -rn "a\\"|b" --include=*.ts . 2>/dev/null' },
   { what: "the build output", command: "grep -r x .next" },
   { what: "a glob above a folder", command: "grep -r x */src" },
-  { what: "one good grep and one bad, in a pipeline", command: "grep -rn x src | grep -rn y ." },
-  { what: "after a semicolon", command: "echo hi; grep -rn x" },
-  { what: "inside a command substitution", command: "echo $(grep -rn x .)" },
-  { what: "stderr folded in, still no path", command: "grep -rn x 2>&1 | head" },
-  { what: "the PowerShell tool", command: "grep -rn x .", tool: "PowerShell" },
+  { what: "a root grep beside a big one", command: "grep -rn x . ; grep -rn y node_modules" },
   { what: "an alias that would make every grep recursive", command: "alias grep='grep -r'" },
   { what: "the alias the old message warned against", command: "alias grep=rg" },
 ];
@@ -153,23 +187,36 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
 export function runBashGrepGuardTests(): void {
   assert.ok(existsSync(guardPath), `bash-guard not found at ${guardPath}`);
   // The cwd is a REPO ROOT inside a workspace folder, as every session here runs, so `.` and `..`
-  // resolve to the trees that hang.
+  // resolve to the trees that hang. `somerepo` is a repo root known only by its `.git`.
   const scratch = mkdtempSync(join(tmpdir(), "phx-grep-guard-"));
   const cwd = join(scratch, "Phoenix Workforce", "phoenix-workforce");
   mkdirSync(cwd, { recursive: true });
+  mkdirSync(join(scratch, "somerepo", ".git"), { recursive: true });
+  const fill = (text: string) => text.replaceAll("<ROOT>", cwd.replace(/\\/g, "/")).replaceAll("<SCRATCH>", scratch.replace(/\\/g, "/"));
   try {
     for (const { what, command, tool } of ALLOWED) {
-      const { decision, reason } = runGuard(cwd, command, tool ?? "Bash");
-      assert.equal(
-        decision,
-        "allow",
-        `C1 must allow a recursive grep over named folders, and a mere mention (${what}):\n  ${command}\n  ${reason}`,
-      );
+      const { decision, reason, command: rewritten } = runGuard(cwd, scratch, command, tool ?? "Bash");
+      assert.equal(decision, "allow", `C1 must allow a recursive grep that cannot hang, and a mere mention (${what}):\n  ${command}\n  ${reason}`);
+      assert.equal(rewritten, null, `C1 must leave a grep that cannot hang untouched (${what}):\n  ${command}\n  → ${rewritten}`);
+    }
+
+    for (const { what, command, expect } of REWRITTEN) {
+      const { decision, reason, command: rewritten } = runGuard(cwd, scratch, command);
+      assert.equal(decision, "allow", `C1 must allow a read-only grep of a repo root, with the excludes added (${what}):\n  ${command}\n  ${reason}`);
+      assert.equal(rewritten, fill(expect), `C1 must add exactly the excludes the grep lacks, after its grep word (${what}):\n  ${command}`);
+    }
+
+    for (const { what, command, expect, tool } of REFUSED_WITH_FIX) {
+      const { decision, reason, command: rewritten } = runGuard(cwd, scratch, command, tool ?? "Bash");
+      assert.equal(decision, "deny", `C1 must not auto-allow a root grep beside a command that is not read-only (${what}):\n  ${command}`);
+      assert.equal(rewritten, null, `a refusal must not carry a rewritten input (${what})`);
+      assert.match(reason, /--exclude-dir=worktrees/, `the refusal must name the excludes (${what}):\n${reason}`);
+      if (expect) assert.ok(reason.includes(fill(expect)), `the refusal must hand back the exact fixed command (${what}):\n${reason}`);
     }
 
     for (const { what, command, tool } of REFUSED) {
-      const { decision, reason } = runGuard(cwd, command, tool ?? "Bash");
-      assert.equal(decision, "deny", `C1 must refuse a recursive grep that walks the root (${what}):\n  ${command}`);
+      const { decision, reason } = runGuard(cwd, scratch, command, tool ?? "Bash");
+      assert.equal(decision, "deny", `C1 must refuse a recursive grep that walks a big tree (${what}):\n  ${command}`);
       assert.match(reason, /Recursive grep hangs/, `the refusal must say why (${what}):\n${reason}`);
       // The refusal has to hand back both the way out and the allowance, or the next session reads
       // it as the old blanket rule and argues with it.
@@ -178,7 +225,7 @@ export function runBashGrepGuardTests(): void {
     }
 
     // Other tools are none of this hook's business.
-    assert.equal(runGuard(cwd, "grep -rn x .", "Read").decision, "allow", "the hook must return silently for any tool but Bash and PowerShell");
+    assert.equal(runGuard(cwd, scratch, "grep -rn x .", "Read").decision, "allow", "the hook must return silently for any tool but Bash and PowerShell");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
