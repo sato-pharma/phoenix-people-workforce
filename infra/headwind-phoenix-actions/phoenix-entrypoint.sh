@@ -181,4 +181,51 @@ else
   fi
 fi
 
+# 🔴 RE-PROVISION WHATSAPP — same wiped-on-restart problem as RustDesk and the launcher above, but
+# sourced DIFFERENTLY and on purpose.
+#
+# WhatsApp is one of the rep tablets' everyday apps (configuration 3, served at /files/WhatsApp.apk,
+# and the device record's url already names that path). It was added through the console, so Headwind's
+# own entrypoint never re-fetches it, and a bare Railway work/ leaves it a 404 — which is exactly what
+# the enrolled rep tablet hit for a week: "Failed to download app com.whatsapp: Bad server response",
+# retried every hour, WhatsApp never installed.
+#
+# 🔴 UNLIKE RustDesk and the launcher, this is NOT an immutable pinned asset. WhatsApp ships no stable
+# per-version download — its only official direct APK is the ever-current build at whatsapp.com, which
+# changes (and its byte size with it) every few weeks. So this block deliberately fetches the OFFICIAL
+# current WhatsApp over TLS and verifies a sane MINIMUM size + the zip magic, rather than an exact size.
+# Each redeploy therefore lands the then-current official build; because WhatsApp's version only ever
+# climbs, the agent reads an installed version at or above configuration 3's and leaves it in place
+# (the same benign "Ignoring downgrade request" the launcher already logs) — so nothing loops and the
+# Headwind record needs no change. We never re-host WhatsApp's binary ourselves; it comes straight from
+# WhatsApp. Same defensive shape otherwise: temp download, checks before the move, and it NEVER aborts
+# startup — a failed or blocked fetch logs and the server still boots, and it retries on the next start.
+WHATSAPP_APK="WhatsApp.apk"
+WHATSAPP_URL="https://www.whatsapp.com/android/current/WhatsApp.apk"
+WHATSAPP_MIN_SIZE=83886080   # 80 MiB floor — the universal APK is ~150 MB; a floating official source gets a minimum + zip-magic check, not an exact size
+WA_DEST="$FILES_DIR/$WHATSAPP_APK"
+have_wa="$([ -f "$WA_DEST" ] && wc -c < "$WA_DEST" | tr -d ' ' || echo 0)"
+if [ "$have_wa" -ge "$WHATSAPP_MIN_SIZE" ] 2>/dev/null; then
+  echo "phoenix-entrypoint(files): $WHATSAPP_APK already present ($have_wa bytes)"
+else
+  echo "phoenix-entrypoint(files): $WHATSAPP_APK missing or too small ($have_wa) — fetching the official current WhatsApp"
+  WA_TMP="$FILES_DIR/.$WHATSAPP_APK.part"
+  rm -f "$WA_TMP"
+  wa_fetched=""
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
+  fi
+  wa_got="$([ -f "$WA_TMP" ] && wc -c < "$WA_TMP" | tr -d ' ' || echo 0)"
+  wa_magic="$([ -f "$WA_TMP" ] && dd if="$WA_TMP" bs=2 count=1 2>/dev/null || true)"
+  if [ -n "$wa_fetched" ] && [ "$wa_got" -ge "$WHATSAPP_MIN_SIZE" ] 2>/dev/null && [ "$wa_magic" = "PK" ]; then
+    mv -f "$WA_TMP" "$WA_DEST"
+    echo "phoenix-entrypoint(files): installed $WHATSAPP_APK ($wa_got bytes)"
+  else
+    rm -f "$WA_TMP"
+    echo "phoenix-entrypoint(files): could not fetch a valid $WHATSAPP_APK (got $wa_got bytes) — it will retry next start" >&2
+  fi
+fi
+
 exec /docker-entrypoint.sh "$@"
