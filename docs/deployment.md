@@ -920,12 +920,77 @@ script waits for the new deployment and, for the web service, for `/api/healthz`
   covered either**: the running container only keeps serving, and a second host with a DNS flip is a
   separate piece of work (it needs another account and a copy of the variables kept outside Railway).
 
+**When even this fails** — Railway refusing the deploy call itself, as on 21 Oct from 10:24 Cairo ("Deploys have
+been paused temporarily") — use the emergency host below; it builds through this workflow (`workflow_call`,
+`deploy=none`) and runs the image somewhere else.
+
 **What is proven and what is not.** Proven by `tests/fallback-image-deploy.test.ts` and a live read-only
 run of `read` and `build-values` on 2026-10-21: the helpers, the workflow's triggers and gate, the
 Dockerfile/ARG parity, and that Railway's API answers both reads during the outage. **Not proven until
 `deploy=rehearsal` has run:** that Railway pulls and starts a private ghcr image with these
 credentials. **Not proven until the first real use:** the repo → image → repo transition on the real
 service (`restore` is the same `serviceConnect` path that repointed production in August).
+
+## The emergency host — a standby copy on Fly.io, for the day Railway will not deploy at all
+
+Built 2026-10-21 at the owner's instruction: *"built a fallback deployment route to relly on when railway fails
+free vercel or any other option easy and user firendly"*. He picked **Fly.io in Frankfurt** and **"one button I
+press"** (not an automatic switch). The trigger: from 10:24 Cairo that day Railway paused builds AND refused every
+deploy call — `serviceInstanceDeployV2` answered "Deploys have been paused temporarily" for more than nine hours — so
+a merged, green fix for a medical rep blocked from logging visits could not go live by any Railway route, and the
+fallback route's own rehearsal was refused the same way.
+
+**Why not free Vercel:** its free plan forbids commercial use, it cannot run this app's Docker image (a different
+build from production), and Vercel is a retired platform here.
+
+**The button** — GitHub → Actions → **Emergency host** → Run workflow (the GitHub phone app works too):
+
+| action | what it does | users notice |
+| --- | --- | --- |
+| `status` | where the domain points, what Railway and the standby serve, the standby's certificate | nothing |
+| `setup` | once (and after a production variable changes): create the Fly app, copy Railway's production web variables into it, get a certificate for `phoenix-hr.satopharma.com` | nothing |
+| `rehearse` | run a commit on the standby, prove `<app>.fly.dev/api/healthz` reports it, stop it again | nothing |
+| `go-live` | run the commit on the standby, prove it, then point the domain at it; Telegram says when it serves | the new version |
+| `back-to-railway` | point the domain back (refused if Railway is not answering), wait 3 minutes, stop the standby | nothing |
+
+**How it works.**
+
+1. **The gate** — the same rule as the fallback route: the commit must have a green `release-gate` job in its own
+   `ci.yml` push run. 🔴 **Off Railway this is the ONLY gate**: the container's readiness gate keys on
+   `RAILWAY_ENVIRONMENT_NAME`, which the standby never has.
+2. **The image** — the fallback route's own build (`fallback-image.yml` called with `deploy=none`, so no Railway service
+   is touched), reused when `ghcr.io/gawish-1997/phoenix-people-workforce:<sha>` already exists. The job hands it to
+   Fly's own registry, because Fly cannot pull the private ghcr package — never make it public.
+3. **The standby** — `infra/fly-standby/fly.toml`: Frankfurt (`fra`), one `shared-cpu-2x` machine with 2 GB, health
+   check `/api/healthz`. 🔴 **WEB ONLY**: `[env]` forces `PHOENIX_PROCESS_ROLE=web` (the schedulers refuse to start)
+   and `PHOENIX_LIVE_CRM_POLL=false`. Railway's worker keeps every scheduler and the CRM poller — a second copy would
+   run the same jobs twice against one database. Between emergencies it has **zero machines**, so it costs nothing.
+4. **The variables** — `setup` copies Railway's production web variables into Fly secrets (`--stage`, values never
+   printed, the temporary file removed). `scripts/emergency-host.mjs` drops every `RAILWAY_*` key and every key
+   `fly.toml` forces, because a Fly secret outranks `[env]`. The copy is as fresh as the last `setup`: **re-run setup
+   after changing a production variable on Railway**, while Railway's API answers.
+5. **The switch** — one Cloudflare record: `CNAME phoenix-hr` holds `xok6ir4p.up.railway.app` normally and
+   `<app>.fly.dev` during an emergency, unproxied, TTL 60 s (`setup` lowers it from Cloudflare's automatic 300 s,
+   content untouched). The certificate is issued beforehand through an `_acme-challenge` record, so the standby can
+   answer for the domain the moment the record moves. `point` refuses: a record holding anything else (a state
+   nobody here set), a standby without a certificate or not answering with the commit, and a flip back to a Railway
+   that does not answer. Its proof is **the domain answering from the chosen host** (Fly's `fly-request-id` header).
+6. **Same address, same everything** — staff keep `phoenix-hr.satopharma.com`, so logins, emailed links and the
+   cron-job.org calls follow the record.
+
+**What only the owner does, once** (a session may not create accounts or handle these tokens):
+
+- A Fly.io account with a card (pay-as-you-go; the standby has no machines between emergencies).
+- An organisation token from the Fly dashboard → `gh secret set FLY_API_TOKEN --repo Gawish-1997/phoenix-people-workforce`.
+- A Cloudflare API token with **Zone → DNS → Edit** and **Zone → Zone → Read** on `satopharma.com` only →
+  `gh secret set CLOUDFLARE_API_TOKEN --repo Gawish-1997/phoenix-people-workforce`.
+- Then Actions → Emergency host → `setup`, then `rehearse`. Optional repository variables: `FLY_APP` (default
+  `phoenix-hr-standby`, if that name is taken on Fly) and `FLY_ORG` (default `personal`).
+
+**What is NOT covered.** A migration (apply it first, as on every route). The worker (it stays on Railway: in a
+build pause it keeps running the older code; in a total Railway outage its jobs pause until Railway returns). A
+Supabase outage. **Not proven until `setup` and `rehearse` have run with the owner's tokens:** the Fly app,
+the variable copy, the certificate, and the image booting on Fly. Pinned by `tests/emergency-host.test.ts`.
 
 ## Production Verification
 

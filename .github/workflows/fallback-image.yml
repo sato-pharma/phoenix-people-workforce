@@ -45,6 +45,22 @@ on:
         options:
           - web
           - web,worker
+  # The emergency host (emergency-host.yml) calls this with deploy=none to build the image it runs on Fly.io, so both
+  # routes share one build and one gate. Called, `github.event_name` is the caller's (workflow_dispatch).
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: main
+      deploy:
+        type: string
+        required: false
+        default: none
+      services:
+        type: string
+        required: false
+        default: web
   pull_request:
     paths:
       - .github/workflows/fallback-image.yml
