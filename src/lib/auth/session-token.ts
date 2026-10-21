@@ -15,6 +15,7 @@ export type SessionPayload = {
   ver: number;
 };
 
+// Deliberately NO PHOENIX_AUTH_SECRET_PREVIOUS fallback (src/lib/auth/previous-secret.ts): a leaked old secret must never mint or verify a session.
 function getSessionSecret() {
   const secret = process.env.PHOENIX_AUTH_SECRET?.trim();
 

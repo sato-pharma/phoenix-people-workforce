@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { previousCronSecret } from "@/lib/auth/previous-secret";
 import { ApiError } from "@/lib/http/api-errors";
-import { logCronUnauthorized } from "@/lib/observability/log";
+import { logCronUnauthorized, logStructured } from "@/lib/observability/log";
 import { bearerSecretMatches, secretMatches } from "@/lib/security/constant-time";
 
 /**
@@ -49,6 +50,17 @@ export function cronSecretAuthorized(request: Request, secret: string | undefine
   return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
+/**
+ * Does the bearer match the PRE-ROTATION `CRON_SECRET` (`CRON_SECRET_PREVIOUS`), still inside its
+ * window? So cron-job.org's jobs can be moved to the new value one at a time without a single 401
+ * (src/lib/auth/previous-secret.ts holds the reason and the hard end date). Only ever the shared
+ * cron secret — a route on its own token never accepts it.
+ */
+export function previousCronSecretAuthorized(request: Request, now: Date = new Date()): boolean {
+  const previous = previousCronSecret(now);
+  return previous !== null && bearerSecretMatches(request.headers.get("authorization"), previous);
+}
+
 export type CronAuthOptions = {
   /**
    * The expected secret. Omit entirely to use `CRON_SECRET` — the case for 22 of the 23 routes.
@@ -78,8 +90,18 @@ export function assertCronAuthorized(
   // `"secret" in options`, not `options?.secret ?? process.env.CRON_SECRET`: a route that passes
   // its own token must fail closed when that token is unset, never silently fall back to the
   // shared CRON_SECRET and authorize a caller who holds the wrong one.
+  const ownToken = Boolean(options && "secret" in options);
   const secret = options && "secret" in options ? options.secret : process.env.CRON_SECRET;
   if (cronSecretAuthorized(request, secret)) return null;
+  // The old CRON_SECRET, during the rotation window only, and only while the new one is SET — an
+  // unset CRON_SECRET still fails closed. Logged so `railway logs | grep cron_previous_secret` lists
+  // the jobs still to move.
+  if (!ownToken && secret && previousCronSecretAuthorized(request)) {
+    logStructured("INFO", `Cron authorized with the previous CRON_SECRET: ${job}`, {
+      labels: { event: "cron_previous_secret", job },
+    });
+    return null;
+  }
   logCronUnauthorized(job, request);
   return NextResponse.json(
     options?.message ? { error: "unauthorized", message: options.message } : { error: "unauthorized" },

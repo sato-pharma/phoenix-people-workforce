@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { systemDeployment } from "@/config/system-settings";
+import { previousAuthSecret } from "@/lib/auth/previous-secret";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /**
@@ -66,8 +67,14 @@ function signingSecret(): string {
 }
 
 /** Domain-separated from every other signer so a share token can never be replayed as one of theirs. */
-function sign(encoded: string): string {
-  return createHmac("sha256", signingSecret()).update(`share-card.v1\n${encoded}`).digest("base64url");
+function sign(encoded: string, secret: string = signingSecret()): string {
+  return createHmac("sha256", secret).update(`share-card.v1\n${encoded}`).digest("base64url");
+}
+
+function signatureMatches(signature: string, expected: string): boolean {
+  const received = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer);
 }
 
 function encode(payload: ShareCardPayload): string {
@@ -126,9 +133,13 @@ export function readShareCardToken(token: string | null | undefined, nowSeconds?
   } catch {
     return null; // no secret → nothing verifies
   }
-  const received = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (received.length !== expectedBuffer.length || !timingSafeEqual(received, expectedBuffer)) return null;
+  if (!signatureMatches(signature, expected)) {
+    // A card shared before the secret rotation keeps resolving until the end date in
+    // src/lib/auth/previous-secret.ts (or its own 30-day expiry, whichever comes first). A new
+    // link is always signed with the current secret.
+    const previous = previousAuthSecret(nowSeconds === undefined ? undefined : new Date(nowSeconds * 1000));
+    if (!previous || !signatureMatches(signature, sign(encoded, previous))) return null;
+  }
 
   let payload: ShareCardPayload;
   try {
