@@ -62,6 +62,7 @@ const OLD_LITERAL_ANSWERS: ReadonlyArray<OldAnswers> = [
  */
 const LATER_RULINGS: ReadonlyArray<{ code: number; name: string; meaning: "AV" | "CP"; ruled: string }> = [
   { code: -16, name: "Training (vendor labels it Unknown)", meaning: "CP", ruled: "2026-09-17" },
+  { code: -22, name: "RTD (Phoenix-side, the vendor never sends it)", meaning: "CP", ruled: "2026-10-21" },
 ];
 
 /** The 16th production code: a regular visit. #1 counts it (never looked up); #2 and #3 returned undefined. */
