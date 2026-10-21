@@ -55,7 +55,7 @@ import {
 import { stripComments } from "./support/comment-strip.ts";
 import { canViewOrganogramSensitiveFields } from "../src/lib/reports/organogram.ts";
 import { canSeeDoctorCoverage, DOCTOR_COVERAGE_PORTAL_ROLES } from "../src/lib/crm/doctor-coverage-roles.ts";
-import { seesWholeInterviewCalendar } from "../src/lib/recruitment/interview-calendar-types.ts";
+import { isInterviewCalendarOwner, seesWholeInterviewCalendar } from "../src/lib/recruitment/interview-calendar-types.ts";
 import { canUseWhatsAppInbox } from "../src/lib/whatsapp-inbox/access.ts";
 
 /**
@@ -369,9 +369,13 @@ export async function runHrResourcingSeatTests() {
   // KPIs: "Give her KPIs" — a company seat, admin shell, not the portal.
   assert.equal(canSeeDoctorCoverage(SEAT), true, "the KPIs board admits her");
   assert.ok(!DOCTOR_COVERAGE_PORTAL_ROLES.includes(SEAT), "she reaches KPIs in the admin shell, not the portal");
-  // Interview Calendar: "Full view built into her seat" — a Viewer, like the CEO.
-  assert.equal(seesWholeInterviewCalendar(her), true, "she sees every interview");
-  assert.equal(seesWholeInterviewCalendar(accessFor("HR Operations")), false, "the other HR seat is not widened");
+  // Interview Calendar: first "Full view built into her seat" (2026-10-08, a Viewer like the CEO), then
+  // — owner, 2026-10-21 — "full access on the interview ... schedule and do everything and use every
+  // single feature": an OWNER, as HR Operations is. The Viewer line stays as the floor under it.
+  assert.equal(isInterviewCalendarOwner(her), true, "she owns the interview calendar: books, moves, cancels, comments, shares");
+  assert.equal(seesWholeInterviewCalendar(her), true, "and the floor under that still reads every interview");
+  assert.equal(isInterviewCalendarOwner(accessFor("HR Administration")), false, "the HR Operations Specialist stays a Viewer — the ruling is the Talent Acquisition seat's");
+  assert.equal(seesWholeInterviewCalendar(accessFor("HR Operations")), false, "HR Operations owns it outright, so needs no Viewer floor");
   // "Just build the account. I will add her later." (owner, 2026-10-08): the seat is handed out in
   // User Access, so its picker has to offer it by the title he will look for — "Talent Acquisition" —
   // and never by its key. The option VALUE stays the key; only the words change.

@@ -398,6 +398,19 @@ function runRoleTests() {
   const hrOperations = createAccessContext({ hrId: "HR-009", role: "HR Operations" });
   assert.equal(isInterviewCalendarOwner(hrOperations), true, "HR Operations runs the calendar as an owner");
   assert.equal(resolveCalendarRole({ isOwner: isInterviewCalendarOwner(hrOperations), shareLevel: "viewer" }), "owner", "a share row cannot demote HR Operations");
+  // TALENT ACQUISITION IS AN OWNER TOO (owner, 2026-10-21: "make the TA have full access on the interview
+  // and can schedule and do everything and use every single feature"). It replaced her Viewer tier of
+  // 2026-10-08 and her read-only request list of 2026-10-18. Run through createAccessContext, the way a
+  // real session builds her, so a scope-only test cannot pass for the wrong reason.
+  const talentAcquisition = createAccessContext({ hrId: "HR-011", role: "HR Resourcing" });
+  assert.equal(isInterviewCalendarOwner(talentAcquisition), true, "Talent Acquisition runs the calendar as an owner");
+  const taRole = resolveCalendarRole({ isOwner: isInterviewCalendarOwner(talentAcquisition), shareLevel: null });
+  assert.equal(taRole, "owner", "she resolves to the owner level, with no share row at all");
+  assert.equal(resolveCalendarRole({ isOwner: isInterviewCalendarOwner(talentAcquisition), shareLevel: "viewer" }), "owner", "a share row cannot demote Talent Acquisition");
+  for (const need of ["view", "comment", "book", "share"] as const) {
+    assert.equal(roleMeets(taRole, need), true, `as an owner she meets "${need}" — schedule, comment, share, every feature`);
+  }
+  assert.equal(canBookInterviews(taRole), true, "the Schedule interview button follows the same rule as the server, and draws for her");
   for (const role of ["CEO", "Finance Manager", "HR Advisory", "National Sales Manager", "Employee"]) {
     const other = createAccessContext({ hrId: "A-99", role });
     assert.equal(isInterviewCalendarOwner(other), false, `${role} (scope ${other.scope}) is not the owner — only a share row lets them in`);
@@ -409,7 +422,7 @@ function runRoleTests() {
   // The HR Operations Specialist seat, 2026-10-20 — the owner's answer: "She can view it only".
   const specialist = createAccessContext({ hrId: "A-99", role: "HR Administration" });
   assert.equal(seesWholeInterviewCalendar(specialist), true, "the HR Operations Specialist reads the whole calendar");
-  assert.equal(isInterviewCalendarOwner(specialist), false, "the HR Operations Specialist does not own the calendar");
+  assert.equal(isInterviewCalendarOwner(specialist), false, "the HR Operations Specialist does not own the calendar — Talent Acquisition's ruling is hers alone");
   for (const role of ["Finance Manager", "HR Advisory", "National Sales Manager", "District Manager", "Medical Representative", "Employee"]) {
     assert.equal(seesWholeInterviewCalendar(createAccessContext({ hrId: "A-99", role })), false, `${role} does not get the whole calendar from this seat`);
   }

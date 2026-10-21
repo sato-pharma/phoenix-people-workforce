@@ -5,8 +5,8 @@
 // route refusing the request is the lock (src/lib/recruitment/interview-calendar.ts).
 //
 // WHO SEES THE CALENDAR — the owner's own choice, 2026-09-18: "Only you + people you share with".
-//   owner      the Super Admin, and HR Operations as its admin (owner, 2026-09-21). Books, moves,
-//              cancels, comments, shares, exports, records outcomes.
+//   owner      the Super Admin, HR Operations as its admin (owner, 2026-09-21) and Talent Acquisition
+//              (owner, 2026-10-21). Books, moves, cancels, comments, shares, exports, records outcomes.
 //   editor     a person he shared it with as Editor — books, moves and cancels too, and comments.
 //   commenter  sees the calendar and opens the CVs on it, and leaves notes on an interview.
 //   viewer     sees the calendar and opens the CVs on it.
@@ -99,13 +99,24 @@ export function roleMeets(role: InterviewCalendarRole | null, need: InterviewCal
 
 /**
  * The calendar's owners: the Super Admin — the owner himself, the only account holding that role —
- * HR Operations, and a system context (a job, not a person).
+ * HR Operations, Talent Acquisition, and a system context (a job, not a person).
  *
  * HR OPERATIONS IS AN OWNER BY THE OWNER'S OWN RULING, 2026-09-21: "make Yasmeena HR Operations
  * full access and control to it as admin". She is the only account holding that role. It is the
  * ROLE, not her HR id, for the same reason the Super Admin's is (interview-calendar.ts, "WHY THE
  * OWNER IS"); whoever holds the HR Operations seat runs the calendar with him. An owner outranks any
  * share row, so no one can demote her by sharing with her at a lower level.
+ *
+ * TALENT ACQUISITION (HR Resourcing) IS AN OWNER TOO, BY THE OWNER'S RULING, 2026-10-21: "make the TA
+ * have full access on the interview and can schedule and do everything and use every single feature".
+ * That REPLACES the two narrower rulings it had before — the 2026-10-08 Viewer ("Full view built into
+ * her seat") and the 2026-10-18 read-only request list — so she books, moves and cancels, gives a
+ * waiting request its time, comments, records outcomes, exports and shares, exactly as HR Operations
+ * does. Again the ROLE, never her HR id, so the seat keeps its right when the person changes.
+ *
+ * Owning the calendar opens the calendar and nothing past it: from here she searches candidates and
+ * adds an outside person while booking (`mayUseRecruitmentFromCalendar`), which she holds the
+ * Recruitment grants for anyway. Her fence stays — she is never shown an HR applicant.
  *
  * THE ROLE, NOT THE SCOPE, IS WHAT A SIGNED-IN OWNER CARRIES. `scopeForRole` gives a Super Admin
  * session "company", exactly as it gives the CEO, the Finance Manager and HR Operations; "system"
@@ -115,7 +126,7 @@ export function roleMeets(role: InterviewCalendarRole | null, need: InterviewCal
  * session builds them.
  */
 export function isInterviewCalendarOwner(access: { role: string | null; scope: string }): boolean {
-  return access.scope === "system" || access.role === "Super Admin" || access.role === "HR Operations";
+  return access.scope === "system" || access.role === "Super Admin" || access.role === "HR Operations" || access.role === "HR Resourcing";
 }
 
 /**
@@ -125,9 +136,10 @@ export function isInterviewCalendarOwner(access: { role: string | null; scope: s
  * him, but he changes nothing and cannot share the calendar. His seat still lets him REQUEST an
  * interview — `mayRequestInterviews` reads the seat, not this role — so nothing he had is removed.
  *
- * The Talent Acquisition seat (HR Resourcing) reads it the same way since 2026-10-08 — the owner's
- * answer in chat, "Full view built into her seat". A Viewer, like the CEO: every interview, and still
- * able to request one by her HR seat. Booking, moving or cancelling for others needs an Editor share.
+ * The Talent Acquisition seat (HR Resourcing) read it the same way from 2026-10-08 — the owner's
+ * answer in chat, "Full view built into her seat" — until he made her an OWNER on 2026-10-21
+ * (`isInterviewCalendarOwner`). `resolveInterviewCalendarRole` asks ownership first, so this line no
+ * longer decides anything for her; it stays as the floor she would fall back to, never above it.
  *
  * The HR Operations Specialist seat (HR Administration) reads it the same way since 2026-10-20 — the
  * owner's answer when her login left the HR Operations seat that owns the calendar: "She can view it
@@ -145,6 +157,10 @@ export function seesWholeInterviewCalendar(access: { role: string | null }): boo
  * showed her only the requests she asked for herself. Reading is all this opens: booking, moving and
  * withdrawing someone else's request stay behind `requireCalendarAccess(…, "book", …)`. The CEO is a
  * Viewer too and is deliberately NOT here — nobody asked for his.
+ *
+ * SINCE 2026-10-21 THE SEAT OWNS THE CALENDAR, so she holds book rights and gives a request its time
+ * herself; her cards are no longer read-only (`readOnly={!canBook}`). This stays true for her as the
+ * floor — it only ever ADDS the list for a caller who lacks book rights, and she no longer lacks them.
  */
 export function readsInterviewRequestInbox(access: { role: string | null }): boolean {
   return access.role === "HR Resourcing";

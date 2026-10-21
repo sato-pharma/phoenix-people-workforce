@@ -150,15 +150,15 @@ export type TalentCalendarMonth = {
  * decision and every API route behind the component asks again, so a prop that said more than her
  * seat holds would buy nothing.
  *
- * NULL when `resolveInterviewCalendarRole` gives her no role at all. Her seat resolves to a Viewer
- * through `seesWholeInterviewCalendar`, so that is not the expected case — it is carried because the
+ * NULL when `resolveInterviewCalendarRole` gives her no role at all. Her seat resolves to an owner
+ * through `isInterviewCalendarOwner` (owner, 2026-10-21), so that is not the expected case — it is carried because the
  * role is a runtime resolution, and a calendar drawn with no role would be a blank week, which is
  * the one wrong answer a diary can give.
  */
 export type TalentInterviewCalendar = {
   /** Whether she may search candidates / add one to Recruitment from inside the calendar. */
   abilities: { canAddToRecruitment: boolean; canSearchCandidates: boolean };
-  /** Whether she reads the requests waiting for a time, read-only — her seat (`readsInterviewRequestInbox`). */
+  /** Whether she reads the requests waiting for a time — her seat (`readsInterviewRequestInbox`); as an owner she also gives them a time. */
   canReadRequests: boolean;
   /** Whether she may ASK for an interview — true for any HR seat (`mayRequestInterviews`). */
   canRequest: boolean;
