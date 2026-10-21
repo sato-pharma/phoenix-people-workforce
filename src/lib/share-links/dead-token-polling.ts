@@ -164,3 +164,42 @@ export function buildDeadTokenPollMessage(verdict: DeadTokenPollVerdict): string
   lines.push("Google account in turn, and delete the refresh trigger whose executions log a 403.");
   return lines.join("\n");
 }
+
+/** One channel's outcome, as `createSystemNotification` reports it — only the two fields read here. */
+export type DeadTokenAlarmDelivery = { reason?: string; status: string };
+
+export type DeadTokenAlarmOutcome = {
+  /** Recipients with at least one channel sent, or queued to go out (quiet hours, a retry). */
+  reached: number;
+  /** Recipients whose every channel was already sent under today's key — the 15-minute repeat. */
+  repeats: number;
+  /** Recipients the alarm meant to reach today and did not: every channel failed or was skipped. */
+  unreached: number;
+};
+
+/**
+ * Count what a run of the alarm really did, per recipient.
+ *
+ * The sweep runs every 15 minutes and the idempotency key holds the message to once a Cairo day,
+ * so 95 of 96 runs send nothing — `claimDelivery` answers "Delivery already sent." on every
+ * channel. The alarm used to count a recipient as delivered as soon as the call returned, and wrote
+ * "delivered to 1 recipient(s)" into `audit_logs` 96 times a day (1,792 rows from 3 to 22 Oct 2026)
+ * while the owner received exactly one message a day. A repeat is not a delivery and is not a
+ * failure either; it is nothing, and the caller writes no row for it.
+ */
+export function summariseDeadTokenAlarmDeliveries(perRecipient: DeadTokenAlarmDelivery[][]): DeadTokenAlarmOutcome {
+  const outcome: DeadTokenAlarmOutcome = { reached: 0, repeats: 0, unreached: 0 };
+  for (const deliveries of perRecipient) {
+    if (deliveries.some((delivery) => ["sent", "pending", "retrying"].includes(delivery.status))) {
+      outcome.reached += 1;
+    } else if (
+      deliveries.length > 0
+      && deliveries.every((delivery) => delivery.status === "skipped" && /^Delivery already /.test(delivery.reason ?? ""))
+    ) {
+      outcome.repeats += 1;
+    } else {
+      outcome.unreached += 1;
+    }
+  }
+  return outcome;
+}
