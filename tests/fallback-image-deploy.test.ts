@@ -140,7 +140,12 @@ export function runFallbackImageDeployTests(): void {
   {
     const on = /^on:\n([\s\S]*?)^\S/m.exec(workflow)?.[1] ?? "";
     const triggers = [...on.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(triggers, ["pull_request", "workflow_dispatch"], "by hand, or a PR that touches the fallback itself — never a push to main, never a schedule");
+    // workflow_call since 2026-10-21: the emergency host (emergency-host.yml, itself by hand only) builds its image here.
+    assert.deepEqual(
+      triggers,
+      ["pull_request", "workflow_call", "workflow_dispatch"],
+      "by hand, called by the hand-started emergency host, or a PR that touches the fallback itself — never a push to main, never a schedule",
+    );
     assert.match(workflow, /cancel-in-progress: false/, "a switch is never cancelled half way");
     assert.ok(!/cancel-in-progress: true/.test(workflow));
     assert.match(workflow, /PUSH: \$\{\{ github\.event_name != 'pull_request' \}\}/, "a pull request builds and boots the image but pushes nothing");

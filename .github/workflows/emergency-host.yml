@@ -1,0 +1,287 @@
+name: Emergency host
+
+# THE EMERGENCY HOST (owner, 2026-10-21): a standby copy of Phoenix on Fly.io in Frankfurt, for the day Railway cannot
+# deploy at all. On 21 Oct 2026 Railway paused every build and refused every deploy call for more than nine hours, so
+# even the fallback route (fallback-image.yml, which still asks Railway to RUN the image) could not ship a fix. This
+# runs the SAME image on Fly.io and points phoenix-hr.satopharma.com (a Cloudflare CNAME) at it. He picked Fly.io and a
+# switch he presses himself. Account and rules: docs/deployment.md, "The emergency host".
+#
+# STARTED ONLY BY HAND — Actions → "Emergency host" → Run workflow (the GitHub phone app works too):
+#
+#   status            read-only: where the domain points, what Railway and the standby each serve
+#   setup             once, and after a production variable changes: create the Fly app, copy Railway's production
+#                     web variables into it, and get the standby a certificate for the domain. Users see no change.
+#   rehearse          build/boot the commit on the standby, prove it answers, then stop it. Users see no change.
+#   go-live           the emergency: run the commit on the standby, then point the domain at it. Telegram says when.
+#   back-to-railway   once Railway serves again: point the domain back, then stop the standby.
+#
+# 🔴 THE GATE IS NOT SKIPPED. Only a main commit whose own ci.yml push run has a green release-gate job can reach the
+# standby — off Railway the container's own /api/readyz gate is open, so this job is the gate.
+# 🔴 WEB ONLY. Railway's worker keeps the schedulers and the CRM poller (infra/fly-standby/fly.toml forces the web role).
+# 🔴 A MIGRATION IS NOT COVERED, as on every route: apply it first (AGENTS.md §8).
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        required: true
+        default: status
+        type: choice
+        options:
+          - status
+          - setup
+          - rehearse
+          - go-live
+          - back-to-railway
+      ref:
+        description: "rehearse / go-live only — the main commit to run (default: main's newest)"
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+# Never cancel and never overlap: a flip interrupted half way leaves the domain somewhere nobody chose.
+concurrency:
+  group: emergency-host
+  cancel-in-progress: false
+
+env:
+  FLY_APP: ${{ vars.FLY_APP || 'phoenix-hr-standby' }}
+  FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+  IMAGE_REPO: ghcr.io/gawish-1997/phoenix-people-workforce
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  status:
+    if: ${{ inputs.action == 'status' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Where the domain points and what each host serves
+        run: node scripts/emergency-host.mjs status
+
+  setup:
+    if: ${{ inputs.action == 'setup' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Install flyctl
+        run: |
+          set -euo pipefail
+          curl -fsSL https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - name: Create the standby app in Frankfurt if it does not exist
+        run: |
+          set -euo pipefail
+          if flyctl status -a "$FLY_APP" > /dev/null 2>&1; then
+            echo "- Fly app ${FLY_APP} already exists" >> "$GITHUB_STEP_SUMMARY"
+          else
+            flyctl apps create "$FLY_APP" --org "$FLY_ORG"
+            echo "- created Fly app ${FLY_APP} (organisation ${FLY_ORG})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Its public addresses, so ${FLY_APP}.fly.dev answers and the domain can point at it.
+          if [ "$(flyctl ips list -a "$FLY_APP" --json | jq 'length')" = "0" ]; then
+            flyctl ips allocate-v6 -a "$FLY_APP"
+            flyctl ips allocate-v4 --shared -a "$FLY_APP"
+          fi
+      - name: Copy Railway's production web variables into the standby (values never printed)
+        run: |
+          set -euo pipefail
+          umask 077
+          node scripts/emergency-host.mjs export-variables --out "$RUNNER_TEMP/standby.env"
+          # --stage: stored now, applied by the next deploy; nothing starts.
+          flyctl secrets import --stage -a "$FLY_APP" < "$RUNNER_TEMP/standby.env"
+          rm -f "$RUNNER_TEMP/standby.env"
+      - name: A certificate for the domain, while it still points at Railway
+        run: node scripts/emergency-host.mjs certificate
+      - name: Read the result
+        if: always()
+        run: node scripts/emergency-host.mjs status
+      - name: Tell the owner
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            node scripts/emergency-host.mjs notify --text "Emergency host: setup finished. The standby has a fresh copy of the production variables. ${RUN_URL}"
+          else
+            node scripts/emergency-host.mjs notify --text "Emergency host: setup FAILED. Users are not affected. ${RUN_URL}"
+          fi
+
+  gate:
+    if: ${{ inputs.action == 'rehearse' || inputs.action == 'go-live' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+      image_exists: ${{ steps.image.outputs.exists }}
+    steps:
+      - name: Pick the commit and prove its own release gate passed
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          ref="${INPUT_REF:-main}"
+          sha="$(gh api "repos/${REPO}/commits/${ref}" --jq .sha)"
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not resolve '${ref}' to a commit."
+            exit 1
+          fi
+          # The same rule as fallback-image.yml: only a main push run of ci.yml has a release-gate job that can succeed.
+          run_id="$(gh api "repos/${REPO}/actions/runs?head_sha=${sha}&event=push&per_page=30" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | sort_by(.created_at) | last | .id // empty')"
+          if [ -z "$run_id" ]; then
+            echo "::error::${sha} has no push run of ci.yml, so it never passed main's release gate."
+            exit 1
+          fi
+          verdict="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "release-gate")] | first | .conclusion // "missing"')"
+          if [ "$verdict" != "success" ]; then
+            echo "::error::${sha}: its release-gate job reads '${verdict}', not 'success'. https://github.com/${REPO}/actions/runs/${run_id}"
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "- commit ${sha:0:9}: release-gate success (run ${run_id})" >> "$GITHUB_STEP_SUMMARY"
+      - name: Is that commit's image already built?
+        id: image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.pick.outputs.sha }}
+        run: |
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin > /dev/null
+          if docker manifest inspect "${IMAGE_REPO}:${SHA}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "- image for ${SHA:0:9} already built — reused" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "- image for ${SHA:0:9} not built yet — building it" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  image:
+    needs: gate
+    if: ${{ needs.gate.outputs.image_exists != 'true' }}
+    # The fallback route's own build: the repository's Dockerfile, Railway's NEXT_PUBLIC values, the commit stamped in,
+    # booted and read before it is pushed. deploy=none — it touches no Railway service.
+    uses: ./.github/workflows/fallback-image.yml
+    with:
+      ref: ${{ needs.gate.outputs.sha }}
+      deploy: none
+    secrets: inherit
+
+  standby:
+    needs: [gate, image]
+    if: ${{ always() && needs.gate.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
+      ACTION: ${{ inputs.action }}
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Install flyctl
+        run: |
+          set -euo pipefail
+          curl -fsSL https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - name: Hand the image to Fly's own registry (Fly cannot pull the private ghcr image)
+        run: |
+          set -euo pipefail
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin > /dev/null
+          docker pull "${IMAGE_REPO}:${SHA}"
+          docker tag "${IMAGE_REPO}:${SHA}" "registry.fly.io/${FLY_APP}:${SHA}"
+          flyctl auth docker
+          docker push "registry.fly.io/${FLY_APP}:${SHA}"
+      - name: Start the standby on the commit (Frankfurt, one machine)
+        run: |
+          set -euo pipefail
+          flyctl deploy -a "$FLY_APP" -c infra/fly-standby/fly.toml \
+            --image "registry.fly.io/${FLY_APP}:${SHA}" \
+            --regions fra --ha=false --strategy immediate --wait-timeout 15m
+      - name: The standby's own address reports the commit
+        run: node scripts/emergency-host.mjs wait-standby --sha "$SHA"
+      - name: Rehearsal — stop the standby again
+        if: ${{ inputs.action == 'rehearse' }}
+        run: |
+          set -euo pipefail
+          flyctl scale count 0 -a "$FLY_APP" --yes
+          echo "- rehearsal passed: the standby ran ${SHA:0:9} and is stopped again; users never left Railway" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/emergency-host.mjs notify --text "Emergency host: rehearsal PASSED on ${SHA:0:9}. The standby is ready and stopped; users never left Railway. ${RUN_URL}"
+      - name: Go live — point the domain at the standby and wait until it serves there
+        if: ${{ inputs.action == 'go-live' }}
+        run: |
+          set -euo pipefail
+          node scripts/emergency-host.mjs point --to fly --sha "$SHA"
+          node scripts/emergency-host.mjs notify --text "EMERGENCY HOST LIVE: phoenix-hr.satopharma.com now runs ${SHA:0:9} on the Fly.io standby (Frankfurt). When Railway deploys again, run Emergency host with action = back-to-railway. ${RUN_URL}"
+      - name: Tell the owner it failed
+        if: failure()
+        run: |
+          node scripts/emergency-host.mjs status || true
+          node scripts/emergency-host.mjs notify --text "Emergency host: ${ACTION} FAILED on ${SHA:0:9}. Read the run; the summary says where the domain points now. ${RUN_URL}"
+
+  back-to-railway:
+    if: ${{ inputs.action == 'back-to-railway' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+      - name: Install flyctl
+        run: |
+          set -euo pipefail
+          curl -fsSL https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - name: Point the domain back at Railway (refused if Railway is not answering)
+        run: node scripts/emergency-host.mjs point --to railway
+      - name: Let the last requests on the standby finish, then stop it
+        run: |
+          set -euo pipefail
+          # Resolvers that cached the standby's name hold it for up to the one-minute TTL; three minutes covers them.
+          sleep 180
+          flyctl scale count 0 -a "$FLY_APP" --yes
+          echo "- the standby is stopped" >> "$GITHUB_STEP_SUMMARY"
+      - name: Tell the owner
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            node scripts/emergency-host.mjs notify --text "Emergency host: phoenix-hr.satopharma.com is back on Railway and the standby is stopped. ${RUN_URL}"
+          else
+            node scripts/emergency-host.mjs status || true
+            node scripts/emergency-host.mjs notify --text "Emergency host: back-to-railway FAILED. Read the run; the summary says where the domain points now. ${RUN_URL}"
+          fi

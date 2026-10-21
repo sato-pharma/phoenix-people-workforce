@@ -1,0 +1,35 @@
+# The EMERGENCY HOST — Phoenix's standby copy on Fly.io, for the day Railway cannot deploy (owner, 2026-10-21).
+# Deployed ONLY by .github/workflows/emergency-host.yml, from the image fallback-image.yml builds. The app name comes
+# from the workflow (`-a`, repository variable FLY_APP, default phoenix-hr-standby). Account: docs/deployment.md,
+# "The emergency host".
+
+# 🔴 FRANKFURT. Production must stay in Europe, beside the Frankfurt Supabase project.
+primary_region = "fra"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # While it serves, it serves: never stopped for being idle. Between emergencies the workflow scales it to zero
+  # machines, so the standby costs nothing then.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "90s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/healthz"
+    timeout = "10s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2048mb"
+
+# 🔴 WEB ONLY. Railway's worker keeps every scheduler and the field-CRM poller; a second copy of either would run
+# the same jobs twice against the same database. These outrank nothing and nothing outranks them: the variable copy
+# (scripts/emergency-host.mjs, filterVariables) drops these keys and every RAILWAY_* key.
+[env]
+  PHOENIX_PROCESS_ROLE = "web"
+  PHOENIX_LIVE_CRM_POLL = "false"
+  PHOENIX_HOST = "fly-standby"

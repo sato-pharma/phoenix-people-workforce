@@ -2574,6 +2574,7 @@ import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-pre
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
 import { runFallbackImageDeployTests } from "./fallback-image-deploy.test.ts";
+import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
 import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
@@ -10149,6 +10150,7 @@ await runTest("phoenix crm: no save bar takes two presses to discard", runPhoeni
 await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 await runTest("urgent deploy: runs only off main, the guard hands over only when every urgent PR is live, probes read the marker", runUrgentDeployTests);
 await runTest("fallback image: bakes the Dockerfile's NEXT_PUBLIC values, stamps the commit so the release gate stays shut, needs a green release-gate, refuses staging, never runs on a push to main", runFallbackImageDeployTests);
+await runTest("emergency host: the Fly.io standby is web-only (no scheduler, no CRM poller, no Railway identity), flips the domain only from a known state to a host that answers with a certificate, needs a green release-gate, and is started by hand only", runEmergencyHostTests);
 
 await runTest("rollup build: a member merging mid-build is survived, not a crash", runRollupBuildVerdictTests);
 
