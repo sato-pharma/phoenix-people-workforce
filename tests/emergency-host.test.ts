@@ -6,6 +6,7 @@ import {
   DOMAIN,
   FORCED_KEYS,
   RAILWAY_TARGET,
+  certificateReady,
   classifyTarget,
   filterVariables,
   flyTarget,
@@ -92,6 +93,23 @@ export function runEmergencyHostTests(): void {
     assert.equal(servedBy(new Headers({ "x-railway-request-id": "r1" })), "railway");
     assert.equal(servedBy(new Headers({ server: "railway-edge" })), "railway");
     assert.equal(servedBy(new Headers({})), "unknown", "an unrecognised answer is never read as either host");
+
+    // 2026-10-21, setup's first real run: configured=true while the status said "Awaiting certificates". The DNS was
+    // right and nothing was issued — a flip then sends every user to a browser security error.
+    assert.equal(
+      certificateReady({ configured: true, status: "Awaiting certificates", certificates: [] }),
+      false,
+      "a configured domain with no issued certificate is NOT ready",
+    );
+    assert.equal(certificateReady({ configured: false, status: "Ready" }), true);
+    assert.equal(
+      certificateReady({ status: "Awaiting certificates", certificates: [{ source: "fly", status: "active", issued: [{ type: "ecdsa" }] }] }),
+      true,
+      "an active Fly-issued certificate is ready",
+    );
+    assert.equal(certificateReady({ status: "", certificates: [{ source: "fly", status: "active", issued: [] }] }), false, "active but nothing issued is not ready");
+    assert.equal(certificateReady(null), false);
+    assert.doesNotMatch(script, /body\?\.configured/, "no check reads `configured` as issued");
 
     assert.throws(() => planFlip({ current: "unknown", to: "fly" }), /nobody here set/, "a record nobody here set is never changed");
     assert.throws(() => planFlip({ current: "railway", to: "staging" }), /must be fly or railway/);
