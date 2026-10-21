@@ -107,6 +107,7 @@ const PINNED = [
   "scripts/dm-line-achievement.ts",
   "scripts/dry-run-dsm-no-record.ts",
   "scripts/dry-run-holiday-bridge.ts",
+  "scripts/fallback-image-deploy.mjs",
   "scripts/field-day/print-day.mjs",
   "scripts/field-day/run-nightly.mjs",
   "scripts/fwc-pull.ts",
