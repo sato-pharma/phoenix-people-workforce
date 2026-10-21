@@ -45,7 +45,7 @@ status, give it its own line.
 
 ## 2.1 Session-level traps
 
-- **grep -r hangs from the repo root, `.` or node_modules — use git grep or rg there; a NAMED folder (src, app, tests, scripts, supabase, docs) is fine.** — `shell-grep-unusable-use-git-grep-or-rg`
+- **grep -r hangs from a repo or worktree root, `.`, node_modules or .claude — use git grep or rg there; any other named folder, file or small absolute path is fine (C1 is a deny-list since 2026-10-22).** — `shell-grep-unusable-use-git-grep-or-rg`
 - **pnpm run <script> PURGES node_modules** — `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
 - **MSYS mangles paths silently, four ways:** — `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **Grepping a wrapped report returns a middle line that reads as a verdict — read the section, and measure the thing itself** — `grepping-a-wrapped-report-turns-an-explanation-into-a-verdict` **(inline — load-bearing)**

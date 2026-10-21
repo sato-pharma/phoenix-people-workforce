@@ -1,4 +1,5 @@
-// bash-guard C1: a recursive grep is refused where it hangs, and allowed where it cannot (2026-10-17).
+// bash-guard C1: a recursive grep is refused where it hangs, and allowed where it cannot (2026-10-17,
+// turned into a deny-list 2026-10-22).
 //
 // WHY THIS EXISTS. C1 refused EVERY recursive grep, on the measured ground that one from the repo
 // root walks ~346k path entries (the worktree payload and node_modules) and takes 10-40 s. A /doctor
@@ -14,12 +15,18 @@
 // the parser cannot place. The allow half is asserted first and as hard as the deny half: it is the
 // half that fails if the narrowing is reverted.
 //
+// 2026-10-22 (owner: "fix"): the seven-folder allow-list was the next false positive — 20-21 Oct it
+// refused ~60 greps that could not hang (`.claude/rules`, `.github/workflows/*.yml`, `docs/*.md`,
+// `package.json`, the memory folder, a scratchpad). The clause now refuses only a BIG TREE, with every
+// path resolved where it runs: the cwd (moved by any `cd`), `~`, and variables set in the command.
+// The new ALLOWED rows below are those refused commands, cut down.
+//
 // It drives the real hook as a subprocess, exactly as settings.json runs it, because a test that
 // imported the matcher would pass against a hook wired to nothing.
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,6 +36,7 @@ type Decision = { decision: "allow" | "deny"; reason: string };
 
 /** The tool payload on stdin, in a folder that is not a git repository, so no other clause answers. */
 function runGuard(cwd: string, command: string, tool = "Bash"): Decision {
+  command = command.replaceAll("<ROOT>", cwd.replace(/\\/g, "/"));
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   const raw = execFileSync(process.execPath, [guardPath], {
@@ -65,6 +73,22 @@ const ALLOWED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "an --include with a glob in a QUOTE", command: 'grep -rn --include="*.ts" "x" src' },
   { what: "--include=value form after the paths", command: "grep -rn x src --include=*.tsx" },
   { what: "a pattern that itself contains an r", command: "grep -rn -ereturn src" },
+  { what: "an escaped quote inside a quoted pattern", command: 'grep -rn "\\"edit_expired\\"\\|removal_decided\\"" src app --include=*.ts' },
+  { what: "an escaped quote, then a pipe", command: 'grep -rln "offer-composer\\"" app src | head -5' },
+  { what: "a dot folder that is small", command: "grep -rn x .claude/rules" },
+  { what: "a dot folder plus files", command: "grep -rli x .claude/rules docs AGENTS.md package.json" },
+  { what: "a glob of files in a folder", command: "grep -rn x .github/workflows/*.yml scripts/*.mjs" },
+  { what: "globs in docs", command: "grep -rn -i -E \"a|b\" docs/devices/*.md docs/*.md 2>/dev/null | head" },
+  { what: "a glob inside a deep folder", command: "grep -rn x src/lib/production-planning/*.ts" },
+  { what: "every entry of a named folder", command: "grep -r x src/*" },
+  { what: "a file-extension glob at the root", command: "grep -rn x *.md" },
+  { what: "a folder that is not tracked", command: "grep -rn x lib instrumentation.ts next.config.ts --include=*.ts" },
+  { what: "one package in node_modules", command: "grep -rn x node_modules/@supabase/storage-js/dist" },
+  { what: "an absolute small folder", command: "grep -rl x \"C:/Users/someone/.claude/projects/F--x/memory\"" },
+  { what: "a variable set earlier in the command", command: "M=\"C:/Users/someone/.claude/projects/F--x/memory\"; grep -rl x \"$M\"" },
+  { what: "a folder under home", command: "grep -rn x ~/.claude/hooks" },
+  { what: "the dot after a cd into a named folder", command: "cd src && grep -rn x ." },
+  { what: "the dot after a cd into a scratchpad", command: "cd \"C:/Users/someone/AppData/Local/Temp/claude/x/scratchpad\" && grep -rn x ." },
   { what: "a cd first", command: 'cd "F:/Phoenix Workforce/_wt-x" && grep -rn x src' },
   { what: "a pipe onward", command: "grep -rn x src | head -20" },
   { what: "stderr folded in", command: "grep -rn x src 2>&1 | head" },
@@ -90,14 +114,12 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "a named folder plus the dot", command: "grep -rn x src ." },
   { what: "a named folder plus the parent", command: "grep -r x src .." },
   { what: "an escape out of a named folder", command: "grep -r x src/../.." },
-  { what: "a glob", command: "grep -r x src/*" },
   { what: "a glob at the root", command: "grep -r x *" },
   { what: "a variable", command: "grep -rn x $PWD" },
   { what: "the home shortcut", command: "grep -R x docs ~" },
   { what: "node_modules", command: "grep -r x node_modules" },
   { what: "the worktrees", command: "grep -rn x .claude/worktrees" },
   { what: "the .claude folder", command: "grep -rn x .claude" },
-  { what: "a folder that only starts like a named one", command: "grep -rn x srcs" },
   { what: "an escape through a named folder", command: "grep -rn x public/../node_modules" },
   { what: "an absolute path", command: "grep -rn x /f/Phoenix" },
   { what: "a drive path", command: "grep -rn x C:/Users" },
@@ -105,6 +127,20 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "-e with no path", command: "grep -r -e x" },
   { what: "egrep", command: "egrep -r x" },
   { what: "fgrep", command: "fgrep -r x ." },
+  { what: "the dot, excluding node_modules — the worktrees are still walked", command: "grep -rn x --exclude-dir=node_modules ." },
+  { what: "the dot after a cd to the workspace folder", command: "cd .. && grep -rn x ." },
+  { what: "the repo root by absolute path", command: "grep -rn x \"<ROOT>\"" },
+  { what: "a worktree root by absolute path", command: "grep -rn x \"F:\\Phoenix Workforce\\_wt-foo\"" },
+  { what: "a cd to an unknown variable, then the dot", command: "cd \"$NOWHERE\" && grep -rn x ." },
+  { what: "an unset variable", command: "grep -rn x \"$TEMP\"" },
+  { what: "home .claude", command: "grep -rn x ~/.claude" },
+  { what: "the transcript store", command: "grep -rn x C:/Users/someone/.claude/projects" },
+  { what: "Temp", command: "grep -rn x C:/Users/someone/AppData/Local/Temp" },
+  { what: "every dot folder", command: "grep -rn x .*" },
+  { what: "the pnpm store", command: "grep -rn x node_modules/.pnpm" },
+  { what: "an escaped quote does not hide the dot", command: 'grep -rn "a\\"|b" --include=*.ts . 2>/dev/null' },
+  { what: "the build output", command: "grep -r x .next" },
+  { what: "a glob above a folder", command: "grep -r x */src" },
   { what: "one good grep and one bad, in a pipeline", command: "grep -rn x src | grep -rn y ." },
   { what: "after a semicolon", command: "echo hi; grep -rn x" },
   { what: "inside a command substitution", command: "echo $(grep -rn x .)" },
@@ -116,7 +152,11 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
 
 export function runBashGrepGuardTests(): void {
   assert.ok(existsSync(guardPath), `bash-guard not found at ${guardPath}`);
-  const cwd = mkdtempSync(join(tmpdir(), "phx-grep-guard-"));
+  // The cwd is a REPO ROOT inside a workspace folder, as every session here runs, so `.` and `..`
+  // resolve to the trees that hang.
+  const scratch = mkdtempSync(join(tmpdir(), "phx-grep-guard-"));
+  const cwd = join(scratch, "Phoenix Workforce", "phoenix-workforce");
+  mkdirSync(cwd, { recursive: true });
   try {
     for (const { what, command, tool } of ALLOWED) {
       const { decision, reason } = runGuard(cwd, command, tool ?? "Bash");
@@ -140,6 +180,6 @@ export function runBashGrepGuardTests(): void {
     // Other tools are none of this hook's business.
     assert.equal(runGuard(cwd, "grep -rn x .", "Read").decision, "allow", "the hook must return silently for any tool but Bash and PowerShell");
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 }

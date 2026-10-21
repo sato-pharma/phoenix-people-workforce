@@ -38,9 +38,9 @@ file holding the full account, under
 
 **Shell and tooling**
 
-- **`grep -r` hangs from the repo root, `.` or `node_modules` — use `git grep` or `rg` there; over a
-  NAMED folder (`src`, `app`, `tests`, `scripts`, `supabase`, `docs`) it takes under 5 s and
-  `bash-guard.mjs` C1 allows it.** Worktree payload is ~1.9M paths; tools honouring `.gitignore` never
+- **`grep -r` hangs from a repo or worktree root (`.`, no path), `node_modules`, `.claude` or
+  `.claude/worktrees` — use `git grep` or `rg` there; over any other NAMED folder, file or small
+  absolute path it is fast and `bash-guard.mjs` C1 allows it (a deny-list since 2026-10-22).** Worktree payload is ~1.9M paths; tools honouring `.gitignore` never
   see it. `shell-grep-unusable-use-git-grep-or-rg`. 🔴 **The blanket refusal was too wide** (2026-10-17,
   a `/doctor` pass over 50 sessions): C1 stopped 124 commands, about 70 of them naming one small tracked
   folder, plus a few that only QUOTED `grep -r` inside a search pattern — each a wasted round trip.
@@ -51,6 +51,18 @@ file holding the full account, under
   `supabase`, `docs` or `public`, and no path, `.`, `..`, an absolute path, a glob, a variable,
   `node_modules`, `.claude` or anything the parser cannot place is still refused. Pinned by
   `tests/bash-grep-guard.test.ts` (allow and deny matrices, each half broken and watched to fire).
+  🔴 **The seven-folder allow-list was the next false positive, so C1 became a DENY-list on 2026-10-22**
+  (owner: "fix"). Replayed over the last two days' transcripts, it had refused 109 greps, and 102 of
+  them could not hang — `.claude/rules`, `.github/workflows/*.yml`, `docs/*.md`, `scripts/*.ts`,
+  `package.json`, the memory folder, a scratchpad — 13 of those only because `\"` inside a double-quoted
+  pattern was read as the closing quote. Now every path is RESOLVED where it runs (the hook's cwd, moved
+  by any `cd` in the command; `~`, `$HOME` and any `NAME=value` set earlier expanded) and refused only
+  when it lands on a big tree: a repo or `_wt-*` root, the workspace folder, `node_modules`, `.pnpm`,
+  `.next`, `.git`, `.claude`, `worktrees`, `~/.claude/projects`, Temp/AppData, or any path two
+  segments deep or less (a drive, `/tmp`, home). An unknown variable, `$(…)`, `..` or `.` under an
+  unknown cwd is still refused; a glob passes when its parent folder is not a big tree. The replay
+  after the change: 102 allowed, the 7 left all walked a repo root or `.claude/`. A backslash is an
+  escape for the Bash tool only — in PowerShell it is a path separator.
 - **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
   install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
@@ -2922,7 +2934,7 @@ it for the hook's wording. Which memory backs which hook:
 
 **Shell and tooling**
 
-- **`grep -r` hangs from the repo root, `.` or `node_modules` — use `git grep` or `rg` there; over a NAMED folder (`src`, `app`, `tests`, `scripts`, `supabase`, `docs`) it takes under 5 s and `bash-guard.mjs` C1 allows it.**
+- **`grep -r` hangs from a repo or worktree root (`.`, no path), `node_modules`, `.claude` or `.claude/worktrees` — use `git grep` or `rg` there; over any other NAMED folder, file or small absolute path it is fast and `bash-guard.mjs` C1 allows it (a deny-list since 2026-10-22).**
 - **MSYS mangles paths silently, four ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 hits read as 0, i.e. *the code is clean*; and **a NATIVE Windows binary cannot resolve `/tmp` at all** (it is `C:/Users/<you>/AppData/Local/Temp`) — bash writes the file and `wc`/`grep` read it, while `rg` says *cannot find the path* and `curl -o` exits 23. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` first; save with `>` rather than `-o`; never quote a count without it.
 - **`git grep -E` is POSIX ERE, where a backslash inside `[...]` is a LITERAL BACKSLASH — so a character class written for `rg` silently matches NOTHING.** Same pattern, same file, measured: `-E` **0**, `-P` **9**, `rg` **9**. The 0 reads as *the code is clean*, and the pattern looks right because it IS right everywhere else. Use `-P`, or keep the class free of `\[`/`\]`.
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error**, so recent work reads as old. The tell is a Cairo reading at `+0000`; the clock is ALREADY `+0300`, so use plain `date` or node, never `TZ=`. `tz-africa-cairo-silently-returns-utc-in-msys`

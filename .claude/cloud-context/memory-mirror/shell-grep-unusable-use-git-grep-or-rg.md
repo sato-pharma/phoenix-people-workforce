@@ -1,6 +1,6 @@
 ---
 name: shell-grep-unusable-use-git-grep-or-rg
-description: "Plain `grep -r` from the repo root, `.` or node_modules never finishes (walks ~346k files for ~3.8k real ones) — use `gg`/`git grep` or `rg` there; over a NAMED folder (src, app, tests, scripts, supabase, docs) it takes under 5 s and bash-guard C1 allows it (narrowed 2026-10-17)"
+description: "Plain `grep -r` from the repo root, `.` or node_modules never finishes (walks ~346k files for ~3.8k real ones) — use `gg`/`git grep` or `rg` there; any other named folder, file, file glob or small absolute path is fast and bash-guard C1 allows it — a deny-list since 2026-10-22 that refuses only a repo/worktree root, `.claude`, node_modules, the workspace folder, Temp or a drive/home root"
 metadata: 
   node_type: memory
   type: project
@@ -29,6 +29,11 @@ is not there: `docs` 0.1 s, `scripts` 0.3 s, `supabase` 1.5 s, `app` 2.7 s, `tes
 the "9 ms a file" figure below no longer holds for a named folder. `bash-guard.mjs` C1 now refuses a
 recursive grep only from the repo root, `.`, `..`, `node_modules`, `.claude`, an absolute path or a glob,
 and allows it when every path is under src/app/tests/scripts/supabase/docs/public (`tests/bash-grep-guard.test.ts`).
+
+**Corrected again 2026-10-22 (owner: "fix"):** the seven-folder allow-list was itself the false positive — 102 of
+the 109 greps it refused over two days could not hang (`.claude/rules`, `docs/*.md`, `package.json`, the memory
+folder, a scratchpad). C1 is now a deny-list: each path is resolved where it runs (cwd moved by `cd`, `~` and
+variables set in the command expanded) and refused only on a big tree. Account: `docs/agents-session-traps.md`.
 
 **How to apply:**
 - Use `gg` (alias for `git grep -n`) for anything committed, or `rg` for untracked files too.

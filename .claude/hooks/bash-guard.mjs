@@ -75,6 +75,7 @@
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -173,12 +174,24 @@ const DEV_SERVER = 'node scripts/dev-server.mjs --port 3000';
  * An unbalanced quote swallows the rest of the command, which errs toward allowing: the cheap way to
  * be wrong for a guard whose worst miss is a dev server that uses too much memory.
  */
+/** A backslash escapes in bash; in PowerShell it is a path separator (`C:\a\`), never an escape. */
+let backslashEscapes = true;
+
 function commandSegments(text) {
   const segments = [];
   let current = '';
   let quote = null;
+  let escaped = false;
   for (const ch of text) {
-    if (quote) {
+    // `"a\"|b"` is ONE quoted word to bash: a backslash escapes the next character outside single
+    // quotes, so `\"` neither closes a double quote nor opens one (2026-10-22: 13 refused greps).
+    if (escaped) {
+      escaped = false;
+      current += ch;
+    } else if (ch === '\\' && backslashEscapes && quote !== "'") {
+      escaped = true;
+      current += ch;
+    } else if (quote) {
       if (ch === quote) quote = null;
       current += ch;
     } else if (ch === '"' || ch === "'") {
@@ -671,14 +684,85 @@ function pnpmAdvice(command, root) {
 }
 
 /**
- * C1 — which recursive greps hang. Measured 15–17 Oct 2026 over 50 sessions: the old blanket refusal
- * stopped 124 commands, and about 70 of them named one small tracked folder (`src` 3,460 files,
- * `app` 1,808, `tests` 2,470, `scripts` 287, `supabase` 1,442, `docs` 173) that cannot hang. What
- * hangs is a walk from the repo root, `.`, `node_modules` or `.claude/worktrees` (~346k entries).
- * So a recursive grep passes ONLY when every path is under one of these folders; anything else —
- * no path, `.`, `..`, an absolute path, a glob or variable, a flag it cannot place — is refused.
+ * C1 — which recursive greps hang. What hangs is a walk of a BIG TREE: the repo root or a worktree
+ * root (~346k path entries — the worktree payload and node_modules), `node_modules` itself, the
+ * workspace folder above the repos, a drive or home root, Temp, `~/.claude` or its transcript store.
+ *
+ * 15–17 Oct 2026 the blanket refusal stopped 124 commands, ~70 of them over one small tracked folder,
+ * so it was narrowed to an ALLOW-list of seven folders. That list was itself the next false positive
+ * (owner, 2026-10-22: "fix"): 20–21 Oct it refused ~60 greps that could not hang — `.claude/rules`,
+ * `.github/workflows/*.yml`, `docs/*.md`, `scripts/*.ts`, `package.json`, `AGENTS.md`, the memory
+ * folder, a scratchpad. So it is now a DENY-list of the big trees, and every path is RESOLVED first:
+ * against the cwd (the hook's own, moved by any `cd` earlier in the command), with `~`, `$HOME` and
+ * any `NAME=value` set earlier in the command expanded. A path it cannot place — an unknown variable,
+ * a command substitution, `..`, `.` or no path under an unknown cwd — is still refused.
  */
-const GREP_SAFE_ROOTS = new Set(['src', 'app', 'tests', 'scripts', 'supabase', 'docs', 'public']);
+const GREP_BIG_LAST_SEGMENT = new Set([
+  'node_modules', '.pnpm', '.next', '.git', 'worktrees', '.codex-worktrees', '.claude',
+  'phoenix-workforce', 'phoenix workforce', 'users', 'appdata', 'local', 'locallow', 'roaming',
+  'temp', 'tmp', 'windows', 'program files', 'program files (x86)', 'programdata',
+]);
+const GREP_GLOB = /[*?[\]{}]/;
+
+/** `F:\a`, `f:/a`, `/f/a` → { drive: 'f', parts: ['a'] }; relative → { drive: null, abs: false }. */
+function grepPathParts(path) {
+  const p = path.replace(/\\/g, '/');
+  let m = /^([A-Za-z]):(?:\/|$)(.*)$/.exec(p) ?? /^\/([A-Za-z])(?:\/|$)(.*)$/.exec(p);
+  if (m) return { abs: true, drive: m[1].toLowerCase(), parts: m[2].split('/').filter(Boolean) };
+  if (p.startsWith('/')) return { abs: true, drive: null, parts: p.split('/').filter(Boolean) };
+  return { abs: false, drive: null, parts: p.split('/').filter(Boolean) };
+}
+
+/** Lexical join of a relative path onto an absolute one; `..` pops. */
+function grepResolve(base, rel) {
+  const parts = [...base.parts];
+  for (const part of rel.parts) {
+    if (part === '.') continue;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  }
+  return { abs: true, drive: base.drive, parts };
+}
+
+/** True when an ABSOLUTE path is a tree a recursive grep must not walk. */
+function grepTreeIsBig(resolved) {
+  const { parts } = resolved;
+  if (parts.length <= 2) return true; // a drive, `/tmp`, `C:/Users/<me>`, `F:/Phoenix Workforce`
+  const last = parts[parts.length - 1].toLowerCase();
+  if (GREP_BIG_LAST_SEGMENT.has(last) || last.startsWith('_wt-')) return true;
+  if (last === 'projects' && parts[parts.length - 2].toLowerCase() === '.claude') return true;
+  return false;
+}
+
+/** `$NAME`, `${NAME}`, a leading `~` → their values; null when one cannot be resolved. */
+function grepExpand(word, vars) {
+  let out = word.replace(/^~(?=\/|\\|$)/, () => vars.HOME);
+  out = out.replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g, (_, a, b) => vars[a ?? b] ?? '\u0000');
+  return out.includes('\u0000') || /[$`]/.test(out) ? null : out;
+}
+
+/** Is this grep operand safe to walk? cwd is an absolute parts object, or null when unknown. */
+function grepPathIsSafe(word, cwd, vars) {
+  const expanded = grepExpand(word, vars);
+  if (expanded === null) return false;
+  const path = grepPathParts(expanded);
+  if (path.parts.includes('..') && !cwd && !path.abs) return false;
+  const globAt = path.parts.findIndex((part) => GREP_GLOB.test(part));
+  if (globAt >= 0) {
+    // Only a glob in the LAST segment is placeable; `*.md` matches files, which never recurse.
+    if (globAt !== path.parts.length - 1) return false;
+    if (/^\*\.[\w.-]+$/.test(path.parts[globAt])) return true;
+    const parent = { ...path, parts: path.parts.slice(0, -1) };
+    if (!parent.abs && !cwd) return parent.parts.length > 0 && !parent.parts.includes('..') && !grepTreeIsBig({ parts: ['?', '?', ...parent.parts] });
+    return !grepTreeIsBig(parent.abs ? parent : grepResolve(cwd, parent));
+  }
+  if (path.abs) return !grepTreeIsBig(grepResolve({ ...path, parts: [] }, path));
+  if (cwd) return !grepTreeIsBig(grepResolve(cwd, path));
+  // Unknown cwd: only a named, forward-only path can be judged — by its own last segment.
+  if (!path.parts.length || path.parts.includes('..') || path.parts.every((part) => part === '.')) return false;
+  return !grepTreeIsBig({ parts: ['?', '?', ...path.parts.filter((part) => part !== '.')] });
+}
+
 /** Short flags whose value follows them (`-e PATTERN`, `-m 5`, `-A 3`); the rest of a cluster is that value. */
 const GREP_VALUE_SHORT = new Set(['e', 'f', 'm', 'A', 'B', 'C', 'd', 'D']);
 const GREP_VALUE_LONG = new Set([
@@ -691,8 +775,16 @@ function shellWords(segment) {
   const words = [];
   let current = null;
   let quote = null;
+  let escaped = false;
   for (const ch of segment) {
-    if (quote) {
+    if (escaped) {
+      escaped = false;
+      // Inside double quotes only `\"`, `\\`, `\$` and `` \` `` drop the backslash; `F:\a` stays a path.
+      current = (current ?? '') + (quote === '"' && !'"\\$`'.includes(ch) ? `\\${ch}` : ch);
+    } else if (ch === '\\' && backslashEscapes && quote !== "'") {
+      escaped = true;
+      current ??= '';
+    } else if (quote) {
       if (ch === quote) quote = null;
       else current += ch;
     } else if (ch === '"' || ch === "'") {
@@ -713,8 +805,9 @@ function shellWords(segment) {
  * Judge one command segment. null = not a recursive grep (not this clause's business);
  * true = a recursive grep that is safe; false = one that walks somewhere it must not.
  */
-function recursiveGrepIsSafe(segment) {
-  const words = shellWords(segment);
+function recursiveGrepIsSafe(segment, cwd, vars) {
+  // `$(grep -r x .)` splits at the `(`, leaving the `)` glued to the last operand.
+  const words = shellWords(segment.replace(/\)+\s*$/, ''));
   if (!words.length || !/^(?:e|f)?grep$/.test(words[0])) return null;
   let recursive = false;
   let patternGiven = false;
@@ -754,11 +847,37 @@ function recursiveGrepIsSafe(segment) {
   if (!recursive) return null;
   const paths = patternGiven ? operands : operands.slice(1);
   if (!paths.length) return false;
-  return paths.every((path) => {
-    if (/[*?[\]${}~`]/.test(path)) return false;
-    const parts = path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').split('/');
-    return !parts.includes('..') && GREP_SAFE_ROOTS.has(parts[0]);
-  });
+  return paths.every((path) => grepPathIsSafe(path, cwd, vars));
+}
+
+/**
+ * Walk the segments in order, as the shell would: a `cd` moves the cwd (to unknown when its target
+ * cannot be resolved), a `NAME=value` / `export NAME=value` defines a variable, and every recursive
+ * grep is judged where it actually runs. True when one of them walks a big tree.
+ */
+function someRecursiveGrepWalksABigTree(segments, startCwd) {
+  const vars = { HOME: homedir().replace(/\\/g, '/') };
+  let cwd = startCwd ? grepPathParts(String(startCwd)) : null;
+  if (cwd && !cwd.abs) cwd = null;
+  for (const segment of segments) {
+    const words = shellWords(segment.replace(/\)+\s*$/, ''));
+    const head = words[0] === 'export' ? words.slice(1) : words;
+    for (const word of head) {
+      const m = /^([A-Za-z_]\w*)=(.*)$/s.exec(word);
+      if (!m) break;
+      const value = grepExpand(m[2], vars);
+      if (value === null) delete vars[m[1]];
+      else vars[m[1]] = value;
+    }
+    if (words[0] === 'cd') {
+      const target = words[1] === undefined ? vars.HOME : grepExpand(words[1], vars);
+      const parts = target === null || target === '-' ? null : grepPathParts(target);
+      cwd = !parts ? null : parts.abs ? grepResolve({ ...parts, parts: [] }, parts) : cwd ? grepResolve(cwd, parts) : null;
+      continue;
+    }
+    if (recursiveGrepIsSafe(segment, cwd, vars) === false) return true;
+  }
+  return false;
 }
 
 try {
@@ -766,20 +885,23 @@ try {
   // PowerShell too: a `Bash` matcher never fires for the PowerShell tool, so until 2026-09-12 the
   // C5 `rmdir`/`remove-item` branch below — PowerShell-shaped from the start — could never run.
   if (input.tool_name !== 'Bash' && input.tool_name !== 'PowerShell') process.exit(0);
+  backslashEscapes = input.tool_name === 'Bash';
   const cmd = String(input?.tool_input?.command ?? '');
   if (!cmd) process.exit(0);
 
-  // C1 — recursive grep at a command position (start / after | ; & ( && ||), unless every path is a
-  // named tracked folder (see GREP_SAFE_ROOTS). A quoted mention is data, not a command: the
+  // C1 — recursive grep at a command position (start / after | ; & ( && ||) whose path, resolved where
+  // it runs, is a big tree (see GREP_BIG_LAST_SEGMENT). A quoted mention is data, not a command: the
   // segments are split quote-aware, with heredoc and here-string bodies removed first.
   // `git grep` and `rg` are NOT matched (git grep honours .gitignore; rg isn't grep).
   const grepSegments = commandSegments(withoutHereStringBodies(withoutHeredocBodies(cmd)));
-  if (grepSegments.some((segment) => recursiveGrepIsSafe(segment) === false) || /\balias\s+grep=/.test(cmd)) {
+  if (someRecursiveGrepWalksABigTree(grepSegments, input?.cwd ?? process.cwd()) || /\balias\s+grep=/.test(cmd)) {
     deny(
-      'Recursive grep hangs from the repo root, `.`, `..`, `node_modules` or `.claude/worktrees` ' +
-        '(~346k path entries get scanned; 10-40s+). A recursive grep over NAMED folders is fine — e.g. ' +
-        '`grep -rn "x" src tests` (src, app, tests, scripts, supabase, docs, public; no globs or variables). ' +
-        'Anywhere else use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
+      'Recursive grep hangs from a repo or worktree root (`.`, `..`, no path), `node_modules`, ' +
+        '`.claude` or `.claude/worktrees`, the workspace folder, a drive/home/Temp root or ~/.claude/projects ' +
+        '(~346k path entries get scanned; 10-40s+). A recursive grep over NAMED folders or files is fine — ' +
+        '`grep -rn "x" src .claude/rules docs/*.md package.json`, an absolute path to a small folder, ' +
+        'or a variable set earlier in the same command. ' +
+        'For a whole tree use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
     );
   }
