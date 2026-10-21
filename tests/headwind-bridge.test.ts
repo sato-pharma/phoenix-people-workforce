@@ -1691,6 +1691,40 @@ function runServerImageTests() {
     "a failed launcher fetch logs and falls through — it never aborts startup, so a bad release cannot down the MDM",
   );
 
+  // 🔴 AND WHATSAPP IS RE-PROVISIONED TOO, FROM WHATSAPP ITSELF — the rep tablets' everyday app.
+  //
+  // Configuration 3 serves WhatsApp at /files/WhatsApp.apk, and that file died with the same bare
+  // work/ on a redeploy: measured 2026-10-22, it answered 404 and the rep's tablet logged "Failed to
+  // download app … Bad server response" every hour from 11 October, so WhatsApp never installed. Unlike
+  // RustDesk and the launcher it is not an immutable pinned asset — WhatsApp publishes one floating
+  // official URL — so the check is a size FLOOR plus the zip magic, never an exact size, and a failed
+  // fetch must still fall through rather than abort startup. Remove this block and every new tablet
+  // goes without WhatsApp again after the next unrelated rebuild.
+  assert.match(
+    entrypoint,
+    /WHATSAPP_APK="WhatsApp\.apk"/,
+    "the entrypoint re-provisions WhatsApp under the exact filename configuration 3 already points at",
+  );
+  assert.match(
+    entrypoint,
+    /WHATSAPP_URL="https:\/\/www\.whatsapp\.com\/android\/current\/WhatsApp\.apk"/,
+    "fetched from WhatsApp's own official download, never a re-hosted copy",
+  );
+  assert.match(
+    entrypoint,
+    /-ge "\$WHATSAPP_MIN_SIZE"[\s\S]*\[ "\$wa_magic" = "PK" \]/,
+    "a fetched file is moved into place only when it clears the size floor AND starts with the zip magic, so an error page is never served as an app",
+  );
+  assert.match(
+    entrypoint,
+    /could not fetch a valid \$WHATSAPP_APK[\s\S]*it will retry next start/,
+    "a failed WhatsApp fetch logs and falls through — it never aborts startup, so WhatsApp's site being down cannot down the MDM",
+  );
+  assert.ok(
+    entrypoint.indexOf("WHATSAPP_APK=") < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
+    "and it runs BEFORE the hand-over to Headwind's entrypoint, since nothing after an exec ever runs",
+  );
+
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
   // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars
