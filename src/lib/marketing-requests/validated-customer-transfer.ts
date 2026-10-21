@@ -2,6 +2,10 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import {
+  VENUE_WITHOUT_DISTRIBUTOR_CODE,
+  venueWithoutDistributorCodeMessage,
+} from "@/lib/marketing-requests/coded-venues-only";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
 import { loadBrickCentroids, resolveBrickForPoint, type ResolvedBrickPoint } from "@/lib/crm/brick-geo";
@@ -1290,6 +1294,12 @@ export async function transferValidatedCustomerToDirectOrders(
   // Asked, never defaulted: an absent answer is refused in the same words every capture point uses.
   const venueType = parseVenueTypeChoice(input.venueType);
   if (!venueType) throw validationError(VENUE_TYPE_UNANSWERED_MESSAGE);
+  // A nursery is not a Marketing venue any more (owner, 2026-10-21: "any thing with no distributor
+  // code never reach the marketing requests") — it is validated in Direct Orders directly. Refused
+  // before any read, in the sentence every marketing door uses.
+  if (!venueRequiresDistributorCode(venueType)) {
+    throw validationError(venueWithoutDistributorCodeMessage(null), VENUE_WITHOUT_DISTRIBUTOR_CODE);
+  }
 
   const customerId = String(input.customerId ?? "").trim();
   if (!customerId) throw validationError("A customer id is required.");
@@ -1374,6 +1384,15 @@ export async function transferValidatedCustomerToDirectOrders(
         realDistributorValue(text(codeRow, "mapped_customer_code")) ??
         realDistributorValue(text(codeRow, "distributor_pharmacy_code"));
     }
+  }
+
+  // The pharmacy path, and only the pharmacy path (owner, 2026-10-21): a customer whose venue link
+  // names no distributor code — or who has no venue link at all — holds nothing Marketing may carry.
+  if (!link || !text(link, "distributor_code_id")) {
+    throw validationError(
+      venueWithoutDistributorCodeMessage(text(marketingPharmacy, "display_name") ?? text(customer, "display_name")),
+      VENUE_WITHOUT_DISTRIBUTOR_CODE,
+    );
   }
 
   // Since 2026-10-21 a validated customer's pharmacies cross into Direct Orders on their own

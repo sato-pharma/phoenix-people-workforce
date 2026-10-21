@@ -607,25 +607,38 @@ function runMarketingMultiCustomerTests() {
     /Customer 2 pharmacy 1 name is required/i,
   );
 
-  // A PHARMACY WITH NO CODE (owner, 2026-10-14): refused with BOTH routes named, accepted once its
-  // licence is attached. The server is the gate that counts — the form's own gate is only a hint.
+  // A VENUE WITH NO CODE IS NEVER SAVED IN MARKETING (owner, 2026-10-21: "any thing with no
+  // distributor code never reach the marketing requests"). A codeless pharmacy is refused with or
+  // without its licence, and a nursery is refused outright — both belong to Direct Orders. The
+  // server is the gate that counts — the form's own gate is only a hint.
   const codeless = { ...pharmacyPayload("Codeless Pharmacy", "unused"), vendorCodes: [] };
+  const refusedAsCodeless = (error: unknown) =>
+    (error as { code?: string }).code === "venue_without_distributor_code"
+    && /has no distributor code[\s\S]*validated in Direct Orders/.test(String((error as Error).message));
   assert.throws(
     () => normalizeMarketingValidationInput({ customers: [{ ...customerPayload(), pharmacies: [codeless] }] }),
-    /needs at least one vendor code, or attach its pharmacy licence/i,
-    "no code and no licence: refused, naming both routes",
+    refusedAsCodeless,
+    "no code and no licence: refused, pointing to Direct Orders",
   );
-  const withLicence = normalizeMarketingValidationInput({
-    customers: [{
-      ...customerPayload(),
-      pharmacies: [{
-        ...codeless,
-        licenseFileDataUrl: `data:application/pdf;base64,${Buffer.from("%PDF-1.7 a trade licence").toString("base64")}`,
-        licenseFileName: "licence.pdf",
+  assert.throws(
+    () => normalizeMarketingValidationInput({
+      customers: [{
+        ...customerPayload(),
+        pharmacies: [{
+          ...codeless,
+          licenseFileDataUrl: `data:application/pdf;base64,${Buffer.from("%PDF-1.7 a trade licence").toString("base64")}`,
+          licenseFileName: "licence.pdf",
+        }],
       }],
-    }],
-  });
-  const savedPharmacy = withLicence.customers[0]!.pharmacies[0]!;
-  assert.equal(savedPharmacy.vendorCodes.length, 0, "it carries no code — none is invented for it");
-  assert.ok(savedPharmacy.licenseFileDataUrl, "and the licence rides along to be stored");
+    }),
+    refusedAsCodeless,
+    "a licence no longer stands in for a distributor code (the 2026-10-14 licence route is retired)",
+  );
+  assert.throws(
+    () => normalizeMarketingValidationInput({
+      customers: [{ ...customerPayload(), pharmacies: [{ ...codeless, displayName: "حضانة النيل", venueType: "nursery" }] }],
+    }),
+    refusedAsCodeless,
+    "a nursery is validated in Direct Orders, never in Marketing",
+  );
 }

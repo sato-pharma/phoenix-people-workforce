@@ -28,10 +28,12 @@ import { adminControlDepthClassName, adminSoftDepthClassName } from "@/component
 import {
   VENUE_TYPES,
   VENUE_TYPE_UNANSWERED_MESSAGE,
+  choiceRequiresDistributorCode,
   venueTypeIsAnswered,
   venueTypeLabel,
   type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
+import { venueWithoutDistributorCodeMessage } from "@/lib/marketing-requests/coded-venues-only";
 import type {
   ValidatedCustomerCompletenessItem,
   ValidatedCustomerDetail as Detail,
@@ -298,15 +300,17 @@ export function ValidatedCustomerDetailView({
             >
               {!venueTypeIsAnswered(venueType)
                 ? VENUE_TYPE_UNANSWERED_MESSAGE
-                : venueType === "nursery"
-                  ? "A nursery has no distributor account, so no code is carried across. The desk approves it on its location and live photo."
+                : !choiceRequiresDistributorCode(venueType)
+                  // Owner, 2026-10-21: a venue with no distributor code is never in Marketing, so it is
+                  // never transferred from here — it is validated in Direct Orders directly.
+                  ? venueWithoutDistributorCodeMessage(null)
                   : "A pharmacy is approved on its distributor code or its licence, so the desk will ask for one if it has neither."}
             </p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="inline-flex items-center gap-2 rounded border border-orange-300 bg-orange-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-              disabled={busy || !venueTypeIsAnswered(venueType)}
+              disabled={busy || !venueTypeIsAnswered(venueType) || !choiceRequiresDistributorCode(venueType)}
               onClick={() => void runTransfer()}
               type="button"
             >

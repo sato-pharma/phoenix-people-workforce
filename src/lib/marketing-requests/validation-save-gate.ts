@@ -22,6 +22,10 @@
  */
 
 import {
+  CODELESS_VENUES_GO_TO_DIRECT_ORDERS,
+  venueWithoutDistributorCodeMessage,
+} from "@/lib/marketing-requests/coded-venues-only";
+import {
   VENUE_TYPE_UNANSWERED_MESSAGE,
   venueRequiresDistributorCode,
   venueTypeIsAnswered,
@@ -47,9 +51,10 @@ export type SaveGatePharmacy = {
   capture: SaveGateCapture;
   existingPharmacyId: string;
   /**
-   * The pharmacy licence the rep attached, if any. Only its presence is read: with no distributor
-   * code a pharmacy may still be saved when the licence is on file (owner, 2026-10-14), parked as
-   * not usable in requests yet.
+   * The pharmacy licence the rep attached, if any. Only its presence is read, to drop blank code
+   * rows. Since 2026-10-21 a licence never stands in for a distributor code: a venue with no code
+   * is validated in Direct Orders, not here (owner: "any thing with no distributor code never reach
+   * the marketing requests").
    */
   license?: unknown;
   name: string;
@@ -157,18 +162,18 @@ export function describeMissingSaveRequirement(
       if (!venueTypeIsAnswered(pharmacy.venueType)) {
         return `${pharmacyLabel}: ${VENUE_TYPE_UNANSWERED_MESSAGE}`;
       }
-      // A venue with no distributor account has nothing to check here, and the codes block is not
-      // even rendered for it. Asking for a code would be asking the rep to make one up again.
-      if (!venueRequiresDistributorCode(pharmacy.venueType)) continue;
-      // With the licence attached, a code row the rep left blank is simply not a code — the form
-      // opens with one empty row, and refusing it would make the licence route unreachable. The
-      // submit drops the same rows (`withoutBlankCodeRows`), so the gate and the payload agree.
+      // A venue with no distributor account — a nursery — is not validated in Marketing at all
+      // (owner, 2026-10-21). Saying so here, in the server's own sentence, is what keeps Save from
+      // greying with no reason: the codes block is not even rendered for one.
+      if (!venueRequiresDistributorCode(pharmacy.venueType)) {
+        return venueWithoutDistributorCodeMessage(pharmacy.name);
+      }
+      // A code row the rep left blank beside an attached licence is not a code — the submit drops the
+      // same rows (`withoutBlankCodeRows`), so the gate and the payload agree. A licence no longer
+      // stands in for a code: with none, the pharmacy belongs to Direct Orders.
       const codeLines = withoutBlankCodeRows(pharmacy);
       if (codeLines.length === 0) {
-        // A licence stands in for the code (owner, 2026-10-14) — the pharmacy is saved, held as not
-        // usable in requests yet. With neither, say both routes so the rep is never told only half.
-        if (pharmacy.license) continue;
-        return `${pharmacyLabel} needs at least one distributor code, or attach its pharmacy licence if it has none.`;
+        return `${pharmacyLabel} needs at least one distributor code. ${CODELESS_VENUES_GO_TO_DIRECT_ORDERS}`;
       }
 
       for (const [codeIndex, line] of codeLines.entries()) {

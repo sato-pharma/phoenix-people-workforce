@@ -28,9 +28,6 @@
  * that kept 24 of 81 new links deliberately invisible.
  */
 
-import { isLicenseOnlyPharmacyNote } from "@/lib/venues/pharmacy-license";
-import { venueRequiresDistributorCode, type VenueType } from "@/lib/venues/venue-type";
-
 /**
  * Link validation statuses that make a venue selectable, strongest first.
  *
@@ -52,49 +49,41 @@ export const LINK_STATUS_PRECEDENCE = ["admin_approved", "sfe_validated", "syste
 
 export type LinkValidationStatus = (typeof LINK_STATUS_PRECEDENCE)[number];
 
-/**
- * The link statuses that can make a LICENCE-ONLY pharmacy a request target: only a person's ruling.
- *
- * A pharmacy saved on its licence alone (owner, 2026-10-14) sits on `pending` until a Super Admin
- * or the CEO has read the licence and pressed Approve, which writes `admin_approved`. The two
- * machine and desk statuses are not enough here: `system_validated` means no human looked, and
- * `sfe_validated` is a desk entry — neither is a person reading a trade licence against a shop sign.
- */
-export const LICENSE_ONLY_RELEASE_STATUS = "admin_approved" as const;
-
 /** What a customer's link has to say for the request form and the server to judge it as a target. */
 export type CustomerTargetLink = {
   distributorCodeId: string | null;
-  /** The link's `validation_notes` — where the licence-only marker lives. */
+  /** The link's `validation_notes` — read by the reviewers' screens, never by the target test. */
   notes: string | null;
   pharmacyId: string;
   status: string | null;
 };
 
 /**
- * - `coded` — a link to a distributor code: sales attribute through it.
- * - `no_distributor_account` — a nursery or clinic: spend allowed, sales can never be matched.
- * - `licence_released` — a pharmacy with no code, released by a person on its licence (owner,
- *   2026-10-14): spend allowed like a nursery, sales cannot be matched until a code is added.
+ * - `coded` — a link to a distributor code: sales attribute through it. The ONLY kind there is.
+ *
+ * Marketing Requests hold only venues that carry a distributor code (owner, 2026-10-21 — "any thing
+ * with no distributor code never reach the marketing requests"). The two codeless kinds this type
+ * used to carry — `no_distributor_account` (a nursery: "spend allowed, sales can never be matched")
+ * and `licence_released` (a pharmacy a person released on its licence) — are gone with the rules
+ * they served. A codeless venue is validated in Direct Orders, never targeted here.
  */
-export type RequestTargetKind = "coded" | "no_distributor_account" | "licence_released";
+export type RequestTargetKind = "coded";
 
 /**
- * Whether a customer's link can be a request target, and as what kind — or null when it cannot.
+ * Whether a customer's link can be a request target — `"coded"`, or null when it cannot.
  *
  * THE ONE TEST. The request form's picker (`getMarketingRequestDraftWorkspace`) and the server's
  * draft guard (`prepareMarketingRequestDraft`) both call this, because they used to carry two
- * hand-written copies of "which links count" and the copies disagreed in the case that mattered: a
- * codeless pharmacy the picker skipped and the server refused, while a link that no longer
- * belonged to the customer at all was accepted by the server because it only asked whether the
- * customer had SOME validated venue.
+ * hand-written copies of "which links count" and the copies disagreed in the case that mattered.
+ *
+ * A link qualifies only when its status is selectable AND it names a distributor code. A link with
+ * no code is never a target, whatever the venue is and whatever a person ruled on it — a nursery, a
+ * pharmacy released on its licence and a broken row all answer null.
  */
-export function requestTargetKind(link: Pick<CustomerTargetLink, "distributorCodeId" | "notes" | "status">, venueType: VenueType): RequestTargetKind | null {
+export function requestTargetKind(link: Pick<CustomerTargetLink, "distributorCodeId" | "status">): RequestTargetKind | null {
   if (!linkStatusIsSelectable(link.status)) return null;
-  if (link.distributorCodeId) return "coded";
-  if (!venueRequiresDistributorCode(venueType)) return "no_distributor_account";
-  if (link.status === LICENSE_ONLY_RELEASE_STATUS && isLicenseOnlyPharmacyNote(link.notes)) return "licence_released";
-  return null;
+  if (!link.distributorCodeId) return null;
+  return "coded";
 }
 
 /** The customer's own link for a chosen target, or undefined when the target is not theirs. */

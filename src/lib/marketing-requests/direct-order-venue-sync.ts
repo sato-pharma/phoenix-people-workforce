@@ -64,6 +64,7 @@ export type MarketingVenueSkipReason =
   | "no_venue_photo"
   | "no_venue_gps"
   | "wholesaler"
+  | "no_distributor_code"
   | "direct_order_venue_retired"
   | "direct_order_venue_pending_review"
   | "direct_order_venue_rejected"
@@ -77,6 +78,8 @@ export const MARKETING_VENUE_SKIP_TEXT: Readonly<Record<MarketingVenueSkipReason
   no_venue_photo: "The pharmacy has no live photo of its own on file.",
   no_venue_gps: "The pharmacy has no GPS location of its own on file.",
   wholesaler: "The venue is a wholesaler / makhzan, which is never a direct-order venue.",
+  no_distributor_code:
+    "The venue has no distributor code, so it is not a Marketing venue to carry across — a nursery or any codeless venue is validated in Direct Orders directly.",
   direct_order_venue_retired: "Its Direct Order venue was retired, so it is not brought back automatically.",
   direct_order_venue_pending_review: "The Direct Order venue holding its code is still waiting for the validation desk.",
   direct_order_venue_rejected: "The Direct Order venue holding its code was rejected as false by a person.",
@@ -118,6 +121,9 @@ export function planMarketingVenueForDirectOrders(input: {
     hasGps: boolean;
     customerCode?: string | null;
     distributorCode?: string | null;
+    /** True when at least one of this pharmacy's validated links names a distributor code. */
+    hasDistributorCode: boolean;
+    venueType: VenueType;
   };
   linkedVenue: DirectOrderVenueState | null;
   codeVenue: DirectOrderVenueState | null;
@@ -134,6 +140,13 @@ export function planMarketingVenueForDirectOrders(input: {
   if (pharmacy.mergedIntoPharmacyId) return { kind: "skip", reason: "pharmacy_merged" };
   if (isCertainWholesalerVenue(pharmacy.displayName, pharmacy.customerCode ?? null, pharmacy.distributorCode ?? null)) {
     return { kind: "skip", reason: "wholesaler" };
+  }
+  // Belt and braces (owner, 2026-10-21: "any thing with no distributor code never reach the marketing
+  // requests"). Marketing no longer validates a codeless venue, so one sitting there is a leftover
+  // from before the rule — never carried across from Marketing. A nursery is validated in Direct
+  // Orders directly, where a codeless venue is allowed.
+  if (!pharmacy.hasDistributorCode || !venueRequiresDistributorCode(pharmacy.venueType)) {
+    return { kind: "skip", reason: "no_distributor_code" };
   }
 
   // A venue that already holds the code is the same shop. Reuse it — but only when it is settled.
@@ -351,6 +364,8 @@ export async function syncMarketingCustomersToDirectOrders(input: {
         hasGps: num(pharmacy, "captured_latitude") !== null && num(pharmacy, "captured_longitude") !== null,
         customerCode: pair?.customerCode ?? null,
         distributorCode: pair?.distributorCode ?? null,
+        hasDistributorCode: (linksByPharmacy.get(pharmacyId) ?? []).some((link) => Boolean(text(link, "distributor_code_id"))),
+        venueType: normalizeVenueType(pharmacy.venue_type),
       },
       linkedVenue: mapping ? venueState(venueById.get(String(mapping.direct_order_pharmacy_id))) ?? {
         // A link whose venue row is gone (deleted) reads as retired — never re-minted silently.

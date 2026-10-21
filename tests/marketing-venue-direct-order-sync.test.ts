@@ -24,6 +24,8 @@ const SHOP = {
   hasGps: true,
   customerCode: "1234",
   distributorCode: "POS",
+  hasDistributorCode: true,
+  venueType: "pharmacy" as const,
 };
 const venue = (verificationStatus: string, extra: Partial<{ active: boolean; mergedIntoPharmacyId: string | null }> = {}) => ({
   id: "venue-1",
@@ -79,6 +81,18 @@ export async function runMarketingVenueDirectOrderSyncTests() {
     planMarketingVenueForDirectOrders({ pharmacy: { ...SHOP, displayName: "مخزن الأمل للأدوية" }, linkedVenue: null, codeVenue: null }),
     { kind: "skip", reason: "wholesaler" },
   );
+  // Belt and braces (owner, 2026-10-21: "any thing with no distributor code never reach the marketing
+  // requests"): a codeless venue or a nursery left in Marketing from before the rule is never carried
+  // across from there — Direct Orders validates a nursery on its own.
+  assert.deepEqual(
+    planMarketingVenueForDirectOrders({ pharmacy: { ...SHOP, hasDistributorCode: false }, linkedVenue: null, codeVenue: null }),
+    { kind: "skip", reason: "no_distributor_code" },
+  );
+  assert.deepEqual(
+    planMarketingVenueForDirectOrders({ pharmacy: { ...SHOP, venueType: "nursery" }, linkedVenue: null, codeVenue: null }),
+    { kind: "skip", reason: "no_distributor_code" },
+  );
+  assert.equal(isRetryableMarketingVenueSkip("no_distributor_code"), false, "a codeless venue is a ruling, not a failure to retry");
   assert.deepEqual(
     planMarketingVenueForDirectOrders({ pharmacy: { ...SHOP, active: false }, linkedVenue: null, codeVenue: null }),
     { kind: "skip", reason: "pharmacy_inactive" },

@@ -144,6 +144,25 @@ async function testTransferRefusesAnUnansweredVenueType() {
   }
 }
 
+// 🔴 A NURSERY IS NEVER TRANSFERRED FROM MARKETING (owner, 2026-10-21: "any thing with no distributor code
+// never reach the marketing requests"). Refused before any database read, in the shared sentence and code.
+async function testTransferRefusesANursery() {
+  const access = createAccessContext({ hrId: "TEST-1", role: "Super Admin" });
+  await assert.rejects(
+    () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID, venueType: "nursery" }),
+    (error: unknown) =>
+      (error as { code?: string }).code === "venue_without_distributor_code"
+      && /validated in Direct Orders/.test(String((error as Error).message)),
+    "a nursery transfer must be refused as a venue without a distributor code",
+  );
+  const source = readFileSync(new URL("../src/lib/marketing-requests/validated-customer-transfer.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /if \(!link \|\| !text\(link, "distributor_code_id"\)\) \{\s*\n\s*throw validationError\(/,
+    "a customer whose venue link names no distributor code is refused too — the pharmacy path alone transfers",
+  );
+}
+
 function testTransferFilesTheVenueWithTheAnsweredType() {
   const source = readFileSync(new URL("../src/lib/marketing-requests/validated-customer-transfer.ts", import.meta.url), "utf8");
   assert.match(
@@ -163,7 +182,11 @@ function testTransferFilesTheVenueWithTheAnsweredType() {
   assert.match(route, /venueType: body\.venueType \?\? null/, "the route forwards the admin's answer to the service");
   const dialog = readFileSync(new URL("../src/components/marketing-requests/validated-customer-detail.tsx", import.meta.url), "utf8");
   assert.match(dialog, /useState<VenueTypeChoice>\(null\)/, "the dialog starts the venue type unanswered");
-  assert.match(dialog, /disabled=\{busy \|\| !venueTypeIsAnswered\(venueType\)\}/, "Yes, transfer it stays disabled until it is answered");
+  assert.match(
+    dialog,
+    /disabled=\{busy \|\| !venueTypeIsAnswered\(venueType\) \|\| !choiceRequiresDistributorCode\(venueType\)\}/,
+    "Yes, transfer it stays disabled until it is answered — and for a nursery, which is never transferred from Marketing (2026-10-21)",
+  );
   assert.match(dialog, /JSON\.stringify\(\{ venueType \}\)/, "the dialog sends the answer");
 }
 
@@ -380,6 +403,7 @@ export async function runValidatedCustomerTransferTests() {
   await testTransferGateRefusesNonAdmins();
   await testRevertGateRefusesNonAdmins();
   await testTransferRefusesAnUnansweredVenueType();
+  await testTransferRefusesANursery();
   testTransferFilesTheVenueWithTheAnsweredType();
   testAllowedRolesPassThePredicate();
   testCompleteRecordReportsNothingOutstanding();
