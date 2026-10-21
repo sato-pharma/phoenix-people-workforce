@@ -574,62 +574,45 @@ export async function runMarketingRequestServiceTests() {
     "a link that is not validated is not a target",
   );
 
-  // A pharmacy saved on its licence: refused while it waits, accepted once a person released it.
-  const licencePharmacyInput = {
+  // A target with no distributor code is NEVER accepted (owner, 2026-10-21: "any thing with no
+  // distributor code never reach the marketing requests") — not a pharmacy waiting on its licence,
+  // not one a person released, not a nursery. All three are refused in the one sentence.
+  const codelessInput = {
     ...baseInput,
     pharmacies: [{ notes: null, targetId: "venue:44444444-4444-4444-4444-444444444444" }],
   } as unknown as MarketingRequestCreateDraft;
   const licenceVenue = { active: true, display_name: "Al Noor Pharmacy", id: "44444444-4444-4444-4444-444444444444", venue_type: "pharmacy" };
-  const licenceLink = (status: string) => ({
+  const nurseryVenue = { ...licenceVenue, display_name: "حضانة النيل", venue_type: "nursery" };
+  const codelessLink = (status: string, notes: string | null) => ({
     distributorCodeId: null,
-    notes: LICENSE_ONLY_PHARMACY_NOTE,
+    notes,
     pharmacyId: licenceVenue.id,
     status,
   });
-  assert.throws(
-    () =>
-      prepareMarketingRequestDraft({
-        customer,
-        customerLinks: [licenceLink("pending")],
-        input: licencePharmacyInput,
-        products: draftProducts,
-        requestType,
-        requester,
-        venuePharmacies: [licenceVenue],
-      }),
-    /not usable in requests yet/i,
-    "a licence-only pharmacy that nobody has released must be refused, with the reason it is waiting",
-  );
-  const releasedDraft = prepareMarketingRequestDraft({
-    customer,
-    customerLinks: [licenceLink("admin_approved")],
-    input: licencePharmacyInput,
-    products: draftProducts,
-    requestType,
-    requester,
-    venuePharmacies: [licenceVenue],
-  });
-  assert.equal(releasedDraft.pharmacyRows[0].distributor_code_id, null);
-  assert.equal(releasedDraft.pharmacyRows[0].pharmacy_id, licenceVenue.id);
-  assert.match(
-    String(releasedDraft.pharmacyRows[0].notes),
-    /sales cannot be matched/i,
-    "the target row says it has no sales channel, so the ROI panel never prints a misleading zero",
-  );
-  assert.throws(
-    () =>
-      prepareMarketingRequestDraft({
-        customer,
-        customerLinks: [{ ...licenceLink("admin_approved"), notes: null }],
-        input: licencePharmacyInput,
-        products: draftProducts,
-        requestType,
-        requester,
-        venuePharmacies: [licenceVenue],
-      }),
-    /must target one of its distributor codes/i,
-    "an ordinary codeless pharmacy (no licence marker) stays refused - the capture gate is not bypassable",
-  );
+  for (const [label, link, venue] of [
+    ["a licence-only pharmacy still waiting", codelessLink("pending", LICENSE_ONLY_PHARMACY_NOTE), licenceVenue],
+    ["a licence-only pharmacy a person released", codelessLink("admin_approved", LICENSE_ONLY_PHARMACY_NOTE), licenceVenue],
+    ["an ordinary codeless pharmacy", codelessLink("admin_approved", null), licenceVenue],
+    ["a validated nursery", codelessLink("system_validated", null), nurseryVenue],
+  ] as const) {
+    assert.throws(
+      () =>
+        prepareMarketingRequestDraft({
+          customer,
+          customerLinks: [link],
+          input: codelessInput,
+          products: draftProducts,
+          requestType,
+          requester,
+          venuePharmacies: [venue],
+        }),
+      (error: unknown) =>
+        (error as { code?: string }).code === "venue_without_distributor_code"
+        && /has no distributor code, so it cannot be in a marketing request/.test(String((error as Error).message))
+        && String((error as Error).message).includes(venue.display_name),
+      `${label} must be refused as a codeless target, naming the venue`,
+    );
+  }
 
   assert.equal(createAccessContext({ hrId: "MR001", role: "Medical Rep" }).scope, "self");
 

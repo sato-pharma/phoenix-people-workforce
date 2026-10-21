@@ -12,6 +12,10 @@ import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
+import {
+  VENUE_WITHOUT_DISTRIBUTOR_CODE,
+  venueWithoutDistributorCodeMessage,
+} from "@/lib/marketing-requests/coded-venues-only";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isLicenseOnlyPharmacyNote } from "@/lib/venues/pharmacy-license";
 import { licenseVerdictColumns } from "@/lib/venues/pharmacy-license-verdict-columns";
@@ -32,6 +36,7 @@ export type CustomerPharmacyLinkDecisionResult = {
 
 type LinkStatusRow = {
   active: boolean;
+  distributor_code_id: string | null;
   id: string;
   pharmacy_id: string | null;
   validation_notes: string | null;
@@ -79,7 +84,7 @@ export function composeValidationNotes(existingNotes: string | null, addition: s
 async function fetchLinkStatus(linkId: string): Promise<LinkStatusRow> {
   const { data, error } = await getSupabaseAdmin()
     .from("marketing_customer_pharmacies")
-    .select("id, validation_status, validation_notes, active, pharmacy_id")
+    .select("id, validation_status, validation_notes, active, pharmacy_id, distributor_code_id")
     .eq("id", linkId)
     .maybeSingle();
   if (error) throw error;
@@ -209,6 +214,15 @@ export async function approveCustomerPharmacyLink(
   const pharmacyName = await fetchLinkedPharmacyName(existing.pharmacy_id);
   if (isCertainWholesalerVenue(pharmacyName)) {
     throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE);
+  }
+
+  // Marketing holds only venues that carry a distributor code (owner, 2026-10-21: "any thing with no
+  // distributor code never reach the marketing requests"). Approving a codeless link — a nursery, or
+  // a pharmacy held on its licence alone — would validate in Marketing a venue that belongs to
+  // Direct Orders, so it is refused here; Reject stays open for it. This retires the 2026-10-14
+  // licence release below for every codeless link: it can only ever be reached by a coded one now.
+  if (!existing.distributor_code_id) {
+    throw validationError(venueWithoutDistributorCodeMessage(pharmacyName), VENUE_WITHOUT_DISTRIBUTOR_CODE);
   }
 
   const actorHrId = await resolveActorStoredHrId(access);

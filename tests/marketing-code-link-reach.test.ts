@@ -78,42 +78,26 @@ export function runMarketingCodeLinkReachTests() {
     /nothing was elevated/i,
     "the row has to explain the inheritance rule itself — a note that only says what happened leaves the next reader to guess why",
   );
-  // -- Which links can be a request target (owner, 2026-10-14) ---------------------------------
+  // -- Which links can be a request target (owner, 2026-10-21) ---------------------------------
   // ONE test, used by the picker and by the server, so the form can never offer what the server
-  // refuses. A pharmacy saved on its licence alone is a target only once a PERSON released it.
+  // refuses. Marketing Requests hold ONLY venues that carry a distributor code: a link with no code
+  // is never a target — not a nursery, not a pharmacy a person released on its licence.
   const licenceLink = (status: string) => ({ distributorCodeId: null, notes: LICENSE_ONLY_PHARMACY_NOTE, status });
-  assert.equal(requestTargetKind({ distributorCodeId: "code-1", notes: null, status: "system_validated" }, "pharmacy"), "coded");
+  assert.equal(requestTargetKind({ distributorCodeId: "code-1", status: "system_validated" }), "coded");
+  assert.equal(requestTargetKind({ distributorCodeId: "code-1", status: "admin_approved" }), "coded");
   assert.equal(
-    requestTargetKind({ distributorCodeId: null, notes: null, status: "system_validated" }, "nursery"),
-    "no_distributor_account",
-    "a nursery with no code is a target, as it always was",
-  );
-  assert.equal(
-    requestTargetKind({ distributorCodeId: null, notes: null, status: "system_validated" }, "pharmacy"),
+    requestTargetKind({ distributorCodeId: null, status: "system_validated" }),
     null,
-    "a codeless pharmacy with no licence marker is a broken row, never a target",
+    "a codeless link (a nursery's included) is never a target — it is validated in Direct Orders",
   );
-  assert.equal(
-    requestTargetKind(licenceLink("pending"), "pharmacy"),
-    null,
-    "a licence-only pharmacy still waiting for a person is NOT usable in requests",
-  );
-  assert.equal(
-    requestTargetKind(licenceLink("system_validated"), "pharmacy"),
-    null,
-    "the machine's status is not a person reading the licence, so it does not release one",
-  );
-  assert.equal(
-    requestTargetKind(licenceLink("sfe_validated"), "pharmacy"),
-    null,
-    "a desk entry is not a release either - only a Super Admin or the CEO pressing Approve is",
-  );
-  assert.equal(
-    requestTargetKind(licenceLink("admin_approved"), "pharmacy"),
-    "licence_released",
-    "released by a person: usable as a target with no sales channel, like a nursery",
-  );
-  assert.equal(requestTargetKind({ distributorCodeId: "code-1", notes: null, status: "rejected" }, "pharmacy"), null);
+  for (const status of ["pending", "system_validated", "sfe_validated", "admin_approved"]) {
+    assert.equal(
+      requestTargetKind(licenceLink(status)),
+      null,
+      `a licence-only pharmacy is never a target, even ${status} — the 2026-10-14 release is retired`,
+    );
+  }
+  assert.equal(requestTargetKind({ distributorCodeId: "code-1", status: "rejected" }), null);
 
   const targetLinks = [
     { distributorCodeId: "code-1", notes: null, pharmacyId: "pharm-1", status: "system_validated" },

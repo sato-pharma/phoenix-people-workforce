@@ -8494,6 +8494,8 @@ error inside the test, and the two caption breaks each fired their own assertion
 
 ## A pharmacy with no distributor code is validated on its licence and released by a person — owner, 2026-10-14
 
+**SUPERSEDED 2026-10-21** by "Marketing Requests hold only venues that carry a distributor code" below: a licence no longer stands in for a code in Marketing, and the release no longer makes a target. Kept as the history of what shipped.
+
 **The incident.** A District Sales Manager on the Anti Infective line was validating a customer for a marketing request. The pharmacy had no distributor code, he attached its licence, and the form blocked him on the code check — while the licence box itself told him to attach the licence when no code existed. Both the client gate and the server required at least one code, and the licence was never read.
 
 **His two rulings (chat, multiple choice).**
@@ -8510,6 +8512,22 @@ error inside the test, and the two caption breaks each fired their own assertion
 - A new licence file gets its own storage path (a failed save used to delete the licence that was already on file) and resets the verdict to "not checked yet", because the old answer described a different document.
 
 **Still open, owner decision.** The licence verdict stays write-once apart from replacing the file. `a-licence-verdict-is-permanent-and-has-no-correction-path` asks that the owner be asked before the first one is recorded. The first one is recorded by a Super Admin or CEO ticking the box in the Approve dialog.
+
+## Marketing Requests hold only venues that carry a distributor code — owner, 2026-10-21
+
+**His words.** "in direct orders we can validate a nursery without a distributor code — any thing with no distributor code never reach the marketing requests".
+
+**What it replaces.** Three marketing rules: a nursery validated in Marketing on location and live photo alone (2026-08-23); a pharmacy with no code saved on its licence, held, and released by a Super Admin or the CEO as a request target (2026-10-14, the section above); and the codeless request target, `no_distributor_account` / `licence_released` ("spend allowed, sales can never be matched").
+
+**How it works.**
+- One sentence and one code for every refusal: `venueWithoutDistributorCodeMessage` and `venue_without_distributor_code` in `src/lib/marketing-requests/coded-venues-only.ts`. The sentence names the venue and says venues without a code (nurseries included) are validated in Direct Orders.
+- Request targets: `requestTargetKind` in `code-link-reach.ts` answers `"coded"` or null. The picker offers only coded links, lists only customers holding one, and the server's draft guard refuses a codeless target before anything else.
+- Capture: the customer-validation save refuses a nursery and a pharmacy with no code (with or without a licence), on a new venue and on a "My Pharmacies" reuse; `venueCodeSlots` refuses a codeless venue at the write loops too, and neither promotion sweep validates a codeless link. The reusable-pharmacy list no longer offers a codeless venue. The form shows Nursery disabled, says where codeless venues go, and the save gate names the same sentence.
+- Admin paths: Customer Pharmacy Mapping's Approve refuses a codeless link (Reject stays open). The manual Transfer refuses a nursery answer before any read, and a customer whose link carries no code; the dialog keeps Yes disabled on Nursery.
+- The automatic carry-over (`direct-order-venue-sync.ts`) skips a codeless link or a nursery with `no_distributor_code`, as a ruling rather than a retry.
+- Direct Orders is untouched: its desk still routes a codeless nursery to `admin` and never refuses it for a missing code.
+
+**Rows already in production.** Codeless links written before this rule stay as rows (nothing was deleted or rewritten); they are simply never targets and never promoted. Pinned by `tests/marketing-coded-venues-only.test.ts`.
 
 ## A resubmit that changes the money, the customer or the venues restarts the approval chain — owner, 2026-10-14
 

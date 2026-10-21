@@ -67,50 +67,44 @@ export async function runMarketingValidationSaveGateTests() {
 
   /*
    * A nursery has no distributor account, so the form hides its vendor-codes block entirely — the
-   * default empty code row stays in state with nothing on screen to fill it. The old boolean still
-   * demanded a distributor and a code from every venue while the sentence skipped both for a
-   * nursery, so answering "Nursery" greyed Save for good AND printed no reason, in a form whose
-   * only feedback channel is that sentence. This is the whole point of deriving one from the other.
+   * default empty code row stays in state with nothing on screen to fill it. A greyed Save with no
+   * sentence is the dead form this module exists to prevent, so the nursery case must always have
+   * a sentence. Since 2026-10-21 that sentence is the refusal itself (owner: "any thing with no
+   * distributor code never reach the marketing requests"): a nursery is validated in Direct Orders.
    */
-  const nursery = [customer({ pharmacies: [pharmacy({ venueType: "nursery", vendorCodes: [{ distributorCode: "", distributorId: "" }] })] })];
-  assert.equal(
-    describeMissingSaveRequirement(nursery, false),
-    null,
-    "a nursery needs no distributor code, so nothing is missing",
+  const nursery = [customer({ pharmacies: [pharmacy({ name: "حضانة النيل", venueType: "nursery", vendorCodes: [{ distributorCode: "", distributorId: "" }] })] })];
+  assert.match(
+    describeMissingSaveRequirement(nursery, false) ?? "",
+    /"حضانة النيل" has no distributor code[\s\S]*validated in Direct Orders/,
+    "a nursery is refused in Marketing, in the shared sentence that points to Direct Orders",
   );
-  assert.equal(
-    canSaveMarketingValidation(nursery, false),
-    true,
-    "Save must be ENABLED for a nursery with no code — the codes block is hidden, so a greyed button here can never be acted on",
-  );
-
-  // Same, with the code row removed outright rather than left blank.
+  assert.equal(canSaveMarketingValidation(nursery, false), false, "and Save is disabled — WITH that sentence beside it");
   assert.equal(
     canSaveMarketingValidation([customer({ pharmacies: [pharmacy({ venueType: "nursery", vendorCodes: [] })] })], false),
-    true,
-    "a nursery with no code row at all saves too",
+    false,
+    "a nursery with no code row at all is refused too",
   );
 
-  // ------------------------------------------- a PHARMACY with no code can be saved on its LICENCE
+  // ---------------------------------- a PHARMACY with no code is refused, licence or not (2026-10-21)
 
   /*
-   * Owner, 2026-10-14: a pharmacy with no distributor code may still be validated when its licence
-   * is attached; it is saved as NOT USABLE IN REQUESTS YET. The form opens with ONE blank code row,
-   * so the licence route has to treat that untouched row as "no code" — otherwise the rep who did
-   * exactly what the screen asked (attached the licence) is still told to enter a code.
+   * Owner, 2026-10-14 had a pharmacy with no distributor code saved on its licence, held as not
+   * usable in requests. Retired 2026-10-21: a licence never stands in for a code in Marketing. The
+   * form opens with ONE blank code row, so an attached licence still drops that untouched row from
+   * the payload — and the sentence then names the missing code and where codeless venues go.
    */
   const licence = { dataUrl: "data:application/pdf;base64,AAAA", fileName: "licence.pdf", isPdf: true };
   const blankRow = [{ distributorCode: "", distributorId: "dist-pos" }];
   const licenceOnly = [customer({ pharmacies: [pharmacy({ license: licence, vendorCodes: blankRow })] })];
-  assert.equal(
-    describeMissingSaveRequirement(licenceOnly, false),
-    null,
-    "a codeless pharmacy with its licence attached is savable — the untouched code row is not a code",
+  assert.match(
+    describeMissingSaveRequirement(licenceOnly, false) ?? "",
+    /needs at least one distributor code\. Venues without a distributor code \(nurseries included\) are validated in Direct Orders\./,
+    "a codeless pharmacy with its licence attached is NOT savable in Marketing",
   );
-  assert.equal(canSaveMarketingValidation(licenceOnly, false), true, "and Save is enabled for it");
+  assert.equal(canSaveMarketingValidation(licenceOnly, false), false, "and Save is disabled for it");
   assert.equal(
     canSaveMarketingValidation([customer({ pharmacies: [pharmacy({ license: licence, vendorCodes: [] })] })], false),
-    true,
+    false,
     "also with the code rows removed outright",
   );
   assert.match(
@@ -120,8 +114,13 @@ export async function runMarketingValidationSaveGateTests() {
   );
   assert.match(
     describeMissingSaveRequirement([customer({ pharmacies: [pharmacy({ vendorCodes: [] })] })], false) ?? "",
-    /needs at least one distributor code, or attach its pharmacy licence/,
-    "with neither route, BOTH are named so the rep is never told only half",
+    /needs at least one distributor code\. Venues without a distributor code/,
+    "with no code at all, the sentence names the code and points codeless venues to Direct Orders",
+  );
+  assert.doesNotMatch(
+    describeMissingSaveRequirement([customer({ pharmacies: [pharmacy({ vendorCodes: [] })] })], false) ?? "",
+    /attach its pharmacy licence/,
+    "the retired licence route is never offered again",
   );
   assert.match(
     describeMissingSaveRequirement(
@@ -129,7 +128,7 @@ export async function runMarketingValidationSaveGateTests() {
       false,
     ) ?? "",
     /Pick a distributor for/,
-    "a code the rep DID type is still checked even with a licence — the licence replaces a missing code, not a half-typed one",
+    "a code the rep DID type is still checked even with a licence",
   );
   assert.deepEqual(
     withoutBlankCodeRows({ license: licence, vendorCodes: [...blankRow, { distributorCode: "0010453", distributorId: "dist-pos" }] }),

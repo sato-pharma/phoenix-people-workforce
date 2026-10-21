@@ -98,9 +98,8 @@ import {
   PHARMACY_LICENSE_MAX_BYTES,
   isPharmacyLicenseContentType,
   isLicenseOnlyPharmacyNote,
-  pharmacyLicenseFillsTheIdentityGap,
-  pharmacyLicensePrompt,
 } from "@/lib/venues/pharmacy-license";
+import { CODELESS_VENUES_GO_TO_DIRECT_ORDERS } from "@/lib/marketing-requests/coded-venues-only";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
@@ -1107,12 +1106,12 @@ function PharmacyLicensePanel({
   if (!venueTypeIsAnswered(venueType)) return null;
   if (!venueRequiresDistributorCode(venueType)) return null;
 
-  const fillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
-  const note = pharmacyLicensePrompt({
-    distributorCodeCount,
-    hasLicenseOnFile: Boolean(license),
-    venueType,
-  });
+  // A licence never stands in for a distributor code in Marketing (owner, 2026-10-21): a pharmacy
+  // with no code is validated in Direct Orders. So the licence is optional here, always, and the
+  // panel says plainly that it does not replace the code when none has been typed.
+  const note = distributorCodeCount === 0
+    ? `The licence does not replace a distributor code. ${CODELESS_VENUES_GO_TO_DIRECT_ORDERS}`
+    : null;
 
   function readFile(file: File | null | undefined) {
     setError(null);
@@ -1153,16 +1152,12 @@ function PharmacyLicensePanel({
 
   return (
     <div
-      className={
-        fillsTheGap && !license
-          ? "rounded-none border border-amber-200 bg-amber-50/60 p-3"
-          : `rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`
-      }
+      className={`rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}
     >
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
-        Pharmacy Licence · رخصة الصيدلية {fillsTheGap ? "" : "(optional)"}
+        Pharmacy Licence · رخصة الصيدلية (optional)
       </p>
-      <p className={`mt-1 text-phx-xs font-semibold ${fillsTheGap ? "text-amber-800" : "text-slate-500"}`} dir="auto">
+      <p className="mt-1 text-phx-xs font-semibold text-slate-500" dir="auto">
         {note ??
           "Attach it if you have it — the reviewer checks the trade name on the licence against the name on the shop sign."}
       </p>
@@ -3433,14 +3428,18 @@ export function MarketingValidationWorkspace() {
                                     What is this? *
                                   </p>
                                   <div className="mt-1.5 flex items-center gap-2">
+                                    {/* A venue with no distributor account (a nursery) cannot be validated in
+                                        Marketing (owner, 2026-10-21), so its answer is shown but disabled — the
+                                        sentence below says where it goes instead. */}
                                     {VENUE_TYPES.map((venueType) => (
                                       <Button
                                         aria-pressed={pharmacy.venueType === venueType}
                                         className={
                                           pharmacy.venueType === venueType
                                             ? `${CAPTURE_BUTTON_SIZE} rounded-none border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700`
-                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
+                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`
                                         }
+                                        disabled={!venueRequiresDistributorCode(venueType)}
                                         key={venueType}
                                         onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
                                         type="button"
@@ -3449,17 +3448,19 @@ export function MarketingValidationWorkspace() {
                                       </Button>
                                     ))}
                                   </div>
-                                  {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
+                                  {/* Unanswered says so; a nursery (only reachable from an old draft) is refused
+                                      in the shared sentence; a pharmacy is told only where codeless venues go. */}
                                   {!venueTypeIsAnswered(pharmacy.venueType) ? (
                                     <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
                                       {VENUE_TYPE_UNANSWERED_MESSAGE}
                                     </p>
                                   ) : venueRequiresDistributorCode(pharmacy.venueType) ? null : (
-                                    <p className="mt-1.5 text-phx-xs text-slate-600">
-                                      A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor account, so it
-                                      carries no code. Spend on it is allowed and can never be matched to a sale.
+                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
+                                      A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor code, so it
+                                      cannot be validated here.
                                     </p>
                                   )}
+                                  <p className="mt-1.5 text-phx-xs text-slate-600">{CODELESS_VENUES_GO_TO_DIRECT_ORDERS}</p>
                                 </div>
                                 <div
                                   className={

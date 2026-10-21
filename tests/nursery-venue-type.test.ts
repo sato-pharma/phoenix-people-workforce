@@ -104,8 +104,10 @@ function testACodelessVenueTargetRoundTrips() {
  *
  * Both write loops used to iterate the vendor codes directly, so a venue with zero codes produced
  * a customer row and a pharmacy row with nothing joining them — a venue that saved successfully
- * and then did not exist. `venueCodeSlots` yields one NULL slot for a codeless venue so the link
- * is still written, and none at all for a pharmacy with no codes so the old refusal still fires.
+ * and then did not exist. `venueCodeSlots` yielded one NULL slot for a codeless venue so the link
+ * was still written. Since 2026-10-21 (owner: "any thing with no distributor code never reach the
+ * marketing requests") it REFUSES a codeless venue instead — the write loops still go through it,
+ * so a codeless venue can never slip into a link row behind the capture gate.
  */
 function testBothWriteLoopsGoThroughVenueCodeSlots() {
   const service = code(SERVICE);
@@ -129,23 +131,24 @@ function testBothWriteLoopsGoThroughVenueCodeSlots() {
 }
 
 /**
- * A nursery cannot hold a code, and a pharmacy cannot go without one. Both directions matter:
- * relaxing the second would reopen the original hole from the other side.
+ * Marketing capture refuses every venue without a distributor code (owner, 2026-10-21): a nursery
+ * (no distributor account — so it can never carry a code either) and a pharmacy with no code. Both
+ * are validated in Direct Orders. A code typed onto a nursery is refused by the same gate, because
+ * the nursery is refused before its codes are read.
  */
 function testCaptureRefusesBothWrongCombinations() {
   const service = code(SERVICE);
 
-  // Was pinned as the inline `venueType === "pharmacy"` until 2026-08-26, which pinned exactly the
-  // re-derivation venue-type.ts warns against. The refusal is the same; only who decides it moved.
+  // Through the one predicate, never an inline `venueType === "pharmacy"` re-derivation.
   assert.match(
     service,
-    /venueRequiresDistributorCode\(venueType\) && vendorCodeInputs\.length === 0/,
-    "a pharmacy with no vendor code must still be refused at capture, via the one predicate",
+    /if \(!venueRequiresDistributorCode\(venueType\) \|\| vendorCodeInputs\.length === 0\) \{\s*\n\s*throw validationError\(venueWithoutDistributorCodeMessage\(displayName\), VENUE_WITHOUT_DISTRIBUTOR_CODE\);/,
+    "a nursery, and a pharmacy with no vendor code, must be refused at marketing capture via the one predicate",
   );
-  assert.match(
+  assert.doesNotMatch(
     service,
-    /venue_cannot_have_vendor_code/,
-    "a code offered for a venue with no distributor account must be refused with a stable code",
+    /pharmacy_code_or_license_required/,
+    "the 2026-10-14 licence route (a codeless pharmacy saved on its licence) is retired",
   );
 }
 

@@ -32,7 +32,6 @@ import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
   loadMarketingPharmacyLicensesByPharmacyIds,
-  MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE,
   type MarketingPharmacyLicenseFile,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
@@ -68,10 +67,13 @@ import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
 import {
   findCustomerTargetLink,
   LINK_STATUS_PRECEDENCE,
-  linkStatusIsSelectable,
   requestTargetKind,
   type CustomerTargetLink,
 } from "@/lib/marketing-requests/code-link-reach";
+import {
+  VENUE_WITHOUT_DISTRIBUTOR_CODE,
+  venueWithoutDistributorCodeMessage,
+} from "@/lib/marketing-requests/coded-venues-only";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -150,15 +152,11 @@ import {
   venueNonAttributableReason,
   venueRequiresDistributorCode,
   venueTypeIsAnswered,
-  venueTypeLabel,
   type VenueType,
 } from "@/lib/venues/venue-type";
 import {
   isLicenseOnlyPharmacyNote,
-  LICENSE_ONLY_PHARMACY_NOTE,
-  LICENSE_RELEASED_TARGET_NOTE,
   parsePharmacyLicenseDataUrl,
-  pharmacyRegistersOnLicenseAlone,
 } from "@/lib/venues/pharmacy-license";
 import {
   WHOLESALER_VENUE_REFUSED_MESSAGE,
@@ -990,19 +988,19 @@ type NormalizedMarketingValidationPharmacy = {
 };
 
 /**
- * What to iterate when writing a venue's links: one entry per distributor code, or a single `null`
- * for a venue that has none.
+ * What to iterate when writing a venue's links: one entry per distributor code — and a refusal for
+ * a venue that has none.
  *
  * Both write paths below used to loop over `vendorCodes` directly, which meant a venue with zero
  * codes silently produced NO customer link at all — the customer would be created, the shop would
- * be created, and nothing would join them. That is the failure this returns `[null]` to prevent.
+ * be created, and nothing would join them. Until 2026-10-21 this answered `[null]` (one codeless
+ * link) for a nursery or a licence-only pharmacy. Marketing now holds only venues that carry a
+ * distributor code (owner, 2026-10-21), so a codeless venue is refused HERE too — belt and braces
+ * behind the capture gates, which refuse it before anything is written.
  */
-function venueCodeSlots<T>(venueType: VenueType, codes: T[], licenseOnly = false): Array<T | null> {
+function venueCodeSlots<T>(codes: T[], venueName: string | null): Array<T | null> {
   if (codes.length > 0) return codes;
-  // A pharmacy saved on its licence alone gets ONE codeless pass, so it has a link to be held and
-  // released — without it the licence would be stored against a shop nothing joins to the customer.
-  if (licenseOnly) return [null];
-  return venueRequiresDistributorCode(venueType) ? [] : [null];
+  throw validationError(venueWithoutDistributorCodeMessage(venueName), VENUE_WITHOUT_DISTRIBUTOR_CODE);
 }
 
 type NormalizedMarketingValidationCustomer = {
@@ -2218,32 +2216,18 @@ function normalizeValidationPharmacy(
   const venueType = venueTypeChoice;
   const vendorCodeInputs = Array.isArray(inputPharmacy.vendorCodes) ? inputPharmacy.vendorCodes : [];
   const licenseFileDataUrl = normalizePharmacyLicenseDataUrl(inputPharmacy.licenseFileDataUrl, label);
-  // A pharmacy still must name a code — a shop nobody can invoice attributes nothing, and that has
-  // been refused since the module shipped. What changed on 2026-08-23 is that "must name a code" is
-  // no longer the same statement as "is a venue": a nursery has no distributor account, and this
-  // gate is what left inventing one as the only way through the form.
+  // MARKETING HOLDS ONLY VENUES THAT CARRY A DISTRIBUTOR CODE (owner, 2026-10-21: "any thing with
+  // no distributor code never reach the marketing requests"). A nursery has no distributor account,
+  // and a pharmacy with no code — even with its licence attached — is the same case: both are
+  // validated in Direct Orders, never here. This replaces the 2026-08-23 nursery route (location +
+  // photo alone) and the 2026-10-14 licence route (saved held, released by a Super Admin or the CEO).
   //
   // Asked through the predicate, never as `venueType === "pharmacy"`: that inline re-derivation is
   // exactly what the venue-type module warns lets the next type be added in one place and missed in
-  // five.
-  //
-  // The licence is the second route (owner, 2026-10-14): a pharmacy with no code may be saved when
-  // its licence is attached, and is held as not usable in requests until a code is added or a Super
-  // Admin releases it. With neither, both routes are named.
-  if (venueRequiresDistributorCode(venueType) && vendorCodeInputs.length === 0 && !licenseFileDataUrl) {
-    throw validationError(
-      `${label} needs at least one vendor code, or attach its pharmacy licence if it has none.`,
-      "pharmacy_code_or_license_required",
-    );
-  }
-  // The mirror image, and the reason this is a check and not just a relaxation: a code typed onto a
-  // nursery is a code that will resolve against somebody else's shop. Refuse it at the door rather
-  // than storing it and discovering later whose sales it stole.
-  if (!venueRequiresDistributorCode(venueType) && vendorCodeInputs.length > 0) {
-    throw validationError(
-      `${label} is a ${venueTypeLabel(venueType).toLowerCase()}, which has no distributor account, so it cannot carry a vendor code.`,
-      "venue_cannot_have_vendor_code",
-    );
+  // five. Asked BEFORE the codes are parsed, so a nursery is told where it belongs rather than being
+  // told its code is malformed.
+  if (!venueRequiresDistributorCode(venueType) || vendorCodeInputs.length === 0) {
+    throw validationError(venueWithoutDistributorCodeMessage(displayName), VENUE_WITHOUT_DISTRIBUTOR_CODE);
   }
 
   const pharmacyPhotoName = cleanText(inputPharmacy.evidencePhotoName);
@@ -2577,58 +2561,17 @@ export function prepareMarketingRequestDraft(params: {
   const venuePharmaciesById = new Map((params.venuePharmacies ?? []).map((venue) => [venue.id, venue]));
 
   const pharmacyRows = normalized.pharmacies.map((pharmacy) => {
-    // A venue with no distributor account — spend on it is allowed, and can never be attributed to
-    // a sale, so there is no code to look up and no capture gate to pass. Everything the gate below
-    // protects is about matching an invoice line, which this venue will never appear on.
+    // A target with no distributor code is never accepted (owner, 2026-10-21: "any thing with no
+    // distributor code never reach the marketing requests"). Until then a nursery and a pharmacy
+    // released on its licence could be codeless targets — "spend allowed, sales can never be
+    // matched". Both are validated in Direct Orders now, and refused here in the one sentence every
+    // marketing door uses. The venue is looked up only to NAME it in that sentence.
     if (!pharmacy.distributorCodeId) {
       const venue = pharmacy.pharmacyId ? venuePharmaciesById.get(pharmacy.pharmacyId) : undefined;
-      if (!venue || venue.active === false) {
-        throw notFoundError("That venue was not found or is inactive.", "pharmacy_not_found");
-      }
-      const venueType = normalizeVenueType(venue.venue_type);
-      const venueLabel = venue.display_name ?? "That venue";
-      const codelessLink = findCustomerTargetLink(params.customerLinks, {
-        distributorCodeId: null,
-        pharmacyId: venue.id,
-      });
-      const targetKind = codelessLink ? requestTargetKind(codelessLink, venueType) : null;
-      if (!targetKind) {
-        // Three different ways to land here, and a requester can fix only one of them, so each
-        // says its own thing. A pharmacy saved on its licence is waiting for a person to release
-        // it; any other codeless pharmacy is the one way this could be abused — pointing a target
-        // at an ordinary pharmacy to slip past the capture gate that guards its code.
-        if (codelessLink && venueRequiresDistributorCode(venueType) && isLicenseOnlyPharmacyNote(codelessLink.notes)) {
-          throw validationError(
-            `"${venueLabel}" was saved on its licence and is not usable in requests yet. A Super Admin or the CEO must release it, or a distributor code must be added.`,
-            "pharmacy_license_not_released",
-          );
-        }
-        if (venueRequiresDistributorCode(venueType)) {
-          throw validationError(
-            `"${venueLabel}" is a pharmacy, so a request must target one of its distributor codes.`,
-            "pharmacy_code_required",
-          );
-        }
-        throw validationError(
-          `"${venueLabel}" is not one of this customer's validated venues.`,
-          "target_not_linked_to_customer",
-        );
-      }
-      // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never a request
-      // target — refused here for an existing venue that was validated before this guard existed.
-      // (A coded target carries no name in this pure function; the validation-write and target-
-      // picker guards cover that path upstream.)
-      if (isCertainWholesalerVenue(venue.display_name)) {
-        throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE, "venue_is_wholesaler");
-      }
-      return {
-        distributor_code_id: null,
-        notes: [
-          pharmacy.notes,
-          targetKind === "licence_released" ? LICENSE_RELEASED_TARGET_NOTE : venueNonAttributableReason(venueType),
-        ].filter(Boolean).join(" | ") || null,
-        pharmacy_id: venue.id,
-      };
+      throw validationError(
+        venueWithoutDistributorCodeMessage(venue?.display_name ?? null),
+        VENUE_WITHOUT_DISTRIBUTOR_CODE,
+      );
     }
 
     const code = pharmacyCodesById.get(pharmacy.distributorCodeId);
@@ -2642,7 +2585,7 @@ export function prepareMarketingRequestDraft(params: {
       distributorCodeId: code.id,
       pharmacyId: code.pharmacy_id,
     });
-    if (!codedLink || requestTargetKind(codedLink, DEFAULT_VENUE_TYPE) !== "coded") {
+    if (!codedLink || requestTargetKind(codedLink) !== "coded") {
       throw validationError(
         `Pharmacy code "${code.distributor_pharmacy_code ?? code.normalized_pharmacy_code ?? code.id}" is not one of this customer's validated venues.`,
         "target_not_linked_to_customer",
@@ -5090,6 +5033,9 @@ async function assertMarketingCustomerHasValidatedVenue(
     .eq("customer_id", customerId)
     .eq("active", true)
     .in("validation_status", [...LINK_STATUS_PRECEDENCE])
+    // Only a link that names a distributor code counts (owner, 2026-10-21) — the same test the
+    // picker applies, so a customer whose only venue has no code is not a requestable customer.
+    .not("distributor_code_id", "is", null)
     .limit(1);
   if (validatedCustomerLinkResult.error) throw validatedCustomerLinkResult.error;
   if ((validatedCustomerLinkResult.data ?? []).length === 0) {
@@ -5112,27 +5058,6 @@ function assertMarketingRequestNamesAVenue(pharmacyRowCount: number): void {
     "Select at least one target pharmacy — a request with no target can never be credited a sale.",
     "marketing_request_has_no_venue",
   );
-}
-
-/**
- * Which of these venues already hold a trade licence on file. Chunked at 50 for the same reason as
- * the licence loader: a long `.in()` list comes back empty, which would read as "no licence".
- */
-async function fetchPharmacyIdsWithLicense(supabase: SupabaseClient, pharmacyIds: string[]): Promise<Set<string>> {
-  const found = new Set<string>();
-  for (let index = 0; index < pharmacyIds.length; index += 50) {
-    const { data, error } = await supabase
-      .from("marketing_evidence_files")
-      .select("entity_id")
-      .eq("entity_type", "pharmacy")
-      .eq("evidence_type", MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE)
-      .in("entity_id", pharmacyIds.slice(index, index + 50));
-    if (error) throw error;
-    for (const row of (data ?? []) as Array<{ entity_id: string | null }>) {
-      if (row.entity_id) found.add(String(row.entity_id));
-    }
-  }
-  return found;
 }
 
 /**
@@ -5446,8 +5371,10 @@ async function refreshLinksAfterCustomerCompletion(input: {
     // let the mapping screen surface it. A MISSING code is only a defect when the venue is supposed
     // to have one: a nursery link legitimately carries none, and refusing to reason about it here
     // is what would leave it held at "Not Usable Yet" after its customer was fully evidenced.
+    // A link with no code is never promoted (owner, 2026-10-21): a venue without a distributor code
+    // is not validated in Marketing at all — a nursery's link included. It stays where it is.
     if (!pharmacyRow) continue;
-    if (!codeRow && venueRequiresDistributorCode(normalizeVenueType(pharmacyRow.venue_type))) continue;
+    if (!codeRow) continue;
 
     const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
     const reference = referencesById.get(Number(codeRow?.reference_id ?? 0));
@@ -5584,8 +5511,9 @@ async function refreshLinksAfterPharmacyCompletion(input: {
     const codeRow = link.distributor_code_id ? codesById.get(String(link.distributor_code_id)) : null;
     // Mirrors the customer sweep: a link whose other half has gone is not something to reason
     // about, and a missing code is only a defect on a venue that is supposed to carry one.
+    // A link with no code is never promoted (owner, 2026-10-21), whatever the venue is.
     if (!customerRow) continue;
-    if (!codeRow && venueRequiresDistributorCode(venueType)) continue;
+    if (!codeRow) continue;
 
     const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
     const reference = referencesById.get(Number(codeRow?.reference_id ?? 0));
@@ -6079,14 +6007,12 @@ async function buildReusableMarketingPharmacies(params: {
     // Source-of-Sales override codes the detector reads, so passing it could only mis-key an owner
     // ruling. The two-tier detector still protects owner pharmacy-overrides by NAME.
     .filter((row) => !isCertainWholesalerVenue(row.display_name))
-    // A PHARMACY with no distributor code has nothing to link a sale to, so there is nothing to
-    // reuse — offering it would create a customer with an empty target list in the request form.
-    //
-    // A nursery is the opposite case and must NOT be filtered out here: having no code is its
-    // normal, correct state, and hiding it is what would send the next rep back to inventing one.
+    // A venue with no distributor code is not offered for reuse, a nursery included (owner,
+    // 2026-10-21: "any thing with no distributor code never reach the marketing requests") — it is
+    // validated in Direct Orders, and the save would refuse it anyway.
     .filter((row) =>
       (codesByPharmacyId.get(row.id) ?? []).length > 0
-      || !venueRequiresDistributorCode(normalizeVenueType(row.venue_type)))
+      && venueRequiresDistributorCode(normalizeVenueType(row.venue_type)))
     .map((row) => {
       const ownerHrId = normalizeHrId(row.owner_hr_id);
       return {
@@ -6681,8 +6607,6 @@ export async function createMarketingValidationRecord(
   );
   const reusedPharmacyRows = new Map<string, MarketingPharmacyDbRow>();
   const reusedCodesByPharmacyId = new Map<string, MarketingPharmacyDistributorCodeDbRow[]>();
-  // Reused pharmacies with no code that are accepted on their licence alone (see the refusal below).
-  const reusedLicenseOnlyPharmacyIds = new Set<string>();
   const reusedReferencesById = new Map<number, MarketingPharmacyCodeReferenceDbRow>();
   if (reusedPharmacyIds.length > 0) {
     const rows = await fetchRowsByIds<MarketingPharmacyDbRow>(
@@ -6717,35 +6641,19 @@ export async function createMarketingValidationRecord(
       bucket.push(code);
       reusedCodesByPharmacyId.set(code.pharmacy_id, bucket);
     }
-    // A reused venue with no distributor code. Only a venue that NORMALLY carries one is a problem:
-    // a nursery has none by design (and `venueCodeSlots` already gives it its one codeless pass), so
-    // refusing it here made every nursery un-attachable to a second customer. A pharmacy with no code
-    // is accepted only on its licence - attached in this submission or already on file - and is then
-    // held as not usable in requests yet, exactly like a freshly captured licence-only pharmacy.
-    const licenseInThisSubmission = new Set(
-      normalized.customers.flatMap((entry) =>
-        entry.pharmacies
-          .filter((pharmacy) => pharmacy.existingPharmacyId && pharmacy.licenseFileDataUrl)
-          .map((pharmacy) => String(pharmacy.existingPharmacyId)),
-      ),
-    );
-    const codelessReuseIds = reusedPharmacyIds.filter((id) => {
-      if ((reusedCodesByPharmacyId.get(id) ?? []).length > 0) return false;
-      return venueRequiresDistributorCode(normalizeVenueType(reusedPharmacyRows.get(id)?.venue_type));
-    });
-    const licenseOnFile = codelessReuseIds.some((id) => !licenseInThisSubmission.has(id))
-      ? await fetchPharmacyIdsWithLicense(supabase, codelessReuseIds)
-      : new Set<string>();
-    for (const pharmacyId of codelessReuseIds) {
-      if (licenseInThisSubmission.has(pharmacyId) || licenseOnFile.has(pharmacyId)) {
-        reusedLicenseOnlyPharmacyIds.add(pharmacyId);
-        continue;
-      }
+    // A reused venue with no distributor code is refused, whatever it is (owner, 2026-10-21: "any
+    // thing with no distributor code never reach the marketing requests"). Until then a nursery
+    // reused freely and a codeless pharmacy was accepted on its licence and held; both are validated
+    // in Direct Orders now. Refused before a single customer is written.
+    for (const pharmacyId of reusedPharmacyIds) {
       const row = reusedPharmacyRows.get(pharmacyId);
-      throw validationError(
-        `Pharmacy "${row?.display_name ?? pharmacyId}" has no distributor code. Attach its licence to save it as not usable in requests yet, or add its code.`,
-        "pharmacy_has_no_distributor_code",
-      );
+      const hasCode = (reusedCodesByPharmacyId.get(pharmacyId) ?? []).length > 0;
+      if (!hasCode || !venueRequiresDistributorCode(normalizeVenueType(row?.venue_type))) {
+        throw validationError(
+          venueWithoutDistributorCodeMessage(row?.display_name ?? pharmacyId),
+          VENUE_WITHOUT_DISTRIBUTOR_CODE,
+        );
+      }
     }
 
     // The registered address behind each reused code, so attaching an existing shop faces the same
@@ -7189,13 +7097,10 @@ export async function createMarketingValidationRecord(
         // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
 
         for (const codeRow of venueCodeSlots(
-          pharmacy.venueType,
           reusedCodesByPharmacyId.get(reusedRow.id) ?? [],
-          reusedLicenseOnlyPharmacyIds.has(reusedRow.id),
+          pharmacy.displayName,
         )) {
           const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
-          // This pass is the licence-only one: a pharmacy with no code, accepted on its licence.
-          const reusedOnLicenseAlone = !codeRow && reusedLicenseOnlyPharmacyIds.has(reusedRow.id);
           // Compared against the SHOP'S OWN capture, not this customer's: the reuse path
           // deliberately re-captures nothing, so the only GPS fix that ever described this shop is
           // the one taken when it was first created. A shop whose capture contradicts its code is
@@ -7206,18 +7111,14 @@ export async function createMarketingValidationRecord(
             registeredAddress: reusedReference?.raw_pharmacy_address,
             registeredRegion: reusedReference?.raw_region,
           });
-          // Always held on `pending`, desk and field alike - the same rule as a freshly captured
-          // licence-only pharmacy: nobody has compared the licence with the shop sign yet.
-          const linkValidationStatus: MarketingValidationStatus = reusedOnLicenseAlone
-            ? "pending"
-            : resolveMarketingValidationRecordStatus({
-              isOnBehalf,
-              systemStatus: resolveMarketingSystemValidationStatus({
-                customerEvidenceStatus,
-                governorateVerdict: governorateCheck.verdict,
-                pharmacyEvidenceStatus: pharmacy.evidenceStatus,
-              }),
-            });
+          const linkValidationStatus: MarketingValidationStatus = resolveMarketingValidationRecordStatus({
+            isOnBehalf,
+            systemStatus: resolveMarketingSystemValidationStatus({
+              customerEvidenceStatus,
+              governorateVerdict: governorateCheck.verdict,
+              pharmacyEvidenceStatus: pharmacy.evidenceStatus,
+            }),
+          });
           const linkValidationNotes = [
             isOnBehalf
               ? adminValidationNote
@@ -7228,7 +7129,6 @@ export async function createMarketingValidationRecord(
             distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
             buildGovernorateMismatchNote(governorateCheck),
             distributorCode ? null : venueNonAttributableReason(pharmacy.venueType),
-            reusedOnLicenseAlone ? LICENSE_ONLY_PHARMACY_NOTE : null,
             // Says on the row itself that this shop was not re-captured for this customer, so an
             // evidence photo dated before the customer is explainable rather than suspicious.
             `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
@@ -7263,28 +7163,15 @@ export async function createMarketingValidationRecord(
             );
           }
 
-          // A link a person has ALREADY released (or any validated link) is never pulled back to
-          // `pending` by a re-save: attaching the same licence-only pharmacy again must not undo the
-          // Super Admin's or the CEO's ruling, or quietly un-validate the customer.
-          const keepValidatedLink = Boolean(
-            reusedOnLicenseAlone
-            && existingLinkRow
-            && linkStatusIsSelectable(existingLinkRow.validation_status),
-          );
           const reusedLinkInsert = existingLinkRow
             ? await supabase
               .from("marketing_customer_pharmacies")
-              .update(keepValidatedLink
-                ? {
-                  updated_at: new Date().toISOString(),
-                  updated_by_hr_id: hrIdForStorage(actorHrId),
-                }
-                : {
-                  updated_at: new Date().toISOString(),
-                  updated_by_hr_id: hrIdForStorage(actorHrId),
-                  validation_notes: linkValidationNotes,
-                  validation_status: linkValidationStatus,
-                })
+              .update({
+                updated_at: new Date().toISOString(),
+                updated_by_hr_id: hrIdForStorage(actorHrId),
+                validation_notes: linkValidationNotes,
+                validation_status: linkValidationStatus,
+              })
               .eq("id", existingLinkRow.id)
               .neq("validation_status", "rejected")
               .select("*")
@@ -7428,16 +7315,11 @@ export async function createMarketingValidationRecord(
 
       // `venueCodeSlots`, not `vendorCodes`: everything below — including the customer↔pharmacy
       // link itself — used to live inside a loop over the codes, so a venue with none produced a
-      // customer and a shop with nothing joining them. A nursery gets exactly one codeless pass.
-      const savedOnLicenseAlone = pharmacyRegistersOnLicenseAlone({
-        codeCount: normalizedPharmacy.vendorCodes.length,
-        hasLicense: Boolean(normalizedPharmacy.licenseFileDataUrl),
-        venueType: normalizedPharmacy.venueType,
-      });
+      // customer and a shop with nothing joining them. A venue with no code is refused by it now
+      // (owner, 2026-10-21) — the capture gate already refused it before anything was written.
       for (const vendorCode of venueCodeSlots(
-        normalizedPharmacy.venueType,
         normalizedPharmacy.vendorCodes,
-        savedOnLicenseAlone,
+        normalizedPharmacy.displayName,
       )) {
         const reference = vendorCode
           ? await resolvePharmacyCodeReference({
@@ -7456,21 +7338,14 @@ export async function createMarketingValidationRecord(
           registeredAddress: reference?.registeredAddress,
           registeredRegion: reference?.registeredRegion,
         });
-        // A pharmacy saved on its licence alone is ALWAYS held on `pending`, desk and field alike:
-        // a request target needs a code, so it cannot be used yet, and a person (Super Admin or CEO)
-        // releases it after reading the licence. The desk's usual shortcut to `sfe_validated` does
-        // not apply — that status would make the customer selectable on the strength of a document
-        // nobody has compared against the shop sign.
-        const linkValidationStatus: MarketingValidationStatus = savedOnLicenseAlone
-          ? "pending"
-          : resolveMarketingValidationRecordStatus({
-            isOnBehalf,
-            systemStatus: resolveMarketingSystemValidationStatus({
-              customerEvidenceStatus,
-              governorateVerdict: governorateCheck.verdict,
-              pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
-            }),
-          });
+        const linkValidationStatus: MarketingValidationStatus = resolveMarketingValidationRecordStatus({
+          isOnBehalf,
+          systemStatus: resolveMarketingSystemValidationStatus({
+            customerEvidenceStatus,
+            governorateVerdict: governorateCheck.verdict,
+            pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
+          }),
+        });
         // The reference lookup still runs and is still stored truthfully, because an unmatched code
         // means sales can never be attributed to this pharmacy — the row is usable, but its ROI
         // would read zero forever. Say so on the row rather than letting it look fully healthy.
@@ -7499,7 +7374,6 @@ export async function createMarketingValidationRecord(
           // Stated on the row rather than left to be inferred from an empty code column: spend on
           // this venue is real, and its return can never be measured through sales.
           vendorCode ? null : venueNonAttributableReason(normalizedPharmacy.venueType),
-          savedOnLicenseAlone ? LICENSE_ONLY_PHARMACY_NOTE : null,
         ].filter(Boolean).join(" ") || null;
         // Narrowed in one place: a venue with no distributor account writes no code row at all,
         // so everything below this point can talk about a real code without optional chaining —
@@ -8135,8 +8009,12 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (financeRequirementsResult.error) throw financeRequirementsResult.error;
   const offsetsByRequestId = await loadOffsetsByRequestId(approvedRequestIds);
 
+  // Only a customer with a CODED validated link can be requested for (owner, 2026-10-21): a customer
+  // whose only venue has no distributor code would open a request with nothing to target.
   const validatedCustomerIds = new Set(
-    ((validatedLinksResult.data ?? []) as Array<{ customer_id: string }>).map((row) => row.customer_id),
+    ((validatedLinksResult.data ?? []) as Array<{ customer_id: string; distributor_code_id: string | null }>)
+      .filter((row) => Boolean(row.distributor_code_id))
+      .map((row) => row.customer_id),
   );
 
   // Target-pharmacy options, grouped by customer, so the form can offer exactly the pharmacies
@@ -8173,15 +8051,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     const code = link.distributor_code_id ? codeById.get(link.distributor_code_id) : null;
     // A link with a code that is not in the active-code list is a retired code: not offered.
     if (link.distributor_code_id && !code) continue;
-    // A link with no code is offerable only through the SAME test the server applies to the draft
-    // (`requestTargetKind`): a genuinely codeless venue, or a pharmacy a person released on its
-    // licence. Anything else is a broken row or a licence still waiting, and offering it would put a
-    // target in the picker the server would then refuse.
-    if (!code && (!pharmacy || !requestTargetKind({
-      distributorCodeId: null,
-      notes: link.validation_notes ?? null,
+    // Offered only through the SAME test the server applies to the draft (`requestTargetKind`):
+    // a link that names a distributor code. A link with no code is never offered (owner,
+    // 2026-10-21) — a nursery or a licence-only pharmacy is validated in Direct Orders, and offering
+    // it would put a target in the picker the server would then refuse.
+    if (!code || requestTargetKind({
+      distributorCodeId: link.distributor_code_id,
       status: link.validation_status ?? null,
-    }, pharmacy.venueType))) continue;
+    }) !== "coded") continue;
     // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
     // target venue, even if one slipped past validation before this guard existed. Name-only — the
     // marketing pharmacy code is a different code space (see buildReusableMarketingPharmacies).

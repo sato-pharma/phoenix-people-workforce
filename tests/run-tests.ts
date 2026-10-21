@@ -2364,6 +2364,7 @@ import { runDisputeCenterRefundsTests } from "./dispute-center-refunds.test.ts";
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
+import { runMarketingCodedVenuesOnlyTests } from "./marketing-coded-venues-only.test.ts";
 import { runMarketingLinkAdminApprovedStatusTests } from "./marketing-link-admin-approved-status.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
@@ -4391,8 +4392,8 @@ await runTest("marketing submission capture gates (not_found pharmacy code refus
 await runTest(
   "nursery venue type (the rule is one predicate, an unknown type falls back to pharmacy, a "
   + "pharmacy target is byte-identical to its old distributor code id, both write loops go through "
-  + "venueCodeSlots so a codeless venue still gets its link row, capture refuses both wrong "
-  + "combinations, the reference_status gate can actually fire, ROI lists an unattributable target "
+  + "venueCodeSlots, which refuses a codeless venue since 2026-10-21, marketing capture refuses a "
+  + "nursery and a codeless pharmacy, the reference_status gate can actually fire, ROI lists an unattributable target "
   + "instead of dropping it, and the migration drops both NOT NULLs)",
   runNurseryVenueTypeTests,
 );
@@ -8976,6 +8977,11 @@ await runTest(
 await runTest(
   "a new code link inherits its validation status and never elevates an unvalidated venue into the picker",
   runMarketingCodeLinkReachTests,
+);
+
+await runTest(
+  "Marketing Requests hold only venues that carry a distributor code (owner, 2026-10-21): a codeless link is never a request target, the draft guard refuses a codeless target with venue_without_distributor_code, the capture save refuses a nursery and a licence-only pharmacy (and the reuse path, write loops, promotion sweeps and the mapping Approve refuse codeless too), the automatic carry-over skips a codeless link, and Direct Orders still validates a nursery with no code",
+  runMarketingCodedVenuesOnlyTests,
 );
 
 await runTest(
