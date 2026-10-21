@@ -283,6 +283,9 @@ export type ValidatedPlaceReading = {
  * phone reported no accuracy, is the anchor; otherwise the place's own validated point is. Measured on
  * production 2026-10-20: 2,510 of 2,627 active places anchor on the photograph, 11 carry a reading
  * wider than 250 m, and the 104 seated in a polyclinic carry none and anchor on the building's point.
+ *
+ * Since 2026-10-21 this is ONE of the two readings a visit is measured against, never the only one — see
+ * `validatedPlaceReadings` for why.
  */
 export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: number; lon: number } | null {
   if (isUsableFix(place.photoLat, place.photoLon) && withinAccuracy(place.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
@@ -290,6 +293,42 @@ export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: numbe
   }
   if (isUsableFix(place.lat, place.lon)) return { lat: Number(place.lat), lon: Number(place.lon) };
   return null;
+}
+
+/**
+ * 🔴 A VISIT IS MEASURED AGAINST BOTH READINGS OF THE PLACE — THE PHOTOGRAPH'S ANCHOR AND THE PLACE'S OWN
+ * VALIDATED POINT — AND THE NEARER ONE DECIDES (owner, 2026-10-21, picked from three options after a rep
+ * was refused 26 times at a hospital he was standing in).
+ *
+ * The photograph alone could not carry a 300 m line. Sehet Behteem Hospital's photograph read ±200 m
+ * (inside the 250 m "sharp" line) and sat 327 m from the pin the rep captured at the door (±7.9 m), so a
+ * rep standing 7-91 m from that pin, on a GPS reading good to ±3-11 m, was measured 324-401 m from a
+ * point that could itself be 200 m off — and refused 26 times between 12:07 and 14:38 Cairo on
+ * 2026-10-21. His two visits there on 13 and 15 October, before the rule, had read 52-54 m from the pin
+ * and flagged ok: three separate days at the pin say the pin is the door.
+ *
+ * Both readings were taken at the door by the rep who validated the place, so being within the line of
+ * EITHER is being at the customer's place — and a rep standing at the validated door is never refused,
+ * which is the aim this module's comments name each time the line moves. Measured 2026-10-21 on
+ * production: of 2,720 places anchored on a photograph, 2,712 carry a photograph within 100 m of the pin,
+ * so for them the nearer reading barely moves the verdict; 8 sit 104 m or more apart, and this hospital
+ * (327 m) is the one a rep was refused at. A moved place (`phoenix_crm_move_place`, which never rewrites
+ * the photograph) now takes effect for the first time, because its new point is one of the two readings.
+ *
+ * 🔴 A photograph reading wider than the place's own line is still NOT a reading: it falls out and the
+ * point alone stands, exactly as before. Never widen this to the photograph's accuracy circle or to the
+ * visit's own radius — the line stays `visit_far_meters` from the nearer of exactly these two points.
+ */
+export function validatedPlaceReadings(place: ValidatedPlaceReading): { lat: number; lon: number }[] {
+  const readings: { lat: number; lon: number }[] = [];
+  const anchor = validatedPlaceAnchor(place);
+  if (anchor !== null) readings.push(anchor);
+  if (isUsableFix(place.lat, place.lon)) {
+    const point = { lat: Number(place.lat), lon: Number(place.lon) };
+    // A place with no sharp photograph reading anchors on this very point: one reading, never two.
+    if (anchor === null || anchor.lat !== point.lat || anchor.lon !== point.lon) readings.push(point);
+  }
+  return readings;
 }
 
 export type VisitPlaceVerdict = {
@@ -322,7 +361,9 @@ export function farVisitRefusalApplies(captureVisitDay: string): boolean {
 /**
  * Is this visit's reading within the line of the customer's validated place?
  *
- * - The NEAREST place decides: a customer with two clinics is at whichever door the rep stood at.
+ * - The NEAREST place decides: a customer with two clinics is at whichever door the rep stood at. And
+ *   within a place the NEARER of its two readings decides (`validatedPlaceReadings`): the photograph's
+ *   anchor and the validated pin.
  * - A customer with NO validated place is never refused — there is no photograph to be away from (a
  *   pharmacy, which needs no validation, and a customer still waiting for one).
  * - The line is `visit_far_meters` from the module's settings (300 m on production), the same figure a
@@ -342,10 +383,10 @@ export function visitAwayFromValidatedPlace(input: {
   if (!isUsableFix(input.fix.lat, input.fix.lon)) return { refused: false, metres: null, placeId: null, farMeters };
   let nearest: { id: string; metres: number } | null = null;
   for (const place of input.places) {
-    const anchor = validatedPlaceAnchor(place);
-    if (anchor === null) continue;
-    const metres = distanceMeters({ lat: input.fix.lat, lon: input.fix.lon }, anchor);
-    if (nearest === null || metres < nearest.metres) nearest = { id: place.id, metres };
+    for (const reading of validatedPlaceReadings(place)) {
+      const metres = distanceMeters({ lat: input.fix.lat, lon: input.fix.lon }, reading);
+      if (nearest === null || metres < nearest.metres) nearest = { id: place.id, metres };
+    }
   }
   if (nearest === null) return { refused: false, metres: null, placeId: null, farMeters };
   return { refused: nearest.metres > farMeters, metres: nearest.metres, placeId: nearest.id, farMeters };
