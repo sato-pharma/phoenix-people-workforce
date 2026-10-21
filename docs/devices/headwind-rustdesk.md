@@ -1331,6 +1331,20 @@ route ever returns a whole configuration to a browser and why nothing logs one.
 An app must be a `.apk`. A `.aab` is what Google Play builds from and cannot be installed on a tablet
 directly, so it is refused with that sentence rather than uploaded and left to fail later.
 
+🔴 **An uploaded app does not survive a redeploy of the tablet server.** `/files/<name>` is served
+from Tomcat's work folder, which Railway recreates empty on every `phoenix-headwind` deploy, so an APK
+put there by this console or by Headwind's own does not come back, while the set of rules still points
+at it. The tablet then fails "Bad server response" at every check-in and never installs the app.
+Measured 2026-10-22: WhatsApp, WPS Office and Telegram had all been 404 since at least 11 October, so
+the rep tablet had installed none of the three. `infra/headwind-phoenix-actions/phoenix-entrypoint.sh`
+restores **three** apps on every start: RustDesk and the Phoenix launcher (exact files from immutable
+releases, checked by exact size), and **WhatsApp** (the official current build from
+`whatsapp.com/android/current/WhatsApp.apk`, checked by an 80 MiB floor and the zip magic, because that
+source floats). WhatsApp only ever moves forward, so a tablet holding a newer build than the one in the
+rules reads it as a downgrade and leaves it alone, and nothing loops. **WPS Office and Telegram are not
+restored yet**: re-adding one in the console works only until the next redeploy, until its file is
+mirrored to a public release and pinned in the entrypoint the way the launcher is.
+
 ### 6.4 The command history is Phoenix's own record
 
 Headwind publishes no command history, so the history panel reads **Phoenix's own audit rows**. An
