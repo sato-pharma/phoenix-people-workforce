@@ -875,6 +875,14 @@ export type DirectOrderApprovalDetail = {
    */
   pharmacyFieldEvidenceGap?: DirectOrderFieldEvidenceGap | null;
   /**
+   * EVERY validation photo on file for the venue this order stands on, each with its full captured
+   * details (owner, 2026-10-21: the SFE and managerial approvers must see the validation photo of the
+   * pharmacy AND the customer with 100% of its data — "never hide a picture if available"). The
+   * Direct Order field claims, the marketing pharmacy's photos, and the photos of every marketing
+   * customer validated at that pharmacy. Optional so hand-built details stay valid.
+   */
+  venueValidationPhotos?: DirectOrderVenueValidationPhoto[];
+  /**
    * The distributor invoice saved with THIS order (owner, 2026-09-14: the SFE Manager must clearly see
    * the invoice that was used). Null when the order carries none. Optional so hand-built details stay
    * valid.
@@ -992,4 +1000,28 @@ export type DirectSalesReconciliationResult = {
   pass: boolean;
   overlaps: DirectSalesReconciliationOverlap[];
   byPeriod: DirectSalesReconciliationPeriod[];
+};
+
+/** Where a venue validation photo was taken for: the Direct Order desk, or Marketing's pharmacy or customer capture. */
+export type DirectOrderVenueValidationPhotoSource = "direct_order_claim" | "marketing_pharmacy" | "marketing_customer";
+
+/**
+ * One validation photo on a direct-order venue, with everything captured beside it (owner, 2026-10-21).
+ * `photoUrl` is null only when the file is recorded but could not be signed — the card then says so
+ * instead of disappearing, so an approver knows a picture exists.
+ */
+export type DirectOrderVenueValidationPhoto = {
+  key: string;
+  source: DirectOrderVenueValidationPhotoSource;
+  /** "Pharmacy — Marketing validation", "Customer — Marketing validation", "Pharmacy — Direct Order validation". */
+  title: string;
+  /** The pharmacy or customer the photo is of. */
+  subject: string;
+  photoUrl: string | null;
+  photoCapturedAt: string | null;
+  photoLatitude: number | null;
+  photoLongitude: number | null;
+  photoAccuracyMeters: number | null;
+  /** Every captured detail, in words, label first — never a raw code where a name exists. */
+  details: Array<{ label: string; value: string }>;
 };

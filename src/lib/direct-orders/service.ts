@@ -69,6 +69,7 @@ import {
   getDirectOrderPharmacyValidationForRequest,
   loadDirectOrderVenueFieldEvidence,
 } from "@/lib/direct-orders/pharmacy-validation";
+import { loadDirectOrderVenueValidationPhotos } from "@/lib/direct-orders/venue-validation-photos";
 import { directOrderFieldEvidenceGap } from "@/lib/direct-orders/field-evidence-gap";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import { resolveDirectOrderPharmacyValidationBadge } from "@/lib/direct-orders/pharmacy-validation-badge";
@@ -1528,6 +1529,20 @@ export async function listMyApprovedDirectOrderPharmacies(access: AccessContext)
   const fromApprovedOrders = new Set(
     ((orderRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.pharmacy_id ?? "")).filter(Boolean),
   );
+  // And every venue his own MARKETING validations brought across (owner, 2026-10-21): a customer he
+  // validated for marketing requests is validated here too, so its pharmacies are his to pick in one
+  // click. The loader syncs his validated customers first and never fails this list.
+  try {
+    const { listDirectOrderVenueIdsFromMyMarketingValidations } = await import(
+      "@/lib/marketing-requests/direct-order-venue-sync"
+    );
+    for (const id of await listDirectOrderVenueIdsFromMyMarketingValidations(access.hrId)) fromApprovedOrders.add(id);
+  } catch (error) {
+    logError("My venues could not read the rep's marketing-validated venues", {
+      labels: { event: "my_venues_marketing_read_failed" },
+      error,
+    });
+  }
 
   const { data: mineRows, error: mineError } = await supabase
     .from("direct_order_pharmacies")
@@ -6425,6 +6440,11 @@ export async function getDirectOrderApprovalDetail(
   const pharmacyFieldEvidenceGap = showFieldEvidenceGap
     ? directOrderFieldEvidenceGap(await loadDirectOrderVenueFieldEvidence(request.pharmacyId))
     : null;
+  // EVERY validation photo of the venue — its Direct Order claims, its marketing pharmacy and the
+  // marketing customers validated there — each with its full captured details (owner, 2026-10-21:
+  // "never hide a picture if available"). Ungated like pharmacyEvidence above: anyone who may open
+  // the order is deciding on the same venue. Never throws.
+  const venueValidationPhotos = await loadDirectOrderVenueValidationPhotos(request.pharmacyId);
   // The invoice the rep used (owner, 2026-09-14). "Expected" is a NEW pharmacy with a distributor
   // account — exactly what the SFE Manager confirms on this order — so a missing invoice is said out
   // loud there instead of reading as nothing to see.
@@ -6626,6 +6646,7 @@ export async function getDirectOrderApprovalDetail(
     // the evidence it jumps to can never disagree.
     pharmacyValidation: resolveDirectOrderPharmacyValidationBadge(pharmacy, pharmacyEvidence, nameOf),
     pharmacyFieldEvidenceGap,
+    venueValidationPhotos,
     orderInvoice,
     invoiceExpected,
     canAttachInvoice,

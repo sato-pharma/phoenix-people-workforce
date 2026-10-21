@@ -170,6 +170,7 @@ const PINNED = [
   "scripts/source-of-sales-warning-cleanup.ts",
   "scripts/staging-executive-dashboard-migration-reconciliation.ts",
   "scripts/staging-safe-rebuild.ts",
+  "scripts/sync-marketing-venues-to-direct-orders.ts",
   "scripts/sync-railway-production-secrets.mjs",
   "scripts/sync-worktree-env.mjs",
   "scripts/synthetic-save-report.ts",
