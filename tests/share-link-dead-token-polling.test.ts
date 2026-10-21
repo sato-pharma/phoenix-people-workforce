@@ -6,6 +6,7 @@ import {
   DEAD_TOKEN_POLL_WINDOW_MS,
   assessDeadTokenPolling,
   buildDeadTokenPollMessage,
+  summariseDeadTokenAlarmDeliveries,
   type DeadTokenPollJudgeableLink,
 } from "@/lib/share-links/dead-token-polling";
 import { SHARE_LINK_FEEDS } from "@/lib/share-links/feeds";
@@ -232,5 +233,42 @@ export async function runShareLinkDeadTokenPollingTests() {
   assert.ok(
     !/select\([^)]*token/.test(alarm),
     "the sweep must never select the token column — it cannot reach a log line if it is never read",
+  );
+
+  // 4. The audit row says what the run really did. The sweep runs every 15 minutes and the
+  // idempotency key holds the message to once a Cairo day, so 95 of 96 runs send nothing — yet
+  // the alarm wrote "delivered to 1 recipient(s)" on every one of them (1,792 rows, 3–22 Oct 2026).
+  const repeat = [
+    { reason: "Delivery already sent.", status: "skipped" },
+    { reason: "Delivery already sent.", status: "skipped" },
+    { reason: "Delivery already in progress.", status: "skipped" },
+  ];
+  assert.deepEqual(
+    summariseDeadTokenAlarmDeliveries([repeat]),
+    { reached: 0, repeats: 1, unreached: 0 },
+    "a 15-minute repeat of today's alert is a repeat — never counted as delivered",
+  );
+  assert.deepEqual(
+    summariseDeadTokenAlarmDeliveries([[{ status: "sent" }, { reason: "Telegram is not connected.", status: "skipped" }]]),
+    { reached: 1, repeats: 0, unreached: 0 },
+    "one channel out is a delivery",
+  );
+  assert.deepEqual(
+    summariseDeadTokenAlarmDeliveries([[{ reason: "Deferred by quiet hours.", status: "pending" }], [{ status: "retrying" }]]),
+    { reached: 2, repeats: 0, unreached: 0 },
+    "a message queued to go out is on its way",
+  );
+  assert.deepEqual(
+    summariseDeadTokenAlarmDeliveries([[{ status: "failed" }, { reason: "Telegram disabled by user preference.", status: "skipped" }], []]),
+    { reached: 0, repeats: 0, unreached: 2 },
+    "every channel failing or skipped for a real reason is NOT a repeat — that run must still be recorded",
+  );
+  assert.ok(
+    alarm.includes("summariseDeadTokenAlarmDeliveries(") && !/delivered \+= 1/.test(alarm),
+    "the alarm counts deliveries from what createSystemNotification reported, never by the call returning",
+  );
+  assert.ok(
+    /outcome\.reached === 0 && outcome\.unreached === 0\)\s*\{\s*return /.test(alarm),
+    "a run where everyone was already alerted today returns before writing an audit row",
   );
 }
