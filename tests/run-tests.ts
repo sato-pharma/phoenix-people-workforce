@@ -2646,6 +2646,7 @@ import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
 import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
+import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10493,6 +10494,10 @@ await runTest(
 await runTest(
   "the HR Operations Specialist never sees a salary: her directory, export, organogram popup and resignations carry no figure while bank and payment mode stay; her own Employee Master export re-imports cleanly, one typed figure refuses the whole file by column name, the plan she approves holds no money and skips the position policy, an Employee ID not in the master is refused rather than created, her save drops every money key as undefined, and no screen offers her Add Employee, Resign or Declined, which the server refuses",
   runSalaryBlindSeatTests,
+);
+await runTest(
+  "the Regular · No Check-in tabs of CRM Master cannot fail on a missing column: crm_visits_checkin_flags, as its last migration defines it, carries every column CRM Master's visit select asks for (the second manager and the Phoenix visit detail included), and keeps security_invoker and its locked-out browser roles",
+  runCrmCheckinFlagsCarriesMasterSelectTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
