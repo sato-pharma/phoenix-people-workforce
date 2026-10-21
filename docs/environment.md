@@ -274,6 +274,27 @@ See docs/observability.md for the full picture.
 | PHOENIX_PREVIEW_READ_ONLY | Legacy Vercel-preview read-only guard; inert on Railway today (neither environment sets `APP_ENV=preview`) |
 | VERCEL_ENV | Legacy — Vercel is decommissioned for hosting, so nothing sets this anymore; any code still branching on it is inert |
 
+## The previous secrets after the October 2026 rotation (temporary — until 2026-11-22)
+
+Railway, the host, reported a security incident on 21 October 2026 that may have exposed environment
+variables, so `PHOENIX_AUTH_SECRET` and `CRON_SECRET` are replaced. Two temporary variables hold the
+**PRE-incident values** so nothing people already hold breaks on the day:
+
+| Variable | Description |
+|---|---|
+| PHOENIX_AUTH_SECRET_PREVIOUS | The old `PHOENIX_AUTH_SECRET`. Accepted ONLY when **opening a link** issued before the rotation: the email-signature picture address, the unsubscribe link, the offer acceptance / joining-form link, the Monthly Closing Export PDF seal and the public share card. Everything new is signed with the current secret. **Never accepted** for a login session, a password-reset code, the native web hand-off, the seat-view token or a payroll acknowledgment link — those stop working with the old secret on purpose, because a leaked old secret must never sign anybody in. |
+| CRON_SECRET_PREVIOUS | The old `CRON_SECRET`, also accepted as the cron bearer (`assertCronAuthorized`, `src/lib/security/cron-auth.ts`) so cron-job.org's jobs can be moved to the new value one at a time without a 401. Every use logs `event=cron_previous_secret` with the job name, so `railway logs \| grep cron_previous_secret` lists the jobs still to move. Never accepted by a route on its own token, and never while `CRON_SECRET` itself is unset. |
+
+🔴 **The end date is hard: `PREVIOUS_SECRET_ACCEPTED_UNTIL = 2026-11-22T00:00:00+02:00`** (midnight Cairo,
+`src/lib/auth/previous-secret.ts`). After it both variables are ignored even if still set. A value shorter
+than 16 characters, or equal to the current secret, is ignored too. Both must be set on the web service
+AND the worker (`phoenix-workforce-worker`), because the moved cron-job.org jobs call the worker: a new
+variable on the app does NOT appear on the worker by itself, so add each there as a reference to the
+app's own (`${{phoenix-people-workforce.NAME}}`), the way every other worker variable is. They are deliberately NOT in `sync-railway-production-secrets`'
+list: editing that script or its workflow pushes every GitHub secret over Railway on merge, which in the
+middle of a rotation could put a leaked value back. After 2026-11-22 delete both variables, the helper file
+and its callers' fallback.
+
 ## Dead-Man's-Switch Monitoring
 
 External liveness alert for the production cron jobs, independent of any platform's own monitoring —
