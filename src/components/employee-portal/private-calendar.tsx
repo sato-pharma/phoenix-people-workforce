@@ -394,12 +394,14 @@ function isRecordedEntry(item: PrivateCalendarItem) {
 
 /**
  * A district manager's day carries ONE table — his plan against what was recorded — so the plan's own half-day
- * entries, which that table already draws, are left out of the detail instead of repeating under it.
+ * entries, which that table already draws, are left out of the detail instead of repeating under it. Only a table that
+ * DRAWS a plan does this: a rep's visits in full (owner, 2026-10-21) carry no manager plan, so his approved plan entries
+ * stay where they are.
  */
 function withoutPlanDrawnByATable(items: PrivateCalendarItem[]) {
   const drawn = new Set(
     items
-      .filter((item) => item.managerVisits && item.managerVisits.length > 0 && item.employeeHrId)
+      .filter((item) => item.managerVisits && item.managerVisits.length > 0 && (item.managerPlan || item.managerPlanUnread) && item.employeeHrId)
       .map((item) => privateCalendarHrIdKey(item.employeeHrId as string)),
   );
   if (drawn.size === 0) return items;
@@ -446,6 +448,12 @@ function ManagerVisitChipRows({ visits }: { visits: readonly ManagerDayVisit[] }
               <span className="bg-white/80 px-1 font-black uppercase tracking-[0.08em] text-slate-700 ring-1 ring-inset ring-black/10">
                 {managerVisitHalfLabel(visit)}
               </span>
+              {/* A rep's day mixes single and double visits (owner, 2026-10-21), so anything but a single says who went. */}
+              {visit.kind !== "single" ? (
+                <span className="bg-white/80 px-1 font-black uppercase tracking-[0.08em] text-slate-700 ring-1 ring-inset ring-black/10">
+                  {visit.kindLabel}
+                </span>
+              ) : null}
             </span>
             <bdi className="mt-0.5 block font-black text-slate-900">{visit.customerName}</bdi>
             {type ? <bdi className="block">{type}</bdi> : null}

@@ -2,6 +2,7 @@
 
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
+import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { MissedRecordPanel, RemoveEnteredVisit } from "@/components/phoenix-crm/missed-record-panel";
 import {
   CrmBlock,
@@ -131,6 +132,21 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
             ) : null}
           </CrmBlock>
         ) : null}
+
+        {/* Every visit in full, as the same table a manager's day page draws (owner, 2026-10-21: "everyone's visits in
+            details … exactly as Mina Farouk"). The cards below keep what only they carry: products left behind, the
+            voice note, the write-up, and the Super Admin's corrections. */}
+        <CrmBlock title="Plan against actual, with the detail of every visit">
+          {view.visitsInFullUnread ? (
+            <CrmNote title="The visits in full could not be read" tone="warn">
+              <p>Every visit of the day is still listed below. Reload the page in a minute to see them in full here.</p>
+            </CrmNote>
+          ) : view.visitsInFull.length === 0 ? (
+            <CrmEmpty message="No visit was recorded on this day." title="Nothing was logged" />
+          ) : (
+            <ManagerPlanActual plan={null} planUnread={false} visits={view.visitsInFull} />
+          )}
+        </CrmBlock>
 
         <CrmBlock title="The visits, in the order they happened">
           {visits.length === 0 ? (

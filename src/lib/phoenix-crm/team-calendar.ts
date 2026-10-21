@@ -80,8 +80,8 @@ export type TeamCalendarPerson = {
   /**
    * A manager who holds NO organogram seat — a line's Product Manager or Group Product Manager (owner,
    * 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR IN A MODULE FIND ANAD SHOW"). His row is keyed
-   * `product-manager:<hr id>`, which is no seat, so no page can be opened on it: his cells explain the day in
-   * the panel below the grid instead. Absent means the row is a seat, which is what every row was before.
+   * `product-manager:<hr id>`, which is no seat. Since 2026-10-21 his worked day opens the manager's day page on
+   * that key (owner, asked: "Open a day page"), which reads him by HR id. Absent means the row is a seat.
    */
   seatless?: boolean;
 };
@@ -101,6 +101,18 @@ export type TeamCalendarRow = TeamCalendarPerson & {
 type DayInput = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation?: number };
 type ActivityInput = { seatId: string; day: string; activity: PhoenixCrmDayActivity };
 type LeaveInput = { seatId: string; day: string };
+
+/** A product manager's row key: no seat, so a key that can never collide with one (a seat id is a uuid). */
+export function productManagerRowKey(hrId: string): string {
+  return `product-manager:${hrId}`;
+}
+
+/** The product manager a row key names, or null when the key is a seat. The one reader of the key above. */
+export function productManagerOfRowKey(key: string): string | null {
+  if (!key.startsWith("product-manager:")) return null;
+  const hrId = key.slice("product-manager:".length).trim();
+  return hrId.length > 0 ? hrId : null;
+}
 
 /** Friday, and nothing else. The same rule the exceptions board reads, kept in one sentence here. */
 function isRestDay(iso: string): boolean {

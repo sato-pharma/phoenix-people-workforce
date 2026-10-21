@@ -7,7 +7,7 @@ import {
   type ManagerVisitPlaceSource,
 } from "@/lib/phoenix-crm/manager-visit-detail";
 import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
-import { singleVisitHalfOfHour } from "@/lib/phoenix-crm/manager-plan-rules";
+import { countsAsPlannersVisitWithRep, singleVisitHalfOfHour } from "@/lib/phoenix-crm/manager-plan-rules";
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -32,6 +32,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  *    `countsAsManagersDoubleVisit` — the rule the manager report and the team calendar already share — and
  *    read from `phoenix_crm_countable_visits` like every calendar row, so an unapproved off-plan visit waits
  *    exactly as it waits on the rep's own row.
+ *
+ * 🔴 A REP'S OWN VISIT (owner, 2026-10-21: "make everyone's visits appear in details … exactly as Mina Farouk") is
+ *    the same countable row read from his side — every visit he logged, single or with a manager — and comes out
+ *    as the same record (`source: "rep"`), so his day and a manager's are drawn by one table and one card.
  *
  * 🔴 NOTHING HERE DECIDES WHO MAY READ. The callers do: the team calendar's manager day resolves the viewer
  *    through `managersInScope`, and the private calendar passes only the employees its own access already
@@ -65,22 +69,30 @@ function loggedHalfOf(iso: string | null): "AM" | "PM" | null {
   return iso ? singleVisitHalfOfHour(cairoHourOf(iso)) : null;
 }
 
+/**
+ * The chunks of one lookup, read side by side rather than one after another: a team's month on the private calendar
+ * names thousands of customers, and each chunk is an independent read of one table by id.
+ */
+async function readChunks(ids: string[], read: (part: string[]) => Promise<Row[]>): Promise<Row[]> {
+  return (await Promise.all(chunk(dedupeIds(ids), 100).map((part) => read(part)))).flat();
+}
+
 async function loadCustomers(ids: string[]): Promise<Map<string, CustomerFacts>> {
   const out = new Map<string, CustomerFacts>();
-  for (const part of chunk(dedupeIds(ids), 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  const rows = await readChunks(ids, (part) =>
+    fetchAllRowsKeyset<Row>(
       () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, list_type, name, speciality, grade").in("id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
-      out.set(String(row.id), {
-        grade: textOrNull(row.grade),
-        listType: textOrNull(row.list_type),
-        name: textOrNull(row.name) ?? "Customer",
-        seatId: textOrNull(row.seat_id),
-        speciality: textOrNull(row.speciality),
-      });
-    }
+    ),
+  );
+  for (const row of rows) {
+    out.set(String(row.id), {
+      grade: textOrNull(row.grade),
+      listType: textOrNull(row.list_type),
+      name: textOrNull(row.name) ?? "Customer",
+      seatId: textOrNull(row.seat_id),
+      speciality: textOrNull(row.speciality),
+    });
   }
   return out;
 }
@@ -95,27 +107,31 @@ async function loadPlaces(placeIds: string[], customerIds: string[]): Promise<{ 
     brickName: textOrNull(row.brick_name),
     label: textOrNull(row.label),
   });
-  for (const part of chunk(dedupeIds(placeIds), 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () => getSupabaseAdmin().from("phoenix_crm_places").select("id, label, address, brick_name, area_name").in("id", part),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) byId.set(String(row.id), factsOf(row));
-  }
-  for (const part of chunk(dedupeIds(customerIds), 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () =>
-        getSupabaseAdmin()
-          .from("phoenix_crm_places")
-          .select("id, customer_id, label, address, brick_name, area_name")
-          .in("customer_id", part)
-          .eq("status", "active"),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
-      const customerId = String(row.customer_id);
-      if (!byCustomer.has(customerId)) byCustomer.set(customerId, factsOf(row));
-    }
+  const [named, active] = await Promise.all([
+    readChunks(placeIds, (part) =>
+      fetchAllRowsKeyset<Row>(
+        () => getSupabaseAdmin().from("phoenix_crm_places").select("id, label, address, brick_name, area_name").in("id", part),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ),
+    readChunks(customerIds, (part) =>
+      fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_places")
+            .select("id, customer_id, label, address, brick_name, area_name")
+            .in("customer_id", part)
+            .eq("status", "active"),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ),
+  ]);
+  for (const row of named) byId.set(String(row.id), factsOf(row));
+  // The customer's FIRST active place, as before: the keyset walk returns each chunk in id order, and the chunks are
+  // concatenated in the order they were asked.
+  for (const row of active) {
+    const customerId = String(row.customer_id);
+    if (!byCustomer.has(customerId)) byCustomer.set(customerId, factsOf(row));
   }
   return { byCustomer, byId };
 }
@@ -247,7 +263,11 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
  * (visit, manager) so a chain visit that names two managers is on both their days.
  */
 export async function loadManagerRideAlongDetails(
-  input: ManagerVisitDetailInput & { territorySeatIds?: ReadonlySet<string> | null },
+  input: ManagerVisitDetailInput & {
+    territorySeatIds?: ReadonlySet<string> | null;
+    /** Also the visits naming these people as the PRODUCT MANAGER, judged by his own rule. Off by default. */
+    productManagerSlot?: boolean;
+  },
 ): Promise<ManagerDayVisit[]> {
   if (input.end < input.start) return [];
   const keys = dedupeIds(input.managerHrIds.map((hrId) => personKey(hrId)));
@@ -257,7 +277,8 @@ export async function loadManagerRideAlongDetails(
 
   const byId = new Map<string, Row>();
   for (const part of chunk(keys, 100)) {
-    for (const column of ["manager_hr_id", "senior_hr_id"] as const) {
+    const columns = input.productManagerSlot ? (["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const) : (["manager_hr_id", "senior_hr_id"] as const);
+    for (const column of columns) {
       const rows = await fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
@@ -278,6 +299,34 @@ export async function loadManagerRideAlongDetails(
   if (byId.size === 0) return [];
 
   const rows = [...byId.values()];
+  const facts = await loadCountableVisitFacts(rows);
+
+  const out: ManagerDayVisit[] = [];
+  for (const row of rows) {
+    const visit = { kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
+    const named = [row.manager_hr_id, row.senior_hr_id, ...(input.productManagerSlot ? [row.product_manager_hr_id] : [])];
+    for (const hrId of new Set(named.map((value) => personKey(String(value ?? ""))))) {
+      if (!hrId || !wanted.has(hrId)) continue;
+      // A seat manager rode it by the rule the manager report judges by; a product manager, named in his own slot,
+      // by the rule his own plan report judges by. `countsAsPlannersVisitWithRep` answers the first two slots
+      // exactly as `countsAsManagersDoubleVisit` does, so asking it when the third slot is read changes nothing for them.
+      const rode = input.productManagerSlot ? countsAsPlannersVisitWithRep(visit, hrId) : countsAsManagersDoubleVisit(visit, hrId);
+      if (!rode) continue;
+      const record = countableVisitRecord(row, hrId, "ride_along", facts, input.territoryNameOf);
+      if (record) out.push(record);
+    }
+  }
+  return sortManagerDayVisits(out);
+}
+
+type CountableVisitFacts = {
+  customers: Map<string, CustomerFacts>;
+  places: { byId: Map<string, PlaceFacts>; byCustomer: Map<string, PlaceFacts> };
+  names: PeopleNames;
+};
+
+/** The customers, places and names a set of countable rows needs, read once for all of them. */
+async function loadCountableVisitFacts(rows: readonly Row[]): Promise<CountableVisitFacts> {
   const customerIds = rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => Boolean(id));
   const placeIds = rows.map((row) => textOrNull(row.place_id)).filter((id): id is string => Boolean(id));
   const [customers, places, names] = await Promise.all([
@@ -287,51 +336,116 @@ export async function loadManagerRideAlongDetails(
       rows.flatMap((row) => [textOrNull(row.rep_hr_id), textOrNull(row.manager_hr_id), textOrNull(row.senior_hr_id), textOrNull(row.product_manager_hr_id)]),
     ),
   ]);
+  return { customers, names, places };
+}
 
+/**
+ * One countable visit as the record a screen prints, for the person whose day it is: a manager who rode it
+ * (`ride_along`) or the rep who logged it (`rep`). One mapping for both, so a visit reads the same on the rep's day
+ * as on his manager's.
+ */
+function countableVisitRecord(
+  row: Row,
+  personHrId: string,
+  source: "ride_along" | "rep",
+  facts: CountableVisitFacts,
+  territoryNameOf: ((seatId: string) => string | null) | undefined,
+): ManagerDayVisit | null {
+  const date = cleanDay(row.visit_date);
+  if (!date) return null;
+  const loggedAt = textOrNull(row.captured_at) ?? textOrNull(row.created_at);
+  const customerId = textOrNull(row.customer_id) ?? "";
+  const customer = facts.customers.get(customerId);
+  const place = facts.places.byId.get(textOrNull(row.place_id) ?? "") ?? facts.places.byCustomer.get(customerId);
+  const listType = parseListType(row.list_type);
+  const kind = managerVisitKind(row.kind);
+  return {
+    address: place?.address ?? null,
+    areaName: place?.areaName ?? null,
+    awaitingValidation: row.customer_validated !== true,
+    brickName: place?.brickName ?? null,
+    bucket: listType,
+    comment: textOrNull(row.comment),
+    customerKey: planCustomerKey(row.customer_id, null),
+    customerName: customer?.name ?? "Customer",
+    date,
+    grade: customer?.grade ?? null,
+    hasPin: row.lat !== null && row.lat !== undefined,
+    id: source === "rep" ? `rep:${String(row.id)}` : `ride:${String(row.id)}:${personHrId}`,
+    inVacantTerritory: false,
+    kind,
+    kindLabel: MANAGER_VISIT_KIND_LABELS[kind],
+    listType,
+    loggedAt,
+    loggedHalf: loggedHalfOf(loggedAt),
+    managerHrId: personHrId,
+    pharmacyName: textOrNull(row.pharmacy_name),
+    placeLabel: place?.label && place.label !== customer?.name ? place.label : null,
+    placeSource: place?.address || place?.areaName || place?.brickName ? "saved_place" : "none",
+    planned: row.is_unplanned !== true,
+    products: productsOf(row.products),
+    source,
+    speciality: customer?.speciality ?? null,
+    territoryName: territoryNameOf ? territoryNameOf(String(row.seat_id ?? "")) : null,
+    withPeople: participantsOf(row, personHrId, facts.names),
+  };
+}
+
+export type RepVisitDetailInput = {
+  /** The reps whose days these are: every visit each of them logged. */
+  repHrIds?: ReadonlyArray<string>;
+  /** Or the territories whose days these are: every visit logged on each, whoever held it. */
+  seatIds?: ReadonlyArray<string>;
+  start: string;
+  end: string;
+  isTest?: boolean;
+  territoryNameOf?: (seatId: string) => string | null;
+};
+
+/**
+ * Every visit these reps logged themselves (single, double, chain or with a product manager), one record each, from
+ * the countable view every calendar reads, so a visit to a customer nobody has validated is listed and marked "not
+ * scored yet" exactly as the calendar cell holds it out. Keyed to the rep who logged it: on a `rep` record
+ * `managerHrId` holds HIM.
+ */
+export async function loadRepVisitDetails(input: RepVisitDetailInput): Promise<ManagerDayVisit[]> {
+  if (input.end < input.start) return [];
+  const isTest = input.isTest ?? false;
+  const reps = dedupeIds((input.repHrIds ?? []).map((hrId) => personKey(hrId)));
+  const seats = dedupeIds([...(input.seatIds ?? [])]);
+  if (reps.length === 0 && seats.length === 0) return [];
+
+  const byId = new Map<string, Row>();
+  const reads: Array<{ column: "rep_hr_id" | "seat_id"; keys: string[] }> = [
+    { column: "rep_hr_id", keys: reps },
+    { column: "seat_id", keys: seats },
+  ];
+  for (const { column, keys } of reads) {
+    for (const part of chunk(keys, 100)) {
+      const rows = await fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_countable_visits")
+            .select(RIDE_COLUMNS)
+            .eq("is_test", isTest)
+            .gte("visit_date", input.start)
+            .lte("visit_date", input.end)
+            .in(column, part),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      );
+      for (const row of rows) byId.set(String(row.id), row);
+    }
+  }
+  if (byId.size === 0) return [];
+
+  const rows = [...byId.values()];
+  const facts = await loadCountableVisitFacts(rows);
   const out: ManagerDayVisit[] = [];
   for (const row of rows) {
-    const date = cleanDay(row.visit_date);
-    if (!date) continue;
-    const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id };
-    const loggedAt = textOrNull(row.captured_at) ?? textOrNull(row.created_at);
-    const customerId = textOrNull(row.customer_id) ?? "";
-    const customer = customers.get(customerId);
-    const place = places.byId.get(textOrNull(row.place_id) ?? "") ?? places.byCustomer.get(customerId);
-    const listType = parseListType(row.list_type);
-    const kind = managerVisitKind(row.kind);
-    for (const hrId of new Set([personKey(String(row.manager_hr_id ?? "")), personKey(String(row.senior_hr_id ?? ""))])) {
-      if (!hrId || !wanted.has(hrId) || !countsAsManagersDoubleVisit(visit, hrId)) continue;
-      out.push({
-        address: place?.address ?? null,
-        areaName: place?.areaName ?? null,
-        awaitingValidation: row.customer_validated !== true,
-        brickName: place?.brickName ?? null,
-        bucket: listType,
-        comment: textOrNull(row.comment),
-        customerKey: planCustomerKey(row.customer_id, null),
-        customerName: customer?.name ?? "Customer",
-        date,
-        grade: customer?.grade ?? null,
-        hasPin: row.lat !== null && row.lat !== undefined,
-        id: `ride:${String(row.id)}:${hrId}`,
-        inVacantTerritory: false,
-        kind,
-        kindLabel: MANAGER_VISIT_KIND_LABELS[kind],
-        listType,
-        loggedAt,
-        loggedHalf: loggedHalfOf(loggedAt),
-        managerHrId: hrId,
-        pharmacyName: textOrNull(row.pharmacy_name),
-        placeLabel: place?.label && place.label !== customer?.name ? place.label : null,
-        placeSource: place?.address || place?.areaName || place?.brickName ? "saved_place" : "none",
-        planned: row.is_unplanned !== true,
-        products: productsOf(row.products),
-        source: "ride_along",
-        speciality: customer?.speciality ?? null,
-        territoryName: input.territoryNameOf ? input.territoryNameOf(String(row.seat_id ?? "")) : null,
-        withPeople: participantsOf(row, hrId, names),
-      });
-    }
+    const rep = personKey(textOrNull(row.rep_hr_id));
+    if (!rep) continue;
+    const record = countableVisitRecord(row, rep, "rep", facts, input.territoryNameOf);
+    if (record) out.push(record);
   }
   return sortManagerDayVisits(out);
 }
@@ -356,7 +470,7 @@ function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Arra
 
 /** Both kinds together — one manager's days in full, earliest visit first. */
 export async function loadManagerVisitDetails(
-  input: ManagerVisitDetailInput & { territorySeatIds?: ReadonlySet<string> | null },
+  input: ManagerVisitDetailInput & { territorySeatIds?: ReadonlySet<string> | null; productManagerSlot?: boolean },
 ): Promise<ManagerDayVisit[]> {
   const [own, rides] = await Promise.all([loadManagerOwnVisitDetails(input), loadManagerRideAlongDetails(input)]);
   return sortManagerDayVisits([...own, ...rides]);

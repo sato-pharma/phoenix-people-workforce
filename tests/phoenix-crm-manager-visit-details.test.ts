@@ -18,6 +18,8 @@ import {
 } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
 import { buildPlanVsActual, planCustomerKey, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
+import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
+import { attachVisitDetails } from "../src/lib/private-calendar/visit-detail-items.ts";
 
 /**
  * A district manager's visits, in full (owner, 2026-10-20): *"when a district manager does visits the visit
@@ -339,7 +341,7 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     const dayView = source("src/components/phoenix-crm/manager-day-view.tsx");
     assert.match(dayView, /buildPlanVsActual\(view\.plan, visits\)/, "the page sets the plan beside the visits");
     const loader = source("src/lib/phoenix-crm/server/manager-day-detail.ts");
-    assert.match(loader, /computeManagerReports\(viewer, \[member\.hrId\], fieldWeekStart\(date\)/, "the plan is the weekly report's own read");
+    assert.match(loader, /computeManagerReports\(viewer, \[subject\.hrId\], fieldWeekStart\(date\)/, "the plan is the weekly report's own read");
     assert.match(loader, /planUnread = true/, "a failed plan read is said, never shown as no plan");
     for (const path of ["src/components/phoenix-crm/manager-plan-actual-table.tsx", "src/lib/phoenix-crm/manager-day-plan.ts"]) {
       const text = source(path);
@@ -350,5 +352,155 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     }
   }
 
+  everyonesVisitsInFull();
+
   console.log("phoenix-crm manager visit details: OK");
+}
+
+function item(overrides: Partial<PrivateCalendarItem>): PrivateCalendarItem {
+  return {
+    approvalImpact: null,
+    description: null,
+    detailLines: [],
+    employeeDepartmentName: null,
+    employeeHrId: "B-300",
+    employeeJobTitle: null,
+    employeeLineName: null,
+    employeeName: null,
+    endDate: "2026-10-19",
+    exceptionFlags: [],
+    id: "x",
+    managerName: null,
+    severity: "success",
+    source: "field_visit",
+    sourceLabel: "",
+    sourceRecordId: null,
+    sourceSystem: "",
+    sourceTable: null,
+    startDate: "2026-10-19",
+    status: "performed",
+    time: null,
+    title: "",
+    ...overrides,
+  };
+}
+
+/**
+ * ── 7. Everyone's visits, exactly as Mina Farouk's (owner, 2026-10-21) ────────────────────────────────────────────
+ * "make everyone's visits appear in details in private calendar and phoenix crm calendar exactly as mina farouk".
+ * A rep's own visit is the same record (`source: "rep"`), drawn by the same table, and on the private calendar it
+ * hangs on the ONE entry of his day that already counts it — never a new entry, never two.
+ */
+function everyonesVisitsInFull(): void {
+  const repVisit = (overrides: Partial<ManagerDayVisit> = {}) =>
+    visit({ bucket: "AM", id: "rep:1", listType: "AM", managerHrId: "B-300", source: "rep", ...overrides });
+
+  // The record reads as a rep's: his customer's list, never "his half"; a pharmacy is its own word.
+  assert.equal(managerVisitHalfLabel(repVisit()), "AM list");
+  assert.equal(managerVisitHalfLabel(repVisit({ listType: "Pharmacy" })), "Pharmacy");
+
+  // His figures: a single visit is counted as one, a double as a double, AM · PM · Pharmacies apart.
+  const figures = managerDayFigures([
+    repVisit({ id: "rep:1" }),
+    repVisit({ bucket: "PM", id: "rep:2", listType: "PM" }),
+    repVisit({ bucket: "PM", id: "rep:3", kind: "double", kindLabel: "Double visit", listType: "PM", withPeople: [{ name: "Mina Farouk", role: "Manager" }] }),
+    repVisit({ bucket: "Pharmacy", id: "rep:4", listType: "Pharmacy", pharmacyName: "Seif Pharmacy" }),
+  ]);
+  assert.equal(figures.am, 1);
+  assert.equal(figures.pm, 2, "a pharmacy is never filed among the doctors");
+  assert.equal(figures.pharmacies, 1, "a rep's pharmacy call is counted apart, as on his cell");
+  assert.equal(figures.singles, 3, "his own single visits are counted as his");
+  assert.equal(figures.doubles, 1);
+  assert.equal(figures.ownSingle, 0, "a rep's visit is never a manager's own single visit");
+
+  // The plan column: the visit answers for itself — never "No plan sent" about a rep.
+  const { rows } = buildPlanVsActual(null, [repVisit({ id: "rep:1" }), repVisit({ id: "rep:2", planned: false })]);
+  assert.deepEqual(
+    rows.map((row) => [row.actual?.id, row.outcome, row.outcomeLabel]),
+    [
+      ["rep:1", "done", "On the plan"],
+      ["rep:2", "unplanned", "Not on the plan"],
+    ],
+  );
+  const table = source("src/components/phoenix-crm/manager-plan-actual-table.tsx");
+  assert.match(table, /if \(!row\.plan && row\.actual\?\.source === "rep"\) \{/, "the plan cell says what HIS week said");
+
+  // The private calendar: the visits hang on the entry that already counts them.
+  const door = item({
+    activityKind: "single_regular",
+    chipLines: ["Single · Regular", "AM 1 · PM 1", "AM · Dr. Hala Mansour · Cardiology", "PM · Dr. Samir Fathy"],
+    detailLines: ["Kind: Single · Regular", "Visits: AM 1 · PM 1 · Pharmacies 0", "Customer 1: AM · Dr. Hala Mansour · Cardiology"],
+    id: "field-visit-B-300|2026-10-19|single_regular",
+  });
+  const received = item({
+    activityKind: "double_regular",
+    chipLines: ["Double · Regular", "With Mina Farouk", "PM 1", "Cairo East"],
+    detailLines: ["Kind: Double · Regular"],
+    id: "double-visit-received-double_regular-B-300-2026-10-19",
+    source: "double_visit",
+    status: "received",
+  });
+  const performed = item({
+    activityKind: "double_regular",
+    chipLines: ["Double · Regular", "With Rami Adel", "PM 1", "Cairo East"],
+    employeeHrId: "B-116",
+    id: "double-visit-performed-double_regular-B-116-2026-10-19",
+    source: "double_visit",
+    status: "performed",
+  });
+  const untouched = item({ id: "attendance-B-300-2026-10-19", source: "attendance" });
+  const single = repVisit({ id: "rep:1" });
+  const double = repVisit({ bucket: "PM", id: "rep:2", kind: "double", kindLabel: "Double visit", listType: "PM" });
+  const ride = visit({ bucket: "PM", id: "ride:2:B-116", kind: "double", kindLabel: "Double visit", listType: "PM", managerHrId: "B-116", source: "ride_along" });
+  const ownOfAManager = visit({ id: "own:7", managerHrId: "B-116" });
+  const elsewhere = repVisit({ date: "2026-10-20", id: "rep:9" });
+
+  const out = attachVisitDetails([door, received, performed, untouched], [single, double, ride, ownOfAManager, elsewhere, single]);
+  assert.equal(out.length, 4, "no entry is ever added or taken away — coverage is the loaders', never a detail read's");
+  const [doorOut, receivedOut, performedOut, untouchedOut] = out;
+  assert.deepEqual(doorOut.managerVisits?.map((entry) => entry.id), ["rep:1"], "his single visit sits on his single entry, once");
+  assert.deepEqual(receivedOut.managerVisits?.map((entry) => entry.id), ["rep:2"], "his double visit on the double entry");
+  assert.deepEqual(performedOut.managerVisits?.map((entry) => entry.id), ["ride:2:B-116"], "the manager's ride-along on HIS performed entry");
+  assert.equal(untouchedOut, untouched, "an entry that gains nothing is the same object");
+  assert.deepEqual(doorOut.chipLines?.slice(0, 2), ["Single · Regular", "AM 1 · PM 1"], "the entry's own head stays");
+  assert.ok(!doorOut.chipLines?.some((line) => line === "PM · Dr. Samir Fathy"), "the door's short customer list gives way to the full record");
+  assert.ok(doorOut.chipLines?.some((line) => line.includes("Dr. Hala Mansour") && line.includes("Brick Nasr City 3")), "the chip names the customer and the brick");
+  assert.ok(!doorOut.chipLines?.some((line) => line.includes("12 Mostafa El-Nahas St")), "and never the street — that is the details'");
+  assert.ok(doorOut.detailLines.some((line) => line.includes("12 Mostafa El-Nahas St")), "the details print the address");
+  assert.ok(!doorOut.detailLines.some((line) => line.startsWith("Customer 1:")), "the old customer line is not printed twice");
+  assert.deepEqual(receivedOut.chipLines?.slice(0, 4), received.chipLines, "a double entry keeps every line it had, the visits under it");
+  assert.equal(doorOut.chipLines?.length, 2 + 1, "the cell draws the visits as the LAST managerVisits.length lines");
+
+  // A team not started: the Phoenix entry carries the whole day, and the iReports360 entry beside it is left alone.
+  const evidence = item({
+    activityKind: "single_regular",
+    chipLines: ["Single · Regular", "Phoenix CRM: 2 visits"],
+    detailLines: ["Kind: Single · Regular", "Visits: 2"],
+    id: "phoenix-work-B-300|2026-10-19",
+  });
+  const [doorBeside, evidenceOut] = attachVisitDetails([door, evidence], [single, double]);
+  assert.equal(doorBeside, door, "his iReports360 list keeps its own customers");
+  assert.deepEqual(evidenceOut.managerVisits?.map((entry) => entry.id), ["rep:1", "rep:2"], "the Phoenix entry lists every Phoenix visit of the day in full");
+  assert.deepEqual(attachVisitDetails([untouched], [single]), [untouched], "a visit with no entry to sit on is never given one");
+
+  // A manager's own entry keeps its own visits and takes his ride-alongs beside them, in time order.
+  const managerItem = managerOwnVisitItem({ am: 1, date: "2026-10-19", hrId: "B-116", pm: 0, visits: 1 }, [visit({ id: "own:7", managerHrId: "B-116" })]);
+  const [managerOut] = attachVisitDetails([managerItem], [ride]);
+  assert.deepEqual(managerOut.managerVisits?.map((entry) => entry.id), ["own:7", "ride:2:B-116"]);
+  assert.equal(managerOut.chipLines?.length, (managerItem.chipLines?.length ?? 0) + 1, "his head lines stay, one line per visit after them");
+
+  // The wiring.
+  const service = source("src/lib/private-calendar/service.ts");
+  assert.equal((service.match(/loadPrivateCalendarVisitDetails\(/g) ?? []).length, 2, "the workspace and the dispute view read every visit in full");
+  assert.equal((service.match(/attachVisitDetails\(/g) ?? []).length, 2, "and hang it on the entries they already built");
+  const reader = source("src/lib/phoenix-crm/server/manager-visit-details.ts");
+  assert.match(reader, /export async function loadRepVisitDetails\(/);
+  assert.match(reader, /const record = countableVisitRecord\(row, rep, "rep", facts, input\.territoryNameOf\);/, "one mapping for a rep's visit and a ride-along");
+  const dayLoader = source("src/lib/phoenix-crm/server/day-detail.ts");
+  assert.match(dayLoader, /visitsInFull = await loadRepVisitDetails\(\{/, "the rep's Phoenix CRM day page reads the same records");
+  assert.match(dayLoader, /visitsInFullUnread = true;/, "and says so when it cannot");
+  const dayView = source("src/components/phoenix-crm/day-detail-view.tsx");
+  assert.match(dayView, /<ManagerPlanActual plan=\{null\} planUnread=\{false\} visits=\{view\.visitsInFull\} \/>/, "drawn as the same table Mina's day page draws");
+  const calendarScreen = source("src/components/employee-portal/private-calendar.tsx");
+  assert.match(calendarScreen, /\(item\.managerPlan \|\| item\.managerPlanUnread\) && item\.employeeHrId/, "only a table that draws a plan hides the plan's own entries");
 }

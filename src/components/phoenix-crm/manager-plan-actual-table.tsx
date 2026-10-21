@@ -95,6 +95,21 @@ function HalfChip({ half }: { half: string }) {
 
 /** The half-day, then what was planned for it: who with, which customer, the note. */
 function PlanCell({ row }: { row: PlanVsActualRow }) {
+  // A rep's own visit: his week is his, and the visit itself recorded whether it was on it (owner, 2026-10-21).
+  if (!row.plan && row.actual?.source === "rep") {
+    const onPlan = row.actual.planned;
+    return (
+      <div className="grid min-w-0 gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <HalfChip half={row.half} />
+          <Chip className={onPlan ? "border-slate-300 bg-slate-100 text-slate-700" : "border-slate-300 bg-white text-slate-600"}>
+            {onPlan ? "On the plan" : "Not planned"}
+          </Chip>
+        </div>
+        <Muted>{onPlan ? "On the rep's own weekly plan for this day." : "Logged off the rep's weekly plan."}</Muted>
+      </div>
+    );
+  }
   if (!row.plan) {
     return (
       <div className="grid min-w-0 gap-1.5">
@@ -234,7 +249,7 @@ function MoreAboutVisit({ row }: { row: PlanVsActualRow }) {
             </span>
           ))
         ) : (
-          <span className="font-semibold text-slate-500">{visit.source === "own" ? "Alone." : "No one else named."}</span>
+          <span className="font-semibold text-slate-500">{visit.source === "own" || (visit.source === "rep" && visit.kind === "single") ? "Alone." : "No one else named."}</span>
         )}
       </Fact>
       <Fact label="Products">

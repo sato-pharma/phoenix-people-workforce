@@ -8,6 +8,7 @@ import { managerChain, managersInScope, personKey, territoryName, territoryRevie
 import {
   buildTeamCalendar,
   monthDays,
+  productManagerRowKey,
   teamCalendarTotals,
   type TeamCalendarPerson,
   type TeamCalendarRow,
@@ -360,11 +361,6 @@ async function describeManagers(viewer: PhoenixCrmViewer, members: readonly Chai
         left.territory.localeCompare(right.territory) ||
         left.person.localeCompare(right.person),
     );
-}
-
-/** A product manager's row key: no seat, so a key that can never collide with one (a seat id is a uuid). */
-function productManagerRowKey(hrId: string): string {
-  return `product-manager:${hrId}`;
 }
 
 /**

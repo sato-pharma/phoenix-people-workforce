@@ -15,6 +15,7 @@ import { hrIdLookupKeys } from "@/lib/hr-id";
 import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { listMessagesForDisputes } from "@/lib/private-calendar/dispute-messages";
 import { loadPlanPrivateCalendarItems } from "@/lib/private-calendar/plan-items";
+import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -418,7 +419,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, attendancePolicyRows, disputesByEmployee] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, attendancePolicyRows, disputesByEmployee, visitDetails] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -445,9 +446,12 @@ export async function getPrivateCalendarWorkspace(input: {
       Promise.all(
         scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
       ),
+      // EVERY Phoenix CRM visit in full, not only a manager's own (owner, 2026-10-21: "everyone, exactly as Mina
+      // Farouk") — hung on the entry that already counts it, never an entry of its own. Best-effort: none on failure.
+      loadPrivateCalendarVisitDetails(scopeHrIds, start, end),
     ]);
 
-  const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
+  const allItems = attachVisitDetails(decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
     ...attendance.items,
     ...vacations.items,
     ...excuses.items,
@@ -457,7 +461,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...phoenixWork.items,
     ...managerOwnVisits.items,
     ...plans.items,
-  ], scopeEmployees), employees)
+  ], scopeEmployees), employees), visitDetails)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
   // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on a Double
@@ -705,7 +709,9 @@ export async function getPrivateCalendarDayEvidence(
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(start, end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, ...holidaysByMonth] = await Promise.all([
+  const [visitDetails, attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, ...holidaysByMonth] = await Promise.all([
+    // A reviewer reads every visit of the disputed day in full, the same record the calendar shows (owner, 2026-10-21).
+    loadPrivateCalendarVisitDetails(hrIds, start, end),
     loadAttendanceItems(hrIds, start, end),
     loadVacationItems(hrIds, start, end),
     loadExcuseItems(hrIds, start, end),
@@ -734,7 +740,7 @@ export async function getPrivateCalendarDayEvidence(
   // keyed on (employee, date). Skipping the suppression would show a "Late" or "Single punch" flag
   // beside a CRM-verified visit and invite a rejection on a flag the calendar itself hides.
   const items = suppressFieldVisitAttendanceProblems(
-    decorateItemsWithEmployeeMetadata(
+    attachVisitDetails(decorateItemsWithEmployeeMetadata(
       [
         ...attendance.items,
         ...vacations.items,
@@ -746,7 +752,7 @@ export async function getPrivateCalendarDayEvidence(
         ...plans.items,
       ],
       directory,
-    ),
+    ), visitDetails),
   );
   // Holidays carry no employee, so they are matched by date alone and appended per pair below.
   const holidays = holidaysByMonth.flat();

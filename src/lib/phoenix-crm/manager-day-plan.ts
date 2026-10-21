@@ -149,6 +149,20 @@ export function buildPlanVsActual(
 
   for (const visit of visits) {
     if (used.has(visit.id)) continue;
+    // 🔴 A REP'S OWN VISIT CARRIES ITS OWN ANSWER (owner, 2026-10-21: every visit in full, "exactly as Mina Farouk").
+    //    His week is not the manager's plan, so nothing above can match it; the row says what the visit itself
+    //    recorded — on his plan or not (`is_unplanned`) — and never "No plan sent" about a rep who sent one.
+    if (visit.source === "rep") {
+      rows.push({
+        actual: visit,
+        half: halfOfVisit(visit),
+        id: `visit:${visit.id}`,
+        outcome: visit.planned ? "done" : "unplanned",
+        outcomeLabel: visit.planned ? "On the plan" : "Not on the plan",
+        plan: null,
+      });
+      continue;
+    }
     summary.unplanned += sent ? 1 : 0;
     rows.push({
       actual: visit,

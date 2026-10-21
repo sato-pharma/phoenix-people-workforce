@@ -172,16 +172,15 @@ function dayHref(row: { seatId: string; kind?: "rep" | "manager" }, day: string,
 /**
  * Whether a cell is a link. A rep's cell opens on a working day (or, for the Super Admin, to enter what was
  * missed); a manager's opens only on a day he worked, because there is no record to enter on a manager's seat.
- * A product manager's row opens nothing (owner, 2026-10-20): he holds no seat, so there is no day page to open
- * on it — his cell explains the day in the panel below the grid, and each visit he rode is on the rep's day.
+ * A product manager's row is a manager's row here (owner, 2026-10-21: "Open a day page"): his worked day opens
+ * the manager's day page on his row key, which that page reads by HR id.
  */
 function cellOpens(
-  row: { seatId: string; kind?: "rep" | "manager"; seatless?: boolean },
+  row: { seatId: string; kind?: "rep" | "manager" },
   day: TeamCalendarDay,
   entrySeats: ReadonlySet<string>,
   entryThrough: string | null,
 ): boolean {
-  if (row.seatless) return false;
   if (row.kind === "manager") return opensTheDay(day);
   return opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
 }
@@ -565,8 +564,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               {chosen.row.seatless ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                   A product manager&apos;s day: their own single visits plus the visits a rep logged naming them as
-                  the product manager. They hold no territory, so the day has no page of its own: each visit they
-                  joined opens from that rep&apos;s row. Counted in none of the month&apos;s totals.
+                  the product manager. A day with either opens in full, in a new tab. Counted in none of the
+                  month&apos;s totals.
                 </p>
               ) : chosen.row.kind === "manager" ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
