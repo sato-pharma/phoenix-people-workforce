@@ -37,6 +37,7 @@ import { describeResolvedAddressPlace, type DirectOrderGeographyVerdict } from "
 import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { DirectOrderVenueValidationPhotos } from "@/components/approvals-hub/direct-order-venue-validation-photos";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { AttachDirectOrderInvoice } from "@/components/direct-orders/attach-direct-order-invoice";
@@ -175,6 +176,7 @@ export function DirectOrderRequestDetail({
     pharmacyEvidence,
     pharmacyValidation = null,
     pharmacyFieldEvidenceGap = null,
+    venueValidationPhotos = [],
     possibleDistributorMatches,
     autoLinkRefusal,
     productPharmacyPrice,
@@ -359,7 +361,13 @@ export function DirectOrderRequestDetail({
       {pharmacyValidation ? (
         <ValidatedEvidenceLink
           badge={pharmacyValidation}
-          href={pharmacyEvidence ? "#do-pharmacy-evidence" : "#do-distributors"}
+          href={
+            venueValidationPhotos.length > 0
+              ? "#do-venue-validation-photos"
+              : pharmacyEvidence
+                ? "#do-pharmacy-evidence"
+                : "#do-distributors"
+          }
           venueNoun="pharmacy"
         />
       ) : null}
@@ -409,6 +417,14 @@ export function DirectOrderRequestDetail({
           {canAttachInvoice ? <AttachDirectOrderInvoice hasInvoice={Boolean(orderInvoice)} requestId={request.id} /> : null}
         </PanelSection>
       ) : null}
+
+      {/* Every validation photo of this venue — the pharmacy AND the customer, from Direct Orders and
+          from Marketing — each with its full captured details (owner, 2026-10-21: "never hide a
+          picture if available"). Above the order details, so an approver sees the shop before the
+          money. */}
+      <PanelSection title="Validation photos — pharmacy and customer" anchorId="do-venue-validation-photos">
+        <DirectOrderVenueValidationPhotos photos={venueValidationPhotos} />
+      </PanelSection>
 
       <PanelSection title="Order details">
         {/* The four facts a decision actually turns on, first and biggest. */}

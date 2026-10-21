@@ -7659,6 +7659,13 @@ export async function createMarketingValidationRecord(
     // A newly validated customer or pharmacy changes the evidence and validation columns the
     // sheet shows, so it is worth a refresh even though no request row moved.
     pingMarketingRequestSheet("validation_recorded");
+    // A customer validated here is validated in the rep's Direct Orders too, and its pharmacies land
+    // in his "My venues" (owner, 2026-10-21). Imported lazily — that module imports this one — and
+    // quiet: the save above has happened, so a hand-over failure is logged and retried, never thrown.
+    const { syncMarketingValidationToDirectOrdersQuietly } = await import(
+      "@/lib/marketing-requests/direct-order-venue-sync"
+    );
+    await syncMarketingValidationToDirectOrdersQuietly(rows.map((row) => String(row.customer.id)));
     return rows;
   } catch (error) {
     // Order matters: the link rows FK to both, and pharmacies are deleted before customers so a

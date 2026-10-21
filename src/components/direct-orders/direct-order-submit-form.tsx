@@ -1096,7 +1096,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 ) : myPharmacies.length === 0 ? (
                   <p className="border border-[#eef1f3] px-3 py-2 text-phx-sm font-semibold text-slate-500">
                     No approved venues yet. A venue lands here once one of your orders on it is
-                    approved, and from then on it is one click.
+                    approved, or once you validate a customer at it for marketing requests — and
+                    from then on it is one click.
                   </p>
                 ) : (
                   <div className="max-h-64 space-y-1 overflow-y-auto">

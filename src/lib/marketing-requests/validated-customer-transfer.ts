@@ -41,6 +41,12 @@ import {
 // field Direct Orders will actually want, so "complete" here means "this will land cleanly over
 // there" rather than "somebody filled in more boxes".
 //
+// SINCE 2026-10-21 THE HAND-OVER IS AUTOMATIC (owner: "every one validates a customer for marketing
+// requests is automatic validated in his direct orders and is appearing in his venues validated").
+// `direct-order-venue-sync.ts` carries every validated pharmacy across on its own; this manual
+// Transfer remains for a customer the automatic path could not carry, and refuses a pharmacy that
+// is already across.
+//
 // NOTHING HERE BLOCKS. Owner's instruction, same day: "This transfer is made manually by the
 // admin… ask him, are you sure… If I tell yes, that's okay. Then proceed. Don't block." The
 // completeness panel therefore informs, the confirmation dialog gates, and the admin decides. The
@@ -338,7 +344,7 @@ export type ResolvedDirectOrderGeography = PinnedGeography;
  * "no brick near". Read as no territory, the photo — the primary evidence — silently lost to the master
  * code or the inherited marketing label, and a transfer filed the venue where its photo says it is not.
  */
-async function readPinTerritory(
+export async function readPinTerritory(
   latitude: number | null,
   longitude: number | null,
   refusal: string,
@@ -374,7 +380,7 @@ async function readPinTerritory(
  * would be inventing a territory, and a wrong territory silently routes a shop to the wrong
  * manager. The completeness panel names it instead, and the admin fixes the source record.
  */
-async function resolveDirectOrderGeography(input: {
+export async function resolveDirectOrderGeography(input: {
   marketingAreaCode: string | null;
   mappedAreaCode?: string | null;
   mappedRegionCode?: string | null;
@@ -426,7 +432,7 @@ async function resolveDirectOrderGeography(input: {
  * distance comes back too, so a 40 km "nearest" brick reads as the nonsense it is rather than as a
  * territory.
  */
-async function suggestBrickForCapture(input: {
+export async function suggestBrickForCapture(input: {
   areaCode: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -1370,6 +1376,27 @@ export async function transferValidatedCustomerToDirectOrders(
     }
   }
 
+  // Since 2026-10-21 a validated customer's pharmacies cross into Direct Orders on their own
+  // (direct-order-venue-sync.ts). A manual Transfer of a pharmacy already across would mint the same
+  // shop twice, so it is refused in words — the venue is already on the rep's list.
+  if (marketingPharmacy) {
+    const { data: alreadyAcross, error: alreadyAcrossError } = await supabase
+      .from("marketing_pharmacy_direct_order_venues")
+      .select("direct_order_pharmacy_id")
+      .eq("marketing_pharmacy_id", String(marketingPharmacy.id))
+      .maybeSingle();
+    if (alreadyAcrossError) {
+      throw new Error(
+        `Could not check whether this pharmacy is already in Direct Orders, so nothing was transferred. (${alreadyAcrossError.message})`,
+      );
+    }
+    if (alreadyAcross) {
+      throw validationError(
+        "This customer's pharmacy is already a validated Direct Order venue — it crossed automatically when the customer was validated. Nothing needs transferring.",
+      );
+    }
+  }
+
   const areaId = num(customer, "area_id");
   let marketingAreaCode: string | null = null;
   if (areaId !== null) {
@@ -1567,6 +1594,18 @@ export async function transferValidatedCustomerToDirectOrders(
     .select("id")
     .single();
   if (transferError) throw transferError;
+
+  // Name the venue this pharmacy IS, so the automatic hand-over never mints it a second time and
+  // the approval panel can open the marketing photos for it.
+  if (marketingPharmacy) {
+    const { error: venueLinkError } = await supabase.from("marketing_pharmacy_direct_order_venues").insert({
+      customer_id: customerId,
+      direct_order_pharmacy_id: directOrderPharmacyId,
+      link_kind: "transferred",
+      marketing_pharmacy_id: String(marketingPharmacy.id),
+    });
+    if (venueLinkError && String((venueLinkError as { code?: string }).code ?? "") !== "23505") throw venueLinkError;
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? actorHrId,
