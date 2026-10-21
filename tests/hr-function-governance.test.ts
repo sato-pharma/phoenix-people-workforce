@@ -374,6 +374,13 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // and nothing else in Recruitment opens: her matrix row still holds no recruitment or candidates
   // grant. The calendar holds no salary, no personnel record and no payroll figure, so it crosses
   // none of her named boundaries.
+  // ALSO names HR Resourcing (Talent Acquisition) in isInterviewCalendarOwner, added 2026-10-21. Owner,
+  // that day: "make the TA have full access on the interview and can schedule and do everything and use
+  // every single feature". Reviewed verdict: the same reach, to the same calendar only. She already holds
+  // the candidates grants through `recruiting`, so searching and adding while booking opens nothing new,
+  // and the Talent Acquisition fence (owner, 2026-10-20) still runs on the calendar's candidate search
+  // and its bookings, so an HR applicant is never offered or shown to her. No salary, personnel record
+  // or payroll figure sits on the calendar, so it crosses none of her named boundaries.
   "src/lib/recruitment/interview-calendar-types.ts",
   // Names "Super Admin" and "HR Operations" in resolveHrIdsForRole, added 2026-09-23 with the
   // interview-request flow. Reviewed verdict: it names the two seats only to pick who is TOLD a new

@@ -173,8 +173,9 @@ export function CvLookupSearch() {
    * SCHEDULE INTERVIEW IS THE SHARED BUTTON, not a second implementation — the owner's 2026-09-18
    * rule is that it reaches "any screen, any CV", and `ScheduleInterviewButton` carries the gate
    * and the dialog with it. It draws NOTHING for somebody who cannot book, so this screen never has
-   * to ask the question: the two seats that hold `cv_lookup` are the Super Admin and HR Operations,
-   * and `isInterviewCalendarOwner` admits exactly those two, so in practice it always draws here —
+   * to ask the question: the seats that hold `cv_lookup` are the Super Admin, HR Operations and Talent
+   * Acquisition, and `isInterviewCalendarOwner` admits exactly those three (the last since 2026-10-21),
+   * so in practice it always draws here —
    * but the gate stays where it belongs rather than being restated as a condition this file owns.
    *
    * `renderTrigger` draws the press in THIS screen's kit. The shared button's own default is the

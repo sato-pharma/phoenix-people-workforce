@@ -11,6 +11,7 @@ import {
   type InterviewCalendarCaller,
 } from "../src/lib/recruitment/interview-calendar.ts";
 import {
+  isInterviewCalendarOwner,
   readsInterviewRequestInbox,
   type InterviewCalendarPerson,
   type InterviewCalendarRole,
@@ -99,7 +100,8 @@ export async function runInterviewRequestTests() {
   assert.match(notify, /resolveHrIdsForRole\("Super Admin"/, "the inbox notice reaches the Super Admin");
   assert.match(notify, /resolveHrIdsForRole\("HR Operations"/, "and HR Operations");
   assert.match(notify, /resolveHrIdsForRole\("HR Resourcing"/, "and the Talent Acquisition seat, who reads the calendar (owner, 2026-10-16)");
-  assert.match(notify, /HR will phone the candidates/, "her copy says what HR will do — she cannot give a CV its time herself");
+  assert.match(notify, /Phone the candidates and give each a time/, "all three get the words of the job — it is theirs to do");
+  assert.doesNotMatch(notify, /HR will phone the candidates|awarenessMessage/, "Talent Acquisition no longer gets the 'HR will do it' awareness copy — she owns the calendar since 2026-10-21 (owner)");
   assert.match(notify, /interview-request-created:/, "the new-request notice is deduped per recipient");
   assert.match(notify, /interview-request-scheduled:/, "the requester is told once per booked CV");
   assert.match(notify, /interview-assigned:/, "the interviewer is told once per interview");
@@ -172,15 +174,25 @@ export async function runInterviewRequestTests() {
   assert.match(panels, /const mineEarlier = .*!isSettled\(request\)/, "earlier requests drop it as well");
   assert.match(panels, /request\.items\.filter\(\(item\) => !item\.booked\)\.map/, "and a card lists only the CVs still to book — a booked CV is on the calendar");
 
-  // ── The Talent Acquisition seat READS the waiting list and changes nothing (owner, 2026-10-18: "let
-  // Talent Acquisition see waiting interview requests on her calendar, read-only"). Her Viewer tier showed
-  // her only the requests she asked for herself; the list asked for book rights. ───────────────────────────
-  assert.equal(readsInterviewRequestInbox({ role: "HR Resourcing" }), true, "the Talent Acquisition seat reads the waiting list");
+  // ── The Talent Acquisition seat OWNS the calendar, so she books from the waiting list herself (owner,
+  // 2026-10-21: "full access on the interview ... schedule and do everything and use every single feature").
+  // That REPLACED two earlier rulings: the Viewer tier of 2026-10-08 and the read-only list of 2026-10-18
+  // ("let Talent Acquisition see waiting interview requests on her calendar, read-only"). The read door
+  // below stays as the FLOOR under her ownership — it only ever adds the list for a caller who lacks book
+  // rights, and she no longer lacks them. ──────────────────────────────────────────────────────────────────
+  assert.equal(isInterviewCalendarOwner(access("HR-011", "HR Resourcing")), true, "the seat owns the calendar, so she holds book rights");
+  assert.equal(readsInterviewRequestInbox({ role: "HR Resourcing" }), true, "the read door still names the Talent Acquisition seat — the floor");
   for (const role of ["CEO", "HR Operations", "Super Admin", "District Manager", "National Sales Manager", "Medical Representative", null]) {
-    assert.equal(readsInterviewRequestInbox({ role }), false, `${role ?? "no role"} is not given the read-only list by this door (the CEO is a Viewer too and nobody asked for his)`);
+    assert.equal(readsInterviewRequestInbox({ role }), false, `${role ?? "no role"} is not given the floor list by this door (the CEO is a Viewer too and nobody asked for his)`);
   }
+  // As resolveInterviewCalendarRole now hands her: an owner. She reads the list AND books anyone.
+  const ownerSeat = caller("owner", "HR-011", "HR Resourcing");
+  assert.doesNotThrow(() => assertMayReadRequestInbox(ownerSeat), "she reads the waiting list");
+  assert.doesNotThrow(() => assertMayBookInterview(ownerSeat, "2026-10-25", "N-01"), "and books anyone, as the other owners do");
+  // The FLOOR: the same seat at Viewer tier (what she was before 2026-10-21) still READS, and the read door
+  // alone books nothing — giving a CV its time is checked before any row is read.
   const seat = caller("viewer", "HR-011", "HR Resourcing");
-  assert.doesNotThrow(() => assertMayReadRequestInbox(seat), "she reads the waiting list");
+  assert.doesNotThrow(() => assertMayReadRequestInbox(seat), "the floor tier still reads the waiting list");
   assert.doesNotThrow(() => assertMayReadRequestInbox(caller("owner", "B-10", "Super Admin")), "the owner still reads it");
   assert.doesNotThrow(() => assertMayReadRequestInbox(caller("editor", "H-1", "HR Operations")), "and an editor, who books from it");
   assert.throws(() => assertMayReadRequestInbox(caller("viewer", "C-1", "CEO")), /Forbidden/, "another Viewer, the CEO, still needs book rights to read it");
@@ -190,15 +202,16 @@ export async function runInterviewRequestTests() {
     /Forbidden/,
     "the seat's role on a guest context (no sign-in) opens nothing",
   );
-  // Reading is ALL it opens: giving a CV its time is checked before any row is read, and refuses her.
+  // Reading is ALL the floor door opens: giving a CV its time is checked before any row is read, and refuses
+  // a Viewer-tier caller. The seat clears that gate by OWNING the calendar (above), never by this door.
   await assert.rejects(
     () => scheduleInterviewRequestItem(seat, { dateKey: "2026-10-25", itemId: "i-1", platform: "in_office", requestId: "r-1", startMinutes: 600 }),
     /Forbidden/,
-    "the Talent Acquisition seat cannot give a CV a time — that stays with book rights",
+    "a Viewer-tier caller cannot give a CV a time — that needs book rights, which the Talent Acquisition seat holds as an owner",
   );
   const gate = stripComments(read("src/lib/recruitment/interview-requests.ts"));
   assert.match(gate, /export async function listInterviewRequestsInbox[\s\S]*?assertMayReadRequestInbox\(caller\);/, "the waiting list is read through that one gate");
-  assert.match(gate, /requireCalendarAccess\(caller, "book", "any"\);\s*\}/, "the gate falls back to book rights for everyone but her seat");
+  assert.match(gate, /requireCalendarAccess\(caller, "book", "any"\);\s*\}/, "the gate falls back to book rights for everyone the floor door does not name");
   assert.match(gate, /const mine = Boolean\(caller\.access\.hrId\)[\s\S]*?if \(!canBook && !mine\) throw/, "withdrawing a request is still book rights or the requester's own");
   assert.match(panels, /const showInbox = canBook \|\| canReadInbox;/, "the list is drawn for a booker or the reading seat");
   assert.match(panels, /useRequests\(api, "\/requests", showInbox, reloadSignal\)/, "and read for both");

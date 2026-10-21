@@ -8207,11 +8207,17 @@ Saturday are not working days here and the week containing a Friday is Sunday-to
 over; and **`lockedWeek` is never passed**, since that is the prop a week-limited share link uses to
 freeze one week, which would delete the navigation he had just asked for.
 
-**Her tier is her seat's, and nothing here widens it.** `seesWholeInterviewCalendar` names
-`HR Resourcing`, so she resolves to a **Viewer**: every interview, plus Request an interview by her
-HR seat. Booking, moving or cancelling for other people needs an Editor share — the owner's own click
-in the calendar's Share dialog. The component offers only what her tier holds and every API route
-behind it enforces again, so a prop that said more would buy nothing.
+**She owns the calendar, since 2026-10-21, and nothing here narrows that.** The owner's words were
+"make the TA have full access on the interview and can schedule and do everything and use every
+single feature". `isInterviewCalendarOwner` names `HR Resourcing`, so she resolves to an **owner**,
+the tier HR Operations holds: she books, moves and cancels interviews, gives a waiting request its
+time, comments, records outcomes, exports and shares the calendar, with the component drawing every
+button her role meets. Until that day she was a **Viewer** (2026-10-08, "Full view built into her
+seat", `seesWholeInterviewCalendar`) with a read-only request list (2026-10-18); both stay in the
+code as the floor under her ownership and decide nothing for her. Her fence stands: the calendar's
+candidate search and bookings run the Talent Acquisition fence, so she never sees an HR applicant.
+The component offers only what her role holds and every API route behind it enforces again, so a
+prop that said more would buy nothing.
 
 The joining days moved to the **month**, which is the only view that draws all seven days; the week
 strip they used to sit on was Sunday to Thursday, so it could never have been complete.

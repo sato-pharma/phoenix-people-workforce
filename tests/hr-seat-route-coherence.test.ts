@@ -271,7 +271,10 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "offered the Recruitment row (permissions: [recruitment]); Operations, who holds no recruitment " +
     "grant and is never shown that heading, is offered a copy under People (roles: [HR Operations]). A null " +
     "role renders a plain 'not been shared with you' notice — never a redirect and never a 403 — " +
-    "and every API route asserts the same gate, so the screen is presentation and never the boundary",
+    "and every API route asserts the same gate, so the screen is presentation and never the boundary. " +
+    "Talent Acquisition (HR Resourcing) is an owner too since 2026-10-21 (isInterviewCalendarOwner is TRUE " +
+    "for her), so she opens it as an owner from the Recruitment row (permissions: [recruitment]) and needs " +
+    "no share row",
   // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
   // was a card on the /hr/attendance hub, and the hub row that fronted them is gone, so they are
   // rail rows in their own right now. Both verified by CALLING the predicate for each seat rather

@@ -24,26 +24,22 @@ const PORTAL_BASE = "/employee-portals/interview-calendar";
 const MODULE = "recruitment";
 
 /**
- * Who is told a request landed: the calendar's owners — the Super Admin and HR Operations, who phone
- * the candidates and give each a time — and the Talent Acquisition seat (HR Resourcing), who sees
- * every request in her notification center (owner, 2026-10-16: new CV received, interview requests,
- * accepted job offers). She reads the calendar but does not book it, so `owner` says which copy she gets.
+ * Who is told a request landed: the calendar's owners — the Super Admin, HR Operations and the Talent
+ * Acquisition seat (HR Resourcing), who phone the candidates and give each a time. She joined the list
+ * as an audience on 2026-10-16 (new CV received, interview requests, accepted job offers) and became
+ * an owner of the calendar on 2026-10-21, so all three get the same words: the job is theirs to do.
  */
-async function inboxRecipients(): Promise<Array<{ hrId: string; owner: boolean }>> {
-  const [superAdmin, hrOps, talentAcquisition] = await Promise.all([
+async function inboxRecipients(): Promise<string[]> {
+  const groups = await Promise.all([
     resolveHrIdsForRole("Super Admin", "Interview request inbox recipients"),
     resolveHrIdsForRole("HR Operations", "Interview request inbox recipients"),
     resolveHrIdsForRole("HR Resourcing", "Interview request inbox recipients"),
   ]);
-  const keyed = new Map<string, { hrId: string; owner: boolean }>();
-  for (const [hrIds, owner] of [
-    [superAdmin.hrIds, true],
-    [hrOps.hrIds, true],
-    [talentAcquisition.hrIds, false],
-  ] as const) {
+  const keyed = new Map<string, string>();
+  for (const { hrIds } of groups) {
     for (const hrId of hrIds) {
       const key = canonicalHrIdKey(hrId);
-      if (key && !keyed.has(key)) keyed.set(key, { hrId, owner });
+      if (key && !keyed.has(key)) keyed.set(key, hrId);
     }
   }
   return Array.from(keyed.values());
@@ -63,20 +59,17 @@ export async function notifyInterviewRequestCreated(request: InterviewRequest): 
     const href = interviewCalendarHref({ base: ADMIN_BASE, weekStart: request.requestedDay });
     const title = `${request.requestedByName} asked for ${request.items.length === 1 ? "an interview" : "interviews"} on ${day}`;
     const summary = `${request.requestedByName} sent ${cvCountText(request)} to interview on ${day}, with ${request.interviewerName} to conduct.`;
-    // The owners are told what is theirs to do; Talent Acquisition is told what HR will do, because she
-    // cannot give a CV its time herself.
-    const ownerMessage = `${summary} Phone the candidates and give each a time.`;
-    const awarenessMessage = `${summary} HR will phone the candidates and give each a time.`;
+    const message = `${summary} Phone the candidates and give each a time.`;
     await Promise.all(
       recipients
         // The requester does not need to be told about their own request, even if they are an admin.
-        .filter(({ hrId }) => canonicalHrIdKey(hrId) !== requesterKey)
-        .map(({ hrId, owner }) =>
+        .filter((hrId) => canonicalHrIdKey(hrId) !== requesterKey)
+        .map((hrId) =>
           createSystemNotification({
             actionUrl: href,
             channels: ["in_app", "telegram"],
             eventType: "interview_request_created",
-            message: owner ? ownerMessage : awarenessMessage,
+            message,
             metadata: { idempotencyKey: `interview-request-created:${request.id}:${canonicalHrIdKey(hrId)}` },
             module: MODULE,
             priority: "high",
