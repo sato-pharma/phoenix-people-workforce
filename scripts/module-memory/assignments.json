@@ -120,6 +120,7 @@
   "a-public-revoke-also-drops-the-supabase-platform-roles": "database",
   "a-publication-snapshot-holds-two-rows-per-area-product": "sales-imports",
   "a-python-heredoc-writes-real-control-chars-into-regex-literals": "phoenix-crm",
+  "a-railway-build-outage-leaves-no-deployment-row": "engineering",
   "a-railway-variable-is-reverted-by-its-github-secret": "engineering-deploys",
   "a-rebase-by-the-branchs-own-session-cancels-your-ci-run": "engineering",
   "a-rebuilt-net-goes-stale-when-an-upload-is-withdrawn": "sales-closing",
@@ -225,6 +226,7 @@
   "an-empty-cv-extraction-is-the-designed-answer-to-a-non-cv": "recruitment",
   "an-exhaustive-record-does-not-gate-the-build-here": "engineering",
   "an-export-must-match-the-screen-never-different-data": "sales-closing",
+  "an-image-ref-in-root-directory-kills-every-production-build": "engineering-deploys",
   "an-interrupted-session-leaves-the-tree-deliberately-broken": "sessions",
   "an-offset-page-over-a-union-view-redoes-the-whole-window": "crm",
   "an-overseas-address-is-a-30-character-window-cut-at-both-ends": "sales-imports",
@@ -494,6 +496,7 @@
   "disk-io-temp-spill-workmem": "database",
   "dm-approval-chain-drops-the-ceo-never-the-nsm": "approvals",
   "dm-sales-scope-drops-out-of-region-areas": "sales-attribution",
+  "dm-test-accounts-see-a-copy-of-the-real-rep-plans": "org",
   "docker-desktop-force-kill-breaks-af-unix-sockets": "engineering",
   "doctor-coverage-scores-only-doctors-already-visited": "crm",
   "dont-foreground-watch-long-pipelines": "global",
@@ -1416,5 +1419,6 @@
   "worktree-payload-is-the-repo-slowness": "git-worktrees",
   "worktree-remove-permission-denied-still-deregisters": "git-worktrees",
   "worktree-session-can-silently-write-to-primary-checkout": "git-worktrees",
+  "zero-deployment-rows-means-a-railway-build-outage-not-a-withheld-deploy": "engineering-deploys",
   "zeroing-is-bonus-turns-free-goods-into-sales": "sales-closing"
 }

@@ -25,6 +25,7 @@ import {
   DEAD_TOKEN_POLL_WINDOW_MS,
   assessDeadTokenPolling,
   buildDeadTokenPollMessage,
+  summariseDeadTokenAlarmDeliveries,
   type DeadTokenPollJudgeableLink,
   type DeadTokenPollVerdict,
 } from "@/lib/share-links/dead-token-polling";
@@ -135,10 +136,9 @@ export async function runDeadTokenPollingCheck(): Promise<DeadTokenPollingRunRes
     const affected = assessed.polled.map((poll) => poll.id).sort();
     const idempotencyBase = `share-link-dead-token-polled:${cairoDayKey()}:${affected.join(",")}`;
 
-    let delivered = 0;
-    await Promise.all(
+    const results = await Promise.all(
       recipients.map(async (recipient) => {
-        await createSystemNotification({
+        const result = await createSystemNotification({
           actionUrl: screenUrl,
           actorId: ACTOR,
           // No email — see the file header. In-app + Telegram + push only.
@@ -157,9 +157,18 @@ export async function runDeadTokenPollingCheck(): Promise<DeadTokenPollingRunRes
           telegram: screenUrl ? { ctaLabel: "Open share links", ctaUrl: screenUrl } : undefined,
           title,
         });
-        delivered += 1;
+        return result.deliveries;
       }),
     );
+
+    // Count what really went out — see `summariseDeadTokenAlarmDeliveries`. A run where every
+    // recipient was already alerted today writes NO audit row: it did nothing, and saying
+    // "delivered" about it 95 times a day is what this replaced.
+    const outcome = summariseDeadTokenAlarmDeliveries(results);
+    const delivered = outcome.reached;
+    if (outcome.reached === 0 && outcome.unreached === 0) {
+      return { delivered: 0, reason: "already alerted today", skipped: true, verdict: assessed };
+    }
 
     await writeAuditLog({
       actorLoginId: ACTOR,
@@ -174,12 +183,16 @@ export async function runDeadTokenPollingCheck(): Promise<DeadTokenPollingRunRes
           refusals: poll.refusals,
           sheet: poll.sheet,
         })),
+        repeats: outcome.repeats,
+        unreached: outcome.unreached,
         warnings,
       },
-      summary: `Dead share-token polling alert delivered to ${delivered} recipient(s).`,
+      summary: outcome.unreached > 0
+        ? `Dead share-token polling alert delivered to ${delivered} recipient(s); ${outcome.unreached} not reached.`
+        : `Dead share-token polling alert delivered to ${delivered} recipient(s).`,
     });
 
-    return { delivered, skipped: false, verdict: assessed };
+    return { delivered, skipped: delivered === 0, verdict: assessed };
   } catch (error) {
     // Swallow: an alarm about a silence must not become a second, self-inflicted outage.
     logError("Dead share-token polling check failed", {
