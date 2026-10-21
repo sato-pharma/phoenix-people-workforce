@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
+import { previousAuthSecret } from "@/lib/auth/previous-secret";
+
 /**
  * Signed, expiring one-click-unsubscribe token. Mirrors the session-token signer
  * (HMAC-SHA256 over a base64url payload using PHOENIX_AUTH_SECRET) so we reuse the same
@@ -29,8 +31,14 @@ function base64UrlDecode(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-function sign(value: string) {
-  return createHmac("sha256", getSecret()).update(value).digest("base64url");
+function sign(value: string, secret: string = getSecret()) {
+  return createHmac("sha256", secret).update(value).digest("base64url");
+}
+
+function signatureMatches(signature: string, expected: string) {
+  const received = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer);
 }
 
 export function createUnsubscribeToken(address: string, type: string, ttlSeconds = defaultTtlSeconds) {
@@ -43,21 +51,24 @@ export function createUnsubscribeToken(address: string, type: string, ttlSeconds
   return `${encoded}.${sign(encoded)}`;
 }
 
-export function verifyUnsubscribeToken(token: string | null | undefined): UnsubscribeTokenPayload | null {
+export function verifyUnsubscribeToken(
+  token: string | null | undefined,
+  now: Date = new Date(),
+): UnsubscribeTokenPayload | null {
   if (!token) return null;
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature) return null;
 
-  const expected = sign(encoded);
-  const received = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (received.length !== expectedBuffer.length || !timingSafeEqual(received, expectedBuffer)) {
-    return null;
+  if (!signatureMatches(signature, sign(encoded))) {
+    // A link mailed before the secret rotation keeps working until the end date in
+    // src/lib/auth/previous-secret.ts. New links are always signed with the current secret.
+    const previous = previousAuthSecret(now);
+    if (!previous || !signatureMatches(signature, sign(encoded, previous))) return null;
   }
 
   try {
     const payload = JSON.parse(base64UrlDecode(encoded)) as UnsubscribeTokenPayload;
-    if (!payload.addr || !payload.type || !payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
+    if (!payload.addr || !payload.type || !payload.exp || payload.exp < Math.floor(now.getTime() / 1000)) {
       return null;
     }
     return payload;

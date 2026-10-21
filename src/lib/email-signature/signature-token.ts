@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHmac } from "node:crypto";
 
+import { previousAuthSecret } from "@/lib/auth/previous-secret";
 import { hrIdForStorage } from "@/lib/hr-id";
 
 // The public address of a signature picture. A mail app fetches the picture with no Phoenix session, so
@@ -11,10 +12,25 @@ import { hrIdForStorage } from "@/lib/hr-id";
 
 const KEY_LABEL = "phoenix-email-signature-token-v1";
 
+function keyFrom(secret: string): Buffer {
+  return createHmac("sha256", secret).update(KEY_LABEL).digest();
+}
+
 function key(): Buffer {
   const secret = process.env.PHOENIX_AUTH_SECRET?.trim();
   if (!secret) throw new Error("PHOENIX_AUTH_SECRET is required for email signature addresses.");
-  return createHmac("sha256", secret).update(KEY_LABEL).digest();
+  return keyFrom(secret);
+}
+
+function openWith(raw: Buffer, secretKey: Buffer): string | null {
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", secretKey, raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    const id = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+    return id || null;
+  } catch {
+    return null;
+  }
 }
 
 export function sealSignatureToken(hrId: string): string {
@@ -27,16 +43,21 @@ export function sealSignatureToken(hrId: string): string {
   return Buffer.concat([iv, cipher.getAuthTag(), sealed]).toString("base64url");
 }
 
-export function openSignatureToken(token: string | null | undefined): string | null {
+export function openSignatureToken(token: string | null | undefined, now: Date = new Date()): string | null {
   if (!token || token.length > 200) return null;
+  let raw: Buffer;
+  let currentKey: Buffer;
   try {
-    const raw = Buffer.from(token, "base64url");
-    if (raw.length <= 28) return null;
-    const decipher = createDecipheriv("aes-256-gcm", key(), raw.subarray(0, 12));
-    decipher.setAuthTag(raw.subarray(12, 28));
-    const id = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
-    return id || null;
+    raw = Buffer.from(token, "base64url");
+    currentKey = key();
   } catch {
     return null;
   }
+  if (raw.length <= 28) return null;
+  const opened = openWith(raw, currentKey);
+  if (opened) return opened;
+  // An address pasted into signatures before the secret rotation keeps its picture until the end date
+  // in src/lib/auth/previous-secret.ts. Sealing above always uses the current secret.
+  const previous = previousAuthSecret(now);
+  return previous ? openWith(raw, keyFrom(previous)) : null;
 }

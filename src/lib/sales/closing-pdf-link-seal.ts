@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { previousAuthSecret } from "@/lib/auth/previous-secret";
 
 import type { ClosingExportFilter } from "./closing-export-payload";
 
@@ -28,7 +29,8 @@ import type { ClosingExportFilter } from "./closing-export-payload";
  * that rule is about who is LOOKING, and whoever downloaded the file is not the person looking now.
  *
  * NO EXPIRY, deliberately. A closing workbook is kept and forwarded for months, and the owner's rule is
- * about whoever receives it, not when. Rotating `PHOENIX_AUTH_SECRET` retires every seal at once.
+ * about whoever receives it, not when. Rotating `PHOENIX_AUTH_SECRET` retires every seal at once —
+ * after the grace window of `PHOENIX_AUTH_SECRET_PREVIOUS` (src/lib/auth/previous-secret.ts) ends.
  *
  * Stateless, like the payroll acknowledgment and the unsubscribe link: an HMAC under
  * `PHOENIX_AUTH_SECRET`. The signed text is prefixed with this purpose, so a signature minted for a
@@ -82,6 +84,10 @@ function sign(secret: string, encoded: string): Buffer {
   return createHmac("sha256", secret).update(`${PURPOSE}\n${encoded}`).digest().subarray(0, SIGNATURE_BYTES);
 }
 
+function signatureMatches(received: Buffer, expected: Buffer): boolean {
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
 /** Trimmed, blank-free, de-duplicated and SORTED, so one selection always seals to one text. */
 function codes(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))].sort();
@@ -117,7 +123,10 @@ export function sealClosingSelection(selection: SealedClosingSelection): string 
  * different purpose, a missing secret. The caller then treats the link as unsealed, which is exactly
  * the gate every link had before seals existed.
  */
-export function openClosingSelectionSeal(token: string | null | undefined): SealedClosingSelection | null {
+export function openClosingSelectionSeal(
+  token: string | null | undefined,
+  now: Date = new Date(),
+): SealedClosingSelection | null {
   const secret = signingSecret();
   if (!secret || !token) return null;
 
@@ -125,8 +134,12 @@ export function openClosingSelectionSeal(token: string | null | undefined): Seal
   if (!encoded || !signature || extra !== undefined) return null;
 
   const received = Buffer.from(signature, "base64url");
-  const expected = sign(secret, encoded);
-  if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
+  if (!signatureMatches(received, sign(secret, encoded))) {
+    // A workbook sent before the secret rotation keeps its Export PDF links until the end date in
+    // src/lib/auth/previous-secret.ts. A new seal is always signed with the current secret.
+    const previous = previousAuthSecret(now);
+    if (!previous || !signatureMatches(received, sign(previous, encoded))) return null;
+  }
 
   let payload: unknown;
   try {

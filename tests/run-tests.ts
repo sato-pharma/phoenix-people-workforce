@@ -1195,6 +1195,7 @@ import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
 import { runCronAuthPolicyTests } from "./cron-auth-policy.test.ts";
+import { runAuthSecretPreviousTests } from "./auth-secret-previous.test.ts";
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runActivityControlTablesFitTheScreenTests } from "./activity-control-tables-fit-the-screen.test.ts";
@@ -5148,6 +5149,7 @@ await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("gcloud migration hardening", runGcloudMigrationHardeningTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);
 await runTest("cron auth policy: unset-secret bypass, denial logging, no dev bypass on required tokens", runCronAuthPolicyTests);
+await runTest("secret rotation: old links open until 2026-11-22 under the previous secret, logins never fall back", runAuthSecretPreviousTests);
 await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests);
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);

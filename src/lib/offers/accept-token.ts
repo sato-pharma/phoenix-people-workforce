@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { systemDeployment } from "@/config/system-settings";
+import { previousAuthSecret } from "@/lib/auth/previous-secret";
 import { parseLetterDate, isIsoDate } from "@/lib/offers/dates";
 
 /**
@@ -38,8 +39,14 @@ function signingSecret(): string {
   return secret;
 }
 
-function sign(encoded: string): string {
-  return createHmac("sha256", signingSecret()).update(`offer-accept.v1\n${encoded}`).digest("base64url");
+function sign(encoded: string, secret: string = signingSecret()): string {
+  return createHmac("sha256", secret).update(`offer-accept.v1\n${encoded}`).digest("base64url");
+}
+
+function signatureMatches(signature: string, expected: string): boolean {
+  const received = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer);
 }
 
 /**
@@ -87,9 +94,12 @@ export function readOfferAcceptToken(token: string | null | undefined, nowSecond
   } catch {
     return null; // no secret → nothing verifies, the page answers "this link is not valid"
   }
-  const received = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (received.length !== expectedBuffer.length || !timingSafeEqual(received, expectedBuffer)) return null;
+  if (!signatureMatches(signature, expected)) {
+    // An offer emailed before the secret rotation keeps opening until the end date in
+    // src/lib/auth/previous-secret.ts. A new link is always signed with the current secret.
+    const previous = previousAuthSecret(nowSeconds === undefined ? undefined : new Date(nowSeconds * 1000));
+    if (!previous || !signatureMatches(signature, sign(encoded, previous))) return null;
+  }
 
   let payload: OfferAcceptPayload;
   try {
