@@ -133,6 +133,37 @@ export function runCrmContactMasterRefreshSpeedTests() {
     `${file}: the name-row upsert writes what it is offered — Phoenix wins (owner, 2026-10-22), and a blank offered keeps the value on file`,
   );
 
+  // ── 3b. THE TWO PASSES ARE OFFERED THE SAME PHOENIX ROW, SO NEITHER UNDOES THE OTHER ──────────────
+  // Found 22 Oct 2026 on production: two doctors whose phone sat only on a PENDING Phoenix copy were written
+  // twice on every run — the vendor pass blanked the phone with the vendor's empty one, and the name-row pass
+  // filled it back from the copy (listContactsChanged = 2 on a second run 15 s after the first). Since
+  // 20261022163300 the truth table holds every Phoenix doctor with a `trusted` flag, picked in the name-row
+  // pass's own order, and the vendor pass lets a pending copy fill what the vendor leaves blank.
+  assert.match(
+    code,
+    /create temporary table crm_refresh_phoenix_truth on commit drop as select distinct on \(coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\)\) coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\) as contact_crm_id, \(t\.reference_contact_crm_id is null or t\.validated_at is not null\) as trusted, nullif\(btrim\(t\.name\), ''\) as name, nullif\(btrim\(t\.speciality\), ''\) as speciality, nullif\(btrim\(t\.phone\), ''\) as phone from pg_temp\.crm_refresh_phoenix_customers t order by coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\), \(t\.reference_contact_crm_id is null or t\.validated_at is not null\) desc, \(t\.status = 'active'\) desc, t\.validated_at desc nulls last, t\.updated_at desc;/,
+    `${file}: the truth table holds every Phoenix doctor, trusted or not, one row each in the name-row pass's order — a truth table of trusted rows only leaves the vendor pass blind to the pending copy the name-row pass then writes`,
+  );
+  assert.match(
+    code,
+    /order by coalesce\(p\.reference_contact_crm_id, p\.own_contact_crm_id\), \(p\.reference_contact_crm_id is null or p\.validated_at is not null\) desc, \(p\.status = 'active'\) desc, p\.validated_at desc nulls last, p\.updated_at desc/,
+    `${file}: the name-row pass picks its Phoenix row in the same order as the truth table, so both passes read the same row`,
+  );
+  for (const [out, vendor] of [
+    ["name", "m.contact_name"],
+    ["speciality", "m.speciality"],
+    ["phone", "m.phone"],
+  ] as const) {
+    const vendorRe = vendor.replace(".", "\\.");
+    assert.match(
+      code,
+      new RegExp(
+        `coalesce\\(case when t\\.trusted then t\\.${out} end, nullif\\(btrim\\(${vendorRe}\\), ''\\), t\\.${out}\\) as ${out},`,
+      ),
+      `${file}: the vendor pass writes a trusted Phoenix ${out}, else the vendor's, else the pending copy's — without the last fallback the vendor pass empties what the name-row pass refills on every run`,
+    );
+  }
+
   // ── 4. EVERYTHING ELSE ABOUT THE FUNCTION IS WHAT 20261015215500 LEFT ──────────────────────────
   assert.equal(
     (code.match(/pg_advisory_xact_lock\(hashtext\('public\.crm_contact_master_refresh'\)\)/g) ?? []).length,
