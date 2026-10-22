@@ -35,7 +35,7 @@ import {
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -742,13 +742,17 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
  * taking a customer off his list. The page names the step it showed, so a step already decided is never
  * decided again as the next one.
  */
-export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ id: string; status: ManagerCustomerStatus }> {
+export async function decideManagerCustomerRemoval(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+  read?: TestWorldRead,
+): Promise<{ id: string; status: ManagerCustomerStatus }> {
   const body = record(raw);
   const decision = body.decision;
   if (decision !== "approve" && decision !== "refuse") throw validationError("Choose Approve or Refuse.");
   const id = textOrNull(body.id);
   if (!id) throw validationError("This customer could not be read. Reload the page.");
-  const isTest = testModeFor(viewer, body.test);
+  const isTest = worldFor(viewer, body.test, read);
   const row = await loadManagerCustomerRow(id);
   if (!row || row.isTest !== isTest) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
   const stage = managerAskStage(row.status);

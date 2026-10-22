@@ -159,7 +159,8 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     assert.deepEqual(stagesFor(rep, false), [], "the rep asks; he never decides");
 
     assert.deepEqual(stagesFor(owner, true), ["manager", "sfe"], "in the test world the Super Admin takes every step");
-    assert.deepEqual(stagesFor(testDm, true), ["manager"], "a test account takes the manager's step as the person it mirrors");
+    // Changed 2026-10-22 (owner: "Only my tab"): every test step is the Super Admin's, from his own tab.
+    assert.deepEqual(stagesFor(testDm, true), [], "a test account no longer takes the manager's step of a test request");
     assert.deepEqual(stagesFor(testDm, false), [], "and never on a real request");
 
     // The Administrator may APPROVE or DECLINE any real decision (owner, 2026-10-14), never on a test entry,

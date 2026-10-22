@@ -30,6 +30,7 @@ const TAB_CHUNKS: Record<PhoenixCrmModuleKey, () => Promise<unknown>> = {
   "doctors": () => import("@/components/phoenix-crm/doctors-tab"),
   reports: () => import("@/components/phoenix-crm/reports-tab"),
   settings: () => import("@/components/phoenix-crm/settings-tab"),
+  testAccounts: () => import("@/components/phoenix-crm/test-accounts-tab"),
 };
 
 /** Begins the download of a module's screen. Never throws: a failed preload just means the page asks again. */

@@ -230,21 +230,26 @@ export function runTestAccountTests(): void {
     assert.equal(testModeFor(realRep, true), false, "and reads him nothing");
   }
 
-  // ── 3. The test manager decides test entries only, as the person he mirrors ──────────────────────
+  // ── 3. The test manager decides NOTHING — every test approval is the Super Admin's own ────────────
+  // 🔒 CHANGED 2026-10-22 (owner: "Only my tab"). Until then the test manager took the manager step of a
+  // test entry as the person he mirrors; now every step a test entry waits at is the Super Admin's, from
+  // his own "Test accounts" tab, and a test manager login is told so. The rest of the test manager's
+  // world — his double visit, his reads — is unchanged.
   {
     const testManager = viewerFor("B-12", "District Manager", { testPersona: true, canApprove: true });
-    assert.doesNotThrow(() => assertReviewer(testManager, REP, true), "he approves the test rep's test plan");
+    refusedWith(() => assertReviewer(testManager, REP, true), /decided by the Super Admin/, "a test manager no longer approves the test rep's test plan");
     refusedWith(() => assertReviewer(testManager, REP, false), /test login/, "a REAL plan is refused to a test manager");
-    assert.equal(canReviewTerritory(testManager, REP, true), true);
+    assert.equal(canReviewTerritory(testManager, REP, true), false, "no screen offers him a test decision");
     assert.equal(canReviewTerritory(testManager, REP, false), false);
-    assert.equal(canDecideUnplannedVisit(testManager, REP, true, "manager"), true, "he takes the manager step of a test off-plan visit");
+    assert.equal(canDecideUnplannedVisit(testManager, REP, true, "manager"), false, "nor the manager step of a test off-plan visit");
     assert.equal(canDecideUnplannedVisit(testManager, REP, true, "sfe"), false, "the SFE step is never a test account's");
+    refusedWith(() => assertUnplannedVisitApprover(testManager, REP, true, "manager"), /decided by the Super Admin/, "a test off-plan visit is refused, naming who decides it");
     refusedWith(() => assertUnplannedVisitApprover(testManager, REP, false, "manager"), /test login/, "a real off-plan visit is refused");
     assert.equal(territoryForVisit(testManager, REP.seatId, false).isTest, true, "his double visit is a test entry too");
 
-    // A test account mirroring somebody who is NOT the reviewer decides nothing, test or not.
+    // A test account mirroring somebody who is NOT the reviewer decides nothing either, with the same answer.
     const testOtherRep = viewerFor("B-901", "Medical Rep", { testPersona: true, canApprove: true });
-    refusedWith(() => assertReviewer(testOtherRep, REP, true), /reviewing manager/, "only the mirrored REVIEWER decides a test entry");
+    refusedWith(() => assertReviewer(testOtherRep, REP, true), /decided by the Super Admin/, "no test login decides a test entry");
   }
 
   // ── 4. The reach is the mirrored person's, never the Super Admin's company ───────────────────────

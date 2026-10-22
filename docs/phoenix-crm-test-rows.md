@@ -85,3 +85,37 @@ assertions was proven to fire by breaking the fix and restoring it.
 The owner ran the generated statement himself and the proof query came back **0 for all 34 tables and
 the view**. An independent read the same night: **10,946** real customers, **744** real visits, **11**
 integrity cases present and unsettled, and the **10** test personas still active and untouched.
+
+## Who decides a test entry: the Super Admin, from his "Test accounts" tab (2026-10-22)
+
+The owner, 2026-10-22: *"In Phoenix CRM, in admin account, add a new tab called Test accounts. It will
+be responsible for all approvals that I do with test accounts … anything that needs approval in Phoenix
+CRM, I can submit it in the test account and approve in my own admin account."* Asked three questions
+the same day, he picked:
+
+- **Step by step.** He takes the step a test entry is AT — the district, regional or national manager's,
+  then SFE's, or the first then the second approver of a manager's week — and a two-step entry comes
+  back to the tab at its next step. The test rep reads every in-between state a real rep would.
+- **Only his tab.** A test district, regional or national manager login no longer decides a test
+  entry's manager step. A double-visit request and a visit ask stay answerable by the test person they
+  are addressed to — those are not approvals.
+- **Real rows unchanged.** `superAdminDoesNotDecide()` still refuses every real decision of his.
+
+How it is built (`src/lib/phoenix-crm/server/test-approvals.ts`):
+
+- `decidesTestWorld(viewer)` is the Super Admin signed in as himself with a deciding grant;
+  `assertTestWorldDecider()` is the gate every test-row decision answers to (`assertReviewer`, the
+  off-plan, edit-request and list-request gates, and `managerPlanDeciderRole`). A test login reads
+  "Test entries are decided by the Super Admin, from his own … tab".
+- The list is read with the module's own loaders, pinned to the test world: the Team tab's row loaders
+  and rights for list requests, off-plan visits and requests to edit a week; `loadPlanReviews` and
+  `loadMonthlyPlanReviews` asked for the test world by name (`worldFor(…, { testWorld: true })`); the
+  Place checks board's waiting test rows; and the Approvals Hub's four reads for the managers' weeks,
+  asks to edit, own-list removals and single-visit days (`loadOpenManagerPlanItems`).
+- Every decision goes through the decider the real screens call, after the route reads the row's own
+  `is_test` and refuses a real row by name. A test row's notice reaches `TEST-` logins only, in-app only.
+- Left out on purpose: the double/chain visit invitations and visit asks (their addressee answers), a
+  recorded visit's Administrator step (the Visit Recording page) and a held polyclinic (Shared places).
+- The tab's badge counts the plans, list requests, requests to edit and off-plan visits the overview
+  already counts for him; the monthly plans, place checks and managers' items show in the list but not
+  in the badge.

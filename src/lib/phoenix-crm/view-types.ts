@@ -164,3 +164,5 @@ export type {
 } from "@/lib/phoenix-crm/server/manager-plan-report";
 export type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/server/manager-day-detail";
 export type { SingleVisitDayAskView, SingleVisitDaysView } from "@/lib/phoenix-crm/server/manager-single-visit-days";
+/** The Super Admin's "Test accounts" tab (owner, 2026-10-22): the test personas' approvals, one step each. */
+export type { TestApprovalItem, TestApprovalsView } from "@/lib/phoenix-crm/server/test-approvals";

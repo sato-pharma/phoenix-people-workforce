@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, Search, Settings, Target, Users } from "lucide-react";
+import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, FlaskConical, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
 // The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
 import { PhoenixCrmNewBadge } from "@/components/phoenix-crm/new-badge";
@@ -44,6 +44,8 @@ const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
   "doctors": Search,
   reports: FileBarChart,
   settings: Settings,
+  // The Super Admin's own tab for the test personas' approvals (owner, 2026-10-22).
+  testAccounts: FlaskConical,
 };
 
 export function PhoenixCrmModuleChooser({
@@ -69,6 +71,14 @@ export function PhoenixCrmModuleChooser({
   // A product manager has no Team module: the visits his line's reps ask of him wait on Reports
   // (owner, 2026-10-02), so that card carries the count instead.
   const reportsWaiting = overview.tabs.team ? 0 : overview.waitingForYou.visitAsks;
+  // The Super Admin's counts are the test world's (owner, 2026-10-22): they belong on his test tab.
+  const testWaiting =
+    overview.tabs.testAccounts && overview.waitingForYou.isTest && !overview.viewer.isTestPersona
+      ? overview.waitingForYou.plans +
+        overview.waitingForYou.requests +
+        overview.waitingForYou.planEdits +
+        overview.waitingForYou.offPlanVisits
+      : 0;
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -82,7 +92,13 @@ export function PhoenixCrmModuleChooser({
         {modules.map((module) => {
           const Icon = MODULE_ICONS[module.key];
           const badge =
-            module.key === "team" && waiting > 0 ? waiting : module.key === "reports" && reportsWaiting > 0 ? reportsWaiting : null;
+            module.key === "team" && waiting > 0 && !overview.tabs.testAccounts
+              ? waiting
+              : module.key === "reports" && reportsWaiting > 0
+                ? reportsWaiting
+                : module.key === "testAccounts" && testWaiting > 0
+                  ? testWaiting
+                  : null;
           return (
             <li className="min-w-0" key={module.key}>
               <PhoenixCrmModuleLink

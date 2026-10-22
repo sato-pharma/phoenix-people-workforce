@@ -45,6 +45,7 @@ const ALL: Record<PhoenixCrmModuleKey, boolean> = {
   "doctors": true,
   reports: true,
   settings: true,
+  testAccounts: true,
 };
 
 export function runPhoenixCrmSplitModulesTests(): void {
@@ -52,8 +53,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
   {
     assert.deepEqual(
       PHOENIX_CRM_MODULE_KEYS,
-      ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings"],
-      "the work he does first, then the reading, and Settings last — `today` was RETIRED and `calendar` added on his word (owner, 2026-09-30), and the CNS daily `forecast` beside the Plan (owner, 2026-10-01)",
+      ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings", "testAccounts"],
+      "the work he does first, then the reading, and Settings last — `today` was RETIRED and `calendar` added on his word (owner, 2026-09-30), the CNS daily `forecast` beside the Plan (owner, 2026-10-01), and the Super Admin's own test tab after Settings (owner, 2026-10-22)",
     );
     assert.equal(PHOENIX_CRM_MODULES.length, PHOENIX_CRM_MODULE_KEYS.length);
     for (const entry of PHOENIX_CRM_MODULES) {
@@ -109,7 +110,7 @@ export function runPhoenixCrmSplitModulesTests(): void {
     //    same day: a CNS rep keeps the Forecast because it is HIS form, his own targets, and he
     //    keeps the Calendar because it is HIS month. The boundary is not which screen it is, it is
     //    whose work it shows — anything comparing him with other people is still a manager's.
-    const rep = { ...ALL, team: false, settings: false, "doctors": false };
+    const rep = { ...ALL, team: false, settings: false, "doctors": false, testAccounts: false };
     assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "forecast", "calendar", "reports"]);
 
     // 🔴 AND THE TWO PREDICATES MUST NOW DIFFER. They were deliberately one expression so they
@@ -259,6 +260,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
       ["doctors-tab", "DoctorsTab"],
       ["reports-tab", "ReportsTab"],
       ["settings-tab", "SettingsTab"],
+      // The Super Admin's own test tab (owner, 2026-10-22), held to the same rule.
+      ["test-accounts-tab", "TestApprovalsTab"],
     ];
     for (const [file, component] of screens) {
       const staticImport = new RegExp(`^import (?!type )[^;]*from "@/components/phoenix-crm/${file}";`, "m");

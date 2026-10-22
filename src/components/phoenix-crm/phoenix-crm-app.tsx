@@ -51,7 +51,7 @@ import { CrmSurfaceProvider, type CrmSurface } from "@/components/phoenix-crm/su
 import { CrmBlock, CrmButton, CrmChoice, CrmEmpty, CrmField, CrmLoading, CrmNote, CrmPanel, CrmPill, CrmSelect } from "@/components/phoenix-crm/ui";
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
-import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
+import { PHOENIX_CRM_PORTAL_BASE, PHOENIX_CRM_TEST_TAB_LABEL, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import { showsTelegramCard } from "@/lib/phoenix-crm/telegram-card";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
@@ -79,10 +79,14 @@ const CalendarTab = dynamic(() => import("@/components/phoenix-crm/calendar-tab"
 const DoctorsTab = dynamic(() => import("@/components/phoenix-crm/doctors-tab").then((mod) => mod.DoctorsTab), { loading: tabLoading });
 const ReportsTab = dynamic(() => import("@/components/phoenix-crm/reports-tab").then((mod) => mod.ReportsTab), { loading: tabLoading });
 const SettingsTab = dynamic(() => import("@/components/phoenix-crm/settings-tab").then((mod) => mod.SettingsTab), { loading: tabLoading });
+const TestApprovalsTab = dynamic(() => import("@/components/phoenix-crm/test-accounts-tab").then((mod) => mod.TestApprovalsTab), {
+  loading: tabLoading,
+});
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings"];
+// The Super Admin's own tab for the test personas' approvals is LAST (owner, 2026-10-22), after Settings.
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings", "testAccounts"];
 
 const TAB_LABELS: Record<TabKey, string> = {
   visits: "Visits",
@@ -94,6 +98,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   doctors: "Directory",
   reports: "Reports",
   settings: "Settings",
+  testAccounts: PHOENIX_CRM_TEST_TAB_LABEL,
 };
 
 /**
@@ -121,6 +126,10 @@ const TAB_COLUMNS: Record<number, string> = {
   // Nine since the CNS daily forecast (2026-10-01) — the Super Admin's full set. Two a row on a phone
   // for the same reason as eight; five a row from `sm` keeps "Directory" and "Settings" on one line.
   9: "grid-cols-2 sm:grid-cols-5 lg:grid-cols-9",
+  // Ten since the Super Admin's own test tab (owner, 2026-10-22). Two a row on a phone, five from `sm`
+  // (two even rows), and two rows of five on a wide screen too: ten across would squeeze the longest
+  // label onto two lines, and the rule is wrap or merge, never shrink the type.
+  10: "grid-cols-2 sm:grid-cols-5",
 };
 
 /** The tabs that show one territory, chosen with the picker above them. */
@@ -132,7 +141,8 @@ const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 /** Today holds none either: it is a read, and every action on it opens another tab. */
 /** Nor does the Calendar: it is a month laid out to be read, and nothing on it is entered. */
 /** Nor the Forecast: every box is pre-filled from the target, so leaving it loses nothing he typed out. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar" | "forecast">;
+/** Nor the Super Admin's test tab: each decision saves at the press, so nothing typed waits on it. */
+type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar" | "forecast" | "testAccounts">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -172,7 +182,7 @@ function isSeatTab(key: TabKey): key is SeatTab {
 }
 
 function isHoldingTab(key: TabKey): key is HoldingTab {
-  return key !== "reports" && key !== "doctors" && key !== "calendar" && key !== "forecast";
+  return key !== "reports" && key !== "doctors" && key !== "calendar" && key !== "forecast" && key !== "testAccounts";
 }
 
 function allowedTabs(tabs: PhoenixCrmTabs): TabKey[] {
@@ -452,6 +462,13 @@ export function PhoenixCrmApp({
       ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.offPlanVisits
       : 0) +
     visitAskCount;
+  // The Super Admin's counts are the TEST world's (server/decision-queues.ts) — the approvals the test
+  // personas sent, every step of them his (owner, 2026-10-22). They belong on his own test tab, never on
+  // Team, which reads the real field force.
+  const testWaitingCount =
+    overview.tabs.testAccounts && waitingForYou.isTest && !test
+      ? waitingForYou.plans + waitingForYou.requests + waitingForYou.planEdits + waitingForYou.offPlanVisits
+      : 0;
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
   const panelId = (key: TabKey) => `${idPrefix}-panel-${key}`;
   /** A tab kept behind the others because it holds work (and is still one of the viewer's tabs). */
@@ -677,7 +694,14 @@ export function PhoenixCrmApp({
       <div aria-label="Phoenix CRM" className={cn("grid gap-1.5", TAB_COLUMNS[tabs.length])} role="tablist">
         {tabs.map((key, index) => {
           const selected = key === activeTab;
-          const count = key === "team" ? waitingCount : key === "reports" && !overview.tabs.team ? visitAskCount : 0;
+          const count =
+            key === "team"
+              ? waitingCount
+              : key === "reports" && !overview.tabs.team
+                ? visitAskCount
+                : key === "testAccounts"
+                  ? testWaitingCount
+                  : 0;
           const heldAside = !selected && isHeld(key);
           return (
             <button
@@ -894,6 +918,7 @@ export function PhoenixCrmApp({
       return <ForecastTab formTerritories={formTerritories} key={`forecast|${test}`} showBoard={overview.tabs.team} test={test} />;
     }
     if (key === "settings") return <SettingsTab onChanged={settingsChanged} onDirtyChange={holdReporters.settings} />;
+    if (key === "testAccounts") return <TestApprovalsTab onChanged={refreshOverview} />;
 
     const seatId = seats[key];
     if (seatId === null) {

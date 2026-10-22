@@ -78,11 +78,12 @@ import {
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
-  testModeFor,
   testReadSeats,
   territoryForRead,
   territoryForRepWrite,
+  worldFor,
   type PhoenixCrmViewer,
+  type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import {
@@ -1093,11 +1094,16 @@ const REVIEW_ORDER: Record<PhoenixCrmPlanStatus | "none", number> = { submitted:
 
 /**
  * One week's plans across the viewer's territories: waiting ones first, with their far-apart days.
- * Territories with no plan show too, so a manager sees who has not sent one. Test mode lists the
- * Super Admin's test plans only.
+ * Territories with no plan show too, so a manager sees who has not sent one. The test world lists the
+ * test plans only — read for the Super Admin's "Test accounts" tab (owner, 2026-10-22), which asks for it
+ * by name through `read`.
  */
-export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unknown; weekStart: unknown }): Promise<PlanReviewView> {
-  const isTest = testModeFor(viewer, raw.test);
+export async function loadPlanReviews(
+  viewer: PhoenixCrmViewer,
+  raw: { test: unknown; weekStart: unknown },
+  read?: TestWorldRead,
+): Promise<PlanReviewView> {
+  const isTest = worldFor(viewer, raw.test, read);
   const weeks = plannableWeeks(viewer.cairoToday);
   // The week he ASKED for, when he picked one. Nothing below ever overrides it.
   const requestedWeek = isFieldWeekStart(raw.weekStart) ? raw.weekStart : null;

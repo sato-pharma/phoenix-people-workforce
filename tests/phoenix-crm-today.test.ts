@@ -262,9 +262,10 @@ export function runPhoenixCrmTodayTests(): void {
 
     const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
     // NINE since the CNS daily forecast became its own tab on his word (2026-10-01), after the team
-    // calendar (2026-09-30) — Today left and neither of them is Today creeping back. TAB_COLUMNS
-    // carries a 9 rule.
-    assert.equal(order.split(",").length, 9, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
+    // calendar (2026-09-30) — Today left and neither of them is Today creeping back. TEN since the Super
+    // Admin's own Test accounts tab (owner, 2026-10-22). TAB_COLUMNS carries a 10 rule.
+    assert.equal(order.split(",").length, 10, "TAB_ORDER and TAB_COLUMNS must agree, or the bar has no grid at its own width");
+    assert.ok(app.includes('10: "grid-cols-2 sm:grid-cols-5"'), "ten tabs have their own grid");
     assert.ok(!order.includes('"today"'), "🔴 Today is not a tab — do not add it back; its replacement is RepTodayPlanPanel");
     assert.ok(app.includes('7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7"'), "seven tabs have their own grid");
     assert.ok(!app.includes("today-tab"), "and the retired screen is gone from the shell");

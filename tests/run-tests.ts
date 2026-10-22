@@ -2556,6 +2556,7 @@ import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
+import { runPhoenixCrmTestApprovalTests } from "./phoenix-crm-test-approvals.test.ts";
 import { runSeatViewTests } from "./seat-view.test.ts";
 import { runNeedsYouTelegramBudgetTests } from "./needs-you-telegram-budget.test.ts";
 import { runNeedsYouSummaryGuardTests } from "./needs-you-summary-guard.test.ts";
@@ -10053,8 +10054,12 @@ await runTest(
   runAttributionFreezesPublishedMonthsTests,
 );
 await runTest(
-  "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
+  "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager login decides no entry at all — every test decision is the Super Admin's, from his Test accounts tab; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "THE SUPER ADMIN'S TEST ACCOUNTS TAB (owner, 2026-10-22): every step of every test entry is decided by the Super Admin signed in as himself with a deciding grant, step by step at the stage the entry is at, and by no test login — the persona is told which tab decides it; every real decision of his is still refused as the manager chain's; the tab asks for the test world by name and a real manager cannot; the decide path refuses a non-decider and a malformed request before it reads, and reads the row's own is_test and refuses a real row by name before anything is dispatched to the module's own deciders; and the tab is last, labelled from one constant, offered to exactly who its two registered routes admit",
+  runPhoenixCrmTestApprovalTests,
 );
 await runTest(
   "VIEW AS SEAT (owner, 2026-10-20): the Super Admin sees the live site as another seat, read only — every write route on disk is refused except leaving the view, and every GET that writes as it reads is refused or named with the reason it records nothing as the seat; the view is honoured only on top of his own live Super Admin session, the exact session id and login it was signed for, never on a test account, a dev-header sweep or another view; its token never passes as a session token or the reverse and dies within the hour; an office seat is viewed by role alone and a portal seat only as one real person; the payroll and outstation decision guards treat it as a preview; and both resolvers, both shells, sign-out, the proxy shortcut, the routes, the registry and the menu carry it",

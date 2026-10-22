@@ -225,6 +225,120 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
   return { awaiting, upcoming };
 }
 
+// ── Every open item in one world, for the Super Admin's "Test accounts" tab ──────────────────────
+
+/** One open item, whoever holds its step: what the decide route needs to take that step and nothing more. */
+export type OpenManagerPlanItem = {
+  kind: "plan" | "edit" | "removal" | "single_visit_day";
+  /** The plan id, the ask id or the own-list customer id. */
+  id: string;
+  /** The step it is AT: the first approver's, or the second's. */
+  stage: "first" | "second";
+  managerHrId: string;
+  weekStart: string | null;
+  customerName: string | null;
+  visitDate: string | null;
+  /** The reason the manager wrote on an ask, when there is one. */
+  reason: string | null;
+  /** The row's version (a week, an ask to edit, a day ask); null for a removal, which is pinned by `requestedAt`. */
+  version: number | null;
+  /** When it started waiting: the send, or the ask. A removal's decision names it back. */
+  requestedAt: string;
+  /** Who holds the step it is AT, as stored on the row at the send or the ask; null when nobody does. */
+  holderHrId: string | null;
+};
+
+/**
+ * Every open week, ask to edit, own-list removal and ask for a day of single visits in ONE world, whoever
+ * holds its step (owner, 2026-10-22: the Super Admin decides every test step from his own tab). The same
+ * four reads the queue above uses, so an item this lists is one a holder's queue would list, and a removed
+ * or expired one is left out the same way.
+ */
+export async function loadOpenManagerPlanItems(isTest: boolean): Promise<OpenManagerPlanItem[]> {
+  const [plans, asks, removals, dayAsks] = await Promise.all([
+    loadOpenPlans(isTest),
+    loadOpenEditAsks(isTest),
+    loadOpenRemovals(isTest),
+    loadOpenSingleVisitDayAsks(isTest),
+  ]);
+  const cairoToday = currentCairoDateOnlyIso();
+  const out: OpenManagerPlanItem[] = [];
+  for (const plan of plans) {
+    const stage = managerPlanStage(plan.status);
+    if (!stage) continue;
+    out.push({
+      kind: "plan",
+      id: plan.planId,
+      stage,
+      managerHrId: plan.managerHrId,
+      weekStart: plan.weekStart,
+      customerName: null,
+      visitDate: null,
+      reason: null,
+      version: plan.version,
+      requestedAt: plan.submittedAt ?? "",
+      holderHrId: stage === "first" ? plan.firstApproverHrId : plan.secondApproverHrId,
+    });
+  }
+  for (const ask of asks) {
+    const stage = managerAskStage(ask.status);
+    if (!stage) continue;
+    out.push({
+      kind: "edit",
+      id: ask.requestId,
+      stage,
+      managerHrId: ask.managerHrId,
+      weekStart: ask.weekStart,
+      customerName: null,
+      visitDate: null,
+      reason: ask.reason,
+      version: ask.version,
+      requestedAt: ask.createdAt ?? "",
+      holderHrId: stage === "first" ? ask.approverHrId : ask.secondApproverHrId,
+    });
+  }
+  for (const row of removals) {
+    const id = textOrNull(row.id);
+    const managerHrId = personKey(textOrNull(row.manager_hr_id));
+    const stage = managerAskStage(row.status);
+    const requestedAt = textOrNull(row.removal_requested_at);
+    if (!id || !managerHrId || !stage || !requestedAt) continue;
+    out.push({
+      kind: "removal",
+      id,
+      stage,
+      managerHrId,
+      weekStart: null,
+      customerName: textOrNull(row.name),
+      visitDate: null,
+      reason: null,
+      version: null,
+      requestedAt,
+      holderHrId: personKey(textOrNull(stage === "first" ? row.removal_approver_hr_id : row.removal_second_approver_hr_id)),
+    });
+  }
+  for (const ask of dayAsks) {
+    // An ask whose day has passed decides nothing, exactly as in the queue above.
+    if (!isSingleVisitDayAskLive(ask.status, ask.visitDate, cairoToday)) continue;
+    const stage = managerAskStage(ask.status);
+    if (!stage) continue;
+    out.push({
+      kind: "single_visit_day",
+      id: ask.requestId,
+      stage,
+      managerHrId: ask.managerHrId,
+      weekStart: ask.weekStart,
+      customerName: null,
+      visitDate: ask.visitDate,
+      reason: ask.reason,
+      version: ask.version,
+      requestedAt: ask.createdAt ?? "",
+      holderHrId: stage === "first" ? ask.approverHrId : ask.secondApproverHrId,
+    });
+  }
+  return out;
+}
+
 // ── The district manager's own requests, and the decisions a person made ──────────────────────────
 
 export type ManagerRequestRecord = {

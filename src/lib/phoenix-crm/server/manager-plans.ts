@@ -70,7 +70,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -1009,13 +1009,18 @@ async function tellManagerPlan(viewer: Pick<PhoenixCrmViewer, "org">, plan: Mana
  * place. The approvers are read from the organogram at the send and stored on the row, so a week already
  * sent keeps going to the people it was sent to.
  */
-export async function transitionManagerPlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerPlanTransitionResult> {
+export async function transitionManagerPlan(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+  read?: TestWorldRead,
+): Promise<ManagerPlanTransitionResult> {
   const body = record(raw);
   const action = body.action;
   if (action !== "submit" && action !== "approve" && action !== "return") throw validationError("Choose Send, Approve or Return.");
   const planId = textOrNull(body.planId);
   if (!planId) throw validationError("This plan could not be read. Reload the page.");
-  const isTest = testModeFor(viewer, body.test);
+  // The Super Admin's "Test accounts" tab asks for the test world by name (owner, 2026-10-22).
+  const isTest = worldFor(viewer, body.test, read);
   const plan = await loadManagerPlanRow(planId, isTest);
   if (!plan) throw notFoundError("This plan is no longer there. Reload the page.");
   const note = noteOf(body.note);
@@ -1177,13 +1182,17 @@ export async function raiseManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknow
  * ask. The step is the ask's own status, and the page names the step it showed, so a page left open on a
  * step already decided is refused rather than deciding the next one unread.
  */
-export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; status: string; planStatus: string }> {
+export async function decideManagerPlanEdit(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+  read?: TestWorldRead,
+): Promise<{ requestId: string; status: string; planStatus: string }> {
   const body = record(raw);
   const decision = body.decision;
   if (decision !== "reopen" && decision !== "refuse") throw validationError("Choose Reopen or Refuse.");
   const requestId = textOrNull(body.requestId);
   if (!requestId) throw validationError("This ask could not be read. Reload the page.");
-  const isTest = testModeFor(viewer, body.test);
+  const isTest = worldFor(viewer, body.test, read);
   const ask = await loadEditAskRow(requestId);
   if (!ask || ask.isTest !== isTest) throw notFoundError("This ask to edit is no longer there. Reload the page.");
   const stage = managerAskStage(ask.status);

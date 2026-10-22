@@ -74,6 +74,11 @@ export function runPhoenixCrmAmPmWordTests() {
     // frequency report reads the company's own A/B/C expectation from there rather than typing a
     // number of its own, so this is an import path — never anything a rep can read.
     /"@\/lib\/crm\/doctor-coverage-config"/,
+    // The Super Admin's own tab is called "Test accounts" in HIS words (owner, 2026-10-22) — a sign-in
+    // account, never an AM customer. The label lives in ONE constant (`PHOENIX_CRM_TEST_TAB_LABEL`) that
+    // every screen reads, and its screen file is reached by this import specifier; nothing else may say it.
+    /"Test accounts"/,
+    /"@\/components\/phoenix-crm\/test-accounts-tab"/,
   ];
 
   const files: string[] = [];
