@@ -17,6 +17,7 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import type { ListNotice, ListScreenBase } from "@/components/phoenix-crm/list-screens";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { CrmBackBar, CrmBlock, CrmButton, CrmNote, CrmPanel } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { NAMEPLATE_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
 
 type RetakeSaved = { placeId: string; customerId: string; confirmed: boolean; message: string };
@@ -36,6 +37,7 @@ export function SignboardRetakeScreen({
   onDone: (notice: ListNotice) => void;
   placeId: string;
 }) {
+  const browserNamed = useBrowserNamed();
   const customer = view.customers.find((entry) => entry.customerId === customerId) ?? null;
   const place = customer?.places.find((entry) => entry.placeId === placeId) ?? null;
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
@@ -117,7 +119,7 @@ export function SignboardRetakeScreen({
         </div>
         {problem ? (
           <CrmNote className="mt-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">

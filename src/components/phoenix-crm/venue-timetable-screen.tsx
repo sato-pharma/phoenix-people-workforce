@@ -18,6 +18,7 @@ import type { ListNotice, ListScreenBase } from "@/components/phoenix-crm/list-s
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import type { SharedPlaceChoice } from "@/components/phoenix-crm/shared-place-screens";
 import { CrmBackBar, CrmBlock, CrmButton, CrmNote, CrmPanel } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import type { AddedVenueTimetable } from "@/lib/phoenix-crm/view-types";
 
 export function VenueTimetableScreen({
@@ -31,6 +32,7 @@ export function VenueTimetableScreen({
   onDone: (notice: ListNotice) => void;
   sharedPlaceId: string;
 }) {
+  const browserNamed = useBrowserNamed();
   const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
   const venue = venues.data?.find((entry) => entry.sharedPlaceId === sharedPlaceId) ?? null;
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
@@ -94,7 +96,7 @@ export function VenueTimetableScreen({
         )}
         {problem ? (
           <CrmNote className="mt-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">

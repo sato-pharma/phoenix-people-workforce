@@ -89,6 +89,7 @@ import {
   crmTextareaClassName,
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
@@ -397,11 +398,12 @@ function SaveBar({
   onSave: () => void;
   problem: string | null;
 }) {
+  const browserNamed = useBrowserNamed();
   return (
     <CrmBlock className="border-t border-slate-100">
       {problem ? (
         <CrmNote className="mb-3" tone="bad">
-          {problem}
+          {browserNamed(problem)}
         </CrmNote>
       ) : null}
       {children}
@@ -573,6 +575,7 @@ export function ValidateScreen({
   onSeatInstead?: (customerId: string, seated: SeatedDraftState) => void;
   subject: ValidateSubject;
 }) {
+  const browserNamed = useBrowserNamed();
   /** The loaded customer this screen is validating, read from the list by id. */
   const listed = subject.mode === "listed" ? (view.customers.find((customer) => customer.customerId === subject.customerId) ?? null) : null;
   // 🔴 THE SFE'S DAYS AND HOURS ARE OFFERED, NEVER IMPOSED (owner, 2026-10-05: "put the clinic days and
@@ -1059,7 +1062,7 @@ export function ValidateScreen({
         <CrmBlock className="border-t border-slate-100">
           {problem ? (
             <CrmNote className="mb-3" tone="bad">
-              {problem}
+              {browserNamed(problem)}
             </CrmNote>
           ) : gap ? (
             <p className="text-sm font-semibold text-slate-500">{gap}</p>
