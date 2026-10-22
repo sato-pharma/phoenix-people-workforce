@@ -32,7 +32,6 @@ import {
   MICRO_LABEL,
   PANEL_ACTION,
   PANEL_ARMED,
-  PANEL_INPUT,
   Panel,
   postJson,
   useRead,
@@ -48,6 +47,17 @@ const PRIMARY_BUTTON =
 
 /** The three the tablet's launcher understands — the same list as `HEADWIND_ICON_SIZES`. */
 const ICON_SIZES = ["SMALL", "MEDIUM", "LARGE"] as const;
+
+/**
+ * What the title across the top shows — the same list as `HEADWIND_DESKTOP_HEADERS`, copied for the
+ * browser bundle. It is a choice of WHAT, not where: Headwind has no title position at all.
+ */
+const TITLE_KINDS = [
+  { label: "No title", value: "NO_HEADER" },
+  { label: "The tablet's number", value: "DEVICE_ID" },
+  { label: "The tablet's description", value: "DESCRIPTION" },
+  { label: "The title typed beside this", value: "TEMPLATE" },
+] as const;
 
 type ConfigurationSummary = {
   id: number;
@@ -185,7 +195,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Title across the top</span>
               <input
-                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                className={cn(phxFieldClassName, "mt-1")}
                 onChange={(event) => set("desktopHeaderTemplate", event.target.value)}
                 placeholder="Sato Pharma · rep tablet"
                 type="text"
@@ -193,19 +203,24 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
               />
             </label>
             <label className="block min-w-0">
-              <span className={`block ${MICRO_LABEL}`}>Where the title sits</span>
-              <input
-                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+              <span className={`block ${MICRO_LABEL}`}>What the title shows</span>
+              <select
+                className={cn(phxSelectClassName, "mt-1")}
                 onChange={(event) => set("desktopHeader", event.target.value)}
-                placeholder="TOP"
-                type="text"
                 value={form.desktopHeader}
-              />
+              >
+                <option value="">Leave it as the tablet has it</option>
+                {TITLE_KINDS.map((kind) => (
+                  <option key={kind.value} value={kind.value}>
+                    {kind.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Background colour</span>
               <input
-                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                className={cn(phxFieldClassName, "mt-1")}
                 onChange={(event) => set("backgroundColor", event.target.value)}
                 placeholder="#0A527D"
                 type="text"
@@ -215,7 +230,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Text colour</span>
               <input
-                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                className={cn(phxFieldClassName, "mt-1")}
                 onChange={(event) => set("textColor", event.target.value)}
                 placeholder="#FFFFFF"
                 type="text"
@@ -225,7 +240,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Background picture</span>
               <input
-                className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                className={cn(phxFieldClassName, "mt-1")}
                 onChange={(event) => set("backgroundImageUrl", event.target.value)}
                 placeholder="https://…/wallpaper.png"
                 type="text"
@@ -235,7 +250,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
             <label className="block min-w-0">
               <span className={`block ${MICRO_LABEL}`}>Icon size</span>
               <select
-                className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
+                className={cn(phxSelectClassName, "mt-1")}
                 onChange={(event) => set("iconSize", event.target.value)}
                 value={form.iconSize}
               >
@@ -324,14 +339,14 @@ function UploadPanel({ configurationId }: { configurationId: number }) {
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="block min-w-0">
             <span className={`block ${MICRO_LABEL}`}>What it is</span>
-            <select className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)} defaultValue="app" name="kind">
+            <select className={cn(phxSelectClassName, "mt-1")} defaultValue="app" name="kind">
               <option value="app">An Android app (.apk)</option>
               <option value="file">A file for the tablets to hold</option>
             </select>
           </label>
           <label className="block min-w-0">
             <span className={`block ${MICRO_LABEL}`}>The file</span>
-            <input className={`mt-1 ${PANEL_INPUT}`} name="file" required type="file" />
+            <input className={cn(phxFieldClassName, "mt-1")} name="file" required type="file" />
           </label>
         </div>
         <p className="break-words text-[11px] font-semibold text-slate-500">
@@ -543,7 +558,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Sign-in name</span>
                 <input
-                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                  className={cn(phxFieldClassName, "mt-1")}
                   onChange={(event) => setState({ ...state, login: event.target.value })}
                   placeholder="omar.gawish"
                   type="text"
@@ -553,7 +568,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Full name</span>
                 <input
-                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                  className={cn(phxFieldClassName, "mt-1")}
                   onChange={(event) => setState({ ...state, name: event.target.value })}
                   placeholder="Omar Gawish"
                   type="text"
@@ -563,7 +578,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>Email</span>
                 <input
-                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                  className={cn(phxFieldClassName, "mt-1")}
                   onChange={(event) => setState({ ...state, email: event.target.value })}
                   type="email"
                   value={state.email}
@@ -572,7 +587,7 @@ function UsersPanel() {
               <label className="block min-w-0">
                 <span className={`block ${MICRO_LABEL}`}>What they can do</span>
                 <select
-                  className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
+                  className={cn(phxSelectClassName, "mt-1")}
                   onChange={(event) => setState({ ...state, roleId: event.target.value })}
                   value={state.roleId}
                 >
@@ -588,7 +603,7 @@ function UsersPanel() {
                 <span className={`block ${MICRO_LABEL}`}>Password</span>
                 <input
                   autoComplete="new-password"
-                  className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+                  className={cn(phxFieldClassName, "mt-1")}
                   onChange={(event) => setState({ ...state, password: event.target.value })}
                   type="password"
                   value={state.password}
@@ -624,8 +639,8 @@ export function HeadwindServerSettings() {
       </div>
       <p className="mt-1 max-w-3xl text-[12px] font-semibold text-slate-600">
         What every tablet follows, rather than one tablet at a time. A change to a set of rules reaches every
-        tablet carrying them at its next check-in. Extra sign-ins to the server are free and uncapped &mdash;
-        the only limits anywhere in it are the tablet count and the disk.
+        tablet carrying them at its next check-in. Extra sign-ins to the server are free and uncapped, and nothing
+        in it is licensed per tablet &mdash; what it can hold is set by the server&rsquo;s own disk and memory.
       </p>
       <div className="mt-3 space-y-3">
         <ConfigurationsPanel />

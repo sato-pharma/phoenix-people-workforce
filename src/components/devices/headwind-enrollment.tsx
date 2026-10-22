@@ -38,6 +38,17 @@ const PRIMARY_BUTTON =
   "inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60";
 const SECONDARY_BUTTON =
   "inline-flex items-center gap-2 border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60";
+/**
+ * The agent's package, as a person calls it. Copied from `HEADWIND_AGENT_PACKAGE` rather than imported:
+ * that module reaches the audit writer, which must not ride into a browser bundle. Any other package a
+ * code names is printed as it is — it is not ours to rename.
+ */
+const AGENT_NAMES: Readonly<Record<string, string>> = { "com.hmdm.launcher": "Headwind MDM agent" };
+
+/** The one warning chip — amber, in words. A checksum-less code is refused by a factory-fresh tablet. */
+const WARNING_CHIP =
+  "inline-block border border-amber-400 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-900";
+
 const CHIP =
   "inline-block border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700";
 
@@ -206,7 +217,9 @@ export function HeadwindEnrollment() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Code">{summary.templateName ?? "No name given"}</Fact>
-            <Fact label="Agent it installs">{summary.agentPackage ?? "Not readable"}</Fact>
+            <Fact label="Agent it installs">
+              {summary.agentPackage ? (AGENT_NAMES[summary.agentPackage] ?? summary.agentPackage) : "Not readable"}
+            </Fact>
             <Fact label="Reports to">{summary.serverHost ?? "Not readable"}</Fact>
             <Fact label="Saved">
               {summary.updatedAt ? cairoDateTime(summary.updatedAt) : "Unknown"}
@@ -224,7 +237,11 @@ export function HeadwindEnrollment() {
               tablet says nothing about a checksum — so this chip is the only warning there is going to
               be. It earns its place beside the two neutral facts.
             */}
-            <span className={CHIP}>{summary.hasChecksum ? "Agent signature pinned" : "🔴 No signature pinned"}</span>
+            {summary.hasChecksum ? (
+              <span className={CHIP}>Agent signature pinned</span>
+            ) : (
+              <span className={WARNING_CHIP}>No signature pinned</span>
+            )}
             <span className={CHIP}>{summary.joinsWifi ? "Joins Wi-Fi during setup" : "No Wi-Fi in the code"}</span>
           </div>
         </>

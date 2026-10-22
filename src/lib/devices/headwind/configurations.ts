@@ -91,6 +91,18 @@ export type HeadwindConfigurationBranding = {
 export const HEADWIND_ICON_SIZES = ["SMALL", "MEDIUM", "LARGE"] as const;
 export type HeadwindIconSize = (typeof HEADWIND_ICON_SIZES)[number];
 
+/**
+ * What the title across the top of the company home screen SHOWS — Headwind's `DesktopHeader` enum,
+ * read from its own source (hmdm-server, `persistence/domain/DesktopHeader.java`) on 2026-10-22.
+ *
+ * 🔴 IT IS NOT A POSITION. The console's field read "Where the title sits" with a placeholder of
+ * "TOP", so the obvious entry wrote a value the server's enum cannot hold. The three `CUSTOM` kinds
+ * print a device's custom fields, and `CUSTOM1` is where the remote screen ID lives, so they are
+ * left out of what Phoenix offers rather than printing that number across a rep's screen.
+ */
+export const HEADWIND_DESKTOP_HEADERS = ["NO_HEADER", "DEVICE_ID", "DESCRIPTION", "TEMPLATE"] as const;
+export type HeadwindDesktopHeader = (typeof HEADWIND_DESKTOP_HEADERS)[number];
+
 function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -271,6 +283,11 @@ export async function setHeadwindBranding(
     if (value && !COLOUR.test(value)) {
       throw new HeadwindConfigurationError(`${label} has to be a six-digit hex colour like #0A527D.`);
     }
+  }
+  if (input.desktopHeader && !HEADWIND_DESKTOP_HEADERS.includes(input.desktopHeader as HeadwindDesktopHeader)) {
+    throw new HeadwindConfigurationError(
+      "Choose what the title shows: no title, the tablet's number, its description, or the title typed beside it.",
+    );
   }
   if (input.iconSize && !HEADWIND_ICON_SIZES.includes(input.iconSize as HeadwindIconSize)) {
     throw new HeadwindConfigurationError(

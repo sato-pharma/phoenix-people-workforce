@@ -20,6 +20,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { deviceActorNames } from "@/lib/devices/actor-names";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const TABLE = "headwind_enrollment_template";
@@ -206,7 +207,8 @@ export async function getHeadwindEnrollmentSummary(): Promise<HeadwindEnrollment
     saved: true,
     templateName: row.template_name,
     updatedAt: row.updated_at,
-    updatedBy: row.updated_by,
+    // A name, never the HR id the row was saved under — see `deviceActorNames`.
+    updatedBy: (await deviceActorNames([row.updated_by]))(row.updated_by),
   };
 }
 
@@ -270,7 +272,7 @@ export async function saveHeadwindEnrollmentTemplate(
       : `Saved the Headwind enrollment code${templateName ? ` (${templateName})` : ""}`,
   });
 
-  return { ...facts, saved: true, templateName, updatedAt, updatedBy: actor };
+  return { ...facts, saved: true, templateName, updatedAt, updatedBy: (await deviceActorNames([actor]))(actor) };
 }
 
 /** Someone asked to see the code. The looking is itself worth a row. */

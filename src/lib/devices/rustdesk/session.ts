@@ -84,8 +84,8 @@ export function rustDeskTarget(
     return {
       reason:
         "This tablet has no RustDesk ID on its Headwind record yet, so there is nothing to connect to. " +
-        "Open the tablet's RustDesk app once, read the ID it shows, and put it in the first custom field " +
-        "of its device in Headwind — after that the screen buttons work from here.",
+        "Open the tablet's RustDesk app once, read the ID it shows, then open this tablet here and type it " +
+        "under Remote screen ID — after that the screen buttons work from here.",
       target: null,
     };
   }

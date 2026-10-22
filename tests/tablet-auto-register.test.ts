@@ -99,7 +99,20 @@ function runGooglePageCountsOnlyTests() {
   assert.match(ui, /data\.pendingRegistration > 0/, "replaced by the count, pointing at the USB register");
 }
 
+/**
+ * A Headwind tablet is added only when a Super Admin confirms it (`registerOneHeadwindTablet`, owner
+ * rule 2026-10-22), so the note on its entry must not say it was added automatically. BREAK-TEST: put
+ * "Added automatically" back into the headwind note and the first assertion fires.
+ */
+function runHeadwindNoteTests() {
+  const source = readFileSync("src/lib/devices/tablet-auto-register.ts", "utf8");
+  const headwindNote = /headwind: "([^"]*)"/.exec(source)?.[1] ?? "";
+  assert.doesNotMatch(headwindNote, /automatically/i, "a person-confirmed Headwind tablet is never described as added automatically");
+  assert.match(headwindNote, /^Added to custody from the Rep Tablets page after it enrolled on the company's own Headwind server\.$/);
+}
+
 export function runTabletAutoRegisterTests() {
+  runHeadwindNoteTests();
   runTagTests();
   runSelectionTests();
   runLookupTests();

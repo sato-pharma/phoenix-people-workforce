@@ -3,15 +3,10 @@ import { redirect } from "next/navigation";
 import { HeadwindEnrollment } from "@/components/devices/headwind-enrollment";
 import { HeadwindFleet } from "@/components/devices/headwind-fleet";
 import { HeadwindServerSettings } from "@/components/devices/headwind-server-settings";
-import { ManageEngineAppRepository } from "@/components/devices/manageengine-app-repository";
-import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
-import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
-import { ManageEngineRepTabletRules } from "@/components/devices/manageengine-rep-tablet-rules";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isHeadwindConfigured } from "@/lib/devices/headwind/auth";
-import { isManageEngineConfigured } from "@/lib/devices/manageengine/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +34,14 @@ export const dynamic = "force-dynamic";
  * component and every `app/api/devices/tablets/*` route it calls stay in the repo untouched. The day
  * Google approves the quota, re-add the one `<RepTabletsConsole …/>` line below and it works again
  * exactly as written.
+ *
+ * MANAGEENGINE TAKEN OFF THIS PAGE 2026-10-22 — the condition the owner set on 2026-09-26 ("retired
+ * as the tablets move across … when the last tablet has moved, the four ManageEngine lines come off")
+ * is met: every rep tablet (PHX-TAB-0002, 0007, 0008) is enrolled in Headwind as device owner, and a
+ * tablet can have only one. Its nine actions had answered "Insufficient Data for Processing Request"
+ * since 2026-09-26, so the four cards were buttons that did nothing. As with Google's console, NOTHING
+ * was deleted: the four `ManageEngine*` components and every `app/api/devices/manageengine/*` route
+ * stay in the repo untouched, and re-adding their four lines brings them back exactly as written.
  */
 export default async function RepTabletsPage() {
   const access = await resolveAccessContextFromPage();
@@ -46,18 +49,11 @@ export default async function RepTabletsPage() {
     redirect("/hr/devices");
   }
 
-  // The rules card reads ManageEngine on mount, so it is only mounted once the bridge has a
-  // credential — with none, it could say nothing except that it cannot connect, which the enrollment
-  // section above it already says once.
-  const manageEngineReady = isManageEngineConfigured();
-
   // 🔴 THE HEADWIND SECTIONS SHIP DARK — all three of them. They render ONLY once the company's own
   // Headwind server exists and its three settings are on Railway; until then this page is byte-for-byte
   // what it is today, so the whole bridge can be merged to production before the server is built. The
   // enrollment card is gated with the rest even though it reads Phoenix's own table rather than the
   // Headwind box: a code for a server that does not exist is a code that enrolls a tablet into nothing.
-  // When the fleet has moved across, the ManageEngine lines come off exactly the way the Google console
-  // did — one line, with nothing deleted from the repo.
   const headwindReady = isHeadwindConfigured();
 
   return (
@@ -67,17 +63,11 @@ export default async function RepTabletsPage() {
         subtitle="Enroll a new tablet with a QR code, drive every enrolled tablet from here, and see them all beside the custody register. A tablet enrolled here is the company's from its first screen."
         title="Rep Tablets"
       />
-      {/* 🔴 HEADWIND FIRST, MANAGEENGINE BELOW IT - the owner's decision, 2026-09-26: ManageEngine is
-          not repaired, it is retired as the tablets move across. The system the fleet is moving TO is
-          what the page opens with; the one it is leaving reads as the block underneath. When the last
-          tablet has moved, the four ManageEngine lines come off and this page is Headwind alone. */}
+      {/* HEADWIND ALONE since 2026-10-22: the last tablet has moved, so the four ManageEngine lines came
+          off as the owner set out on 2026-09-26 (see the doc comment above). */}
       {headwindReady ? <HeadwindEnrollment /> : null}
       {headwindReady ? <HeadwindFleet /> : null}
       {headwindReady ? <HeadwindServerSettings /> : null}
-      <ManageEngineEnrollment />
-      {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
-      {manageEngineReady ? <ManageEngineAppRepository /> : null}
-      <ManageEngineFleet bridgeConfigured={manageEngineReady} />
     </div>
   );
 }

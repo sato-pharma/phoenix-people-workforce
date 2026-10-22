@@ -19,13 +19,16 @@
  * "nothing has ever happened to this tablet" are not the same sentence and must not look alike.
  *
  * NAMES, NEVER CODES (AGENTS.md §4). Keys become sentences (`batteryLevel` → "Battery level"),
- * booleans become Yes and No, epoch milliseconds become an ISO instant the page renders in Cairo
- * time, and raw identifiers a person cannot act on are dropped from the display entirely.
+ * booleans become Yes and No, epoch milliseconds become a Cairo date and time HERE (the panel prints a
+ * fact's value as it arrives, so an ISO instant reached the page as raw UTC until 2026-10-22), and raw
+ * identifiers a person cannot act on are dropped from the display entirely.
  *
  * NOTHING HERE WRITES.
  */
 
+import { deviceActorNames } from "@/lib/devices/actor-names";
 import { listHeadwindDevices } from "@/lib/devices/headwind/devices";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type RawRecord = Record<string, unknown>;
@@ -82,23 +85,40 @@ export function humanizeHeadwindKey(key: string): string {
   return [opener, ...rest].join(" ");
 }
 
+/**
+ * Whether a key names a moment. `lastContactAt` and `locatedAt` are camelCase with no underscore, so
+ * the `…At` ending is matched on its own — the old pattern missed both, which is why the Check-in
+ * section printed raw UTC.
+ */
+function isInstantKey(key: string): boolean {
+  return /(time|date|_at|seen|stamp|update)/i.test(key) || /At$/.test(key);
+}
+
 /** Whether a number is a millisecond epoch rather than a plain quantity. Both halves matter. */
 function looksLikeEpochMs(key: string, value: number): boolean {
-  if (!/(time|date|_at|seen|stamp|update)/i.test(key)) return false;
+  if (!isInstantKey(key)) return false;
   return value > 1_000_000_000_000 && value < 4_000_000_000_000;
 }
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
 function formatValue(key: string, value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return null;
-    if (looksLikeEpochMs(key, value)) return new Date(value).toISOString();
+    if (looksLikeEpochMs(key, value)) return cairoDateTime(new Date(value).toISOString());
     return Number.isInteger(value) ? value.toLocaleString("en-US") : String(value);
   }
   if (typeof value === "string") {
     const text = value.trim();
-    return text ? text : null;
+    if (!text) return null;
+    // The fleet read hands over its moments as ISO strings — Cairo time here, never the raw instant.
+    if (isInstantKey(key) && ISO_INSTANT.test(text)) {
+      const cairo = cairoDateTime(text);
+      return cairo === "—" ? text : cairo;
+    }
+    return text;
   }
   return null;
 }
@@ -165,13 +185,25 @@ export async function getHeadwindDeviceDetail(
   return { deviceNumber, headline, sections };
 }
 
+/** How many of Phoenix's own actions on one tablet the panel lists, newest first. */
+export const HEADWIND_HISTORY_LIMIT = 50;
+
+export type HeadwindCommandHistory = {
+  commands: HeadwindCommandRecord[];
+  /** More actions exist than are listed — the panel says so rather than letting 50 read as "all". */
+  more: boolean;
+};
+
 /**
  * What Phoenix has done to this tablet — read from Phoenix's own required audit rows.
  *
  * See the header: this is deliberately NOT a claim about everything that has ever happened to the
  * tablet, only about what was done from here. The panel labels it that way.
+ *
+ * One row past the limit is read so the panel can say there are older actions, and the actor column —
+ * an HR id — is turned into a name through `deviceActorNames`, never printed as the code.
  */
-export async function getHeadwindCommandHistory(deviceNumber: string): Promise<HeadwindCommandRecord[]> {
+export async function getHeadwindCommandHistory(deviceNumber: string): Promise<HeadwindCommandHistory> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("audit_logs")
@@ -179,12 +211,17 @@ export async function getHeadwindCommandHistory(deviceNumber: string): Promise<H
     .eq("entity_type", "headwind_device_command")
     .eq("entity_id", deviceNumber)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(HEADWIND_HISTORY_LIMIT + 1);
   if (error) throw new Error(`Could not read what has been done to this tablet: ${error.message}`);
 
-  return (data ?? []).map((row) => ({
-    actor: typeof row.actor_login_id === "string" && row.actor_login_id.trim() ? row.actor_login_id.trim() : null,
-    issuedAt: String(row.created_at),
-    summary: String(row.summary ?? ""),
-  }));
+  const rows = (data ?? []).slice(0, HEADWIND_HISTORY_LIMIT);
+  const nameOf = await deviceActorNames(rows.map((row) => (typeof row.actor_login_id === "string" ? row.actor_login_id : null)));
+  return {
+    commands: rows.map((row) => ({
+      actor: nameOf(typeof row.actor_login_id === "string" ? row.actor_login_id : null),
+      issuedAt: String(row.created_at),
+      summary: String(row.summary ?? ""),
+    })),
+    more: (data ?? []).length > HEADWIND_HISTORY_LIMIT,
+  };
 }
