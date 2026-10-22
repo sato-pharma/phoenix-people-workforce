@@ -95,13 +95,28 @@ export function isHeadwindConfigured(env: NodeJS.ProcessEnv = process.env): bool
 /**
  * The Cloudflare Access service-token headers, when the console is behind a Cloudflare Tunnel.
  *
- * WHY THIS EXISTS (owner's decision, 2026-09-25: "use cloudflare tunnel for the mdm console").
- * Headwind Community has no two-factor sign-in, so the console sits behind Cloudflare Access — a
- * person signs in to Cloudflare before the login page is even reachable. 🔴 BUT PHOENIX IS NOT A
- * PERSON AND CANNOT SIGN IN. Without these two headers every call from Phoenix would be answered by
- * Cloudflare's own sign-in page instead of by Headwind, and the whole bridge would go dark the
- * moment the tunnel was switched on. A service token is Cloudflare's answer for exactly that: a
- * machine credential Access accepts in place of a human session.
+ * WHY THIS EXISTS (owner's decision, 2026-09-25: "use cloudflare tunnel for the mdm console"). The
+ * console sits behind Cloudflare Access — a person signs in to Cloudflare before the login page is
+ * even reachable. 🔴 BUT PHOENIX IS NOT A PERSON AND CANNOT SIGN IN. Without these two headers every
+ * call from Phoenix would be answered by Cloudflare's own sign-in page instead of by Headwind, and
+ * the whole bridge would go dark the moment the tunnel was switched on. A service token is
+ * Cloudflare's answer for exactly that: a machine credential Access accepts in place of a human
+ * session.
+ *
+ * 🔴 THIS COMMENT USED TO SAY "Headwind Community has no two-factor sign-in", AND THAT IS FALSE —
+ * corrected 2026-10-22 against the upstream source: `settings.twoFactor` is a real column and the
+ * server has the TOTP endpoints. 🔴 BUT ITS CONSOLE UI IS HARD-DISABLED UPSTREAM (`ng-if="false"` on
+ * the whole two-factor form), so Headwind 2FA is unavailable in this build and Access is the console's
+ * ONLY second factor — not a stand-in for a missing feature, and not mere hardening
+ * (`docs/devices/headwind-rustdesk.md` §4.7). The console otherwise sits on the public internet behind
+ * one password that factory-resets tablets.
+ *
+ * 🔴 AND 2FA WOULD NOT TOUCH THIS BRIDGE EITHER WAY — never warn that it will dark the fleet, and
+ * never ask for a second account to dodge it. Were it reachable it would be ONE server-wide switch
+ * (`settings.twoFactor`, one row per `customerId`; no per-account toggle) read only by the CONSOLE's
+ * `AuthResource`. The endpoint this module calls is a different class: `POST /rest/public/jwt/login`
+ * is `JWTAuthResource.login`, which injects no `SettingsDAO` at all — it matches the MD5 password,
+ * calls `tokenProvider.createToken` and returns a bare `{ id_token }`.
  *
  * 🔴 AND THIS IS WHY THERE IS NO `/rest/*` BYPASS RULE IN THE RUNBOOK. Putting Access on the console
  * while letting the REST API through unauthenticated would protect nothing that matters: the API is
@@ -172,6 +187,14 @@ type LoginResponse = {
  * refused the Phoenix sign-in — check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD", against a login
  * and a password that were both exactly right. Measured on production 2026-09-26: the server's own
  * audit log recorded that same sign-in as `errorCode=0`, a SUCCESS, while the page called it a refusal.
+ *
+ * 🔴 THE `twoFactor` BRANCH CANNOT FIRE ON THE ENDPOINT THIS MODULE CALLS, AND IS KEPT ONLY AS A
+ * GUARD — read it as a measurement and you will reach the wrong conclusion. Both branches below read
+ * the enveloped `{ status, data }` shape the CONSOLE's `AuthResource` returns; `/rest/public/jwt/login`
+ * is `JWTAuthResource`, which answers a bare `{ id_token }` and never consults `settings.twoFactor`.
+ * So a `twoFactor` demand here is NOT evidence that 2FA breaks the bridge — it does not
+ * (`docs/devices/headwind-rustdesk.md` §4.7) — and this branch's "use an account without it for the
+ * bridge" is a leftover from that misreading: 2FA is server-wide, so there is no such account to pick.
  */
 function demandFromLogin(payload: LoginResponse): string | null {
   const data = payload.data;
