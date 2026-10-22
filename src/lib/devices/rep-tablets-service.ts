@@ -109,10 +109,11 @@ export type RepTabletsState = {
   enrollable: EnrollableTablet[];
   /** Set when the custody register could not be read; the tablets are then shown unmatched. */
   registerError: string | null;
-  /** Asset tags given on this read to enrolled tablets the register did not know yet. */
-  autoRegistered: string[];
-  /** Set when an enrolled tablet could not be added to the register on this read. */
-  autoRegisterError: string | null;
+  /**
+   * Enrolled tablets the register has never seen that carry a serial or an IMEI — the count, never
+   * the act. Nothing is added on this read; a person adds each one (owner, 2026-10-22).
+   */
+  pendingRegistration: number;
   loadedAt: string;
 };
 
@@ -146,11 +147,12 @@ async function appTitles(
 }
 
 /**
- * Read the page. `actor` is who is looking: an enrolled tablet the register does not know is added
- * to it on this read, in their name (see `tablet-auto-register.ts`). Only when the register itself
- * was readable — adding blind would give a known tablet a second tag.
+ * Read the page. 🔴 THIS READ NO LONGER FILLS THE CUSTODY REGISTER (owner, 2026-10-22: "new tablets
+ * enter Device Custody only when a person confirms them"). An enrolled tablet the register does not
+ * know is counted in `pendingRegistration`, and a person adds it from the tablet itself on the USB
+ * register (`registerRepTabletFromUsb`). `_actor` is kept for call-site compatibility only.
  */
-export async function getRepTabletsState(actor: string): Promise<RepTabletsState> {
+export async function getRepTabletsState(_actor: string): Promise<RepTabletsState> {
   const connection = await connect();
   const [live, devices, loaded, profile] = await Promise.all([
     getRepTabletPolicy(connection),
@@ -161,23 +163,9 @@ export async function getRepTabletsState(actor: string): Promise<RepTabletsState
     getEnterpriseProfile(connection).catch((error: unknown) => deviceErrorMessage(error)),
   ]);
 
-  let register = loaded;
-  const autoRegistered: string[] = [];
-  let autoRegisterError: string | null = null;
-  const missing = register.error ? [] : tabletsToAutoRegister(devices, register.entries);
-  if (missing.length > 0) {
-    let entries = register.entries;
-    for (const facts of missing) {
-      try {
-        const added = await registerTablet(facts, "enrollment", actor, entries);
-        if (added.created) autoRegistered.push(added.assetTag);
-        entries = (await getDeviceRegisterData()).devices;
-      } catch (error) {
-        autoRegisterError = `A tablet (serial ${facts.serialNumber ?? "not reported"}) could not be added to the custody register: ${deviceErrorMessage(error)}`;
-      }
-    }
-    register = await loadRegister();
-  }
+  const register = loaded;
+  // Counted, never added: a person confirms each new tablet (owner, 2026-10-22).
+  const pendingRegistration = register.error ? 0 : tabletsToAutoRegister(devices, register.entries).length;
 
   const ownerApps = ownerAppsFromPolicy(live);
   const titles = await appTitles(connection, ownerApps);
@@ -206,8 +194,7 @@ export async function getRepTabletsState(actor: string): Promise<RepTabletsState
       exists: live !== null,
       version,
     },
-    autoRegisterError,
-    autoRegistered,
+    pendingRegistration,
     registerError: register.error,
     rules: REP_TABLET_RULES,
     tablets,

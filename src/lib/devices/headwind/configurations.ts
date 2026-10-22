@@ -14,7 +14,8 @@
  *    the configuration's `applications`, `applicationSettings` and `files`. Sending back an object you
  *    assembled yourself — rather than the one the server handed you — silently empties whichever list
  *    you left out. Every whole-object write here is therefore an OPAQUE ROUND-TRIP: read the server's
- *    own JSON, change exactly one field on it, put the same object back.
+ *    own JSON, change exactly one field on it, put the same object back — WITH the app links read from
+ *    their own endpoint, because the by-id read never carries them (`configurationWriteBody`).
  * 2. **A CONFIGURATION CARRIES A PLAINTEXT PASSWORD.** `Configuration.password` is the tablet's admin
  *    password in clear text — the Swagger annotation calling it an MD5 hash is wrong; the hash is
  *    computed at sync time from a plaintext column. The round-trip carries it through untouched, and
@@ -172,11 +173,43 @@ export async function getHeadwindConfiguration(
 }
 
 /**
+ * The body a whole-configuration PUT sends: the server's own object, the patch over it, and the app
+ * links put back — the same body the Headwind console's own save sends.
+ *
+ * 🔴 THE BY-ID READ NEVER CARRIES THE APP LINKS (read from `hmdm-server` and on production,
+ * 2026-10-22). `getConfigurationByIdFull` fills `applicationSettings`, `applicationUsageParameters` and
+ * `files`, but `applications` always comes back `[]`; the links live behind
+ * `GET /rest/private/configurations/applications/{id}`, and the PUT deletes every link and re-inserts
+ * only the ones it is sent. A round-trip of the by-id read alone would therefore take EVERY app off
+ * every tablet on those rules — and the server then re-checks `mainAppId` against the emptied list, so
+ * the home-screen app goes with them. The console sends `allApplications.filter(app => app.action != 0)`;
+ * so does this. `action` 0 is "not on this configuration", 1 is install, 2 is remove.
+ */
+export function configurationWriteBody(
+  current: HeadwindConfiguration,
+  links: unknown,
+  patch: Record<string, unknown>,
+): HeadwindConfiguration {
+  if (!Array.isArray(links)) {
+    throw new HeadwindConfigurationError(
+      "The Headwind server did not say which apps are on those tablet rules, so nothing was changed — saving now would take every app off those tablets. Try again in a minute.",
+    );
+  }
+  const applications = links.filter((link): link is Record<string, unknown> => {
+    if (typeof link !== "object" || link === null) return false;
+    const { action, id } = link as { action?: unknown; id?: unknown };
+    return typeof id === "number" && action !== 0;
+  });
+  return { ...current, ...patch, applications };
+}
+
+/**
  * Change named fields on a configuration and put the whole object back.
  *
  * 🔴 THE ROUND-TRIP IS THE POINT. `patch` is spread over the object the SERVER just handed us, and
- * that object — not a reconstruction of it — is what goes back, so the application, settings and file
- * lists the PUT re-inserts are the ones that were already there.
+ * that object — not a reconstruction of it — is what goes back, so the settings and file lists the
+ * PUT re-inserts are the ones that were already there. The app links come from their own read
+ * (`configurationWriteBody`), because the by-id read never carries them.
  */
 async function patchHeadwindConfiguration(
   configurationId: number,
@@ -185,7 +218,13 @@ async function patchHeadwindConfiguration(
   env: NodeJS.ProcessEnv,
 ): Promise<HeadwindConfiguration> {
   const current = await readHeadwindConfiguration(configurationId, fetchImpl, env);
-  const next = { ...current, ...patch };
+  const links = await callHeadwind<unknown>(
+    `/rest/private/configurations/applications/${configurationId}`,
+    { method: "GET" },
+    fetchImpl,
+    env,
+  );
+  const next = configurationWriteBody(current, links, patch);
   await callHeadwind(
     "/rest/private/configurations",
     { body: JSON.stringify(next), method: "PUT" },

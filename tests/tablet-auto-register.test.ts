@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { stripComments } from "./support/comment-strip.ts";
 
 import type { AmapiDevice, RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 import {
@@ -75,8 +78,30 @@ function runLookupTests() {
   assert.equal(findRegisteredTablet({ imei: null, manufacturer: null, model: null, serialNumber: "OTHER" }, register), null);
 }
 
+/**
+ * 🔴 THE GOOGLE PAGE COUNTS NEW TABLETS AND NEVER ADDS THEM (owner, 2026-10-22: new tablets enter
+ * Device Custody only when a person confirms them). The Headwind half was changed the same day; this
+ * pins the Google half. BREAK-TEST: put the `registerTablet(facts, "enrollment", ...)` loop back into
+ * getRepTabletsState and the first assertion fires.
+ */
+function runGooglePageCountsOnlyTests() {
+  const service = stripComments(readFileSync("src/lib/devices/rep-tablets-service.ts", "utf8"));
+  assert.doesNotMatch(service, /registerTablet\(facts, "enrollment"/, "reading the page never adds a tablet to custody");
+  assert.match(service, /registerTablet\(facts, "usb", actor, devices\)/, "the person-confirmed USB register is the one door left");
+  assert.match(
+    service,
+    /pendingRegistration = register\.error \? 0 : tabletsToAutoRegister\(devices, register\.entries\)\.length/,
+    "the page counts the tablets waiting instead",
+  );
+  assert.doesNotMatch(service, /autoRegistered|autoRegisterError/, "and the state that reported self-added tablets is gone");
+  const ui = stripComments(readFileSync("src/components/devices/rep-tablets-console.tsx", "utf8"));
+  assert.doesNotMatch(ui, /Added to the custody register by themselves/, "the banner that claimed tablets added themselves is gone");
+  assert.match(ui, /data\.pendingRegistration > 0/, "replaced by the count, pointing at the USB register");
+}
+
 export function runTabletAutoRegisterTests() {
   runTagTests();
   runSelectionTests();
   runLookupTests();
+  runGooglePageCountsOnlyTests();
 }

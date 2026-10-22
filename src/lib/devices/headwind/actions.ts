@@ -51,6 +51,8 @@
  * app instead, which draws it — the same door the alarm uses.
  */
 
+import { randomInt } from "node:crypto";
+
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
@@ -160,8 +162,8 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
   {
     carrier: "add-on",
     description:
-      "Clears the PIN or pattern on the tablet's screen lock, for a rep who is locked out of their " +
-      "own tablet. Nothing on the tablet is erased.",
+      "Replaces the tablet's screen lock with a one-time six-digit PIN that Phoenix shows you once, " +
+      "for a rep who is locked out of their own tablet. Nothing on the tablet is erased.",
     destructive: false,
     id: "RESET_SCREEN_LOCK",
     label: "Reset the screen lock",
@@ -291,8 +293,39 @@ function checkMessage(def: HeadwindActionDef, message: string | null | undefined
   return text;
 }
 
+/** A PIN a person would try first: one digit repeated, or a straight run up or down (123456, 987654). */
+function guessablePin(pin: string): boolean {
+  const digits = [...pin].map(Number);
+  const steps = new Set(digits.slice(1).map((digit, index) => digit - (digits[index] as number)));
+  return steps.size === 1 && [0, 1, -1].includes([...steps][0] as number);
+}
+
+/**
+ * The temporary screen-lock PIN for "Reset the screen lock".
+ *
+ * 🔴 WHY THERE IS A PIN AT ALL (fixed 2026-10-22). The agent's `passwordReset` is not a switch — it is
+ * the NEW password, handed to `dpm.resetPasswordWithToken`. Phoenix used to send only
+ * `passwordReset: true`; the add-on reads the words from `password`, its `text()` drops a missing one
+ * to null, the sync then carried `passwordReset: null`, and the tablet did nothing while the row still
+ * read as sent. A cleared lock would leave a field tablet open to anyone, so the reset sets a fresh
+ * six-digit PIN instead. It is shown to the person who pressed the button ONCE and is never written to
+ * Phoenix's audit row; the add-on drops its own copy when the tablet confirms.
+ */
+export function temporaryScreenLockPin(draw: (limit: number) => number = (limit) => randomInt(limit)): string {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const pin = String(draw(1_000_000)).padStart(6, "0");
+    if (/^\d{6}$/.test(pin) && !guessablePin(pin)) return pin;
+  }
+  throw new HeadwindActionError("A temporary PIN could not be made. Try the reset again.");
+}
+
 /** What the add-on is asked to put in the tablet's next sync response. */
-function addonBody(action: HeadwindActionId, deviceNumber: string, message: string | null) {
+export function headwindAddonBody(
+  action: HeadwindActionId,
+  deviceNumber: string,
+  message: string | null,
+  password: string | null = null,
+) {
   switch (action) {
     case "LOCK":
       return { deviceNumber, lock: true };
@@ -304,7 +337,9 @@ function addonBody(action: HeadwindActionId, deviceNumber: string, message: stri
     case "FACTORY_RESET":
       return { deviceNumber, factoryReset: true };
     case "RESET_SCREEN_LOCK":
-      return { deviceNumber, passwordReset: true };
+      // 🔴 A reset with no PIN is refused here, not sent: the tablet would ignore it (see above).
+      if (!password) throw new HeadwindActionError("A screen-lock reset has to carry the new PIN.");
+      return { deviceNumber, password, passwordReset: true };
     default:
       throw new HeadwindActionError("That is not an action the add-on carries.");
   }
@@ -333,13 +368,15 @@ export async function takeHeadwindAction(
 
   const message = checkMessage(def, input.message);
   const target = await resolveHeadwindActionTarget(deviceNumber, fetchImpl, env);
+  // Never audited, never logged — it reaches the person who pressed the button once, in the reply.
+  const pin = def.id === "RESET_SCREEN_LOCK" ? temporaryScreenLockPin() : null;
 
   if (def.carrier === "add-on") {
     if (!(await headwindAddonInstalled(fetchImpl, env))) throw new HeadwindActionError(ADDON_MISSING);
     try {
       await callHeadwind(
         `${ADDON_BASE}/action`,
-        { body: JSON.stringify(addonBody(def.id, target.deviceNumber, message)), method: "POST" },
+        { body: JSON.stringify(headwindAddonBody(def.id, target.deviceNumber, message, pin)), method: "POST" },
         fetchImpl,
         env,
       );
@@ -391,11 +428,11 @@ export async function takeHeadwindAction(
   return {
     action: def.id,
     assetTag: target.assetTag,
-    message: resultMessage(def, target.subject),
+    message: resultMessage(def, target.subject, pin),
   };
 }
 
-function resultMessage(def: HeadwindActionDef, subject: string): string {
+function resultMessage(def: HeadwindActionDef, subject: string, pin: string | null = null): string {
   switch (def.id) {
     case "LOCK":
       return `${subject} will lock at its next check-in, usually within a minute or two. Nothing on it can be used until it is unlocked from here.`;
@@ -407,7 +444,7 @@ function resultMessage(def: HeadwindActionDef, subject: string): string {
     case "FACTORY_RESET":
       return `${subject} will erase itself at its next check-in. 🔴 It also stops being managed at that moment, so nothing here can reach it again — and nothing on it can be recovered.`;
     case "RESET_SCREEN_LOCK":
-      return `${subject} will clear its screen lock at its next check-in. Nothing on it is erased; the rep sets a new PIN themselves.`;
+      return `${subject} will take the temporary PIN ${pin ?? ""} as its screen lock at its next check-in. Give it to the rep now — Phoenix does not show it again or keep it. Nothing on the tablet is erased, and the rep can change the PIN in the tablet's own settings once they are in.`;
     case "RING_ALARM":
       return `${subject} will sound its alarm. It plays on the alarm channel, so it is heard with the ringer down — though under Do Not Disturb it plays at whatever volume is already set.`;
     case "SHOW_MESSAGE":
