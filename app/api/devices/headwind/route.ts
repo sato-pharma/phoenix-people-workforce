@@ -15,6 +15,7 @@ import { getHeadwindLocation, listHeadwindDevices } from "@/lib/devices/headwind
 import { getHeadwindFleet } from "@/lib/devices/headwind/fleet";
 import { headwindErrorResponse } from "@/lib/devices/headwind/http";
 import { getHeadwindLocationHistory } from "@/lib/devices/headwind/locations";
+import { listRecordings } from "@/lib/devices/headwind/recordings";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 import { isRustDeskSessionMode, rustDeskTarget } from "@/lib/devices/rustdesk/session";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -106,6 +107,11 @@ export async function GET(request: Request) {
         }
         return NextResponse.json(rustDeskTarget({ mode, rustDeskId: device.rustDeskId }));
       }
+      // 🔴 THE SCREEN RECORDINGS PHOENIX HOLDS FOR THIS TABLET, newest first, each ready one carrying a
+      // short-lived playback link. On-demand captures the tablet uploaded — never a live feed, never
+      // calls or messages. Reading is Super Admin only, the same gate as the rest of this route.
+      case "recordings":
+        return NextResponse.json(await listRecordings(deviceNumber));
       default:
         return NextResponse.json(await getHeadwindLocation(deviceNumber));
     }

@@ -377,6 +377,51 @@ The day the company wants its own relay, it wants a box, and
 [`.env.headwind.example`](../../.env.headwind.example) are kept in the repository for exactly that —
 unchanged, and labelled as the optional path.
 
+### 4.5.1 Screen recording — on-demand capture, filed in Phoenix (the launcher contract)
+
+Owner, 2026-10-22: after live view and control he asked for screen **recording** too, **on-demand into
+Phoenix** — the Super Admin presses Record on one tablet, the tablet records its own screen for a set
+length and uploads the file to Phoenix, and he plays it back in the dashboard whenever he likes, with
+nobody watching live. Calls and messages are never recorded; they do not exist in this stack.
+
+**The Phoenix side is built (this PR).** The pieces, all behind `company_devices:approve`:
+
+- `device_screen_recordings` table + a private `device-screen-recordings` bucket (mp4/webm, 256 MB) —
+  migration `20261022170000_tablet_screen_recordings.sql`.
+- `src/lib/devices/headwind/recordings.ts` — `requestRecording` (opens a slot, pushes the record
+  intent, audits it), `listRecordings` (rows + short-lived signed playback links), `ingestRecording`
+  (the device's upload door), and the pure `recordingUploadDecision` the upload is judged by.
+- Routes: `POST /api/devices/headwind/record` (Super Admin, same-origin) starts one; the dashboard's
+  `GET /api/devices/headwind?view=recordings` lists them; `POST /api/devices/recordings/upload` takes
+  the file. A `RecordingsPanel` on the tablet drill-down drives and plays them.
+
+**Why the capture is NOT in the Phoenix app.** The alarm and message actions push an `intent` to
+`com.satopharma.phoenixworkforce`, the Expo app under `mobile/` — which is **frozen**, so it cannot
+grow a screen-capture handler. The capture therefore belongs in the **Phoenix RustDesk-fork launcher**,
+which already runs Android MediaProjection for live view and already holds the one-time capture grant.
+The record push is aimed at the RustDesk package (`rustDeskPackageName()`), never the frozen app.
+
+**The device-side contract (to build in the RustDesk fork's own repo — NOT here, NOT in `mobile/`):**
+
+1. **Trigger.** Phoenix sends `POST /rest/private/push` with `messageType: "intent"`, `deviceNumbers:
+   [<this tablet>]`, and a `payload` (a JSON **string**) of
+   `{ "action": "com.satopharma.phoenix.tablet.RECORD_SCREEN", "pkg": "<rustdesk package>", "extra":
+   { "recordingId": "<uuid>", "token": "<hex>", "uploadUrl": "https://…/api/devices/recordings/upload",
+   "durationSeconds": <n> } }`. The fork registers the receiver/activity for that action.
+2. **Capture.** Record the screen via the MediaProjection session the fork already owns for live view,
+   for `durationSeconds` (5–300), to an mp4 (or webm).
+3. **Upload.** `POST` the file to `uploadUrl` as multipart `file`, with form fields `recordingId`,
+   `token` and `capturedSeconds`. No bearer and no session — the `token` IS the credential, matched
+   once against the slot's stored hash inside a 15-minute window, then burned.
+
+**The exposure, stated plainly.** A tablet's Headwind configuration is world-readable (§8.3), so no
+long-lived secret may travel to a device. The per-recording token travels in the push instead: random,
+single-use, short-lived, and worth at most one capture slot for minutes if it leaked. The ingest
+re-reads the stored object's real size rather than trusting the tablet — the same discipline the CRM
+visit recording keeps. The `/rest/videos` path this feature does **not** use is the server's own
+unauthenticated video endpoint, deliberately 403'd by the §8.3 Tomcat rule; recording uses the
+authenticated Phoenix door above, never that hole.
+
 ### 4.6 Turning it on in Phoenix
 
 Three variables on the **Phoenix app's** Railway service (production) — not on `phoenix-headwind`.
