@@ -184,7 +184,7 @@ export function runDoctorListsEverywhereTests() {
     assert.ok(REFRESH.includes(`'${key}',`), `the refresh reports ${key}`);
   }
 
-  // ── 11. A PHOENIX-BORN DOCTOR GETS HIS NAME ROW, AND NEVER OVERWRITES THE VENDOR'S ────────────────
+  // ── 11. A PHOENIX-BORN DOCTOR GETS HIS NAME ROW, AND PHOENIX'S NAME WINS ───────────────────────────
   // `crm_contact_assignments` has a foreign key to `crm_contacts`, so without this the fifth pass could
   // not insert a row for a doctor who exists only in Phoenix CRM. It runs BEFORE the fifth pass for
   // exactly that reason. `source` is 'phoenix' because that is the only value crm_contacts_source allows
@@ -203,10 +203,17 @@ export function runDoctorListsEverywhereTests() {
   );
   const nameStatement = REFRESH.slice(REFRESH.lastIndexOf("insert into public.crm_contacts as c (", nameRow), nameRow + 600);
   assert.match(nameStatement, /'phoenix'::text as source,/, "the name row is marked 'phoenix' — the only source value the CHECK allows");
+  // Owner, 2026-10-22: "phoenix is the source of trust and its data override old crm data". What the pass
+  // offers it writes; a blank offered keeps the value on file (20261022163100).
   assert.match(
     REFRESH.slice(nameRow),
+    /name = coalesce\(excluded\.name, c\.name\)/,
+    "Phoenix's name replaces the one on file — the old blank-only arm kept the vendor's spelling on every doctor Phoenix corrected",
+  );
+  assert.doesNotMatch(
+    REFRESH.slice(nameRow),
     /name = coalesce\(c\.name, excluded\.name\)/,
-    "a name the vendor already carries is left alone — renaming it would restate months already read",
+    "the blank-only arm is gone from the name-row pass",
   );
 
   // ── 12. THE ID IS THE SAME ONE THE DOORS EMIT ─────────────────────────────────────────────────────

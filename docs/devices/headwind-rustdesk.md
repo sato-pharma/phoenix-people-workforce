@@ -499,6 +499,11 @@ Pinned in `tests/headwind-bridge.test.ts`.
 
 #### 🔴 WHY THE TABLETS' HOSTNAME, AND A CORRECTION TO WHAT THIS SECTION USED TO SAY
 
+🔴 **SUPERSEDED BY THE HOST SPLIT (§8.3, 22 Oct 2026).** Everything below was true while one Tomcat served
+everything on every name. Once the host split deploys, `mdm.satopharma.com` serves the tablets' paths and
+nothing else, so Phoenix MUST use `https://mdm-console.satopharma.com`, with the two
+`HEADWIND_MDM_ACCESS_*` values once Access is on — §8.10 says in which order.
+
 This section used to instruct `https://mdm-console.satopharma.com` and warn that `mdm.satopharma.com`
 "would quietly put the API back on the public internet that §4.7 exists to take it off." **That
 sentence was wrong, and it is worth saying why rather than quietly deleting it.**
@@ -836,6 +841,16 @@ call after it. Leave both unset and nothing changes — that is the shape for a 
 in front of it. Set only one and Phoenix refuses to call at all, naming the missing half, rather than
 spending an afternoon on a reply that was never Headwind's.
 
+🔴 **AND ACCESS ALONE IS A FRONT DOOR WITH A SIDE DOOR ON RAILWAY — SO THE SERVER CHECKS THE PASS TOO**
+(owner, 2026-10-22: shut the back door at the server). Access acts only on traffic that comes through
+Cloudflare. Railway's edge answers anyone who connects to it directly with the console's name — exactly
+the connection `origin-certificate-check.yml` makes every day — and that request never meets Cloudflare.
+So the add-on's `AccessGateFilter` verifies Cloudflare's signed pass (`Cf-Access-Jwt-Assertion`: RS256,
+the team's published keys, `iss`, this application's `aud`, `exp`) on every request to
+`mdm-console.satopharma.com`, once `PHX_ACCESS_TEAM_DOMAIN` and `PHX_ACCESS_AUD` are set on the service; the
+build proves it refuses twelve kinds of forgery (`AccessVerifierCheck.java`). The host split (§8.3)
+makes sure no other name serves the console, so there is no third way in.
+
 🔴 **There is deliberately no exception rule for `/rest/*`, and one must never be added.** It is the
 obvious-looking simplification — let the API through unauthenticated and only the browser console is
 guarded — and it protects nothing that matters: the REST API is what lists, commands and
@@ -964,7 +979,8 @@ Do **PHX-TAB-0002 first, alone**, and only move the rest once every step has bee
    in it is the name the tablet comes up with:
 
    ```
-   https://mdm.satopharma.com/rest/public/qr/<the Rep tablets QR key>?size=400&deviceId=PHX-TAB-0003&create=1
+   https://mdm-console.satopharma.com/rest/public/qr/<the Rep tablets QR key>?size=400&deviceId=PHX-TAB-0003&create=1
+   (on `mdm-console` since the host split — `mdm` answers 403 to `/rest/public/qr/*`, §8.3)
    ```
 
    🔴 **The key is a credential and is deliberately not written down here** — anyone holding it can
@@ -1665,14 +1681,37 @@ Phoenix paths they must leave alone, and the Dockerfile wiring.
 - a tablet's next sync still lands (its `lastUpdate` moves).
 Never test with a real upload.
 
-**The staged host-split (second, separate, higher-risk step).** Allow only the tablet-facing public
-paths on `mdm` and move the console + private API to `mdm-console` behind Access. This can break every
-tablet's sync if the allowlist is wrong, and it requires Phoenix to reach `mdm-console` through a
-Cloudflare Access service token — so it is its own change with its own verification (§8.10), done only
-after §8.3's minimal rule is proven and a tablet is in hand to test against. The tablet-facing public
-allowlist to preserve on `mdm`: `/files/`, `sync/configuration`, `sync/info`, `notifications/device`,
-`notifications/polling`, `devicelog/log/(rules|list)`, `deviceinfo` public + `plugin-settings/device`,
-`devicelocations/update`, and `devicereset/public/(reboot|password)`.
+**The host split (built 22 Oct, owner: "split the Headwind console onto mdm-console behind Access").**
+The same `rewrite.config` now carries a third rule: on every hostname EXCEPT
+`mdm-console.satopharma.com`, only the tablet agent's own paths answer, and everything else — the console,
+`/rest/public/jwt/login` (the token endpoint that skips 2FA), `/rest/private/*`, the add-on's private
+paths, `/rest/public/qr/*` — is 403. The allowlist was read from the agent's own source, not from this
+page: `ServerService.java`, `PushNotificationWorker`, `PushLongPollingService` and
+`GetServerConfigTask` at `h-mdm/hmdm-android` master, identical at our launcher fork's
+`launcher-6.39-r1` (the fork changes only a build workflow). Twelve call shapes plus `/files/`:
+`sync/configuration/{n}`, `sync/info`, `notifications/device/{n}`, **`notification/polling/{n}`
+(singular — this page used to say "notifications/polling", which would have refused the push channel)**,
+`devicelog/log/rules|list/{n}`, `deviceinfo/deviceinfo/public/{n}`,
+`deviceinfo/deviceinfo-plugin-settings/device/{n}`, `devicelocations/public/update/{n}`, and
+`devicereset/public/[reboot/|password/]{n}`. The live configuration hands tablets only `/files/*` URLs on
+`mdm` (read 22 Oct), so nothing else is needed.
+
+🔴 **Tomcat's rewrite rules match the WHOLE path, not a prefix** (`Matcher.matches()` in both RewriteRule
+and RewriteCond). The first upload rules were written as prefixes, so `^/rest/videos` refused
+`/rest/videos` and let `/rest/videos/` through; the test missed it because JavaScript's `test()` matches
+a prefix. Both are now `(/.*)?$`, and the test models Tomcat's anchoring.
+
+**The proof runs before anything ships.** `rewrite-cases.txt` lists the requests (allow/refuse, host,
+path); `RewriteCheck.java` runs Tomcat's OWN engine over every one at image build and fails the build on a
+single surprise, and `tests/headwind-bridge.test.ts` checks the same file with a model of the engine plus
+a coverage check that every agent path is allowed on `mdm`. The new `headwind-image` workflow builds the
+real image on every PR touching `infra/headwind-phoenix-actions/`, so this is the first change here whose
+Java and rules were compiled and exercised before a merge rather than on the live service. It still
+cannot prove the server starts or a real tablet syncs — that is §8.13.
+
+🔴 **The host split cuts Phoenix off the console unless Phoenix has moved first.** Phoenix's
+`HEADWIND_MDM_BASE_URL` is `https://mdm.satopharma.com` today (§4.6), and after this deploy that name
+answers Phoenix's sign-in with 403. The order is §8.10, and its first step comes before the merge.
 
 ### 8.4 Durable `/files` — the Railway volume (the "small disk" the owner approved)
 
@@ -1756,14 +1795,41 @@ enters their address and password: `imap.satopharma.com` / `smtp.satopharma.com`
 `cpanel356.turbify.biz`), IMAP 993 SSL, SMTP 465 SSL. `webmail.satopharma.com` in the browser is the
 zero-install fallback.
 
-### 8.10 The `mdm-console` / Access / env cutover (with §8.3's host-split)
+### 8.10 The `mdm-console` / Access cutover — in this order, and only this order
 
-Point Phoenix's Headwind base URL at `mdm-console.satopharma.com` (the private-API host) and give it a
-Cloudflare Access **service token** so its server-to-server calls pass Access: set
-`HEADWIND_MDM_ACCESS_CLIENT_ID` / `HEADWIND_MDM_ACCESS_CLIENT_SECRET` (support already in `auth.ts`),
-created in the Cloudflare Zero Trust dashboard (already live from MeshCentral). Tablets keep using
-`mdm.satopharma.com` — confirmed that no tablet-facing URL is built from Phoenix's base URL. Set the env
-before the host-split rule is cut over, or Phoenix loses the console.
+Each step leaves everything working; doing one early is what breaks something.
+
+1. **Phoenix moves to the console's name (before the merge).** Set `HEADWIND_MDM_BASE_URL` to
+   `https://mdm-console.satopharma.com` on Phoenix's production service (and on the Fly standby worker if
+   it carries the Headwind variables). Safe today: both names serve everything until step 2. Tablets keep
+   `mdm.satopharma.com` — no tablet-facing URL is built from Phoenix's base URL. Verify the Device
+   Custody fleet view still reads.
+2. **Merge the host-split PR; Railway rebuilds `phoenix-headwind`.** The Access gate is OFF (no
+   `PHX_ACCESS_*` yet) and logs that at every start. Verify on the live hosts: on `mdm`, a tablet path
+   answers (sync 200, `/files/<launcher>.apk` 200) and `/`, `/rest/public/jwt/login` and
+   `/rest/private/devices/search` are 403; on `mdm-console` the console signs in and Phoenix works; both
+   uploads 403 on every name; a tablet's `lastUpdate` moves at its next check-in.
+3. **The owner creates the Access application** (§8.12): Zero Trust → Access → Applications → Add →
+   Self-hosted, domain `mdm-console.satopharma.com`; an Allow policy for his own email; a second policy,
+   action **Service Auth**, for a new service token named `phoenix-headwind`. He copies three values: the
+   application's **Application Audience (AUD) Tag**, and the token's Client ID and Client Secret (the
+   secret is shown once).
+4. **Phoenix gets the service token**: `HEADWIND_MDM_ACCESS_CLIENT_ID` / `HEADWIND_MDM_ACCESS_CLIENT_SECRET`
+   on Phoenix's service (and the standby worker). Harmless before step 5: with no Access in front, the
+   two headers are simply ignored.
+5. **`mdm-console` goes orange** in Cloudflare DNS (proxied). Access only acts on proxied traffic. This is
+   the flip §4.7 warns can stall Railway's certificate renewal; `origin-certificate-check.yml` reads it
+   daily and alarms on Telegram under 21 days. `mdm` stays grey for ever.
+6. **The tablet server starts checking the pass**: set `PHX_ACCESS_TEAM_DOMAIN=curly-violet-4187.cloudflareaccess.com`
+   and `PHX_ACCESS_AUD=<the AUD tag>` on `phoenix-headwind` (the variable change redeploys it). Verify: the
+   console in a browser asks for the Cloudflare sign-in first; Phoenix's fleet view still reads; and a
+   request made straight to Railway's edge with the console's name and no pass —
+   `curl --resolve mdm-console.satopharma.com:443:<Railway edge IP> https://mdm-console.satopharma.com/rest/public/jwt/login`
+   — answers 403 "This address needs a Cloudflare Access sign-in."
+
+**Break-glass:** if Access ever locks the owner out, removing both `PHX_ACCESS_*` variables turns the
+gate off at the next start, and the console answers on `mdm-console` behind its password as before. Setting
+only ONE of them refuses every console request by design — the log says which half is missing.
 
 ### 8.11 Custody confirm — shipped in this PR (Phoenix code)
 
@@ -1784,7 +1850,8 @@ auto-registers — it is being retired, not changed.
 
 - Enable **2FA** on both console accounts (`admin`, `phoenix`) — §4.7.
 - Set a **long config-3 agent password** (today `12345678`; its MD5 is what the public config leaks).
-- Create the Cloudflare Access **service token** for Phoenix and add **Access** on `mdm-console`.
+- Create the **Access application** on `mdm-console` and its **service token** for Phoenix, and copy the
+  three values §8.10 step 3 names (the AUD tag, the token's Client ID and Client Secret).
 - **For the factory-reset lock (§8.8):** create the Google account **it.satopharma@gmail.com** (the
   address he chose) and hand over its **numeric FRP account ID** — the long number tied to the account,
   not the address. Get it by signing into the account at `people.googleapis.com/v1/people/me?personFields=metadata`
@@ -1794,7 +1861,7 @@ auto-registers — it is being retired, not changed.
 
 ### 8.13 Verification checklist (run when Railway is healthy)
 
-1. `/rest/public/applications/upload` and `/rest/videos` → 403 on all three hosts; `/files/<launcher>.apk` → 200; the console signs in; a tablet still syncs.
+1. `/rest/public/applications/upload` and `/rest/videos` (and both with a trailing `/`) → 403 on all three hosts; `/files/<launcher>.apk` → 200; on `mdm` the console and `/rest/public/jwt/login` → 403; on `mdm-console` the console signs in; a tablet still syncs. Then §8.10 step 6's checks once the Access gate is on.
 2. A console/Phoenix APK upload survives a redeploy (volume).
 3. `polling`: an `APPLY_SETTINGS` lands within seconds; push history > 0; no tracking notice on the tablet.
 4. "Reset the screen lock" sets the PIN Phoenix showed on a real tablet, and refuses cleanly when it cannot.

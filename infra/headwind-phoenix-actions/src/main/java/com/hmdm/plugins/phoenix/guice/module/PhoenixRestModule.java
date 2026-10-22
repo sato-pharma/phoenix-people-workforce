@@ -7,6 +7,7 @@ import com.google.inject.servlet.ServletModule;
 
 import com.hmdm.plugins.phoenix.rest.DeviceResetConfirmResource;
 import com.hmdm.plugins.phoenix.rest.PhoenixActionsResource;
+import com.hmdm.plugins.phoenix.security.AccessGateFilter;
 import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.filter.PrivateIPFilter;
 import com.hmdm.rest.filter.PublicIPFilter;
@@ -53,6 +54,12 @@ public class PhoenixRestModule extends ServletModule {
 
     @Override
     protected void configureServlets() {
+        // 🔴 FIRST, AND ON EVERY PATH: the console hostname needs a Cloudflare Access pass once
+        // PHX_ACCESS_TEAM_DOMAIN and PHX_ACCESS_AUD are set (AccessGateFilter says why the server checks
+        // what Cloudflare already did). Every other hostname passes straight through, so the tablets
+        // never meet it. Headwind maps GuiceFilter to /*, so this sees the console pages and the API alike.
+        filter("/*").through(AccessGateFilter.class);
+
         filter(PROTECTED_RESOURCES).through(JWTFilter.class);
         filter(PROTECTED_RESOURCES).through(AuthFilter.class);
         filter(PROTECTED_RESOURCES).through(PrivateIPFilter.class);

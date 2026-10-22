@@ -1178,6 +1178,48 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // twice, which is its two actions, and leave_requests, resignations and
   // private_calendar_data_disputes once each).
   "20261020064831_hr_operations_specialist_seat.sql",
+  // 2026-10-22, Phoenix is the source of trust over the old CRM (owner, about 04:00 Cairo: "phoenix is
+  // the source of trust and its data override old crm data"). Applied to staging (04:4x Cairo) and then
+  // production (04:53 Cairo, on his MCQ pick "Apply staging then prod") with
+  // `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, because the
+  // staging MCP answered {"status":"declined"} twice on this SQL, whose body holds six
+  // `drop table if exists pg_temp.…` lines. That route writes NO ledger row, so the absence here is the
+  // apply route and not a missed migration; its two siblings, 20261022163000 and 20261022163200, went
+  // through apply_migration and are in both ledgers by name.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.crm_contact_master_refresh reads a99ddecb38b6332a972a787e52443806 over 33,564 chars on
+  // ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file
+  // (as-is LF), and this file is the function's LAST definer. Production held
+  // 8f343dc21428862adb1d4df1a66190b8 (20261016233000) immediately before, which makes that file the
+  // one-command rollback. SECURITY INVOKER, proconfig {search_path=public} and proacl (postgres and
+  // service_role only) were read in the same query, and the function comment digests
+  // 8801832df34402819bef3dd76951a853 on both. Effect on production: the first call changed 64 vendor
+  // contacts (the 62 a pre-image saved before the apply had named, plus the two below) and the four
+  // Phoenix-born ones; afterwards 0 contacts differ from what Phoenix holds. A second call 15 s later
+  // changed 2 — Peter Alphonse (95487) and Mahmoud Khalafa (105208), whose phone exists only on a
+  // PENDING Phoenix copy: the vendor pass blanks it and the name-row pass fills it back on every run, with
+  // the same end state. That loop is the blank-fill rule the previous body had too; 20261022163300 below
+  // removes it. Re-applying it is a no-op (`create or replace`).
+  "20261022163100_phoenix_wins_the_contact_refresh.sql",
+  // 2026-10-22, the loop above, fixed (owner, 05:1x Cairo: "fix the phone loop on Peter Alphonse and Mahmoud
+  // Khalafa"). Applied to staging and then production (05:13 Cairo) with
+  // `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, for the same reason as
+  // the entry above: the body holds six `drop table if exists pg_temp.…` lines, which both MCP doors refuse.
+  // That route writes NO ledger row, so the absence here is the apply route and not a missed migration.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.crm_contact_master_refresh reads 0e5d0165b9ca43d1fb4a18f4ef2015e1 (length(prosrc) 34,105 — two
+  // emoji fewer than the file body's JS length, md5 identical) on ozucdzovmcqvepbozvqf and on
+  // cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file (as-is LF), and this file is the
+  // function's LAST definer. Production held a99ddecb38b6332a972a787e52443806 (20261022163100) immediately
+  // before — the one-command rollback. SECURITY INVOKER, proconfig {search_path=public} and proacl
+  // (postgres and service_role only) read in the same query; the function comment digests
+  // 1bcf6cb93ee611cdca0bfa7b6fafcd88 on both. Effect, proved before the apply by a read-only replay of the
+  // new vendor pass on production: 0 contacts would change and exactly 2 blanks are filled from a pending
+  // copy (the two doctors above). After it, two production refreshes each reported listContactsChanged = 0
+  // and wrote 0 crm_contacts rows, and both doctors kept their phones; staging's two runs also changed 0.
+  "20261022163300_a_pending_copy_fills_the_vendor_blank_in_one_pass.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

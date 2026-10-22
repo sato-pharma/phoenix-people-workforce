@@ -1,0 +1,62 @@
+# What rewrite.config must do, one request per line: <allow|refuse> <host> <path>
+#
+# RewriteCheck.java runs Tomcat's OWN rewrite engine over every line at image build and fails the build
+# on a single surprise, so a rule that would refuse a tablet never reaches the tablets.
+# tests/headwind-bridge.test.ts reads the same file and checks it covers every path in the agent list.
+#
+# ── The tablet agent's every call, on the tablets' own hostname (ServerService.java and friends) ──
+allow mdm.satopharma.com /files/hmdm-phoenix-6.39.apk
+allow mdm.satopharma.com /files/WhatsApp.apk
+allow mdm.satopharma.com /rest/public/sync/configuration/PHX-TAB-0007
+allow mdm.satopharma.com /rest/public/sync/info
+allow mdm.satopharma.com /rest/notifications/device/PHX-TAB-0007
+allow mdm.satopharma.com /rest/notification/polling/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicelog/log/rules/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicelog/log/list/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/deviceinfo/deviceinfo/public/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/deviceinfo/deviceinfo-plugin-settings/device/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicelocations/public/update/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicereset/public/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicereset/public/reboot/PHX-TAB-0007
+allow mdm.satopharma.com /rest/plugins/devicereset/public/password/PHX-TAB-0007
+# The same on any other name that reaches the service (Railway's own edge name included)
+allow iul4dp7h.up.railway.app /rest/public/sync/configuration/PHX-TAB-0007
+allow iul4dp7h.up.railway.app /files/hmdm-phoenix-6.39.apk
+#
+# ── The console, the token endpoint and the private API: NOT on the tablets' hostname ──
+refuse mdm.satopharma.com /
+refuse mdm.satopharma.com /index.html
+refuse mdm.satopharma.com /rest/public/jwt/login
+refuse mdm.satopharma.com /rest/private/devices/search
+refuse mdm.satopharma.com /rest/private/configurations/applications/3
+refuse mdm.satopharma.com /rest/plugins/phoenix-actions/private/status
+refuse mdm.satopharma.com /rest/plugins/phoenix-actions/private/action
+refuse mdm.satopharma.com /rest/public/qr/anything
+refuse mdm.satopharma.com /rest/public/sync/configuration
+refuse mdm.satopharma.com /rest/public/sync/configuration/PHX-TAB-0007/extra
+refuse mdm.satopharma.com /rest/public/sync/infox
+refuse mdm.satopharma.com /files/
+refuse MDM.SATOPHARMA.COM /rest/private/devices/search
+refuse mdm-console.satopharma.com.evil.example /rest/private/devices/search
+refuse evilmdm-console.satopharma.com /rest/private/devices/search
+refuse iul4dp7h.up.railway.app /
+refuse iul4dp7h.up.railway.app /rest/public/jwt/login
+#
+# ── The console hostname serves everything the console and Phoenix use ──
+allow mdm-console.satopharma.com /
+allow mdm-console.satopharma.com /rest/public/jwt/login
+allow mdm-console.satopharma.com /rest/private/devices/search
+allow mdm-console.satopharma.com /rest/private/configurations/applications/3
+allow mdm-console.satopharma.com /rest/plugins/phoenix-actions/private/status
+allow mdm-console.satopharma.com /rest/public/qr/anything
+allow MDM-CONSOLE.SATOPHARMA.COM /rest/private/devices/search
+#
+# ── The two uploads stay refused on every name, under any suffix ──
+refuse mdm.satopharma.com /rest/public/applications/upload
+refuse mdm.satopharma.com /rest/videos
+refuse mdm-console.satopharma.com /rest/public/applications/upload
+refuse mdm-console.satopharma.com /rest/public/applications/upload/
+refuse mdm-console.satopharma.com /rest/videos
+refuse mdm-console.satopharma.com /rest/videos/
+refuse mdm-console.satopharma.com /rest/videos/clip.mp4
+refuse mdm-console.satopharma.com /REST/VIDEOS

@@ -987,10 +987,45 @@ build from production), and Vercel is a retired platform here.
 - Then Actions → Emergency host → `setup`, then `rehearse`. Optional repository variables: `FLY_APP` (default
   `phoenix-hr-standby`, if that name is taken on Fly) and `FLY_ORG` (default `personal`).
 
-**What is NOT covered.** A migration (apply it first, as on every route). The worker (it stays on Railway: in a
-build pause it keeps running the older code; in a total Railway outage its jobs pause until Railway returns). A
-Supabase outage. **Not proven until `setup` and `rehearse` have run with the owner's tokens:** the Fly app,
+**What is NOT covered.** A migration (apply it first, as on every route). The worker: the workflow never deploys
+it — since 2026-10-22 it runs on Fly too, deployed by hand (next section). A Supabase outage. **Not proven until `setup` and `rehearse` have run with the owner's tokens:** the Fly app,
 the variable copy, the certificate, and the image booting on Fly. Pinned by `tests/emergency-host.test.ts`.
+
+### The worker on Fly
+
+Since 22 Oct 2026 03:38 Cairo the background jobs run on Fly as well (owner, choosing **"Separate worker on Fly"**).
+Railway's worker was stuck on its 20 Oct deployment holding the database key that had just been switched off, and
+Railway could not deploy, so every scheduler had stopped at about 02:35 Cairo.
+
+- **The app** is `phoenix-worker-standby` (Frankfurt, one `shared-cpu-2x` machine, 2 GB). Its config is
+  `infra/fly-standby/fly-worker.toml`: `PHOENIX_PROCESS_ROLE=worker`, `PHOENIX_LIVE_CRM_POLL=true`,
+  `PHOENIX_HOST=fly-worker`, and **`RAILWAY_ENVIRONMENT_NAME=production` on purpose**: it is the CRM poller's host
+  pin (`resolveInProcessHostRefusal` in `src/lib/crm/live-poller.ts`). With no `RAILWAY_GIT_COMMIT_SHA` the release
+  gate reads `no_commit` and stays open. Until 22 Oct the file lived only in a Temp folder, which Windows empties.
+- 🔴 **Deployed by hand after every go-live — the workflow updates only the website.** It runs the image the go-live
+  just pushed to Fly's registry, so the worker never runs code the website does not:
+
+  ```bash
+  flyctl deploy -a phoenix-worker-standby -c infra/fly-standby/fly-worker.toml --image registry.fly.io/phoenix-hr-standby:<sha> --strategy rolling
+  ```
+
+  Prove it from `https://phoenix-worker-standby.fly.dev/api/healthz` (`revision`) and from the log lines
+  `[process-role] worker` and `[crm:live-poll] started`.
+- **Its secrets** were copied from Railway's worker through `filterVariables` (`scripts/emergency-host.mjs`), so every
+  key the config forces is dropped from the copy, as on the website. **Every secret rotation must reach this app
+  too.**
+- 🔴 **ONE worker only.** Railway's worker was stopped (`deploymentStop`) and its `PHOENIX_PROCESS_ROLE` set to `web`,
+  so a Railway redeploy can never run the jobs twice; there is no single-runner lock, and two pollers would hit one
+  iReports360 account.
+- **What calls it:** the four cron-job.org jobs that used to call Railway's worker address — `crm-contact-lists`,
+  `process-notifications`, `recruitment-email-intake` and `inbound-intake` — now call
+  `phoenix-worker-standby.fly.dev`. Every other job calls `phoenix-hr.satopharma.com`, so it follows the website.
+- **Moving back to Railway is one change, in this order:** stop the Fly worker
+  (`flyctl scale count 0 -a phoenix-worker-standby`), set Railway's worker `PHOENIX_PROCESS_ROLE=worker`, deploy it,
+  move the four jobs back to `phoenix-workforce-worker-production.up.railway.app`, then delete the Fly app.
+
+Pinned by `tests/emergency-host.test.ts` (the worker role, the poller, its host pin, one machine that never idles,
+and that the variable copy drops every key the config forces).
 
 ## Production Verification
 

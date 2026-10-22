@@ -113,9 +113,11 @@ export function runCrmContactMasterRefreshSpeedTests() {
     /where e\.contact_crm_id is null or \(e\.name, e\.name_ar, e\.speciality, e\.phone, e\.address, e\.city, e\.zone, e\.crm_region_name, e\.source\) is distinct from \(coalesce\(x\.name, e\.name\), x\.name_ar, x\.speciality, x\.phone, x\.address, x\.city, x\.zone, x\.crm_region_name, 'list'\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
     `${file}: the contacts upsert is offered a row only when it is new or differs by the SAME predicate the conflict filter uses`,
   );
+  // Since 20261022163100 the name-row pass offers `o` — Phoenix's value for a trusted row, the value on file
+  // else Phoenix's for a pending copy — and the pre-filter is still the conflict filter's own predicate.
   assert.match(
     code,
-    /where e\.contact_crm_id is null or \(e\.name, e\.speciality, e\.phone\) is distinct from \(coalesce\(e\.name, x\.name\), coalesce\(e\.speciality, x\.speciality\), coalesce\(e\.phone, x\.phone\)\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
+    /where e\.contact_crm_id is null or \(e\.name, e\.speciality, e\.phone\) is distinct from \(coalesce\(o\.name, e\.name\), coalesce\(o\.speciality, e\.speciality\), coalesce\(o\.phone, e\.phone\)\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
     `${file}: the name-row upsert is offered a row only when it is new or differs by the SAME predicate the conflict filter uses`,
   );
   // The conflict clauses themselves are untouched: the pre-filter is an optimisation in FRONT of them, so
@@ -127,9 +129,40 @@ export function runCrmContactMasterRefreshSpeedTests() {
   );
   assert.match(
     code,
-    /on conflict \(contact_crm_id\) do update set name = coalesce\(c\.name, excluded\.name\), speciality = coalesce\(c\.speciality, excluded\.speciality\), phone = coalesce\(c\.phone, excluded\.phone\), first_seen_on = least\(c\.first_seen_on, excluded\.first_seen_on\), updated_at = now\(\) where \(c\.name, c\.speciality, c\.phone\) is distinct from \(coalesce\(c\.name, excluded\.name\), coalesce\(c\.speciality, excluded\.speciality\), coalesce\(c\.phone, excluded\.phone\)\) or c\.first_seen_on > excluded\.first_seen_on;/,
-    `${file}: the name-row upsert keeps its original ON CONFLICT clause and filter`,
+    /on conflict \(contact_crm_id\) do update set name = coalesce\(excluded\.name, c\.name\), speciality = coalesce\(excluded\.speciality, c\.speciality\), phone = coalesce\(excluded\.phone, c\.phone\), first_seen_on = least\(c\.first_seen_on, excluded\.first_seen_on\), updated_at = now\(\) where \(c\.name, c\.speciality, c\.phone\) is distinct from \(coalesce\(excluded\.name, c\.name\), coalesce\(excluded\.speciality, c\.speciality\), coalesce\(excluded\.phone, c\.phone\)\) or c\.first_seen_on > excluded\.first_seen_on;/,
+    `${file}: the name-row upsert writes what it is offered — Phoenix wins (owner, 2026-10-22), and a blank offered keeps the value on file`,
   );
+
+  // ── 3b. THE TWO PASSES ARE OFFERED THE SAME PHOENIX ROW, SO NEITHER UNDOES THE OTHER ──────────────
+  // Found 22 Oct 2026 on production: two doctors whose phone sat only on a PENDING Phoenix copy were written
+  // twice on every run — the vendor pass blanked the phone with the vendor's empty one, and the name-row pass
+  // filled it back from the copy (listContactsChanged = 2 on a second run 15 s after the first). Since
+  // 20261022163300 the truth table holds every Phoenix doctor with a `trusted` flag, picked in the name-row
+  // pass's own order, and the vendor pass lets a pending copy fill what the vendor leaves blank.
+  assert.match(
+    code,
+    /create temporary table crm_refresh_phoenix_truth on commit drop as select distinct on \(coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\)\) coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\) as contact_crm_id, \(t\.reference_contact_crm_id is null or t\.validated_at is not null\) as trusted, nullif\(btrim\(t\.name\), ''\) as name, nullif\(btrim\(t\.speciality\), ''\) as speciality, nullif\(btrim\(t\.phone\), ''\) as phone from pg_temp\.crm_refresh_phoenix_customers t order by coalesce\(t\.reference_contact_crm_id, t\.own_contact_crm_id\), \(t\.reference_contact_crm_id is null or t\.validated_at is not null\) desc, \(t\.status = 'active'\) desc, t\.validated_at desc nulls last, t\.updated_at desc;/,
+    `${file}: the truth table holds every Phoenix doctor, trusted or not, one row each in the name-row pass's order — a truth table of trusted rows only leaves the vendor pass blind to the pending copy the name-row pass then writes`,
+  );
+  assert.match(
+    code,
+    /order by coalesce\(p\.reference_contact_crm_id, p\.own_contact_crm_id\), \(p\.reference_contact_crm_id is null or p\.validated_at is not null\) desc, \(p\.status = 'active'\) desc, p\.validated_at desc nulls last, p\.updated_at desc/,
+    `${file}: the name-row pass picks its Phoenix row in the same order as the truth table, so both passes read the same row`,
+  );
+  for (const [out, vendor] of [
+    ["name", "m.contact_name"],
+    ["speciality", "m.speciality"],
+    ["phone", "m.phone"],
+  ] as const) {
+    const vendorRe = vendor.replace(".", "\\.");
+    assert.match(
+      code,
+      new RegExp(
+        `coalesce\\(case when t\\.trusted then t\\.${out} end, nullif\\(btrim\\(${vendorRe}\\), ''\\), t\\.${out}\\) as ${out},`,
+      ),
+      `${file}: the vendor pass writes a trusted Phoenix ${out}, else the vendor's, else the pending copy's — without the last fallback the vendor pass empties what the name-row pass refills on every run`,
+    );
+  }
 
   // ── 4. EVERYTHING ELSE ABOUT THE FUNCTION IS WHAT 20261015215500 LEFT ──────────────────────────
   assert.equal(
@@ -168,10 +201,15 @@ export function runCrmContactMasterRefreshSpeedTests() {
     stated![1],
     `${file}: the digest in the header must be the digest of the body below it — it is how an apply is proved, because create-or-replace makes the mere presence of the function worthless as evidence`,
   );
+  // The rollback names the PREVIOUS definer, whichever it is — an older file that exists and re-emits the
+  // function. A fixed name here went stale the first time the function was redefined after it.
+  const rollback = /ROLLBACK: re-apply supabase\/migrations\/(\d{14}_[a-z0-9_]+\.sql)/.exec(sql);
+  assert.ok(rollback, `${file}: the header must name the one-command rollback`);
+  assert.ok(rollback![1] < file, `${file}: the rollback must re-apply an EARLIER migration, not ${rollback![1]}`);
   assert.match(
-    sql,
-    /ROLLBACK: re-apply supabase\/migrations\/20261015215500_a_vendorless_reps_phoenix_list_opens\.sql/,
-    `${file}: the header must name the one-command rollback`,
+    readFileSync(new URL(rollback![1], MIGRATIONS), "utf8"),
+    /create\s+or\s+replace\s+function\s+public\.crm_contact_master_refresh\s*\(/i,
+    `${file}: the rollback file ${rollback![1]} must itself re-emit crm_contact_master_refresh`,
   );
   assert.match(
     sql,
