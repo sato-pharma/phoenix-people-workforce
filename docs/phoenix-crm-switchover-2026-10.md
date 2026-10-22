@@ -193,8 +193,9 @@ own id into a report, so a month somebody has already read can never be restated
 `phoenix_crm:customer_already_has_own_contact_id` has its own sentence in `REFUSALS`.
 
 The hourly refresh gives each one its `crm_contacts` name row with `source = 'phoenix'` — the only
-value that CHECK allows, `'phoenix_crm'` is rejected — and never overwrites a name the vendor already
-carries.
+value that CHECK allows, `'phoenix_crm'` is rejected. Until 2026-10-22 it never overwrote a name the
+vendor already carried; since then Phoenix's name, speciality and phone win (see "Phoenix is the source
+of trust" below).
 
 ## A doctor added twice stopped the hourly refresh for a day
 
@@ -460,3 +461,81 @@ entry; 7 newly drop, on days the rep also recorded in Phoenix. Both are the inte
 production on 16 October 2026; `phoenix_crm_rep_entry_days()` returned 277 entry rows, md5 of the function body
 `362949c1365a82a1b0eb79398219171f`. No data row was touched — the change restates figures through two views, and
 production has no PITR.
+
+## Phoenix is the source of trust
+
+Owner, 22 October 2026, about 04:00 Cairo: *"CRM Master page and all crm old sources once got data from phoenix crm
+then phoenix is the source of trust and its data override old crm data"*.
+
+### What was wrong
+
+Phoenix CRM was treated as a blank-filler. The hourly contact refresh and the add-path trigger both carried the arm
+`name = coalesce(c.name, excluded.name)` — "a name the vendor already carries is left alone" — so a doctor a rep had
+corrected in Phoenix kept the vendor's spelling and speciality in `crm_contacts`, and the three old-CRM doors
+(`crm_visits_unified`, `crm_checkins_unified`, `crm_plan_entries_unified`) printed the vendor's text on every
+iReports360 row. Read on production the same night:
+
+- Dr Tharwat Milad (contact 1000036186, Phoenix-born, validated) was changed to General Surgery in Phoenix and still
+  read Internal Medicine in `crm_contacts`.
+- 2,269 vendor contacts have a validated Phoenix customer. In `crm_contacts` 18 of their names and 3 specialities
+  differed from Phoenix's; 22,857 iReports360 visits are to them, and 15,816 of those carry a different spelling of the
+  doctor (22 a different speciality).
+- 12,649 iReports360 visits were made before the account's current holder was hired. 6,040 of them carry the EARLIER
+  holder's hr id beside the vendor's re-stamped name of the current holder (iReports360 relabels an account's old rows
+  when it changes hands); 6,609 carry no hr id at all. Osama Mohamed Ali's account, re-assigned to him on 1 October
+  2026, printed his name on 825 visits from May to August.
+
+### What changed
+
+- **Trusted means validated.** `public.crm_contact_phoenix_truth` holds one row per vendor contact that a VALIDATED
+  Phoenix customer references (an active row beats a dropped one, then the latest validation), served by the partial
+  index `phoenix_crm_customers_validated_reference_idx`. The 10,164 pending reference rows are unvalidated copies of the
+  vendor list, and some name a different doctor (contact 71036: one name in the vendor list, another on a pending row),
+  so they override nothing.
+- **The doors** (`20261022163000`) print the doctor's name and speciality from that view (check-ins: the name), and on
+  the visits door the agent and the double-visit partner print the Phoenix employee's own name whenever the row's hr id
+  resolves, keeping the vendor's trailing "( territory )". The grade is not replaced: it is a dated period, governed by
+  `crm_contact_assignments` from each team's start.
+- **The contact master** (`20261022163100`, `crm_contact_master_refresh`) reads the customer snapshot first, builds
+  `crm_refresh_phoenix_truth` (Phoenix-born or validated, the view's order), and the vendor list pass takes Phoenix's
+  name, speciality and phone where Phoenix holds them. The name-row pass offers a trusted row's values as they are and
+  its arm is now `name = coalesce(excluded.name, c.name)` — Phoenix wins, a blank never erases a value. A pending copy
+  is offered as the value on file, else Phoenix's, so it still only fills a blank.
+- **The add path** (`20261022163200`) re-emits `phoenix_crm_customers_write_contact_name_row()` with that same arm,
+  byte for byte; `tests/phoenix-crm-add-path-name-row.test.ts` holds the two identical.
+- **The CRM Master page** prints "Previous holder ( territory )" for a row with NO hr id whose label names only people
+  Phoenix had not hired that day (`isHandedOverLabel` in `src/lib/crm/identity.ts`, applied by `relabelHandedOverRows`
+  in `src/lib/crm/master.ts` on the visit datasets, the vacations page and every export). The door keeps the vendor
+  label for those rows on purpose: reconciliation check 9 reads it there and settles a relabelled row by the person it
+  names.
+
+### A test that compared against a dead body
+
+`tests/phoenix-crm-add-path-name-row.test.ts` found "the newest refresh" by matching `contact_refresh` in FILE NAMES.
+`20261016233000_crm_contact_master_refresh_skips_idle_work.sql` does not contain that string, so from 16 to 22 October the
+byte-identity check compared the trigger with the superseded `20261015132445` body. It now finds the newest definer by
+content, like `tests/crm-contact-master-refresh-speed.test.ts`.
+
+### Applied
+
+Staging first, then production on 22 October 2026 between 04:40 and 04:54 Cairo, on the owner's pick "Apply staging
+then prod". The doors (`20261022163000`) and the add-path trigger (`20261022163200`) went through `apply_migration` and
+sit in both ledgers by name. The refresh (`20261022163100`) went through `scripts/apply-sql-file.mjs`, the standing route,
+because the MCP declined it twice (its body holds six `drop table if exists pg_temp.…` lines), so it has an evidenced
+`ACKNOWLEDGED_EXCEPTIONS` entry instead of a ledger row.
+
+- Bodies, identical on both projects: refresh `md5(prosrc)` `a99ddecb38b6332a972a787e52443806` (33,564 chars), trigger
+  function `1deb2cb14f08a160fa6d6d517e55e2fe`; views `md5(pg_get_viewdef)` visits `f3eab007ee2dfe9d2cfbd665b86bf75c`,
+  check-ins `271464594b70e74396965b475a238bde`, plans `6031389f0361de226619147d1a4a1d8a`, truth
+  `73ec1273c926c1db6f44b10106b7ec9c`. Before: refresh `8f343dc21428862adb1d4df1a66190b8`, trigger
+  `55d95c4201ee9923e7229ef121f8ce03`, visits `31314651…`, check-ins `031a3091…`, plans `070b2c67…`.
+- Pre-image: the 66 `crm_contacts` rows Phoenix was about to change (62 vendor contacts and 4 Phoenix-born), saved with
+  their Phoenix values before the apply.
+- First refresh: 64 vendor contacts changed (the 62, plus the two below) and the 4 Phoenix-born; afterwards **0**
+  contacts differ from what Phoenix holds. Dr Tharwat Milad (1000036186) reads General Surgery.
+- Second refresh 15 s later: 2 changed, both a blank-fill loop that predates this change — Peter Alphonse (95487) and
+  Mahmoud Khalafa (105208) have a phone only on a PENDING Phoenix copy, so the vendor pass blanks it and the name-row pass
+  fills it back, with the same end state each run. Staging's second run changed 0.
+- The visits door: of 143,664 iReports360 visits, 16,152 now print the doctor's Phoenix name, 22 his Phoenix speciality
+  and 136,374 the rep's Phoenix name. The truth view holds 2,269 doctors and answers from the new index in 7 ms; a
+  September read of the whole visits door runs in 280 ms.
