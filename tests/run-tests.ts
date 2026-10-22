@@ -2455,6 +2455,7 @@ import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runRiskyAllowGuardTests } from "./risky-allow-guard.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
+import { runSqlColumnHintTests } from "./sql-column-hint.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runRollupMemberGuardTests } from "./rollup-member-guard.test.ts";
@@ -9581,6 +9582,11 @@ await runTest(
 await runTest(
   "a test file nothing runs is flagged the moment it is written: test-registration-check.mjs warns after a Write/Edit of a tests/*.test.ts that run-tests.ts does not import, or imports and never calls, or that exports no run…Tests function (helpers not named run…Tests are ignored), on either path separator; it stays silent for the runner, support files and non-test paths, is registered as a PostToolUse hook for Write and Edit, and uses test-wiring-complete's own two regexes verbatim so it can never disagree with CI",
   runTestRegistrationCheckTests,
+);
+
+await runTest(
+  "a guessed SQL column is answered with the real ones: sql-column-hint.mjs reads a failed execute_sql (42703 column does not exist — PostToolUseFailure error or PostToolUse tool_response, any execute_sql server), resolves the alias from the query FROM/JOIN clauses (or the relation an UPDATE names, or every table for an unqualified column), and names that table real columns nearest first — the 22 Oct 2026 p.pin_captured_at guess gets captured_at — or the information_schema read when no schema is available; it calls a CTE a CTE, stays silent for other tools, other errors and successful queries, fails open, and is wired for both events on every execute_sql server",
+  runSqlColumnHintTests,
 );
 
 await runTest(
