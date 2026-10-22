@@ -1602,13 +1602,13 @@ control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
 |---|---|---|
 | Sync / check-in | ✅ | Hourly until each tablet went offline (0002 on 12 Oct, 0007 on 19 Oct). |
 | Remote factory reset (add-on) | ✅ once | 0002 on 26 Sep; it re-enrolled the same evening. |
-| **Location / "Locate"** | 🔴 no | Config 3 is `requestUpdates=DONOTTRACK`, so no continuous tracking; and the fix-refresh service runs only under the launcher's `MainActivity`, which the stock Lenovo home defeats. 0 location rows held. |
+| **Location / "Locate"** | 🟡 built (6.40), off until flipped | 0 location rows held, because upstream started the fix-refresh service only under `MainActivity` (stock home defeats it) and config 3 is `DONOTTRACK`. 6.40 starts it from the boot/sync path too (§8.6); it stays inert until config 3's `requestUpdates` is set to `network`. |
 | **Instant commands** (lock, wipe, app-removal, reboot, locate-wake) | 🔴 never delivered | `pushOptions=mqttAlarm` = MQTT on TCP 31000, never opened on Railway (775 failures, push history 0). The agent's HTTP-poll fallback is dead code in MQTT mode. Only the hourly sync carries anything. |
 | Add-on "lock" | ⚠️ overlay only | The agent's full-screen overlay, not a real `lockNow`; weak under the stock home. |
 | **Password reset** | ✅ fixed on the Phoenix side | Was a silent no-op: `actions.ts` sent `passwordReset: true` with **no** `password`; the add-on's `text()` nulled it and `@JsonInclude(NON_NULL)` dropped the field, yet the row was marked consumed. Phoenix now sends a one-time six-digit PIN (§8.7). Still to prove on a real tablet. |
 | App installs | 🔴 3 of 5 404 | Telegram, WPS, WhatsApp wiped every redeploy (WhatsApp fixed by #6232). Only RustDesk + launcher on 0007. |
 | Remote screen (RustDesk) | ⚠️ half | Installed on both; **0007 has no RustDesk ID** (`custom1` empty) so nobody can connect. Capture the id when 0007 is next online (§6.9). |
-| **Rep resets from Settings** | 🔴 yes, around the block | `no_factory_reset` stops the Settings reset only *while in force* — and the agent lifts it at the start of every sync, re-locking only after the install loop finishes, so **one 404 app leaves reset OFF**. A recovery-menu wipe is outside Headwind's reach; with no Google account and no FRP it returns a clean, unmanaged tablet. See §8.8. |
+| **Rep resets from Settings** | 🟡 built (6.40) | The agent used to lift `no_factory_reset` at the start of every sync and re-lock only after the install loop, so one 404 app left reset OFF. 6.40 keeps the protective restrictions locked for the whole sync, and adds FRP (a recovery-menu wipe comes back locked to a Google account) — both built, verified at the pilot. See §8.8. |
 | Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose a native mail app (§8.9). |
 | **Custody register** | ✅ fixed in this PR | Was auto-registering by serial/IMEI; now a person confirms each tablet (§8.11). |
 | **Console / upload path open on every name** | 🔴 | One Tomcat serves the console, the private API and the public write paths on `mdm`, `mdm-console` and the Railway host. `/rest/public/applications/upload` is gated only by `MD5(deviceNumber + hash.secret)` where `hash.secret` is the published default (no `SHARED_SECRET` set), and device numbers are guessable — so an app row can be written into `/files` and served to tablets. A second open upload, `/rest/videos`, sits outside `/rest/private` with no check at all. Both are refused by a Tomcat rule built 22 Oct, live on the next `phoenix-headwind` deploy. 2FA is available but off. See §8.3. |
@@ -1660,7 +1660,7 @@ Phoenix paths they must leave alone, and the Dockerfile wiring.
 **Verify on the redeploy (Railway must be deploying again):**
 - `curl -s -o /dev/null -w "%{http_code}" -X OPTIONS` on both paths → **403** on `mdm`,
   `mdm-console` and the Railway host;
-- `/files/hmdm-phoenix-6.39.apk` → 200;
+- `/files/hmdm-phoenix-6.40.apk` → 200;
 - the console still signs in;
 - a tablet's next sync still lands (its `lastUpdate` moves).
 Never test with a real upload.
@@ -1694,14 +1694,18 @@ configuration (config id 3) through the console or the Phoenix configurations AP
 benign `APPLY_SETTINGS` (`configUpdated`) and watch the add-on push history advance past 0 and the device
 sync within seconds.
 
-### 8.6 Location — it belongs to the custom launcher build
+### 8.6 Location under the stock home — BUILT in the launcher (6.40)
 
-Check-in location needs `requestUpdates` ≠ `DONOTTRACK` **and** the launcher's `MainActivity` running,
-which the stock Lenovo home defeats; the free build's location-history upload is a stub. So durable
-location is part of the custom launcher task (`headwind-rep-tablet-custom-launcher-build-required`): a
-foreground service that refreshes the fix under the stock home, plus the `deviceinfo` plugin switched on
-(`locations.ts` already switches the plugin on and reads `gpsLat`/`gpsLon`). Do **not** force
-`requestUpdates=gps` on config 3 now — it lights a tracking notice and still feeds nothing useful.
+Check-in location needs `requestUpdates` ≠ `DONOTTRACK` **and** a running fix-refresh service. Upstream
+starts `LocationService` only from the launcher's `MainActivity`, which the stock Lenovo home defeats, so
+the server held 0 location rows. The 6.40 launcher starts it from the boot/enrol/periodic path too
+(`Initializer.startServicesAndLoadConfig`, mirroring `MainActivity.startLocationService()`), so the fix
+stays fresh under the stock home; `DeviceInfoProvider.getLocation` already rides the fix onto every sync,
+and `locations.ts` switches the `deviceinfo` plugin on and reads `gpsLat`/`gpsLon`. The service goes
+foreground before any early stop, so the background `startForegroundService` call cannot crash. A null
+(DONOTTRACK) mode is still inert — so this does nothing until config 3's `requestUpdates` is set to a
+real mode (`network` is enough and cheapest). Flip it only once the pilot confirms the clean status bar
+hides the foreground-service notice (golden rule — the rep sees no tracking sign).
 
 ### 8.7 Password reset — a one-time PIN, not a cleared lock (shipped, Phoenix side)
 
@@ -1724,14 +1728,24 @@ active, and on a tablet that already had a secure lock when the token was set, A
 only after one unlock. Prove it on a new tablet before relying on it. Pinned by
 `tests/headwind-bridge.test.ts` (the body shape and the PIN rules).
 
-### 8.8 Reset hardening
+### 8.8 Reset hardening — the re-lock and FRP are BUILT in the launcher (6.40)
 
-Add to config 3 `restrictions`: `no_safe_boot`, `no_debugging_features`, `no_add_user` (keep
-`no_factory_reset`). Honest limit: none of these stop a recovery-menu wipe. The failed-download-lifts-the-
-block behaviour is upstream launcher logic — the real cure is the custom launcher re-locking on failure;
-interim, keep config 3 free of 404 apps so the install loop always completes and re-locks. **Enterprise
-FRP** (a fork `setFactoryResetProtectionPolicy`) is the only thing that makes a recovery wipe come back
-still locked — fork work.
+Config 3 `restrictions` carries `no_factory_reset,no_safe_boot,no_debugging_features,no_add_user` (set
+22 Oct). **The failed-download-lifts-the-block bug is fixed in 6.40:** upstream released every configured
+restriction at the start of each sync and re-locked only after the last app installed, so one app whose
+download failed stopped the loop before `lockRestrictions()` and left factory reset open until the next
+good sync. 6.40 keeps the four protective restrictions (none of which block an app install) locked for
+the whole sync — `ConfigUpdater` releases only the install/uninstall restrictions via
+`Utils.withoutProtectiveRestrictions`, so no exit path can leave factory reset open.
+
+**Enterprise FRP is BUILT (6.40):** `Utils.applyFactoryResetProtection` runs on every sync in
+`lockRestrictions`, driven by the launcher's own `frp_accounts` **application setting** in the tablet
+rules — a comma-separated list of numeric **Google** account IDs (`off` removes the lock, empty leaves
+the device alone), Android 11+ and device owner only. A tablet wiped from the recovery menu then asks,
+at setup, for one of those Google accounts before it can be used. The account the owner chose is
+**it.satopharma@gmail.com** (22 Oct) — it must be a real Google account, and FRP needs its **numeric**
+account ID, not the address (§8.12). Honest limit: FRP is honoured by the OEM, so prove it on the Lenovo
+TB328XU at the pilot before relying on it.
 
 ### 8.9 A native mail app on the tablet (the owner's choice, 22 Oct)
 
@@ -1771,6 +1785,12 @@ auto-registers — it is being retired, not changed.
 - Enable **2FA** on both console accounts (`admin`, `phoenix`) — §4.7.
 - Set a **long config-3 agent password** (today `12345678`; its MD5 is what the public config leaks).
 - Create the Cloudflare Access **service token** for Phoenix and add **Access** on `mdm-console`.
+- **For the factory-reset lock (§8.8):** create the Google account **it.satopharma@gmail.com** (the
+  address he chose) and hand over its **numeric FRP account ID** — the long number tied to the account,
+  not the address. Get it by signing into the account at `people.googleapis.com/v1/people/me?personFields=metadata`
+  (the `people/<digits>` it returns), or via the Google account's own data; FRP cannot use a bare email.
+  Once the ID is in hand, Phoenix writes it into config 3's launcher `frp_accounts` application setting —
+  no rebuild. Until then the lock stays off and a recovery-menu wipe returns a clean tablet.
 
 ### 8.13 Verification checklist (run when Railway is healthy)
 

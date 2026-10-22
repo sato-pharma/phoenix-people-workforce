@@ -153,8 +153,8 @@ fi
 # size + zip-magic check before it is moved into place, and it NEVER aborts startup — a failed fetch logs
 # and the server still boots, so a bad release can never take the whole MDM down. The release asset is
 # immutable, so its byte size is pinned and a wrong size is refused.
-PHX_LAUNCHER_APK="hmdm-phoenix-6.39.apk"
-PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.39-r1/${PHX_LAUNCHER_APK}"
+PHX_LAUNCHER_APK="hmdm-phoenix-6.40.apk"
+PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.40-r1/${PHX_LAUNCHER_APK}"
 PHX_LAUNCHER_SIZE=6286121   # bytes — the exact size of the signed Phoenix launcher release asset
 PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
 have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
