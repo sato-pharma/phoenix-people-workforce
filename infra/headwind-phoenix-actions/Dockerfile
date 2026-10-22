@@ -152,6 +152,14 @@ RUN set -eu; \
       -Dhmdm.jwt.version="$jwt_version" \
       package
 
+# 🔴 THE CONSOLE'S ACCESS-PASS CHECK IS PROVEN HERE, AGAINST THE CLASSES JUST COMPILED, BEFORE THEY
+# ARE PUT INTO THE WAR. AccessVerifierCheck signs its own passes with keys it generates and fails the
+# build if the verifier accepts a forgery (another app's pass, an expired one, a stranger's signature,
+# alg none, altered claims…) or refuses a genuine one. A verifier that would let a forged pass through
+# never reaches the server; see src/…/security/AccessGateFilter.java for why the server checks at all.
+COPY AccessVerifierCheck.java /tmp/AccessVerifierCheck.java
+RUN java -cp target/classes /tmp/AccessVerifierCheck.java
+
 # ── Put the add-on INSIDE the WAR, and prove it landed ────────────────────────────────────────────
 # The last line is not decoration: a `jar uf` that quietly wrote nothing would give us back exactly
 # the broken image described at the top of this file, and it would look like a clean build.
@@ -214,8 +222,15 @@ RUN set -eu; \
 # and Railway still calls that deploy green (see the logging note above). RewriteCheck.java runs
 # Tomcat's own parser on the file with the image's own jars, so a typo leaves the running server as it
 # is. The server.xml edit refuses to guess: exactly one </Host>, no RewriteValve already there.
+#
+# 🔴 THE SAME FILE CARRIES THE HOST SPLIT (owner, 2026-10-22: "split the Headwind console onto
+# mdm-console behind Access"): every name except mdm-console.satopharma.com serves the tablet agent's
+# own paths and nothing else. That rule is an ALLOWLIST, so a parse check is not enough — RewriteCheck
+# also runs Tomcat's own engine over rewrite-cases.txt, and one tablet path refused fails the build
+# rather than the fleet.
 COPY rewrite.config /usr/local/tomcat/conf/Catalina/localhost/rewrite.config
 COPY RewriteCheck.java /tmp/RewriteCheck.java
+COPY rewrite-cases.txt /tmp/rewrite-cases.txt
 RUN set -eu; \
     TOMCAT="${CATALINA_HOME:-/usr/local/tomcat}"; \
     SERVER_XML="$TOMCAT/conf/server.xml"; \
@@ -223,8 +238,8 @@ RUN set -eu; \
     if grep -q 'valves.rewrite.RewriteValve' "$SERVER_XML"; then echo "server.xml already carries a RewriteValve — refusing to add a second"; exit 1; fi; \
     sed -i 's|</Host>|  <Valve className="org.apache.catalina.valves.rewrite.RewriteValve" />\n      </Host>|' "$SERVER_XML"; \
     [ "$(grep -c 'className="org.apache.catalina.valves.rewrite.RewriteValve"' "$SERVER_XML")" = 1 ]; \
-    java -cp "$TOMCAT/lib/*:$TOMCAT/bin/tomcat-juli.jar" /tmp/RewriteCheck.java "$TOMCAT/conf/Catalina/localhost/rewrite.config" 2; \
-    rm -f /tmp/RewriteCheck.java
+    java -cp "$TOMCAT/lib/*:$TOMCAT/bin/tomcat-juli.jar" /tmp/RewriteCheck.java "$TOMCAT/conf/Catalina/localhost/rewrite.config" 3 /tmp/rewrite-cases.txt; \
+    rm -f /tmp/RewriteCheck.java /tmp/rewrite-cases.txt
 
 COPY phoenix-entrypoint.sh /phoenix-entrypoint.sh
 # chmod because the repository is checked out on Windows, where the executable bit does not survive.

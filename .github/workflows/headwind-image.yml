@@ -1,0 +1,44 @@
+name: Headwind image build
+
+# WHY THIS EXISTS (added 2026-10-22). A merge under infra/headwind-phoenix-actions/ ships straight to the
+# tablet server on Railway's next deploy of `phoenix-headwind`, and until now nothing built that image
+# BEFORE the merge: there is no Java or Docker run on the owner's laptop (RAM), and `ci.yml` never looks
+# at this folder. So the add-on's Java, the Host-level rewrite rules and their build-time checks were first
+# compiled by Railway, on the live service — the runbook's "no safe way to rehearse"
+# (docs/devices/headwind-rustdesk.md §8.2).
+#
+# This builds the exact image Railway builds, on GitHub's machines, and pushes and deploys NOTHING. The
+# build itself carries the proofs: Maven compiles the add-on against the jars read out of Headwind's WAR,
+# AccessVerifierCheck proves the console's Access-pass verifier refuses forgeries, and RewriteCheck runs
+# Tomcat's own rewrite engine over rewrite-cases.txt — so a rule that would refuse a tablet path fails
+# here instead of taking the fleet dark.
+#
+# WHAT IT DOES NOT PROVE: that the server starts against its database, or that a real tablet still
+# syncs. That stays the redeploy verification in §8.3 and §8.13 — green here is not a working tablet.
+#
+# COST: only pull requests that touch this folder (or this file), and a manual dispatch. Not required by
+# branch protection; it reports.
+
+on:
+  pull_request:
+    paths:
+      - "infra/headwind-phoenix-actions/**"
+      - ".github/workflows/headwind-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: headwind-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: headwind-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build the tablet server image (nothing is pushed or deployed)
+        run: docker build --progress=plain -t phoenix-headwind-check infra/headwind-phoenix-actions
