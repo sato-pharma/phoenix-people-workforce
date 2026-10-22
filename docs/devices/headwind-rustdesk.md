@@ -38,8 +38,10 @@ build.
 > plugin that owns them is not in the open-source repository. That gap is closed by a ~200-line add-on
 > of our own on our own box, through Headwind's own published `SyncResponseHook` interface, with **no
 > change to any tablet**. What genuinely costs money is **remote control / screen mirroring** (+$990,
-> exactly the job RustDesk does for nothing), **URL filtering** (+$990) and **admin two-factor
-> sign-in** (Cloudflare Access covers the console instead).
+> exactly the job RustDesk does for nothing) and **URL filtering** (+$990). 🔴 **Admin two-factor
+> sign-in was listed here as paid too, and that is not the real story** — the Community build ships
+> the 2FA code with its console UI hard-disabled, so it is unavailable to us either way (§4.7,
+> corrected 2026-10-22). Cloudflare Access is the console's second factor.
 
 ### One tablet, one manager
 
@@ -590,16 +592,60 @@ Two more settings follow in §4.7 — the Cloudflare Access service token — **
 
 ### 4.7 Locking down the console — Cloudflare Access
 
-🔴 **CORRECTED 2026-10-22: Headwind Community DOES have two-factor sign-in** — the live server's
-`settings.twoFactor` flag exists and both console accounts (`admin`, `phoenix`) can turn it on; the
-earlier claim that 2FA is a paid tier was wrong. **But `/rest/public/jwt/login` skips 2FA and accepts
-the password alone** (read off the agent source), so 2FA protects the login *page* and not the token
-endpoint — which is why the token endpoint has to come off the public tablet hostname (see §8), not
-merely be guarded by 2FA. The admin console otherwise sits on the public internet with one password
-in front of it, and that password factory-resets tablets. **The owner's decision (2026-09-25): the
-console goes behind Cloudflare Access**, so nobody reaches the login page at all without first
-signing in to Cloudflare. 2FA on both accounts is the belt beside that brace — turn it on; it is the
-owner's own click in the console (Settings → the account → two-factor).
+🔴 **CORRECTED 2026-10-22: HEADWIND 2FA CANNOT BE TURNED ON FROM THIS CONSOLE AT ALL, AND IT WOULD
+NOT GUARD THE PHOENIX BRIDGE EITHER WAY. CLOUDFLARE ACCESS IS THE CONSOLE'S SECOND FACTOR — NOT
+HEADWIND 2FA.** Three claims this page made are each wrong and are corrected below. The two-factor
+*code* does exist, so "2FA is a paid tier" was wrong — but the vendor hard-disabled its UI in this
+Community build, there is no per-account version of it, and the endpoint Phoenix uses never consults
+it. All of this is read from the upstream source, `h-mdm/hmdm-server`, not from the console's screens.
+
+🔴 **THERE IS NO OWNER CLICK HERE — THE CONSOLE OFFERS NO WAY TO ENABLE IT.** The whole two-factor
+form in `server/src/main/webapp/app/components/main/view/settings/language.html` is wrapped in
+`<form class='form-horizontal' ng-if="false">` — line 197, and the form runs to line 241, holding the
+title, the checkbox, the QR code and the Verify button. AngularJS therefore renders none of it, and
+the checkbox is simply not on the general-and-language tab. 🔴 **This page used to say "turn it on;
+Settings → the account → two-factor": there is no such screen, and no reachable screen anywhere.**
+The server endpoints do still answer (`/rest/private/twofactor/qr/{user}`, `.../set`,
+`.../verify/{user}/{code}`), but **do not drive them by hand to force 2FA on** — enrolment would be
+half-built with no supported recovery path, and the realistic outcome is locking the owner out of his
+own console. **Treat Headwind 2FA as unavailable in this build.**
+
+**And were it ever reachable, it is server-wide, not per account.** The enable flag is
+`settings.twoFactor` — `db.changelog.xml` adds it as `ALTER TABLE settings ADD COLUMN twoFactor
+BOOLEAN NOT NULL DEFAULT false`, and `CommonMapper.setTwoFactor` writes one row per `customerId`.
+What the `users` table gets is only `twoFactorSecret` and `twoFactorAccepted` — each console user's
+own TOTP secret and whether they finished enrolling. 🔴 **So there is NO per-account 2FA toggle, and
+"turn it on for one account but not the other" is not an available action.** The `twoFactor` field
+that appears on a user record — including in the audit log's `update.user` JSON that §5.3 reads — is
+marked in `User.java` as *"a transient parameter, no db entry"*: computed per login, never stored,
+and no evidence of a per-user setting.
+
+🔴 **AND IT WOULD BE HARMLESS TO THE BRIDGE — ANY WARNING THAT IT WOULD DARK THE FLEET IS WRONG.**
+The switch is read by the CONSOLE's browser login only: `AuthResource` fetches the customer's
+settings and, when `settings.isTwoFactor()`, sets `twoFactorNeeded` on the session plus the transient
+`user.twoFactor` flag that `login.controller.js` reads to send the person to the challenge screen.
+The endpoint Phoenix uses is a different class — `POST /rest/public/jwt/login` is
+`JWTAuthResource.login`, which injects no `SettingsDAO` at all: it matches the MD5 password, calls
+`tokenProvider.createToken` and returns a bare `{ id_token }`, after which `JWTFilter` trusts the
+bearer token alone. It never reads `settings.twoFactor`, `twoFactorSecret` or `twoFactorAccepted`.
+**So 2FA, if it were ever enabled, would not affect the account in `HEADWIND_MDM_LOGIN` (`phoenix`,
+read live off both Fly services 2026-10-22) and would not interrupt the custody sync, the fleet reads
+or any tablet command.** That account never signs in through a browser anyway.
+
+⚠️ **Do not read `demandFromLogin` as evidence to the contrary.** `src/lib/devices/headwind/auth.ts`
+has a `data.twoFactor` branch answering *"use an account without it for the bridge"*; both of its
+branches read the enveloped `{ status, data }` shape the console returns, so on the JWT endpoint the
+branch cannot fire at all, and its advice names a per-account choice that does not exist. It is a
+harmless guard, never a measurement.
+
+**So the console's lock is Cloudflare Access, and it is the whole lock.** Headwind 2FA would in any
+case protect only the login *page* and not the token endpoint — which is why that endpoint has to
+come off the public tablet hostname (see §8). The admin console otherwise sits on the public internet
+with one password in front of it, and that password factory-resets tablets. **The owner's decision
+(2026-09-25): the console goes behind Cloudflare Access**, so nobody reaches the login page at all
+without first signing in to Cloudflare. With Headwind's own 2FA unreachable, Access is not a belt
+beside a brace — it is the only second factor the console has, which is why §8.10 treats it as
+required rather than as hardening.
 
 **On Railway there is no tunnel and no `cloudflared` daemon** — there is no box to run one on, and
 none is needed. Railway already publishes the service on a public hostname; Access goes in front of
@@ -1866,7 +1912,10 @@ auto-registers — it is being retired, not changed.
 
 ### 8.12 The owner's clicks (I cannot do these — reported, never done for him)
 
-- Enable **2FA** on both console accounts (`admin`, `phoenix`) — §4.7.
+- ~~Enable **2FA** on the console accounts~~ — **struck 2026-10-22: there is no such click in this
+  build.** The console's two-factor form is hard-disabled upstream (`ng-if="false"`), so nothing can
+  be enabled from the UI, and forcing it through the raw endpoints would lock him out with no
+  recovery. The console's second factor is the Cloudflare Access application below. §4.7.
 - Set a **long config-3 agent password** (today `12345678`; its MD5 is what the public config leaks).
 - Create the **Access application** on `mdm-console` and its **service token** for Phoenix, and copy the
   three values §8.10 step 3 names (the AUD tag, the token's Client ID and Client Secret).

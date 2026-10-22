@@ -218,4 +218,51 @@ export function runModuleMemoryTests() {
       + "(.claude/rules/<id>.md, ## Rules) — AGENTS.md is re-sent on every request and holds only rules true everywhere. "
       + "If a rule truly applies to every module, add its headline to DELIBERATELY_GLOBAL with the reason.",
   );
+
+  // 7. 🔴 EACH RULES FILE CARRIES ITS STRUCTURE EXACTLY ONCE — A DUPLICATED HEADER IS INVISIBLE TO
+  // EVERY OTHER CHECK IN THIS FILE. Found on `main` 2026-10-22: `.claude/rules/devices.md` held a
+  // second copy of its own frontmatter, H1, scope line and `rules:begin` marker spliced INTO rule
+  // bullet #6 — severing the `mdm-console` host-split rule, orphaning its tail (`, never a prefix.`)
+  // on a line of its own, and costing ~4.7 KB of always-loaded context on every devices session.
+  // Nothing objected: `checkModuleMemory()` asks about orphan notes, dead globs, a stale GENERATED
+  // block, the cap and a MISSING `paths:` — and a SECOND `paths:` buried in the hand-written half is
+  // none of those. The generated block was byte-perfect, so the file read as healthy.
+  //
+  // 🔴 COUNTING THE LANDMARKS IS THE WHOLE TEST, AND IT IS DELIBERATELY NOT A SHAPE CHECK ON THE
+  // RULES BLOCK. The tempting sharper guard — "every non-empty line in the rules block is a bullet,
+  // a heading or a marker", which is exactly what the severed tail violated — was measured against
+  // all 56 files first and would have reddened 23 of them on 68 legitimate lines: the `_No module
+  // rules yet._` placeholders, the "moved out of X so its pointer stays under the margin" notes, the
+  // sibling-module preambles and ordinary wrapped continuations. A splice cannot duplicate a file
+  // into another without bringing these markers with it, so counting them catches the real shape
+  // without a single false red.
+  for (const m of MODULES) {
+    const path = `.claude/rules/${m.id}.md`;
+    // Normalised: core.autocrlf=true puts CRLF in this working tree and the CI runner checks out LF,
+    // so an anchored `^...$` match would be red here and green there (or the reverse).
+    const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+    assert.ok(
+      text.startsWith("---\npaths:"),
+      `${path} must OPEN with its \`paths:\` frontmatter — Claude Code reads the globs from there, and a file `
+        + "whose frontmatter is not first loads for everyone at startup or not at all",
+    );
+    for (const [label, needle] of [
+      ["its `paths:` frontmatter line", /^paths:$/gm],
+      ["its `# Module memory` heading", /^# Module memory/gm],
+      ["the rules:begin marker", /<!-- module-memory:rules:begin/g],
+      ["the rules:end marker", /<!-- module-memory:rules:end/g],
+      ["the notes:begin marker", /<!-- module-memory:notes:begin/g],
+      ["the notes:end marker", /<!-- module-memory:notes:end/g],
+    ] as const) {
+      const seen = (text.match(needle) ?? []).length;
+      assert.equal(
+        seen,
+        1,
+        `${path} carries ${label} ${seen} times, not once. More than one means a COPY OF THE FILE was `
+          + "spliced into it, which severs whichever rule it landed in and leaves that rule's tail orphaned "
+          + "(devices.md, 2026-10-22) — repair the file by hand, rejoining the broken bullet; "
+          + "`build.mjs` regenerates only the notes block and will not fix this.",
+      );
+    }
+  }
 }
