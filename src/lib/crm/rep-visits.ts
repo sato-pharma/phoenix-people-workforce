@@ -50,6 +50,7 @@ import {
   type VisitForCallRate,
 } from "@/lib/crm/call-rate";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { isPharmacyListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   matchCampaignNote,
   type CampaignContactMatch,
@@ -333,7 +334,14 @@ export function toRepVisitRow<C extends CheckinForMatch>(
     // owner named that row himself and inventing an expansion for it would be a guess printed as a
     // fact. `resolveSpeciality` canonicalises the ones that ARE known ("IM", "باطنا" -> internal
     // medicine) through contact-taxonomy, so this column stays one vocabulary and not two.
-    speciality: text(visit.speciality) ?? note?.people[0]?.speciality?.written ?? null,
+    // A Phoenix pharmacy call says so through its list (`ampm = 'Pharmacy'`), often with no speciality on
+    // the pharmacy a rep added himself — it reads "Pharmacy" here, so the row says what it is and the
+    // summary below files it under Pharmacies, never under "unspecified" (re-audit, 2026-10-22).
+    speciality:
+      text(visit.speciality) ??
+      (isPharmacyListType(visit.ampm) ? PHARMACY_LIST_TYPE : null) ??
+      note?.people[0]?.speciality?.written ??
+      null,
     grade: text(visit.crm_contact_grade),
     crmRegionId: visit.crm_region_id,
     crmRegionName: text(visit.crm_region_name),

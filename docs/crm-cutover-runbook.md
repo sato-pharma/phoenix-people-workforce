@@ -17,7 +17,7 @@ point-in-time recovery; the 7 daily backups are the whole recovery story.
 | --- | --- |
 | `cutover_date` null | Nothing changes. Vendor rows only, everywhere. |
 | `cutover_date` set | Every CRM read (visits, check-ins, plan boards, rep doctor lists, rep day, reps list, Visits Report, FWC, probation double visits, deductions) serves vendor rows **before** the date and Phoenix rows **on and after** it — never both for one day. The rep day stops asking the live vendor for days on or after the date. The CRM no-activity deduction is not charged for the calendar month the date falls in (decision 18), and the collection result says so. |
-| `vendor_sync_retired_at` set | The live poller's tick stands down whole (no pulls, no pings). The four cron routes answer `200 {skipped: true, reason: "vendor_sync_retired"}` before their dead-man's switch. The Visits Report backfill, the rep doctor lists Refresh and plan verification answer 409 with a plain message; the Early Birds Sync button is no longer shown, and the admin CRM sync panel says iReports360 was retired on that date and hides its backfill. The heartbeat sweep stops watching the four vendor jobs, reconciliation check 10 (sync freshness) holds, the FWC live snapshot stops warning it is stale, and the first-visit board stops waiting for a vendor sync. The housekeeping timer takes over the probation double-visit capture every 6 hours, and Phoenix double visits (negative ids) are captured. |
+| `vendor_sync_retired_at` set | The live poller's tick stands down whole (no pulls, no pings). The four cron routes answer `200 {skipped: true, reason: "vendor_sync_retired"}` before their dead-man's switch. The Visits Report backfill, the rep doctor lists Refresh and plan verification answer 409 with a plain message; the Early Birds Sync button is no longer shown, and the admin CRM sync panel says iReports360 was retired on that date and hides its backfill. The heartbeat sweep stops watching the four vendor jobs, reconciliation check 10 (sync freshness) holds, the FWC live snapshot stops warning it is stale, and the first-visit board stops waiting for a vendor sync. The housekeeping timer takes over the probation double-visit capture every 6 hours, and Phoenix double visits (negative ids) are captured. It also takes over the contact master refresh (`crm_contact_master_refresh`) — every 15 minutes, with the visit-and-plan pass once per Cairo day — because its only other callers were the poller and the doctor-lists cron, and without it a doctor a rep adds in Phoenix would never reach the master (re-audit, 2026-10-22). |
 
 The table's check constraint refuses a retirement without a date.
 
@@ -72,8 +72,8 @@ Check `pg_class`/`pg_proc` for each object, never the migration ledger alone.
    update public.crm_cutover set vendor_sync_retired_at = now(), updated_by = '<who>', updated_at = now() where id;
    ```
 
-   Confirm in the Railway logs that `[crm:housekeeping]` captured probation double visits and that the
-   poller stopped pulling.
+   Confirm in the worker logs that `[crm:housekeeping]` refreshed the contact master and captured probation
+   double visits, and that the poller stopped pulling.
 7. **cron-job.org.** Disable the one vendor job still enabled, the CRM contact lists job. The 4 OFF
    iReports360 jobs are already OFF by design; leave them OFF. The API allows 100 requests a day.
 8. **Healthchecks.** The in-app heartbeat sweep already skips the jobs tagged vendor in

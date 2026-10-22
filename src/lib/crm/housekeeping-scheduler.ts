@@ -10,7 +10,16 @@
 // before that (the poller still owns it, and running both would only repeat idempotent reads). It
 // reads the unified CRM view through the read door and never calls the vendor, so, like the Early
 // Birds close, it keeps the poller's HOST guards and needs no iReports360 credentials.
+//
+// THE CONTACT MASTER IS THE SECOND JOB IT TAKES OVER (re-audit, 2026-10-22). crm_contact_master_refresh
+// turns each Phoenix-born doctor into a crm_contacts row and keeps every started rep's dated doctor-list
+// assignments, and its own SQL switches the vendor half off after the cutover date — it was written to
+// keep running. But its only callers were the poller's contact-list slice and the crm-contact-lists cron,
+// and both stand down with the vendor, so from the cutover a doctor a rep adds in Phoenix would never reach
+// the master. This timer runs it from the same moment: the list half every tick, the activity half (every
+// visit and plan row, ~2.5 s) once per Cairo day — the cadence the poller gave it.
 
+import { refreshCrmContactMaster } from "@/lib/crm/contact-master";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { PROBATION_DV_LOOKBACK_DAYS, resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
@@ -41,16 +50,53 @@ export function isProbationDvCaptureDue(input: {
   return input.lastSuccessMs == null || input.nowMs - input.lastSuccessMs >= CRM_HOUSEKEEPING_PROBATION_DV_GAP_MS;
 }
 
+/** Pure: whether this tick's contact-master refresh also runs the activity pass — once per Cairo day. */
+export function isContactMasterActivityDue(input: { cairoToday: string; lastActivityCairoDay: string | null }): boolean {
+  return input.lastActivityCairoDay !== input.cairoToday;
+}
+
 let started = false;
 let inFlight = false;
 const state: { lastFailureMs: number | null; lastSuccessMs: number | null } = { lastFailureMs: null, lastSuccessMs: null };
+/** In memory, like the poller's stamp: a deploy resets it and that day gets one more activity pass. */
+let contactActivityRebuiltOnCairoDay: string | null = null;
 
 async function runOnce(): Promise<void> {
   if (inFlight) return;
   inFlight = true;
   try {
-    // Before the vendor is retired the poller's deep runs own the capture.
+    // Before the vendor is retired the poller's deep runs own the capture and the contact master.
     if (!(await resolveVendorSyncStandDown())) return;
+    await refreshContactMasterAfterCutover();
+    await captureProbationDvDays();
+  } finally {
+    inFlight = false;
+  }
+}
+
+async function refreshContactMasterAfterCutover(): Promise<void> {
+  const cairoToday = cairoTodayIso();
+  const includeActivity = isContactMasterActivityDue({ cairoToday, lastActivityCairoDay: contactActivityRebuiltOnCairoDay });
+  // Never throws: a failure comes back as an outcome, so the probation capture still runs this tick.
+  const outcome = await trackJob("crm:housekeeping", () => refreshCrmContactMaster({ includeActivity }));
+  if (outcome.status === "refreshed") {
+    // Only a pass that actually landed may claim the day — a failed one must not lock out the next.
+    if (includeActivity) contactActivityRebuiltOnCairoDay = cairoToday;
+    console.log(
+      `[crm:housekeeping] contact master refreshed${includeActivity ? " with the activity pass" : ""} — ` +
+        `${outcome.result.assignmentsOpened} assignments opened, ${outcome.result.assignmentsClosed} closed, ` +
+        `${outcome.result.listContactsChanged} contacts changed`,
+    );
+  } else if (outcome.status === "failed") {
+    logError("CRM housekeeping contact master refresh failed; the next tick tries again", {
+      error: outcome.error,
+      labels: { event: "contact_master_refresh_failed", job: "crm-housekeeping" },
+    });
+  }
+}
+
+async function captureProbationDvDays(): Promise<void> {
+  try {
     const nowMs = Date.now();
     if (!isProbationDvCaptureDue({ ...state, nowMs })) return;
 
@@ -68,8 +114,6 @@ async function runOnce(): Promise<void> {
       error,
       labels: { event: "probation_dv_capture_failed", job: "crm-housekeeping" },
     });
-  } finally {
-    inFlight = false;
   }
 }
 
@@ -87,7 +131,7 @@ export function startCrmHousekeepingScheduler(): CrmHousekeepingSchedulerStartRe
   }, CRM_HOUSEKEEPING_TICK_MS);
   unrefTimer(timer);
   console.log(
-    `[crm:housekeeping] started — asks every ${CRM_HOUSEKEEPING_TICK_MS / 60_000} minutes; captures probation double visits only once the CRM cutover retires iReports360`,
+    `[crm:housekeeping] started — asks every ${CRM_HOUSEKEEPING_TICK_MS / 60_000} minutes; refreshes the contact master and captures probation double visits only once the CRM cutover retires iReports360`,
   );
   return { started: true };
 }

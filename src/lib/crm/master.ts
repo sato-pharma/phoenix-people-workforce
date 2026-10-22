@@ -34,7 +34,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, REAL_DOUBLE_PARTNER_OR_FILTER, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
@@ -1851,8 +1851,11 @@ function applyMasterFilters(
   // Canonical double-visit = real partner on a fieldwork visit type (Regular 0 / Campaign -8),
   // the same predicate DV Analytics / probation / the portal use — so the DV tab count matches them
   // (a partnered Meeting/Conference is joint-attendance bookkeeping, not a double visit).
+  // The partner is the one REAL_DOUBLE_PARTNER_OR_FILTER names (re-audit, 2026-10-22): a CRM id on a
+  // vendor row, or a resolved HR id on a Phoenix row — a Phoenix double visit whose manager has no CRM
+  // account carries him by HR id only, and the old `double_crm_id` gate dropped it from this tab.
   if (dataset === "double_visits") {
-    q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0).in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
+    q = q.or(REAL_DOUBLE_PARTNER_OR_FILTER).in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
   }
   // UNREACHABLE TODAY — deliberately kept. Both callers (the paginated list and the streaming
   // export) return from their own `dataset === "vacations"` branch, which groups day-rows into
@@ -1881,7 +1884,8 @@ function applyMasterFilters(
   // including on the Double Visits tab, whose entire purpose is this exact record type.
   if (agentHrId) {
     if (isVisits) {
-      const orFilter = ilikeAnyFilter(["agent_hr_id", "double_hr_id"], agentHrId);
+      // Slot 2 too: a chain visit's second manager appears nowhere else on the row.
+      const orFilter = ilikeAnyFilter(["agent_hr_id", "double_hr_id", "double2_hr_id"], agentHrId);
       if (orFilter) q = q.or(orFilter);
     } else {
       // A single-column .ilike() is its own query parameter, not part of an or(...) expression, so
@@ -1910,8 +1914,9 @@ function applyMasterFilters(
       ? ilikeAnyFilter(["agent_hr_id", "contact_name", "address"], search)
       // Includes double_hr_id so the unified Search box fully covers what the separate "Agent HR
       // ID" box used to (it matched agent_hr_id OR double_hr_id) — the redesign folds them into one.
+      // and the chain visit's second person (slot 2), whom no other column names.
       : ilikeAnyFilter(
-          ["agent_name", "double_name", "contact_name", "customer_name", "agent_hr_id", "double_hr_id", "comment"],
+          ["agent_name", "double_name", "double2_name", "contact_name", "customer_name", "agent_hr_id", "double_hr_id", "double2_hr_id", "comment"],
           search,
         );
     if (orExpr) q = q.or(orExpr);

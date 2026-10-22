@@ -320,4 +320,19 @@ export function runCrmCallRateTests() {
     assert.equal(rep.pharmacy.verified, 0);
     assert.equal(rep.pharmacy.verifiedRate, 0, "zero pharmacy calls over real working days is 0.00, not null");
   }
+
+  // ── A Phoenix pharmacy call is a pharmacy by its LIST, with no speciality at all (re-audit 2026-10-22) ─
+  {
+    // The pharmacy a rep added in Phoenix carries no speciality; the unified view hands its list over as
+    // ampm = 'Pharmacy'. 257 such October calls were filed under "unspecified" — counted in no lane.
+    const phoenixPharmacy = visit({ ampm: "Pharmacy", speciality: null, source: "phoenix", crm_visit_id: -9001 });
+    assert.equal(isPharmacyVisit(phoenixPharmacy), true, "ampm = 'Pharmacy' is a pharmacy whatever the speciality says");
+    assert.equal(isPharmacyVisit(visit({ ampm: "PM", speciality: null })), false, "a PM doctor visit stays a doctor visit");
+
+    const report = computeCallRate([phoenixPharmacy], [], { dateFrom: "2026-08-01", dateTo: "2026-08-01" });
+    const rep = report.reps[0];
+    assert.equal(rep.pharmacy.verified, 1, "the Phoenix pharmacy call lands in the pharmacy lane, proved by itself");
+    assert.equal(rep.unspecified, 0, "and never in 'unspecified'");
+    assert.equal(rep.pm.verified + rep.pm.unverified, 0, "nor among the PM doctors");
+  }
 }

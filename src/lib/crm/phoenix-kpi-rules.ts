@@ -37,9 +37,10 @@ import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, countCallRateWorkingDays, isC
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { isOnOrAfterCrmCutover, type CrmCutoverSetting } from "@/lib/crm/cutover";
-import type { StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
+import { isPhoenixNativeVisitRow, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import { CATCH_ALL_CONTACT_CRM_ID, DEFAULT_REP_KPI_STANDARDS, kpiGradeTierOf, type RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { classifyVisit } from "@/lib/crm/visit-types";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 export type KpiRules = "legacy" | "phoenix";
 
@@ -240,6 +241,24 @@ export type PhoenixVisit = {
   hasCheckin: boolean;
 };
 
+/**
+ * Rule 10's flag for one visit row: a Phoenix CRM visit IS its own check-in, an iReports360 visit has
+ * one only when a GPS check-in matched it.
+ *
+ * The same rule the old call rate already applies (`classifyCallProof` in crm/call-rate.ts). A Phoenix
+ * visit is captured on the spot with the phone's own location, and the check-in door serves no
+ * iReports360 check-in on a started rep's Phoenix days — so asking the matcher alone found NOTHING for
+ * every Phoenix visit. Measured on production 2026-10-22: the week of 17 Oct held 2,291 Phoenix visits
+ * by 46 reps and 0 matched, so the KPIs board scored every started rep 0 calls, 0 coverage and 0
+ * frequency on any period its Phoenix rules scored — the Weekly tab, and from 1 November the month.
+ */
+export function phoenixVisitHasCheckin(
+  row: { source?: string | null; crm_visit_id?: number | null },
+  matchedCheckin: boolean,
+): boolean {
+  return isPhoenixNativeVisitRow(row) || matchedCheckin;
+}
+
 export type PhoenixRepKpis = {
   /** Rule 4, inside the window scored so far. */
   workingDays: number;
@@ -287,6 +306,9 @@ function slice(visits: number, workingDays: number, target: number | null): Phoe
 }
 
 function isPharmacyCall(visit: PhoenixVisit): boolean {
+  // The customer's own list first: a Phoenix pharmacy call arrives as `ampm = 'Pharmacy'`, often with
+  // no speciality at all (isPharmacyVisit in crm/call-rate.ts, the same rule).
+  if (isPharmacyListType(visit.ampm)) return true;
   if (isPharmacySpeciality(visit.speciality)) return true;
   return classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description).label === "Pharmacy Visit";
 }

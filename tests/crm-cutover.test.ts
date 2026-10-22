@@ -18,6 +18,7 @@ import {
 import {
   CRM_HOUSEKEEPING_PROBATION_DV_GAP_MS,
   CRM_HOUSEKEEPING_RETRY_AFTER_FAILURE_MS,
+  isContactMasterActivityDue,
   isProbationDvCaptureDue,
 } from "../src/lib/crm/housekeeping-scheduler.ts";
 import {
@@ -336,6 +337,16 @@ function housekeepingTests() {
   const standDown = runOnce.indexOf("if (!(await resolveVendorSyncStandDown())) return;");
   assert.ok(standDown > 0 && standDown < runOnce.indexOf("syncProbationDvDays("), "it captures only once the vendor is retired, when the poller no longer does");
   assert.ok(runOnce.includes("addDaysIso(today, -PROBATION_DV_LOOKBACK_DAYS)"), "it reads the same 45-day window the poller used");
+
+  // The contact master outlives the vendor too (re-audit, 2026-10-22): its only callers were the poller and the
+  // doctor-lists cron, so from the cutover a doctor a rep adds in Phoenix would never reach crm_contacts.
+  const refreshAt = runOnce.indexOf("await refreshContactMasterAfterCutover();");
+  assert.ok(standDown > 0 && refreshAt > standDown, "the contact master is refreshed only once the vendor is retired, when the poller no longer does");
+  assert.ok(runOnce.includes("refreshCrmContactMaster({ includeActivity })"), "it runs the same refresh the poller and the cron ran");
+  assert.ok(refreshAt < runOnce.indexOf("await captureProbationDvDays();"), "a refresh never blocks the capture: it never throws, and the capture runs after it");
+  assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-22", lastActivityCairoDay: null }), true, "the first retired tick runs the activity pass");
+  assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-22", lastActivityCairoDay: "2026-10-22" }), false, "once per Cairo day, not every tick");
+  assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-23", lastActivityCairoDay: "2026-10-22" }), true, "and again the next day");
 
   const instrumentation = read("instrumentation.ts");
   const earlyBirds = instrumentation.indexOf('await import("@/lib/early-birds/close-scheduler")');

@@ -63,6 +63,16 @@ export function runCrmWorkAfterExitDateTests() {
   assert.equal(manager.visits, 1, "a manager's double visit after the date is his work");
   assert.deepEqual(manager.daysWithManager, [], "his own double visit is not someone else beside him");
 
+  // A chain visit's SECOND manager (slot 2) rode along too (re-audit, 2026-10-22): the manager-side read
+  // already fetches slot 2's rows, and the summary dropped them.
+  const secondManager = summarizeCrmWorkAfterDate(
+    [{ agent_crm_id: 1459, agent_hr_id: "B-152", double_hr_id: "PD-0012", double2_hr_id: "A-10", visit_date: "2026-10-04" }],
+    { afterDate: "2026-10-01", crmIds: [], hrId: "A-10" },
+  );
+  assert.equal(secondManager.visits, 1, "a chain visit's second manager's ride-along after the date is his work");
+  assert.deepEqual(secondManager.days, ["2026-10-04"]);
+  assert.deepEqual(secondManager.daysWithManager, [], "his own ride-along is not someone else beside him");
+
   // The CRM account label names the seat: the retired codes read as the live ones, and a different
   // area or line never matches.
   assert.deepEqual(crmLabelAreaAndLine("Norhan.Gamal ( Sharkia 1 / A )"), { area: "sharkia 1", line: "A" });

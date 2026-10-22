@@ -99,28 +99,45 @@ export function buildVisitReportDashboard(input: {
   const chosen = new Set(fields.map((field) => field.key));
   const total = rows.length;
 
-  const reps = new Set(rows.map((row) => row.repName));
-  const repDays = new Set(rows.map((row) => `${row.repName}|${row.visitDate}`));
-  const planned = rows.filter((row) => row.planned).length;
-  const notSingle = rows.filter((row) => row.visitType !== "" && row.visitType !== PHOENIX_VISIT_KIND_LABELS.single).length;
-  const measured = rows.filter((row) => row.locationFlag !== null && MEASURED.has(row.locationFlag));
+  // 🔴 THE TILES COUNT WHAT THE KPIs COUNT (re-audit, 2026-10-22). They used to count every row, so 18 October
+  // off-plan visits still waiting for approval — in no KPI — stood in "Visits" and in the per-day rate, and the
+  // report disagreed with every KPI screen. Every row is still LISTED, and the panels below still describe every
+  // visit recorded; the tiles are worked out from the counting rows, and "Visits" names what is held back.
+  const counting = rows.filter((row) => !row.kpiHoldBack);
+  const heldBack = (reason: "approval" | "validation" | "refused") => rows.filter((row) => row.kpiHoldBack === reason).length;
+  const heldCounts: Array<[number, string]> = [
+    [heldBack("approval"), "waiting for approval"],
+    [heldBack("validation"), "waiting for customer validation"],
+    [heldBack("refused"), "refused"],
+  ];
+  const held = heldCounts.filter(([count]) => count > 0).map(([count, words]) => `${count} ${words}`);
+  const countingDays = held.length === 0 ? days : visitReportDays(counting);
+  const counted = counting.length;
+
+  const reps = new Set(counting.map((row) => row.repName));
+  const repDays = new Set(counting.map((row) => `${row.repName}|${row.visitDate}`));
+  const planned = counting.filter((row) => row.planned).length;
+  const notSingle = counting.filter((row) => row.visitType !== "" && row.visitType !== PHOENIX_VISIT_KIND_LABELS.single).length;
+  const measured = counting.filter((row) => row.locationFlag !== null && MEASURED.has(row.locationFlag));
   const far = measured.filter((row) => row.locationFlag === FAR).length;
 
   const tiles: VisitReportDashboardTile[] = [
     {
       label: "Visits",
-      value: total.toLocaleString("en-US"),
-      hint: `${days.length} day${days.length === 1 ? "" : "s"} with visits${
+      value: counted.toLocaleString("en-US"),
+      hint: `${countingDays.length} day${countingDays.length === 1 ? "" : "s"} with visits${
+        held.length === 0 ? "" : ` · plus ${held.join(", ")}, listed and counted in no figure`
+      }${
         ownVisits === 0 ? "" : ` · plus ${ownVisits} of the manager's own visit${ownVisits === 1 ? "" : "s"}, listed and counted in no figure`
       }`,
     },
     {
       label: "Visits per person per working day",
-      value: repDays.size === 0 ? "—" : (total / repDays.size).toFixed(1),
+      value: repDays.size === 0 ? "—" : (counted / repDays.size).toFixed(1),
       hint: `${reps.size} ${reps.size === 1 ? "person" : "people"}, over the days each logged any visit`,
     },
-    { label: "On the plan", value: percent(planned, total), hint: `${planned} of ${total}` },
-    { label: "With a manager or product manager", value: percent(notSingle, total), hint: `${notSingle} of ${total}` },
+    { label: "On the plan", value: percent(planned, counted), hint: `${planned} of ${counted}` },
+    { label: "With a manager or product manager", value: percent(notSingle, counted), hint: `${notSingle} of ${counted}` },
     { label: "Far from the place", value: percent(far, measured.length), hint: `${far} of ${measured.length} measured against a place` },
   ];
 

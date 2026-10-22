@@ -95,6 +95,19 @@ export function runEmergencyHostTests(): void {
     for (const name of forced) {
       assert.ok(dropped.includes(name), `${name} is forced by fly-worker.toml, so the variable copy (a Fly secret, which outranks [env]) must drop it`);
     }
+
+    // The go-live moves the worker onto the website's image (re-audit, 2026-10-22: the website ran 81a75f428 while the
+    // worker ran 65eafc9a7, and System Issues read every worker error as Resolved). After the flip, never before it, and
+    // a worker that fails to move never fails the website's go-live.
+    const workerStep = /- name: Move the background worker to the same commit\n([\s\S]*?)\n\s+- name:/.exec(workflow)?.[1] ?? "";
+    assert.ok(workerStep.length > 200, "the go-live has a step that moves the worker");
+    assert.match(workerStep, /if: \$\{\{ inputs\.action == 'go-live' \}\}/, "only a go-live moves the worker; a rehearsal leaves the live jobs alone");
+    assert.match(workerStep, /continue-on-error: true/, "a worker that fails to move never undoes the website's go-live");
+    assert.match(workerStep, /-c infra\/fly-standby\/fly-worker\.toml/, "the worker keeps its own config: the worker role and the poller");
+    assert.match(workerStep, /--image "registry\.fly\.io\/\$\{FLY_APP\}:\$\{SHA\}"/, "the worker runs the very image the website just took");
+    assert.match(workerStep, /--regions fra --ha=false/, "one worker machine, in Frankfurt — two would run every job twice");
+    assert.match(workerStep, /FLY_APP="\$WORKER_APP" node scripts\/emergency-host\.mjs wait-standby --sha "\$SHA"/, "the worker's own address must report the commit");
+    assert.ok(workflow.indexOf("point --to fly --sha") < workflow.indexOf("Move the background worker"), "the website goes live first, then the worker follows");
   }
 
   // ── The variable file `flyctl secrets import` reads ───────────────────────────────────────────────────────────────

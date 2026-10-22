@@ -11,6 +11,7 @@ import {
   employedWorkingDays,
   kpiRulesFor,
   phoenixRuleRepKeys,
+  phoenixVisitHasCheckin,
   type PhoenixPanelContact,
   type PhoenixPlanEntry,
   type PhoenixVisit,
@@ -249,6 +250,36 @@ function read(relativePath: string) {
 }
 
 /**
+ * A Phoenix CRM visit is its own check-in under the Phoenix rules too (re-audit, 2026-10-22). The
+ * check-in door serves no iReports360 check-in on a started rep's Phoenix days, so the matcher alone
+ * found none: 2,291 Phoenix visits in the week of 17 Oct, 0 credited, and every started rep scored 0.
+ */
+function phoenixVisitIsItsOwnCheckin() {
+  assert.equal(phoenixVisitHasCheckin({ source: "phoenix", crm_visit_id: -42 }, false), true, "a Phoenix visit needs no vendor check-in");
+  assert.equal(phoenixVisitHasCheckin({ source: null, crm_visit_id: -7 }, false), true, "a negative visit id is a Phoenix row too");
+  assert.equal(phoenixVisitHasCheckin({ source: "ireports360", crm_visit_id: 9001 }, false), false, "a vendor visit with no check-in stays unproved");
+  assert.equal(phoenixVisitHasCheckin({ source: "ireports360", crm_visit_id: 9001 }, true), true, "a vendor visit with a matched check-in is proved");
+
+  // End to end through the rules: a started rep's Phoenix visits, none of which any vendor check-in matches.
+  const kpis = computePhoenixRepKpis({
+    window: { dateFrom: MONTH.start, dateTo: "2026-09-10", windowEnd: MONTH.end },
+    month: MONTH,
+    today: "2026-09-10",
+    panel: [{ contactCrmId: 1, listType: "PM", grade: "A" }],
+    planEntries: [{ contactCrmId: 1, planDate: "2026-09-05", grade: "A", speciality: null }],
+    visits: [visit(1, "2026-09-05", { ampm: "PM", hasCheckin: phoenixVisitHasCheckin({ source: "phoenix" }, false) })],
+  });
+  assert.equal(kpis.pm.visits, 1, "the Phoenix visit earns its PM call");
+  assert.equal(kpis.regularNoCheckin, 0, "and is never parked on the no-check-in line");
+  assert.equal(kpis.coverage.visited, 1, "its doctor is covered");
+
+  // The loader must select the two columns the rule reads, and must ask the rule — not the matcher alone.
+  const loader = read("src/lib/crm/phoenix-kpi-data.ts");
+  assert.match(loader, /const VISIT_COLUMNS =\s*"[^"]*\bsource,crm_visit_id"/, "the KPI loader selects source and crm_visit_id");
+  assert.match(loader, /hasCheckin: phoenixVisitHasCheckin\(\s*row,/, "the KPI loader decides rule 10 through phoenixVisitHasCheckin");
+}
+
+/**
  * Rule 2 on the two call-rate boards that already existed: under the Phoenix rules every submitted
  * regular visit counts and GPS is evidence only. Before the cutover the headline stays "proved".
  */
@@ -379,4 +410,5 @@ export function runPhoenixKpiRulesTests() {
   regularNoCheckinBucket();
   callRateBasisAndWording();
   perTeamRuleReps();
+  phoenixVisitIsItsOwnCheckin();
 }

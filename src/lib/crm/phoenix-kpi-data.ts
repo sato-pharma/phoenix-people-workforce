@@ -1,8 +1,10 @@
 /**
  * Loads what the Phoenix KPI rules need, for every rep one viewer may see.
  *
- * Only ever called once `kpiRulesFor` has answered "phoenix", which needs a CRM cutover date. Until
- * that date is set nothing reaches this file. The rules themselves are crm/phoenix-kpi-rules.ts.
+ * Called when `kpiRulesFor` has answered "phoenix" (the company-wide cutover), OR when any rep in
+ * scope belongs to a team that went live before the period began (`phoenixRuleRepKeys`, the per-team
+ * switch of 2026-10-07) — so it is LIVE today for every started team, on the Weekly tab and on any
+ * period that starts on or after a go-live day. The rules themselves are crm/phoenix-kpi-rules.ts.
  *
  * Reads the same doors the rest of the CRM uses: Phoenix's own contact lists (the open periods of
  * `crm_contact_assignments`, via `loadPanelRows` — the rep's own list decides AM, PM and pharmacy),
@@ -16,6 +18,7 @@ import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import {
   computePhoenixCoverageDoctors,
   computePhoenixRepKpis,
+  phoenixVisitHasCheckin,
   type PhoenixCoverageDoctor,
   type PhoenixKpiWindow,
   type PhoenixPanelContact,
@@ -30,13 +33,17 @@ import { loadPanelRows, narrowListType } from "@/lib/crm/rep-kpi-reports-data";
 import type { RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
+// `source` and `crm_visit_id` tell a Phoenix CRM visit apart: it is its own check-in (rule 10, see
+// `phoenixVisitHasCheckin`), and the check-in door never serves a vendor check-in on its day.
 const VISIT_COLUMNS =
-  "agent_hr_id,agent_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,ampm,speciality,crm_save_date";
+  "agent_hr_id,agent_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,ampm,speciality,crm_save_date,source,crm_visit_id";
 
 type VisitRecord = Omit<PhoenixVisit, "hasCheckin"> & {
   agent_hr_id: string | null;
   agent_crm_id: number | null;
   crm_save_date: string | null;
+  source: string | null;
+  crm_visit_id: number | null;
 };
 
 type CheckinRecord = {
@@ -95,11 +102,13 @@ export async function loadPhoenixRepKpis(input: {
 
   // Rule 10 (owner, 2026-09-20): which Regular visits have a matching GPS check-in. The SAME
   // agent+contact+Cairo-day matcher every other CRM surface uses (checkin-match.ts) — a visit
-  // resolves to the same check-in here as it does on the Visits Report and the CRM master tab.
+  // resolves to the same check-in here as it does on the Visits Report and the CRM master tab. A
+  // Phoenix CRM visit is its own check-in, exactly as the old call rate already counts it.
   const checkinIndex = indexCheckinsByAgentContactDay(checkinRows);
   const visitsWithCheckin = visitRows.map((row) => ({
     ...row,
-    hasCheckin:
+    hasCheckin: phoenixVisitHasCheckin(
+      row,
       pickCheckinForVisit(
         {
           agentCrmId: row.agent_crm_id,
@@ -110,6 +119,7 @@ export async function loadPhoenixRepKpis(input: {
         },
         checkinIndex,
       ) !== null,
+    ),
   }));
 
   // The plan view and the visit view leave the hr id blank on many vendor rows; the contact list

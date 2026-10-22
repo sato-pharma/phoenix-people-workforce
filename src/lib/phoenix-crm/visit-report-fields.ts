@@ -19,6 +19,8 @@
  * src/lib/phoenix-crm, and a customer is a customer. Labels are names, never codes.
  */
 
+import type { KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
+
 export type VisitReportCategoryId =
   | "when"
   | "org"
@@ -456,6 +458,12 @@ export type VisitReportRow = {
    * visit a rep logged.
    */
   ownVisit?: boolean;
+  /**
+   * Why this visit is in no KPI (`kpiHoldBackOf`): its customer is not validated, its off-plan approval is still
+   * waiting, or it was refused. Absent or null when it counts. The row is listed either way; the dashboard's
+   * figures are built from the counting rows only and its "Visits" tile names the rest (re-audit, 2026-10-22).
+   */
+  kpiHoldBack?: KpiHoldBack | null;
 };
 
 export type VisitReportDashboardTile = { label: string; value: string; hint?: string };

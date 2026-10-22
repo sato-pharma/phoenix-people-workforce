@@ -7,6 +7,7 @@ import {
   isCheckableActivity,
   isScoredInAdherenceHistory,
   isScoredVerdict,
+  mergeManagerPlanWeeks,
   PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES,
   planAdherenceTone,
   planAdherenceVerdictLabel,
@@ -15,6 +16,10 @@ import {
   type PlanAdherenceHistoryEntry,
   type PlanItemForAdherence,
 } from "../src/lib/weekly-planning/plan-adherence.ts";
+
+function dataSourceForMerge(): string {
+  return readFileSync("src/lib/weekly-planning/plan-adherence-data.ts", "utf8");
+}
 
 /** The manager whose week is being scored, and the reps he plans to go out with. */
 const OWNER = "dsm-201";
@@ -288,6 +293,45 @@ export function runPlanAdherenceTests(): void {
     const empty = buildPlanAdherenceHistory([]);
     assert.equal(empty.averagePct, null, "no history is not a 0% history");
     assert.equal(empty.measuredPeriods, 0);
+  }
+
+  // A district manager's Phoenix CRM week REPLACES the legacy plan for the same dates (owner,
+  // 2026-10-16). Weaam Mahmoud, Mina Farouk and Taha Mohamed hold both for the week of 17 Oct 2026;
+  // concatenating them scored that one real week twice (re-audit, 2026-10-22).
+  {
+    const legacy: PlanAdherenceHistoryEntry[] = [
+      { checkable: 4, kept: 4, measurable: true, periodEndDate: "2026-10-09", periodKey: "2026-W41", periodStartDate: "2026-10-03", planId: "legacy-before", scorePct: 100, status: "hr_acknowledged" },
+      { checkable: 5, kept: 1, measurable: true, periodEndDate: "2026-10-23", periodKey: "2026-W43", periodStartDate: "2026-10-17", planId: "legacy-same-week", scorePct: 20, status: "final_approved" },
+    ];
+    const phoenix: PlanAdherenceHistoryEntry[] = [
+      { checkable: 5, kept: 5, measurable: true, periodEndDate: "2026-10-23", periodKey: "2026-10-17", periodStartDate: "2026-10-17", planId: "crm-week", scorePct: 100, status: "approved" },
+    ];
+    const merged = mergeManagerPlanWeeks(legacy, phoenix);
+    assert.deepEqual(
+      merged.entries.map((entry) => entry.planId),
+      ["crm-week", "legacy-before"],
+      "the legacy plan for a week Phoenix also holds is replaced; the weeks before the go-live stay",
+    );
+    assert.equal(merged.totalCheckable, 9, "the replaced week's items are not counted a second time");
+    assert.equal(merged.averagePct, 100);
+
+    const noPhoenix = mergeManagerPlanWeeks(legacy, []);
+    assert.equal(noPhoenix.entries.length, 2, "with no Phoenix week the legacy history is untouched");
+
+    const edgeTouch = mergeManagerPlanWeeks(
+      [{ ...legacy[0]!, periodEndDate: "2026-10-17", periodStartDate: "2026-10-11", planId: "legacy-touching" }],
+      phoenix,
+    );
+    assert.deepEqual(
+      edgeTouch.entries.map((entry) => entry.planId),
+      ["crm-week"],
+      "a legacy plan that shares even one day with a Phoenix week is the same week and is replaced",
+    );
+
+    assert.ok(
+      dataSourceForMerge().includes("mergeManagerPlanWeeks(legacy.entries, crmWeeks)"),
+      "the employee-portal card must merge through the replace rule, not concatenate the two histories",
+    );
   }
 
   // ── Presentation ────────────────────────────────────────────────────────────

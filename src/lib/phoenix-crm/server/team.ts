@@ -74,6 +74,7 @@ import {
   type TeamTodayPlanned,
   type TeamTodayVisit,
 } from "@/lib/phoenix-crm/team-today";
+import { isUnplannedKind, isUnplannedVisitStatus, kpiHoldBackOf, type KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -141,6 +142,27 @@ function withClock(
  * THIS DAY (plan-rules.ts `isPlanDaySent`): a week returned for ONE other day still stands as sent on
  * this one (owner, 2026-10-02, "Still planned"), and only the returned day reads as not sent.
  */
+const TEAM_TODAY_VISIT_COLUMNS =
+  "seat_id, customer_id, list_type, captured_at, is_unplanned, unplanned_kind, " +
+  "customer:phoenix_crm_customers!customer_id(validated_at), unplanned:phoenix_crm_unplanned_visits!visit_id(status)";
+
+/** Why a visit is in no KPI — read off the row the same way the visit list reads it (visits.ts). */
+export function teamTodayHoldBack(row: Row): KpiHoldBack | null {
+  const one = (value: unknown): Row => {
+    const entry = Array.isArray(value) ? value[0] : value;
+    return (entry && typeof entry === "object" ? entry : {}) as Row;
+  };
+  const isUnplanned = row.is_unplanned === true;
+  const unplannedKind = isUnplanned ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
+  const status = one(row.unplanned).status;
+  return kpiHoldBackOf({
+    customerValidated: typeof one(row.customer).validated_at === "string",
+    isUnplanned,
+    unplannedKind,
+    unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
+  });
+}
+
 async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
   const supabase = getSupabaseAdmin();
   // The batches run four at a time rather than one after another — an SFE Manager's whole company is
@@ -158,9 +180,11 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
         .eq("is_test", isTest)
         .eq("week_start", fieldWeekStart(date))
         .in("status", [...PLAN_STATUSES_WITH_SENT_DAYS]),
+      // The raw table, so every visit he saved is on the line — and with it the two halves of "does it
+      // count" (`visitCountsInKpi`): the off-plan approval and the customer's validation.
       supabase
         .from("phoenix_crm_visits")
-        .select("seat_id, customer_id, list_type, captured_at")
+        .select(TEAM_TODAY_VISIT_COLUMNS)
         .in("seat_id", part)
         .eq("is_test", isTest)
         .eq("visit_date", date),
@@ -189,10 +213,16 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
         if (seatId && plannedListType !== null) planned.push({ seatId, customerId: String(row.customer_id), listType: plannedListType });
       }
     }
-    for (const row of (dayVisits.data ?? []) as Row[]) {
+    for (const row of (dayVisits.data ?? []) as unknown as Row[]) {
       const visitListType = listTypeOf(row.list_type);
       if (visitListType === null) continue;
-      visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: visitListType, capturedAt: String(row.captured_at) });
+      visits.push({
+        seatId: String(row.seat_id),
+        customerId: String(row.customer_id),
+        listType: visitListType,
+        capturedAt: String(row.captured_at),
+        holdBack: teamTodayHoldBack(row),
+      });
     }
     return { seatsWithPlan, planned, visits };
   });
@@ -386,7 +416,10 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const unplannedSeats = new Set([...unplannedRows, ...planEditRows].map((row) => String(row.seat_id)));
   const workedToday = (seatId: string) => {
     const figures = todayBySeat.get(seatId);
-    return Boolean(figures && (figures.planSent || figures.amLogged > 0 || figures.pmLogged > 0));
+    return Boolean(
+      figures &&
+        (figures.planSent || figures.amLogged > 0 || figures.pmLogged > 0 || figures.awaitingApproval > 0 || figures.awaitingValidation > 0),
+    );
   };
   const rowSeats = isTest
     ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId) || workedToday(seat.seatId))

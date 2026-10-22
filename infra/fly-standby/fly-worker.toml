@@ -2,16 +2,19 @@
 # It stands in for Railway's phoenix-workforce-worker: the same image as the standby website, run as the worker, and
 # the host the worker's cron-job.org jobs call. Account: docs/deployment.md, "The worker on Fly".
 #
-# 🔴 DEPLOYED BY HAND, NEVER BY THE WORKFLOW. emergency-host.yml updates only the website (phoenix-hr-standby), so
-# after every go-live this app takes the SAME image, from the repo root:
+# 🔴 MOVED BY THE GO-LIVE (re-audit, 2026-10-22). emergency-host.yml's go-live deploys this app with the SAME image
+# right after the website, so the two never run different code. By hand only when that step reports a failure, from
+# the repo root:
 #   flyctl deploy -a phoenix-worker-standby -c infra/fly-standby/fly-worker.toml \
-#     --image registry.fly.io/phoenix-hr-standby:<sha> --strategy rolling
+#     --image registry.fly.io/phoenix-hr-standby:<sha> --regions fra --ha=false --strategy rolling
 #
 # 🔴 ONE WORKER ONLY. Railway's worker is stopped and set to PHOENIX_PROCESS_ROLE=web while this one runs; two would
 # run every job twice against one database and point two pollers at one iReports360 account.
 #
 # RAILWAY_ENVIRONMENT_NAME = "production" is deliberate: it is the CRM poller's host pin (src/lib/crm/live-poller.ts,
-# resolveInProcessHostRefusal). With no RAILWAY_GIT_COMMIT_SHA the release gate reads "no_commit" and stays open.
+# resolveInProcessHostRefusal). It also makes the release gate REQUIRED here: the image carries RAILWAY_GIT_COMMIT_SHA
+# (fallback-image.yml builds it in), so /api/readyz reads the commit's recorded gate (read live 22 Oct: required, passed,
+# "recorded"). Only a gated commit reaches this app anyway: the go-live's own gate job refuses any other.
 app = "phoenix-worker-standby"
 
 # 🔴 FRANKFURT. Production must stay in Europe, beside the Frankfurt Supabase project.
