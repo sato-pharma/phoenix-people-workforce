@@ -1797,6 +1797,38 @@ function runServerImageTests() {
     "and it runs BEFORE the hand-over to Headwind's entrypoint, since nothing after an exec ever runs",
   );
 
+  // 🔴 TELEGRAM AND WPS OFFICE ARE RE-PROVISIONED THE SAME WAY, EACH FROM ITS OWN PUBLISHER.
+  //
+  // Measured 2026-10-22: /files/Telegram.apk and /files/wps_18.25.2_abi32_en00000.apk both answered 404,
+  // so configuration 3 had two everyday apps no rep tablet could ever install. Telegram floats (a size
+  // floor plus the zip magic, like WhatsApp); WPS is a per-version file, pinned to its exact size. Drop
+  // either call, or point it at a re-hosted copy, and the tablets lose that app on the next rebuild.
+  assert.match(
+    entrypoint,
+    /provision_official_apk "Telegram\.apk" "https:\/\/telegram\.org\/dl\/android\/apk" "" "\$TELEGRAM_MIN_SIZE"/,
+    "Telegram is fetched from telegram.org's own direct download under the filename configuration 3 serves, with a size floor rather than an exact size",
+  );
+  assert.match(
+    entrypoint,
+    /provision_official_apk "wps_18\.25\.2_abi32_en00000\.apk" \\\n\s+"https:\/\/wdl1\.pcfg\.cache\.wpscdn\.com\/wpsdl\/wpsoffice\/download\/32bit\/wps_18\.25\.2_abi32_en00000\.apk" "\$WPS_SIZE" 0/,
+    "WPS Office is fetched from WPS's own CDN and pinned to its exact size",
+  );
+  assert.match(entrypoint, /^WPS_SIZE=171366058\b/m, "the WPS pin is the size WPS's own file measured on 2026-10-22");
+  assert.match(
+    entrypoint,
+    /apk_size_ok "\$pa_got" "\$pa_exact" "\$pa_min" && \[ "\$pa_magic" = "PK" \]/,
+    "a fetched Telegram or WPS file is moved into place only when it clears its size check AND starts with the zip magic",
+  );
+  assert.match(
+    entrypoint,
+    /could not fetch a valid \$pa_name[\s\S]*it will retry next start[\s\S]*return 0\n\}/,
+    "a failed Telegram or WPS fetch logs and returns 0 — under set -eu anything else would abort startup and down the MDM",
+  );
+  assert.ok(
+    entrypoint.indexOf('provision_official_apk "wps_') < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
+    "and both run BEFORE the hand-over to Headwind's entrypoint",
+  );
+
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
   // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars

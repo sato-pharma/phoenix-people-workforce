@@ -228,4 +228,53 @@ else
   fi
 fi
 
+# 🔴 RE-PROVISION TELEGRAM AND WPS OFFICE — the last two of configuration 3's everyday apps that a bare
+# work/ leaves a 404. Measured 2026-10-22: /files/Telegram.apk and /files/wps_18.25.2_abi32_en00000.apk
+# both answered 404, so neither ever reached a rep tablet. Both come straight from their publisher:
+#   - Telegram from telegram.org's own direct-download link (package org.telegram.messenger.web, the
+#     build Telegram publishes outside Play). It floats like WhatsApp's, so it gets a size FLOOR and the
+#     zip magic, never an exact size; the version only climbs, so the agent's benign "Ignoring downgrade
+#     request" is the worst a newer file can cause.
+#   - WPS Office from WPS's own CDN, a per-version file, so it is pinned to its exact size like RustDesk.
+# Same defensive shape as every block above: temp download, checks before the move, and a failed fetch
+# logs and falls through — it NEVER aborts startup, and retries on the next start.
+apk_size_ok() {
+  # $1 the size read, $2 the exact size (empty for a floating official source), $3 the minimum size
+  if [ -n "$2" ]; then [ "$1" = "$2" ]; else [ "$1" -ge "$3" ] 2>/dev/null; fi
+}
+provision_official_apk() {
+  # $1 the file name configuration 3 serves at /files/, $2 the publisher's URL, $3 exact size or "", $4 minimum size
+  pa_name="$1"; pa_url="$2"; pa_exact="$3"; pa_min="$4"
+  pa_dest="$FILES_DIR/$pa_name"
+  pa_have="$([ -f "$pa_dest" ] && wc -c < "$pa_dest" | tr -d ' ' || echo 0)"
+  if apk_size_ok "$pa_have" "$pa_exact" "$pa_min"; then
+    echo "phoenix-entrypoint(files): $pa_name already present ($pa_have bytes)"
+    return 0
+  fi
+  echo "phoenix-entrypoint(files): $pa_name missing or wrong size ($pa_have) — fetching it from its publisher"
+  pa_tmp="$FILES_DIR/.$pa_name.part"
+  rm -f "$pa_tmp"
+  pa_fetched=""
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$pa_tmp" "$pa_url" && pa_fetched="yes" || true
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$pa_tmp" "$pa_url" && pa_fetched="yes" || true
+  fi
+  pa_got="$([ -f "$pa_tmp" ] && wc -c < "$pa_tmp" | tr -d ' ' || echo 0)"
+  pa_magic="$([ -f "$pa_tmp" ] && dd if="$pa_tmp" bs=2 count=1 2>/dev/null || true)"
+  if [ -n "$pa_fetched" ] && apk_size_ok "$pa_got" "$pa_exact" "$pa_min" && [ "$pa_magic" = "PK" ]; then
+    mv -f "$pa_tmp" "$pa_dest"
+    echo "phoenix-entrypoint(files): installed $pa_name ($pa_got bytes)"
+  else
+    rm -f "$pa_tmp"
+    echo "phoenix-entrypoint(files): could not fetch a valid $pa_name (got $pa_got bytes) — it will retry next start" >&2
+  fi
+  return 0
+}
+TELEGRAM_MIN_SIZE=41943040   # 40 MiB floor — the official build measured 70,867,407 bytes on 2026-10-22
+WPS_SIZE=171366058           # bytes — the exact size of WPS's own wps_18.25.2_abi32_en00000.apk
+provision_official_apk "Telegram.apk" "https://telegram.org/dl/android/apk" "" "$TELEGRAM_MIN_SIZE"
+provision_official_apk "wps_18.25.2_abi32_en00000.apk" \
+  "https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/32bit/wps_18.25.2_abi32_en00000.apk" "$WPS_SIZE" 0
+
 exec /docker-entrypoint.sh "$@"

@@ -1622,7 +1622,7 @@ control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
 | **Instant commands** (lock, wipe, app-removal, reboot, locate-wake) | 🔴 never delivered | `pushOptions=mqttAlarm` = MQTT on TCP 31000, never opened on Railway (775 failures, push history 0). The agent's HTTP-poll fallback is dead code in MQTT mode. Only the hourly sync carries anything. |
 | Add-on "lock" | ⚠️ overlay only | The agent's full-screen overlay, not a real `lockNow`; weak under the stock home. |
 | **Password reset** | ✅ fixed on the Phoenix side | Was a silent no-op: `actions.ts` sent `passwordReset: true` with **no** `password`; the add-on's `text()` nulled it and `@JsonInclude(NON_NULL)` dropped the field, yet the row was marked consumed. Phoenix now sends a one-time six-digit PIN (§8.7). Still to prove on a real tablet. |
-| App installs | 🔴 3 of 5 404 | Telegram, WPS, WhatsApp wiped every redeploy (WhatsApp fixed by #6232). Only RustDesk + launcher on 0007. |
+| App installs | 🟡 built, on at deploy | Telegram, WPS and WhatsApp were wiped every redeploy, so only RustDesk + launcher reached 0007. WhatsApp is re-fetched since #6232; Telegram (telegram.org) and WPS Office (WPS's own CDN) are re-fetched at every start by the launcher-6.40 PR, each from its publisher. Config 3 sets the three to install only once each `/files/` path answers 200. |
 | Remote screen (RustDesk) | ⚠️ half | Installed on both; **0007 has no RustDesk ID** (`custom1` empty) so nobody can connect. Capture the id when 0007 is next online (§6.9). |
 | **Rep resets from Settings** | 🟡 built (6.40) | The agent used to lift `no_factory_reset` at the start of every sync and re-lock only after the install loop, so one 404 app left reset OFF. 6.40 keeps the protective restrictions locked for the whole sync, and adds FRP (a recovery-menu wipe comes back locked to a Google account) — both built, verified at the pilot. See §8.8. |
 | Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose a native mail app (§8.9). |
@@ -1716,7 +1716,7 @@ answers Phoenix's sign-in with 403. The order is §8.10, and its first step come
 ### 8.4 Durable `/files` — the Railway volume (the "small disk" the owner approved)
 
 `/files` lives under `/usr/local/tomcat/work`, recreated bare on every redeploy — which is why console
-uploads vanish and the entrypoint has to re-fetch RustDesk, the launcher and WhatsApp. A Railway volume
+uploads vanish and the entrypoint has to re-fetch RustDesk, the launcher, WhatsApp, Telegram and WPS Office. A Railway volume
 mounted at the files dir makes a one-time console upload durable (and removes the need for an entrypoint
 block per app). Create it via the Railway GraphQL `volumeCreate` on the `phoenix-headwind` service,
 mount path `/usr/local/tomcat/work/files`, region `europe-west4-drams3a` (the service's region — a
