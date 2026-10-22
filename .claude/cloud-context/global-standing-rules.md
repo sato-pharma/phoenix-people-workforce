@@ -89,6 +89,17 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
   card, flyer or file means bleed, resolution, fonts, colour space, boxes, typos — the look stays
   identical, and no house identity or brand standard overrides it. Unsure whether a change alters
   the look? Leave it and flag it.
+- 🥇 **GOLDEN RULE — NOTHING YOU DESIGN MAY LOOK AI-MADE** (owner, 2026-10-22: "never make any thing
+  looks like image creation by chatgpt … always act as a real human designer working on photoshop").
+  Every icon, layout, image and finish must read as a human designer's deliberate hand, built the way
+  it would be in Photoshop/Illustrator: flat colour, real print finishes, restraint. Never glossy
+  gel/jewel buttons, gloss-highlight ellipses, sparkle/star glints, glow halos, drop-shadowed UI
+  cards, badge-on-badge stacks or gradient-on-everything "AI polish". If a viewer could spot it as
+  AI-generated, it does not ship.
+- **A design needs a picture? Hand him the EXACT ChatGPT prompt** (owner, 2026-10-22: "whenever u need a
+  picture give me the exact prompt u want for chat gpt to create"). He makes every photo himself in ChatGPT: write the
+  full prompt, ready to paste, one per picture, naming the reference file to attach, the size and a plain white ground.
+  Never stock photos and never a vague brief. Build everything else in the meantime.
 
 ## Approvals — never take these on yourself
 

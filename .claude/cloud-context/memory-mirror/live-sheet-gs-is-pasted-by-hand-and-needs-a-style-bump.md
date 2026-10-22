@@ -1,6 +1,6 @@
 ---
 name: live-sheet-gs-is-pasted-by-hand-and-needs-a-style-bump
-description: "Merging a change to docs/*-live-sheet.gs changes NOTHING — the owner pastes it into Apps Script by hand — and a look-only change also needs STYLE_VERSION bumped or it never repaints."
+description: "STALE first half: since 2026-09-05 apps-script-push.yml writes docs/*-live-sheet.gs into each project on merge (HEAD), and PR #6244 also moves the web app — no hand paste. Still true: a look-only change needs STYLE_VERSION bumped or it never repaints."
 metadata: 
   node_type: memory
   type: project
