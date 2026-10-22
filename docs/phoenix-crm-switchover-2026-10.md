@@ -535,7 +535,28 @@ because the MCP declined it twice (its body holds six `drop table if exists pg_t
   contacts differ from what Phoenix holds. Dr Tharwat Milad (1000036186) reads General Surgery.
 - Second refresh 15 s later: 2 changed, both a blank-fill loop that predates this change — Peter Alphonse (95487) and
   Mahmoud Khalafa (105208) have a phone only on a PENDING Phoenix copy, so the vendor pass blanks it and the name-row pass
-  fills it back, with the same end state each run. Staging's second run changed 0.
+  fills it back, with the same end state each run. Staging's second run changed 0. Fixed the same morning — see
+  "The two passes are offered the same Phoenix row" below.
 - The visits door: of 143,664 iReports360 visits, 16,152 now print the doctor's Phoenix name, 22 his Phoenix speciality
   and 136,374 the rep's Phoenix name. The truth view holds 2,269 doctors and answers from the new index in 7 ms; a
   September read of the whole visits door runs in 280 ms.
+
+### The two passes are offered the same Phoenix row
+
+Owner, 22 October 2026, about 05:10 Cairo: *"fix the phone loop on Peter Alphonse and Mahmoud Khalafa"*.
+
+The refresh writes `crm_contacts` in two passes: the vendor list pass, then the name-row pass. A pending Phoenix copy
+only fills a blank, but only the name-row pass knew about it, so for a doctor whose phone sat only on a pending copy the
+vendor pass wrote the vendor's empty phone and the name-row pass filled it back: two writes per doctor per run and an
+`updated_at` that moved every hour, for the same phone.
+
+`20261022163300` gives `crm_refresh_phoenix_truth` every Phoenix doctor with a `trusted` flag, one row each in the
+name-row pass's own order, and the vendor pass now writes a trusted Phoenix value, else the vendor's, else the pending
+copy's. Both passes are offered the same value, so neither undoes the other; nothing a pending copy holds overrides a
+value the vendor sends. `tests/crm-contact-master-refresh-speed.test.ts` block 3b pins it (each assertion broken and
+seen to fire).
+
+Applied to staging and production at 05:13 Cairo through `scripts/apply-sql-file.mjs` (evidenced
+`ACKNOWLEDGED_EXCEPTIONS` entry). Body `md5(prosrc)` `0e5d0165b9ca43d1fb4a18f4ef2015e1` on both. A read-only replay
+on production first showed 0 contacts would change and exactly 2 blanks filled from a pending copy; after the apply,
+two production refreshes each changed 0 contacts and wrote 0 rows, and both doctors kept their phones.

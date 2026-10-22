@@ -1199,9 +1199,27 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Phoenix-born ones; afterwards 0 contacts differ from what Phoenix holds. A second call 15 s later
   // changed 2 — Peter Alphonse (95487) and Mahmoud Khalafa (105208), whose phone exists only on a
   // PENDING Phoenix copy: the vendor pass blanks it and the name-row pass fills it back on every run, with
-  // the same end state. That loop is the blank-fill rule the previous body had too, and it is untouched.
-  // Re-applying it is a no-op (`create or replace`).
+  // the same end state. That loop is the blank-fill rule the previous body had too; 20261022163300 below
+  // removes it. Re-applying it is a no-op (`create or replace`).
   "20261022163100_phoenix_wins_the_contact_refresh.sql",
+  // 2026-10-22, the loop above, fixed (owner, 05:1x Cairo: "fix the phone loop on Peter Alphonse and Mahmoud
+  // Khalafa"). Applied to staging and then production (05:13 Cairo) with
+  // `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, for the same reason as
+  // the entry above: the body holds six `drop table if exists pg_temp.…` lines, which both MCP doors refuse.
+  // That route writes NO ledger row, so the absence here is the apply route and not a missed migration.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.crm_contact_master_refresh reads 0e5d0165b9ca43d1fb4a18f4ef2015e1 (length(prosrc) 34,105 — two
+  // emoji fewer than the file body's JS length, md5 identical) on ozucdzovmcqvepbozvqf and on
+  // cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file (as-is LF), and this file is the
+  // function's LAST definer. Production held a99ddecb38b6332a972a787e52443806 (20261022163100) immediately
+  // before — the one-command rollback. SECURITY INVOKER, proconfig {search_path=public} and proacl
+  // (postgres and service_role only) read in the same query; the function comment digests
+  // 1bcf6cb93ee611cdca0bfa7b6fafcd88 on both. Effect, proved before the apply by a read-only replay of the
+  // new vendor pass on production: 0 contacts would change and exactly 2 blanks are filled from a pending
+  // copy (the two doctors above). After it, two production refreshes each reported listContactsChanged = 0
+  // and wrote 0 crm_contacts rows, and both doctors kept their phones; staging's two runs also changed 0.
+  "20261022163300_a_pending_copy_fills_the_vendor_blank_in_one_pass.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
