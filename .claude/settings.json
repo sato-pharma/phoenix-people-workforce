@@ -29,6 +29,34 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "^mcp__.*__execute_sql$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/sql-column-hint.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^mcp__.*__execute_sql$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/sql-column-hint.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
