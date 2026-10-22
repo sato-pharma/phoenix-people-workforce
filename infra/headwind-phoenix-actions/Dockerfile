@@ -201,6 +201,31 @@ RUN set -eu; \
       >> "$LOGPROPS"; \
     grep -q 'java.util.logging.ConsoleHandler$' "$LOGPROPS"
 
+# 🔴 THE TWO PUBLIC UPLOAD ENDPOINTS ARE REFUSED HERE, BEFORE HEADWIND SEES THE REQUEST (owner,
+# 2026-10-22: "close the tablet server's open upload path"). `rewrite.config` beside this file says
+# which two and why; docs/devices/headwind-rustdesk.md §8.3 has the account.
+#
+# Host level, not the web application's own context: the base entrypoint REGENERATES
+# conf/Catalina/localhost/ROOT.xml at every start, so a valve put there would be gone on boot, while
+# server.xml is copied in at image build and never rewritten. The Host-level valve reads its rules
+# from conf/Catalina/localhost/rewrite.config, which nothing at start touches.
+#
+# 🔴 AND A BAD RULE FAILS THE BUILD, NEVER THE START. A line Tomcat cannot parse stops the whole Host,
+# and Railway still calls that deploy green (see the logging note above). RewriteCheck.java runs
+# Tomcat's own parser on the file with the image's own jars, so a typo leaves the running server as it
+# is. The server.xml edit refuses to guess: exactly one </Host>, no RewriteValve already there.
+COPY rewrite.config /usr/local/tomcat/conf/Catalina/localhost/rewrite.config
+COPY RewriteCheck.java /tmp/RewriteCheck.java
+RUN set -eu; \
+    TOMCAT="${CATALINA_HOME:-/usr/local/tomcat}"; \
+    SERVER_XML="$TOMCAT/conf/server.xml"; \
+    [ "$(grep -c '</Host>' "$SERVER_XML")" = 1 ] || { echo "server.xml does not hold exactly one </Host> — refusing to guess where the upload block goes"; exit 1; }; \
+    if grep -q 'valves.rewrite.RewriteValve' "$SERVER_XML"; then echo "server.xml already carries a RewriteValve — refusing to add a second"; exit 1; fi; \
+    sed -i 's|</Host>|  <Valve className="org.apache.catalina.valves.rewrite.RewriteValve" />\n      </Host>|' "$SERVER_XML"; \
+    [ "$(grep -c 'className="org.apache.catalina.valves.rewrite.RewriteValve"' "$SERVER_XML")" = 1 ]; \
+    java -cp "$TOMCAT/lib/*:$TOMCAT/bin/tomcat-juli.jar" /tmp/RewriteCheck.java "$TOMCAT/conf/Catalina/localhost/rewrite.config" 2; \
+    rm -f /tmp/RewriteCheck.java
+
 COPY phoenix-entrypoint.sh /phoenix-entrypoint.sh
 # chmod because the repository is checked out on Windows, where the executable bit does not survive.
 RUN chmod +x /phoenix-entrypoint.sh

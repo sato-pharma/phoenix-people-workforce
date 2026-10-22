@@ -1611,7 +1611,7 @@ control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
 | **Rep resets from Settings** | 🔴 yes, around the block | `no_factory_reset` stops the Settings reset only *while in force* — and the agent lifts it at the start of every sync, re-locking only after the install loop finishes, so **one 404 app leaves reset OFF**. A recovery-menu wipe is outside Headwind's reach; with no Google account and no FRP it returns a clean, unmanaged tablet. See §8.8. |
 | Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose a native mail app (§8.9). |
 | **Custody register** | ✅ fixed in this PR | Was auto-registering by serial/IMEI; now a person confirms each tablet (§8.11). |
-| **Console / upload path open on every name** | 🔴 | One Tomcat serves the console, the private API and the public write paths on `mdm`, `mdm-console` and the Railway host. `/rest/public/applications/upload` is gated only by `MD5(deviceNumber + hash.secret)` where `hash.secret` is the published default (no `SHARED_SECRET` set), and device numbers are guessable — so an app row can be written into `/files` and served to tablets. 2FA is available but off. See §8.3. |
+| **Console / upload path open on every name** | 🔴 | One Tomcat serves the console, the private API and the public write paths on `mdm`, `mdm-console` and the Railway host. `/rest/public/applications/upload` is gated only by `MD5(deviceNumber + hash.secret)` where `hash.secret` is the published default (no `SHARED_SECRET` set), and device numbers are guessable — so an app row can be written into `/files` and served to tablets. A second open upload, `/rest/videos`, sits outside `/rest/private` with no check at all. Both are refused by a Tomcat rule built 22 Oct, live on the next `phoenix-headwind` deploy. 2FA is available but off. See §8.3. |
 
 ### 8.2 🔴 THE GATE — apply NOTHING in §8.3–§8.10 until Railway is healthy, and verify the server-side changes on a real redeploy before the PR is merged
 
@@ -1626,30 +1626,44 @@ has shipped is all Phoenix-side and needs no tablet-server deploy: the custody c
 screen-lock PIN (§8.7) and the configuration save that keeps the app links (§8.14). Do not merge any
 later server-side change on a green CI alone — green CI is not a working tablet (§4.3).
 
-### 8.3 Close the public APK-upload write (do first; it is the urgent hole)
+### 8.3 Close the public upload writes (built; ships when Railway deploys `phoenix-headwind`)
 
-`POST /rest/public/applications/upload` (`PublicResource.java`) writes an APK into a customer's
-`/files` and inserts an `applications` row pointing tablets at it, gated only by the published-default
-hash. Nothing legitimate on this fleet uses it — tablets download finished APKs from `/files/<name>`
-(a different, static path they must keep reaching), and the only client of the upload endpoint is the
-desktop "AppList" utility, which the owner does not use. So it is safe to refuse.
+**Two** endpoints accept a file upload with no sign-in. Both answered `OPTIONS` with `Allow: POST` on
+`mdm.satopharma.com` on 22 Oct, and nothing on this fleet uses either:
 
-**Minimal, safe first rule (Tomcat RewriteValve).** Add a Host-level `RewriteValve` and a
-`conf/Catalina/localhost/rewrite.config` (conf/ is not under the `work/` volume, so it survives a
-redeploy) carrying exactly:
+- `POST /rest/public/applications/upload` (`PublicResource.java`) writes an APK into `/files` and
+  inserts an `applications` row, gated only by the published-default hash. Its one client is the
+  desktop "AppList" utility, which the owner does not use.
+- `POST /rest/videos` (`VideosResource.java`) is mapped outside `/rest/private`, so the JWT filter
+  (bound to `/rest/private/*` only) never runs on it, and the resource itself checks nothing. Found
+  while listing every resource mapped outside `/rest/private` on 22 Oct. Nothing in Phoenix calls it.
 
-```
-RewriteCond %{REQUEST_URI} ^/rest/public/applications/upload
-RewriteRule .* - [F]
-```
+Tablets download finished APKs from `/files/<name>` and sync from `/rest/public/sync/…`; neither rule
+touches them.
 
-`[F]` returns 403 on every hostname. This blocks only the upload POST and touches no tablet path.
-Wire the valve by COPYing a patched `server.xml` in the Dockerfile (it is never rewritten at start),
-or inject `WEB-INF/rewrite.config` into the WAR the same way the add-on jar is injected (`jar uf`) and
-declare the valve in `conf/context.xml`; add a build-time parse check so a malformed config fails the
-build, not the server's boot. **Verify on redeploy:** `curl -s -o /dev/null -w "%{http_code}"` on
-`/rest/public/applications/upload` → 403 on all three hosts, while `/files/hmdm-phoenix-6.39.apk` still
-→ 200 and a tablet still syncs.
+**What ships (owner, 22 Oct: "close the tablet server's open upload path").** A Host-level Tomcat
+`RewriteValve` refuses both with 403 on every hostname the server answers to.
+`infra/headwind-phoenix-actions/rewrite.config` carries the two `RewriteRule … - [F,NC]` lines. The
+Dockerfile copies it to `conf/Catalina/localhost/rewrite.config` and adds the valve to `server.xml`'s
+one `<Host>`. It is Host level, not the app's own context, because the base entrypoint regenerates
+`conf/Catalina/localhost/ROOT.xml` at every start, while `server.xml` is copied at build and never
+rewritten.
+
+🔴 **A bad rule fails the BUILD, never the start.** A line Tomcat cannot parse stops the whole Host
+while Railway still calls the deploy green (the trap in the Dockerfile's logging note).
+`RewriteCheck.java` runs Tomcat's own parser (`RewriteValve.parse` per line, then `RewriteRule.parse`)
+against the image's own jars at build. A typo therefore leaves the running server as it is. The
+`server.xml` edit refuses to guess: exactly one `</Host>`, and no RewriteValve already there.
+`tests/headwind-bridge.test.ts` pins the exact two rules, the paths they refuse, the tablet and
+Phoenix paths they must leave alone, and the Dockerfile wiring.
+
+**Verify on the redeploy (Railway must be deploying again):**
+- `curl -s -o /dev/null -w "%{http_code}" -X OPTIONS` on both paths → **403** on `mdm`,
+  `mdm-console` and the Railway host;
+- `/files/hmdm-phoenix-6.39.apk` → 200;
+- the console still signs in;
+- a tablet's next sync still lands (its `lastUpdate` moves).
+Never test with a real upload.
 
 **The staged host-split (second, separate, higher-risk step).** Allow only the tablet-facing public
 paths on `mdm` and move the console + private API to `mdm-console` behind Access. This can break every
@@ -1760,7 +1774,7 @@ auto-registers — it is being retired, not changed.
 
 ### 8.13 Verification checklist (run when Railway is healthy)
 
-1. `/rest/public/applications/upload` → 403 on all three hosts; `/files/<launcher>.apk` → 200; a tablet still syncs.
+1. `/rest/public/applications/upload` and `/rest/videos` → 403 on all three hosts; `/files/<launcher>.apk` → 200; the console signs in; a tablet still syncs.
 2. A console/Phoenix APK upload survives a redeploy (volume).
 3. `polling`: an `APPLY_SETTINGS` lands within seconds; push history > 0; no tracking notice on the tablet.
 4. "Reset the screen lock" sets the PIN Phoenix showed on a real tablet, and refuses cleanly when it cannot.
