@@ -1821,6 +1821,9 @@ import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-a
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runOutstationStaleApprovalTests } from "./outstation-stale-approval.test.ts";
 import { runOutstationExtraTicketAfterDecisionTests } from "./outstation-extra-ticket-after-decision.test.ts";
+import { runOutstationMissingTicketTests } from "./outstation-missing-ticket.test.ts";
+import { runOutstationWorkloadRestampTests } from "./outstation-workload-restamp.test.ts";
+import { runOutstationSubmitExpenseStepsTests } from "./outstation-submit-expense-steps.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
@@ -10513,6 +10516,18 @@ await runTest(
 await runTest(
   "an employee's extra ticket is refused once HR has decided the claim — only a submitted or needs-review claim takes one, so an accepted claim can no longer have a higher total re-pushed to its payroll row unseen; the refusal comes before any file is uploaded or the claim written, the write is itself pinned to the open statuses, the function no longer touches payroll, the route answers 409, the employee screen offers the button only on a Pending claim, and a journey stop shares the same single list of open statuses",
   runOutstationExtraTicketAfterDecisionTests,
+);
+await runTest(
+  "a train or bus claim that arrived without its ticket can have it attached by the employee afterwards — only his own undecided train or bus claim with no ticket on it, every refusal before any upload, the write pinned to the claim still being undecided and still ticketless, no amount or approval revision moved, the calculation's ticket downgrade undone and the offline hold sentence replaced while every other hold stays, and a submit made while the phone reports no signal keeps the ticket it carried instead of dropping it",
+  runOutstationMissingTicketTests,
+);
+await runTest(
+  "a trip's CRM workload stamped before the day's visits were typed is refreshed the next morning — only an undecided, system-stamped claim whose trip ended in the last 45 days, only when the CRM now holds more work, never a figure typed by hand, never the gate status, the approval revision or any money, the write pinned to the figures it read, the replaced stamp recorded for the approver, one shared stamp shape with the first capture, and the job appended to the daily run",
+  runOutstationWorkloadRestampTests,
+);
+await runTest(
+  "Submit Expense is a step form that says what to do in each step and what comes next — a trip walks trip, destination, evidence, amounts and review, a Meeting or Other expense has no destination, each step names what it still needs and Submit goes to the first one missing something, the screen after Submit lists what is still owed with the departure photo first, and Submit Expense and Expense Submissions are one page: what is owed, the form, then My claims, with the old page forwarding a submitter to it",
+  runOutstationSubmitExpenseStepsTests,
 );
 await runTest(
   "the Role Coverage audit on Data Health: a person is bucketed by job function (a Senior Medical Representative is a medical rep, a Senior District Manager a district manager, the Chief Executive his own bucket), a reps-only list is reported missing every manager rung that holds people and names them, a partial rung is reported partial, a role nobody holds is never a gap, a role left out on purpose is reported with its reason and never as a gap — unless the page shows it anyway — and every registered module names its roles, its page, its people list and the function its probe calls",

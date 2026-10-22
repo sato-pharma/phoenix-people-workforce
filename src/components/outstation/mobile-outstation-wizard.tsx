@@ -1,28 +1,35 @@
 "use client";
 
-import { Camera, MapPin, Upload } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Camera,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  MapPin,
+  Upload,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
-import { EligibilityResultCard } from "@/components/outstation/eligibility-result-card";
 import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
-import { OutstationCostBreakdown } from "@/components/outstation/outstation-cost-breakdown";
+import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
 import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
+import { Field } from "@/components/outstation/wizard-primitives";
+import { FormWizard } from "@/components/ui/form-kit";
 import {
-  Field,
-  FieldValue,
-  Stat,
-  SummaryValue,
-  WizardStep,
-} from "@/components/outstation/wizard-primitives";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { ChoiceGroup } from "@/components/ui/choice-group";
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
-import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import {
   isOutstationEvidenceWaivedRole,
   isOutstationTicketWaivedRole,
@@ -34,14 +41,19 @@ import {
   type OutstationLocalDraft,
 } from "@/lib/outstation/local-draft";
 import {
+  afterSubmitGuidance,
+  firstOpenSubmitExpenseStep,
+  MY_CLAIMS_ANCHOR,
+  submitExpenseStepInstruction,
+  submitExpenseStepProblem,
+  submitExpenseSteps,
+  type AfterSubmitItem,
+  type SubmitExpenseFacts,
+} from "@/lib/outstation/submit-expense-steps";
+import {
   checkSubmitBodySize,
   checkTicketAttachmentFile,
-  jpegFileName,
-  TICKET_IMAGE_FALLBACK_QUALITY,
-  TICKET_IMAGE_MAX_DIMENSION,
-  TICKET_IMAGE_QUALITY,
   TICKET_MAX_FILES,
-  TICKET_PDF_MAX_BYTES,
 } from "@/lib/outstation/ticket-attachment-limits";
 import type {
   OutstationCalculationResult,
@@ -61,7 +73,6 @@ import {
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 type MedicalTripOption = {
@@ -109,67 +120,18 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error ?? new Error("Unable to read the selected file."));
-    reader.readAsDataURL(file);
-  });
-}
 
-/**
- * One ticket or invoice, ready to send.
- *
- * A photo is decoded and re-encoded as a JPEG no longer than TICKET_IMAGE_MAX_DIMENSION on its
- * long side — the same canvas route the arrival photo takes — because the server refuses anything
- * over 5 MB and a phone camera shot is routinely larger, and a HEIC or WebP file (which the picker
- * offers as `image/*`) is not a type the server accepts at all. A PDF cannot be shrunk here, so it
- * goes as it is; checkTicketAttachmentFile has already held it to the size cap.
- */
-async function prepareTicketAttachment(file: File): Promise<{ dataUrl: string; name: string }> {
-  const verdict = checkTicketAttachmentFile(file);
-  if (!verdict.ok) throw new Error(verdict.message);
-
-  if (verdict.kind === "pdf") {
-    return { dataUrl: await fileToDataUrl(file), name: file.name };
-  }
-
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () =>
-        reject(
-          new Error(
-            `"${file.name}" could not be read as a photo on this phone. Take the photo again, or choose a JPG, PNG or PDF.`,
-          ),
-        );
-      element.src = objectUrl;
-    });
-
-    const scale = Math.min(
-      1,
-      TICKET_IMAGE_MAX_DIMENSION / Math.max(image.naturalWidth || 1, image.naturalHeight || 1),
-    );
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
-    canvas.height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Unable to process the selected photo.");
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-    let dataUrl = canvas.toDataURL("image/jpeg", TICKET_IMAGE_QUALITY);
-    // Roughly 4.5 MB decoded: over that, try once more at a lower quality before giving up.
-    if (dataUrl.length > TICKET_PDF_MAX_BYTES * 1.37) {
-      dataUrl = canvas.toDataURL("image/jpeg", TICKET_IMAGE_FALLBACK_QUALITY);
-    }
-    return { dataUrl, name: jpegFileName(file.name) };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
+/** What the screen after Submit names: the claim, and where the trip went. */
+type SubmittedClaim = {
+  arrivalPhotoOwed: boolean;
+  destination: string | null;
+  id: number | null;
+  /** A car trip can add stops on the way (chained-journey.ts) — the screen after Submit says how. */
+  isCarTrip: boolean;
+  isNonTravel: boolean;
+  isTicketBased: boolean;
+  ticketsAttached: number;
+};
 
 function getDurationSummary(start: string, end: string) {
   if (!start || !end) {
@@ -360,7 +322,6 @@ export function MobileOutstationWizard({
   medicalTripOptions,
   residenceShortSummary,
   residenceSummary,
-  showIntro = true,
 }: {
   areaRepOptions?: ManagerAreaRepOption[];
   employeeHrId: string;
@@ -370,9 +331,14 @@ export function MobileOutstationWizard({
   medicalTripOptions: MedicalTripOption[];
   residenceShortSummary?: string;
   residenceSummary: string;
-  showIntro?: boolean;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState(1);
+  // He pressed Next (or Submit) on a step that still needs something: the bar then says
+  // "Still needed" in rose instead of "Now" — the same two words Log a visit uses.
+  const [tried, setTried] = useState(false);
+  const [submitted, setSubmitted] = useState<SubmittedClaim | null>(null);
+  const formTopRef = useRef<HTMLDivElement | null>(null);
   const [expenseType, setExpenseType] = useState<OutstationExpenseType>("traveling");
   const [transportationType, setTransportationType] =
     useState<OutstationTransportationType>("car");
@@ -450,7 +416,7 @@ export function MobileOutstationWizard({
   // type too. While it rendered on `car` only, a train or bus employee had no control anywhere on
   // the page that could satisfy a rule the server was already enforcing, so every train and bus
   // submission died on a 400 that the mobile layout pushed off-screen below the sticky footer.
-  const arrivalPhotoBadge = transportationType === "car" ? "Car live photo" : "Arrival photo";
+  const arrivalPhotoBadge = transportationType === "car" ? "Live car photo" : "Arrival photo";
   // Owner request 2026-08-05: a non-car trip may satisfy the arrival photo by UPLOADING one
   // instead of capturing it live. Car is deliberately excluded — validateLiveArrivalEvidence
   // still refuses anything but a live capture there, and offering an upload button that the
@@ -458,7 +424,7 @@ export function MobileOutstationWizard({
   const canUploadArrivalPhoto = transportationType !== "car";
   const arrivalPhotoHeading = canUploadArrivalPhoto
     ? "Add one arrival photo — take it live or upload it"
-    : "Capture one live photo from device camera";
+    : "Take one live photo of the car";
   const arrivalPhotoHint =
     transportationType === "car"
       ? "Car requests require one in-app camera photo with GPS and app-generated timestamp."
@@ -509,7 +475,9 @@ export function MobileOutstationWizard({
     closePermissionPrompt();
     setMessage(
       kind === "camera"
-        ? "Camera permission was declined. The car photo cannot be captured without camera access."
+        ? transportationType === "car"
+          ? "Camera permission was declined. The car photo cannot be taken without camera access."
+          : "Camera permission was declined. Allow the camera, or upload the arrival photo instead."
         : "Location permission was declined. This expense cannot continue without GPS access.",
     );
   }
@@ -767,7 +735,13 @@ export function MobileOutstationWizard({
           });
           if (response.ok) {
             resetFormState();
-            setMessage("Offline outstation draft synced successfully after reconnecting.");
+            // A replayed draft carries no ticket file (a file cannot live in localStorage), so a
+            // train or bus claim lands without one — and the departure photo is still owed. Both
+            // are said here, and the refresh puts both cards at the top of the page.
+            setMessage(
+              "Your saved claim was sent now that you are back online. Take the departure photo before you leave, and for a train or bus trip attach the ticket on the claim under My claims below.",
+            );
+            router.refresh();
           } else {
             syncAttemptedRef.current = false;
           }
@@ -779,7 +753,7 @@ export function MobileOutstationWizard({
     } else {
       syncAttemptedRef.current = false;
     }
-  }, [employeeHrId, isOffline, medicalTripOptions, resetFormState]);
+  }, [employeeHrId, isOffline, medicalTripOptions, resetFormState, router]);
 
   const hasTicketAttachments = ticketFiles.length > 0;
   const hasCarEvidence = Boolean(carEvidence?.imageDataUrl);
@@ -1038,9 +1012,11 @@ export function MobileOutstationWizard({
           toCity: null,
           toLabel: "Offline capture pending server validation",
         };
+        // He stays on the Destination step to see the result; the bar names the next step.
         setCaptured(offlineCapture);
-        setStep(2);
-        setMessage("Destination captured offline. The draft will sync when internet returns.");
+        setMessage(
+          "Location captured with no connection. The distance and the total are worked out when the claim reaches the server.",
+        );
         return;
       }
 
@@ -1062,7 +1038,6 @@ export function MobileOutstationWizard({
       }
 
       setCaptured(payload);
-      setStep(2);
     } catch (error) {
       if (isDeniedPermissionError(error)) {
         setMessage(permissionDeniedMessage("destination-location"));
@@ -1194,7 +1169,11 @@ export function MobileOutstationWizard({
         source: "live_camera",
       });
       stopCarEvidenceCamera();
-      setMessage("Live car photo captured. This photo is attached to this request.");
+      setMessage(
+        transportationType === "car"
+          ? "Live car photo taken. It goes with this claim."
+          : "Arrival photo taken. It goes with this claim.",
+      );
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
       if (isDeniedPermissionError(typedError)) {
@@ -1304,7 +1283,7 @@ export function MobileOutstationWizard({
     }
 
     if (!captured && !isNonTravel) {
-      setMessage("Tap the To field to capture your current destination first.");
+      setMessage("Go back to Destination and tap Capture my location first.");
       return;
     }
 
@@ -1314,7 +1293,7 @@ export function MobileOutstationWizard({
     }
 
     if (!isOffline && isTicketRequired && ticketFiles.length === 0) {
-      setMessage("Upload the ticket before submitting this train or bus request.");
+      setMessage("Go back to Evidence and attach the ticket — a train or bus claim needs it.");
       return;
     }
 
@@ -1331,9 +1310,14 @@ export function MobileOutstationWizard({
     setMessage(null);
     try {
       const endpoint = isOffline ? "/api/outstation/sync-offline" : "/api/outstation/submit";
-      // Ticket files are uploaded on the online path only; the offline path cannot carry them.
+      // Sent on BOTH routes (owner, 2026-10-22: "fix the offline ticket gap"). `navigator.onLine`
+      // reporting false does not mean this request cannot land — Osama's 20 Oct train claim was
+      // posted to sync-offline and arrived, but its ticket had been stripped here because the
+      // phone said "offline", and the claim was held for a ticket he had attached. sync-offline
+      // now carries ticketAttachments exactly like submit. Only a draft REPLAYED later from
+      // localStorage has no file to send; that claim gets its ticket from My claims.
       let ticketAttachments: Array<{ dataUrl: string; name: string }> | undefined;
-      if (!isOffline && (isTicketBased || isNonTravel) && ticketFiles.length > 0) {
+      if ((isTicketBased || isNonTravel) && ticketFiles.length > 0) {
         try {
           ticketAttachments = await Promise.all(ticketFiles.map(prepareTicketAttachment));
         } catch (error) {
@@ -1374,736 +1358,382 @@ export function MobileOutstationWizard({
         return;
       }
 
+      // The form no longer resets in silence: the screen after Submit says what is still owed,
+      // in order — the departure photo first (owner, 2026-10-22: "show him what should he do in
+      // this step and the next"). The refresh re-reads the page, so the departure-photo card
+      // appears at its top straight away.
+      const claimId = Number(payload?.id);
+      setSubmitted({
+        arrivalPhotoOwed,
+        destination:
+          (typeof payload?.toLabel === "string" && payload.toLabel.trim()) ||
+          (captured ? destinationLocation.shortLabel : null),
+        id: Number.isFinite(claimId) && claimId > 0 ? claimId : null,
+        isCarTrip: !isNonTravel && transportationType === "car",
+        isNonTravel,
+        isTicketBased,
+        ticketsAttached: ticketAttachments?.length ?? 0,
+      });
       resetFormState();
+      setMessage(null);
+      router.refresh();
+    } catch {
+      // A phone with no signal cannot post at all. Its draft is already kept on the phone by the
+      // effect above and is sent by itself once the connection is back, so say exactly that.
       setMessage(
         isOffline
-          ? "Offline request synced successfully."
-          : "Outstation request submitted successfully.",
+          ? "No connection. Your claim is kept on this phone and is sent by itself when you are back online — keep this page open."
+          : "Unable to submit the request.",
       );
-    } catch {
-      setMessage("Unable to submit the request.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  return (
-    <div className="space-y-5">
-      <OfflineSyncBanner visible={isOffline} />
-      {permissionPrompt ? (
-        <PermissionPromptModal
-          blocked={permissionPrompt.blocked}
-          kind={permissionPrompt.kind}
-          onAccept={() => void acceptPermissionPrompt()}
-          onDecline={declinePermissionPrompt}
+  // ── The step form ───────────────────────────────────────────────────────────────────────
+  // Every rule of WHICH step needs WHAT lives in src/lib/outstation/submit-expense-steps.ts; this
+  // only feeds it the screen's state.
+  const steps = submitExpenseSteps(isNonTravel);
+  const stepNumber = Math.min(Math.max(step, 1), steps.length);
+  const currentStep = steps[stepNumber - 1];
+  const nextStep = stepNumber < steps.length ? steps[stepNumber] : null;
+  const isReviewStep = currentStep.key === "review";
+  const facts: SubmitExpenseFacts = {
+    arrivalPhotoOwed,
+    captured: Boolean(captured),
+    hasArrivalPhoto: hasCarEvidence,
+    isNonTravel,
+    isOffline,
+    isTicketBased,
+    isTicketRequired,
+    meetingAmount,
+    otherAmount,
+    ticketCount: ticketFiles.length,
+    transportationType,
+    tripEndDate,
+    tripStartDate,
+  };
+  const stepProblem = submitExpenseStepProblem(currentStep.key, facts);
+  const firstOpen = firstOpenSubmitExpenseStep(steps, facts);
+  const reviewHold = !isReviewStep
+    ? null
+    : firstOpen
+      ? `${steps[firstOpen.index].label}: ${firstOpen.problem}`
+      : isOffline
+        ? null
+        : isCalculating || !calculation
+          ? "Phoenix is calculating the total. It appears here in a moment."
+          : calculation.eligibilityStatus === "not_eligible"
+            ? `This trip is not eligible: ${calculation.eligibilityReason}`
+            : null;
+
+  function showStep(target: number) {
+    // A camera left open on a step he has walked away from keeps the phone's camera light on, so
+    // leaving the evidence step closes it — here, on the move itself, never in an effect after it.
+    if (steps[target - 1]?.key !== "evidence" && isCarEvidenceCameraOpen) stopCarEvidenceCamera();
+    setTried(false);
+    setMessage(null);
+    setStep(target);
+    formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function goNext() {
+    if (stepProblem) {
+      setTried(true);
+      return;
+    }
+    showStep(stepNumber + 1);
+  }
+
+  // ── What each step draws ────────────────────────────────────────────────────────────────
+  const expenseTypeOptions: ReadonlyArray<{ label: string; value: OutstationExpenseType }> = [
+    { label: "Traveling", value: "traveling" },
+    { label: "Meeting", value: "meeting" },
+    { label: "Other", value: "other" },
+  ];
+  const transportOptions: ReadonlyArray<{ label: string; value: OutstationTransportationType }> = [
+    { label: "Car", value: "car" },
+    { label: "Train", value: "train" },
+    { label: "Bus", value: "bus" },
+    { label: "Other", value: "other" },
+  ];
+
+  const tripBody = (
+    <div className="grid gap-5">
+      <Field as="div" label="Expense type">
+        <ChoiceTiles
+          label="Expense type"
+          onChange={(value) => setExpenseType(value)}
+          options={expenseTypeOptions}
+          value={expenseType}
         />
-      ) : null}
+      </Field>
 
-      {showIntro ? (
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
-          {/* 🔴 A SECOND PAGE TITLE USED TO STAND HERE — `Outstation Expense` over
-              `<h1>Smart expense entry</h1>` — AND IT MUST NOT COME BACK.
-              This intro renders in the PORTAL ONLY: `admin-shell-employee-pages.tsx` passes
-              `showIntro={false}` and gets its heading from `AdminPageHero` instead. So the portal is
-              the only place that heading ever appeared, and there `EmployeePortalPageShell` already
-              paints the navy command header with the `Expenses` badge and the title `Submit Expense`.
-              Two titles, worded DIFFERENTLY, which is why it read as a second page rather than as a
-              repeat and went unnoticed (owner, 2026-09-30, after the same defect on five other
-              surfaces: "fix the duplicated header on submit expense too").
-
-              The rest of the block STAYS. The sentence below and the four stats are not in the shell
-              header and are the only place a rep is told that From is locked to his residence and
-              whether his residence GPS is ready — suppressing the whole intro with `showIntro` would
-              have been the quick fix and would have taken real information with it. */}
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-500">
-            From is locked to your registered residence. Tap To so Phoenix Workforce captures
-            your live destination, validates distance, detects fraud signals, and calculates
-            the request automatically on the server.
-          </p>
-          <div className="mt-4 grid grid-cols-2 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-4">
-            <Stat label="Employee" value={formatEmployeeDisplayName(employeeName)} />
-            <Stat label="Role" value={employeeRole} />
-            <Stat label="From" value={fromShortLabel} />
-            <Stat
-              label="Residence GPS"
-              value={hasResidenceCoordinates ? "Ready" : "Missing"}
-            />
-          </div>
-        </section>
-      ) : null}
-
-      {/* Step indicator — flat thin pills, no oversized icon boxes */}
-      <div
-        aria-label="Submission progress"
-        className="overflow-hidden rounded-md border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
-        role="group"
-      >
-        <div className="grid grid-cols-3 divide-x divide-gray-100">
-          <WizardStep active={step === 1} index={1} label="Trip details" />
-          <WizardStep active={step === 2} index={2} label="Validate route" />
-          <WizardStep active={step === 3} index={3} label="Review & submit" />
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="From date">
+          <Input
+            aria-label="Trip start date"
+            lang="en-GB"
+            max={tripEndDate || undefined}
+            onChange={(event) => setTripStartDate(event.target.value)}
+            placeholder="YYYY-MM-DD"
+            type="date"
+            value={tripStartDate}
+          />
+        </Field>
+        <Field label="To date">
+          <Input
+            aria-label="Trip end date"
+            lang="en-GB"
+            min={tripStartDate || undefined}
+            onChange={(event) => setTripEndDate(event.target.value)}
+            placeholder="YYYY-MM-DD"
+            type="date"
+            value={tripEndDate}
+          />
+        </Field>
       </div>
+      {tripStartDate && tripEndDate ? (
+        <StepNote tone="neutral">
+          <span className="font-black">{durationSummary}.</span>{" "}
+          {/* Only an overnight stay joins two days (owner, 2026-09-18 — see overnight-evidence.ts). */}
+          {tripStartDate < tripEndDate
+            ? "Two dates mean you stayed away overnight. If you came home the same day, choose one date and file each day as its own trip."
+            : null}
+        </StepNote>
+      ) : null}
 
-      <Card
-        aria-busy={isCalculating}
-        className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-            Request details
-          </span>
-        </div>
-        <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
-          Fill the trip and let the system calculate the rest
-        </h2>
+      {isNonTravel ? null : (
+        <Field as="div" label="How you travelled">
+          <ChoiceTiles
+            columns={4}
+            label="Transportation type"
+            onChange={(value) => handleTransportationTypeChange(value)}
+            options={transportOptions}
+            value={transportationType}
+          />
+        </Field>
+      )}
 
-        {/* Conditional hint banner */}
-        {(!hasResidenceCoordinates || isOffline) && (
-          <div
-            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-phx-sm ${
-              !hasResidenceCoordinates
-                ? "border-rose-200 bg-rose-50 text-rose-700"
-                : "border-amber-200 bg-amber-50 text-amber-800"
-            }`}
-            role="status"
+      {useAreaRepPicker ? (
+        <Field label="Area">
+          <SearchableSelect
+            className="w-full px-3 disabled:text-slate-400"
+            onChange={(event) => handleAreaSelection(event.target.value)}
+            value={selectedAreaCode}
           >
-            <span
-              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm ${
-                !hasResidenceCoordinates ? "bg-rose-500" : "bg-amber-500"
-              }`}
-            />
-            <span>
-              {!hasResidenceCoordinates
-                ? "Residence GPS coordinates are missing. Ask HR to set your residence in your profile before submitting."
-                : "You are offline. The request will be saved locally and synced automatically when you reconnect."}
-            </span>
-          </div>
-        )}
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <span className="mb-1 block text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-              Expense Type
-            </span>
-            <ChoiceGroup
-              aria-label="Expense type"
-              className="grid-cols-3 rounded-md"
-              onChange={(value) => setExpenseType(value)}
-              options={[
-                { label: "Traveling", value: "traveling" },
-                { label: "Meeting", value: "meeting" },
-                { label: "Other", value: "other" },
-              ]}
-              optionClassName="min-h-11"
-              value={expenseType}
-            />
-          </div>
-
-          <Field label="From Date">
-            <Input
-              aria-label="Trip start date"
-              lang="en-GB"
-              max={tripEndDate || undefined}
-              onChange={(event) => setTripStartDate(event.target.value)}
-              placeholder="YYYY-MM-DD"
-              type="date"
-              value={tripStartDate}
-            />
-          </Field>
-
-          <Field label="To Date">
-            <Input
-              aria-label="Trip end date"
-              lang="en-GB"
-              min={tripStartDate || undefined}
-              onChange={(event) => setTripEndDate(event.target.value)}
-              placeholder="YYYY-MM-DD"
-              type="date"
-              value={tripEndDate}
-            />
-          </Field>
-
-          <Field label="Duration">
-            <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-              {durationSummary}
-            </div>
-            {/* Only an overnight stay joins two days (owner, 2026-09-18 — see overnight-evidence.ts). */}
-            {tripStartDate && tripEndDate && tripStartDate < tripEndDate ? (
-              <p className="mt-2 text-xs font-semibold text-slate-500">
-                Two dates mean you stayed away overnight. If you came home the same day, choose one date
-                and file each day as its own trip.
-              </p>
-            ) : null}
-          </Field>
-
-          {isNonTravel ? null : (
-          <Field label="From">
-            <PremiumTooltip
-              className="w-80"
-              content={<LocationTooltipContent label="Full residence address" value={residenceSummary} />}
-              placement="top"
-              triggerClassName="block"
-            >
-              <div
-                aria-label={`From residence: ${residenceSummary}`}
-                className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
-                title={residenceSummary}
-              >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-orange-400" />
-                <span className="truncate" dir="auto">{fromShortLabel}</span>
-              </div>
-            </PremiumTooltip>
-          </Field>
-          )}
-
-          {isNonTravel ? null : (
-          <Field label="To">
-            <PremiumTooltip
-              className="w-80"
-              content={<LocationTooltipContent label="Full destination address" value={destinationLocation.fullAddress} />}
-              placement="top"
-              triggerClassName="block"
-            >
-              <button
-                aria-label={
-                  captured
-                    ? `Destination location: ${destinationLocation.fullAddress}`
-                    : "Capture current location for destination"
-                }
-                className="flex min-h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-orange-300 hover:bg-orange-50"
-                disabled={isCapturing}
-                onClick={() => void captureLocation()}
-                title={destinationLocation.fullAddress}
-                type="button"
-              >
-                <span className="truncate" dir="auto">
-                  {isCapturing ? "Capturing destination..." : destinationLocation.shortLabel}
-                </span>
-                {isCapturing ? (
-                  <LoadingSpinner />
-                ) : (
-                  <MapPin className="h-4 w-4 shrink-0 text-orange-500" />
-                )}
-              </button>
-            </PremiumTooltip>
-          </Field>
-          )}
-
-          {captured && !isNonTravel ? (
-            <>
-              <Field label="Area / Brick">
-                <LocationReadout value={destinationLocation.area} />
-              </Field>
-
-              <Field label="Governorate">
-                <LocationReadout value={destinationLocation.governorate} />
-              </Field>
-
-              <div className="sm:col-span-2 xl:col-span-2">
-                <Field label="Full Address">
-                  <PremiumTooltip
-                    className="w-80 max-w-[calc(100vw-2rem)]"
-                    content={<LocationTooltipContent label="Captured full address" value={destinationLocation.fullAddress} />}
-                    placement="top"
-                    triggerClassName="block"
-                  >
-                    <LocationReadout value={destinationLocation.fullAddress} />
-                  </PremiumTooltip>
-                </Field>
-              </div>
-            </>
-          ) : null}
-
-          {isNonTravel ? null : (
-          <Field label="Transportation Type">
-            <SearchableSelect
-              className="w-full px-3"
-              onChange={(event) =>
-                handleTransportationTypeChange(event.target.value as OutstationTransportationType)
-              }
-              value={transportationType}
-            >
-              <option value="car">Car</option>
-              <option value="train">Train</option>
-              <option value="bus">Bus</option>
-              <option value="other">Other</option>
-            </SearchableSelect>
-          </Field>
-          )}
-
-          {useAreaRepPicker ? (
-            <Field label="Area">
-              <SearchableSelect
-                className="w-full px-3 disabled:text-slate-400"
-                onChange={(event) => handleAreaSelection(event.target.value)}
-                value={selectedAreaCode}
-              >
-                <option value="">Select area</option>
-                {areaRepOptions.map((option) => (
-                  <option key={option.areaCode} value={option.areaCode}>
-                    {option.areaName}
-                    {option.isVacant ? " (vacant)" : ""}
-                  </option>
-                ))}
-              </SearchableSelect>
-              {selectedAreaOption ? (
-                <p className="mt-2 text-xs font-semibold text-slate-500">
-                  {selectedAreaOption.repHrId
-                    ? `Medical rep: ${formatEmployeeDisplayName(selectedAreaOption.repName)}`
-                    : "No medical rep is currently assigned to this area."}
-                </p>
-              ) : null}
-            </Field>
-          ) : (
-            <Field label="Medical Representative">
-              <SearchableSelect
-                className="w-full px-3 disabled:text-slate-400"
-                disabled={medicalTripOptions.length === 0}
-                onChange={(event) => setMedicalTripHrId(event.target.value)}
-                value={medicalTripHrId}
-              >
-                <option value="">
-                  {medicalTripOptions.length === 0
-                    ? "No medical representatives in team"
-                    : "Select medical representative"}
-                </option>
-                {medicalTripOptions.map((option) => (
-                  <option key={option.hrId} value={option.hrId}>
-                    {formatEmployeeDisplayName(option.name)}
-                  </option>
-                ))}
-              </SearchableSelect>
-            </Field>
-          )}
-
-          {isNonTravel ? null : transportationType === "car" ? (
-            <Field label="Kilometer Reading">
-              <Input
-                onChange={(event) => setKilometerReading(event.target.value)}
-                placeholder="Enter odometer reading"
-                type="number"
-                value={kilometerReading}
-              />
-            </Field>
-          ) : isTicketBased ? (
-            <>
-              <Field label="Go Ticket Amount">
-                <Input
-                  onChange={(event) => setGoTicketAmount(event.target.value)}
-                  placeholder="EGP"
-                  type="number"
-                  value={goTicketAmount}
-                />
-              </Field>
-              <Field label="Return Ticket Amount">
-                <Input
-                  onChange={(event) => setReturnTicketAmount(event.target.value)}
-                  placeholder="EGP"
-                  type="number"
-                  value={returnTicketAmount}
-                />
-              </Field>
-            </>
-          ) : null}
-
-          {/*
-            Meeting and Other are ALWAYS both shown, never gated on the expense type.
-
-            They are additive line items on top of travel + allowance — reportExpectedTotal
-            (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowanceAmount +
-            otherAmount unconditionally — and the expense type only labels the trip. Production
-            agrees: live rep-submitted requests are typed "traveling" while carrying a real
-            meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
-            20.00), which is the shape reps use most, so gating either box by type would make
-            that trip unable to record its own cost.
-
-            A SECOND, expenseType-gated pair of these same two inputs used to sit below Notes.
-            It came first (1a9d4b482, 2026-06-11); this always-visible pair landed four days
-            later in ec2a5dded ("expense report fields, rescued from #129") without removing it,
-            so both were on screen at once, bound to the same meetingAmount / otherAmount state
-            — on a Meeting trip the rep saw "Meeting Amount" above "Meeting Amount (EGP)",
-            mirroring each other as he typed. The gated pair is the one that went, which also
-            settles this screen on the same rule as the admin modal: see
-            src/components/outstation/admin-manager-expense-modal.tsx and
-            tests/outstation-admin-manual-expense-amount-visibility.test.ts (production request
-            77, B-122: 550.00 typed under "meeting", saved under "other" with the visible box
-            reading empty, because handleSubmit sends both amounts whatever is on screen).
-
-            Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
-            the amount that does not match the type — that would silently drop real money from
-            every traveling trip that also had a meeting or a parking cost.
-          */}
-          <Field label="Meeting Amount (EGP)">
-            <Input
-              min="0"
-              onChange={(event) => setMeetingAmount(event.target.value)}
-              placeholder="EGP"
-              type="number"
-              value={meetingAmount}
-            />
-          </Field>
-
-          <Field label="Other Amount (EGP)">
-            <Input
-              min="0"
-              onChange={(event) => setOtherAmount(event.target.value)}
-              placeholder="EGP"
-              type="number"
-              value={otherAmount}
-            />
-          </Field>
-
-          <p className="text-xs font-semibold text-slate-500 sm:col-span-2 xl:col-span-4">
-            {isNonTravel
-              ? "A Meeting or Other expense is paid on these amounts alone. No distance, travel cost or allowance is calculated."
-              : "Both are paid on top of the travel cost and the allowance, whatever the expense type is. Leave a box empty if that cost was not incurred."}
-          </p>
-
-          {/*
-            The editable "AM Workload" / "PM Workload" inputs that used to sit here were removed.
-            They contradicted the read-only "AM Visits" / "PM Visits" fields further down, which
-            already say workload is resolved automatically: every write path runs
-            resolveOutstationWorkloadPayload (src/lib/outstation/service.ts) and overwrites
-            am_workload / pm_workload from the published Double Visit Analytics snapshot, so a
-            typed value never survived there.
-
-            It did still reach report_am_workload / report_pm_workload, which payroll-expense-
-            mapping.ts prefers over am_workload. That preference is already effectively
-            unconditional — those columns are NOT NULL DEFAULT 0, so its `!= null` fallback to the
-            resolved value can never fire — meaning a rep who left these blank (which the adjacent
-            "resolved automatically" note tells them to do) already sent 0. Removing the inputs
-            makes that the uniform behaviour rather than introducing it.
-          */}
-
-          <Field label="Notes">
-            <textarea
-              className={cn(phxTextareaClassName, "min-h-28")}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Add any trip note or explanation"
-              value={notes}
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="AM Visits">
-              <Input
-                disabled
-                placeholder="Auto from Double Visit Analytics"
-                readOnly
-                value={amWorkload}
-              />
-            </Field>
-            <Field label="PM Visits">
-              <Input
-                disabled
-                placeholder="Auto from Double Visit Analytics"
-                readOnly
-                value={pmWorkload}
-              />
-            </Field>
-            {/* THE AM · PM · PHARMACIES GOLDEN RULE: pharmacy visits are their own figure, never
-                inside AM or PM. Filled after submission like the other two. */}
-            <Field label="Pharmacy Visits">
-              <Input
-                disabled
-                placeholder="Auto from Double Visit Analytics"
-                readOnly
-                value=""
-              />
-            </Field>
-            <p className="col-span-2 text-xs font-semibold text-slate-500">
-              Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission,
-              as three figures: AM, PM and Pharmacies.
+            <option value="">Select area</option>
+            {areaRepOptions.map((option) => (
+              <option key={option.areaCode} value={option.areaCode}>
+                {option.areaName}
+                {option.isVacant ? " (vacant)" : ""}
+              </option>
+            ))}
+          </SearchableSelect>
+          {selectedAreaOption ? (
+            <p className="mt-2 text-xs font-semibold text-slate-500">
+              {selectedAreaOption.repHrId
+                ? `Medical rep: ${formatEmployeeDisplayName(selectedAreaOption.repName)}`
+                : "No medical rep is currently assigned to this area."}
             </p>
+          ) : null}
+        </Field>
+      ) : (
+        <Field label="Medical representative">
+          <SearchableSelect
+            className="w-full px-3 disabled:text-slate-400"
+            disabled={medicalTripOptions.length === 0}
+            onChange={(event) => setMedicalTripHrId(event.target.value)}
+            value={medicalTripHrId}
+          >
+            <option value="">
+              {medicalTripOptions.length === 0
+                ? "No medical representatives in team"
+                : "Select medical representative"}
+            </option>
+            {medicalTripOptions.map((option) => (
+              <option key={option.hrId} value={option.hrId}>
+                {formatEmployeeDisplayName(option.name)}
+              </option>
+            ))}
+          </SearchableSelect>
+        </Field>
+      )}
+    </div>
+  );
+
+  const destinationBody = (
+    <div className="grid gap-5">
+      {/* From is not a choice: it is the registered home the distance is measured from. Said here,
+          on the step it belongs to, together with whether that home has a GPS point at all. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="From — your registered home">
+          <LocationReadout value={residenceSummary || fromShortLabel} />
+        </Field>
+        <Field label="Home GPS">
+          <LocationReadout value={hasResidenceCoordinates ? "Ready" : "Missing"} />
+        </Field>
+      </div>
+      {!hasResidenceCoordinates ? (
+        <StepNote tone="bad">
+          Your home GPS is missing, so the distance cannot be measured. Ask HR to set your residence in
+          your profile before you submit.
+        </StepNote>
+      ) : null}
+
+      <button
+        aria-label={
+          captured
+            ? `Capture the destination again. Now: ${destinationLocation.fullAddress}`
+            : "Capture current location for destination"
+        }
+        className={cn(phxButtonPrimaryClassName, "min-h-12 w-full justify-center text-base sm:w-auto")}
+        disabled={isCapturing}
+        onClick={() => void captureLocation()}
+        type="button"
+      >
+        {isCapturing ? <LoadingSpinner className="text-white" /> : <MapPin aria-hidden className="h-4 w-4" />}
+        {isCapturing ? "Capturing your location…" : captured ? "Capture again" : "Capture my location"}
+      </button>
+
+      {captured ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Area / Brick">
+            <LocationReadout value={destinationLocation.area} />
+          </Field>
+          <Field label="Governorate">
+            <LocationReadout value={destinationLocation.governorate} />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="To — the address captured">
+              <LocationReadout value={destinationLocation.fullAddress} />
+            </Field>
           </div>
         </div>
+      ) : (
+        <StepNote tone="neutral">
+          Phoenix reads your phone&apos;s GPS once, here, and measures the trip from your home to this point.
+        </StepNote>
+      )}
+    </div>
+  );
 
-        <div className="mt-5">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-            Auto calculated summary
-          </span>
-          <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
-            {isNonTravel ? null : (
-              <>
-                <SummaryValue
-                  label="Allowance"
-                  value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
-                />
-                <SummaryValue
-                  label={transportationType === "car" ? "Travel Cost" : "Ticket Cost"}
-                  value={
-                    calculation
-                      ? transportationType === "car"
-                        ? egp(calculation.fuelAmount)
-                        : egp(calculation.ticketAmount)
-                      : "Will appear automatically"
-                  }
-                />
-              </>
-            )}
-            <SummaryValue
-              label="Total Cost"
-              value={calculation ? egp(calculation.expectedTotalAmount) : "Will appear automatically"}
-            />
-            <SummaryValue
-              label="Meeting"
-              value={calculation ? egp(calculation.reportMeetingAmount) : "Will appear automatically"}
-            />
-            <SummaryValue
-              label="Other"
-              value={calculation ? egp(calculation.reportOtherAmount) : "Will appear automatically"}
-            />
-            {isNonTravel ? null : (
-              <>
-                <SummaryValue
-                  label="Kilometer"
-                  value={
-                    calculation?.distanceFromResidenceKm != null
-                      ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
-                      : "Will appear automatically"
-                  }
-                />
-                <SummaryValue
-                  label="Estimated Duration"
-                  value={
-                    calculation?.durationMinutes != null
-                      ? `${calculation.durationMinutes.toFixed(0)} mins`
-                      : "Will appear automatically"
-                  }
-                />
-              </>
-            )}
-            <SummaryValue
-              label="Eligibility"
-              value={
-                calculation
-                  ? calculation.eligibilityStatus.replace(/_/g, " ")
-                  : "Will appear automatically"
-              }
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-md border border-gray-100 bg-slate-50/60 px-3 py-2.5 text-phx-sm text-slate-600">
-          {isCalculating ? (
-            <span className="inline-flex items-center gap-2 font-medium text-slate-800">
-              <LoadingSpinner />
-              {isNonTravel
-                ? "Phoenix is totalling your amounts..."
-                : "Phoenix is calculating kilometer, allowance, amount, and validation automatically..."}
-            </span>
-          ) : isNonTravel ? (
-            <span>
-              {isOffline
-                ? "A Meeting or Other expense needs an internet connection so its invoice can be uploaded."
-                : canAutoCalculate
-                  ? "No distance or travel is calculated for a Meeting or Other expense. It is paid on the amounts you entered."
-                  : "Select the dates and enter the Meeting or Other amount. No location is needed."}
-            </span>
-          ) : canAutoCalculate ? (
-            <span>
-              The system is calculating your trip automatically from your residence, live
-              destination, dates, policy, and transport details.
-            </span>
-          ) : (
-            <span>
-              Select the date range and tap To so the system can capture destination and calculate
-              the request.
-            </span>
-          )}
-        </div>
-
-        {calculation ? (
-          <div className="mt-5 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
-            {isNonTravel ? null : (
-              <>
-                <FieldValue
-                  label="Kilometer"
-                  value={
-                    calculation?.distanceFromResidenceKm != null
-                      ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
-                      : "N/A"
-                  }
-                />
-                <FieldValue
-                  label="Estimated Duration"
-                  value={
-                    calculation?.durationMinutes != null
-                      ? `${calculation.durationMinutes.toFixed(0)} mins`
-                      : "N/A"
-                  }
-                />
-                <FieldValue
-                  label={transportationType === "car" ? "Fuel Amount" : "Ticket Amount"}
-                  value={
-                    calculation
-                      ? transportationType === "car"
-                        ? egp(calculation.fuelAmount)
-                        : egp(calculation.ticketAmount)
-                      : "N/A"
-                  }
-                />
-              </>
-            )}
-            <FieldValue label="Amount" value={egp(calculation.expectedTotalAmount)} />
-            <FieldValue
-              label="Eligibility"
-              value={calculation.eligibilityStatus.replace(/_/g, " ")}
-            />
-            {isNonTravel ? null : (
-              <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
-            )}
-            {/* Meeting and other are inside Amount (reportExpectedTotal sums travel + meeting +
-                allowance + other), so a review card that lists fuel and allowance beside the
-                Amount has to list these two as well or the figures below it do not add up. */}
-            {calculation.reportMeetingAmount > 0 ? (
-              <FieldValue label="Meeting" value={egp(calculation.reportMeetingAmount)} />
-            ) : null}
-            {calculation.reportOtherAmount > 0 ? (
-              <FieldValue label="Other" value={egp(calculation.reportOtherAmount)} />
-            ) : null}
-          </div>
-        ) : null}
-      </Card>
-
+  const evidenceBody = (
+    <div className="grid gap-5">
       {/* Hidden outright for the waived roles (owner request 2026-08-19) rather than shown as
           "optional": these managers are not being asked to weigh a choice, the step is simply no
-          longer part of their submission. A card that stays on screen saying "you may skip this"
+          longer part of their submission. A block that stays on screen saying "you may skip this"
           is the same requirement, only asked more quietly. */}
       {!arrivalPhotoOwed ? null : (
-      <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-            {arrivalPhotoBadge}
-          </span>
-          <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
-            {arrivalPhotoHeading}
-          </h2>
-          <p className="mt-2 max-w-2xl text-phx-md leading-relaxed text-slate-500">
-            {arrivalPhotoHint}
-          </p>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                Live Camera Photo
-              </span>
-              <button
-                className="flex min-h-12 w-full items-center justify-center gap-3 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
-                disabled={isCapturingCarEvidence || isCarEvidenceCameraOpen}
-                onClick={() => void openCarEvidenceCamera()}
-                type="button"
-              >
-                {isCapturingCarEvidence ? (
-                  <>
-                    <LoadingSpinner className="text-white" />
-                    Opening...
-                  </>
-                ) : (
-                  <>
-                    <Camera className="h-4 w-4" />
-                    {isCarEvidenceCameraOpen
-                      ? "Camera Open"
-                      : carEvidence
-                        ? "Retake Camera Photo"
-                        : "Open Camera"}
-                  </>
-                )}
-              </button>
-              {canUploadArrivalPhoto ? (
-                <>
-                  <span className="mt-3 mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Or upload a photo
-                  </span>
-                  <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-4 text-phx-md font-semibold text-orange-700 transition hover:bg-orange-50">
-                    <Upload className="h-4 w-4" />
-                    {carEvidence?.source === "upload" ? "Replace uploaded photo" : "Upload Photo"}
-                    <input
-                      accept="image/*"
-                      className="hidden"
-                      disabled={isCapturingCarEvidence}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        // Cleared so re-picking the SAME file fires change again; without this a
-                        // failed upload cannot be retried with the identical photo.
-                        event.target.value = "";
-                        if (file) void uploadArrivalEvidence(file);
-                      }}
-                      type="file"
-                    />
-                  </label>
-                </>
-              ) : null}
-            </label>
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                Photo status
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">
-                {arrivalPhotoStatusLabel}
-              </p>
-              {carEvidence ? (
-                <p className="mt-2 text-sm text-slate-700">
-                  {carEvidence.capturedLocationLabel}
-                </p>
-              ) : null}
-            </div>
+        <section aria-label={arrivalPhotoBadge} className="grid gap-3 border border-slate-200 bg-white p-4">
+          <div>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">{arrivalPhotoBadge}</p>
+            <h3 className="mt-1 text-base font-black text-slate-900">{arrivalPhotoHeading}</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600">{arrivalPhotoHint}</p>
           </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              className={cn(phxButtonAccentClassName, "min-h-12 w-full justify-center")}
+              disabled={isCapturingCarEvidence || isCarEvidenceCameraOpen}
+              onClick={() => void openCarEvidenceCamera()}
+              type="button"
+            >
+              {isCapturingCarEvidence ? (
+                <>
+                  <LoadingSpinner className="text-white" />
+                  Opening…
+                </>
+              ) : (
+                <>
+                  <Camera aria-hidden className="h-4 w-4" />
+                  {isCarEvidenceCameraOpen ? "Camera open" : carEvidence ? "Take it again" : "Open camera"}
+                </>
+              )}
+            </button>
+            {canUploadArrivalPhoto ? (
+              <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-4 text-sm font-bold text-orange-800 transition hover:bg-orange-100">
+                <Upload aria-hidden className="h-4 w-4" />
+                {carEvidence?.source === "upload" ? "Replace the uploaded photo" : "Or upload a photo"}
+                <input
+                  accept="image/*"
+                  className="hidden"
+                  disabled={isCapturingCarEvidence}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    // Cleared so re-picking the SAME file fires change again; without this a
+                    // failed upload cannot be retried with the identical photo.
+                    event.target.value = "";
+                    if (file) void uploadArrivalEvidence(file);
+                  }}
+                  type="file"
+                />
+              </label>
+            ) : null}
+          </div>
+
           {isCarEvidenceCameraOpen ? (
-            <div className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-slate-950">
-              <video
-                ref={videoRef}
-                autoPlay
-                className="aspect-video w-full object-cover"
-                muted
-                playsInline
-              />
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-950 p-4">
-                <p className="text-sm font-semibold text-white">
-                  Frame the car clearly, then capture the photo.
+            <div className="overflow-hidden border border-slate-200 bg-slate-950">
+              <video ref={videoRef} autoPlay className="aspect-video w-full object-cover" muted playsInline />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-950 p-3">
+                <p className="min-w-0 flex-1 basis-48 text-sm font-semibold text-white">
+                  {transportationType === "car"
+                    ? "Frame the car clearly, then take the photo."
+                    : "Frame where you arrived — the station or the place — then take the photo."}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    className="rounded-md border border-white/20 bg-transparent px-4 text-white hover:bg-white/10"
+                  <button
+                    className="inline-flex min-h-11 items-center border border-white/30 px-4 text-sm font-bold text-white hover:bg-white/10"
                     onClick={stopCarEvidenceCamera}
                     type="button"
                   >
                     Cancel
-                  </Button>
-                  <Button
-                    className="rounded-md bg-orange-500 px-5 text-white hover:bg-orange-600"
+                  </button>
+                  <button
+                    className={cn(phxButtonAccentClassName, "min-h-11")}
                     disabled={isCapturingCarEvidence}
                     onClick={() => void captureCarEvidence()}
                     type="button"
                   >
-                    {isCapturingCarEvidence ? <LoadingSpinner className="text-white" /> : <Camera className="h-4 w-4" />}
-                    Capture
-                  </Button>
+                    {isCapturingCarEvidence ? <LoadingSpinner className="text-white" /> : <Camera aria-hidden className="h-4 w-4" />}
+                    Take the photo
+                  </button>
                 </div>
               </div>
             </div>
           ) : null}
+
+          <div className="border border-slate-200 bg-slate-50 p-3">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Photo</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{arrivalPhotoStatusLabel}</p>
+            {carEvidence ? (
+              <p className="mt-1 break-words text-sm text-slate-700" dir="auto">{carEvidence.capturedLocationLabel}</p>
+            ) : (
+              <p className="mt-1 text-sm font-semibold text-amber-800">{arrivalPhotoMissingMessage}</p>
+            )}
+          </div>
+
           {carEvidence?.imageDataUrl ? (
-            <div className="relative mt-4 overflow-hidden rounded-md border border-slate-200">
+            <div className="relative overflow-hidden border border-slate-200">
               <ZoomablePhoto
-                alt="Live car photo preview"
-                caption="Live car photo"
+                alt={`${arrivalPhotoBadge} preview`}
+                caption={arrivalPhotoBadge}
                 className="h-auto w-full object-cover"
                 src={carEvidence.imageDataUrl}
               />
             </div>
           ) : carEvidence ? (
-            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Live photo details are restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
-            </div>
+            <StepNote tone="warn">
+              The photo details were kept, but the picture itself could not be restored on this phone. Take the
+              photo again before you submit.
+            </StepNote>
           ) : null}
-        </Card>
+        </section>
       )}
 
-      {/* Rendered alongside the arrival photo, never instead of it — a train or bus
-          request carries BOTH its ticket and its live arrival photo. The card hides
-          itself for car and other via `visible`. For a waived role the photo card is gone
-          and this is the trip's only evidence surface, which is why it stays on screen for
-          them — optional, but offered. */}
+      {/* Rendered alongside the arrival photo, never instead of it — a train or bus claim carries
+          BOTH its ticket and its live arrival photo. The card hides itself for car and other via
+          `visible`. For a waived role the photo block is gone and this is the trip's only evidence
+          surface, which is why it stays on screen for them — optional, but offered. */}
       <TicketUploadCard
         attachmentCount={ticketFiles.length}
         onFilesSelected={(files) => {
@@ -2132,156 +1762,565 @@ export function MobileOutstationWizard({
         visible={isTicketBased || isNonTravel}
         {...(isNonTravel
           ? {
-              badge: "Upload invoice or picture",
+              badge: "Invoice or picture",
               description:
                 "Attach the invoice or a picture of this expense — JPG, PNG or PDF, up to 3 files. You can submit without one, but the claim is then held for review before it moves to payroll.",
             }
           : {})}
       />
 
-      <EligibilityResultCard result={calculation} />
-      {isNonTravel ? null : <OutstationCostBreakdown result={calculation} />}
-      {isNonTravel ? null : <RouteMapPreview request={calculation} />}
+      {isOffline && isTicketRequired && ticketFiles.length === 0 ? (
+        <StepNote tone="warn">
+          No connection: you can submit without the ticket now and attach it afterwards from My claims, below this form.
+        </StepNote>
+      ) : null}
+      {!arrivalPhotoOwed && !(isTicketBased || isNonTravel) ? (
+        <StepNote tone="neutral">Nothing to add on this step for your role. Press Next.</StepNote>
+      ) : null}
+    </div>
+  );
+
+  const amountsBody = (
+    <div className="grid gap-5">
+      {isNonTravel ? null : transportationType === "car" ? (
+        <Field label="Kilometer reading">
+          <Input
+            inputMode="numeric"
+            onChange={(event) => setKilometerReading(event.target.value)}
+            placeholder="Odometer reading"
+            type="number"
+            value={kilometerReading}
+          />
+        </Field>
+      ) : isTicketBased ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Go ticket amount (EGP)">
+            <Input
+              inputMode="decimal"
+              onChange={(event) => setGoTicketAmount(event.target.value)}
+              placeholder="EGP"
+              type="number"
+              value={goTicketAmount}
+            />
+          </Field>
+          <Field label="Return ticket amount (EGP)">
+            <Input
+              inputMode="decimal"
+              onChange={(event) => setReturnTicketAmount(event.target.value)}
+              placeholder="EGP"
+              type="number"
+              value={returnTicketAmount}
+            />
+          </Field>
+        </div>
+      ) : null}
+
+      {/*
+        Meeting and Other are ALWAYS both shown, never gated on the expense type.
+
+        They are additive line items on top of travel + allowance — reportExpectedTotal
+        (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowanceAmount +
+        otherAmount unconditionally — and the expense type only labels the trip. Production
+        agrees: live rep-submitted requests are typed "traveling" while carrying a real
+        meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
+        20.00), which is the shape reps use most, so gating either box by type would make
+        that trip unable to record its own cost.
+
+        A SECOND, expenseType-gated pair of these same two inputs used to sit below Notes.
+        It came first (1a9d4b482, 2026-06-11); this always-visible pair landed four days
+        later in ec2a5dded ("expense report fields, rescued from #129") without removing it,
+        so both were on screen at once, bound to the same meetingAmount / otherAmount state.
+        The gated pair is the one that went, which also settles this screen on the same rule
+        as the admin modal: see src/components/outstation/admin-manager-expense-modal.tsx and
+        tests/outstation-admin-manual-expense-amount-visibility.test.ts (production request
+        77, B-122: 550.00 typed under "meeting", saved under "other" with the visible box
+        reading empty, because handleSubmit sends both amounts whatever is on screen).
+
+        Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
+        the amount that does not match the type — that would silently drop real money from
+        every traveling trip that also had a meeting or a parking cost.
+      */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Meeting Amount (EGP)">
+          <Input
+            min="0"
+            onChange={(event) => setMeetingAmount(event.target.value)}
+            placeholder="EGP"
+            type="number"
+            value={meetingAmount}
+          />
+        </Field>
+        <Field label="Other Amount (EGP)">
+          <Input
+            min="0"
+            onChange={(event) => setOtherAmount(event.target.value)}
+            placeholder="EGP"
+            type="number"
+            value={otherAmount}
+          />
+        </Field>
+      </div>
+      <StepNote tone="neutral">
+        {isNonTravel
+          ? "A Meeting or Other expense is paid on these amounts alone. No distance, travel cost or allowance is calculated."
+          : "Both are paid on top of the travel cost and the allowance, whatever the expense type is. Leave a box empty if that cost was not incurred."}
+      </StepNote>
+
+      {/*
+        No AM / PM / Pharmacy boxes on this form, editable or disabled. The workload is read from
+        Phoenix CRM after submission, as three figures (THE AM · PM · PHARMACIES GOLDEN RULE), and a
+        trip stamped before the evening's visits were saved is re-read the next morning
+        (runOutstationWorkloadRestamp). Three greyed-out boxes that could never hold anything were
+        what this step showed until 2026-10-22; the Review step says what happens instead.
+      */}
+      <Field label="Notes">
+        <textarea
+          className={cn(phxTextareaClassName, "min-h-28")}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Anything your approver should know about this trip"
+          value={notes}
+        />
+      </Field>
+    </div>
+  );
+
+  const preview = afterSubmitGuidance({
+    arrivalPhotoOwed,
+    destination: captured ? destinationLocation.shortLabel : null,
+    isCarTrip: !isNonTravel && transportationType === "car",
+    isNonTravel,
+    isTicketBased,
+    ticketsAttached: ticketFiles.length,
+  });
+
+  const reviewBody = (
+    <div className="grid gap-5">
+      {isOffline ? (
+        <StepNote tone="warn">
+          No connection: the total is calculated when the claim reaches the server. Press Save offline — it is
+          sent by itself when you are back online.
+        </StepNote>
+      ) : isCalculating || !calculation ? (
+        <StepNote tone="neutral">
+          <span className="inline-flex items-center gap-2 font-bold">
+            <LoadingSpinner />
+            {isNonTravel
+              ? "Phoenix is totalling your amounts…"
+              : "Phoenix is calculating the distance, the allowance and the total…"}
+          </span>
+        </StepNote>
+      ) : null}
+
+      {/* ONE review, never two. This step used to show the same figures three times — an "auto
+          calculated summary", a second grid of the same values, and an eligibility card repeating
+          distance and duration — so the employee read every number twice before finding the one
+          that mattered. */}
+      <dl className="grid border border-slate-200 bg-white sm:grid-cols-2" aria-label="Claim review">
+        <ReviewRow label="Expense" value={`${expenseTypeOptions.find((option) => option.value === expenseType)?.label ?? expenseType}${isNonTravel ? "" : ` · ${transportOptions.find((option) => option.value === transportationType)?.label ?? transportationType}`}`} />
+        <ReviewRow label="Dates" value={tripStartDate && tripEndDate ? `${tripStartDate === tripEndDate ? tripStartDate : `${tripStartDate} to ${tripEndDate}`} · ${durationSummary}` : "Not chosen yet"} />
+        {isNonTravel ? null : <ReviewRow label="From" value={fromShortLabel} />}
+        {isNonTravel ? null : <ReviewRow label="To" value={captured ? destinationLocation.fullAddress : "Not captured yet"} />}
+        {selectedMedicalTripName ? <ReviewRow label="Medical rep" value={formatEmployeeDisplayName(selectedMedicalTripName)} /> : null}
+        {arrivalPhotoOwed ? (
+          <ReviewRow label="Arrival photo" tone={hasCarEvidence ? "good" : "bad"} value={hasCarEvidence ? arrivalPhotoStatusLabel : arrivalPhotoMissingShort} />
+        ) : null}
+        {isTicketBased || isNonTravel ? (
+          <ReviewRow
+            label={isNonTravel ? "Invoice" : "Ticket"}
+            tone={ticketFiles.length > 0 ? "good" : isTicketRequired && !isOffline ? "bad" : "neutral"}
+            value={ticketFiles.length > 0 ? `${ticketFiles.length} file${ticketFiles.length === 1 ? "" : "s"} attached` : "None attached"}
+          />
+        ) : null}
+        {calculation && !isNonTravel ? (
+          <>
+            <ReviewRow
+              label="Distance"
+              value={
+                calculation.distanceFromResidenceKm != null
+                  ? `${calculation.distanceFromResidenceKm.toFixed(2)} km${calculation.durationMinutes != null ? ` · about ${calculation.durationMinutes.toFixed(0)} minutes` : ""}`
+                  : "Not available"
+              }
+            />
+            <ReviewRow label={transportationType === "car" ? "Travel cost" : "Ticket cost"} value={egp(transportationType === "car" ? calculation.fuelAmount : calculation.ticketAmount)} />
+            <ReviewRow label="Allowance" value={egp(calculation.allowanceAmount)} />
+          </>
+        ) : null}
+        {calculation && calculation.reportMeetingAmount > 0 ? <ReviewRow label="Meeting" value={egp(calculation.reportMeetingAmount)} /> : null}
+        {calculation && calculation.reportOtherAmount > 0 ? <ReviewRow label="Other" value={egp(calculation.reportOtherAmount)} /> : null}
+        {calculation ? (
+          <ReviewRow
+            label="Total"
+            strong
+            tone={calculation.eligibilityStatus === "not_eligible" ? "bad" : "neutral"}
+            value={egp(calculation.expectedTotalAmount)}
+          />
+        ) : null}
+        {calculation ? (
+          <ReviewRow
+            label="Eligibility"
+            tone={calculation.eligibilityStatus === "not_eligible" ? "bad" : calculation.eligibilityStatus === "eligible" ? "good" : "warn"}
+            value={`${calculation.eligibilityStatus.replace(/_/g, " ")} — ${calculation.eligibilityReason}`}
+          />
+        ) : null}
+      </dl>
 
       {calculation ? (
-        <>
-          {/* Desktop / tablet inline submit card */}
-          <Card className="hidden rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:block sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-                  Step 3
-                </span>
-                <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
-                  Submit request
-                </h2>
-              </div>
-              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                className="min-h-11 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
-                disabled={
-                  isSubmitting ||
-                  calculation.eligibilityStatus === "not_eligible" ||
-                  (!hasCarEvidence && arrivalPhotoOwed)
-                }
-                onClick={submit}
-                type="button"
-              >
-                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
-                {isSubmitting
-                  ? "Submitting..."
-                  : isOffline
-                    ? "Save & Sync Offline Request"
-                    : "Submit Request"}
-              </Button>
-            </div>
-            {/* A disabled button that says nothing is what made this look broken: the
-                employee pressed it and the page did not react. Always name the reason. */}
-            {!hasCarEvidence && arrivalPhotoOwed ? (
-              <p className="mt-2 text-phx-sm font-semibold text-amber-700">
-                {arrivalPhotoMissingMessage}
-              </p>
-            ) : null}
-          </Card>
+        <div className="flex flex-wrap items-start gap-3 border border-slate-200 bg-slate-50 p-3">
+          <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
+          <p className="min-w-0 flex-1 basis-56 break-words text-sm leading-6 text-slate-700">{calculation.approvalReason}</p>
+        </div>
+      ) : null}
+      {calculation?.routeError ? (
+        <StepNote tone="warn">
+          <span className="font-black">Route:</span> {calculation.routeError}
+        </StepNote>
+      ) : null}
+      {isNonTravel ? null : <RouteMapPreview request={calculation} />}
 
-          {/* Mobile sticky footer (< sm). Includes a spacer above the
-              container so the last content row isn't hidden behind the
-              footer when the form is fully scrolled. */}
-          <div aria-hidden className="h-20 sm:hidden" />
+      <section aria-label="After you submit" className="border border-slate-200 bg-white p-4">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">After you submit</p>
+        <NextSteps items={preview.slice(1, 3)} />
+      </section>
+    </div>
+  );
+
+  const bodies: Record<(typeof steps)[number]["key"], ReactNode> = {
+    amounts: amountsBody,
+    destination: destinationBody,
+    evidence: evidenceBody,
+    review: reviewBody,
+    trip: tripBody,
+  };
+
+  // The bar under his thumb, read the way Log a visit's is: what this step still needs ("Now", or
+  // "Still needed" once he pressed on without it), and when it needs nothing, the step after it.
+  const barProblem = isReviewStep ? reviewHold : stepProblem;
+  const barStatus: ReactNode = message ? (
+    <p className="flex min-w-0 items-start gap-2 text-sm font-black text-amber-800">
+      <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+      <span className="min-w-0 break-words">{message}</span>
+    </p>
+  ) : barProblem ? (
+    <button
+      className="flex min-h-11 w-full min-w-0 items-start gap-2 text-left disabled:cursor-default"
+      disabled={!isReviewStep || !firstOpen}
+      onClick={() => {
+        if (isReviewStep && firstOpen) showStep(firstOpen.index + 1);
+      }}
+      type="button"
+    >
+      <ArrowRight aria-hidden className={cn("mt-0.5 h-4 w-4 shrink-0", tried ? "text-rose-600" : "text-orange-600")} />
+      <span className="min-w-0">
+        <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
+          {tried ? "Still needed" : "Now"}
+        </span>
+        <span className={cn("block break-words text-sm font-black", tried ? "text-rose-700" : "text-slate-950")}>{barProblem}</span>
+      </span>
+    </button>
+  ) : isReviewStep ? (
+    <p className="flex min-w-0 items-start gap-2">
+      <CircleCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+      <span className="min-w-0">
+        <span className="block break-words text-sm font-black text-slate-950">
+          {isOffline ? "Ready to save on this phone" : `Ready to submit${calculation ? ` · ${egp(calculation.expectedTotalAmount)}` : ""}`}
+        </span>
+        <span className="block break-words text-xs font-semibold leading-5 text-slate-500">
+          {arrivalPhotoOwed ? "Next: the departure photo, before you leave." : "Next: validation, then payroll."}
+        </span>
+      </span>
+    </p>
+  ) : nextStep ? (
+    <p className="flex min-w-0 items-start gap-2">
+      <CircleCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+      <span className="min-w-0">
+        <span className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-emerald-700">Done · Next</span>
+        <span className="block break-words text-sm font-black text-slate-950">
+          {nextStep.label} — {nextStep.description}
+        </span>
+      </span>
+    </p>
+  ) : null;
+
+  return (
+    <div className="min-w-0 space-y-4" ref={formTopRef}>
+      <OfflineSyncBanner visible={isOffline} />
+      {permissionPrompt ? (
+        <PermissionPromptModal
+          blocked={permissionPrompt.blocked}
+          kind={permissionPrompt.kind}
+          onAccept={() => void acceptPermissionPrompt()}
+          onDecline={declinePermissionPrompt}
+        />
+      ) : null}
+
+      {/* 🔴 NO PAGE TITLE HERE. The portal shell already prints "Submit Expense", and the admin shell
+          prints its own; a second heading was removed on 2026-09-30 (tests/portal-single-header). */}
+      {submitted ? (
+        <SubmittedClaimPanel
+          claim={submitted}
+          onAnother={() => {
+            setSubmitted(null);
+            showStep(1);
+          }}
+        />
+      ) : (
+        <FormWizard
+          badge={
+            <span className="inline-flex max-w-full items-center gap-1.5 break-words border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+              {expenseTypeOptions.find((option) => option.value === expenseType)?.label ?? "Expense"}
+              {isNonTravel ? "" : ` · ${transportOptions.find((option) => option.value === transportationType)?.label ?? ""}`}
+            </span>
+          }
+          bleed
+          // Back to any step; forward only as far as the first step that still needs something.
+          canJump={(target) => target < stepNumber || target <= (firstOpen ? firstOpen.index + 1 : steps.length)}
+          footer={<></>}
+          footnote="Nothing is sent until you press Submit. Phoenix measures the distance and calculates the allowance and the travel cost on the server."
+          footnoteIcon={false}
+          header="strip"
+          onStepChange={showStep}
+          step={stepNumber}
+          steps={steps}
+        >
+          <div aria-busy={isCalculating} className="min-w-0 px-4 pb-5 sm:px-5">
+            {/* What to do in THIS step, in one sentence, before anything else on it. */}
+            <p className="mb-5 flex items-start gap-2 border-l-[3px] border-orange-500 bg-orange-50 px-3 py-2.5 text-sm font-bold leading-6 text-slate-900">
+              {submitExpenseStepInstruction(currentStep.key, facts)}
+            </p>
+            {bodies[currentStep.key]}
+          </div>
+
+          {/* Held above the portal's bottom bar on phones (--phx-portal-bottom-nav-reserve is its
+              height there and 0 elsewhere), under his thumb wherever he has scrolled to — the same
+              bar Log a visit and the weekly plan carry. Every message lands here, in view, never in
+              a card below a fixed footer where a refusal used to fall off-screen. */}
           <div
-            className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-100 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2.5 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] backdrop-blur sm:hidden print:hidden"
+            aria-label="Submit expense action bar"
+            className="sticky bottom-[var(--phx-portal-bottom-nav-reserve,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 print:hidden"
             data-no-print
             role="region"
-            aria-label="Submit expense action bar"
           >
-            {!hasCarEvidence && arrivalPhotoOwed ? (
-              <p className="mb-1.5 whitespace-nowrap text-phx-xs font-semibold text-amber-700">
-                {arrivalPhotoMissingShort}
-              </p>
-            ) : null}
-            <div className="flex items-center gap-2">
-              <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
-              <Button
-                className="ml-auto min-h-11 flex-1 rounded-md bg-orange-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
-                disabled={
-                  isSubmitting ||
-                  calculation.eligibilityStatus === "not_eligible" ||
-                  (!hasCarEvidence && arrivalPhotoOwed)
-                }
-                onClick={submit}
-                type="button"
-              >
-                {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
-                {isSubmitting
-                  ? "Submitting..."
-                  : isOffline
-                    ? "Save offline"
-                    : "Submit Request"}
-              </Button>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <div aria-live="polite" className="min-w-0 flex-1 basis-56" data-action-bar-status="">
+                {barStatus}
+              </div>
+              <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex sm:w-auto sm:flex-row-reverse">
+                {isReviewStep ? (
+                  <button
+                    className={cn(phxButtonAccentClassName, "min-h-12 justify-center text-base sm:min-w-40")}
+                    disabled={
+                      isSubmitting ||
+                      (!isOffline && (isCalculating || !calculation)) ||
+                      calculation?.eligibilityStatus === "not_eligible" ||
+                      (!hasCarEvidence && arrivalPhotoOwed)
+                    }
+                    onClick={() => {
+                      if (firstOpen) {
+                        setTried(true);
+                        return;
+                      }
+                      void submit();
+                    }}
+                    type="button"
+                  >
+                    {isSubmitting ? <LoadingSpinner className="text-white" /> : null}
+                    {isSubmitting ? "Submitting…" : isOffline ? "Save offline" : "Submit"}
+                  </button>
+                ) : (
+                  <button
+                    className={cn(phxButtonPrimaryClassName, "min-h-12 justify-center text-base sm:min-w-40")}
+                    onClick={goNext}
+                    type="button"
+                  >
+                    Next
+                    <ChevronRight aria-hidden className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  className={cn(phxButtonGhostClassName, "order-first min-h-12 justify-center sm:order-none")}
+                  disabled={stepNumber === 1 || isSubmitting}
+                  onClick={() => showStep(stepNumber - 1)}
+                  type="button"
+                >
+                  <ChevronLeft aria-hidden className="h-4 w-4" />
+                  Back
+                </button>
+              </div>
             </div>
           </div>
-        </>
-      ) : null}
-
-      {message ? (
-        <>
-          <Card
-            aria-live="polite"
-            className="hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-sm font-medium text-amber-800 sm:block"
-            role="status"
-          >
-            {message}
-          </Card>
-          {/* On a phone this card sat in normal flow BELOW the fixed submit bar, at the
-              very end of the scroll area. Every refusal — including the server's — landed
-              off-screen, so pressing Submit looked like it did nothing at all. Pinned above
-              the action bar it is now the first thing the employee sees. */}
-          <div
-            className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] z-50 sm:hidden print:hidden"
-            data-no-print
-          >
-            <Card
-              aria-live="polite"
-              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-sm font-medium text-amber-800 shadow-lg"
-              role="status"
-            >
-              {message}
-            </Card>
-          </div>
-        </>
-      ) : null}
+        </FormWizard>
+      )}
     </div>
   );
 }
 
-function LocationTooltipContent({
+/** A tap is the step's answer, as on Log a visit's choice steps. Square, like every CRM tile. */
+function ChoiceTiles<T extends string>({
+  columns = 3,
   label,
+  onChange,
+  options,
+  value,
+}: {
+  columns?: 3 | 4;
+  label: string;
+  onChange: (next: T) => void;
+  options: ReadonlyArray<{ label: string; value: T }>;
+  value: T;
+}) {
+  return (
+    <div
+      aria-label={label}
+      className={cn("grid gap-1.5", columns === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}
+      role="radiogroup"
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            aria-checked={selected}
+            className={cn(
+              "min-h-11 min-w-0 border px-3 py-2 text-sm font-black transition",
+              selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+            )}
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            role="radio"
+            type="button"
+          >
+            <span className="block break-words">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const NOTE_TONES = {
+  bad: "border-rose-200 bg-rose-50 text-rose-800",
+  neutral: "border-slate-200 bg-slate-50 text-slate-700",
+  warn: "border-amber-200 bg-amber-50 text-amber-900",
+} as const;
+
+function StepNote({ children, tone }: { children: ReactNode; tone: keyof typeof NOTE_TONES }) {
+  return (
+    <div className={cn("border px-3.5 py-3 text-sm leading-6", NOTE_TONES[tone])} role={tone === "bad" ? "alert" : undefined}>
+      <div className="break-words font-medium">{children}</div>
+    </div>
+  );
+}
+
+const REVIEW_TONES = {
+  bad: "text-rose-700",
+  good: "text-emerald-700",
+  neutral: "text-slate-900",
+  warn: "text-amber-800",
+} as const;
+
+function ReviewRow({
+  label,
+  strong = false,
+  tone = "neutral",
   value,
 }: {
   label: string;
+  strong?: boolean;
+  tone?: keyof typeof REVIEW_TONES;
   value: string;
 }) {
   return (
-    <div className="space-y-1">
-      <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </p>
-      <p className="break-words text-sm font-semibold leading-5 text-slate-900" dir="auto">
+    <div className="min-w-0 border-b border-slate-100 px-3 py-2.5 sm:odd:border-r">
+      <dt className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
+      <dd className={cn("mt-0.5 break-words", strong ? "text-lg font-black" : "text-sm font-bold", REVIEW_TONES[tone])} dir="auto">
         {value}
-      </p>
+      </dd>
     </div>
   );
 }
 
+/** The rail of what is still owed — done, now, next — shared by the Review step and the screen after Submit. */
+function NextSteps({ items }: { items: ReadonlyArray<AfterSubmitItem> }) {
+  return (
+    <ol className="mt-3 grid gap-3">
+      {items.map((item, index) => (
+        <li className="flex items-start gap-3" key={item.key}>
+          <span
+            aria-hidden
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center text-xs font-black",
+              item.state === "done"
+                ? "bg-orange-100 text-orange-700"
+                : item.state === "now"
+                  ? "bg-orange-600 text-white"
+                  : item.state === "if-needed"
+                    ? "border border-dashed border-orange-400 bg-white text-orange-700"
+                    : "border border-slate-300 bg-white text-slate-400",
+            )}
+          >
+            {item.state === "done" ? <Check className="h-4 w-4" /> : index + 1}
+          </span>
+          <div className="min-w-0">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+              {item.state === "done"
+                ? "Done"
+                : item.state === "now"
+                  ? "Now"
+                  : item.state === "if-needed"
+                    ? "If you drive on"
+                    : "Next"}
+            </p>
+            <p className={cn("break-words text-sm font-black", item.state === "next" ? "text-slate-500" : "text-slate-950")} dir="auto">
+              {item.title}
+            </p>
+            <p className="mt-0.5 break-words text-xs leading-5 text-slate-500">{item.detail}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * The screen after Submit (owner, 2026-10-22). It replaces a form that reset in silence: the claim's
+ * number, and what is still owed on it, in order — the departure photo first when the trip owes one.
+ */
+function SubmittedClaimPanel({ claim, onAnother }: { claim: SubmittedClaim; onAnother: () => void }) {
+  const items = afterSubmitGuidance(claim);
+  return (
+    <section aria-label="Claim submitted" className="border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
+        <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-emerald-700">
+          <CircleCheck aria-hidden className="h-4 w-4" />
+          Submitted
+        </p>
+        <h2 className="mt-1 text-lg font-black text-slate-900">
+          {claim.id ? `Claim OUTSTATION-${claim.id} is in` : "Your claim is in"}
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">Here is what happens now, step by step.</p>
+      </div>
+      <div className="px-5 pb-5 sm:px-8">
+        <NextSteps items={items} />
+        <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-5">
+          <a className={cn(phxButtonPrimaryClassName, "min-h-12 justify-center")} href={`#${MY_CLAIMS_ANCHOR}`}>
+            See it under My claims
+            <ChevronRight aria-hidden className="h-4 w-4" />
+          </a>
+          <button className={cn(phxButtonGhostClassName, "min-h-12 justify-center")} onClick={onAnother} type="button">
+            Submit another expense
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** A read-only value, wrapped rather than cut: an address is read in full (the no-ellipsis rule). */
 function LocationReadout({ value }: { value: string }) {
   return (
-    <div
-      className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
-      title={value}
-    >
-      <span className="truncate" dir="auto">{value}</span>
+    <div className="flex min-h-11 items-center border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
+      <span className="min-w-0 break-words" dir="auto">
+        {value}
+      </span>
     </div>
   );
 }
@@ -2367,8 +2406,8 @@ function PermissionPromptModal({
       className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm"
       role="dialog"
     >
-      <div className="w-full max-w-md rounded-lg border border-white/30 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
-        <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+      <div className="w-full max-w-md border border-slate-200 bg-white p-5">
+        <span className="inline-flex bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
           {copy.badge}
         </span>
         <h2 id="outstation-permission-title" className="mt-3 text-lg font-bold text-slate-900">
@@ -2376,23 +2415,22 @@ function PermissionPromptModal({
         </h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">{copy.description}</p>
         {blocked ? (
-          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
+          <p className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
             Browser security can prevent the native prompt from appearing again after a permanent block.
             The app can open settings as a shortcut, but you must switch this site&apos;s permission to Allow.
           </p>
         ) : null}
         {blocked ? (
-          <Button
-            className="mt-4 min-h-11 w-full rounded-md border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+          <button
+            className={cn(phxButtonGhostClassName, "mt-4 min-h-11 w-full justify-center")}
             onClick={handleOpenSettings}
             type="button"
-            variant="secondary"
           >
             Open settings / show steps
-          </Button>
+          </button>
         ) : null}
         {blocked && settingsAttempted ? (
-          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+          <div className="mt-4 border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
             <p className="font-semibold text-slate-900">
               If no settings page opened, your browser blocked the shortcut.
             </p>
@@ -2403,24 +2441,22 @@ function PermissionPromptModal({
             </ol>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {settingsUrl ? (
-                <Button
-                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                <button
+                  className={cn(phxButtonGhostClassName, "min-h-10 justify-center text-xs")}
                   onClick={() => void copyText(settingsUrl, "Settings shortcut")}
                   type="button"
-                  variant="secondary"
                 >
                   Copy settings shortcut
-                </Button>
+                </button>
               ) : null}
               {siteUrl ? (
-                <Button
-                  className="min-h-10 rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100"
+                <button
+                  className={cn(phxButtonGhostClassName, "min-h-10 justify-center text-xs")}
                   onClick={() => void copyText(siteUrl, "Site URL")}
                   type="button"
-                  variant="secondary"
                 >
                   Copy site URL
-                </Button>
+                </button>
               ) : null}
             </div>
             {copyMessage ? (
@@ -2429,27 +2465,16 @@ function PermissionPromptModal({
           </div>
         ) : null}
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button
-            className="min-h-11 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            onClick={onDecline}
-            type="button"
-            variant="secondary"
-          >
+          <button className={cn(phxButtonGhostClassName, "min-h-11 justify-center")} onClick={onDecline} type="button">
             Decline
-          </Button>
-          <Button
-            className="min-h-11 rounded-md bg-orange-500 text-white hover:bg-orange-600"
-            onClick={onAccept}
-            type="button"
-          >
+          </button>
+          <button className={cn(phxButtonAccentClassName, "min-h-11 justify-center")} onClick={onAccept} type="button">
             {blocked ? "Accept & retry" : "Accept"}
-          </Button>
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// WizardStep / Field / Stat / FieldValue / SummaryValue moved to
-// `src/components/outstation/wizard-primitives.tsx` so admin outstation
-// pages can reuse them.
+// Field lives in `src/components/outstation/wizard-primitives.tsx`.

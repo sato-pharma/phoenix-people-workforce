@@ -249,10 +249,10 @@ export function DeparturePhotoCard({
   if (requests.length === 0) return null;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-orange-200 bg-orange-50/60 p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+    <section className="overflow-hidden border border-orange-200 bg-orange-50/60 p-4 sm:p-5">
       <div className="flex items-center gap-2">
         <Camera className="h-4 w-4 text-orange-600" />
-        <span className="rounded-md bg-orange-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-700">
+        <span className="bg-orange-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-700">
           {isRetake ? "Retake the departure photo" : "Departure photo needed"}
         </span>
       </div>
@@ -268,7 +268,7 @@ export function DeparturePhotoCard({
           const done = isActive && state.kind === "done";
 
           return (
-            <div className="rounded-md border border-orange-200 bg-white p-3 sm:p-4" key={request.id}>
+            <div className="border border-orange-200 bg-white p-3 sm:p-4" key={request.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-slate-900">{request.destination}</p>
@@ -278,7 +278,7 @@ export function DeparturePhotoCard({
                 </div>
                 {!done ? (
                   <button
-                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center gap-2 bg-orange-500 px-4 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-60"
                     disabled={
                       (isActive && (state.kind === "opening" || state.kind === "saving")) ||
                       // The shutter stays dead until the preview is genuinely producing frames.
@@ -313,7 +313,7 @@ export function DeparturePhotoCard({
               </div>
 
               {isActive && state.kind === "live" ? (
-                <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-black">
+                <div className="mt-3 overflow-hidden border border-slate-200 bg-black">
                   {/* muted is required, not cosmetic: some browsers refuse to autoplay an
                       unmuted element, and a refused play is exactly how this ends up black. */}
                   <video

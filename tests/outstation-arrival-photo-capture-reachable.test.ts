@@ -96,10 +96,19 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
   // Owner request 2026-09-19: a Meeting or Other expense owes no arrival photo either, so the guard is
   // now `arrivalPhotoOwed` (= not a non-travel expense AND not a waived role). The waiver half is
   // asserted separately below so this guard can never silently drop it.
+  // Owner request 2026-10-22 ("make it in a form exactly like … log a visit in Phoenix CRM"): the
+  // form is a step form now, with ONE action bar on every screen size, so there is ONE Submit
+  // button — the desktop card and the mobile bar were the two copies that could drift, and they
+  // are gone. Exactly one, so a second Submit cannot come back without its own guard.
   assert.equal(
     wizard.split("|| (!hasCarEvidence && arrivalPhotoOwed) }").length - 1,
-    2,
-    "both submit buttons (desktop card and mobile action bar) disable on a missing arrival photo, for every transport type and every role that still owes one",
+    1,
+    "the one Submit button disables on a missing arrival photo, for every transport type and every role that still owes one",
+  );
+  assert.equal(
+    wizard.split("void submit();").length - 1,
+    1,
+    "there is exactly one Submit press in the form — a second one is a second guard that can drift",
   );
   assert.ok(
     wizard.includes("const arrivalPhotoOwed = !isNonTravel && !isEvidencePhotoWaived;"),
@@ -110,8 +119,13 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
     "…and neither may keep the un-waived form of the guard, or a waived manager's button sits dead with no photo card on screen to explain it",
   );
   assert.ok(
-    wizard.includes("{arrivalPhotoMissingMessage}") && wizard.includes("{arrivalPhotoMissingShort}"),
+    wizard.includes("{arrivalPhotoMissingMessage}") && wizard.includes(": arrivalPhotoMissingShort}"),
     "a disabled button must name its reason — an unexplained dead button is what made this read as 'nothing happens'",
+  );
+  // …and the bar beside the button names it too: the evidence step's problem is the arrival photo.
+  assert.ok(
+    wizard.includes("{barStatus}") && wizard.includes("submitExpenseStepProblem("),
+    "the action bar shows what is still missing, from the same step rule that decides it",
   );
 
   // ── The image is sent for every type ────────────────────────────────────────
@@ -128,9 +142,18 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
   );
 
   // ── The refusal is visible on a phone ───────────────────────────────────────
+  // Every message now renders INSIDE the sticky action bar (2026-10-22), the bar Log a visit carries:
+  // held above the portal's bottom navigation and under the thumb wherever the page is scrolled.
+  // In normal flow a refusal once rendered below a fixed footer and off-screen, which is why a real
+  // 400 looked like no response at all.
   assert.ok(
-    wizard.includes('className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] z-50 sm:hidden print:hidden"'),
-    "on mobile the message must be pinned above the sticky action bar; in normal flow it rendered below the fixed footer and off-screen, which is why a real 400 looked like no response at all",
+    wizard.includes('aria-label="Submit expense action bar"') &&
+      wizard.includes("sticky bottom-[var(--phx-portal-bottom-nav-reserve,0px)]"),
+    "the action bar must stay pinned above the portal's bottom navigation",
+  );
+  assert.ok(
+    wizard.includes("const barStatus: ReactNode = message ? ("),
+    "a message (a server refusal included) is the FIRST thing the bar shows, so it is never off-screen",
   );
 
   // ── The upload route exists for non-car, and ONLY for non-car ───────────────

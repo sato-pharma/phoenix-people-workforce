@@ -657,6 +657,15 @@ const SQUARE_FORMS = [
   "src/components/employee-portal/contact-hr-support-page.tsx",
   "src/components/admin/private-calendar-disputes-workspace.tsx",
   "src/components/attendance/attendance-exceptions-manager.tsx",
+  // Submit Expense and My claims, one page in the one form design (owner, 2026-10-22).
+  "src/components/outstation/mobile-outstation-wizard.tsx",
+  "src/components/outstation/ticket-upload-card.tsx",
+  "src/components/outstation/wizard-primitives.tsx",
+  "src/components/outstation/departure-photo-card.tsx",
+  "src/components/outstation/missing-ticket-card.tsx",
+  "src/components/outstation/outstation-pending-actions.tsx",
+  "src/components/outstation/my-expense-submissions.tsx",
+  "src/components/outstation/submit-expense-my-claims.tsx",
 ];
 
 /** Every corner radius except `full` and `none`. */

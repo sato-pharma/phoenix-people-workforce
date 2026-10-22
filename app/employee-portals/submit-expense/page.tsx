@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
+import { OutstationPendingActions } from "@/components/outstation/outstation-pending-actions";
+import { SubmitExpenseMyClaims } from "@/components/outstation/submit-expense-my-claims";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -9,7 +11,11 @@ import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employe
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { getOutstationEmployeeContext } from "@/lib/outstation/service";
+import {
+  getOutstationEmployeeContext,
+  getOwnOutstationPendingActions,
+  listOwnOutstationSubmissions,
+} from "@/lib/outstation/service";
 import { getManagerAreaRepOptions } from "@/lib/outstation/area-rep-options";
 
 // NOTE: dir="auto", print stylesheet, prefers-reduced-motion, and a
@@ -63,13 +69,21 @@ export default async function EmployeePortalSubmitExpensePage() {
     redirect("/employee-portals/expenses");
   }
 
-  const [portalDataResult, outstationContextResult, teamPerformanceResult, areaRepOptionsResult] =
-    await Promise.allSettled([
-      getEmployeePortalShellData(access),
-      getOutstationEmployeeContext(access),
-      getDsmTeamPerformance(access),
-      getManagerAreaRepOptions(access),
-    ]);
+  const [
+    portalDataResult,
+    outstationContextResult,
+    teamPerformanceResult,
+    areaRepOptionsResult,
+    pendingActionsResult,
+    submissionsResult,
+  ] = await Promise.allSettled([
+    getEmployeePortalShellData(access),
+    getOutstationEmployeeContext(access),
+    getDsmTeamPerformance(access),
+    getManagerAreaRepOptions(access),
+    getOwnOutstationPendingActions(access),
+    listOwnOutstationSubmissions(access),
+  ]);
 
   if (portalDataResult.status === "rejected") {
     return (
@@ -103,25 +117,42 @@ export default async function EmployeePortalSubmitExpensePage() {
     })) ?? [];
   const areaRepOptions =
     areaRepOptionsResult.status === "fulfilled" ? areaRepOptionsResult.value : [];
+  // What is still owed on claims already submitted leads the page: the departure photo and a missing
+  // ticket are both taken HERE, on the screen people come back to (owner, 2026-10-22).
+  const pendingActions =
+    pendingActionsResult.status === "fulfilled"
+      ? pendingActionsResult.value
+      : { departurePhotoDue: [], missingTicket: [] };
+  const employeeHrId = access.hrId ?? portalData.employee.hrId;
+  // My claims sits under the form: Submit Expense and Expense Submissions are one page (owner,
+  // 2026-10-22). A failed read is passed as null and said in words, never as an empty list.
+  const submissions = submissionsResult.status === "fulfilled" ? submissionsResult.value : null;
 
   return (
     <EmployeePortalPageShell
       badge="Expenses"
-      description="Capture outstation travel from the employee portal without duplicating the full admin expense workspace."
+      description="Submit an outstation expense step by step, then follow every claim you have made underneath."
       errorBoundaryTitle="Submit Expense unavailable"
       title="Submit Expense"
     >
-      <MobileOutstationWizard
-        areaRepOptions={areaRepOptions}
-        employeeHrId={access.hrId ?? portalData.employee.hrId}
-        employeeName={employeeName}
-        employeeRole={employeeRole}
-        hasResidenceCoordinates={hasResidenceCoordinates}
-        medicalTripOptions={medicalTripOptions}
-        residenceShortSummary={residenceShortSummary}
-        residenceSummary={residenceSummary}
-        showIntro={false}
-      />
+      <div className="space-y-5">
+        <OutstationPendingActions
+          departurePhotoDue={pendingActions.departurePhotoDue}
+          employeeHrId={employeeHrId}
+          missingTicket={pendingActions.missingTicket}
+        />
+        <MobileOutstationWizard
+          areaRepOptions={areaRepOptions}
+          employeeHrId={employeeHrId}
+          employeeName={employeeName}
+          employeeRole={employeeRole}
+          hasResidenceCoordinates={hasResidenceCoordinates}
+          medicalTripOptions={medicalTripOptions}
+          residenceShortSummary={residenceShortSummary}
+          residenceSummary={residenceSummary}
+        />
+        <SubmitExpenseMyClaims employeeHrId={employeeHrId} submissions={submissions} />
+      </div>
     </EmployeePortalPageShell>
   );
 }

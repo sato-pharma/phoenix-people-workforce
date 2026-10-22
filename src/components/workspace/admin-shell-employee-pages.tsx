@@ -36,6 +36,8 @@ import {
 } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
+import { OutstationPendingActions } from "@/components/outstation/outstation-pending-actions";
+import { SubmitExpenseMyClaims } from "@/components/outstation/submit-expense-my-claims";
 import { OrganogramReport } from "@/components/reports/organogram-report";
 import { VacanciesReport } from "@/components/reports/vacancies-report";
 import { VacationReport } from "@/components/vacation/vacation-report";
@@ -68,7 +70,11 @@ import {
   parseMarketingRequestDecision,
 } from "@/lib/marketing-requests/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { getOutstationEmployeeContext } from "@/lib/outstation/service";
+import {
+  getOutstationEmployeeContext,
+  getOwnOutstationPendingActions,
+  listOwnOutstationSubmissions,
+} from "@/lib/outstation/service";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import {
   canAccessCompanyOrganogram,
@@ -824,11 +830,14 @@ export async function WorkspaceExpenseDashboardPage() {
 
 export async function WorkspaceSubmitExpensePage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ action: "create", resource: "outstation" });
-  const [portalDataResult, outstationContextResult, teamPerformanceResult] = await Promise.allSettled([
-    getEmployeePortalShellData(access),
-    getOutstationEmployeeContext(access),
-    getDsmTeamPerformance(access),
-  ]);
+  const [portalDataResult, outstationContextResult, teamPerformanceResult, pendingActionsResult, submissionsResult] =
+    await Promise.allSettled([
+      getEmployeePortalShellData(access),
+      getOutstationEmployeeContext(access),
+      getDsmTeamPerformance(access),
+      getOwnOutstationPendingActions(access),
+      listOwnOutstationSubmissions(access),
+    ]);
   if (portalDataResult.status === "rejected") {
     return <WorkspaceUnavailable message="Unable to load your employee profile." title="Submit Expense Unavailable" />;
   }
@@ -846,6 +855,12 @@ export async function WorkspaceSubmitExpensePage() {
       hrId: member.hrId,
       name: member.name,
     })) ?? [];
+  const pendingActions =
+    pendingActionsResult.status === "fulfilled"
+      ? pendingActionsResult.value
+      : { departurePhotoDue: [], missingTicket: [] };
+  const employeeHrId = access.hrId ?? portalData.employee.hrId;
+  const submissions = submissionsResult.status === "fulfilled" ? submissionsResult.value : null;
   return (
     <WorkspaceFrame
       access={access}
@@ -853,16 +868,23 @@ export async function WorkspaceSubmitExpensePage() {
       icon={<PlusCircle className="h-3.5 w-3.5" />}
       title="Submit Expense"
     >
-      <MobileOutstationWizard
-        employeeHrId={access.hrId ?? portalData.employee.hrId}
-        employeeName={employeeName}
-        employeeRole={employeeRole}
-        hasResidenceCoordinates={hasResidenceCoordinates}
-        medicalTripOptions={medicalTripOptions}
-        residenceShortSummary={buildResidenceShortSummary(residence)}
-        residenceSummary={buildResidenceSummary(residence)}
-        showIntro={false}
-      />
+      <div className="space-y-5">
+        <OutstationPendingActions
+          departurePhotoDue={pendingActions.departurePhotoDue}
+          employeeHrId={employeeHrId}
+          missingTicket={pendingActions.missingTicket}
+        />
+        <MobileOutstationWizard
+          employeeHrId={employeeHrId}
+          employeeName={employeeName}
+          employeeRole={employeeRole}
+          hasResidenceCoordinates={hasResidenceCoordinates}
+          medicalTripOptions={medicalTripOptions}
+          residenceShortSummary={buildResidenceShortSummary(residence)}
+          residenceSummary={buildResidenceSummary(residence)}
+        />
+        <SubmitExpenseMyClaims employeeHrId={employeeHrId} submissions={submissions} />
+      </div>
     </WorkspaceFrame>
   );
 }

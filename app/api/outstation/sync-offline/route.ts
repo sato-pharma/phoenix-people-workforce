@@ -10,6 +10,7 @@ import {
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
+import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -73,6 +74,21 @@ export async function POST(request: Request) {
     //                     The server derives this label itself from the trip's own dates.
     //
     // Adding a field back requires the owner's approval and an explicit gate here — not a default.
+    //
+    // ticketAttachments IS read (owner, 2026-10-22 — "the offline ticket gap"), parsed exactly as
+    // submit parses it. A phone can report no signal while its request still arrives, and the
+    // ticket it carried used to be dropped here, holding a train claim whose ticket was in hand.
+    // It is evidence the SERVER counts from the files it received, never a flag, so it widens
+    // nothing an employee controls. A replay from the phone's own storage sends none.
+    const rawTicketAttachments = Array.isArray(body.ticketAttachments)
+      ? (body.ticketAttachments as Array<Record<string, unknown>>)
+      : [];
+    const ticketAttachments = rawTicketAttachments.map((entry) =>
+      parseOutstationTicketAttachmentDataUrl({
+        dataUrl: String(entry.dataUrl ?? ""),
+        fileName: String(entry.name ?? ""),
+      }),
+    );
     const result = await syncOfflineOutstationRequest(access, {
       // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a
       // claim with no accuracy for Super Admin review (owner, 2026-09-18).
@@ -101,7 +117,7 @@ export async function POST(request: Request) {
       tripStartDate: String(body.tripStartDate ?? ""),
       attachmentCount: Number(body.attachmentCount ?? 0),
       carEvidenceImageDataUrl: parseCarEvidenceImageDataUrl(body),
-    });
+    }, { ticketAttachments });
 
     return NextResponse.json(result);
   } catch (error) {

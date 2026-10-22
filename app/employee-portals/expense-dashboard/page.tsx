@@ -11,10 +11,10 @@ import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
 import { isMedicalRepExpenseViewer } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   getOwnOutstationTicketCounts,
-  getOwnOutstationRequestsAwaitingDeparturePhoto,
+  getOwnOutstationPendingActions,
   getOwnPendingOutstationReviewRequests,
 } from "@/lib/outstation/service";
-import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card";
+import { OutstationPendingActions } from "@/components/outstation/outstation-pending-actions";
 import { PendingReviewRequestsCard } from "@/components/outstation/pending-review-requests-card";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
@@ -82,18 +82,24 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  const [pendingReviewRequests, ticketCountsByRequestId, departurePhotoDue] = await Promise.all([
+  const [pendingReviewRequests, ticketCountsByRequestId, pendingActions] = await Promise.all([
     getOwnPendingOutstationReviewRequests(access).catch(() => []),
     getOwnOutstationTicketCounts(access).catch(() => ({})),
-    getOwnOutstationRequestsAwaitingDeparturePhoto(access).catch(() => []),
+    getOwnOutstationPendingActions(access).catch(() => ({ departurePhotoDue: [], missingTicket: [] })),
   ]);
+  const { departurePhotoDue, missingTicket } = pendingActions;
   const hasWorkloadRows = Boolean(data.workload?.expenseRows?.length);
 
-  // A request owing a departure photo must keep the page open even when there is nothing else to
-  // show. Without it in this condition, an employee whose only outstation activity is the trip he
-  // is standing on would be sent to the empty state and could never capture the photo that
-  // releases his own money.
-  if (!hasWorkloadRows && pendingReviewRequests.length === 0 && departurePhotoDue.length === 0) {
+  // A request owing a departure photo or a missing ticket must keep the page open even when there is
+  // nothing else to show. Without it in this condition, an employee whose only outstation activity
+  // is the trip he is standing on would be sent to the empty state and could never capture the
+  // photo, or attach the ticket, that releases his own money.
+  if (
+    !hasWorkloadRows &&
+    pendingReviewRequests.length === 0 &&
+    departurePhotoDue.length === 0 &&
+    missingTicket.length === 0
+  ) {
     return (
       <EmployeePortalEmptyState
         message="No visible outstation expense records are available for your expense scope yet."
@@ -112,7 +118,11 @@ export default async function EmployeePortalExpenseDashboardPage() {
       <div className="space-y-5">
         {/* Above the review card on purpose: this one is the only thing on the page the employee
             must ACT on, and it is time-sensitive — the window closes at the end of the trip. */}
-        <DeparturePhotoCard employeeHrId={access.hrId ?? ""} requests={departurePhotoDue} />
+        <OutstationPendingActions
+          departurePhotoDue={departurePhotoDue}
+          employeeHrId={access.hrId ?? ""}
+          missingTicket={missingTicket}
+        />
         <PendingReviewRequestsCard requests={pendingReviewRequests} />
         {hasWorkloadRows ? (
           <PersonalExpenseWorkloadDashboard

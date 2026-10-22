@@ -11,6 +11,7 @@ import {
   Loader2,
   MapPin,
   Route,
+  Ticket,
   TriangleAlert,
   Wallet,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card";
 import { JourneyStopCard } from "@/components/outstation/journey-stop-card";
+import { MissingTicketCard } from "@/components/outstation/missing-ticket-card";
 import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -191,7 +193,7 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
         ? `${fieldWorkloadLabel(submission)}${
             submission.workloadSource === "override" ? " (entered by an administrator)" : ""
           }`
-        : "Waiting for your visits to be matched from the CRM",
+        : "Phoenix reads your AM, PM and pharmacy visits for the trip days from Phoenix CRM. Visits saved later the same evening are picked up the next morning.",
     ),
     // Named "Validation", not "HR decision" (owner decision 2026-08-08). HR still owns this step
     // and nothing about who controls it has changed — but a manager reading his own expense should
@@ -258,6 +260,37 @@ export const TONE_CLASSES: Record<"amber" | "emerald" | "rose" | "slate", string
   rose: "bg-rose-100 text-rose-800",
   slate: "bg-slate-100 text-slate-700",
 };
+
+/**
+ * The row's answer to "what now, and what after", readable without opening the claim (owner,
+ * 2026-10-22: "in every step, show him what should he do in this step and the next"). Something
+ * the employee must do leads; otherwise the current stage says where the claim is. Null once every
+ * stage is done.
+ */
+export function rowNowAndNext(
+  stages: Stage[],
+  action: { departureDue: boolean; ticketDue: boolean },
+): { next: string | null; now: string; yours: boolean } | null {
+  const currentIndex = stages.findIndex((stage) => stage.state === "current");
+  if (currentIndex === -1) return null;
+  const current = stages[currentIndex];
+  const after = stages[currentIndex + 1] ?? null;
+  if (action.departureDue) {
+    return {
+      next: action.ticketDue ? "Attach the ticket" : (stages.find((stage) => stage.key === "workload")?.label ?? null),
+      now: "Take the departure photo before you leave the destination",
+      yours: true,
+    };
+  }
+  if (action.ticketDue) {
+    return { next: current.label, now: "Attach the ticket this claim arrived without", yours: true };
+  }
+  return {
+    next: after ? after.label : null,
+    now: current.key === "workload" ? "Log your visits for the trip days in Phoenix CRM" : current.label,
+    yours: current.key === "workload",
+  };
+}
 
 export function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
@@ -354,11 +387,11 @@ export function MyExpenseSubmissions({
 
   if (submissions.length === 0) {
     return (
-      <section className="rounded-lg border border-slate-200 bg-white p-8 text-center">
+      <section className="border border-slate-200 bg-white p-8 text-center">
         <Route className="mx-auto h-8 w-8 text-slate-300" />
         <p className="mt-3 text-sm font-bold text-slate-900">No outstation submissions yet</p>
         <p className="mt-1 text-phx-md text-slate-500">
-          Trips you submit from Submit Expense appear here, with their evidence and what HR decided.
+          Claims you submit appear here, with their evidence, what each one waits for, and how it was validated.
         </p>
       </section>
     );
@@ -367,12 +400,12 @@ export function MyExpenseSubmissions({
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="border border-slate-200 bg-white p-4">
           <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">You claimed</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{money(totals.claimed)}</p>
           <p className="mt-0.5 text-xs text-slate-500">{submissions.length} submissions</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="border border-slate-200 bg-white p-4">
           <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Validated</p>
           <p className="mt-1 text-2xl font-black text-emerald-700">
             {totals.approvedCount > 0 ? money(totals.approved) : "—"}
@@ -383,7 +416,7 @@ export function MyExpenseSubmissions({
               : "Nothing decided yet"}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="border border-slate-200 bg-white p-4">
           <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Still held</p>
           <p className="mt-1 text-2xl font-black text-amber-700">{totals.awaiting}</p>
           <p className="mt-0.5 text-xs text-slate-500">Waiting on evidence or workload</p>
@@ -402,10 +435,12 @@ export function MyExpenseSubmissions({
             Math.abs(submission.decision.approvedAmount - submission.claimedTotalAmount) > 0.005;
           const departureDue =
             submission.canCaptureDeparturePhoto && !captured.includes(submission.id);
+          const ticketDue = submission.canAttachMissingTicket;
+          const nowAndNext = rowNowAndNext(stages, { departureDue, ticketDue });
 
           return (
             <article
-              className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+              className="overflow-hidden border border-slate-200 bg-white"
               key={submission.id}
             >
               <button
@@ -416,17 +451,17 @@ export function MyExpenseSubmissions({
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-slate-900 px-1.5 py-0.5 text-phx-2xs font-black tracking-wider text-white">
+                    <span className="bg-slate-900 px-1.5 py-0.5 text-phx-2xs font-black tracking-wider text-white">
                       OUTSTATION-{submission.id}
                     </span>
                     <span
-                      className={`rounded-md px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${TONE_CLASSES[status.tone]}`}
+                      className={`px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${TONE_CLASSES[status.tone]}`}
                     >
                       {status.label}
                     </span>
-                    {departureDue ? (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-orange-500 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider text-white">
-                        <Camera className="h-3 w-3" />
+                    {departureDue || ticketDue ? (
+                      <span className="inline-flex items-center gap-1 bg-orange-500 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider text-white">
+                        {departureDue ? <Camera className="h-3 w-3" /> : <Ticket className="h-3 w-3" />}
                         Action needed
                       </span>
                     ) : null}
@@ -444,6 +479,31 @@ export function MyExpenseSubmissions({
                   {!submission.isPayrollEligible ? (
                     <p className="mt-1.5 text-phx-md leading-relaxed text-amber-800">
                       {submission.gateMessage}
+                    </p>
+                  ) : null}
+                  {submission.canAddJourneyStop ? (
+                    // A stop is taken on the way, before the trip's last day ends, and most trips
+                    // have none — so it is said beside the claim rather than counted as owed.
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                      <span className="font-black uppercase tracking-wider text-orange-700">If you drive on</span>{" "}
+                      Open this claim and add a stop in each new governorate before the trip ends.
+                    </p>
+                  ) : null}
+                  {nowAndNext ? (
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                      <span
+                        className={`font-black uppercase tracking-wider ${nowAndNext.yours ? "text-orange-700" : "text-slate-500"}`}
+                      >
+                        Now
+                      </span>{" "}
+                      {nowAndNext.now}
+                      {nowAndNext.next ? (
+                        <>
+                          {" · "}
+                          <span className="font-black uppercase tracking-wider text-slate-500">Next</span>{" "}
+                          {nowAndNext.next}
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
                 </div>
@@ -485,7 +545,7 @@ export function MyExpenseSubmissions({
                       {stages.map((stage) => (
                         <li className="flex items-start gap-3" key={stage.key}>
                           <span
-                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-phx-2xs font-black ${
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-phx-2xs font-black ${
                               stage.state === "done"
                                 ? "bg-emerald-500 text-white"
                                 : stage.state === "current"
@@ -526,6 +586,21 @@ export function MyExpenseSubmissions({
                     />
                   ) : null}
 
+                  {/* ── The ticket this claim arrived without, attachable right here ─ */}
+                  {ticketDue ? (
+                    <MissingTicketCard
+                      requests={[
+                        {
+                          destination: submission.destination,
+                          id: submission.id,
+                          transportationType: submission.transportationType,
+                          tripEndDate: submission.tripEndDate,
+                          tripStartDate: submission.tripStartDate,
+                        },
+                      ]}
+                    />
+                  ) : null}
+
                   {/* ── The trip ───────────────────────────────────────────── */}
                   <section>
                     <SectionTitle>Trip</SectionTitle>
@@ -559,7 +634,7 @@ export function MyExpenseSubmissions({
                         levels. The address string above is what the map service called the spot;
                         this is what the business calls it, and it is the one an approver argues
                         about. Derived from the coordinates against TODAY's brick tree. */}
-                    <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
+                    <div className="mt-4 border border-slate-200 bg-white p-3">
                       <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
                         Captured location
                       </p>
@@ -582,7 +657,7 @@ export function MyExpenseSubmissions({
                       ) : null}
                     </div>
                     {submission.notes ? (
-                      <p className="mt-3 whitespace-pre-line rounded-md border border-slate-200 bg-white p-3 text-phx-md leading-relaxed text-slate-700">
+                      <p className="mt-3 whitespace-pre-line border border-slate-200 bg-white p-3 text-phx-md leading-relaxed text-slate-700">
                         {submission.notes}
                       </p>
                     ) : null}
@@ -654,7 +729,7 @@ export function MyExpenseSubmissions({
                   <section>
                     <SectionTitle>Money</SectionTitle>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-slate-200 bg-white p-3">
+                      <div className="border border-slate-200 bg-white p-3">
                         <p className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
                           <Wallet className="h-3 w-3" />
                           You claimed
@@ -687,7 +762,7 @@ export function MyExpenseSubmissions({
                       </div>
 
                       <div
-                        className={`rounded-md border p-3 ${
+                        className={`border p-3 ${
                           adjusted ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
                         }`}
                       >
@@ -714,7 +789,7 @@ export function MyExpenseSubmissions({
                         )}
 
                         {submission.decision?.hrComment || submission.decision?.hrNotes ? (
-                          <div className="mt-3 rounded border border-slate-200 bg-white p-2.5">
+                          <div className="mt-3 border border-slate-200 bg-white p-2.5">
                             <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
                               Note
                             </p>
@@ -763,7 +838,7 @@ export function MyExpenseSubmissions({
                           },
                         ].map((photo) => (
                           <figure
-                            className="overflow-hidden rounded-md border border-slate-200 bg-white"
+                            className="overflow-hidden border border-slate-200 bg-white"
                             key={photo.label}
                           >
                             {photo.url ? (
@@ -846,7 +921,7 @@ export function MyExpenseSubmissions({
                             ]}
                           />
                           <button
-                            className="mt-2 min-h-10 rounded-xl px-3 text-xs font-bold text-slate-600 hover:text-slate-900"
+                            className="mt-2 min-h-10 px-3 text-xs font-bold text-slate-600 hover:text-slate-900"
                             onClick={() => setRetakeFor(null)}
                             type="button"
                           >
@@ -855,7 +930,7 @@ export function MyExpenseSubmissions({
                         </div>
                       ) : (
                         <button
-                          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                          className="mt-3 inline-flex min-h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
                           onClick={() => setRetakeFor(submission.id)}
                           type="button"
                         >

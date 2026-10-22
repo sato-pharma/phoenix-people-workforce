@@ -2,8 +2,6 @@
 
 import { Upload } from "lucide-react";
 
-import { Card } from "@/components/ui/card";
-
 /**
  * What the file picker will offer. Named to match exactly what the server accepts in
  * parseOutstationTicketAttachmentDataUrl — PDF, JPG, PNG — so the picker cannot hand back a file
@@ -15,7 +13,7 @@ import { Card } from "@/components/ui/card";
  * it reaches us; anything that still arrives as an unsupported type is refused server-side with
  * the reason named, which is the right place for that answer.
  */
-const TICKET_FILE_ACCEPT = "application/pdf,image/*";
+export const TICKET_FILE_ACCEPT = "application/pdf,image/*";
 
 export function TicketUploadCard({
   attachmentCount,
@@ -54,17 +52,21 @@ export function TicketUploadCard({
           : "Optional for your role. If you have the tickets, attach them as a PDF or a photo — you can take the photo here. The request submits either way."
         : "Attach any supporting document for this expense request.");
 
+  // A block inside the Evidence step, not a card of its own — the step form already draws the one
+  // card on the screen. Square, like every block of the form (the square-edge golden rule).
   return (
-    <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-      <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-        {badge ?? (isTicketBased && !required ? "Upload attachment · Optional" : "Upload attachment")}
-      </span>
-      <p className="mt-2 text-phx-md leading-relaxed text-slate-500">{description}</p>
-      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-3 py-4 text-phx-md font-semibold text-orange-700 transition hover:bg-orange-50">
-        <Upload className="h-4 w-4" />
+    <section aria-label={badge ?? "Ticket"} className="grid gap-3 border border-slate-200 bg-white p-4">
+      <div>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+          {badge ?? (isTicketBased ? (required ? "Ticket · Required" : "Ticket · Optional") : "Attachment")}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+      <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-3 py-3 text-sm font-bold text-orange-800 transition hover:bg-orange-100">
+        <Upload aria-hidden className="h-4 w-4" />
         {attachmentCount > 0
-          ? `${attachmentCount} attachment(s) selected`
-          : "Select attachment(s)"}
+          ? `${attachmentCount} file${attachmentCount === 1 ? "" : "s"} attached — tap to change`
+          : "Take a photo or choose a file"}
         <input
           accept={TICKET_FILE_ACCEPT}
           className="hidden"
@@ -73,6 +75,6 @@ export function TicketUploadCard({
           type="file"
         />
       </label>
-    </Card>
+    </section>
   );
 }

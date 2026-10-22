@@ -18,7 +18,11 @@ import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operation
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
-import { runOutstationDeparturePhotoReminders, runOutstationSlaDaily } from "@/lib/outstation/service";
+import {
+  runOutstationDeparturePhotoReminders,
+  runOutstationSlaDaily,
+  runOutstationWorkloadRestamp,
+} from "@/lib/outstation/service";
 import { runCrmAccountSetupReminder } from "@/lib/crm/account-setup-reminder";
 import { runDeadTelegramLinkAlert } from "@/lib/notifications/dead-telegram-link-alert";
 import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/milestone-emails";
@@ -127,6 +131,8 @@ async function runDailyNotifications(request: Request) {
     deadTelegramLinkAlert,
     // Position 30, added 2026-09-29. Appended for the same reason as 26-29.
     probationMilestoneEmails,
+    // Position 31, added 2026-10-22. Appended for the same reason as 26-30.
+    outstationWorkloadRestamp,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -338,6 +344,17 @@ async function runDailyNotifications(request: Request) {
         error: message,
       })),
     ),
+    // Re-reads the CRM for an undecided trip whose AM · PM · Pharmacies were stamped before the
+    // day's visits were typed (owner, 2026-10-22 — workload-stamp.ts), and rewrites the stamp only
+    // when the CRM now holds MORE work. Evidence only: no money, no gate, no message to anyone.
+    runOutstationWorkloadRestamp().catch(
+      onJobFailure("daily-outstation-workload-restamp", (message) => ({
+        checked: 0,
+        errors: 1,
+        restamped: 0,
+        error: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -349,7 +366,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (30 since the probation Day 30/60/75 milestone emails were added 2026-09-29;
+  // under-reports (31 since the outstation workload refresh was added 2026-10-22; 30 since the
+  // probation Day 30/60/75 milestone emails were added 2026-09-29;
   // 29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
   // account-setup reminder the same day; 27 since the
   // Needs You weekly email, the same day as the
@@ -357,7 +375,7 @@ async function runDailyNotifications(request: Request) {
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 30;
+  const totalJobs = 31;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -413,6 +431,7 @@ async function runDailyNotifications(request: Request) {
     outstationSla,
     probationMilestoneEmails,
     outstationDeparturePhotoReminders,
+    outstationWorkloadRestamp,
     rateLimitPrune,
     errorEventsPrune,
     recruitment,

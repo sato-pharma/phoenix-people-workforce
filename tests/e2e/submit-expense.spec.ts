@@ -3,16 +3,18 @@ import { test, expect } from "@playwright/test";
 /**
  * E2E tests for the Submit Expense page (/employee-portals/submit-expense).
  *
+ * Owner request 2026-10-22: the page is a step form like Report It and Log a visit in Phoenix CRM —
+ * every step says what to do in it and what comes next — and Submit Expense and Expense Submissions
+ * are ONE page: the form, then My claims under it.
+ *
  * Covers:
  * - Page load + hero
- * - Wizard step indicator (3 steps, numbered)
- * - Request details card visibility
- * - Form fields (Expense Type, From/To Date, Transportation Type, Notes)
- * - Auto-calculated summary section
- * - Mobile responsiveness (375px, 768px, 1280px)
- * - RTL support
- * - Print stylesheet
- * - Error boundary verification
+ * - The step rail (Trip, Destination, Evidence, Amounts, Review & submit) and its instruction line
+ * - The action bar under the thumb, and what it says when a step is incomplete
+ * - A Meeting or Other expense drops the Destination step
+ * - My claims on the same page
+ * - Mobile responsiveness (375px, 768px, 1280px) with no horizontal scroll
+ * - RTL support, print stylesheet
  *
  * Run with:  pnpm exec playwright test tests/e2e/submit-expense.spec.ts
  */
@@ -43,27 +45,33 @@ test.describe("Submit Expense", () => {
     await expect(badge).toBeVisible();
   });
 
-  // ─── Wizard Step Indicator ─────────────────────────────────────────
+  // ─── The step form ─────────────────────────────────────────────────
 
-  test("3 wizard steps are visible (Trip details / Validate route / Review & submit)", async ({
-    page,
-  }) => {
-    await expect(page.getByText("Trip details", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("Validate route", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("Review & submit", { exact: false }).first()).toBeVisible();
+  test("the step rail names every step of a trip", async ({ page }) => {
+    const rail = page.locator('[aria-label="Form steps"]').first();
+    await expect(rail).toBeVisible();
+    for (const step of ["Trip", "Destination", "Evidence", "Amounts", "Review & submit"]) {
+      await expect(rail.getByText(step, { exact: true }).first()).toBeVisible();
+    }
   });
 
-  test("step indicator group has aria-label", async ({ page }) => {
-    const group = page.locator('[aria-label="Submission progress"]').first();
-    await expect(group).toBeVisible();
-  });
-
-  // ─── Request Details Card ──────────────────────────────────────────
-
-  test("request details card visible", async ({ page }) => {
+  test("the first step says what to do in it", async ({ page }) => {
     await expect(
-      page.getByText("Fill the trip and let the system calculate the rest").first(),
+      page.getByText("Choose the expense type, the dates you were away and how you travelled.").first(),
     ).toBeVisible();
+  });
+
+  test("the action bar is on screen with Next", async ({ page }) => {
+    const bar = page.locator('[aria-label="Submit expense action bar"]').first();
+    await expect(bar).toBeVisible();
+    await expect(bar.getByRole("button", { name: /Next/ })).toBeVisible();
+  });
+
+  test("Next on an incomplete step says what is still needed", async ({ page }) => {
+    const bar = page.locator('[aria-label="Submit expense action bar"]').first();
+    await bar.getByRole("button", { name: /Next/ }).click();
+    await expect(bar.getByText("Still needed")).toBeVisible();
+    await expect(bar.getByText("Choose the From date.")).toBeVisible();
   });
 
   test("expense type options can be selected by direct click", async ({ page }) => {
@@ -75,33 +83,25 @@ test.describe("Submit Expense", () => {
     await expect(meetingOption).toHaveAttribute("aria-checked", "true");
   });
 
-  test("location capture button is discoverable and clickable", async ({ page }) => {
-    const captureButton = page.getByRole("button", { name: /Capture current location for destination/i });
-    await expect(captureButton).toBeVisible();
-    await expect(captureButton).toBeEnabled();
+  test("a Meeting expense has no Destination step", async ({ page }) => {
+    const expenseTypeGroup = page.getByRole("radiogroup", { name: /Expense type/i });
+    await expenseTypeGroup.getByRole("radio", { name: "Meeting" }).click();
+    const rail = page.locator('[aria-label="Form steps"]').first();
+    await expect(rail.getByText("Destination", { exact: true })).toHaveCount(0);
+    await expect(rail.getByText("Invoice", { exact: true }).first()).toBeVisible();
   });
 
-  test("from-date input is rendered", async ({ page }) => {
-    const fromDate = page.locator('input[type="date"]').first();
-    await expect(fromDate).toBeVisible();
+  test("trip date inputs are rendered", async ({ page }) => {
+    await expect(page.getByLabel("Trip start date")).toBeVisible();
+    await expect(page.getByLabel("Trip end date")).toBeVisible();
   });
 
-  test("notes textarea is rendered", async ({ page }) => {
-    const textarea = page.locator("textarea").first();
-    await expect(textarea).toBeVisible();
-  });
+  // ─── My claims, on the same page ───────────────────────────────────
 
-  // ─── Auto Calculated Summary ───────────────────────────────────────
-
-  test("auto calculated summary badge is visible", async ({ page }) => {
-    await expect(
-      page.getByText(/Auto calculated summary/i).first(),
-    ).toBeVisible();
-  });
-
-  test("summary fields appear (Allowance / Total Cost)", async ({ page }) => {
-    await expect(page.getByText("Allowance", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("Total Cost", { exact: false }).first()).toBeVisible();
+  test("My claims sits under the form", async ({ page }) => {
+    const claims = page.locator('section[aria-label="My claims"]').first();
+    await expect(claims).toBeAttached();
+    await expect(claims.getByRole("heading", { name: "My claims" })).toBeVisible();
   });
 
   // ─── RTL ───────────────────────────────────────────────────────────
@@ -126,33 +126,22 @@ test.describe("Submit Expense", () => {
 
   // ─── Mobile Responsiveness ─────────────────────────────────────────
 
-  test("mobile viewport (375px) renders all sections without crash", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await expect(
-      page.locator("h1").filter({ hasText: /Submit Expense/i }),
-    ).toBeVisible();
-    await expect(page.getByText("Trip details", { exact: false }).first()).toBeVisible();
-  });
-
-  test("tablet viewport (768px) renders correctly", async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    await expect(
-      page.locator("h1").filter({ hasText: /Submit Expense/i }),
-    ).toBeVisible();
-  });
-
-  test("desktop viewport (1280px) renders correctly", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await expect(
-      page.locator("h1").filter({ hasText: /Submit Expense/i }),
-    ).toBeVisible();
-  });
-
-  // ─── Error Boundary ────────────────────────────────────────────────
-
-  test("page renders without crash (error boundary verification)", async ({ page }) => {
-    await expect(
-      page.locator("h1").filter({ hasText: /Submit Expense/i }).first(),
-    ).toBeVisible();
-  });
+  for (const [width, height] of [
+    [375, 812],
+    [768, 1024],
+    [1280, 800],
+  ] as const) {
+    test(`${width}px renders the form and the action bar with no horizontal scroll`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await expect(
+        page.locator("h1").filter({ hasText: /Submit Expense/i }),
+      ).toBeVisible();
+      await expect(page.locator('[aria-label="Submit expense action bar"]').first()).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const main = document.querySelector("main") ?? document.body;
+        return main.scrollWidth - main.clientWidth;
+      });
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  }
 });
