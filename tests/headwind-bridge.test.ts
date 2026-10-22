@@ -2016,65 +2016,189 @@ function runServerImageTests() {
     "a confirmation that closed no row is noticed rather than silently accepted — that log line is the only signal a forged or stale confirmation leaves",
   );
 
-  // 10. 🔴 THE TWO PUBLIC UPLOAD ENDPOINTS ARE REFUSED AT TOMCAT (owner, 2026-10-22: "close the tablet
-  //     server's open upload path"). `/rest/public/applications/upload` and `/rest/videos` both answered
-  //     `Allow: POST` with no sign-in on mdm.satopharma.com that day. The rules must refuse both and
-  //     leave every path a tablet or Phoenix uses alone.
+  // 10. 🔴 THE TABLET SERVER'S HOST-LEVEL REWRITE RULES (owner, 2026-10-22). Two jobs in one file:
+  //     the two public uploads (`/rest/public/applications/upload`, `/rest/videos`) are refused on every
+  //     name — "close the tablet server's open upload path" — and every name EXCEPT
+  //     mdm-console.satopharma.com serves the tablet agent's own paths and nothing else — "split the
+  //     Headwind console onto mdm-console behind Access".
   //
-  //     BREAK-TEST: delete either RewriteRule line, or widen one to `^/rest/public`, and the exact-list
-  //     assertion fires first. The path checks below it are what a DELIBERATE change to the list must
-  //     still pass: every refused path refused, every tablet and Phoenix path reached.
-  const rewriteRules = source("infra/headwind-phoenix-actions/rewrite.config")
+  //     🔴 TOMCAT MATCHES THE WHOLE PATH. RewriteRule and RewriteCond both call Matcher.matches(), so the
+  //     model below anchors every pattern at both ends, exactly as Tomcat does. The first test of the
+  //     upload rules used JavaScript's `test()`, which matches a PREFIX, and so it passed `^/rest/videos`
+  //     as refusing `/rest/videos/clip.mp4` — which Tomcat never would have. That is how the trailing-slash
+  //     gap (`/rest/videos/` through the door) shipped green.
+  //
+  //     The cases live in rewrite-cases.txt, and RewriteCheck.java runs TOMCAT'S OWN ENGINE over the same
+  //     file at image build (the `headwind-image` workflow builds it on every PR touching that folder).
+  //     This model is the fast first line; Tomcat is the authority.
+  //
+  //     BREAK-TEST: drop `(/.*)?$` from the videos rule, or delete one path from the allowlist rule, or
+  //     loosen the host condition, and the matching case below fires.
+  type Cond = { test: string; pattern: RegExp; positive: boolean };
+  type Rule = { pattern: RegExp; positive: boolean; forbidden: boolean; conds: Cond[] };
+  const anchored = (pattern: string, flags: string) => new RegExp(`^(?:${pattern})$`, `s${flags}`);
+  const rewriteLines = source("infra/headwind-phoenix-actions/rewrite.config")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
-  assert.deepEqual(
-    rewriteRules,
-    ["RewriteRule ^/rest/public/applications/upload - [F,NC]", "RewriteRule ^/rest/videos - [F,NC]"],
-    "exactly two refusal rules, and nothing else Tomcat would have to parse",
-  );
-  const refusals = rewriteRules.map((line) => new RegExp(line.split(" ")[1] as string, "is"));
-  const refused = (path: string) => refusals.some((rule) => rule.test(path));
-  for (const path of ["/rest/public/applications/upload", "/rest/videos", "/rest/videos/clip.mp4", "/REST/VIDEOS"]) {
-    assert.ok(refused(path), `${path} is refused`);
+  const rules: Rule[] = [];
+  let pendingConds: Cond[] = [];
+  for (const line of rewriteLines) {
+    const [kind, first, second, flagText = ""] = line.split(/\s+/);
+    const nocase = /\bNC\b/.test(flagText);
+    if (kind === "RewriteCond") {
+      const positive = !second!.startsWith("!");
+      pendingConds.push({ test: first!, pattern: anchored(second!.replace(/^!/, ""), nocase ? "i" : ""), positive });
+      continue;
+    }
+    assert.equal(kind, "RewriteRule", `rewrite.config holds only RewriteRule and RewriteCond lines — not: ${line}`);
+    assert.equal(second, "-", "every rule substitutes nothing and refuses");
+    const positive = !first!.startsWith("!");
+    rules.push({
+      pattern: anchored(first!.replace(/^!/, ""), nocase ? "i" : ""),
+      positive,
+      forbidden: /\bF\b/.test(flagText),
+      conds: pendingConds,
+    });
+    pendingConds = [];
   }
-  for (const path of [
-    "/files/hmdm-phoenix-6.39.apk",
-    "/rest/public/sync/configuration/PHX-TAB-0007",
-    "/rest/public/sync/info",
-    "/rest/notifications/device/PHX-TAB-0007",
-    "/rest/notification/polling/PHX-TAB-0007",
-    "/rest/plugins/devicelog/log/rules/PHX-TAB-0007",
-    "/rest/plugins/devicereset/public/password/PHX-TAB-0007",
-    "/rest/public/jwt/login",
-    "/rest/private/configurations/applications/3",
-    "/rest/plugins/phoenix-actions/private/action",
-    "/",
-  ]) {
-    assert.ok(!refused(path), `tablets and Phoenix still reach ${path}`);
+  assert.equal(pendingConds.length, 0, "no RewriteCond is left dangling at the end of the file");
+  assert.equal(rules.length, 3, "three rules: the two uploads and the host split");
+  assert.ok(rules.every((rule) => rule.forbidden), "every rule refuses with [F]");
+  const tomcatRefuses = (host: string, path: string) =>
+    rules.some(
+      (rule) =>
+        rule.pattern.test(path) === rule.positive &&
+        rule.conds.every((cond) => {
+          assert.equal(cond.test, "%{HTTP_HOST}", "the only variable the rules read is the host");
+          return cond.pattern.test(host) === cond.positive;
+        }),
+    );
+
+  const cases = source("infra/headwind-phoenix-actions/rewrite-cases.txt")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => line.split(/\s+/));
+  assert.ok(cases.length >= 40, `rewrite-cases.txt carries the cases (${cases.length})`);
+  for (const [expect, host, path] of cases) {
+    assert.ok(expect === "allow" || expect === "refuse", `a case starts with allow or refuse, not ${expect}`);
+    assert.equal(
+      tomcatRefuses(host!, path!),
+      expect === "refuse",
+      `${host}${path} should be ${expect === "allow" ? "ALLOWED" : "REFUSED"} — the rules would ${tomcatRefuses(host!, path!) ? "refuse" : "allow"} it`,
+    );
   }
 
+  // 🔴 THE TABLETS' WHOLE VOCABULARY IS IN THE CASES, ON THE TABLETS' OWN HOSTNAME. This list is read
+  // from the agent's source (ServerService.java, PushNotificationWorker, PushLongPollingService,
+  // GetServerConfigTask at h-mdm/hmdm-android master, identical at our launcher fork's launcher-6.39-r1).
+  // A path that leaves the allowlist leaves a tablet unable to sync, and the server would look healthy.
+  const AGENT_PATHS = [
+    "/rest/public/sync/configuration/{n}",
+    "/rest/public/sync/info",
+    "/rest/notifications/device/{n}",
+    "/rest/notification/polling/{n}",
+    "/rest/plugins/devicelog/log/rules/{n}",
+    "/rest/plugins/devicelog/log/list/{n}",
+    "/rest/plugins/deviceinfo/deviceinfo/public/{n}",
+    "/rest/plugins/devicelocations/public/update/{n}",
+    "/rest/plugins/deviceinfo/deviceinfo-plugin-settings/device/{n}",
+    "/rest/plugins/devicereset/public/{n}",
+    "/rest/plugins/devicereset/public/reboot/{n}",
+    "/rest/plugins/devicereset/public/password/{n}",
+  ];
+  for (const template of AGENT_PATHS) {
+    const path = template.replace("{n}", "PHX-TAB-0007");
+    assert.ok(
+      cases.some(([expect, host, p]) => expect === "allow" && host === "mdm.satopharma.com" && p === path),
+      `rewrite-cases.txt proves the tablets still reach ${path} on mdm.satopharma.com`,
+    );
+    assert.ok(!tomcatRefuses("mdm.satopharma.com", path), `and the rules let ${path} through`);
+  }
+  assert.ok(!tomcatRefuses("mdm.satopharma.com", "/files/RustDesk.apk"), "and every APK under /files/");
+
+  // The console's hostname in the rules is the one AccessGateFilter checks for an Access pass. If they
+  // ever drift, the rewrite lets the console through on a name the filter does not guard.
+  const gate = stripComments(source("infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix/security/AccessGateFilter.java"));
+  const gateHost = gate.match(/CONSOLE_HOST = "([^"]+)"/)?.[1];
+  assert.equal(gateHost, "mdm-console.satopharma.com", "AccessGateFilter guards the console hostname");
+  assert.ok(
+    rules[2]!.conds.some((cond) => !cond.positive && cond.pattern.test(gateHost!) && !cond.pattern.test(`x${gateHost}`)),
+    "and the host split exempts exactly that name, no more",
+  );
+
   // The Dockerfile puts the rules at HOST level (ROOT.xml is regenerated at every start, server.xml is
-  // not), and checks them with Tomcat's own parser at build, because a rule Tomcat cannot parse stops the
-  // whole Host while Railway reports the deploy green.
+  // not), and runs Tomcat's own parser AND engine on them at build, because a rule Tomcat cannot parse
+  // stops the whole Host while Railway reports the deploy green, and a rule that parses but refuses a
+  // tablet path takes the fleet dark just as quietly.
   const upload = stripHashComments(dockerfile);
   assert.match(
     upload,
     /COPY rewrite\.config \/usr\/local\/tomcat\/conf\/Catalina\/localhost\/rewrite\.config/,
     "the rules sit in the Host's own config folder, where the Host-level valve reads them",
   );
+  assert.match(upload, /COPY rewrite-cases\.txt \/tmp\/rewrite-cases\.txt/, "the cases go into the image build");
   assert.match(
     upload,
     /sed -i 's\|<\/Host>\|  <Valve className="org\.apache\.catalina\.valves\.rewrite\.RewriteValve" \/>/,
     "the valve goes into server.xml's one Host, which nothing rewrites at start",
   );
   assert.match(upload, /grep -c '<\/Host>'/, "and refuses to guess when server.xml does not hold exactly one Host");
-  const check = upload.match(/\/tmp\/RewriteCheck\.java "\$TOMCAT\/conf\/Catalina\/localhost\/rewrite\.config" (\d+)/);
-  assert.ok(check, "the build runs RewriteCheck on the installed rules file");
-  assert.equal(Number(check?.[1]), rewriteRules.length, "with the rule count the file really holds");
+  const check = upload.match(/\/tmp\/RewriteCheck\.java "\$TOMCAT\/conf\/Catalina\/localhost\/rewrite\.config" (\d+) \/tmp\/rewrite-cases\.txt/);
+  assert.ok(check, "the build runs RewriteCheck on the installed rules file and the cases");
+  assert.equal(Number(check?.[1]), rules.length, "with the rule count the file really holds");
   const rewriteCheck = stripComments(source("infra/headwind-phoenix-actions/RewriteCheck.java"));
   assert.match(rewriteCheck, /RewriteValve\.parse\(line\)/, "RewriteCheck parses each line with Tomcat's own parser");
+  assert.match(rewriteCheck, /rule\.addCondition\(cond\)/, "attaches each condition to the rule after it, as the valve does");
   assert.match(rewriteCheck, /rule\.parse\(new HashMap<>\(\)\)/, "and compiles each pattern the way the valve does at start");
+  assert.match(rewriteCheck, /rule\.evaluate\(parts\[2\], resolver\)/, "then runs Tomcat's own engine over every case");
+  assert.match(rewriteCheck, /"HTTP_HOST"\.equals\(key\)\) return host/, "handing it the case's host as %{HTTP_HOST}");
+
+  // 11. 🔴 THE CONSOLE CHECKS CLOUDFLARE'S ACCESS PASS ITSELF (owner, 2026-10-22: shut the back door at
+  //     the server). Access guards only traffic that comes through Cloudflare; Railway's edge answers
+  //     anyone who connects to it with the console's name, which never meets Cloudflare. So the add-on
+  //     verifies the signed pass on every request to the console's hostname.
+  const restWiring = stripComments(source("infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix/guice/module/PhoenixRestModule.java"));
+  const body = restWiring.slice(restWiring.indexOf("configureServlets"));
+  assert.match(body, /filter\("\/\*"\)\.through\(AccessGateFilter\.class\)/, "the gate is registered on every path");
+  assert.ok(
+    body.indexOf("AccessGateFilter.class") < body.indexOf("JWTFilter.class"),
+    "and before the add-on's own private-path filters",
+  );
+  assert.match(gate, /request\.getServerName\(\)/, "the gate tests getServerName(), the value Tomcat gives the rewrite as %{HTTP_HOST}");
+  assert.doesNotMatch(gate, /getHeader\("Host"\)|X-Forwarded/i, "never a raw Host or forwarded header the two could read differently");
+  assert.match(gate, /System\.getenv\("PHX_ACCESS_TEAM_DOMAIN"\)/, "the team comes from the service's variables");
+  assert.match(gate, /System\.getenv\("PHX_ACCESS_AUD"\)/, "and so does the console application's audience tag");
+  assert.match(gate, /Mode\.MISCONFIGURED/, "a half-set gate refuses rather than guessing open");
+  assert.match(gate, /"Cf-Access-Jwt-Assertion"/, "the pass is read from Cloudflare's own header");
+  const verifier = stripComments(source("infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix/security/AccessTokenVerifier.java"));
+  assert.match(verifier, /"RS256"\.equals\(header\.get\("alg"\)\)/, "only RS256 passes — `none` and HMAC tricks are refused");
+  assert.match(verifier, /SHA256withRSA/, "the signature is checked");
+  assert.match(verifier, /issuer\.equals\(claims\.get\("iss"\)\)/, "the issuer must be the team");
+  assert.match(verifier, /hasAudience\(claims\.get\("aud"\)\)/, "the audience must be THIS application");
+  assert.match(verifier, /\/cdn-cgi\/access\/certs/, "keys come from Cloudflare's published list");
+  assert.match(verifier, /REFETCH_FLOOR_MILLIS/, "and an unknown key id cannot make the server hammer Cloudflare");
+  for (const file of ["AccessGateFilter.java", "AccessTokenVerifier.java", "MiniJson.java"]) {
+    const java = stripComments(source(`infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix/security/${file}`));
+    assert.doesNotMatch(java, /com\.fasterxml\.jackson\.databind|java\.net\.http|\bvar\s+\w+\s*=/, `${file} uses nothing the WAR or Java 8 lacks`);
+  }
+  const buildStage = upload.slice(upload.indexOf("AS build"), upload.indexOf("jar uf"));
+  assert.match(
+    buildStage,
+    /RUN java -cp target\/classes \/tmp\/AccessVerifierCheck\.java/,
+    "the build proves the verifier against the compiled classes before they go into the WAR",
+  );
+  const verifierCheck = stripComments(source("infra/headwind-phoenix-actions/AccessVerifierCheck.java"));
+  for (const forgery of ["ANOTHER Access app", "expired", "not valid yet", "another team", "stranger's key", "never published", "alg none", "alg HS256", "altered claims"]) {
+    assert.ok(verifierCheck.includes(forgery), `AccessVerifierCheck refuses a pass from: ${forgery}`);
+  }
+
+  // 12. And CI builds that image before a merge can ship it — the runbook's "no safe way to rehearse".
+  const imageWorkflow = source(".github/workflows/headwind-image.yml");
+  assert.match(imageWorkflow, /- "infra\/headwind-phoenix-actions\/\*\*"/, "the image build runs on every PR touching the add-on's folder");
+  assert.match(imageWorkflow, /docker build [^\n]*infra\/headwind-phoenix-actions/, "and builds exactly that folder, as Railway does");
+  assert.doesNotMatch(imageWorkflow, /docker push|railway |secrets\./, "and pushes and deploys nothing");
 }
 
 /**
