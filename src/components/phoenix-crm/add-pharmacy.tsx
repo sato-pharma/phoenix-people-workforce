@@ -25,6 +25,7 @@ import type { CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { PharmacyExtras } from "@/components/phoenix-crm/pharmacy-details";
 import { CrmBackBar, CrmBlock, CrmButton, CrmField, CrmNote, CrmPanel, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { ADDED_PHARMACY_NAME_MAX, addedPharmacyNameProblem } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 /** What the server answered: the pharmacy on his list, and whether it was added just now. */
@@ -46,6 +47,7 @@ export function AddPharmacyScreen({
   seatId: string;
   test: boolean;
 }) {
+  const browserNamed = useBrowserNamed();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState<CapturedPin | null>(null);
@@ -126,7 +128,7 @@ export function AddPharmacyScreen({
       <CrmBlock className="border-t border-slate-100">
         {problem ? (
           <CrmNote className="mb-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">

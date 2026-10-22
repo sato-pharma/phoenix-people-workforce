@@ -29,6 +29,7 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
 import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmNote, CrmPanel } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 
 /** What a pinned pharmacy reads as, on every screen that shows one. */
 export type PharmacyPinRead = {
@@ -139,6 +140,7 @@ export function PharmacyDetailsScreen({
   seatId: string;
   test: boolean;
 }) {
+  const browserNamed = useBrowserNamed();
   const [phone, setPhone] = useState(pharmacy.phone ?? "");
   const [pin, setPin] = useState<CapturedPin | null>(null);
   // Pressed "Remove the saved location": the pin key is then sent as null, which is how it is cleared.
@@ -220,7 +222,7 @@ export function PharmacyDetailsScreen({
       <CrmBlock className="border-t border-slate-100">
         {problem ? (
           <CrmNote className="mb-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">

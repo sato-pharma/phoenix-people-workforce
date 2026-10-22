@@ -140,6 +140,34 @@ export function runPhoenixCrmBrowserNameTests(): void {
     );
   }
 
+  // ── And the validation screens, which show the SERVER's place refusals ────────
+  // 🔴 THE PLACE REFUSALS ARE THE COMMONEST ONES A REP MEETS, AND THESE SCREENS PRINTED THEM RAW. The
+  // server's too-rough and not-captured sentences carry the placeholder (entry-rules.ts
+  // `roughFixAtThePlace`, `NO_FIX_AT_THE_PLACE`, the pharmacy pair; shared-place-rules.ts for a
+  // building), and every screen that shows them put the text straight into the note: between 2 and 22
+  // October 2026, 180 place readings were refused as too rough for 12 reps (phoenix_crm_refused_readings),
+  // each one reading "Turn on precise location for your browser" while the visit bar beside it said
+  // Chrome. The note is split over three lines in these files, so the one-line pattern above never saw it.
+  for (const [file, sites] of [
+    ["src/components/phoenix-crm/list-screens.tsx", 2], // Validate, and the SaveBar under Save the clinic
+    ["src/components/phoenix-crm/out-of-list-entry.tsx", 1], // Someone new
+    ["src/components/phoenix-crm/add-pharmacy.tsx", 1],
+    ["src/components/phoenix-crm/pharmacy-details.tsx", 1],
+    ["src/components/phoenix-crm/signboard-retake-screen.tsx", 1],
+    ["src/components/phoenix-crm/shared-place-screens.tsx", 1], // a new polyclinic or centre
+    ["src/components/phoenix-crm/venue-timetable-screen.tsx", 1],
+  ] as const) {
+    const code = stripComments(readFileSync(file, "utf8"));
+    assert.match(code, /useBrowserNamed\(\)/, `${file} shows a place refusal, so it reads the browser's name`);
+    const named = code.split("{browserNamed(problem)}").length - 1;
+    assert.ok(named >= sites, `${file} must show its ${sites} refusal note(s) named, found ${named}`);
+    assert.doesNotMatch(
+      code,
+      /<CrmNote\b[^>]*\btone="bad"[^>]*>\s*\{(?:error|problem)\}\s*<\/CrmNote>/,
+      `${file} must not render a refusal that skipped the namer, on one line or several`,
+    );
+  }
+
   // What her iPhone should have read, from the user agent app_sessions recorded for her that morning.
   assert.equal(
     nameBrowserIn(

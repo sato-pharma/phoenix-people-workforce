@@ -350,7 +350,7 @@ function CaptureVenue({
       <CrmBlock className="border-t border-slate-100">
         {problem ? (
           <CrmNote className="mb-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">
