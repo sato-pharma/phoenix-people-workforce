@@ -1,12 +1,14 @@
 ---
 name: hr-operations-specialist-seat-owner-decisions
-description: "owner 2026-10-20 — role key \"HR Administration\" shown \"HR Operations Specialist\" (Yasmeena, HR-009) is salary-blind everywhere except the renewal annex, prints 8 papers, reviews Daily & Weekly Reports in DAYS only; a manager's own visits COUNT in that manager's own row of her field report; \"HR Operations\" is shown \"HR Generalist\" and stays empty for a hire, its alerts falling to the Super Admin."
+description: "owner 2026-10-20 — role key \"HR Administration\" shown \"HR Operations Specialist\" (built for Yasmeena, HR-009, who was moved BACK to HR Operations on 2026-10-21; the seat is left in place, empty) is salary-blind everywhere except the renewal annex, prints 8 papers, reviews Daily & Weekly Reports in DAYS only; a manager's own visits COUNT in that manager's own row of her field report; \"HR Operations\" is shown \"HR Generalist\" and stays empty for a hire, its alerts falling to the Super Admin."
 metadata:
   node_type: memory
   type: project
   originSessionId: 061d8c97-37ba-4e99-8b5d-a309001b06a0
-  modified: 2026-10-20T06:32:27.009Z
+  modified: 2026-10-21T12:06:28.296Z
 ---
+
+🔴 **2026-10-21 (owner: "return to Yasmeena her original account and leave the new account seat as it is"): Yasmeena (HR-009) is BACK ON `HR Operations`** (shown HR Generalist) — login role, access profile, both auth-metadata blocks, session_version 10→11, her live sessions revoked. The `HR Administration` seat (HR Operations Specialist) is LEFT IN PLACE and now holds nobody: roles row, 3 CHECK constraints, 5 workflow actions and the resignation alert audience untouched. Her `employees.job_title` still reads "HR Operations Specialist" (set before 2026-10-20, unchanged). While she holds `HR Operations`, vacation notices, business cards and that seat's alerts reach her again, not him. Everything below describes the seat's design, not who sits in it.
 
 Built 2026-10-20 (branch `codex/yasmeen-seat`, plan `~/.claude/plans/go-start-every-spicy-quiche.md`). His multiple-choice answers that day:
 
