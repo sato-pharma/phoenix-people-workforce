@@ -312,9 +312,16 @@ function runWritePathTests() {
     crmCamera.includes("const FIX_STALE_MS = 15_000;"),
     "the CRM camera must keep its 15s staleness escape, or a stale best-accuracy fix wins for ever",
   );
+  // 2026-10-22: the stamp burns the camera's running reading, `usedFix`, EXCEPT when the shutter's fresh
+  // reading overruled it as a cold network guess (photo-reading-rules.ts) — then it burns that one, so
+  // the picture never prints a place the phone never was. Either way it carries the reading's own time.
   assert.ok(
-    crmCamera.includes("locationCapturedAt: usedFix.at"),
+    crmCamera.includes("locationCapturedAt: stampFix.at"),
     "the CRM stamp must carry the FIX’s own time beside the shutter time",
+  );
+  assert.ok(
+    crmCamera.includes("const stampFix: Fix = shutterOverrules ? photoFix : usedFix;"),
+    "the stamped reading is the camera's running one unless the shutter overruled it",
   );
 
   // The outstation cameras already read a fresh position in the same flow as the shutter, with

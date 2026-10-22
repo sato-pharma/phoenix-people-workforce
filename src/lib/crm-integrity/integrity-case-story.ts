@@ -25,6 +25,7 @@
  */
 
 import { distanceMeters, formatDistance } from "@/lib/phoenix-crm/geo";
+import { MAX_TRAVEL_KMH } from "@/lib/phoenix-crm/location-integrity";
 
 export type CaseStoryReading = {
   label: string;
@@ -242,6 +243,30 @@ export function spokenGap(seconds: number): string {
   return hours < 24 ? `${Math.round(hours * 10) / 10} hours` : `${Math.round(hours / 24)} days`;
 }
 
+/**
+ * Whether the pin and the photograph sit further apart than anybody travels in the time between them,
+ * so one of the two is not where the phone was — Dr Tharwat Milad's place, 22 Oct 2026: 10,070 m in
+ * five seconds, a cold first reading in the photograph and the pin at the door.
+ *
+ * Each reading is granted the accuracy it claimed and only the distance left over is timed, so two
+ * loose readings that could both be true never qualify; a reading with no accuracy figure grants
+ * nothing to time against and never qualifies. No time at all between them leaves any distance
+ * impossible. The speed is the detector's own line, never a second number.
+ */
+function fasterThanAnyoneTravels(metresApart: number, seconds: number, input: CaseStoryInput): boolean {
+  const accuracyOf = (label: string): number | null => {
+    const accuracy = input.readings.find((reading) => reading.label === label)?.accuracyMeters;
+    return typeof accuracy === "number" && Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null;
+  };
+  const pin = accuracyOf(CASE_READING_LABELS.pin);
+  const photograph = accuracyOf(CASE_READING_LABELS.photograph);
+  if (pin === null || photograph === null) return false;
+  const leftOver = metresApart - pin - photograph;
+  if (leftOver <= 0) return false;
+  const hours = Math.abs(seconds) / 3600;
+  return hours === 0 || leftOver / 1000 / hours > MAX_TRAVEL_KMH;
+}
+
 /** A list of names as a reader would say it: "A", "A and B", "A, B and C". */
 export function spokenList(values: ReadonlyArray<string>): string {
   const kept = values.filter((value) => value.trim() !== "");
@@ -309,10 +334,14 @@ export function oddReadingSentence(input: CaseStoryInput): string | null {
   // kept point was taken FROM the photograph, which is true of 1,312 of the 1,403 validated places —
   // and on a visit case those are the two labels that agree. Printing "saved in a single tap" there
   // would be a confident explanation of the wrong mechanism.
+  // A place's own case carries the same copy under its own two labels: where the place was captured
+  // IS the photograph's reading on such a place, so the two "agreeing" readings are one reading, and
+  // the pin they outvote can be the true one (Dr Tharwat Milad, 22 Oct 2026: the pin was the door).
   const labels = agreeing.labels;
   const oneTap = labels.includes(CASE_READING_LABELS.pin) && labels.includes(CASE_READING_LABELS.photograph);
   const keptFromPhotograph =
-    labels.includes(CASE_READING_LABELS.placeOnList) && labels.includes(CASE_READING_LABELS.placePhotograph);
+    (labels.includes(CASE_READING_LABELS.placeOnList) && labels.includes(CASE_READING_LABELS.placePhotograph)) ||
+    (labels.includes(CASE_READING_LABELS.placeCaptured) && labels.includes(CASE_READING_LABELS.photograph));
   const why = oneTap
     ? ", saved in a single tap"
     : keptFromPhotograph
@@ -509,10 +538,13 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
       return metresApart === null
         ? "The pin and the photograph's own reading are further apart than one doorway."
         : `The pin and the photograph's own reading are ${formatDistance(metresApart)} apart — further than one doorway.`;
-    case "photo_pin_disagrees":
-      return metresApart === null
-        ? "The pin and the photograph's own reading are in different places."
-        : `The pin and the photograph's own reading are ${formatDistance(metresApart)} apart.`;
+    case "photo_pin_disagrees": {
+      if (metresApart === null) return "The pin and the photograph's own reading are in different places.";
+      const apart = `The pin and the photograph's own reading are ${formatDistance(metresApart)} apart`;
+      if (gapSeconds === null || !fasterThanAnyoneTravels(metresApart, gapSeconds, input)) return `${apart}.`;
+      const when = Math.abs(gapSeconds) < 1 ? "at the same moment" : `only ${spokenGap(gapSeconds)} apart`;
+      return `${apart}, but were taken ${when} — closer in time than anyone can travel that far, so one of the two is not where the phone was.`;
+    }
     case "photo_pin_gap_long": {
       if (gapSeconds === null) return "The photograph and the pin were taken a long way apart in time.";
       const order = gapSeconds < 0 ? "before" : "after";
@@ -634,7 +666,7 @@ function flagOrdinaryCause(flag: string): string | null {
     case "photo_pin_drifted":
       return "A picture taken at the door and the pin saved a few steps away gives this.";
     case "photo_pin_disagrees":
-      return "One of the two readings being the phone's cached position explains most of these.";
+      return "A phone's first reading after its location switches on comes from nearby Wi-Fi and phone masts before the satellites lock, and it can land kilometres away while claiming tens of metres; a cached position does the same.";
     case "photo_pin_gap_long":
       return "A picture taken at the door and the pin saved from the car does this, and so does a form left open.";
     case "sign_other_name":
@@ -791,8 +823,10 @@ export function caseStory(input: CaseStoryInput): CaseStory {
   const odd = oddReadingSentence(input);
   const visitStanding = visitsAgainstThePhotographSentence(input);
   // The ordinary innocent reason, on ONE line however many flags there are. It used to be a heading
-  // plus a line per cause, which read as an accusation with a list of excuses under it.
-  const usually = causes.length === 0 ? null : `Usually: ${spokenList(causes).replace(/, and /, " or ")}.`;
+  // plus a line per cause, which read as an accusation with a list of excuses under it. Each cause is
+  // a whole sentence with its own full stop, so they follow one another: joined as a list they printed
+  // "explains most of these.." and "these. and A picture", with ", and" inside a cause turned to " or".
+  const usually = causes.length === 0 ? null : `Usually: ${causes.join(" ")}`;
   // 🔴 A PHOTOGRAPH GETS NO POINT OF ITS OWN. Only its ABSENCE is worth words, because an empty
   // frame reads as a missing file rather than as the design: a one-tap visit keeps no picture at
   // all. The "as it was sent" line that used to sit here was wrong on the ninth detector too, where

@@ -46,6 +46,7 @@ import {
 } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { capturedLocationText, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
   emptyPlaceDraft,
@@ -596,6 +597,9 @@ export function ValidateScreen({
   const [problem, setProblem] = useState<string | null>(null);
   // Owner, 2026-10-14: validating is a form of steps, one at a time, in the order the rep does them.
   const [step, setStep] = useState(1);
+  // The phone's location receiver warms from the first step, so the photo and the pin two steps later
+  // are read from the satellites, not the network's first guess (location-receiver.ts, 2026-10-22).
+  useLocationWarmUp();
   // The "add the building" capture is open inside the polyclinic step; leaving then would lose its photo.
   const [venueAdding, setVenueAdding] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
@@ -1253,6 +1257,8 @@ export function AddPlaceScreen({
   const [seated, setSeated] = useState<SeatedDraftState>(() => initialSeated ?? emptySeatedDraft([], seatedSessionOf(view.customers.find((entry) => entry.customerId === customerId)?.listType)));
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Warm from the moment the screen opens, as on Validate (location-receiver.ts).
+  useLocationWarmUp();
 
   function close() {
     if (saving) return;

@@ -1208,6 +1208,84 @@ the pin), a single reading yielding no comparison, and the panel's own order —
 list, measurements after it. **Eight assertions, each broken on purpose and watched fire on its own
 headline, 7 of 7 breaks reported and the suite green again after every restore.**
 
+## 16 · The photograph that read 10 km from the door (2026-10-22)
+
+Dr Tharwat Milad's clinic in Dishna was validated on 20 October at 15:36 Cairo. The live photo's own
+reading put the signboard in **Faw Bahari** (26.0839274, 32.3733084) at ±65.1 m, taken at 15:36:34; the
+**Capture location** pin the same phone took at 15:36:39 read **Dishna** (26.1208047, 32.465416) at
+±20.1 m. That is **10,070 m in five seconds**. The board filed a strong `photo_pin_disagrees` case. The
+pin was the true one: the previous rep's two April check-ins at this doctor in the old CRM sit 242 m and
+273 m from it. The case stays open and strong, by his choice the same night.
+
+The same night he settled the seven visits the ninth detector had filed at four other places whose
+photograph sits away from their pin — Sehet Behteem Hospital (2), Ashmoun Fever Hospital (3), Ahmed Sabry
+Mashaal (1) and Linda Iskandar (1). Every one was saved **7-56 m from the pin** and 351 m to 2.8 km from
+the photograph. All seven were settled on 22 October at 03:21 Cairo with the reason *"the rep stood at
+the place's validated pin, and the photo's location was the phone's error"*.
+
+### Why a phone does this
+
+A location receiver that has just been switched on answers first from nearby networks, Wi-Fi routers
+and phone masts looked up in a database, and only later from the satellites. That first answer can land
+kilometres from the phone while claiming tens of metres: a router that moved house is still filed at its
+old address. The camera switched its receiver on as it opened, enabled the shutter on the first answer,
+and kept it, because the fresh reading taken at the shutter replaced the kept one **only when it claimed
+to be sharper**. Whatever the shutter read that afternoon did not claim better than ±65 m, so the Faw
+Bahari answer stayed; the pin came from the separate **Capture location** button five seconds later.
+
+### What the camera does now
+
+- **Two readings contradict** when they sit further apart than both claimed accuracies together, and
+  never on less than the place's 250 m line, so two honest readings a doorway apart never do
+  (`readingsContradict`, `src/lib/phoenix-crm/photo-reading-rules.ts`).
+- **A reading taken in the receiver's first 30 seconds is cold**, and a later reading that contradicts
+  it wins whatever accuracy either claims (`laterReadingOverrules`). The running watch asks it on every
+  reading, and the shutter asks it of its fresh reading; the burned-in stamp then names the reading kept,
+  with that reading's own time (`stampFix`). **A warm receiver's reading is never overruled**, so the
+  photo's reading changes only in the one shape that produced the Faw Bahari photo.
+- **The receiver is held warm while any capture screen is open** — the validation steps, Add a place,
+  Capture location and the out-of-list entry (`useLocationWarmUp`, `location-receiver.ts`) — so the
+  satellites have usually locked before the camera opens. It starts only where `permissions.query`
+  already answers "granted": a warm-up never asks the rep for anything.
+- 🔴 **It never holds the shutter, never refuses a photo and never tells the rep** (Golden Rule #1): it
+  only chooses between readings the camera already had. A forced retake and a location retake were
+  offered the same night and declined; never re-propose either.
+
+### What the board says now
+
+The panel told this case as *"The pin and the photograph's own reading are 10.1 km apart"*, named the
+pin as *"the one that disagrees"* because the place's kept point and the photograph counted as two
+readings, and closed on *"Usually: One of the two readings being the phone's cached position explains
+most of these.."*. Now:
+
+1. **A pin and a photograph further apart than anybody travels in the seconds between them say so.**
+   Each reading is granted the accuracy it claimed, and only the distance left over is timed against
+   the detector's own `MAX_TRAVEL_KMH` (150): *"…10.1 km apart, but were taken only 5 seconds apart —
+   closer in time than anyone can travel that far, so one of the two is not where the phone was."* Two
+   loose readings whose circles meet, an unrecorded gap, or a reading with no accuracy figure claim
+   nothing (`fasterThanAnyoneTravels`).
+2. **The ordinary cause is the phone's first network reading**, with a cached position beside it.
+3. **On a place case the kept point is the photograph's reading, and the sentence says so**, so a copy
+   never reads as a second witness against the pin. It still names the pin as the one that differs and
+   still refuses to say which is wrong.
+4. **`Usually:` joins its causes as sentences.** Joined as a list it printed *"these.."*, *"these. and A
+   picture"*, and turned the *", and so does"* inside one cause into *" or so does"*.
+
+### Considered and not done
+
+Making the night check accept either reading, as the visit door does since 21 October, and having the
+story name the reading the visits support. His 13 October rule is that the visits are measured against
+the photograph, so a visit at the pin on a place like this one is still filed, weakly, and is his to
+settle; the door and the night check deliberately answer different questions.
+
+### Proof
+
+`tests/phoenix-crm-photo-reading.test.ts`, on his case's own readings: the rule, the camera's two call
+sites and its stamp, the warm-up on every capture screen, and the board's sentences. Three assertions
+were broken on purpose and fired on their own headlines — the five seconds in the sentence, the
+two-cause `Usually:` line, and the kept-point clause — and the file was restored byte-identical
+(SHA-256 compared) before the suite went green again.
+
 ## Where the code is
 
 
@@ -1238,3 +1316,6 @@ headline, 7 of 7 breaks reported and the suite green again after every restore.*
 | Whose visit it is — the rep, or the manager on his own single visit | `personOnTheVisit`, `location-integrity.ts` |
 | Why a manager's own visit has no rep at all | the `kind === "single"` branch of `resolveVisitParticipants`, `scope.ts` |
 | The one list of reading labels the loader names its readings from | `CASE_READING_LABELS`, same file |
+| Which camera reading becomes the photo's — the cold-reading rule | `laterReadingOverrules`, `src/lib/phoenix-crm/photo-reading-rules.ts` |
+| The receiver held warm on every capture screen | `useLocationWarmUp`, `src/components/phoenix-crm/location-receiver.ts` |
+| A pin and photograph no one could travel between in time | `fasterThanAnyoneTravels`, `src/lib/crm-integrity/integrity-case-story.ts` |

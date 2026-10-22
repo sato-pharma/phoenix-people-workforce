@@ -44,8 +44,25 @@ function north(metres: number): { lat: number; lon: number } {
   return { lat: DOOR.lat + metres / 111_195, lon: DOOR.lon };
 }
 
+/**
+ * A place whose point settled on its PIN (`pointSource: "pin"`), so `lat`/`lon` ARE the pin — the shape
+ * every case below was written for. The pin fields stay null here so `lat`/`lon` keep standing in for it;
+ * section 1b builds the other shape, a point that settled on the photograph.
+ */
 function place(overrides: Partial<ValidatedPlaceReading> = {}): ValidatedPlaceReading {
-  return { id: "p1", lat: DOOR.lat, lon: DOOR.lon, photoLat: DOOR.lat, photoLon: DOOR.lon, photoAccuracyMeters: 12, ...overrides };
+  return {
+    id: "p1",
+    lat: DOOR.lat,
+    lon: DOOR.lon,
+    photoLat: DOOR.lat,
+    photoLon: DOOR.lon,
+    photoAccuracyMeters: 12,
+    pinLat: null,
+    pinLon: null,
+    pinAccuracyMeters: null,
+    pointSource: "pin",
+    ...overrides,
+  };
 }
 
 function read(file: string): string {
@@ -138,6 +155,42 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   assert.equal(verdict(north(327), twoDoors).placeId, "p1", "the nearest PLACE still decides, and the verdict names it");
   assert.equal(verdict(north(327), twoDoors).refused, false, "with two places, the nearer reading of the nearer place is what counts");
 
+  // ── 1b · The PIN, not the point the validation settled on (2026-10-22) ──────────────────────────
+  // The owner's 2026-10-21 pick names "the photograph's anchor or the place's own validated PIN". The
+  // first cut measured `lat`/`lon`, which hold the PHOTOGRAPH whenever its accuracy figure was the sharper
+  // one — so on those places the pin was never measured at all. Ahmed Sabry Mashaal's place, as stored:
+  // the photograph (±13.4 m) is the point, the pin (±18.4 m) sits 441 m away, and every later visit
+  // stood 7 m from the pin.
+  const settledOnPhoto = place({
+    pointSource: "photo",
+    photoAccuracyMeters: 13.4,
+    pinLat: north(441).lat,
+    pinLon: DOOR.lon,
+    pinAccuracyMeters: 18.4,
+  }); // lat/lon = the photograph = DOOR
+  assert.equal(validatedPlaceReadings(settledOnPhoto).length, 2, "a point settled on the photograph still has its pin as the second reading");
+  assert.equal(
+    verdict(north(441 + 7), [settledOnPhoto]).refused,
+    false,
+    "🔴 a rep 7 m from the PIN is accepted though the place's point settled on the photograph 448 m away — the owner named the pin",
+  );
+  assert.equal(verdict(DOOR, [settledOnPhoto]).refused, false, "the photograph still counts");
+  assert.equal(verdict(north(441 + 310), [settledOnPhoto]).refused, true, "and 310 m past the pin is still refused — the line is not widened");
+  // Linda Iskandar's place: 2,768 m between the two, every later visit 56 m from the pin.
+  const linda = place({ pointSource: "photo", photoAccuracyMeters: 25.3, pinLat: north(2_768).lat, pinLon: DOOR.lon, pinAccuracyMeters: 100 });
+  assert.equal(verdict(north(2_768 + 56), [linda]).refused, false, "a rep 56 m from a pin 2.8 km from the photograph is accepted");
+  // A pin wider than the place's line is no reading, exactly as a blurred photograph is none.
+  const roughPin = place({ pointSource: "photo", pinLat: north(800).lat, pinLon: DOOR.lon, pinAccuracyMeters: 2_000 });
+  assert.deepEqual(validatedPlaceReadings(roughPin), [{ lat: DOOR.lat, lon: DOOR.lon }], "a rough pin falls out and the settled point stands alone");
+  assert.equal(verdict(north(800), [roughPin]).refused, true, "so a visit at a rough pin is refused");
+  // 🔴 A MOVED place: the move is where the place is now, and the pin it corrected opens no door.
+  const moved = place({ pointSource: "moved", lat: north(600).lat, pinLat: north(2_000).lat, pinLon: DOOR.lon, pinAccuracyMeters: 10 });
+  assert.equal(verdict(north(600), [moved]).refused, false, "a visit at the moved point is accepted");
+  assert.equal(verdict(north(2_000), [moved]).refused, true, "🔴 a visit at the OLD pin of a moved place is refused");
+  // A seat in a polyclinic carries no photograph reading and answers with the building's point.
+  const seated = place({ pointSource: "shared_place", photoLat: null, photoLon: null, photoAccuracyMeters: null, pinLat: north(900).lat, pinLon: DOOR.lon, pinAccuracyMeters: 10 });
+  assert.deepEqual(validatedPlaceReadings(seated), [{ lat: DOOR.lat, lon: DOOR.lon }], "a seated place is measured at the building's point only");
+
   // 🔴 The rule is ONE source line: the verdict walks the place's readings. A refactor back to the photograph
   // alone would pass every behaviour above for a place whose photograph and pin agree, and fail only here.
   const entryRulesSource = stripComments(read("src/lib/phoenix-crm/entry-rules.ts"));
@@ -192,7 +245,12 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   const saveRpcAt = saveVisit.indexOf('"phoenix_crm_save_visit"');
   assert.ok(claimAt > throwAt, "🔴 refused BEFORE a required recording is claimed, so a refused visit never spends it");
   assert.ok(saveRpcAt > throwAt, "🔴 and before the save writes anything — no row, no notice");
-  assert.match(saveVisit, /\.select\("id, lat, lon, photo_lat, photo_lon, photo_accuracy_meters"\)/, "the place read carries the photograph's own reading, which is what the visit is measured against");
+  assert.match(
+    saveVisit,
+    /\.select\("id, lat, lon, photo_lat, photo_lon, photo_accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, point_source"\)/,
+    "the place read carries the photograph's reading AND the pin, the two a visit is measured against",
+  );
+  assert.match(saveVisit, /pinLat: numberOrNull\(row\.pin_lat\),/, "🔴 and hands the PIN to the rule — never only the settled point");
   assert.match(saveVisit, /farMeters: settings\.visitFarMeters/, "the line is the module's setting, the same figure the flag and the board use");
 
   // The manager's own single visits never reach this door at all: they are filed through their own path.

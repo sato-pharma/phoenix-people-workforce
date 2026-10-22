@@ -3521,6 +3521,35 @@ by hand — were declined; never re-propose either.
   104 m or more apart (this hospital 327 m, one other doctor's place 10,070 m — a data conflict for the
   Place checks board, which the nearer-reading rule does not settle: it accepts either point).
 
+### Correction, 2026-10-22 — the "pin" the door read was the photograph
+
+**What was wrong.** `validatedPlaceReadings` took the place's kept point (`lat`/`lon`) as the pin. On a
+place whose point was taken from the photograph, that point IS the photograph, so the ruling above never
+reached those places: the pin did not count. Sehet Behteem was fixed only because its own kept point is
+its pin. Measured on production: **9 active places** hold a photograph 300 m or more from the pin with the
+kept point on the photograph, and on **3** of them visits stood at the pin — Linda Iskandar (photograph
+and pin 2,768 m apart, visits 56 m from the pin), Ashmoun Fever Hospital (869 m apart) and Ahmed Sabry
+Mashaal (441 m apart). A rep logging a visit at the door of any of the three would have been refused.
+None had been yet (production, 22 Oct): every `far_from_place` refusal within 300 m of a pin since the
+rule began was Sehet Behteem's on 21 Oct before the fix, or one rep standing 299 m from a place whose
+pin and photograph sit 7 m apart — which the corrected door now lets through, at the line.
+
+**What it does now.** The second reading is the place's own `pin_lat`/`pin_lon` (`validatedPin`,
+`entry-rules.ts`), used when the pin's accuracy is within the same 250 m line; a moved point (the Super
+Admin's or the SFE Manager's) and a seated customer's venue point stay the place's point, and a rough or
+missing pin falls back to it. The line, the nearer-reading rule and everything else above stand.
+
+**What it does not change.** The night check that measures each visit against the place's photograph
+(owner, 2026-10-13) still measures against the photograph only, so a visit at the pin on one of these
+places is still filed on the integrity board, weakly, for him to settle; the door and the night check
+answer different questions. The other doctor's place above was Dr Tharwat Milad's: its photograph was
+the phone's first network reading, 10 km from the door
+(`docs/phoenix-crm-integrity-settlement.md` §16).
+
+Pinned by `tests/phoenix-crm-visit-far-refusal.test.ts` §1b on the three places' shapes; the assertion
+that a point settled on the photograph still has its pin as the second reading was broken on purpose,
+fired (one reading, not two), and the file was restored byte-identical.
+
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
 He described the whole cycle he wants a medical rep to live in and asked, first, whether it was

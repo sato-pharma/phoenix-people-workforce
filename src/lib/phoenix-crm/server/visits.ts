@@ -1378,8 +1378,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   const [placesResult, issuedAt, listedPharmacies] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
-      // The photograph's own reading travels too: it is what a rep's visit is measured against below.
-      .select("id, lat, lon, photo_lat, photo_lon, photo_accuracy_meters")
+      // Both readings travel: the photograph's and the pin, the two a rep's visit is measured against below,
+      // with `point_source` saying which of them `lat`/`lon` settled on.
+      .select("id, lat, lon, photo_lat, photo_lon, photo_accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, point_source")
       .eq("customer_id", visit.customerId)
       .eq("seat_id", seat.seatId)
       .eq("is_test", isTest)
@@ -1422,6 +1423,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         photoLat: numberOrNull(row.photo_lat),
         photoLon: numberOrNull(row.photo_lon),
         photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
+        pinLat: numberOrNull(row.pin_lat),
+        pinLon: numberOrNull(row.pin_lon),
+        pinAccuracyMeters: numberOrNull(row.pin_accuracy_meters),
+        pointSource: typeof row.point_source === "string" ? row.point_source : null,
       })),
       farMeters: settings.visitFarMeters,
     });
