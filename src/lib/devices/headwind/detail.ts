@@ -123,6 +123,24 @@ function formatValue(key: string, value: unknown): string | null {
   return null;
 }
 
+/**
+ * The `info` keys already surfaced in the headline or in the position section — excluded from the
+ * "Everything the tablet reports" catch-all so a fact is not printed twice under two labels. The
+ * candidate spellings match `normalizeDevice` in `devices.ts`; a spelling that fleet reader does not
+ * promote still falls through to the catch-all, which is the safe direction.
+ */
+const PROMOTED_INFO_KEYS: ReadonlySet<string> = new Set([
+  "manufacturer", "brand", "vendor",
+  "model", "deviceModel",
+  "androidVersion", "osVersion", "sdkVersion",
+  "batteryLevel", "battery",
+  "batteryCharging", "charging", "isCharging",
+  "serial", "serialNumber",
+  "imei", "imei1",
+  "launcherVersion", "version",
+  "lat", "latitude", "lon", "lng", "longitude", "location",
+]);
+
 /** The scalar facts inside one object, humanised, with identifiers and empty values dropped. */
 function factsFrom(record: RawRecord): DeviceFact[] {
   const facts: DeviceFact[] = [];
@@ -181,6 +199,18 @@ export async function getHeadwindDeviceDetail(
     locatedAt: device.locatedAt,
   } satisfies RawRecord);
   if (everythingElse.length > 0) sections.push({ facts: everythingElse, title: "Check-in" });
+
+  // 🔴 EVERYTHING THE AGENT SENT THAT IS NOT ALREADY ABOVE. The promoted facts are dropped so nothing
+  // reads twice; `factsFrom` then humanises the rest, turns epoch millis into Cairo time, and drops
+  // identifiers and nested objects. A fact this file has never seen appears here the day the agent
+  // starts sending it — which is the whole reason the blob is carried through rather than a fixed list.
+  const reported = Object.fromEntries(
+    Object.entries(device.info).filter(([key]) => !PROMOTED_INFO_KEYS.has(key)),
+  );
+  const everythingReported = factsFrom(reported);
+  if (everythingReported.length > 0) {
+    sections.push({ facts: everythingReported, title: "Everything the tablet reports" });
+  }
 
   return { deviceNumber, headline, sections };
 }

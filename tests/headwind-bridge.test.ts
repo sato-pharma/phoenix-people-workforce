@@ -37,6 +37,7 @@ import {
 } from "../src/lib/devices/headwind/commands.ts";
 import {
   configurationBranding,
+  configurationFiles,
   configurationSummary,
   configurationWriteBody,
   linkHeadwindApp,
@@ -46,6 +47,15 @@ import {
   HEADWIND_ICON_SIZES,
   HeadwindConfigurationError,
 } from "../src/lib/devices/headwind/configurations.ts";
+import {
+  fixesToPoints,
+  fleetRowsToPoints,
+  summarizeFleet,
+  DASHBOARD_LOW_BATTERY,
+  DASHBOARD_ONLINE_WINDOW_MS,
+  type DashboardLocationFix,
+} from "../src/lib/devices/headwind/dashboard.ts";
+import type { RepHeadwindRow } from "../src/lib/devices/headwind/fleet.ts";
 import {
   parseHeadwindEnrollmentTemplate,
   HeadwindEnrollmentError,
@@ -185,6 +195,7 @@ function device(overrides: Partial<HeadwindDevice>): HeadwindDevice {
     deviceNumber: "PHX-TAB-0002",
     enrollmentStatus: "Enrolled",
     imei: null,
+    info: {},
     isAndroid: true,
     lastContactAt: null,
     latitude: null,
@@ -198,6 +209,39 @@ function device(overrides: Partial<HeadwindDevice>): HeadwindDevice {
     platformLabel: "Android",
     rustDeskId: null,
     serialNumber: null,
+    ...overrides,
+  };
+}
+
+function repRow(overrides: Partial<RepHeadwindRow>): RepHeadwindRow {
+  return {
+    agentVersion: null,
+    assetTag: null,
+    assignmentId: null,
+    batteryCharging: null,
+    batteryLevel: null,
+    configurationName: null,
+    deviceNumber: "PHX-TAB-0002",
+    enrollmentStatus: "Enrolled",
+    holderJobTitle: null,
+    holderName: null,
+    imei: null,
+    isAndroid: true,
+    lastContactAt: null,
+    latitude: null,
+    locatedAt: null,
+    longitude: null,
+    manufacturer: null,
+    model: null,
+    name: "PHX-TAB-0002",
+    osVersion: null,
+    placeholderName: null,
+    platformLabel: "Android",
+    registerDeviceId: null,
+    registerStatus: null,
+    rustDeskId: null,
+    serialNumber: null,
+    unregistered: false,
     ...overrides,
   };
 }
@@ -1610,7 +1654,18 @@ async function runDeviceDetailTests() {
             items: [
               {
                 id: 9,
-                info: { location: { lat: 30.0444, lon: 31.2357, ts: 1_758_800_000_000 }, model: "TB328XU" },
+                info: {
+                  // Promoted facts — these belong in the headline, not in the catch-all section below.
+                  androidVersion: "13",
+                  batteryLevel: 84,
+                  location: { lat: 30.0444, lon: 31.2357, ts: 1_758_800_000_000 },
+                  model: "TB328XU",
+                  // The long tail — facts no hand-written list would carry, and the whole reason the blob is shown.
+                  freeStorageMb: 20480,
+                  ringerMode: "silent",
+                  ssid: "Sato-Field",
+                  udid: "internal-7",
+                },
                 lastUpdate: 1_758_900_000_000,
                 number: "PHX-TAB-0008",
               },
@@ -1633,6 +1688,28 @@ async function runDeviceDetailTests() {
   for (const fact of checkIn.facts) {
     assert.doesNotMatch(fact.value, /\d{4}-\d{2}-\d{2}T\d{2}:/, `${fact.label} never reaches the page as a raw ISO instant`);
   }
+
+  // 🔴 EVERYTHING THE AGENT SENT APPEARS, AND A FACT ALREADY PROMOTED IS NOT PRINTED TWICE. The whole
+  // point of carrying the blob (rather than a fixed list) is that a fact this code has never seen still
+  // shows the day the agent sends it — so the catch-all must carry the long tail while the promoted
+  // facts stay only in the headline.
+  // BREAK-TEST: drop `info` from the returned device in devices.ts (or drop the section in detail.ts) and
+  // the section-present assertion fires; drop `batteryLevel` from PROMOTED_INFO_KEYS and the
+  // no-duplicate assertion fires with "Battery level" showing in the section.
+  const reported = detail.sections.find((section) => section.title === "Everything the tablet reports");
+  assert.ok(reported, "the catch-all section carries what the agent reported beyond the promoted facts");
+  const reportedLabels = reported.facts.map((fact) => fact.label);
+  assert.ok(reportedLabels.includes("Free storage mb"), "a fact no hand-written list would carry still appears");
+  assert.ok(reportedLabels.includes("Ringer mode"), "and another");
+  assert.ok(reportedLabels.includes("Wi-Fi network"), "humanised through the acronym map, so SSID reads as a person would say it");
+  assert.ok(!reportedLabels.includes("Battery level"), "a promoted fact is not repeated here — Battery is already in the headline");
+  assert.ok(!reportedLabels.includes("Model"), "nor the model");
+  assert.ok(!reportedLabels.some((label) => /udid/i.test(label)), "and a raw identifier (udid) is dropped, never shown");
+  assert.ok(!reported.facts.some((fact) => fact.value === "internal-7"), "the identifier's value never reaches the page either");
+  assert.ok(
+    detail.headline.some((fact) => fact.label === "Battery" && fact.value.startsWith("84")),
+    "the promoted battery stays in the headline where a person looks for it first",
+  );
 }
 
 async function runDeviceActorNameTests() {
@@ -3224,6 +3301,135 @@ function runPluginPathTests() {
   }
 }
 
+/**
+ * The Tablet Dashboard's own arithmetic, and the files a tablet's rules push.
+ *
+ * These are pure functions on purpose — the overview counts, the two map-point mappers and the file
+ * projection carry the dashboard's whole logic with no React and no network, so they are pinned here
+ * where breaking one shows at once. The page and its components import them; they never re-derive them.
+ */
+function runDashboardTests() {
+  // A fixed "now" so the online window is arithmetic, not a clock race.
+  const now = Date.parse("2026-10-22T12:00:00.000Z");
+  const recent = new Date(now - 60 * 60 * 1000).toISOString(); // an hour ago → online
+  const stale = new Date(now - DASHBOARD_ONLINE_WINDOW_MS - 1000).toISOString(); // just past a day → not online
+
+  const rows: RepHeadwindRow[] = [
+    repRow({ batteryCharging: false, batteryLevel: 12, deviceNumber: "A", lastContactAt: recent, latitude: 30.04, longitude: 31.23, rustDeskId: "111" }),
+    repRow({ batteryCharging: true, batteryLevel: 8, deviceNumber: "B", lastContactAt: recent, rustDeskId: "222" }),
+    repRow({ batteryLevel: 95, deviceNumber: "C", lastContactAt: stale, latitude: 29.9, longitude: 31.1, unregistered: true }),
+    repRow({ batteryLevel: null, deviceNumber: "D" }),
+  ];
+
+  const summary = summarizeFleet(rows, now);
+  assert.equal(summary.total, 4, "every managed tablet is counted");
+  assert.equal(summary.online, 2, "online is a check-in inside the last day — the stale one and the never-seen one are out");
+  assert.equal(summary.reportingLocation, 2, "only the two carrying coordinates report a position");
+  assert.equal(summary.screenReady, 2, "screen-ready is a RustDesk id present");
+  // 🔴 LOW BATTERY IS 'AT OR BELOW 20 AND OFF THE CHARGER'. B is at 8 but charging, so it is NOT low —
+  // a tablet on the charger is not about to die in the field. BREAK-TEST: drop the `!== true` charging
+  // guard in dashboard.ts and this reads 2.
+  assert.equal(summary.lowBattery, 1, "only A is low: 12% and off the charger; B at 8% is charging; D reported no level");
+  assert.equal(summary.notInRegister, 1, "one tablet the register does not yet know");
+  assert.equal(DASHBOARD_LOW_BATTERY, 20, "the low-battery line is 20%");
+
+  // The fleet map: one point per tablet that has a position, labelled with its tag/holder.
+  const held = repRow({ assetTag: "PHX-TAB-0007", deviceNumber: "E", holderName: "Gannatullah Amer", latitude: 30.1, longitude: 31.2 });
+  const unregisteredRow = repRow({ assetTag: null, deviceNumber: "F", latitude: 30.2, longitude: 31.3, unregistered: true });
+  const points = fleetRowsToPoints([held, unregisteredRow, repRow({ deviceNumber: "G" })]);
+  assert.equal(points.length, 2, "a tablet with no coordinates is left off the map, never plotted at (0,0)");
+  assert.equal(points[0].label, "PHX-TAB-0007", "a placed tablet is labelled with its asset tag");
+  assert.equal(points[0].sublabel, "Gannatullah Amer", "and the holder rides in the tooltip — a name, never an id");
+  assert.equal(points[0].order, null, "a fleet marker has no trail number");
+  assert.equal(points[1].sublabel, "Not in the custody register", "a tablet nobody holds says which it is rather than reading blank");
+
+  // The trail: fixes numbered oldest-first, joined in time order, unplaceable ones dropped.
+  const t0 = "2026-10-20T08:00:00.000Z";
+  const t1 = "2026-10-20T09:00:00.000Z";
+  const t2 = "2026-10-20T10:00:00.000Z";
+  const fixes: DashboardLocationFix[] = [
+    { batteryLevel: 70, latitude: 30.2, longitude: 31.3, recordedAt: t2, source: "check-in" },
+    { batteryLevel: 80, latitude: 30.0, longitude: 31.1, recordedAt: t0, source: "plugin" },
+    { batteryLevel: 75, latitude: 30.1, longitude: 31.2, recordedAt: t1, source: "check-in" },
+    { batteryLevel: null, latitude: Number.NaN, longitude: 31.0, recordedAt: null, source: "plugin" },
+  ];
+  const trail = fixesToPoints(fixes);
+  assert.equal(trail.length, 3, "the fix with no usable coordinates is dropped");
+  // 🔴 OLDEST FIRST. The read hands fixes back newest-first; a trail reads in time order. BREAK-TEST:
+  // remove the sort in dashboard.ts and the order below is [t2, t0, t1].
+  assert.deepEqual(trail.map((point) => point.sublabel), [t0, t1, t2], "sorted oldest-first by recorded time");
+  assert.deepEqual(trail.map((point) => point.order), [1, 2, 3], "numbered from one in that order");
+  assert.deepEqual(trail.map((point) => point.label), ["1", "2", "3"], "and the marker label is the stop number");
+  assert.equal(trail[0].latitude, 30.0, "stop one is the earliest fix's position");
+
+  // The file projection: the four browser-safe fields, read defensively, nothing secret.
+  const files = configurationFiles({
+    files: [
+      { description: "The field manual", fileId: 5, path: "manual.pdf", url: "https://mdm.test.local/files/manual.pdf" },
+      { description: null, id: 9, path: null }, // name falls back to its id
+      { externalUrl: true, id: 12, path: "logo.png" }, // a boolean externalUrl is not a URL
+      { description: "" }, // nothing to label and nothing to act on → dropped
+      "not an object",
+      null,
+    ],
+    id: 3,
+    name: "Rep tablets",
+    password: "plain-text-secret",
+  } as never);
+  assert.equal(files.length, 3, "the two unusable entries are dropped; the three real ones are kept");
+  assert.deepEqual(files[0], {
+    description: "The field manual",
+    fileId: 5,
+    name: "manual.pdf",
+    url: "https://mdm.test.local/files/manual.pdf",
+  });
+  assert.equal(files[1].name, "File 9", "a file with no path reads as its id, never blank");
+  assert.equal(files[1].fileId, 9, "the id is read from either `fileId` or `id`");
+  assert.equal(files[2].url, null, "🔴 a boolean externalUrl flag is never shown as a link — only a string URL is");
+  assert.equal(files[2].name, "logo.png");
+  // 🔴 NOTHING SECRET LEAVES THE PROJECTION. The configuration carries the tablet's plaintext admin
+  // password; the file list must never carry it or any other field of the object.
+  const serialised = JSON.stringify(files);
+  assert.ok(!serialised.includes("plain-text-secret"), "the configuration's plaintext password never reaches the file list");
+  assert.deepEqual(configurationFiles({ id: 1, name: "x" } as never), [], "a configuration with no files is an empty list, never a throw");
+
+  // The route and the components are wired to these — pinned at the source so a rename shows here.
+  const route = stripComments(source("app/api/devices/headwind/route.ts"));
+  assert.match(route, /case "files":/, "the fleet route answers a files view");
+  assert.match(route, /getHeadwindConfigurationFiles\(/, "through the browser-safe reader, never the whole configuration");
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only, like every other view");
+
+  const panel = stripComments(source("src/components/devices/headwind-tablet-panel.tsx"));
+  assert.match(panel, /view=files/, "the tablet panel has a files panel that reads the files view");
+  assert.match(panel, /change: "file"[\s\S]*?remove: true/, "and its Remove takes the file off the rules");
+  assert.match(panel, /every tablet on these rules/, "🔴 the armed Remove says the file leaves every tablet on the rules, not only this one");
+  assert.match(panel, /view=screen&mode=control/, "the live browse opens a RustDesk control session");
+  assert.match(panel, /File Transfer tab/, "and tells the person to use RustDesk's File Transfer tab — there is no file-transfer deep link");
+  assert.match(panel, /kind="trail"/, "the movements panel draws the trail map");
+  assert.match(panel, /fixesToPoints\(/, "from the pure mapper pinned above");
+
+  // 🔴 THE DASHBOARD PAGE IS SUPER-ADMIN ONLY AND SAYS CALLS AND MESSAGES ARE NEVER SHOWN.
+  const page = stripComments(source("app/(admin)/devices/tablets/dashboard/page.tsx"));
+  assert.match(page, /canAccess\(access, "company_devices", "approve"\)/, "the page gate is the approve permission");
+  assert.match(page, /redirect\("\/hr\/devices"\)/, "and anyone turned away is sent to the register they can use");
+  assert.match(page, /isHeadwindConfigured\(\)/, "it ships dark until the server exists");
+  assert.match(page, /[Cc]alls and messages are never shown/, "and the page says plainly that calls and messages are never shown");
+
+  const nav = stripComments(source("src/config/system-navigation.ts"));
+  assert.match(nav, /href: "\/devices\/tablets\/dashboard"/, "the dashboard has a sidebar row");
+  assert.match(
+    nav,
+    /href: "\/devices\/tablets\/dashboard",[\s\S]*?action: "approve"/,
+    "gated on the approve permission, so it never reaches a seat the page turns away",
+  );
+
+  const overview = stripComments(source("src/components/devices/tablet-fleet-overview.tsx"));
+  assert.match(overview, /summarizeFleet\(/, "the overview strip counts through the pure summary, not its own query");
+  const map = stripComments(source("src/components/devices/tablet-fleet-map.tsx"));
+  assert.match(map, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/, "the map reuses the shared browser key");
+  assert.match(map, /border border-slate-200/, "and wears the devices look — a slate border, square, not the field map's rounded card");
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -3231,6 +3437,7 @@ export async function runHeadwindBridgeTests() {
   await runDeviceTests();
   await runDeviceDetailTests();
   await runDeviceActorNameTests();
+  runDashboardTests();
   runMatcherTests();
   runRegisterSyncTests();
   await runCommandTests();

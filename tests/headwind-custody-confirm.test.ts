@@ -37,6 +37,7 @@ function device(overrides: Partial<HeadwindDevice>): HeadwindDevice {
     deviceNumber: "PHX-TAB-0002",
     enrollmentStatus: "Enrolled",
     imei: null,
+    info: {},
     isAndroid: true,
     lastContactAt: null,
     latitude: null,

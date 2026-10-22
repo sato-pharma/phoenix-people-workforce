@@ -9,6 +9,7 @@ import {
   issueHeadwindCommand,
   HeadwindCommandInputError,
 } from "@/lib/devices/headwind/commands";
+import { getHeadwindConfigurationFiles } from "@/lib/devices/headwind/configurations";
 import { getHeadwindCommandHistory, getHeadwindDeviceDetail } from "@/lib/devices/headwind/detail";
 import { getHeadwindLocation, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { getHeadwindFleet } from "@/lib/devices/headwind/fleet";
@@ -60,6 +61,37 @@ export async function GET(request: Request) {
       // record. Blending them draws a confident line through places a tablet never went.
       case "locations":
         return NextResponse.json(await getHeadwindLocationHistory(deviceNumber));
+      // 🔴 THE FILES A TABLET CARRIES ARE THE FILES ON ITS RULES, AND THOSE RULES REACH EVERY TABLET
+      // ON THEM — Headwind has no per-tablet file store to read. So this resolves the tablet's own
+      // configuration and returns that configuration's file list, and the note says plainly that a
+      // file added or removed here reaches all of them, so nobody reads it as one tablet's own folder.
+      case "files": {
+        const devices = await listHeadwindDevices();
+        const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
+        if (!device) {
+          throw new HeadwindCommandInputError(
+            "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
+          );
+        }
+        const configurationId = device.configurationId ? Number(device.configurationId) : null;
+        if (configurationId === null || !Number.isInteger(configurationId)) {
+          return NextResponse.json({
+            configurationId: null,
+            configurationName: device.configurationName,
+            files: [],
+            note: "This tablet is not on any set of rules yet, so there are no pushed files to show. Put it on a configuration first.",
+          });
+        }
+        const { configuration, files } = await getHeadwindConfigurationFiles(configurationId);
+        return NextResponse.json({
+          configurationId,
+          configurationName: configuration.name,
+          files,
+          note:
+            `These are the files pushed through this tablet's rules (${configuration.name}). Every tablet on ` +
+            "these rules holds them — a file added or removed here reaches all of them at their next check-in.",
+        });
+      }
       case "screen": {
         const mode = params.get("mode")?.trim();
         if (!isHeadwindScreenMode(mode)) {
