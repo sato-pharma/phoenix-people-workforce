@@ -1969,6 +1969,7 @@ import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-vi
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
+import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
@@ -7090,6 +7091,11 @@ await runTest(
 await runTest(
   "a medical rep visit logged more than 300 m from the customer validated photo is REFUSED (owner, 2026-10-20: \"not accept medical reps visits logged away from the validated picture of the customer with maximum 300 m apart\"; 97 of 2,558 measurable rep visits sat past the line on 6-19 October). Pinned: the nearest validated place decides; the photograph anchors only when its reading is within the place line, else the place point; no place refuses nobody; the line is visit_far_meters with 300 m behind it; only the REP save is asked, before the recording claim and before any write; the attempt is kept for the SFE board as far_from_place with its metres and place; and the rep reads his own work, never the line, his metres or a check)",
   runPhoenixCrmVisitFarRefusalTests,
+);
+
+await runTest(
+  "a COLD first reading never becomes the Phoenix CRM photo's own (2026-10-22: Dr Tharwat Milad's signboard in Dishna was stamped Faw Bahari, 10,070 m away, five seconds before the pin read Dishna). Pinned: two readings contradict past both accuracies and never inside the place's 250 m line; a later reading overrules a kept one only when the kept one arrived in the receiver's first 30 s, never on a warm receiver; the camera's watch and its shutter both ask it, the stamp then names the reading kept, and the shutter is never held; the receiver is held warm on every capture screen, only where location is already allowed, and shows nothing; and the integrity board says a pin and photograph further apart than anybody travels in the seconds between them (each granted its own accuracy) mean one of the two is not where the phone was, names the phone's first network reading as the ordinary cause, joins its causes as sentences, and never counts the place's kept point as a second witness against the pin",
+  runPhoenixCrmPhotoReadingTests,
 );
 
 await runTest(

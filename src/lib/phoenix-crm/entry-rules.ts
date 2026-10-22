@@ -269,6 +269,16 @@ export type ValidatedPlaceReading = {
   photoLat: number | null;
   photoLon: number | null;
   photoAccuracyMeters: number | null;
+  /**
+   * The Capture-location pin as the rep read it at the door. Kept apart from `lat`/`lon`, which hold
+   * whichever reading the validation SETTLED on — the photograph's whenever its accuracy figure was the
+   * sharper one (`pickPlacePoint`).
+   */
+  pinLat: number | null;
+  pinLon: number | null;
+  pinAccuracyMeters: number | null;
+  /** `point_source` — which reading `lat`/`lon` hold: "photo", "pin", "moved" or "shared_place". */
+  pointSource: string | null;
 };
 
 /**
@@ -296,9 +306,35 @@ export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: numbe
 }
 
 /**
+ * The place's second reading: its validated PIN (owner, 2026-10-21 — "the photograph's anchor or the
+ * place's own validated pin").
+ *
+ * 🔴 NOT `lat`/`lon`. Those hold the reading the validation SETTLED on, which is the photograph's
+ * whenever its accuracy figure was the sharper one or a tie — and then the anchor and the point were one
+ * reading counted once, and the pin the owner named was never measured at all. Measured on production
+ * 2026-10-22: 9 active places carry a photograph 300 m or more from their pin with the point settled on
+ * the photograph, and on three of them every later visit stood at the PIN — Linda Iskandar 56 m from it
+ * and 2,822 m from the photograph, Ashmoun Fever Hospital 12-38 m and 831-859 m, Ahmed Sabry Mashaal 7 m
+ * and 446 m. Each is a rep this door would refuse at the clinic, as it refused one at Sehet Behteem.
+ *
+ * A MOVED place answers with its moved point and never its old pin: the Super Admin's move is where the
+ * place is now, and the reading it corrected must not keep a door open at the old spot. A seat in a
+ * polyclinic answers with the building's point. A pin wider than the place's own line is not a reading,
+ * exactly as a blurred photograph is not, and then the settled point stands.
+ */
+function validatedPin(place: ValidatedPlaceReading): { lat: number; lon: number } | null {
+  const point = isUsableFix(place.lat, place.lon) ? { lat: Number(place.lat), lon: Number(place.lon) } : null;
+  if (place.pointSource === "moved" || place.pointSource === "shared_place") return point;
+  if (isUsableFix(place.pinLat, place.pinLon) && withinAccuracy(place.pinAccuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
+    return { lat: Number(place.pinLat), lon: Number(place.pinLon) };
+  }
+  return point;
+}
+
+/**
  * 🔴 A VISIT IS MEASURED AGAINST BOTH READINGS OF THE PLACE — THE PHOTOGRAPH'S ANCHOR AND THE PLACE'S OWN
- * VALIDATED POINT — AND THE NEARER ONE DECIDES (owner, 2026-10-21, picked from three options after a rep
- * was refused 26 times at a hospital he was standing in).
+ * VALIDATED PIN (`validatedPin`) — AND THE NEARER ONE DECIDES (owner, 2026-10-21, picked from three
+ * options after a rep was refused 26 times at a hospital he was standing in).
  *
  * The photograph alone could not carry a 300 m line. Sehet Behteem Hospital's photograph read ±200 m
  * (inside the 250 m "sharp" line) and sat 327 m from the pin the rep captured at the door (±7.9 m), so a
@@ -321,12 +357,9 @@ export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: numbe
  */
 export function validatedPlaceReadings(place: ValidatedPlaceReading): { lat: number; lon: number }[] {
   const readings: { lat: number; lon: number }[] = [];
-  const anchor = validatedPlaceAnchor(place);
-  if (anchor !== null) readings.push(anchor);
-  if (isUsableFix(place.lat, place.lon)) {
-    const point = { lat: Number(place.lat), lon: Number(place.lon) };
-    // A place with no sharp photograph reading anchors on this very point: one reading, never two.
-    if (anchor === null || anchor.lat !== point.lat || anchor.lon !== point.lon) readings.push(point);
+  for (const reading of [validatedPlaceAnchor(place), validatedPin(place)]) {
+    // A photograph taken at the very point is one reading, never counted twice.
+    if (reading !== null && !readings.some((kept) => kept.lat === reading.lat && kept.lon === reading.lon)) readings.push(reading);
   }
   return readings;
 }

@@ -174,7 +174,10 @@ export function runPhoenixCrmPerformanceTests(): void {
     const shutterAt = camera.indexOf("const shutterFix = await readShutterFix();");
     assert.ok(lookupAt !== -1 && shutterAt !== -1, "the camera still looks up the place and takes the shutter reading");
     assert.ok(lookupAt < shutterAt, "the place-name lookup starts BEFORE the shutter reading is awaited, so the two waits overlap");
-    assert.match(camera, /const payload = await stampLookup;/, "and the stamp waits for that same lookup");
+    // A second lookup only in the one case the early one was started for a reading the shutter then
+    // overruled as a cold network guess (2026-10-22, photo-reading-rules.ts); every other photo waits
+    // for the lookup already running.
+    assert.match(camera, /const payload = stampFix === usedFix \? await stampLookup : /, "and the stamp waits for that same lookup");
 
     const panel = code("src/components/phoenix-crm/visit-detail-panel.tsx");
     assert.doesNotMatch(panel, /router\.refresh\(\)/, "the write-up never re-renders a page the Visits tab does not read");

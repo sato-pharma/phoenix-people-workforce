@@ -24,6 +24,7 @@ import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/ph
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
 import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
+import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
@@ -99,6 +100,8 @@ export function OutOfListEntry({
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A new customer is validated here with a photo and a pin: warm the receiver while he is being added.
+  useLocationWarmUp(adding);
 
   // Every way out lets the photo's preview go — this screen's own Back, the step form's Back (which
   // never passes through `close`), a saved validation — and so does a photo taken again.

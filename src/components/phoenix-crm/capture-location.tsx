@@ -20,6 +20,7 @@ import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
 import { noteReading } from "@/components/phoenix-crm/location-reader";
+import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -50,6 +51,10 @@ export function CaptureLocation({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The receiver is switched on while this button is on screen, so the one fresh reading it takes comes
+  // from the satellites rather than the network's first guess (location-receiver.ts). Its read is still
+  // its own and fresh: this only means the receiver is already awake when it asks.
+  useLocationWarmUp();
   /**
    * This button raises its own refusals, so it names the browser itself — the screens around it name
    * only the SERVER's (use-browser-name.ts), and a rep sent to find "your browser" in his settings

@@ -25,6 +25,13 @@
  * photo's location is found and nothing else — no accuracy, no "rough signal", nothing that says a
  * reading is judged (Golden Rule #1). The measurements are the Super Admin's and the SFE Manager's,
  * on the place-move screen.
+ *
+ * A COLD FIRST READING NEVER BECOMES THE PHOTO'S (2026-10-22). A receiver just switched on answers first
+ * from nearby networks, and that answer can land kilometres away while claiming tens of metres: Dr Tharwat
+ * Milad's signboard in Dishna was stamped Faw Bahari, 10 km off, five seconds before the pin read Dishna.
+ * So the receiver is held on from the moment the camera's screen is drawn (location-receiver.ts), and a
+ * reading that arrived while it was still cold is overruled by a later one that contradicts it, the
+ * stamp then naming the later one (photo-reading-rules.ts). Nothing waits longer and nothing is shown.
  */
 
 import type { ReactNode } from "react";
@@ -35,6 +42,7 @@ import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lu
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { noteReading } from "@/components/phoenix-crm/location-reader";
+import { receiverRunningSince, receiverStarted, receiverStopped, useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -46,6 +54,7 @@ import {
   wrapWatermarkText,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { laterReadingOverrules } from "@/lib/phoenix-crm/photo-reading-rules";
 import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
 import { openRearCamera } from "@/lib/phoenix-crm/rear-camera";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
@@ -109,7 +118,11 @@ export type CapturedPhoto = {
 // `releaseCapturedPhoto` lives in captured-photo.ts, a leaf module, so the app shell can free a
 // preview without pulling this whole camera into the chunk every Phoenix CRM page loads.
 
-type Fix = { lat: number; lon: number; accuracyMeters: number | null; at: string };
+/**
+ * `at` is the phone's own time for the reading, burned into the stamp; `arrivedAt` is when this page
+ * received it (`Date.now()`), the clock the cold-receiver rule compares with the receiver's start.
+ */
+type Fix = { lat: number; lon: number; accuracyMeters: number | null; at: string; arrivedAt: number };
 
 type Shot = {
   blob: Blob;
@@ -246,6 +259,10 @@ export function LivePhotoCapture({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const watchRef = useRef<number | null>(null);
+  /** This camera's own watch in the receiver register, so the cold-receiver rule knows when it began. */
+  const receiverRef = useRef<number | null>(null);
+  // The receiver is switched on while this camera's step is on screen, before Open the camera is pressed.
+  useLocationWarmUp();
 
   const [stage, setStage] = useState<Stage>("idle");
   const [cameraReady, setCameraReady] = useState(false);
@@ -275,6 +292,7 @@ export function LivePhotoCapture({
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (watchRef.current !== null && typeof navigator !== "undefined") navigator.geolocation?.clearWatch(watchRef.current);
+      receiverStopped(receiverRef.current);
     };
   }, []);
 
@@ -288,6 +306,8 @@ export function LivePhotoCapture({
   function stopLocation() {
     if (watchRef.current !== null) navigator.geolocation?.clearWatch(watchRef.current);
     watchRef.current = null;
+    receiverStopped(receiverRef.current);
+    receiverRef.current = null;
   }
 
   function startLocation(): boolean {
@@ -298,6 +318,7 @@ export function LivePhotoCapture({
     stopLocation();
     setFix(null);
     setLocationNote("Finding your location");
+    receiverRef.current = receiverStarted();
     watchRef.current = navigator.geolocation.watchPosition(
       (position) => {
         noteReading(position);
@@ -306,10 +327,14 @@ export function LivePhotoCapture({
           lon: position.coords.longitude,
           accuracyMeters: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
           at: new Date(position.timestamp || Date.now()).toISOString(),
+          arrivedAt: Date.now(),
         };
         setLocationNote(null);
         setFix((current) => {
           if (!current || current.accuracyMeters === null) return reading;
+          // A reading kept from a COLD receiver that this one contradicts was the network's first guess,
+          // however sharp it claimed to be: the later one replaces it (photo-reading-rules.ts).
+          if (laterReadingOverrules(current, reading, receiverRunningSince())) return reading;
           if (reading.accuracyMeters !== null && reading.accuracyMeters <= current.accuracyMeters) return reading;
           return Date.parse(reading.at) - Date.parse(current.at) > FIX_STALE_MS ? reading : current;
         });
@@ -461,11 +486,15 @@ export function LivePhotoCapture({
     // `fetchEvidenceLocation` never throws, so starting it early cannot leave a rejection unhandled.
     const stampLookup = fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, null);
 
+    // Read before the watch stops: once it does, nothing on the page may be left to say when the
+    // receiver was switched on, and the reading kept from it would wrongly read as cold.
+    const receiverSince = receiverRunningSince();
     // The photo’s OWN reading, taken now rather than reused from the watch. Awaited, unlike the
     // marketing camera, because this path already waits for the place-name lookup started above - so
     // it adds no wait the rep can perceive. Capped at 8s by the shared reader and never throwing: a
     // refusal or a timeout leaves it null and the visit saves exactly as before.
     const shutterFix = await readShutterFix();
+    const shutterArrivedAt = Date.now();
     stopLocation();
     // The photo's reading: the fresh one when it came, else the camera's own from a moment before.
     // Either is the PHOTO's — the Capture-location pin is a separate button (owner, 2026-09-30).
@@ -474,24 +503,39 @@ export function LivePhotoCapture({
     const shutterIsSharper =
       hasPosition(shutterFix) &&
       (usedFix.accuracyMeters === null || (shutterFix.accuracy !== null && shutterFix.accuracy <= usedFix.accuracyMeters));
-    const photoFix: Fix = hasPosition(shutterFix) && shutterIsSharper
-      ? { lat: shutterFix.latitude, lon: shutterFix.longitude, accuracyMeters: shutterFix.accuracy, at: takenAt }
+    // 🔴 OR the camera's reading arrived while the receiver was still COLD and the fresh one contradicts
+    // it — two readings that cannot both be where the phone stood, of which the cold one is the network's
+    // first guess (photo-reading-rules.ts; Dr Tharwat Milad's signboard stamped 10 km off, 2026-10-20).
+    const shutterOverrules =
+      hasPosition(shutterFix) &&
+      !shutterIsSharper &&
+      laterReadingOverrules(
+        usedFix,
+        { lat: shutterFix.latitude, lon: shutterFix.longitude, accuracyMeters: shutterFix.accuracy, arrivedAt: shutterArrivedAt },
+        receiverSince,
+      );
+    const photoFix: Fix = hasPosition(shutterFix) && (shutterIsSharper || shutterOverrules)
+      ? { lat: shutterFix.latitude, lon: shutterFix.longitude, accuracyMeters: shutterFix.accuracy, at: takenAt, arrivedAt: shutterArrivedAt }
       : usedFix;
 
     // The stamp burned into the photo is read by the REP in the preview, so it names the place and the
     // coordinates but never the accuracy (Golden Rule #1 — accuracy is a signal only the Super Admin
     // and the SFE Manager read). The accuracy itself still travels in the saved place, untouched.
     // It burns the CAMERA's running reading with that reading's OWN time beside the shutter time, so
-    // the gap between them is legible on the image itself (pinned by capture-trust).
-    const payload = await stampLookup;
-    const stamp = readEvidenceLocationStamp(payload, usedFix.lat, usedFix.lon, null);
+    // the gap between them is legible on the image itself (pinned by capture-trust) — UNLESS the
+    // shutter's reading overruled it, when the camera's is known to be wrong and the picture would
+    // print a place the phone never was: then it burns the shutter's, looked up afresh. That is the one
+    // case that waits for a second lookup, and it is the case that photographed Dishna as Faw Bahari.
+    const stampFix: Fix = shutterOverrules ? photoFix : usedFix;
+    const payload = stampFix === usedFix ? await stampLookup : await fetchEvidenceLocation(LOCATION_ENDPOINT, stampFix.lat, stampFix.lon, null);
+    const stamp = readEvidenceLocationStamp(payload, stampFix.lat, stampFix.lon, null);
     const detail = payload?.location && typeof payload.location === "object" ? (payload.location as Record<string, unknown>) : null;
     const components = detail?.components && typeof detail.components === "object" ? (detail.components as Record<string, unknown>) : null;
 
     drawStamp(
       context,
       canvas,
-      buildEvidenceStampLines({ capturedAt: takenAt, locationCapturedAt: usedFix.at, locationLines: stamp.lines, title }),
+      buildEvidenceStampLines({ capturedAt: takenAt, locationCapturedAt: stampFix.at, locationLines: stamp.lines, title }),
     );
     const blob = await jpegUnder(canvas, MAX_UPLOAD_BYTES);
     if (!blob) {
@@ -503,7 +547,8 @@ export function LivePhotoCapture({
     const next: Shot = {
       blob,
       previewUrl: URL.createObjectURL(blob),
-      fix: usedFix,
+      // The reading burned into the picture, so the photo's `lat`/`lon` and its stamp never disagree.
+      fix: stampFix,
       address: textField(detail, "address"),
       zone: textField(components, "area"),
       locationLabel: stamp.label,
