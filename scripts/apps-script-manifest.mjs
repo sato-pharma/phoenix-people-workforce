@@ -46,8 +46,19 @@ export const APPS_SCRIPT_TARGETS = [
   },
 ];
 
-/** The OAuth scope `projects.updateContent` needs. Nothing broader is requested. */
-export const APPS_SCRIPT_SCOPE = "https://www.googleapis.com/auth/script.projects";
+/** `projects.updateContent` and `projects.versions.create` need this one. */
+export const APPS_SCRIPT_PROJECTS_SCOPE = "https://www.googleapis.com/auth/script.projects";
+
+/**
+ * `projects.deployments.list` and `projects.deployments.update` need this one. Without it the push
+ * writes the project's HEAD and the sheet's web app keeps serving whatever VERSION it was deployed
+ * at — which is how the Direct Orders `/exec` URL sat on version 5 of 5 Aug 2026 for eleven weeks
+ * while every push since went to HEAD only (found 22 Oct 2026).
+ */
+export const APPS_SCRIPT_DEPLOYMENTS_SCOPE = "https://www.googleapis.com/auth/script.deployments";
+
+/** What the consent asks for, space-separated as OAuth wants it. Nothing broader is requested. */
+export const APPS_SCRIPT_SCOPE = [APPS_SCRIPT_PROJECTS_SCOPE, APPS_SCRIPT_DEPLOYMENTS_SCOPE].join(" ");
 
 /** The three credentials, named once so the pusher, the authorizer and the docs cannot drift. */
 export const OAUTH_ENV = {

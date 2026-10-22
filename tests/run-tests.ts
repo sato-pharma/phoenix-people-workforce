@@ -8658,7 +8658,9 @@ await runTest(
 await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
   + "refuses when the managed file is absent or the wrong type, preserves appsscript.json and "
-  + "every sibling file, and every docs/*-live-sheet.gs on disk is declared in the manifest)",
+  + "every sibling file, and every docs/*-live-sheet.gs on disk is declared in the manifest) and its "
+  + "web app follows (the one versioned /exec deployment is moved to a new version of HEAD, same id, "
+  + "none created; a grant without script.deployments fails loudly after writing HEAD)",
   runAppsScriptPushTests,
 );
 await runTest(

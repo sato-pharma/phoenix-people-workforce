@@ -352,7 +352,7 @@ exits 0.
 |---|---|---|
 | GOOGLE_APPS_SCRIPT_CLIENT_ID | OAuth client (type "Desktop app") for the Apps Script API | (unset) |
 | GOOGLE_APPS_SCRIPT_CLIENT_SECRET | That client's secret | (unset) |
-| GOOGLE_APPS_SCRIPT_REFRESH_TOKEN | Long-lived grant from the sheets' owner. Issued by `scripts/apps-script-authorize.mjs`; scope `script.projects` and nothing wider | (unset) |
+| GOOGLE_APPS_SCRIPT_REFRESH_TOKEN | Long-lived grant from `achieverrr303@gmail.com`. Issued by `scripts/apps-script-authorize.mjs`; scopes `script.projects` (write HEAD, create a version) and `script.deployments` (move the web app), nothing wider. A grant issued before 22 Oct 2026 carries `script.projects` only: it still pushes HEAD, and the run then fails naming the missing scope | (unset) |
 | CV_LIFECYCLE_APPS_SCRIPT_ID | CV-lifecycle sheet: Extensions to Apps Script to Project Settings to Script ID | (unset) |
 | DIRECT_ORDERS_APPS_SCRIPT_ID | Direct-orders sheet: same place | (unset) |
 | MARKETING_REQUESTS_APPS_SCRIPT_ID | Marketing-requests sheet: same place | (unset) |
@@ -448,6 +448,34 @@ One setting outside this repository decides whether the grant survives: the OAut
 publishing status. While it reads **Testing**, Google expires every refresh token after 7 days, so
 the push would work for a week and then start failing with `invalid_grant` for no visible reason.
 **In production** has no such expiry. Check it before wondering why a working setup stopped.
+
+### The web app follows HEAD (since 22 Oct 2026)
+
+Writing the project's content changes its HEAD — what the sheet's own time-driven trigger runs. A
+web app `/exec` URL does NOT run HEAD: it runs the saved VERSION its deployment was given, and stays
+there until somebody points it at another. The pusher never did, so every `/exec` URL Phoenix calls
+(`SHEET_REFRESH_WEBHOOK_URL` and the two below it) sat on the version it was deployed with. Read on
+22 Oct 2026: Direct Orders on version 5 (5 Aug), Marketing Requests on version 3 (5 Aug), CV
+Lifecycle on version 1 (5 Sep). The Direct Orders one answered Phoenix's instant refresh ping with
+HTTP 200 and a Google error page from version 5 — *"You can't merge frozen and non-frozen columns
+(line 404)"* — a defect HEAD had already fixed, while the sheet itself stayed fresh on its trigger.
+
+So after the content step, on every run including one where the content was already current, the
+pusher reads the project's deployments, takes the ONE versioned deployment with a web-app entry
+point, and compares the files of the version it serves with HEAD. Different → it creates a version
+and updates THAT deployment to it, keeping its id, manifest and description, so the `/exec` URL never
+changes. It never creates a deployment (none is a skip), refuses when there are two (it cannot tell
+which URL Phoenix holds), and leaves the editor's `/dev` HEAD deployment alone. `--check` reports
+`would … deploy a new version` without writing. `planWebAppDeployment` is the pure decision;
+`tests/apps-script-push.test.ts` drives the real `pushTarget` through a stubbed Google on the
+22 Oct state.
+
+This needs the `script.deployments` scope, which the original grant did not ask for. Until the grant
+is re-issued, a run still writes HEAD and then FAILS naming the missing scope, rather than reporting
+success while the web app stays behind. Each web app runs `executeAs: USER_DEPLOYING`, so after a
+move it executes as the account the grant belongs to; Marketing and CV Lifecycle are that account's
+own projects, and the Direct Orders version 5 was deployed within a minute of Marketing's first, the
+same morning, so it is very likely already that account too.
 
 The API this uses REPLACES every file in a project — there is no per-file write. So the pusher
 reads the project first and sends every existing file back with only the managed one swapped, and
