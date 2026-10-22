@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 550d992f-bbc7-4a1b-98e6-6861df800cf0
-  modified: 2026-10-02T16:37:50.501Z
+  modified: 2026-10-22T05:23:01.816Z
 ---
 
 Newly hired medical reps are issued a company **tablet** the owner wants **controlled** from a
@@ -94,6 +94,14 @@ ManageEngine Free was $0 up to 25 tablets; tablet 26 would have meant ManageEngi
 for the rule set.
 **Superseded 2026-10-02:** previously "ManageEngine Free stays the start; every other MDM checked (Headwind …) costs more" — the move to self-hosted Headwind with the free custom launcher (`headwind-rep-tablet-custom-launcher-build-required`, `rep-tablet-never-shows-tracking-golden-rule`).
 
+- 🔴 **Free-MDM bake-off CLOSED 2026-10-22 — Headwind kept, AirDroid + ManageEngine + LocalDroid all
+  REJECTED; never re-pitch them.** On 0008 Headwind was shown to give control AND the live screen
+  (RustDesk, free) in one place. AirDroid is a 14-day trial then paid; ManageEngine free omits the
+  screen (paid) and shows the managed notices (no custom launcher, breaks the golden rule) — its only
+  extras are BYOD work-profile / conditional-email, useless on a company-owned tablet; LocalDroid is
+  unverified self-hosted with no published feature list. The owner trialled none — he kept Headwind
+  on 0008 by decision. Headwind + the custom launcher ([[phoenix-launcher-6-41-built-completes-location-and-unattended-rustdesk]])
+  is the whole fleet answer.
 - 🔴 **Never propose a self-built DPC** — Play Protect's 2025 allowlist blocks any non-listed DPC at
   enrollment ("App blocked to protect your device"); appeals run months. Only adb per-cable slips past.
 - 🔴 **Managed Google Play is NOT how apps reach the rep tablets — owner decision 2026-09-28 dropped
