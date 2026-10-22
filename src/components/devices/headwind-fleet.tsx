@@ -27,7 +27,7 @@
  * get cards. Nothing truncates — every line wraps. The factory reset asks twice before it fires.
  */
 
-import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
@@ -94,8 +94,8 @@ type CommandDef = {
 type FleetState = {
   rows: FleetRow[];
   registerError: boolean;
-  autoRegistered: string[];
-  autoRegisterError: string | null;
+  /** Managed tablets not in the custody register yet that a person could confirm — the count, never the act. */
+  pendingRegistration: number;
   imeisToRecord: number;
   remoteScreenReady: boolean;
   commands: CommandDef[];
@@ -114,6 +114,8 @@ type ImeiRecordResult = {
   alreadyRecorded: string[];
   failed: Array<{ assetTag: string; message: string }>;
 };
+/** The custody entry a person confirmed into the register from a tablet's row. */
+type RegisterResult = { assetTag: string; created: boolean };
 
 function imeiCopiedText(result: ImeiRecordResult): string | null {
   const tags = result.recorded.map((entry) => entry.assetTag);
@@ -323,6 +325,39 @@ export function HeadwindFleet() {
     }
   }, []);
 
+  /**
+   * Add one managed tablet to the custody register — the person-confirmed step that replaced the
+   * silent auto-create (owner, 2026-10-22). On success the fleet is read again, so the row moves from
+   * "Not in the custody register" to its new asset tag and the waiting count above it drops.
+   */
+  const addToCustody = useCallback(
+    async (row: FleetRow) => {
+      const key = `${row.deviceNumber}:REGISTER`;
+      setBusyKey(key);
+      setErrors((previous) => ({ ...previous, [row.deviceNumber]: "" }));
+      try {
+        const result = await requestJson<RegisterResult>("/api/devices/headwind/register", {
+          deviceNumber: row.deviceNumber,
+        });
+        setNotices((previous) => ({
+          ...previous,
+          [row.deviceNumber]: result.created
+            ? `Added ${result.assetTag} to the custody register.`
+            : `This tablet is already in the custody register as ${result.assetTag}.`,
+        }));
+        await load(() => true);
+      } catch (caught) {
+        setErrors((previous) => ({
+          ...previous,
+          [row.deviceNumber]: messageOf(caught, "Could not add this tablet to the custody register."),
+        }));
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [load],
+  );
+
   const toggleOpen = useCallback((row: FleetRow) => {
     setOpenDeviceNumber((current) => (current === row.deviceNumber ? null : row.deviceNumber));
   }, []);
@@ -409,14 +444,11 @@ export function HeadwindFleet() {
         </div>
       ) : null}
 
-      {data && data.autoRegistered.length > 0 ? (
-        <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-[12px] font-semibold text-emerald-900">
-          Added to the custody register by themselves: {data.autoRegistered.join(", ")}.
-        </p>
-      ) : null}
-      {data?.autoRegisterError ? (
+      {data && data.pendingRegistration > 0 ? (
         <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
-          {data.autoRegisterError}
+          {data.pendingRegistration === 1
+            ? "One managed tablet is not in the custody register yet. Add it to custody from its row below."
+            : `${data.pendingRegistration} managed tablets are not in the custody register yet. Add each to custody from its row below.`}
         </div>
       ) : null}
       {imeiNotice ? (
@@ -462,6 +494,7 @@ export function HeadwindFleet() {
                     notice={notices[row.deviceNumber]}
                     onCommand={runCommand}
                     onLocate={locate}
+                    onRegister={addToCustody}
                     onRefresh={refresh}
                     onScreen={openScreen}
                     onToggle={toggleOpen}
@@ -490,6 +523,7 @@ export function HeadwindFleet() {
                 notice={notices[row.deviceNumber]}
                 onCommand={runCommand}
                 onLocate={locate}
+                onRegister={addToCustody}
                 onRefresh={refresh}
                 onScreen={openScreen}
                 onToggle={toggleOpen}
@@ -522,6 +556,8 @@ type BlockProps = {
   open: boolean;
   onCommand: (row: FleetRow, command: string, destructive: boolean) => void;
   onLocate: (row: FleetRow) => void;
+  /** Add this managed tablet to the custody register — the person-confirmed step. */
+  onRegister: (row: FleetRow) => void;
   onScreen: (row: FleetRow, mode: "view" | "control") => void;
   onToggle: (row: FleetRow) => void;
   /** Read the fleet again — a remote screen ID recorded in the panel has to reach the row above it. */
@@ -616,6 +652,7 @@ function FleetActions({
   open,
   onCommand,
   onLocate,
+  onRegister,
   onScreen,
   onToggle,
 }: BlockProps) {
@@ -623,12 +660,32 @@ function FleetActions({
   const anyBusy = busyKey !== null && busyKey.startsWith(`${row.deviceNumber}:`);
   const normal = commands.filter((command) => !command.destructive);
   const destructive = commands.filter((command) => command.destructive);
+  // A tablet the register has never seen can be confirmed into custody here — but only if it reports a
+  // serial or an IMEI, since a row with neither cannot be told apart and the server would refuse it.
+  const canAddToCustody = row.unregistered && Boolean(row.serialNumber ?? row.imei);
   return (
     <div className="flex flex-wrap gap-2">
       <button className={ACTION_BUTTON} onClick={() => onToggle(row)} type="button">
         {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         {open ? "Close this tablet" : "Open this tablet"}
       </button>
+
+      {canAddToCustody ? (
+        <button
+          className={ACTION_BUTTON}
+          disabled={anyBusy}
+          onClick={() => onRegister(row)}
+          title="Add this tablet to the Device Custody register, under the next PHX-TAB number"
+          type="button"
+        >
+          {busy(`${row.deviceNumber}:REGISTER`) ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+          )}
+          Add to custody
+        </button>
+      ) : null}
 
       {/* The free pair — no amber, no Paid chip. See the header. */}
       {(["view", "control"] as const).map((mode) => (

@@ -2014,6 +2014,13 @@ export const accessRegistry = [
   // browser can ask for the copy but never say what it copies. Each IMEI written carries its own
   // REQUIRED audit row (company_device).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Adding ONE managed Headwind tablet to the custody register — the person-confirmed step that
+  // replaced the silent auto-create on the fleet read (owner, 2026-10-22: new tablets enter Device
+  // Custody only when a person confirms them). The body carries a device number and nothing else: the
+  // facts written are read from Headwind's live list on the server, so the browser can ask to add a
+  // tablet but never say what its entry holds. Same Super Admin gate as the rest of the bridge, and the
+  // register write carries its own REQUIRED audit row (company_device).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/register", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Recording the RustDesk ID of one tablet — the number a screen session is aimed at, kept in Headwind's
   // `custom1` so there is no second list to keep in step. 🔴 It is typed through Phoenix because the
   // Community console CANNOT draw that field: it appears only when `settings.customPropertyName1` is

@@ -1036,6 +1036,7 @@ import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
 import { runHeadwindBridgeTests } from "./headwind-bridge.test.ts";
+import { runHeadwindCustodyConfirmTests } from "./headwind-custody-confirm.test.ts";
 import { runManageEngineBridgeTests } from "./manageengine-bridge.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
@@ -4916,6 +4917,14 @@ await runTest(
   + "reach nothing, a remote-screen link carries the tablet and no credential, and the whole section "
   + "ships dark until the server's settings are set)",
   runHeadwindBridgeTests,
+);
+await runTest(
+  "new Headwind tablets enter Device Custody only when a person confirms them (owner, 2026-10-22): the "
+  + "fleet read no longer auto-registers a tablet — it counts the ones waiting — and a person adds one "
+  + "from its row through registerOneHeadwindTablet, which refuses a tablet that has left the fleet, one "
+  + "already in the register (naming its tag), and one carrying neither a serial nor an IMEI, writing "
+  + "exactly one row through the one shared register door",
+  runHeadwindCustodyConfirmTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
