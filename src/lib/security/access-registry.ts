@@ -215,6 +215,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/integrations/telegram/webhook", reason: "Telegram bot webhook is protected by the Telegram secret-token header." }),
   tokenApi({ authMode: "machine-token", methods: ["GET", "POST"], pattern: "/api/integrations/ftp-videos", reason: "FTP portal lists WhatsApp closing videos waiting to be filed (short-lived signed links, sender submission IDs) and claims them once filed; bearer-guarded by its own FTP_VIDEO_HANDOFF_SECRET, never CRON_SECRET. No session, so CSRF-exempt." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/attendance/raw-punches", reason: "Local attendance agent bearer-token ingestion route." }),
+  tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/devices/recordings/upload", reason: "A rep tablet uploads a finished screen recording here. No session and NO shared secret — a tablet's Headwind configuration is world-readable, so the only credential is a single-use per-recording token minted when the Super Admin pressed Record and matched against the row's stored hash inside a short window. CSRF-exempt because it carries no ambient cookie authority; the worst a leaked token buys is one capture slot for minutes." }),
   tokenApi({ authMode: "machine-token", methods: ["GET"], pattern: "/api/sales/master-map/sheet", reason: "Read-only feed for the Master Map Google Sheet, polled every five minutes by the Apps Script bound to that workbook. A shared bearer token (MASTER_MAP_SYNC_TOKEN) rather than a session because the caller is a Google script with no Phoenix user, and Google's org policy blocks the service-account key the other direction would need. GET only and mutates nothing — the sole risk it carries is DISCLOSURE of the customer master, which is why it fails closed when the token is unset in production. Longer pattern than the /api/sales/** blanket, so it wins the longest-match and is never treated as a session route." }),
   tokenApi({ authMode: "public-token", methods: ["GET", "POST"], pattern: "/api/excuses/:id/decision", reason: "Manager excuse decision email link is protected by a one-time token; POST is explicitly unsupported." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/birthdays", reason: "Scheduled notification route guarded by cron controls." }),
@@ -2026,6 +2027,12 @@ export const accessRegistry = [
   // tablet but never say what its entry holds. Same Super Admin gate as the rest of the bridge, and the
   // register write carries its own REQUIRED audit row (company_device).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/register", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Starting an on-demand screen recording on ONE tablet. The body carries a device number and an
+  // optional length; the capture is pushed to the tablet's launcher and the file comes back to the
+  // upload route below. Same Super Admin gate as the rest of the bridge, same-origin, and a REQUIRED
+  // audit row naming the tablet (headwind_device_command). Reading the recordings back is the existing
+  // /api/devices/headwind GET (view=recordings), so it needs no entry of its own.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/record", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Recording the RustDesk ID of one tablet — the number a screen session is aimed at, kept in Headwind's
   // `custom1` so there is no second list to keep in step. 🔴 It is typed through Phoenix because the
   // Community console CANNOT draw that field: it appears only when `settings.customPropertyName1` is

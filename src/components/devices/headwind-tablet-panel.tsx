@@ -23,7 +23,7 @@
  * text with nothing truncated, and Cairo times. The shared pieces are in `headwind-panel-kit.tsx`.
  */
 
-import { FolderOpen, Loader2, MapPin, UploadCloud } from "lucide-react";
+import { FolderOpen, Loader2, MapPin, UploadCloud, Video } from "lucide-react";
 import { useRef, useState } from "react";
 
 import {
@@ -540,6 +540,181 @@ function FilesPanel({ deviceNumber, tabletName }: { deviceNumber: string; tablet
           </div>
         </div>
       ) : null}
+    </Panel>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Screen recordings — on-demand capture, filed in Phoenix. Never a live feed, never calls or messages.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type Recording = {
+  id: string;
+  deviceNumber: string;
+  assetTag: string | null;
+  requestedByHrId: string;
+  status: "requested" | "ready" | "failed" | "expired";
+  requestedAt: string;
+  durationRequestedS: number;
+  capturedSeconds: number | null;
+  sizeBytes: number | null;
+  uploadedAt: string | null;
+  error: string | null;
+  playbackUrl: string | null;
+};
+type RecordingsRead = { recordings: Recording[] };
+type RecordingsState = {
+  deviceNumber: string;
+  busy: boolean;
+  failure: string | null;
+  notice: string | null;
+  round: number;
+  durationSeconds: number;
+};
+
+const RECORDING_LENGTHS = [
+  { label: "15 seconds", value: 15 },
+  { label: "1 minute", value: 60 },
+  { label: "3 minutes", value: 180 },
+  { label: "5 minutes", value: 300 },
+] as const;
+
+const NO_RECORDING_PENDING = { busy: false, durationSeconds: 60, failure: null, notice: null, round: 0 } as const;
+
+function formatSeconds(total: number): string {
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+function describeRecording(recording: Recording): string {
+  const parts = [`asked for ${formatSeconds(recording.durationRequestedS)}`];
+  if (recording.status === "requested") parts.push("waiting for the tablet");
+  if (recording.status === "ready") {
+    if (recording.capturedSeconds) parts.push(`${formatSeconds(recording.capturedSeconds)} captured`);
+    if (recording.sizeBytes) parts.push(formatBytes(recording.sizeBytes));
+  }
+  if (recording.status === "expired") parts.push("the tablet never uploaded it");
+  return parts.join(" · ");
+}
+
+function recordingStatusLabel(status: Recording["status"]): string {
+  if (status === "ready") return "Ready";
+  if (status === "requested") return "Recording…";
+  if (status === "failed") return "Failed";
+  return "Expired";
+}
+
+/**
+ * On-demand screen recording of this one tablet. Press Record, pick a length; the tablet captures its
+ * own screen and uploads the file, which appears here to play back. The capture is driven by the
+ * tablet's launcher, not a live session — and calls and messages are never recorded.
+ *
+ * The state is derived per device the same way every panel here is, so a half-chosen length or a
+ * just-started capture for one tablet never follows the panel onto another rep's.
+ */
+function RecordingsPanel({ deviceNumber }: { deviceNumber: string }) {
+  const query = encodeURIComponent(deviceNumber);
+  const [state, setState] = useState<RecordingsState>({ deviceNumber, ...NO_RECORDING_PENDING });
+  const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_RECORDING_PENDING };
+  const recordings = useRead<RecordingsRead>(
+    `/api/devices/headwind?deviceNumber=${query}&view=recordings&round=${own.round}`,
+  );
+
+  async function startRecording() {
+    setState({ ...own, busy: true, failure: null, notice: null });
+    try {
+      const result = await postJson<{ message: string }>("/api/devices/headwind/record", {
+        deviceNumber,
+        durationSeconds: own.durationSeconds,
+      });
+      setState({ ...own, busy: false, failure: null, notice: result.message, round: own.round + 1 });
+    } catch (caught: unknown) {
+      setState({ ...own, busy: false, failure: failureText(caught, "Could not start a recording on this tablet."), notice: null });
+    }
+  }
+
+  return (
+    <Panel title="Screen recordings">
+      <div className="space-y-3">
+        <p className="break-words text-[11px] font-semibold text-slate-500">
+          Records this tablet&rsquo;s screen on demand and files it here &mdash; nobody needs to be watching. Calls
+          and messages are never recorded. A recording appears below once the tablet has uploaded it.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className={MICRO_LABEL}>Length</span>
+            <select
+              className={phxSelectClassName}
+              disabled={own.busy}
+              onChange={(event) => setState({ ...own, durationSeconds: Number(event.target.value) })}
+              value={own.durationSeconds}
+            >
+              {RECORDING_LENGTHS.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className={PANEL_ACTION} disabled={own.busy} onClick={startRecording} type="button">
+            {own.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
+            Record this screen
+          </button>
+        </div>
+
+        {own.notice ? <Done message={own.notice} /> : null}
+        {own.failure ? <Failed message={own.failure} /> : null}
+        {recordings.loading ? <Busy what="the recordings" /> : null}
+        {recordings.error ? <Failed message={recordings.error} /> : null}
+
+        {recordings.data && !recordings.loading && !recordings.error ? (
+          recordings.data.recordings.length === 0 ? (
+            <p className="text-[11px] font-semibold text-slate-500">No recordings yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {recordings.data.recordings.map((recording) => (
+                <li className="space-y-1 border-t border-slate-100 pt-2" key={recording.id}>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-[11px] font-bold text-slate-900">{cairoDateTime(recording.requestedAt)}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                      {recordingStatusLabel(recording.status)}
+                    </span>
+                    <span className="break-words text-[10px] font-semibold text-slate-500">
+                      {describeRecording(recording)}
+                    </span>
+                  </div>
+                  {recording.status === "ready" && recording.playbackUrl ? (
+                    <video
+                      className="w-full max-w-md border border-slate-200"
+                      controls
+                      preload="metadata"
+                      src={recording.playbackUrl}
+                    />
+                  ) : null}
+                  {recording.status === "failed" && recording.error ? (
+                    <p className="break-words text-[10px] font-semibold text-rose-600">{recording.error}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+      </div>
     </Panel>
   );
 }
@@ -1148,6 +1323,8 @@ export function HeadwindTabletPanel({
       <MovementsPanel deviceNumber={deviceNumber} />
 
       <FilesPanel deviceNumber={deviceNumber} tabletName={tabletName} />
+
+      <RecordingsPanel deviceNumber={deviceNumber} />
 
       <WipePanel deviceNumber={deviceNumber} tabletName={tabletName} />
 
