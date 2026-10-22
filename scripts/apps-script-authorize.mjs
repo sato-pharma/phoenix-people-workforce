@@ -27,6 +27,14 @@
 // Then, pointing at the file from step 2 (preferred — the secret is never retyped):
 //   node scripts/apps-script-authorize.mjs --client-file ~/Downloads/client_secret_….json
 //
+// Or with NO Google Cloud step at all (added 22 Oct 2026, when the deployment scope was added and
+// the original client secret was long gone): reuse the OAuth client of Google's own Apps Script
+// CLI, clasp, which this laptop already has signed in. Only its client id and client secret are
+// read from ~/.clasprc.json — never its stored tokens — and the consent still asks for the two
+// scopes in scripts/apps-script-manifest.mjs and nothing else, so the grant is as narrow as a
+// dedicated client's would be:
+//   node scripts/apps-script-authorize.mjs --clasp-client
+//
 // Or, if the two values are already in `.env.local` (gitignored):
 //   GOOGLE_APPS_SCRIPT_CLIENT_ID / GOOGLE_APPS_SCRIPT_CLIENT_SECRET
 //   node scripts/apps-script-authorize.mjs
@@ -37,6 +45,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { APPS_SCRIPT_SCOPE, OAUTH_ENV } from "./apps-script-manifest.mjs";
@@ -47,7 +56,7 @@ import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 refuseUnknownFlags({
   name: "apps-script-authorize",
   entry: import.meta.url,
-  known: ["--client-file", "--reuse-consent", "--write-env-local"],
+  known: ["--clasp-client", "--client-file", "--reuse-consent", "--write-env-local"],
   hints: [
     "--client-file takes the OAuth client JSON path: --client-file <file>",
   ],
@@ -110,6 +119,31 @@ function readGoogleClientFile(file) {
     process.exit(1);
   }
   return { clientId: block.client_id, clientSecret: block.client_secret };
+}
+
+/**
+ * The OAuth client clasp signs in with, read from ~/.clasprc.json. It is Google's own Desktop
+ * client, whose secret ships inside the open-source clasp package, so reading it reveals nothing
+ * and it accepts the loopback redirect below. The file's refresh tokens are NOT read: they carry
+ * clasp's far wider scopes (Google Cloud, Drive, logs), and the CI grant must stay narrow.
+ *
+ * @returns {{clientId: string, clientSecret: string}}
+ */
+function readClaspClient() {
+  const file = path.join(os.homedir(), ".clasprc.json");
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    console.error(`Could not read ${file}: ${error instanceof Error ? error.message : error}. Sign clasp in first.`);
+    process.exit(1);
+  }
+  const entry = Object.values(parsed?.tokens ?? {}).find((token) => token?.client_id && token?.client_secret);
+  if (!entry) {
+    console.error(`${file} holds no clasp login with a client id and secret. Run "clasp login" first.`);
+    process.exit(1);
+  }
+  return { clientId: entry.client_id, clientSecret: entry.client_secret };
 }
 
 function credential(name, fromFile) {
@@ -206,7 +240,12 @@ async function main() {
 
   let clientId;
   let clientSecret;
-  if (clientFile) {
+  if (argv.includes("--clasp-client")) {
+    ({ clientId, clientSecret } = readClaspClient());
+    console.log("Using the OAuth client of Google's Apps Script CLI (clasp) — no Google Cloud client needed.");
+    // The id identifies the client and is not a secret; the secret is never printed.
+    console.log(`Client: ${clientId}`);
+  } else if (clientFile) {
     ({ clientId, clientSecret } = readGoogleClientFile(clientFile));
     console.log(`Using the OAuth client in ${clientFile}`);
     // The id identifies the client and is not a secret; the secret is never printed.

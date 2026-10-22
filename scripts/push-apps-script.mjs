@@ -21,6 +21,19 @@
 // managed file must already exist by name (a typo in `remoteFile` would otherwise ADD a second
 // file and leave the real one running, silently doing nothing).
 //
+// HEAD IS NOT WHAT THE WEB APP RUNS. `updateContent` writes the project's HEAD, which is what the
+// sheet's own time-driven trigger runs. A web app `/exec` URL runs a saved VERSION instead, and a
+// deployment stays on the version it was given until somebody points it at another. Until
+// 22 Oct 2026 this script never did, so each sheet's `/exec` stayed on the version it was deployed
+// with in August or September: the Direct Orders one answered Phoenix's instant refresh ping with a
+// Google error page from version 5 (5 Aug), "You can't merge frozen and non-frozen columns", a
+// defect HEAD had long since fixed. So after the content step the push now checks the ONE
+// versioned web-app deployment, and when the version it serves differs from HEAD it creates a new
+// version and updates THAT deployment to it. The deployment id is kept, so the `/exec` URL Phoenix
+// holds never changes, and no deployment is ever created: none to update is a skip, more than one
+// is a refusal, because guessing which URL Phoenix calls is how the wrong one moves.
+// `planWebAppDeployment` holds that decision, pure, beside `planAppsScriptUpdate`.
+//
 // Usage:
 //   node scripts/push-apps-script.mjs            # push every connected target
 //   node scripts/push-apps-script.mjs --check    # report what WOULD change, write nothing
@@ -33,7 +46,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { APPS_SCRIPT_TARGETS, OAUTH_ENV } from "./apps-script-manifest.mjs";
+import { APPS_SCRIPT_DEPLOYMENTS_SCOPE, APPS_SCRIPT_TARGETS, OAUTH_ENV } from "./apps-script-manifest.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -45,7 +58,8 @@ refuseUnknownFlags({
 });
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const CONTENT_URL = (scriptId) => `https://script.googleapis.com/v1/projects/${scriptId}/content`;
+const PROJECT_URL = (scriptId) => `https://script.googleapis.com/v1/projects/${scriptId}`;
+const CONTENT_URL = (scriptId) => `${PROJECT_URL(scriptId)}/content`;
 
 /**
  * One file inside an Apps Script project. Apps Script stores a name and a type rather than a
@@ -104,6 +118,82 @@ export function planAppsScriptUpdate(files, target, localSource) {
   };
 }
 
+/**
+ * One deployment as `projects.deployments.list` returns it. The HEAD deployment (the editor's
+ * `/dev` test URL) carries no `versionNumber`; every real `/exec` deployment carries one.
+ *
+ * @typedef {object} AppsScriptDeployment
+ * @property {string} deploymentId
+ * @property {{scriptId?: string, versionNumber?: number, manifestFileName?: string, description?: string}} [deploymentConfig]
+ * @property {{entryPointType?: string}[]} [entryPoints]
+ */
+
+/** Two file lists hold the same code — order-blind, because the API does not promise an order. */
+export function sameAppsScriptFiles(left, right) {
+  const key = (files) =>
+    JSON.stringify(
+      (files ?? [])
+        .map((file) => [file.name, file.type, file.source])
+        .sort((a, b) => `${a[0]}\u0000${a[1]}`.localeCompare(`${b[0]}\u0000${b[1]}`)),
+    );
+  return key(left) === key(right);
+}
+
+/**
+ * Find the ONE web-app deployment whose `/exec` URL Phoenix calls. Pure, like the plan above.
+ *
+ * None is a skip, never a create: making a deployment mints a NEW `/exec` URL that nothing in
+ * Phoenix holds. More than one is a refusal: the API cannot say which URL Railway's
+ * `*_SHEET_REFRESH_WEBHOOK_URL` names, and moving the wrong one leaves the real one stale while
+ * the run reports success.
+ *
+ * @param {AppsScriptDeployment[] | null | undefined} deployments
+ * @param {{key: string, sheet: string}} target
+ * @returns {{action: "none"}
+ *          |{action: "refuse", reason: string}
+ *          |{action: "use", deployment: AppsScriptDeployment, versionNumber: number}}
+ */
+export function planWebAppDeployment(deployments, target) {
+  const webApps = (deployments ?? []).filter(
+    (deployment) =>
+      Number.isInteger(deployment?.deploymentConfig?.versionNumber) &&
+      (deployment.entryPoints ?? []).some((entry) => entry?.entryPointType === "WEB_APP"),
+  );
+  if (webApps.length === 0) return { action: "none" };
+  if (webApps.length > 1) {
+    return {
+      action: "refuse",
+      reason:
+        `${target.sheet}'s script has ${webApps.length} versioned web-app deployments ` +
+        `(${webApps.map((d) => `${d.deploymentId} on version ${d.deploymentConfig.versionNumber}`).join("; ")}). ` +
+        `Refusing to guess which /exec URL Phoenix calls — compare them with the sheet's ` +
+        `*_SHEET_REFRESH_WEBHOOK_URL and archive the one nothing uses.`,
+    };
+  }
+  const [deployment] = webApps;
+  return { action: "use", deployment, versionNumber: deployment.deploymentConfig.versionNumber };
+}
+
+/**
+ * The body of `projects.deployments.update` that moves a deployment to a new version and changes
+ * NOTHING else: the same script, manifest and description, and — because the deployment id is the
+ * URL path, not a body field — the same `/exec` URL.
+ *
+ * @param {AppsScriptDeployment} deployment
+ * @param {string} scriptId
+ * @param {number} versionNumber
+ */
+export function deploymentUpdateBody(deployment, scriptId, versionNumber) {
+  const config = deployment.deploymentConfig ?? {};
+  return {
+    deploymentConfig: {
+      ...config,
+      scriptId: config.scriptId ?? scriptId,
+      versionNumber,
+    },
+  };
+}
+
 const argv = process.argv.slice(2);
 const checkOnly = argv.includes("--check");
 const onlyIndex = argv.indexOf("--only");
@@ -147,38 +237,147 @@ async function accessToken() {
         `Re-run scripts/apps-script-authorize.mjs to issue a new one.`,
     );
   }
-  return json.access_token;
+  // Google returns the scopes the grant actually carries. A grant issued before the deployment
+  // scope was added (22 Oct 2026) still pushes HEAD, and only the web-app step can tell.
+  const scopes = String(json.scope ?? "").split(/\s+/).filter(Boolean);
+  return { token: json.access_token, scopes };
 }
 
-async function readProject(token, scriptId) {
-  const response = await fetch(CONTENT_URL(scriptId), {
-    headers: { Authorization: `Bearer ${token}` },
+async function googleJson(token, url, what, init = {}) {
+  const response = await fetch(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) },
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(
-      `could not read the Apps Script project (${json?.error?.message ?? `HTTP ${response.status}`})`,
-    );
+    throw new Error(`could not ${what} (${json?.error?.message ?? `HTTP ${response.status}`})`);
   }
   return json;
 }
 
-async function writeProject(token, scriptId, files) {
-  const response = await fetch(CONTENT_URL(scriptId), {
+function readProject(token, scriptId) {
+  return googleJson(token, CONTENT_URL(scriptId), "read the Apps Script project");
+}
+
+function readVersionContent(token, scriptId, versionNumber) {
+  return googleJson(
+    token,
+    `${CONTENT_URL(scriptId)}?versionNumber=${versionNumber}`,
+    `read version ${versionNumber} of the Apps Script project`,
+  );
+}
+
+async function listDeployments(token, scriptId) {
+  const all = [];
+  let pageToken = "";
+  do {
+    const query = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : "";
+    const page = await googleJson(token, `${PROJECT_URL(scriptId)}/deployments${query}`, "list the deployments");
+    all.push(...(page.deployments ?? []));
+    pageToken = page.nextPageToken ?? "";
+  } while (pageToken);
+  return all;
+}
+
+function createVersion(token, scriptId, description) {
+  return googleJson(token, `${PROJECT_URL(scriptId)}/versions`, "create a version", {
+    body: JSON.stringify({ description }),
+    method: "POST",
+  });
+}
+
+function updateDeployment(token, scriptId, deploymentId, body) {
+  return googleJson(
+    token,
+    `${PROJECT_URL(scriptId)}/deployments/${encodeURIComponent(deploymentId)}`,
+    `update deployment ${deploymentId}`,
+    { body: JSON.stringify(body), method: "PUT" },
+  );
+}
+
+function writeProject(token, scriptId, files) {
+  return googleJson(token, CONTENT_URL(scriptId), "write the Apps Script project", {
     body: JSON.stringify({ files }),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     method: "PUT",
   });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(
-      `could not write the Apps Script project (${json?.error?.message ?? `HTTP ${response.status}`})`,
-    );
-  }
-  return json;
 }
 
-async function pushTarget(token, target) {
+/**
+ * Keep the sheet's web app on the code HEAD now holds. Runs after the content step on EVERY push,
+ * including one where the content was already current — that is the case that sat broken: HEAD
+ * right, the `/exec` URL eleven weeks behind it.
+ */
+async function syncWebApp(auth, target, scriptId, headFiles) {
+  if (!auth.scopes.includes(APPS_SCRIPT_DEPLOYMENTS_SCOPE)) {
+    throw new Error(
+      `the Google grant carries no ${APPS_SCRIPT_DEPLOYMENTS_SCOPE}, so ${target.sheet}'s web app ` +
+        `could not be moved — its /exec URL still runs whatever version it was last deployed at, ` +
+        `not the code just pushed. Re-run scripts/apps-script-authorize.mjs (it now asks for both scopes).`,
+    );
+  }
+
+  const plan = planWebAppDeployment(await listDeployments(auth.token, scriptId), target);
+  if (plan.action === "refuse") throw new Error(plan.reason);
+  if (plan.action === "none") {
+    console.log(`skip   ${target.key} — ${target.sheet}'s script has no versioned web app to keep current.`);
+    return;
+  }
+
+  const { deployment, versionNumber } = plan;
+  const served = await readVersionContent(auth.token, scriptId, versionNumber);
+  if (sameAppsScriptFiles(served.files, headFiles)) {
+    console.log(`ok     ${target.key} — ${target.sheet}'s web app already serves this code (version ${versionNumber}).`);
+    return;
+  }
+
+  if (target.moveWebApp === false) {
+    // Never moved from here — see `moveWebApp` in the manifest. Failing is the point: the old
+    // version keeps answering Phoenix with code HEAD has already replaced, and nothing else says so.
+    throw new Error(
+      `${target.sheet}'s web app serves version ${versionNumber}, which is not the code just pushed, ` +
+        `and this project belongs to another Google account, so the push does not move it (an editor's ` +
+        `move turns the /exec URL into "Access denied"). The owning account must open the script, ` +
+        `Deploy → Manage deployments → Edit the web app → Version: New version → Deploy.`,
+    );
+  }
+
+  if (checkOnly) {
+    console.log(`would  ${target.key} — ${target.sheet}'s web app is on version ${versionNumber}, behind HEAD: deploy a new version to it.`);
+    return;
+  }
+
+  const sha = (process.env.GITHUB_SHA ?? "").slice(0, 9);
+  const version = await createVersion(
+    auth.token,
+    scriptId,
+    `Phoenix push${sha ? ` ${sha}` : ""} — ${target.localPath}`,
+  );
+  if (!Number.isInteger(version.versionNumber)) {
+    throw new Error(`Google created a version for ${target.sheet} but returned no version number.`);
+  }
+  const updated = await updateDeployment(
+    auth.token,
+    scriptId,
+    deployment.deploymentId,
+    deploymentUpdateBody(deployment, scriptId, version.versionNumber),
+  );
+  // Read the answer, never assume it: the point of this step is that a deployment can silently
+  // stay where it was.
+  const landed = updated?.deploymentConfig?.versionNumber;
+  if (landed !== version.versionNumber || updated?.deploymentId !== deployment.deploymentId) {
+    throw new Error(
+      `${target.sheet}'s deployment answered version ${landed} (id ${updated?.deploymentId}) after ` +
+        `being moved to version ${version.versionNumber} — the web app may still serve the old code.`,
+    );
+  }
+  console.log(
+    `deploy ${target.key} — ${target.sheet}'s web app moved from version ${versionNumber} to ` +
+      `${version.versionNumber}; same deployment, same /exec URL.`,
+  );
+}
+
+export async function pushTarget(auth, target) {
+  const { token } = auth;
   const scriptId = process.env[target.scriptIdEnv];
   if (!scriptId) {
     console.log(`skip   ${target.key} — ${target.scriptIdEnv} is not set, so this sheet is not connected yet.`);
@@ -193,21 +392,23 @@ async function pushTarget(token, target) {
 
   if (plan.action === "current") {
     console.log(`ok     ${target.key} — ${target.sheet}'s script is already current (${plan.bytes} bytes).`);
-    return;
+  } else {
+    const delta = plan.to - plan.from;
+    const summary =
+      `${target.key} — ${target.sheet}: ${plan.from} → ${plan.to} bytes ` +
+      `(${delta >= 0 ? "+" : ""}${delta})`;
+
+    if (checkOnly) {
+      console.log(`would  ${summary}`);
+    } else {
+      await writeProject(token, scriptId, plan.files);
+      console.log(`push   ${summary}`);
+    }
   }
 
-  const delta = plan.to - plan.from;
-  const summary =
-    `${target.key} — ${target.sheet}: ${plan.from} → ${plan.to} bytes ` +
-    `(${delta >= 0 ? "+" : ""}${delta})`;
-
-  if (checkOnly) {
-    console.log(`would  ${summary}`);
-    return;
-  }
-
-  await writeProject(token, scriptId, plan.files);
-  console.log(`push   ${summary}`);
+  // HEAD as it now stands (or, under --check, as it would). The web app is compared against this,
+  // never against the local file alone, because a version snapshots EVERY file in the project.
+  await syncWebApp(auth, target, scriptId, plan.action === "update" ? plan.files : project.files);
 }
 
 async function main() {
@@ -223,10 +424,10 @@ async function main() {
     return;
   }
 
-  const token = await accessToken();
+  const auth = await accessToken();
   for (const target of targets) {
     try {
-      await pushTarget(token, target);
+      await pushTarget(auth, target);
     } catch (error) {
       fail(`${target.key} — ${error instanceof Error ? error.message : String(error)}`);
     }

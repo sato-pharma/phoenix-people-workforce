@@ -352,7 +352,7 @@ exits 0.
 |---|---|---|
 | GOOGLE_APPS_SCRIPT_CLIENT_ID | OAuth client (type "Desktop app") for the Apps Script API | (unset) |
 | GOOGLE_APPS_SCRIPT_CLIENT_SECRET | That client's secret | (unset) |
-| GOOGLE_APPS_SCRIPT_REFRESH_TOKEN | Long-lived grant from the sheets' owner. Issued by `scripts/apps-script-authorize.mjs`; scope `script.projects` and nothing wider | (unset) |
+| GOOGLE_APPS_SCRIPT_REFRESH_TOKEN | Long-lived grant from `achieverrr303@gmail.com`. Issued by `scripts/apps-script-authorize.mjs`; scopes `script.projects` (write HEAD, create a version) and `script.deployments` (move the web app), nothing wider. A grant issued before 22 Oct 2026 carries `script.projects` only: it still pushes HEAD, and the run then fails naming the missing scope | (unset) |
 | CV_LIFECYCLE_APPS_SCRIPT_ID | CV-lifecycle sheet: Extensions to Apps Script to Project Settings to Script ID | (unset) |
 | DIRECT_ORDERS_APPS_SCRIPT_ID | Direct-orders sheet: same place | (unset) |
 | MARKETING_REQUESTS_APPS_SCRIPT_ID | Marketing-requests sheet: same place | (unset) |
@@ -429,7 +429,13 @@ behind. Reading Google's own file means the secret goes from disk into one HTTPS
 nowhere else. Dismissing that dialog is not fatal but it is not free either: the only way back is
 to add a SECOND secret to the same client.
 
-Two further flags exist for re-running it:
+`--clasp-client` (22 Oct 2026) replaces `--client-file` when no Google Cloud client secret is at
+hand — the original was lost on 2026-09-05. It reads only the client id and secret of the OAuth
+client Google's own Apps Script CLI (clasp) signs in with from `~/.clasprc.json`, never that file's
+tokens, and the consent asks for the same two scopes, so the grant is no wider. Sign in as
+`achieverrr303@gmail.com` and approve.
+
+Two more further flags exist for re-running it:
 
 - `--write-env-local` additionally writes the three values into `.env.local`, which is gitignored.
   Actions secrets are **write-only** — once stored, nothing can read them back — so a run that only
@@ -448,6 +454,42 @@ One setting outside this repository decides whether the grant survives: the OAut
 publishing status. While it reads **Testing**, Google expires every refresh token after 7 days, so
 the push would work for a week and then start failing with `invalid_grant` for no visible reason.
 **In production** has no such expiry. Check it before wondering why a working setup stopped.
+
+### The web app follows HEAD (since 22 Oct 2026)
+
+Writing the project's content changes its HEAD — what the sheet's own time-driven trigger runs. A
+web app `/exec` URL does NOT run HEAD: it runs the saved VERSION its deployment was given, and stays
+there until somebody points it at another. The pusher never did, so every `/exec` URL Phoenix calls
+(`SHEET_REFRESH_WEBHOOK_URL` and the two below it) sat on the version it was deployed with. Read on
+22 Oct 2026: Direct Orders on version 5 (5 Aug), Marketing Requests on version 3 (5 Aug), CV
+Lifecycle on version 1 (5 Sep). The Direct Orders one answered Phoenix's instant refresh ping with
+HTTP 200 and a Google error page from version 5 — *"You can't merge frozen and non-frozen columns
+(line 404)"* — a defect HEAD had already fixed, while the sheet itself stayed fresh on its trigger.
+
+So after the content step, on every run including one where the content was already current, the
+pusher reads the project's deployments, takes the ONE versioned deployment with a web-app entry
+point, and compares the files of the version it serves with HEAD. Different → it creates a version
+and updates THAT deployment to it, keeping its id, manifest and description, so the `/exec` URL never
+changes. It never creates a deployment (none is a skip), refuses when there are two (it cannot tell
+which URL Phoenix holds), and leaves the editor's `/dev` HEAD deployment alone. `--check` reports
+`would … deploy a new version` without writing. `planWebAppDeployment` is the pure decision;
+`tests/apps-script-push.test.ts` drives the real `pushTarget` through a stubbed Google on the
+22 Oct state.
+
+This needs the `script.deployments` scope, which the original grant did not ask for. Until the grant
+is re-issued, a run still writes HEAD and then FAILS naming the missing scope, rather than reporting
+success while the web app stays behind.
+
+🔴 **THE PUSH NEVER MOVES THE DIRECT ORDERS WEB APP, BECAUSE THAT PROJECT BELONGS TO ANOTHER GOOGLE
+ACCOUNT.** Its manifest entry carries `moveWebApp: false`. Measured 22 Oct 2026, 04:28 Cairo: moving
+its deployment to version 6 as `achieverrr303@gmail.com` (an editor there, the grant's own account)
+turned the `/exec` URL into HTTP 403 *"Access denied — you need permission"* for every caller, right
+secret or wrong, and moving it back to version 5 the same way did not undo it — so the editor's move,
+not the code, is what Google refuses. Marketing Requests and CV Lifecycle are that account's own
+projects; Marketing moved from version 3 to 4 at the same minute and answered `ok` at once. For an
+owner-only project the push still reads the web app and FAILS, naming the version it serves, when that
+is not HEAD's code — the repair is the owning account's own **Deploy → Manage deployments → Edit →
+Version: New version → Deploy**, which keeps the same URL. Never flip the flag to fix a red run.
 
 The API this uses REPLACES every file in a project — there is no per-file write. So the pusher
 reads the project first and sends every existing file back with only the managed one swapped, and
