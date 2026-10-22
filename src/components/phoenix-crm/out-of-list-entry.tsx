@@ -27,6 +27,7 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
+import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -90,6 +91,7 @@ export function OutOfListEntry({
   seatId: string;
   test: boolean;
 }) {
+  const browserNamed = useBrowserNamed();
   const [adding, setAdding] = useState(false);
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
@@ -337,7 +339,7 @@ export function OutOfListEntry({
         ) : null}
         {problem ? (
           <CrmNote className="mb-3" tone="bad">
-            {problem}
+            {browserNamed(problem)}
           </CrmNote>
         ) : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">
