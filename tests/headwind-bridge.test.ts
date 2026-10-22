@@ -2015,6 +2015,66 @@ function runServerImageTests() {
     /closed == 0/,
     "a confirmation that closed no row is noticed rather than silently accepted — that log line is the only signal a forged or stale confirmation leaves",
   );
+
+  // 10. 🔴 THE TWO PUBLIC UPLOAD ENDPOINTS ARE REFUSED AT TOMCAT (owner, 2026-10-22: "close the tablet
+  //     server's open upload path"). `/rest/public/applications/upload` and `/rest/videos` both answered
+  //     `Allow: POST` with no sign-in on mdm.satopharma.com that day. The rules must refuse both and
+  //     leave every path a tablet or Phoenix uses alone.
+  //
+  //     BREAK-TEST: delete either RewriteRule line, or widen one to `^/rest/public`, and the exact-list
+  //     assertion fires first. The path checks below it are what a DELIBERATE change to the list must
+  //     still pass: every refused path refused, every tablet and Phoenix path reached.
+  const rewriteRules = source("infra/headwind-phoenix-actions/rewrite.config")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  assert.deepEqual(
+    rewriteRules,
+    ["RewriteRule ^/rest/public/applications/upload - [F,NC]", "RewriteRule ^/rest/videos - [F,NC]"],
+    "exactly two refusal rules, and nothing else Tomcat would have to parse",
+  );
+  const refusals = rewriteRules.map((line) => new RegExp(line.split(" ")[1] as string, "is"));
+  const refused = (path: string) => refusals.some((rule) => rule.test(path));
+  for (const path of ["/rest/public/applications/upload", "/rest/videos", "/rest/videos/clip.mp4", "/REST/VIDEOS"]) {
+    assert.ok(refused(path), `${path} is refused`);
+  }
+  for (const path of [
+    "/files/hmdm-phoenix-6.39.apk",
+    "/rest/public/sync/configuration/PHX-TAB-0007",
+    "/rest/public/sync/info",
+    "/rest/notifications/device/PHX-TAB-0007",
+    "/rest/notification/polling/PHX-TAB-0007",
+    "/rest/plugins/devicelog/log/rules/PHX-TAB-0007",
+    "/rest/plugins/devicereset/public/password/PHX-TAB-0007",
+    "/rest/public/jwt/login",
+    "/rest/private/configurations/applications/3",
+    "/rest/plugins/phoenix-actions/private/action",
+    "/",
+  ]) {
+    assert.ok(!refused(path), `tablets and Phoenix still reach ${path}`);
+  }
+
+  // The Dockerfile puts the rules at HOST level (ROOT.xml is regenerated at every start, server.xml is
+  // not), and checks them with Tomcat's own parser at build, because a rule Tomcat cannot parse stops the
+  // whole Host while Railway reports the deploy green.
+  const upload = stripHashComments(dockerfile);
+  assert.match(
+    upload,
+    /COPY rewrite\.config \/usr\/local\/tomcat\/conf\/Catalina\/localhost\/rewrite\.config/,
+    "the rules sit in the Host's own config folder, where the Host-level valve reads them",
+  );
+  assert.match(
+    upload,
+    /sed -i 's\|<\/Host>\|  <Valve className="org\.apache\.catalina\.valves\.rewrite\.RewriteValve" \/>/,
+    "the valve goes into server.xml's one Host, which nothing rewrites at start",
+  );
+  assert.match(upload, /grep -c '<\/Host>'/, "and refuses to guess when server.xml does not hold exactly one Host");
+  const check = upload.match(/\/tmp\/RewriteCheck\.java "\$TOMCAT\/conf\/Catalina\/localhost\/rewrite\.config" (\d+)/);
+  assert.ok(check, "the build runs RewriteCheck on the installed rules file");
+  assert.equal(Number(check?.[1]), rewriteRules.length, "with the rule count the file really holds");
+  const rewriteCheck = stripComments(source("infra/headwind-phoenix-actions/RewriteCheck.java"));
+  assert.match(rewriteCheck, /RewriteValve\.parse\(line\)/, "RewriteCheck parses each line with Tomcat's own parser");
+  assert.match(rewriteCheck, /rule\.parse\(new HashMap<>\(\)\)/, "and compiles each pattern the way the valve does at start");
 }
 
 /**
