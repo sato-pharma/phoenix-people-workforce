@@ -66,6 +66,16 @@ import {
   HeadwindLocationError,
 } from "../src/lib/devices/headwind/locations.ts";
 import {
+  clampRecordingDuration,
+  hashRecordingToken,
+  recordingUploadDecision,
+  RECORDING_DEFAULT_SECONDS,
+  RECORDING_MAX_BYTES,
+  RECORDING_MAX_SECONDS,
+  RECORDING_MIN_SECONDS,
+  RECORDING_TOKEN_TTL_SECONDS,
+} from "../src/lib/devices/headwind/recordings.ts";
+import {
   uploadHeadwindApp,
   HEADWIND_MAX_UPLOAD_BYTES,
   HeadwindUploadError,
@@ -3430,6 +3440,110 @@ function runDashboardTests() {
   assert.match(map, /border border-slate-200/, "and wears the devices look — a slate border, square, not the field map's rounded card");
 }
 
+/**
+ * On-demand screen recording: the pure upload door, and the fingerprints that keep the capture off the
+ * frozen Expo app and the device's upload session-less.
+ */
+function runRecordingTests() {
+  // The length is parsed, clamped and defaulted.
+  assert.equal(clampRecordingDuration(60), 60, "a plain length is kept");
+  assert.equal(clampRecordingDuration(2), RECORDING_MIN_SECONDS, "below the floor clamps up");
+  assert.equal(clampRecordingDuration(99999), RECORDING_MAX_SECONDS, "above the cap clamps down");
+  assert.equal(clampRecordingDuration("45"), 45, "a numeric string is read");
+  assert.equal(clampRecordingDuration("nonsense"), RECORDING_DEFAULT_SECONDS, "junk falls back to the default");
+  assert.equal(clampRecordingDuration(undefined), RECORDING_DEFAULT_SECONDS, "a missing length falls back to the default");
+
+  // recordingUploadDecision — the whole upload door, proven without a database.
+  const token = "a".repeat(64);
+  const hash = hashRecordingToken(token);
+  const now = 1_700_000_000_000;
+  const freshRow = { requestedAtMs: now, status: "requested", uploadTokenHash: hash };
+
+  assert.deepEqual(
+    recordingUploadDecision({ contentType: "video/mp4", nowMs: now + 1000, presentedToken: token, row: freshRow, sizeBytes: 1024 }),
+    { ok: true },
+    "a fresh slot, the right token, a small mp4 is accepted",
+  );
+  assert.equal(
+    recordingUploadDecision({ contentType: "video/webm; codecs=vp9", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: 1024 }).ok,
+    true,
+    "webm with a codecs parameter is accepted",
+  );
+
+  const noRow = recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: null, sizeBytes: 10 });
+  assert.equal(noRow.ok, false, "no such recording is refused");
+  assert.equal(noRow.ok ? 0 : noRow.status, 404, "and answers 404");
+
+  // 🔴 THE HEADLINE: a token that does not match is refused 403. Break it — compare the WRONG hash, or
+  // drop the timingSafeEqual — and this assertion is what fires.
+  const badToken = recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: "b".repeat(64), row: freshRow, sizeBytes: 10 });
+  assert.equal(badToken.ok, false, "a token that does not match the slot is refused");
+  assert.equal(badToken.ok ? 0 : badToken.status, 403, "and the refusal is 403");
+
+  assert.equal(
+    recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: { requestedAtMs: now, status: "ready", uploadTokenHash: hash }, sizeBytes: 10 }).ok,
+    false,
+    "a slot already handled is refused",
+  );
+  assert.equal(
+    recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: { requestedAtMs: now, status: "requested", uploadTokenHash: null }, sizeBytes: 10 }).ok,
+    false,
+    "a closed slot (its hash cleared) is refused",
+  );
+
+  const expired = recordingUploadDecision({ contentType: "video/mp4", nowMs: now + RECORDING_TOKEN_TTL_SECONDS * 1000 + 1, presentedToken: token, row: freshRow, sizeBytes: 10 });
+  assert.equal(expired.ok, false, "past the window is refused");
+  assert.equal(expired.ok ? 0 : expired.status, 410, "and answers 410");
+
+  assert.equal(recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: 0 }).ok, false, "an empty upload is refused");
+  assert.equal(recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: RECORDING_MAX_BYTES + 1 }).ok, false, "over the byte cap is refused");
+  assert.equal(recordingUploadDecision({ contentType: "image/png", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: 10 }).ok, false, "a non-video type is refused");
+
+  // SOURCE FINGERPRINTS — the capture is driven to the RustDesk fork, never the frozen Expo app.
+  const recordings = stripComments(source("src/lib/devices/headwind/recordings.ts"));
+  assert.match(recordings, /messageType: "intent"/, "the record push uses the agent's intent door");
+  assert.match(recordings, /pkg: rustDeskPackageName\(env\)/, "aimed at the RustDesk-fork launcher's package");
+  assert.doesNotMatch(
+    recordings,
+    /com\.satopharma\.phoenixworkforce/,
+    "never the frozen Expo app package — recording it there would mean editing mobile/, which is frozen",
+  );
+  assert.match(recordings, /upload_token_hash: hashRecordingToken\(token\)/, "only the token's hash is stored, never the token");
+
+  // The device upload door is session-less and token-authenticated; the trigger route is Super Admin.
+  const uploadRoute = stripComments(source("app/api/devices/recordings/upload/route.ts"));
+  assert.doesNotMatch(
+    uploadRoute,
+    /resolveAccessContext|assertPermission|assertSameOriginMutation/,
+    "the device upload door has no session and no CSRF gate — the per-recording token is the whole auth",
+  );
+  assert.match(uploadRoute, /ingestRecording\(/, "it hands the bytes to ingestRecording, which matches the token");
+
+  const recordRoute = stripComments(source("app/api/devices/headwind/record/route.ts"));
+  assert.match(recordRoute, /assertSameOriginMutation\(request\)/, "the trigger route is same-origin");
+  assert.match(recordRoute, /assertPermission\(access, "company_devices", "approve"\)/, "and Super Admin only");
+
+  // Registered in the access registry: the trigger as a session route, the upload as machine-token.
+  const registry = source("src/lib/security/access-registry.ts");
+  assert.match(
+    registry,
+    /pattern: "\/api\/devices\/headwind\/record", permission: \{ resource: "company_devices", action: "approve" \}, csrfRequired: true/,
+    "the record route is registered Super Admin + csrf",
+  );
+  assert.match(
+    registry,
+    /authMode: "machine-token", methods: \["POST"\], pattern: "\/api\/devices\/recordings\/upload"/,
+    "the upload route is registered as a machine-token door",
+  );
+
+  // The dashboard route serves the recordings view and the panel plays them back.
+  const route = stripComments(source("app/api/devices/headwind/route.ts"));
+  assert.match(route, /case "recordings":/, "the dashboard route serves view=recordings");
+  const panel = stripComments(source("src/components/devices/headwind-tablet-panel.tsx"));
+  assert.match(panel, /<RecordingsPanel deviceNumber=\{deviceNumber\} \/>/, "the panel is mounted on the tablet drill-down");
+  assert.match(panel, /view=recordings/, "and reads the recordings view");
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -3445,6 +3559,7 @@ export async function runHeadwindBridgeTests() {
   await runAppRemovalTests();
   await runRemoteScreenIdTests();
   await runCorporateWipeTests();
+  runRecordingTests();
   await runConfigurationTests();
   await runUploadTests();
   await runLocationTests();
