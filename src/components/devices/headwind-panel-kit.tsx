@@ -23,7 +23,7 @@
  */
 
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 
@@ -33,8 +33,34 @@ export const PANEL_ACTION =
 /** The same button once it is armed and the next press does the thing. */
 export const PANEL_ARMED =
   "inline-flex max-w-full items-center gap-1.5 break-all border border-rose-700 bg-rose-700 px-2 py-0.5 text-left text-[10px] font-semibold text-white transition hover:bg-rose-800 disabled:opacity-50";
-export const PANEL_INPUT =
-  "w-full border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-slate-500 focus:outline-none";
+
+/**
+ * How long a press-again button stays armed before it quietly goes back to its first state.
+ *
+ * 🔴 AN ARMED BUTTON THAT NEVER DISARMS IS A LOADED ONE. Factory reset, the corporate wipe, an app
+ * removal and a revoke all arm on the first press; left armed, the next stray press — minutes later,
+ * after a scroll — does the destructive thing with no second look. Eight seconds is long enough to read
+ * the armed sentence and press again, and short enough that a press after walking away starts over.
+ */
+export const ARM_WINDOW_MS = 8_000;
+
+/**
+ * Disarm after `ARM_WINDOW_MS`. `armed` is whatever the panel keeps armed — a package name, an action
+ * id, or a plain flag; `null` and `false` mean nothing is armed. The timer restarts when a different
+ * thing is armed, and is dropped when the panel moves to another tablet (its derived state disarms).
+ * The disarm runs from a timer, never synchronously inside the effect.
+ */
+export function useDisarmAfterWindow(armed: string | boolean | null, disarm: () => void): void {
+  const disarmRef = useRef(disarm);
+  useEffect(() => {
+    disarmRef.current = disarm;
+  });
+  useEffect(() => {
+    if (armed === null || armed === false) return;
+    const timer = window.setTimeout(() => disarmRef.current(), ARM_WINDOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+}
 
 async function readBody(response: Response): Promise<unknown> {
   try {

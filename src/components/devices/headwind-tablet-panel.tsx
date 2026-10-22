@@ -34,9 +34,9 @@ import {
   MICRO_LABEL,
   PANEL_ACTION,
   PANEL_ARMED,
-  PANEL_INPUT,
   Panel,
   postJson,
+  useDisarmAfterWindow,
   useRead,
 } from "@/components/devices/headwind-panel-kit";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -127,13 +127,14 @@ const NO_ACTION_PENDING: Omit<ActionState, "deviceNumber"> = {
   words: {},
 };
 
-function ActionsPanel({ deviceNumber }: { deviceNumber: string }) {
+function ActionsPanel({ deviceNumber, tabletName }: { deviceNumber: string; tabletName: string }) {
   const catalogue = useRead<{ actions: ActionAvailability[] }>("/api/devices/headwind/actions");
   const [state, setState] = useState<ActionState>({ deviceNumber, ...NO_ACTION_PENDING });
 
   // Derived during the render, never reset in an effect. An armed Factory reset belongs to ONE tablet:
   // carried across a switch, the next press would erase a different rep's tablet.
   const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_ACTION_PENDING };
+  useDisarmAfterWindow(own.armed, () => setState((current) => ({ ...current, armed: null })));
 
   async function take(action: ActionAvailability) {
     if (action.destructive && own.armed !== action.id) {
@@ -180,7 +181,7 @@ function ActionsPanel({ deviceNumber }: { deviceNumber: string }) {
                 <label className="mt-1 block min-w-0">
                   <span className={`block ${MICRO_LABEL}`}>The words to show, in your own wording</span>
                   <textarea
-                    className={cn(phxTextareaClassName, `mt-1 h-16 ${PANEL_INPUT}`)}
+                    className={cn(phxTextareaClassName, "mt-1")}
                     maxLength={MESSAGE_LIMIT}
                     onChange={(event) =>
                       setState({ ...own, words: { ...own.words, [action.id]: event.target.value } })
@@ -209,7 +210,7 @@ function ActionsPanel({ deviceNumber }: { deviceNumber: string }) {
                   server's own description.
                 */}
                 {own.armed === action.id
-                  ? `Press again to ${action.label.toLowerCase()} ${deviceNumber}. This cannot be undone.`
+                  ? `Press again to ${action.label.toLowerCase()} ${tabletName}. This cannot be undone.`
                   : action.label}
               </button>
             </li>
@@ -325,10 +326,11 @@ const NO_WIPE_PENDING = { armed: false, busy: false, failure: null, notice: null
  * a mistake can be caught is here, before it is sent, which is why the armed button says what goes
  * rather than saying "confirm".
  */
-function WipePanel({ deviceNumber }: { deviceNumber: string }) {
+function WipePanel({ deviceNumber, tabletName }: { deviceNumber: string; tabletName: string }) {
   const scope = useRead<WipeScope>("/api/devices/headwind/wipe");
   const [state, setState] = useState<WipeState>({ deviceNumber, ...NO_WIPE_PENDING });
   const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_WIPE_PENDING };
+  useDisarmAfterWindow(own.armed, () => setState((current) => ({ ...current, armed: false })));
 
   async function wipe() {
     if (!own.armed) {
@@ -383,7 +385,7 @@ function WipePanel({ deviceNumber }: { deviceNumber: string }) {
           >
             {own.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
             {own.armed
-              ? `Press again to erase ${erases.join(", ")} from ${deviceNumber}`
+              ? `Press again to erase ${erases.join(", ")} from ${tabletName}`
               : "Erase the company's data"}
           </button>
         </div>
@@ -430,6 +432,7 @@ function AppsPanel({ deviceNumber }: { deviceNumber: string }) {
   // inside the state means the previous tablet's armed button, notice and failure are simply not this
   // tablet's, and are not shown.
   const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NOTHING_PENDING };
+  useDisarmAfterWindow(own.armed, () => setState((current) => ({ ...current, armed: null })));
   const apps = useRead<AppsRead>(`/api/devices/headwind?deviceNumber=${query}&view=apps&round=${own.round}`);
 
   async function remove(packageName: string) {
@@ -529,10 +532,12 @@ type RemoteScreenIdState = {
  */
 function RemoteScreenIdPanel({
   deviceNumber,
+  tabletName,
   current,
   onSaved,
 }: {
   deviceNumber: string;
+  tabletName: string;
   current: string | null;
   onSaved?: () => void;
 }) {
@@ -586,7 +591,7 @@ function RemoteScreenIdPanel({
         <label className="min-w-0 max-w-xs flex-1 basis-40">
           <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
           <input
-            className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+            className={cn(phxFieldClassName, "mt-1")}
             inputMode="numeric"
             onChange={(event) => setState({ ...own, failure: null, notice: null, value: event.target.value })}
             placeholder="123 456 789"
@@ -596,7 +601,7 @@ function RemoteScreenIdPanel({
         </label>
         <button className={PANEL_ACTION} disabled={own.busy} onClick={() => void save()} type="button">
           {own.busy ? <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> : null}
-          {current ? `Change the ID of ${deviceNumber}` : `Record the ID of ${deviceNumber}`}
+          {current ? `Change the ID of ${tabletName}` : `Record the ID of ${tabletName}`}
         </button>
       </div>
       {own.notice ? <Done message={own.notice} /> : null}
@@ -623,6 +628,20 @@ type CustodyProps = {
   assignable: AssignableEmployee[];
   /** Re-read the fleet after a change, so the row and this panel catch up. */
   onChanged?: () => void;
+};
+
+/**
+ * The register's status as the Device custody page says it — never the stored code. "marked repair"
+ * and "marked in_stock" are what a raw status reads as on this panel.
+ */
+const REGISTER_STATUS_WORDS: Record<DeviceStatus, string> = {
+  assigned: "With staff",
+  in_stock: "In stock",
+  lost: "Lost",
+  repair: "In repair",
+  reserved: "Reserved",
+  retired: "Retired",
+  stolen: "Stolen",
 };
 
 type CustodyMode = null | "assign" | "reserve" | "reconcile" | "reassign";
@@ -662,6 +681,7 @@ function CustodyPanel(props: CustodyProps) {
   // Derived during the render, never reset in an effect — the rule every panel here follows, so a
   // half-filled form for one tablet never follows onto another rep's row.
   const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_CUSTODY_PENDING };
+  useDisarmAfterWindow(own.armedRevoke, () => setState((current) => ({ ...current, armedRevoke: false })));
 
   async function send(body: Record<string, unknown>, fallback: string) {
     setState({ ...own, busy: true, failure: null, notice: null });
@@ -689,7 +709,7 @@ function CustodyPanel(props: CustodyProps) {
     <label className="min-w-0 max-w-xs flex-1 basis-48">
       <span className={`block ${MICRO_LABEL}`}>Employee</span>
       <select
-        className={cn(phxSelectClassName, `mt-1 ${PANEL_INPUT}`)}
+        className={cn(phxSelectClassName, "mt-1")}
         onChange={(event) => setState({ ...own, failure: null, hrId: event.target.value })}
         value={own.hrId}
       >
@@ -724,7 +744,7 @@ function CustodyPanel(props: CustodyProps) {
     <label className="min-w-0 max-w-xs flex-1 basis-48">
       <span className={`block ${MICRO_LABEL}`}>Held for (name)</span>
       <input
-        className={cn(phxFieldClassName, `mt-1 ${PANEL_INPUT}`)}
+        className={cn(phxFieldClassName, "mt-1")}
         onChange={(event) => setState({ ...own, failure: null, name: event.target.value })}
         placeholder="The person it is being kept for"
         type="text"
@@ -817,8 +837,8 @@ function CustodyPanel(props: CustodyProps) {
 
       {registerStatus && !["in_stock", "reserved", "assigned"].includes(registerStatus) ? (
         <p className="break-words text-[11px] font-semibold text-slate-500">
-          This tablet is marked {registerStatus} in the register, so it cannot be assigned or reserved until that
-          changes on the Device custody page.
+          This tablet is marked <span className="font-bold text-slate-900">{REGISTER_STATUS_WORDS[registerStatus]}</span>{" "}
+          in the register, so it cannot be assigned or reserved until that changes on the Device custody page.
         </p>
       ) : null}
     </Panel>
@@ -827,12 +847,19 @@ function CustodyPanel(props: CustodyProps) {
 
 export function HeadwindTabletPanel({
   deviceNumber,
+  tabletName = deviceNumber,
   remoteScreenId = null,
   onRemoteScreenIdSaved,
   custody,
   onCustodyChanged,
 }: {
   deviceNumber: string;
+  /**
+   * What a person calls this tablet — its asset tag where the register knows it. Every armed sentence
+   * names the tablet with this, so "Press again to factory reset PHX-TAB-0008" names the tablet on its
+   * label, not Headwind's device number.
+   */
+  tabletName?: string;
   remoteScreenId?: string | null;
   onRemoteScreenIdSaved?: () => void;
   custody?: Omit<CustodyProps, "deviceNumber" | "onChanged">;
@@ -840,7 +867,9 @@ export function HeadwindTabletPanel({
 }) {
   const query = encodeURIComponent(deviceNumber);
   const detail = useRead<DeviceDetail>(`/api/devices/headwind?deviceNumber=${query}&view=detail`);
-  const history = useRead<{ commands: CommandRecord[] }>(`/api/devices/headwind?deviceNumber=${query}&view=history`);
+  const history = useRead<{ commands: CommandRecord[]; more: boolean }>(
+    `/api/devices/headwind?deviceNumber=${query}&view=history`,
+  );
 
   return (
     <div className="mt-3 space-y-3">
@@ -870,15 +899,20 @@ export function HeadwindTabletPanel({
 
       {custody ? <CustodyPanel deviceNumber={deviceNumber} {...custody} onChanged={onCustodyChanged} /> : null}
 
-      <RemoteScreenIdPanel current={remoteScreenId} deviceNumber={deviceNumber} onSaved={onRemoteScreenIdSaved} />
+      <RemoteScreenIdPanel
+        current={remoteScreenId}
+        deviceNumber={deviceNumber}
+        onSaved={onRemoteScreenIdSaved}
+        tabletName={tabletName}
+      />
 
-      <ActionsPanel deviceNumber={deviceNumber} />
+      <ActionsPanel deviceNumber={deviceNumber} tabletName={tabletName} />
 
       <AppsPanel deviceNumber={deviceNumber} />
 
       <MovementsPanel deviceNumber={deviceNumber} />
 
-      <WipePanel deviceNumber={deviceNumber} />
+      <WipePanel deviceNumber={deviceNumber} tabletName={tabletName} />
 
       <Panel title="What has been done to this tablet from Phoenix">
         {history.loading ? <Busy what="the history" /> : null}
@@ -890,17 +924,25 @@ export function HeadwindTabletPanel({
               console are not listed here — this is Phoenix&rsquo;s own record.
             </p>
           ) : (
-            <ul className="space-y-1">
-              {history.data.commands.map((record) => (
-                <li className="flex flex-wrap items-baseline gap-x-2" key={`${record.issuedAt}:${record.summary}`}>
-                  <span className="break-words text-[11px] font-bold text-slate-900">{record.summary}</span>
-                  <span className="break-words text-[11px] font-semibold text-slate-500">
-                    {cairoDateTime(record.issuedAt)}
-                    {record.actor ? ` · ${record.actor}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-1.5">
+              <ul className="space-y-1">
+                {history.data.commands.map((record) => (
+                  <li className="flex flex-wrap items-baseline gap-x-2" key={`${record.issuedAt}:${record.summary}`}>
+                    <span className="break-words text-[11px] font-bold text-slate-900">{record.summary}</span>
+                    <span className="break-words text-[11px] font-semibold text-slate-500">
+                      {cairoDateTime(record.issuedAt)}
+                      {record.actor ? ` · ${record.actor}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {/* Fifty is where the list stops, not where the history does — said, so it never reads as all. */}
+              {history.data.more ? (
+                <p className="break-words text-[11px] font-semibold text-slate-500">
+                  These are the latest {history.data.commands.length} actions. Older ones are not listed here.
+                </p>
+              ) : null}
+            </div>
           )
         ) : null}
       </Panel>

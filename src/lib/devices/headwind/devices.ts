@@ -22,7 +22,7 @@
  */
 
 import { normalizeImei, normalizeSerial, imeisMatch } from "@/lib/devices/device-identity";
-import { callHeadwind } from "@/lib/devices/headwind/client";
+import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/client";
 import type { RegisterTablet } from "@/lib/devices/managed-tablets";
 
 type RawRecord = Record<string, unknown>;
@@ -197,10 +197,17 @@ type SearchResponse = RawRecord & { items?: unknown; devices?: unknown };
  * no tablets while the server held two device rows. Nothing contradicted it either: an empty fleet and
  * an unread reply look exactly alike. The flat shapes are kept, so a build that answers the page
  * directly is not broken by the fix.
+ *
+ * 🔴 AND A SHAPE IT CANNOT READ NOW SAYS SO (2026-10-22). Falling through to `[]` is exactly how that
+ * outage stayed silent: the next unknown shape would again read as "no tablets", "no apps" or "that
+ * tablet is not in the fleet any more". Only two things are an empty fleet — no reply body at all, and
+ * a page that says `totalItemsCount: 0` — and everything else this cannot place throws, so the screen
+ * shows an error rather than a confident empty list.
  */
 export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
   if (Array.isArray(payload)) return payload as RawRecord[];
-  if (!payload || typeof payload !== "object") return [];
+  if (payload === null || payload === undefined) return [];
+  if (typeof payload !== "object") throw unreadableSearch();
   const record = payload as SearchResponse;
   for (const key of ["items", "devices"] as const) {
     const value = record[key];
@@ -210,8 +217,17 @@ export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
   if (page && typeof page === "object") {
     const items = (page as SearchResponse).items;
     if (Array.isArray(items)) return items as RawRecord[];
+    if ((page as RawRecord).totalItemsCount === 0) return [];
   }
-  return [];
+  if (record.totalItemsCount === 0) return [];
+  throw unreadableSearch();
+}
+
+function unreadableSearch(): HeadwindRequestError {
+  return new HeadwindRequestError(
+    502,
+    "The company tablet server answered the device list in a shape Phoenix cannot read, so the tablets are not shown rather than shown as none. Nothing was changed on any tablet.",
+  );
 }
 
 /**

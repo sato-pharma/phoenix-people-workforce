@@ -30,6 +30,7 @@
 import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import { ARM_WINDOW_MS } from "@/components/devices/headwind-panel-kit";
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -222,6 +223,8 @@ export function HeadwindFleet() {
       if (!isCurrent()) return;
       setData(state);
       setSetupRequired(false);
+      // A read that worked clears the last one's failure — a red box over a fleet that loaded is a lie.
+      setLoadError(null);
     } catch (caught) {
       if (!isCurrent()) return;
       if (caught instanceof RequestFailure && caught.setupRequired) setSetupRequired(true);
@@ -278,7 +281,7 @@ export function HeadwindFleet() {
       const key = `${row.deviceNumber}:${command}`;
       if (destructive && confirmKey !== key) {
         setConfirmKey(key);
-        window.setTimeout(() => setConfirmKey((current) => (current === key ? null : current)), 4000);
+        window.setTimeout(() => setConfirmKey((current) => (current === key ? null : current)), ARM_WINDOW_MS);
         return;
       }
       setConfirmKey(null);
@@ -400,10 +403,11 @@ export function HeadwindFleet() {
         <p className="text-[11px] font-semibold text-slate-500">Live from Headwind · Super Admin only</p>
       </div>
       <p className="mt-1 max-w-3xl text-[12px] font-semibold text-slate-600">
-        The tablets on the company&rsquo;s own device-management server. There is no limit on how many can be here and
-        nothing to renew. Viewing and taking over a tablet&rsquo;s screen run through the company&rsquo;s own relay and
+        The tablets on the company&rsquo;s own device-management server. Nothing on it is licensed per tablet and
+        there is nothing to renew. Viewing and taking over a tablet&rsquo;s screen run through the company&rsquo;s own relay and
         cost nothing. Open a tablet to see everything the server holds about it, the apps on it, and every action taken
-        from Phoenix. Each action is recorded against the tablet in the audit log.
+        from Phoenix. Each action sent to a tablet from here is recorded against it in the audit log; opening its
+        screen in RustDesk is not an action on the tablet and is not recorded.
       </p>
 
       {/*
@@ -598,8 +602,11 @@ function TabletCell({ row }: { row: FleetRow }) {
     <>
       {row.assetTag ? (
         <p className="break-words text-[12px] font-black text-slate-900">{row.assetTag}</p>
-      ) : (
+      ) : row.unregistered ? (
         <p className="break-words text-[12px] font-black text-amber-700">Not in the custody register</p>
+      ) : (
+        // The register could not be read — "not in it" would be a guess, and it would offer an Add.
+        <p className="break-words text-[12px] font-black text-slate-500">Custody not readable</p>
       )}
       <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
         {[row.manufacturer, row.model].filter(Boolean).join(" ") || row.name}
@@ -620,7 +627,16 @@ function TabletCell({ row }: { row: FleetRow }) {
 
 function HolderCell({ row }: { row: FleetRow }) {
   if (!row.assetTag) {
-    return <p className="break-words text-[11px] font-semibold text-slate-400">Unknown — add it to the register</p>;
+    if (!row.unregistered) {
+      return <p className="break-words text-[11px] font-semibold text-slate-400">Not known — the custody register could not be read</p>;
+    }
+    return (
+      <p className="break-words text-[11px] font-semibold text-slate-400">
+        {row.serialNumber || row.imei
+          ? "Nobody yet — add it to custody from this row"
+          : "Nobody yet — it can be added to custody once it reports its serial number or IMEI"}
+      </p>
+    );
   }
   return row.holderName ? (
     <>
@@ -769,7 +785,7 @@ function FleetActions({
         ) : (
           <MapPin className="h-3.5 w-3.5" aria-hidden />
         )}
-        Where is it
+        Last known position
       </button>
 
       {destructive.map((command) => {
@@ -796,7 +812,7 @@ function FleetActions({
             type="button"
           >
             {busy(key) ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-            {armed ? "Press again to factory-reset" : command.label}
+            {armed ? `Press again to ${command.label.toLowerCase()} ${row.assetTag ?? row.name}` : command.label}
           </button>
         );
       })}
@@ -835,6 +851,7 @@ function FleetRowBlock(props: BlockProps) {
               onCustodyChanged={props.onRefresh}
               onRemoteScreenIdSaved={props.onRefresh}
               remoteScreenId={row.rustDeskId}
+              tabletName={row.assetTag ?? row.name}
             />
           ) : null}
         </div>
@@ -874,6 +891,7 @@ function FleetRowBlock(props: BlockProps) {
               onCustodyChanged={props.onRefresh}
               onRemoteScreenIdSaved={props.onRefresh}
               remoteScreenId={row.rustDeskId}
+              tabletName={row.assetTag ?? row.name}
             />
           ) : null}
         </td>

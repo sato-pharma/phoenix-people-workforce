@@ -64,7 +64,7 @@ export type RepHeadwindRow = {
   assignmentId: string | null;
   /** When the tablet is reserved for a not-yet-hired holder: the typed name it is held for. */
   placeholderName: string | null;
-  /** The register does not know this managed tablet. */
+  /** The register was read and does not know this managed tablet. False when the register could not be read. */
   unregistered: boolean;
 };
 
@@ -90,6 +90,7 @@ function toRow(
   device: HeadwindDevice,
   register: Parameters<typeof matchHeadwindToRegister>[1],
   reservations: ReservationByDevice,
+  registerError: boolean,
 ): RepHeadwindRow {
   const entry = matchHeadwindToRegister(device, register);
   const reservation = entry ? reservations.get(entry.id) ?? null : null;
@@ -122,7 +123,11 @@ function toRow(
     registerStatus: entry?.status ?? null,
     rustDeskId: device.rustDeskId,
     serialNumber: device.serialNumber,
-    unregistered: entry === null,
+    // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE. With no register read, every tablet matches nothing,
+    // and flagging them all "not in the custody register" offered an Add to custody on tablets that are
+    // in it — a duplicate row a click away. Unknown stays unknown: the page says the register could not
+    // be read, and offers nothing to add.
+    unregistered: !registerError && entry === null,
   };
 }
 
@@ -167,7 +172,7 @@ export async function getHeadwindFleet(
     }
   }
 
-  const rows = devices.map((device) => toRow(device, register.devices, reservations));
+  const rows = devices.map((device) => toRow(device, register.devices, reservations, registerError));
   rows.sort((left, right) => {
     if (left.unregistered !== right.unregistered) return left.unregistered ? -1 : 1;
     return (left.assetTag ?? left.name).localeCompare(right.assetTag ?? right.name);

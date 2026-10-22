@@ -26,6 +26,7 @@
  * NOTHING HERE WRITES.
  */
 
+import { deviceActorNames } from "@/lib/devices/actor-names";
 import { listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -184,13 +185,25 @@ export async function getHeadwindDeviceDetail(
   return { deviceNumber, headline, sections };
 }
 
+/** How many of Phoenix's own actions on one tablet the panel lists, newest first. */
+export const HEADWIND_HISTORY_LIMIT = 50;
+
+export type HeadwindCommandHistory = {
+  commands: HeadwindCommandRecord[];
+  /** More actions exist than are listed — the panel says so rather than letting 50 read as "all". */
+  more: boolean;
+};
+
 /**
  * What Phoenix has done to this tablet — read from Phoenix's own required audit rows.
  *
  * See the header: this is deliberately NOT a claim about everything that has ever happened to the
  * tablet, only about what was done from here. The panel labels it that way.
+ *
+ * One row past the limit is read so the panel can say there are older actions, and the actor column —
+ * an HR id — is turned into a name through `deviceActorNames`, never printed as the code.
  */
-export async function getHeadwindCommandHistory(deviceNumber: string): Promise<HeadwindCommandRecord[]> {
+export async function getHeadwindCommandHistory(deviceNumber: string): Promise<HeadwindCommandHistory> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("audit_logs")
@@ -198,12 +211,17 @@ export async function getHeadwindCommandHistory(deviceNumber: string): Promise<H
     .eq("entity_type", "headwind_device_command")
     .eq("entity_id", deviceNumber)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(HEADWIND_HISTORY_LIMIT + 1);
   if (error) throw new Error(`Could not read what has been done to this tablet: ${error.message}`);
 
-  return (data ?? []).map((row) => ({
-    actor: typeof row.actor_login_id === "string" && row.actor_login_id.trim() ? row.actor_login_id.trim() : null,
-    issuedAt: String(row.created_at),
-    summary: String(row.summary ?? ""),
-  }));
+  const rows = (data ?? []).slice(0, HEADWIND_HISTORY_LIMIT);
+  const nameOf = await deviceActorNames(rows.map((row) => (typeof row.actor_login_id === "string" ? row.actor_login_id : null)));
+  return {
+    commands: rows.map((row) => ({
+      actor: nameOf(typeof row.actor_login_id === "string" ? row.actor_login_id : null),
+      issuedAt: String(row.created_at),
+      summary: String(row.summary ?? ""),
+    })),
+    more: (data ?? []).length > HEADWIND_HISTORY_LIMIT,
+  };
 }

@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       case "apps":
         return NextResponse.json(await getHeadwindDeviceApps(deviceNumber, rustDeskPackageName()));
       case "history":
-        return NextResponse.json({ commands: await getHeadwindCommandHistory(deviceNumber) });
+        return NextResponse.json(await getHeadwindCommandHistory(deviceNumber));
       // 🔴 WHERE THE TABLET HAS BEEN, EVERY ROW SAYING WHICH SOURCE IT CAME FROM. The two are never
       // blended: one is the position that rides on each check-in, the other the movement plugin's own
       // record. Blending them draws a confident line through places a tablet never went.
