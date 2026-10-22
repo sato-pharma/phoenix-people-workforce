@@ -144,13 +144,21 @@ export function runOutstationTripWorkloadPharmaciesTests() {
 
   // 5. THE CAPTURE PATH writes the third figure and stamps its verdict from all three.
   const service = source("../src/lib/outstation/service.ts");
+  // Since 2026-10-22 the capture writes ONE shared stamp shape (workload-stamp.ts), the same one the
+  // next-morning refresh writes, so the two pins below read that shape and the capture must use it.
+  const stamp = source("../src/lib/outstation/workload-stamp.ts");
   assert.match(
     service,
+    /\.\.\.capturedWorkloadColumns\(capture, now\)/,
+    "the workload capture must write the shared stamp shape",
+  );
+  assert.match(
+    stamp,
     /pharmacy_workload: capture\.pharmacyWorkload/,
     "the workload capture must write the pharmacy figure it measured",
   );
   assert.match(
-    service,
+    stamp,
     /workload_match_status: capturedWorkloadMatchStatus\(capture\)/,
     "the capture verdict must come from AM + PM + Pharmacies, or a pharmacy-only trip reads 'no activity'",
   );

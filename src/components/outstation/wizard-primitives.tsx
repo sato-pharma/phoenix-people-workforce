@@ -10,6 +10,8 @@
 
 import type { ReactNode } from "react";
 
+import { phxLabelClassName } from "@/components/ui/form-tokens";
+
 /* ------------------------------------------------------------------ */
 /*  Step indicator                                                    */
 /* ------------------------------------------------------------------ */
@@ -31,7 +33,7 @@ export function WizardStep({
       }`}
     >
       <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-phx-xs font-bold ${
+        className={`flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-bold ${
           active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500"
         }`}
       >
@@ -52,18 +54,34 @@ export function WizardStep({
 /*  Field label wrapper                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A labelled control in the one form design (form-tokens.ts): the label wears `phxLabelClassName`,
+ * like every field on Report It and Log a visit.
+ *
+ * `as="div"` for a GROUP of buttons (a row of choice tiles): a <label> activates its first labelable
+ * descendant when its text is tapped, so a label around three choice buttons would silently pick
+ * the first one whenever the employee touched the word above them.
+ */
 export function Field({
+  as = "label",
   children,
   label,
 }: {
+  as?: "div" | "label";
   children: ReactNode;
   label: string;
 }) {
+  if (as === "div") {
+    return (
+      <div className="block min-w-0" role="group" aria-label={label}>
+        <span className={phxLabelClassName}>{label}</span>
+        {children}
+      </div>
+    );
+  }
   return (
-    <label className="block">
-      <span className="mb-1 block text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </span>
+    <label className="block min-w-0">
+      <span className={phxLabelClassName}>{label}</span>
       {children}
     </label>
   );

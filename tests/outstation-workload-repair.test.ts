@@ -117,17 +117,32 @@ export function runOutstationWorkloadRepairTests() {
   // 2026-08-19. It gates nothing, which is precisely why it went unnoticed: it is the field a
   // human reads to decide whether the number in front of them means anything.
   const captureWorkloadSlice = functionSlice(service, "async function captureWorkloadAndReleaseIfReady");
+  // Since 2026-10-22 the columns a capture writes are ONE shape, capturedWorkloadColumns in
+  // workload-stamp.ts, shared with the next-morning refresh — so the re-grab must write through it,
+  // and that shape must restate the verdict from the numbers it writes.
+  assert.ok(
+    captureWorkloadSlice.includes("...capturedWorkloadColumns(capture, now),"),
+    "a successful re-grab must write the one shared stamp shape, numbers and verdict together",
+  );
+  const stampColumns = functionSlice(
+    source("src/lib/outstation/workload-stamp.ts"),
+    "export function capturedWorkloadColumns(",
+  );
   assert.match(
-    captureWorkloadSlice,
+    stampColumns,
     // Since 2026-09-21 the numbers are AM · PM · Pharmacies, so the verdict comes from all three
     // (a pharmacy-only trip is worked) — tests/outstation-trip-workload-pharmacies.test.ts pins why.
     /workload_match_status:\s*\n?\s*capturedWorkloadMatchStatus\(capture\)/,
     "a successful re-grab must restate the match status from the numbers it just wrote, or the row contradicts itself",
   );
   // Both branches, so the pair can never drift into "matched" on a genuine zero.
+  const matchStatusFn = functionSlice(
+    source("src/lib/outstation/workload-rollup.ts"),
+    "export function capturedWorkloadMatchStatus(",
+  );
   for (const value of ['"matched"', '"no_activity"']) {
     assert.ok(
-      captureWorkloadSlice.includes(value),
+      matchStatusFn.includes(value),
       `the re-grab must still be able to record ${value} — collapsing to one of the two makes the column decorative`,
     );
   }

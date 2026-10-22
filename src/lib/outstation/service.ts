@@ -89,6 +89,17 @@ import {
 } from "@/lib/outstation/decision";
 import { overnightStayEvidenceHoldReason } from "@/lib/outstation/overnight-evidence";
 import {
+  approvalReasonAfterMissingTicketAttached,
+  canAttachMissingOutstationTicket,
+  eligibilityAfterMissingTicketAttached,
+  MISSING_TICKET_ALREADY_ATTACHED_MESSAGE,
+  MISSING_TICKET_WRONG_TRANSPORT_MESSAGE,
+  missingTicketAttachedSentence,
+  OUTSTATION_ELIGIBLE_LOCATION_REASON,
+  OUTSTATION_OFFLINE_TICKET_HOLD_REASON,
+  OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
+} from "@/lib/outstation/missing-ticket";
+import {
   isNonTravelExpenseType,
   NON_TRAVEL_APPROVAL_REASON,
   NON_TRAVEL_ELIGIBILITY_REASON,
@@ -109,7 +120,13 @@ import {
 } from "@/lib/outstation/captured-location";
 import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
 import { storedWorkloadMatchStatus } from "@/lib/outstation/workload-evidence";
-import { capturedWorkloadMatchStatus } from "@/lib/outstation/workload-rollup";
+import {
+  capturedWorkloadColumns,
+  isWorkloadRestampCandidate,
+  restampWindowStart,
+  shouldRestampWorkload,
+  WORKLOAD_RESTAMP_MAX_ROWS,
+} from "@/lib/outstation/workload-stamp";
 import {
   allowanceRowDates,
   deriveClaimedAllowanceDays,
@@ -1201,7 +1218,7 @@ async function validateCapturedLocation(
   }
 
   let eligibilityStatus: OutstationEligibilityStatus = "eligible";
-  let eligibilityReason = "Captured location is eligible for outstation calculation.";
+  let eligibilityReason = OUTSTATION_ELIGIBLE_LOCATION_REASON;
   const capturedAt = isoString(params.capturedAt) || submittedAt;
 
   let polyline: string | null = null;
@@ -1554,8 +1571,8 @@ export async function calculateOutstationExpense(
     ) {
       if (result.eligibilityStatus === "eligible") {
         result.eligibilityStatus = "needs_review";
-        result.eligibilityReason =
-          "Ticket-based trips require attachment evidence before the request can move forward.";
+        // The exact sentence missing-ticket.ts undoes once the employee attaches the ticket.
+        result.eligibilityReason = OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON;
       }
     }
   }
@@ -2192,8 +2209,9 @@ export async function submitOutstationRequest(
     calculation.eligibilityStatus === "not_eligible" ? calculation.eligibilityReason : null;
   const governorateReviewReason =
     "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
-  const offlineTicketHoldReason =
-    "This train or bus claim was captured offline and could not carry its ticket attachment, so it is held for Super Admin review before it moves to payroll.";
+  // The hold the employee clears himself by attaching the ticket from Expense Submissions
+  // (missing-ticket.ts), which replaces this sentence on the claim.
+  const offlineTicketHoldReason = OUTSTATION_OFFLINE_TICKET_HOLD_REASON;
   // Ordered worst-first: the flag most likely to decide the outcome is the one the approver
   // should read first, and this list is joined into the reason the queue renders.
   const detectedHoldReasons = [
@@ -2487,14 +2505,27 @@ export async function submitOutstationRequest(
   return submitted;
 }
 
+/**
+ * The offline route. The ticket files are passed through when the phone sent them (owner,
+ * 2026-10-22 — "the offline ticket gap"): a phone that REPORTS no signal while its request still
+ * reaches the server used to have the ticket stripped on the way, so a train claim with its ticket
+ * in hand landed held as "could not carry its ticket". A replay from the phone's own storage still
+ * carries none — files are not kept there — and the employee then attaches it from Expense
+ * Submissions (attachMissingTicketsToOwnOutstationRequest).
+ */
 export async function syncOfflineOutstationRequest(
   access: AccessContext,
   input: OutstationCalculationInput,
+  options: { ticketAttachments?: OutstationTicketAttachmentUploadInput[] } = {},
 ) {
-  return submitOutstationRequest(access, {
-    ...input,
-    offlineCaptured: true,
-  });
+  return submitOutstationRequest(
+    access,
+    {
+      ...input,
+      offlineCaptured: true,
+    },
+    options,
+  );
 }
 
 export async function updateOutstationPolicies(
@@ -2932,6 +2963,126 @@ export async function addExtraTicketsToOwnOutstationRequest(
     return updated;
   } catch (error) {
     await deleteOutstationTicketAttachments(uploaded.map((a) => a.path));
+    throw error;
+  }
+}
+
+/**
+ * Employee self-service: attach the ticket a train or bus claim ARRIVED WITHOUT (owner,
+ * 2026-10-22 — "fix the offline ticket gap"). A claim saved with no signal is replayed later from
+ * the phone's own storage, which cannot carry files, so it lands with no ticket and is held. Until
+ * now he had no way to supply it: "Add tickets" adds MONEY (a new leg at a new cost), never proof
+ * for the ticket he already claimed.
+ *
+ * EVIDENCE ONLY (missing-ticket.ts): no amount moves, so neither `updated_at` (the approval
+ * revision, claim-revision.ts) nor any figure is touched. Only the ticket gap is closed: the
+ * calculation's ticket downgrade is undone, the offline hold sentence is replaced by one saying he
+ * attached it — and nothing else the claim was held for is cleared.
+ *
+ * His own, undecided train or bus claim with no ticket yet; the write is pinned to both, so HR
+ * deciding it, or a second tap racing this one, leaves no row to change.
+ */
+export async function attachMissingTicketsToOwnOutstationRequest(
+  requestId: number,
+  access: AccessContext,
+  input: { tickets: OutstationTicketAttachmentUploadInput[] },
+): Promise<OutstationExpenseRequest> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) {
+    throw new Error("Your session is not linked to an employee. Please sign in again.");
+  }
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+  if (normalizeHrIdForAccess(existing.employeeHrId) !== callerHrId) {
+    throw new Error("Forbidden: you can only attach a ticket to your own expense request.");
+  }
+  if (existing.transportationType !== "train" && existing.transportationType !== "bus") {
+    throw new Error(MISSING_TICKET_WRONG_TRANSPORT_MESSAGE);
+  }
+  if (!isOutstationClaimUndecided(existing.status)) {
+    throw new Error(OUTSTATION_CLAIM_DECIDED_MESSAGE);
+  }
+  const existingCount = existing.ticketAttachmentPaths.length;
+  if (
+    !canAttachMissingOutstationTicket({
+      status: existing.status,
+      ticketAttachmentCount: existingCount,
+      transportationType: existing.transportationType,
+    })
+  ) {
+    throw new Error(MISSING_TICKET_ALREADY_ATTACHED_MESSAGE);
+  }
+
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+
+  const tickets = input.tickets ?? [];
+  if (tickets.length === 0) throw new Error("Upload the ticket to attach.");
+
+  const uploaded = await uploadOutstationTicketAttachments(
+    tickets.map((ticket) => ({
+      ...ticket,
+      employeeHrId: existing.employeeHrId,
+      requestDraftId: `outstation-missing-ticket-${randomUUID()}`,
+    })),
+  );
+
+  try {
+    const now = new Date().toISOString();
+    const eligibility = eligibilityAfterMissingTicketAttached({
+      eligibilityReason: existing.eligibilityReason,
+      eligibilityStatus: existing.eligibilityStatus,
+    });
+    const approvalReason = approvalReasonAfterMissingTicketAttached(
+      existing.approvalReason,
+      missingTicketAttachedSentence(formatPhoenixDateTime(now), uploaded.length),
+    );
+
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .update({
+        approval_reason: approvalReason,
+        attachment_count: uploaded.length,
+        eligibility_reason: eligibility.eligibilityReason,
+        eligibility_status: eligibility.eligibilityStatus,
+        ticket_attachment_metadata: uploaded,
+        ticket_attachment_paths: uploaded.map((attachment) => attachment.path),
+      })
+      .eq("id", requestId)
+      .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
+      // Still no ticket: a second tap, or another tab, that already attached one leaves no row.
+      .eq("attachment_count", existing.attachmentCount)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("This request just changed. Refresh and try again.");
+
+    const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+      entityId: String(updated.id),
+      entityType: "outstation_request",
+      newValues: {
+        attachmentCount: uploaded.length,
+        eligibilityStatus: updated.eligibilityStatus,
+        source: "employee_missing_ticket",
+        status: updated.status,
+      },
+      oldValues: {
+        attachmentCount: existing.attachmentCount,
+        eligibilityStatus: existing.eligibilityStatus,
+      },
+      summary: `Employee attached the missing ticket (${uploaded.length} file(s)) to outstation request ${updated.id}.`,
+    });
+
+    return updated;
+  } catch (error) {
+    await deleteOutstationTicketAttachments(uploaded.map((attachment) => attachment.path));
     throw error;
   }
 }
@@ -5758,31 +5909,14 @@ async function captureWorkloadAndReleaseIfReady(
     await getSupabaseAdmin()
       .from("outstation_expense_requests")
       .update({
-        am_workload: capture.amWorkload,
-        // AM · PM · Pharmacies: pharmacy visits are the third figure, never inside AM or PM.
-        pharmacy_workload: capture.pharmacyWorkload,
-        pm_workload: capture.pmWorkload,
+        // AM · PM · Pharmacies, the match verdict kept in step with them (a re-grabbed row once read
+        // "no_activity" beside a real AM 2 / PM 7), and the per-day breakdown an approver reads —
+        // one shape, shared with the morning refresh (workload-stamp.ts).
+        ...capturedWorkloadColumns(capture, now),
         workload_capture_attempts: (request.workloadCaptureAttempts ?? 0) + 1,
         workload_gate_status: "complete",
         workload_last_attempt_at: now,
         workload_last_attempt_error: null,
-        workload_matched_at: now,
-        // Kept in step with the numbers being written. Leaving the previous value in place made
-        // a repaired row contradict itself: three requests re-grabbed on 2026-08-19 stored a
-        // real AM 2 / PM 7 from the CRM while the column beside it still read "no_activity",
-        // because the submit-time grab had run before that day's visits had synced. It gates
-        // nothing, which is exactly why nobody noticed — it is what a person reads. Pharmacy
-        // visits count as work here (owner, 2026-09-21), so a pharmacy-only trip is "matched".
-        workload_match_status: capturedWorkloadMatchStatus(capture),
-        workload_source: "ireports360",
-        // The per-day breakdown and who was counted, so an approver can see WHY the number is
-        // what it is — a rolled-up manager figure is otherwise unexplainable.
-        workload_evidence_snapshot: {
-          contributingHrIds: capture.contributingHrIds,
-          days: capture.days,
-          hops: capture.hops,
-          sourceLabel: capture.sourceLabel,
-        },
       })
       .eq("id", request.id);
 
@@ -5794,6 +5928,106 @@ async function captureWorkloadAndReleaseIfReady(
     });
     return null;
   }
+}
+
+/**
+ * The morning refresh of a workload stamped too early (owner, 2026-10-22 — workload-stamp.ts).
+ *
+ * The first stamp is read the moment the departure photo lands, which is usually before the
+ * manager has typed the day's visits; nothing re-read it afterwards, so a worked day stayed "no
+ * activity" in front of the approver. Each morning this re-reads the CRM for every undecided,
+ * system-stamped claim whose trip ended in the last 45 days, and rewrites the stamp only when the
+ * CRM now holds MORE work. Evidence only: no amount, no gate status, no `updated_at` (the approval
+ * revision belongs to money) and no approval reason is touched, and the write is pinned to the
+ * claim still being undecided and still carrying the figures that were read.
+ */
+export async function runOutstationWorkloadRestamp(): Promise<{
+  checked: number;
+  errors: number;
+  restamped: number;
+}> {
+  const today = cairoTodayIso();
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("*")
+    .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
+    .eq("workload_gate_status", "complete")
+    .gte("trip_end_date", restampWindowStart(today))
+    .order("trip_end_date", { ascending: false })
+    .limit(WORKLOAD_RESTAMP_MAX_ROWS);
+  if (error) throw new Error(error.message);
+
+  const candidates = ((data ?? []) as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((row) => isWorkloadRestampCandidate(row, today));
+
+  let restamped = 0;
+  let errors = 0;
+  for (const request of candidates) {
+    try {
+      const capture = await captureOutstationTripWorkload({
+        employeeHrId: request.employeeHrId,
+        employeeRole: request.employeeRole,
+        tripEndDate: request.tripEndDate,
+        tripStartDate: request.tripStartDate,
+      });
+      if (!capture.captured || !shouldRestampWorkload(request, capture)) continue;
+
+      const now = new Date().toISOString();
+      let write = getSupabaseAdmin()
+        .from("outstation_expense_requests")
+        .update(
+          capturedWorkloadColumns(capture, now, {
+            amWorkload: request.amWorkload,
+            matchedAt: request.workloadMatchedAt,
+            pharmacyWorkload: request.pharmacyWorkload,
+            pmWorkload: request.pmWorkload,
+          }),
+        )
+        .eq("id", request.id)
+        .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
+        .eq("workload_gate_status", "complete")
+        .eq("workload_source", "ireports360")
+        .eq("am_workload", request.amWorkload)
+        .eq("pm_workload", request.pmWorkload);
+      write =
+        request.pharmacyWorkload === null || request.pharmacyWorkload === undefined
+          ? write.is("pharmacy_workload", null)
+          : write.eq("pharmacy_workload", request.pharmacyWorkload);
+      const { data: written, error: writeError } = await write.select("id").maybeSingle();
+      if (writeError) throw new Error(writeError.message);
+      // Decided, re-typed or re-stamped between the read and this write: the row is not ours to change.
+      if (!written) continue;
+
+      restamped += 1;
+      await writeRequiredAuditLog({
+        actorLoginId: "system",
+        entityId: String(request.id),
+        entityType: "outstation_request",
+        newValues: {
+          amWorkload: capture.amWorkload,
+          pharmacyWorkload: capture.pharmacyWorkload,
+          pmWorkload: capture.pmWorkload,
+          source: "workload_restamp",
+        },
+        oldValues: {
+          amWorkload: request.amWorkload,
+          pharmacyWorkload: request.pharmacyWorkload,
+          pmWorkload: request.pmWorkload,
+          workloadMatchedAt: request.workloadMatchedAt,
+        },
+        summary: `Outstation request ${request.id} workload refreshed from the CRM after more visits were saved: AM ${request.amWorkload ?? 0} · PM ${request.pmWorkload ?? 0} → AM ${capture.amWorkload} · PM ${capture.pmWorkload} · Pharmacies ${capture.pharmacyWorkload}.`,
+      });
+    } catch (restampError) {
+      errors += 1;
+      logError("Outstation workload refresh failed for one request", {
+        error: restampError,
+        labels: { event: "outstation_workload_restamp_failed", requestId: String(request.id) },
+      });
+    }
+  }
+
+  return { checked: candidates.length, errors, restamped };
 }
 
 /** One of the caller's own requests still owing its departure photo. */
@@ -5856,6 +6090,74 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
       tripEndDate: row.tripEndDate,
       tripStartDate: row.tripStartDate,
     }));
+}
+
+/** One of the caller's undecided train or bus claims that arrived with no ticket (missing-ticket.ts). */
+export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
+  transportationType: string;
+};
+
+/** Everything the caller himself must still do on his own claims — what Submit Expense opens with. */
+export type OwnOutstationPendingActions = {
+  departurePhotoDue: OutstationDeparturePhotoDue[];
+  missingTicket: OutstationMissingTicketDue[];
+};
+
+/**
+ * The caller's own undecided train or bus claims that arrived with NO ticket — what the missing-ticket
+ * card offers to fix (owner, 2026-10-22: "fix the offline ticket gap in outstation"). Decided by
+ * canAttachMissingOutstationTicket, the same rule the attach route enforces, so the card is offered
+ * exactly where the write would be accepted. Read narrow with hrIdLookupKeys and filtered by the
+ * comparison key, like listOwnOutstationSubmissions. Best effort: the page renders without it.
+ */
+export async function getOwnOutstationRequestsMissingTicket(
+  access: AccessContext,
+): Promise<OutstationMissingTicketDue[]> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) return [];
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("*")
+    .in("employee_hr_id", hrIdLookupKeys(access.hrId))
+    .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
+    .in("transportation_type", ["train", "bus"])
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+
+  return (data as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
+    .filter((row) =>
+      canAttachMissingOutstationTicket({
+        status: row.status,
+        ticketAttachmentCount: row.ticketAttachmentPaths.length,
+        transportationType: row.transportationType,
+      }),
+    )
+    .map((row) => ({
+      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+      id: row.id,
+      transportationType: row.transportationType,
+      tripEndDate: row.tripEndDate,
+      tripStartDate: row.tripStartDate,
+    }));
+}
+
+/**
+ * Everything the caller must still do on his own claims, for the top of Submit Expense and the
+ * Expense Dashboard (owner, 2026-10-22: Osama took his arrival photo on Submit Expense and never
+ * learned a departure photo was owed — its card lived only on the dashboard and inside a collapsed
+ * row of Expense Submissions). Two readers, each the module's own rule; neither failing hides the other.
+ */
+export async function getOwnOutstationPendingActions(
+  access: AccessContext,
+): Promise<OwnOutstationPendingActions> {
+  const [departurePhotoDue, missingTicket] = await Promise.all([
+    getOwnOutstationRequestsAwaitingDeparturePhoto(access).catch(() => []),
+    getOwnOutstationRequestsMissingTicket(access).catch(() => []),
+  ]);
+  return { departurePhotoDue, missingTicket };
 }
 
 // ── The submitter's own view of his submissions ───────────────────────────────
@@ -5921,6 +6223,12 @@ export type MyOutstationSubmission = {
    * server re-checks every one of these and payroll as well; this only decides whether to offer it.
    */
   canAddJourneyStop: boolean;
+  /**
+   * True while he may attach the ticket this train or bus claim arrived WITHOUT (owner,
+   * 2026-10-22 — missing-ticket.ts): undecided, and no ticket on it at all. Evidence only; the
+   * server re-checks every condition.
+   */
+  canAttachMissingTicket: boolean;
   /** How the journey is priced once it has a stop; null for a trip with no stop. */
   journey: {
     /** True when the approver has something to look at — the WORDING is the approver's only. */
@@ -6020,6 +6328,11 @@ function buildMyOutstationSubmission(
       Boolean(request.carEvidenceImagePath) &&
       journeyStops.length < MAX_JOURNEY_STOPS &&
       isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: request.tripEndDate }),
+    canAttachMissingTicket: canAttachMissingOutstationTicket({
+      status: request.status,
+      ticketAttachmentCount: request.ticketAttachmentPaths.length,
+      transportationType: request.transportationType,
+    }),
     canCaptureDeparturePhoto: gate.blocker === "departure_photo",
     canRetakeDeparturePhoto:
       Boolean(request.departureEvidenceImagePath) &&

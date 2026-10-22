@@ -5,9 +5,10 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { MyExpenseSubmissions } from "@/components/outstation/my-expense-submissions";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listOwnOutstationSubmissions } from "@/lib/outstation/service";
+import { MY_CLAIMS_ANCHOR } from "@/lib/outstation/submit-expense-steps";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,15 @@ export default async function EmployeePortalExpenseSubmissionsPage() {
   }
 
   await assertPermission(access, "expenses", "read");
+
+  // Submit Expense and Expense Submissions are ONE page for anyone who can submit a claim (owner,
+  // 2026-10-22: "I want the submit expense and the expense submissions to be in one page … in the
+  // same form"): the form, and My claims under it. This route stays for links, notifications and
+  // the viewers who can read claims but not submit one (Training Manager, Manager), who still get
+  // the list here. Submit Expense never sends anyone back to this page, so there is no loop.
+  if (access.role !== "Medical Rep" && (await canAccess(access, "outstation", "create"))) {
+    redirect(`/employee-portals/submit-expense#${MY_CLAIMS_ANCHOR}`);
+  }
 
   let submissions: Awaited<ReturnType<typeof listOwnOutstationSubmissions>> = [];
   let loadError: string | null = null;
