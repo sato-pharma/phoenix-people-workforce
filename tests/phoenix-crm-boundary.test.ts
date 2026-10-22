@@ -266,6 +266,12 @@ const ROUTE_GATES: RouteGate[] = [
   get("visit-detail", "read"),
   post("visit-detail", "create"),
   get("team"),
+  // The Super Admin's own "Test accounts" tab (owner, 2026-10-22): every test entry waiting, and his
+  // decision on one. `read` and `approve` — the gates of the real screens these decisions come from —
+  // narrowed in the service to the Super Admin signed in as himself with a deciding grant
+  // (`assertTestWorldDecider`), and the decision to a row whose own `is_test` is true.
+  get("test-approvals"),
+  post("test-approvals/decide", "approve"),
   // The district manager's double-visit plan (owner, 2026-10-02): which of his reps he joins on which
   // day, AM or PM. The rep never sees it. `read`, narrowed in the service to that district manager, the
   // SFE Manager and the Super Admin; `create` for a half-day, narrowed to the district manager's OWN plan

@@ -50,8 +50,9 @@ export type PhoenixCrmDecisionSeats = {
 export function phoenixCrmDecisionSeats(viewer: PhoenixCrmViewer): PhoenixCrmDecisionSeats {
   const scope = viewer.scopeTerritories;
   return {
-    // Real decisions are the reviewer's; the Super Admin decides test entries only, and so does a
-    // test account — on the territories the person it mirrors reviews.
+    // Real decisions are the reviewer's; the Super Admin decides test entries only, from his "Test
+    // accounts" tab (owner, 2026-10-22). A test account decides none any more, so `canReviewTerritory`
+    // answers false on every seat for it and its counts are a true zero.
     isTest: viewer.isSuperAdmin || viewer.isTestPersona,
     reviewSeatIds: viewer.isSuperAdmin
       ? null

@@ -30,7 +30,7 @@ import {
   type SingleVisitDayAskStatus,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { assertManagerPlanWriter, managerAskDeciderRole, managerPlanWriter, managerPlanWriterFor } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerApproversFor } from "@/lib/phoenix-crm/server/manager-plan-writers";
@@ -234,13 +234,17 @@ export async function askSingleVisitDay(viewer: PhoenixCrmViewer, raw: unknown):
  * the ask — or the Administrator in place of either, approves the day (or passes it on) or refuses it. The
  * page names the step and the version it showed, so a step already decided is never decided again unread.
  */
-export async function decideSingleVisitDay(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; status: SingleVisitDayAskStatus }> {
+export async function decideSingleVisitDay(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+  read?: TestWorldRead,
+): Promise<{ requestId: string; status: SingleVisitDayAskStatus }> {
   const body = record(raw);
   const decision = body.decision;
   if (decision !== "approve" && decision !== "refuse") throw validationError("Choose Approve or Refuse.");
   const requestId = textOrNull(body.requestId);
   if (!requestId) throw validationError("This ask could not be read. Reload the page.");
-  const isTest = testModeFor(viewer, body.test);
+  const isTest = worldFor(viewer, body.test, read);
   const ask = await loadSingleVisitDayAskRow(requestId);
   if (!ask || ask.isTest !== isTest) throw notFoundError("This ask for a day of single visits is no longer there. Reload the page.");
   if (!isSingleVisitDayAskLive(ask.status, ask.visitDate, viewer.cairoToday)) {

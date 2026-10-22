@@ -20,6 +20,7 @@ import { PLAN_EDIT_WAITING_STATUSES, type PlanEditStatus } from "@/lib/phoenix-c
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { telegramCardOffered } from "@/lib/phoenix-crm/telegram-card";
 import {
+  decidesTestWorld,
   lineOpeningText,
   readsCalendar,
   readsFieldHeardByProduct,
@@ -60,6 +61,8 @@ export type PhoenixCrmTabs = {
   doctors: boolean;
   reports: boolean;
   settings: boolean;
+  /** The Super Admin's own tab for the test personas' approvals (owner, 2026-10-22). */
+  testAccounts: boolean;
 };
 
 export type PhoenixCrmOverview = {
@@ -328,6 +331,10 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     // products, company-wide (owner, 2026-10-02) — and the tab is that section's door.
     reports: hasScope || readsFieldHeardByProduct(viewer),
     settings: viewer.isSuperAdmin && viewer.canUpdate,
+    // The Super Admin, signed in as himself, decides every test persona's approval here (owner,
+    // 2026-10-22) — the same predicate the tab's two routes answer to, so a tab is never offered that
+    // its page would refuse.
+    testAccounts: decidesTestWorld(viewer),
   };
 
   return {

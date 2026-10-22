@@ -31,7 +31,25 @@ export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
  * build. `server/page.ts` carries a compile-time check that this union and `keyof PhoenixCrmTabs`
  * still agree, so adding a tab without giving it a card cannot compile.
  */
-export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "forecast" | "team" | "calendar" | "doctors" | "reports" | "settings";
+export type PhoenixCrmModuleKey =
+  | "visits"
+  | "list"
+  | "plan"
+  | "forecast"
+  | "team"
+  | "calendar"
+  | "doctors"
+  | "reports"
+  | "settings"
+  | "testAccounts";
+
+/**
+ * The Super Admin's own tab for the test personas' approvals (owner, 2026-10-22: *"add a new tab called
+ * Test accounts"*). His own name for it, so it is the one screen string in the module allowed to say the
+ * word — `tests/phoenix-crm-am-pm-words.test.ts` lets this constant through and nothing else. Every
+ * other string that names the tab reads this constant.
+ */
+export const PHOENIX_CRM_TEST_TAB_LABEL = "Test accounts";
 
 export type PhoenixCrmModule = {
   key: PhoenixCrmModuleKey;
@@ -80,6 +98,14 @@ export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "doctors", slug: "directory", label: "Directory", blurb: "Search every customer you are allowed to see." },
   { key: "reports", slug: "reports", label: "Reports", blurb: "Coverage, frequency and the call rate, AM and PM apart." },
   { key: "settings", slug: "settings", label: "Settings", blurb: "The module's own settings." },
+  // 🔴 THE SUPER ADMIN'S, AND LAST (owner, 2026-10-22). Everything the test personas send for approval
+  // waits here, and he takes each step from this tab. The slug avoids the word the AM/PM sweep bans.
+  {
+    key: "testAccounts",
+    slug: "test-approvals",
+    label: PHOENIX_CRM_TEST_TAB_LABEL,
+    blurb: "What the test logins sent for approval: take each step yourself, as the manager, SFE or HR would.",
+  },
 ];
 
 export const PHOENIX_CRM_MODULE_KEYS: readonly PhoenixCrmModuleKey[] = PHOENIX_CRM_MODULES.map((entry) => entry.key);

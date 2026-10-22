@@ -914,7 +914,10 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     assert.doesNotMatch(screen, /integrity|suspicious|flagged|distance/i, "nothing on them judges the rep");
     // The waiting count: Team for a manager, Reports for a product manager, who has no Team tab.
     const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
-    assert.match(app, /const count = key === "team" \? waitingCount : key === "reports" && !overview\.tabs\.team \? visitAskCount : 0;/);
+    assert.match(
+      app,
+      /const count =\s*key === "team"\s*\?\s*waitingCount\s*:\s*key === "reports" && !overview\.tabs\.team\s*\?\s*visitAskCount\s*:\s*key === "testAccounts"\s*\?\s*testWaitingCount\s*:\s*0;/,
+    );
     const chooser = source("src/components/phoenix-crm/module-chooser.tsx");
     assert.match(chooser, /const reportsWaiting = overview\.tabs\.team \? 0 : overview\.waitingForYou\.visitAsks;/);
   }

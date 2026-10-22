@@ -109,12 +109,13 @@ export function runPhoenixCrmApprovalNoticeTests() {
     const chooser = source("src/components/phoenix-crm/module-chooser.tsx");
     assert.match(chooser, /overview\.waitingForYou\.offPlanVisits \+/, "the module chooser's Team card counts it");
     const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
-    // Two sums, and they are different questions: `decisions` picks the tab the page OPENS on, and
-    // `waitingCount` is the number on the Team tab. Both left it out.
+    // Three sums, and they are different questions: `decisions` picks the tab the page OPENS on,
+    // `waitingCount` is the number on the Team tab, and `testWaitingCount` the number on the Super
+    // Admin's own Test accounts tab (owner, 2026-10-22). The first two once left it out.
     assert.equal(
       (app.match(/waitingForYou\.offPlanVisits/g) ?? []).length,
-      2,
-      "both the opening-tab decision and the tab bar's count take it",
+      3,
+      "the opening-tab decision, the Team tab's count and the Test accounts tab's count all take it",
     );
     assert.match(app, /if \(tabs\.team && !viewer\.isRep && decisions > 0\) return "team";/, "the opening tab still reads `decisions`");
     // The one sum that was always right: inside Team, the sentence that names what waits.

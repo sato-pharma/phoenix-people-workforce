@@ -20,9 +20,10 @@
  *     entry was a test entry (owner, 2026-09-16), is history and not guidance;
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
  *     that person's own territories, scope and authority — but every read and every save it makes is in
- *     the test world, always, whatever flag the screen sends. It decides test entries only, as the
- *     person it mirrors would decide real ones, so a test rep and a test manager work a plan through
- *     together without either ever touching a real row.
+ *     the test world, always, whatever flag the screen sends. It never DECIDES an approval: since
+ *     2026-10-22 every step a test entry waits at — the manager's, SFE's, HR's — is the Super Admin's,
+ *     taken step by step from his own "Test accounts" tab (`assertTestWorldDecider`). A test person
+ *     still answers a double-visit request or a visit ask addressed to him.
  */
 
 import { cache } from "react";
@@ -45,6 +46,7 @@ import {
   type ScopeBasis,
 } from "@/lib/phoenix-crm/scope";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
+import { PHOENIX_CRM_TEST_TAB_LABEL } from "@/lib/phoenix-crm/modules";
 import { PRODUCT_MANAGER_PLAN_ROLES } from "@/lib/phoenix-crm/manager-plan-rules";
 import { loadProductManagerRoster, type ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, type PlanEditStage } from "@/lib/phoenix-crm/plan-edit-rules";
@@ -207,6 +209,54 @@ function superAdminDoesNotDecide(): ApiError {
   );
 }
 
+/**
+ * 🔒 THE TEST WORLD IS DECIDED BY THE SUPER ADMIN, FROM HIS OWN "Test accounts" TAB (owner, 2026-10-22:
+ * *"add a new tab called Test accounts … anything that needs approval in Phoenix CRM, I can submit it in
+ * the test account and approve in my own admin account"*). His three picks the same day:
+ *   - STEP BY STEP — he takes the manager's step, then the SFE step, each a decision of its own, so the
+ *     test rep sees every in-between state a real rep would;
+ *   - ONLY HIS TAB — a test district, regional or national manager login no longer decides a test
+ *     entry's manager step; a double-visit request and a visit ask stay answerable by the test person
+ *     they are addressed to;
+ *   - REAL ROWS UNCHANGED — `superAdminDoesNotDecide` still refuses every real decision of his.
+ * This is the gate every decision on a test row answers to.
+ */
+export function assertTestWorldDecider(viewer: PhoenixCrmViewer): void {
+  if (decidesTestWorld(viewer)) return;
+  if (viewer.isTestPersona) {
+    throw forbiddenError(`Test entries are decided by the Super Admin, from the ${PHOENIX_CRM_TEST_TAB_LABEL} tab in Phoenix CRM.`);
+  }
+  throw forbiddenError("Test entries are the Super Admin's.");
+}
+
+/**
+ * The answer twin of {@link assertTestWorldDecider}, and the ONE definition of who decides the test world:
+ * the Super Admin signed in as himself (never a test login), with a deciding grant. Read off the viewer's
+ * own fields, so every gate and the tab's own flag answer the same question the same way.
+ */
+export function decidesTestWorld(viewer: Pick<PhoenixCrmViewer, "isSuperAdmin" | "isTestPersona" | "canApprove" | "canUpdate">): boolean {
+  return viewer.isSuperAdmin && !viewer.isTestPersona && (viewer.canApprove || viewer.canUpdate);
+}
+
+/**
+ * A read or a decision asked FOR the test world by the "Test accounts" tab. Only the Super Admin's tab
+ * passes it; every other screen leaves it out and keeps its own world (`testModeFor`).
+ */
+export type TestWorldRead = { testWorld?: boolean };
+
+/**
+ * The world a cross-territory read or a manager-plan decision runs in. The tab's explicit request for
+ * the test world is honoured only for the test-world decider and refused for anybody else; without it
+ * the answer is `testModeFor`'s, unchanged.
+ */
+export function worldFor(viewer: PhoenixCrmViewer, flag: unknown, read?: TestWorldRead): boolean {
+  if (read?.testWorld === true) {
+    assertTestWorldDecider(viewer);
+    return true;
+  }
+  return testModeFor(viewer, flag);
+}
+
 /** The opening day of a seat's line: "Phoenix CRM opens for Pedia on 19 September 2026." */
 export function lineOpeningText(viewer: PhoenixCrmViewer, seat: Pick<OrgSeat, "lineCode" | "lineName">): string {
   const opensOn = viewer.config.lineRollout.find((entry) => entry.lineCode === seat.lineCode)?.opensOn ?? null;
@@ -330,18 +380,16 @@ export function territoryForVisit(
   throw forbiddenError("Only the territory's rep or one of its managers enters its visits.");
 }
 
-/** Deciding a request or approving a plan: the territory's reviewer; the Super Admin on test entries. */
+/**
+ * Deciding a request or approving a plan: the territory's reviewer on a real entry; on a test entry the
+ * Super Admin, from his "Test accounts" tab (owner, 2026-10-22 — a test manager login no longer does).
+ */
 export function assertReviewer(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): void {
-  if (viewer.isTestPersona) {
-    if (!isTest) throw testAccountRealEntry();
-    if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
-    if (!isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId)) throw forbiddenError("Only the territory's reviewing manager decides this.");
-    return;
-  }
   if (isTest) {
-    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+    assertTestWorldDecider(viewer);
     return;
   }
+  if (viewer.isTestPersona) throw testAccountRealEntry();
   if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (!isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId)) {
@@ -507,8 +555,8 @@ export function territoryForDayWrite(
 
 /** The twin of assertReviewer: the viewer decides this territory's requests and approves its plans. */
 export function canReviewTerritory(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
-  if (viewer.isTestPersona) return isTest && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
-  if (isTest) return viewer.isSuperAdmin;
+  if (isTest) return decidesTestWorld(viewer);
+  if (viewer.isTestPersona) return false;
   return !viewer.isSuperAdmin && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
 }
 
@@ -536,12 +584,10 @@ export function canDecideUnplannedVisit(
   isTest: boolean,
   stage: UnplannedVisitStage,
 ): boolean {
-  // A test account decides the MANAGER step of a test visit as the person it mirrors. The SFE step is
-  // the SFE Manager's, an admin-shell seat no test account can hold — the Super Admin takes it in test mode.
-  if (viewer.isTestPersona) {
-    return isTest && stage !== "sfe" && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
-  }
-  if (isTest) return viewer.isSuperAdmin;
+  // A test visit's every step — the manager's, then SFE's — is the Super Admin's, from his "Test
+  // accounts" tab (owner, 2026-10-22). A test manager login no longer decides one.
+  if (isTest) return decidesTestWorld(viewer);
+  if (viewer.isTestPersona) return false;
   if (viewer.isSuperAdmin || !viewer.canApprove) return false;
   if (stage === "sfe") return viewer.isSfeManager && viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
   return isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
@@ -554,19 +600,11 @@ export function assertUnplannedVisitApprover(
   isTest: boolean,
   stage: UnplannedVisitStage,
 ): void {
-  if (viewer.isTestPersona) {
-    if (!isTest) throw testAccountRealEntry();
-    if (canDecideUnplannedVisit(viewer, seat, isTest, stage)) return;
-    throw forbiddenError(
-      stage === "sfe"
-        ? "This visit is waiting for SFE, and only the SFE Manager decides that step."
-        : "Only the territory's reviewing manager decides this step.",
-    );
-  }
   if (isTest) {
-    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+    assertTestWorldDecider(viewer);
     return;
   }
+  if (viewer.isTestPersona) throw testAccountRealEntry();
   if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (canDecideUnplannedVisit(viewer, seat, isTest, stage)) return;
@@ -609,10 +647,9 @@ export function canOverrideDecision(viewer: PhoenixCrmViewer, isTest: boolean): 
  * `canOverrideDecision`.
  */
 export function canDecidePlanEdit(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, stage: PlanEditStage): boolean {
-  if (viewer.isTestPersona) {
-    return isTest && stage === "manager" && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
-  }
-  if (isTest) return viewer.isSuperAdmin;
+  // A test request's every step is the Super Admin's, from his "Test accounts" tab (owner, 2026-10-22).
+  if (isTest) return decidesTestWorld(viewer);
+  if (viewer.isTestPersona) return false;
   if (viewer.isSuperAdmin || !viewer.canApprove) return false;
   if (stage === "sfe") return viewer.isSfeManager && viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
   return isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
@@ -620,10 +657,13 @@ export function canDecidePlanEdit(viewer: PhoenixCrmViewer, seat: OrgSeat, isTes
 
 /** The assert twin. The stage comes from the row's own status, never from the phone. */
 export function assertPlanEditApprover(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, stage: PlanEditStage): void {
-  if (viewer.isTestPersona && !isTest) throw testAccountRealEntry();
-  if (isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) throw forbiddenError("Test entries are the Super Admin's.");
+  if (isTest) {
+    assertTestWorldDecider(viewer);
+    return;
+  }
+  if (viewer.isTestPersona) throw testAccountRealEntry();
   if (canDecidePlanEdit(viewer, seat, isTest, stage)) return;
-  if (!isTest && viewer.isSuperAdmin) throw superAdminDoesNotDecide();
+  if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   throw forbiddenError(
     stage === "sfe"
       ? "This request is waiting for SFE, and only the SFE Manager decides that step."
@@ -909,6 +949,11 @@ export function assertListRequestApprover(
   isTest: boolean,
   stage: PhoenixCrmRequestStage | null,
 ): void {
+  // A test request's every step is the Super Admin's, from his "Test accounts" tab (owner, 2026-10-22).
+  if (isTest) {
+    assertTestWorldDecider(viewer);
+    return;
+  }
   if (stage === null) {
     // The reviewer's own step, unless the seat above is empty — then SFE's, by the same predicate the
     // reads use, so a screen can never offer a decision this would refuse.
@@ -916,19 +961,7 @@ export function assertListRequestApprover(
     assertReviewer(viewer, seat, isTest);
     return;
   }
-  if (viewer.isTestPersona) {
-    if (!isTest) throw testAccountRealEntry();
-    if (canDecideListRequest(viewer, seat, isTest, stage)) return;
-    throw forbiddenError(
-      stage === "sfe"
-        ? "This request is waiting for SFE, and only the SFE Manager decides that step."
-        : "Only the territory's reviewing manager decides this step.",
-    );
-  }
-  if (isTest) {
-    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
-    return;
-  }
+  if (viewer.isTestPersona) throw testAccountRealEntry();
   if (viewer.isSuperAdmin) throw superAdminDoesNotDecide();
   if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
   if (canDecideListRequest(viewer, seat, isTest, stage)) return;

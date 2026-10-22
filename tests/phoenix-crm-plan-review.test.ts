@@ -440,7 +440,8 @@ export function runPhoenixCrmPlanReviewTests(): void {
     refused(() => assertCanReturnPlan(rep, REP, false), "the rep never returns his own week");
     assert.equal(assertCanReturnPlan(owner, REP, false), "administrator", "the Administrator may return a week with a comment — he is no step");
     assert.equal(assertCanReturnPlan(owner, REP, true), "reviewer", "on a test plan he takes the reviewer's place");
-    assert.equal(assertCanReturnPlan(testDm, REP, true), "reviewer", "a test account returns a test week as the person it mirrors");
+    // Changed 2026-10-22 (owner: "Only my tab"): a test week is returned from the Super Admin's own tab.
+    refused(() => assertCanReturnPlan(testDm, REP, true), "a test account no longer returns a test week");
     refused(() => assertCanReturnPlan(testDm, REP, false), "and never a real one");
 
     // The steps open for exactly who decides: approves, or returns.

@@ -41,7 +41,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { districtManagers } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { managerChain, personKey, territoriesBelow, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canOverrideDecision, superAdminHasNoFieldWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canOverrideDecision, decidesTestWorld, superAdminHasNoFieldWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import type { ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
 
 export const MANAGER_PLAN_NOT_FOR_YOU =
@@ -264,16 +264,21 @@ export type ManagerPlanDeciderRole = "first" | "second" | "administrator";
  * Whether the viewer decides THIS step of a sent week. `stage` is the row's own (its status), never the
  * phone's; the holder is the approver STORED on the row at send — whatever `approve` his role carries
  * elsewhere, since the CEO and the Marketing Manager decide a regional, national or product manager's week
- * "as today". A test account decides as the person it mirrors, in the test world only; the Administrator
- * acts in place of either holder on real data.
+ * "as today". The Administrator acts in place of either holder on real data.
+ *
+ * 🔒 A TEST week's every step is the Super Admin's, from his "Test accounts" tab (owner, 2026-10-22): he
+ * takes the step the row is AT, recorded under that step's own role, so the test manager reads the same
+ * in-between state a real one would. A test account decides none, the approver stored on the row
+ * included.
  */
 export function managerPlanDeciderRole(
   viewer: PhoenixCrmViewer,
   row: { stage: ManagerPlanStage; firstApproverHrId: string | null; secondApproverHrId: string | null; isTest: boolean },
 ): ManagerPlanDeciderRole | null {
-  if (viewer.isTestPersona !== row.isTest) return null;
+  if (row.isTest) return decidesTestWorld(viewer) ? row.stage : null;
+  if (viewer.isTestPersona) return null;
   const holder = row.stage === "first" ? row.firstApproverHrId : row.secondApproverHrId;
-  if (holder && personKey(holder) === viewer.hrId && !(viewer.isSuperAdmin && !viewer.isTestPersona)) return row.stage;
+  if (holder && personKey(holder) === viewer.hrId && !viewer.isSuperAdmin) return row.stage;
   if (canOverrideDecision(viewer, row.isTest)) return "administrator";
   return null;
 }

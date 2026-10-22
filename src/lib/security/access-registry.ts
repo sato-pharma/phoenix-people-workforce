@@ -1027,6 +1027,11 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/monthly-plans/reviews", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/monthly-plans/reviews", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/team", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The Super Admin's "Test accounts" tab (owner, 2026-10-22): every approval the test personas sent, read
+  // (`read`) and decided one step at a time (`approve`). WHO is narrowed in the service to the Super Admin
+  // signed in as himself (`assertTestWorldDecider`), and the decision refuses any real row by name.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/test-approvals", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/test-approvals/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The district manager's double-visit plan (owner, 2026-10-02): which of his reps he joins on which
   // day, AM or PM. The rep never sees it. Read (`read`) by that district manager, the SFE Manager and
   // the Super Admin only — narrowed in the service; written (`create`) by the district manager alone

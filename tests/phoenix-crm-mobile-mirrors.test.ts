@@ -139,7 +139,9 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
   // the two checks under it make a stale entry fail rather than rot.
   // `forecast` joined on 2026-10-01 for the same reason: the owner asked for the CNS daily forecast as
   // its own module, on the web, while the freeze holds.
-  const WEB_ONLY_WHILE_MOBILE_IS_FROZEN = ["calendar", "forecast"];
+  // `testAccounts` joined on 2026-10-22: the Super Admin's own tab for the test personas' approvals, on
+  // the web, while the freeze holds.
+  const WEB_ONLY_WHILE_MOBILE_IS_FROZEN = ["calendar", "forecast", "testAccounts"];
   for (const key of WEB_ONLY_WHILE_MOBILE_IS_FROZEN) {
     assert.ok(webTabs.includes(key), `\`${key}\` is listed as web-only and is not a web tab — retire the entry`);
     assert.ok(!phoneTabs.includes(key), `\`${key}\` reached the phone — take it out of WEB_ONLY_WHILE_MOBILE_IS_FROZEN`);
