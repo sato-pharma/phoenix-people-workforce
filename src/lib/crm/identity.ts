@@ -476,11 +476,33 @@ function peopleNamedByLabel(row: UnmappedSlotRow, maps: CrmIdentityMaps): string
 export function isSettledUnmappedRow(row: UnmappedSlotRow, maps: CrmIdentityMaps): boolean {
   if (row.crmId == null) return false;
   if (recordsNoWorkToAttribute(row.visitType)) return true;
+  return isHandedOverLabel(row, maps);
+}
+
+/**
+ * Shape 2 above, on its own: the row has no hr id, its label names known employees, and NONE of them was
+ * employed that day — so iReports360 relabelled a PREVIOUS holder's row with the account's later
+ * holder's name, and the name printed on it is not the person who made it. Phoenix's own hiring dates
+ * are the source of trust (owner, 2026-10-22: "once got data from phoenix crm then phoenix is the source
+ * of trust and its data override old crm data"), so a screen that prints this row prints
+ * {@link previousHolderLabel}, never the vendor's name.
+ */
+export function isHandedOverLabel(row: UnmappedSlotRow, maps: CrmIdentityMaps): boolean {
+  if (row.crmId == null) return false;
   const day = row.visitDate?.slice(0, 10) || null;
   if (resolveEmployeeAttribution(row.crmId, row.label, maps, day).hrId !== null) return false;
   const named = peopleNamedByLabel(row, maps);
   if (named.length === 0) return false;
   return !named.some((hrId) => isAttributableOn(hrId, day, maps, row.label));
+}
+
+/** What a handed-over row ({@link isHandedOverLabel}) prints instead of the later holder's name: the
+ * account's territory kept, so a board that reads the territory off the label still finds it. */
+export const PREVIOUS_HOLDER_LABEL = "Previous holder";
+
+export function previousHolderLabel(vendorLabel: string | null | undefined): string {
+  const territory = /(\([^()]*\))\s*$/.exec(vendorLabel?.trim() ?? "")?.[1];
+  return territory ? `${PREVIOUS_HOLDER_LABEL} ${territory}` : PREVIOUS_HOLDER_LABEL;
 }
 
 /** The waterfall's hr-id answer alone — the shape every existing caller expects. */

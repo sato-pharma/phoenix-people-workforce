@@ -168,6 +168,28 @@ function previousItems(name: string, from: string): string[] {
   return previous.slice(previous.indexOf(" as select ") + " as select ".length, previous.indexOf(` ${from}`)).split(", ");
 }
 
+/**
+ * The previous items with Phoenix's values in place — owner, 2026-10-22: "phoenix is the source of trust
+ * and its data override old crm data" (20261022163000). Only these items change; every other column of
+ * every vendor branch is still the previous door word for word, so a column a door drops or reorders
+ * still fails here.
+ */
+function withPhoenixOverrides(items: string[], overrides: Record<string, string>): string[] {
+  const replaced = new Set<string>();
+  const result = items.map((item) => {
+    const name = outputName(item);
+    if (!(name in overrides)) return item;
+    replaced.add(name);
+    return overrides[name];
+  });
+  assert.deepEqual([...replaced].sort(), Object.keys(overrides).sort(), "every Phoenix override names a column the previous door had");
+  return result;
+}
+
+/** The person's own name plus the vendor's trailing "( territory )", when the row's hr id is a person. */
+const PERSON_NAME = (column: "agent_name" | "double_name", person: string) =>
+  String.raw`case when ${person}.full_name is not null then concat_ws(' ', ${person}.full_name, substring(v.${column} from '(\([^()]*\))\s*$')) else v.${column} end as ${column}`;
+
 function isoDow(day: string): number {
   const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
   return weekday === 0 ? 7 : weekday;
@@ -1033,7 +1055,18 @@ function runRowShapeTests(code: string): void {
   // The iReports360 branch is the previous view word for word, with four columns APPENDED. Appended and
   // never inserted, because a caller reading by position must keep reading the same column — and
   // because `create or replace view` accepts a new column only at the end of the list.
-  assert.deepEqual(vendorItems.slice(0, 30), previousItems("crm_visits_unified", "from public.ireports360_visits v"), "the first 30 columns keep their names, types and order");
+  // Since 20261022163000 four of them carry what Phoenix holds: the doctor's validated name and speciality,
+  // and the person's own name for the agent and the double-visit partner.
+  assert.deepEqual(
+    vendorItems.slice(0, 30),
+    withPhoenixOverrides(previousItems("crm_visits_unified", "from public.ireports360_visits v"), {
+      agent_name: PERSON_NAME("agent_name", "agent_person"),
+      double_name: PERSON_NAME("double_name", "double_person"),
+      contact_name: "coalesce(truth.name, v.contact_name) as contact_name",
+      speciality: "coalesce(truth.speciality, v.speciality) as speciality",
+    }),
+    "the first 30 columns keep their names, types and order",
+  );
   assert.deepEqual(
     names.slice(30),
     [
@@ -1378,7 +1411,14 @@ function runPlanDoorTests(plans: string): void {
   const view = viewSql(PLANS_DOOR, "crm_plan_entries_unified");
   const [vendorBranch, phoenixBranch] = view.split("\nunion all\n");
   const vendorItems = itemsOf(vendorBranch, "from public.ireports360_plan_entries pe");
-  assert.deepEqual(vendorItems, previousItems("crm_plan_entries_unified", "from public.ireports360_plan_entries pe"), "the 23 columns keep their names, types and order");
+  assert.deepEqual(
+    vendorItems,
+    withPhoenixOverrides(previousItems("crm_plan_entries_unified", "from public.ireports360_plan_entries pe"), {
+      contact_name: "coalesce(truth.name, pe.contact_name) as contact_name",
+      speciality: "coalesce(truth.speciality, pe.speciality) as speciality",
+    }),
+    "the 23 columns keep their names, types and order — the doctor's name and speciality are Phoenix's where he is validated (20261022163000)",
+  );
   const vendor = flat(vendorBranch);
   assert.ok(vendor.includes("where (pe.plan_date is null or pe.plan_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date)) and not exists"), "its one condition bracketed, then the two clauses");
   assert.ok(vendor.includes("where r.hr_key = lower(btrim(pe.agent_hr_id)) and pe.plan_date >= r.counted_from and (r.counted_until is null or pe.plan_date < r.counted_until)"), "the started team's people leave the vendor plan copy for the same days");
@@ -1507,7 +1547,13 @@ function runCheckinDoorTests(plans: string): void {
   assert.ok(vendorBranch && phoenixBranch, "two branches: iReports360 check-ins, and positioned Phoenix visits");
 
   const vendorItems = itemsOf(vendorBranch, "from (\n");
-  assert.deepEqual(vendorItems, previousItems("crm_checkins_unified", "from public.ireports360_checkins c"), "the 16 columns keep their names, types and order");
+  assert.deepEqual(
+    vendorItems,
+    withPhoenixOverrides(previousItems("crm_checkins_unified", "from public.ireports360_checkins c"), {
+      contact_name: "coalesce(truth.name, c.contact_name) as contact_name",
+    }),
+    "the 16 columns keep their names, types and order — the doctor's name is Phoenix's where he is validated (20261022163000)",
+  );
   const vendor = flat(vendorBranch);
   // The visit door's split and once-built entry days, on the check-in's wall-clock day: a check-in before the
   // first day's midnight "UTC" (the vendor's Cairo wall clock) is on a day before it.

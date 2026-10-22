@@ -37,6 +37,8 @@ import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
+import type { CrmIdentityMaps } from "@/lib/crm/types";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
   intersectHrIdAllowLists,
@@ -1065,6 +1067,49 @@ function attachAgentMeta(rows: CrmMasterRow[], metaByHrId: Map<string, AgentMeta
   }
 }
 
+/** The identity maps {@link relabelHandedOverRows} needs, read only when a row on the page has no hr id.
+ * Null when nothing needs them or they cannot be read: the relabel is a display overlay, so a failed read
+ * prints the vendor's label rather than failing the page. */
+async function loadIdentityMapsForLabels(rows: readonly CrmMasterRow[]): Promise<CrmIdentityMaps | null> {
+  const needed = rows.some(
+    (row) => typeof row.agent_name === "string" && !(typeof row.agent_hr_id === "string" && row.agent_hr_id.trim()),
+  );
+  return needed ? loadIdentityMapsOrNull() : null;
+}
+
+async function loadIdentityMapsOrNull(): Promise<CrmIdentityMaps | null> {
+  try {
+    return await loadCrmIdentityMaps();
+  } catch (error) {
+    logError("CRM master: identity maps could not be read; handed-over rows keep the vendor's label", {
+      error,
+      labels: { event: "crm_master_previous_holder_label_failed" },
+    });
+    return null;
+  }
+}
+
+/**
+ * PHOENIX NAMES WHO MADE THE ROW (owner, 2026-10-22: "once got data from phoenix crm then phoenix is the
+ * source of trust and its data override old crm data"). The doors already print the Phoenix employee's
+ * own name on every iReports360 row whose hr id resolves. A row with NO hr id whose label names only
+ * people Phoenix had not hired yet is a previous holder's row that iReports360 relabelled when the account
+ * changed hands, so it prints "Previous holder ( territory )" — never the later holder's name.
+ */
+function relabelHandedOverRows(rows: CrmMasterRow[], maps: CrmIdentityMaps | null, dateField: string): void {
+  if (!maps) return;
+  for (const row of rows) {
+    if (typeof row.agent_name !== "string") continue;
+    if (typeof row.agent_hr_id === "string" && row.agent_hr_id.trim()) continue;
+    const crmId = Number(row.agent_crm_id);
+    if (row.agent_crm_id == null || !Number.isFinite(crmId)) continue;
+    const day = typeof row[dateField] === "string" ? (row[dateField] as string) : null;
+    if (isHandedOverLabel({ crmId, label: row.agent_name, visitDate: day, visitType: null }, maps)) {
+      row.agent_name = previousHolderLabel(row.agent_name);
+    }
+  }
+}
+
 /** One CRM region's resolved Phoenix brick mapping (joined against the real brick master). */
 type BrickMapping = { areaId: string | null; brickId: string; regionId: string | null };
 
@@ -1885,6 +1930,8 @@ type DeriveResources = {
   brickMappingByContact?: Map<number, BrickMapping>;
   triples?: Map<number, { third: string; unspecified: boolean }>;
   checkinsIndex?: Map<string, CheckinLite[]>;
+  /** Null is a real answer (nothing to relabel, or the read failed); undefined means "load it". */
+  identityMaps?: CrmIdentityMaps | null;
 };
 
 /** Merge derived columns onto rows (nearest check-in for visit datasets, triple flag for double
@@ -1924,7 +1971,7 @@ async function attachDerived(
   // after another. With no preload handed in (the paginated view), the brick mappings are read for this
   // page's own contacts and regions only. One Promise.all, so no load runs unwatched; every overlay is
   // still APPLIED below in exactly the order it always was.
-  const [checkinCorrelationAvailable, agentMeta, byRegion, byContact, tripleFlags] = await Promise.all([
+  const [checkinCorrelationAvailable, agentMeta, byRegion, byContact, tripleFlags, identityMaps] = await Promise.all([
     attachCheckinOverlays(),
     resources?.agentMeta ?? loadAgentMetaByHrId(),
     isVisitDataset(dataset) ? (resources?.brickMapping ?? loadBrickMappingByRegionId(brickLookupRegionIds(rows))) : null,
@@ -1934,12 +1981,14 @@ async function attachDerived(
     dataset === "double_visits"
       ? (resources?.triples ?? computeTriplesInRange(range).then((triples) => triples.byVisitId))
       : null,
+    resources?.identityMaps !== undefined ? resources.identityMaps : loadIdentityMapsForLabels(rows),
   ]);
   // Flag the double visits that are actually part of a triple (third person stacked that day).
   if (dataset === "double_visits" && tripleFlags) attachTripleFlag(rows, tripleFlags);
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows, checkinCorrelationAvailable);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
   attachAgentMeta(rows, agentMeta, "agent_hr_id");
+  relabelHandedOverRows(rows, identityMaps, "visit_date");
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to (both maps are null for every other dataset).
@@ -2150,6 +2199,7 @@ export async function getCrmMasterData(
     const start = (page - 1) * pageSize;
     const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "agent_hr_id");
+    relabelHandedOverRows(pageRows, await loadIdentityMapsForLabels(pageRows), "from_date");
     return {
       ...echo,
       latestSyncRuns,
@@ -2274,6 +2324,7 @@ export async function* streamCrmMasterExportPages(
     const [{ periods: allPeriods }, agentMeta] = await Promise.all([computeVacationPeriods(range), loadAgentMetaByHrId()]);
     const rows = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     attachAgentMeta(rows, agentMeta, "agent_hr_id");
+    relabelHandedOverRows(rows, await loadIdentityMapsForLabels(rows), "from_date");
     for (let i = 0; i < rows.length; i += CHUNK) yield rows.slice(i, i + CHUNK);
     return;
   }
@@ -2285,14 +2336,17 @@ export async function* streamCrmMasterExportPages(
   // doesn't hit this table's index well into a multi-minute export that got its connection cut
   // before finishing, producing a corrupted .xlsx.
   const needsCheckins = dataset === "visits" || dataset === "double_visits";
-  const [agentMeta, brickMapping, brickMappingByContact, checkinsIndex] = await Promise.all([
+  const [agentMeta, brickMapping, brickMappingByContact, checkinsIndex, identityMaps] = await Promise.all([
     loadAgentMetaByHrId(),
     isVisitDataset(dataset) ? loadBrickMappingByRegionId() : Promise.resolve(new Map<number, BrickMapping>()),
     isVisitDataset(dataset) ? loadBrickMappingByContactId() : Promise.resolve(new Map<number, BrickMapping>()),
     needsCheckins ? preloadCheckinsIndexForExport(range) : Promise.resolve(new Map<string, CheckinLite[]>()),
+    // Once for the whole export, like every other overlay: a check-in export carries no agent_name, so it
+    // asks for nothing.
+    dataset === "checkins" ? Promise.resolve(null) : loadIdentityMapsOrNull(),
   ]);
   const triples = dataset === "double_visits" ? (await computeTriplesInRange(range)).byVisitId : undefined;
-  const resources: DeriveResources = { agentMeta, brickMapping, brickMappingByContact, triples, checkinsIndex };
+  const resources: DeriveResources = { agentMeta, brickMapping, brickMappingByContact, triples, checkinsIndex, identityMaps };
 
   const supabase = getSupabaseAdmin();
   const table =

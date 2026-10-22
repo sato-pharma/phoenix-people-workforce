@@ -113,9 +113,11 @@ export function runCrmContactMasterRefreshSpeedTests() {
     /where e\.contact_crm_id is null or \(e\.name, e\.name_ar, e\.speciality, e\.phone, e\.address, e\.city, e\.zone, e\.crm_region_name, e\.source\) is distinct from \(coalesce\(x\.name, e\.name\), x\.name_ar, x\.speciality, x\.phone, x\.address, x\.city, x\.zone, x\.crm_region_name, 'list'\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
     `${file}: the contacts upsert is offered a row only when it is new or differs by the SAME predicate the conflict filter uses`,
   );
+  // Since 20261022163100 the name-row pass offers `o` — Phoenix's value for a trusted row, the value on file
+  // else Phoenix's for a pending copy — and the pre-filter is still the conflict filter's own predicate.
   assert.match(
     code,
-    /where e\.contact_crm_id is null or \(e\.name, e\.speciality, e\.phone\) is distinct from \(coalesce\(e\.name, x\.name\), coalesce\(e\.speciality, x\.speciality\), coalesce\(e\.phone, x\.phone\)\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
+    /where e\.contact_crm_id is null or \(e\.name, e\.speciality, e\.phone\) is distinct from \(coalesce\(o\.name, e\.name\), coalesce\(o\.speciality, e\.speciality\), coalesce\(o\.phone, e\.phone\)\) or e\.first_seen_on > x\.first_seen_on on conflict \(contact_crm_id\) do update set/,
     `${file}: the name-row upsert is offered a row only when it is new or differs by the SAME predicate the conflict filter uses`,
   );
   // The conflict clauses themselves are untouched: the pre-filter is an optimisation in FRONT of them, so
@@ -127,8 +129,8 @@ export function runCrmContactMasterRefreshSpeedTests() {
   );
   assert.match(
     code,
-    /on conflict \(contact_crm_id\) do update set name = coalesce\(c\.name, excluded\.name\), speciality = coalesce\(c\.speciality, excluded\.speciality\), phone = coalesce\(c\.phone, excluded\.phone\), first_seen_on = least\(c\.first_seen_on, excluded\.first_seen_on\), updated_at = now\(\) where \(c\.name, c\.speciality, c\.phone\) is distinct from \(coalesce\(c\.name, excluded\.name\), coalesce\(c\.speciality, excluded\.speciality\), coalesce\(c\.phone, excluded\.phone\)\) or c\.first_seen_on > excluded\.first_seen_on;/,
-    `${file}: the name-row upsert keeps its original ON CONFLICT clause and filter`,
+    /on conflict \(contact_crm_id\) do update set name = coalesce\(excluded\.name, c\.name\), speciality = coalesce\(excluded\.speciality, c\.speciality\), phone = coalesce\(excluded\.phone, c\.phone\), first_seen_on = least\(c\.first_seen_on, excluded\.first_seen_on\), updated_at = now\(\) where \(c\.name, c\.speciality, c\.phone\) is distinct from \(coalesce\(excluded\.name, c\.name\), coalesce\(excluded\.speciality, c\.speciality\), coalesce\(excluded\.phone, c\.phone\)\) or c\.first_seen_on > excluded\.first_seen_on;/,
+    `${file}: the name-row upsert writes what it is offered — Phoenix wins (owner, 2026-10-22), and a blank offered keeps the value on file`,
   );
 
   // ── 4. EVERYTHING ELSE ABOUT THE FUNCTION IS WHAT 20261015215500 LEFT ──────────────────────────
@@ -168,10 +170,15 @@ export function runCrmContactMasterRefreshSpeedTests() {
     stated![1],
     `${file}: the digest in the header must be the digest of the body below it — it is how an apply is proved, because create-or-replace makes the mere presence of the function worthless as evidence`,
   );
+  // The rollback names the PREVIOUS definer, whichever it is — an older file that exists and re-emits the
+  // function. A fixed name here went stale the first time the function was redefined after it.
+  const rollback = /ROLLBACK: re-apply supabase\/migrations\/(\d{14}_[a-z0-9_]+\.sql)/.exec(sql);
+  assert.ok(rollback, `${file}: the header must name the one-command rollback`);
+  assert.ok(rollback![1] < file, `${file}: the rollback must re-apply an EARLIER migration, not ${rollback![1]}`);
   assert.match(
-    sql,
-    /ROLLBACK: re-apply supabase\/migrations\/20261015215500_a_vendorless_reps_phoenix_list_opens\.sql/,
-    `${file}: the header must name the one-command rollback`,
+    readFileSync(new URL(rollback![1], MIGRATIONS), "utf8"),
+    /create\s+or\s+replace\s+function\s+public\.crm_contact_master_refresh\s*\(/i,
+    `${file}: the rollback file ${rollback![1]} must itself re-emit crm_contact_master_refresh`,
   );
   assert.match(
     sql,

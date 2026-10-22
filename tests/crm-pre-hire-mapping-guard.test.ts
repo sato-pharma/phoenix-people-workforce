@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   findPreHireMappingConflict,
@@ -7,7 +8,15 @@ import {
   type MappingCandidateRow,
   type StampCandidateRow,
 } from "../src/lib/crm/admin.ts";
-import { buildCrmIdentityMaps, isSettledUnmappedRow, normalizeCrmName, type CrmResolutionRow } from "../src/lib/crm/identity.ts";
+import {
+  buildCrmIdentityMaps,
+  isHandedOverLabel,
+  isSettledUnmappedRow,
+  normalizeCrmName,
+  PREVIOUS_HOLDER_LABEL,
+  previousHolderLabel,
+  type CrmResolutionRow,
+} from "../src/lib/crm/identity.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 
 /**
@@ -386,5 +395,62 @@ export function runCrmPreHireMappingGuardTests() {
     isSettledUnmappedRow(slot("2026-07-13", 0, "Soad.Atef ( Behira 2 / C )", 1485), handedOver),
     true,
     "the gap after the leaver left and before the joiner started is nobody's — settled",
+  );
+
+  // ── (N) A handed-over row prints "Previous holder", never the later holder's name ─────────────
+  //
+  // Owner, 2026-10-22: "once got data from phoenix crm then phoenix is the source of trust and its data
+  // override old crm data". When an account changes hands iReports360 relabels its OLD rows with the new
+  // holder's name — Osama Mohamed Ali's account, hired 1 Oct 2026, prints his name on 825 visits from May
+  // to August. Phoenix's hiring date is the truth, so the CRM Master prints such a row as the previous
+  // holder's, keeping the territory a board reads off the label.
+  assert.equal(isHandedOverLabel(slot("2026-07-13", 0, "Soad.Atef ( Behira 2 / C )", 1485), handedOver), true, "a row before the named person's hire is handed over");
+  assert.equal(isHandedOverLabel(slot("2026-08-26", 0, "Soad.Atef ( Behira 2 / C )", 1485), handedOver), false, "her own in-tenure call keeps her name");
+  assert.equal(isHandedOverLabel(slot("2026-05-07", 0), knownNoMapping), true, "the 33 pre-hire rows on Alex East print as the previous holder's");
+  assert.equal(isHandedOverLabel(slot("2026-05-20", 0), knownNoMapping), false, "his own call after his hire keeps his name");
+  assert.equal(
+    isHandedOverLabel(slot("2026-05-07", 0), unmapped),
+    false,
+    "with no crm_username on the roster his label names nobody Phoenix knows — the vendor's label stays",
+  );
+  assert.equal(
+    isHandedOverLabel(slot("2026-05-07", 0, "Stranger.Name ( Tanta / P )", 9999), knownNoMapping),
+    false,
+    "a label that names nobody Phoenix knows is never relabelled — there is no hiring date to read",
+  );
+  assert.equal(isHandedOverLabel(slot("2026-05-07", 0, alexLabel, null), knownNoMapping), false, "no account, nothing to relabel");
+  // Unlike the settled test, a no-work marker is NOT handed over by its type alone: only the hiring date decides.
+  assert.equal(isHandedOverLabel(slot("2026-05-20", -5), knownNoMapping), false, "an in-tenure holiday marker keeps his name");
+
+  assert.equal(PREVIOUS_HOLDER_LABEL, "Previous holder");
+  assert.equal(previousHolderLabel("Soad.Atef ( Behira 2 / C )"), "Previous holder ( Behira 2 / C )", "the territory is kept");
+  assert.equal(previousHolderLabel("  Osama.Mohamed ( Giza 3 / P )  "), "Previous holder ( Giza 3 / P )", "surrounding space is ignored");
+  assert.equal(previousHolderLabel("Osama.Mohamed"), "Previous holder", "no territory, no brackets");
+  assert.equal(previousHolderLabel(null), "Previous holder");
+  assert.equal(previousHolderLabel(undefined), "Previous holder");
+
+  // The CRM Master applies it on every path that prints an agent name: the paginated and exported visit
+  // datasets (attachDerived, after the roster overlay) and both vacation paths. A check-in export carries
+  // no agent name and asks for nothing.
+  const master = readFileSync(new URL("../src/lib/crm/master.ts", import.meta.url), "utf8");
+  assert.match(
+    master,
+    /attachAgentMeta\(rows, agentMeta, "agent_hr_id"\);\s*relabelHandedOverRows\(rows, identityMaps, "visit_date"\);/,
+    "attachDerived relabels right after the roster overlay",
+  );
+  assert.equal(
+    (master.match(/relabelHandedOverRows\(\w+, await loadIdentityMapsForLabels\(\w+\), "from_date"\);/g) ?? []).length,
+    2,
+    "the vacations page and the vacations export relabel by the period's first day",
+  );
+  assert.match(
+    master,
+    /dataset === "checkins" \? Promise\.resolve\(null\) : loadIdentityMapsOrNull\(\)/,
+    "the export reads the identity maps once for the whole export",
+  );
+  assert.match(
+    master,
+    /if \(typeof row\.agent_hr_id === "string" && row\.agent_hr_id\.trim\(\)\) continue;/,
+    "a row with an hr id is never relabelled — the door already prints that person's own name",
   );
 }
