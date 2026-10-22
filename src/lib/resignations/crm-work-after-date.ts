@@ -25,12 +25,14 @@ import { getUnstampedAgentAccounts, queryVisits } from "@/lib/crm/reads";
  */
 
 /** The visit columns the summary reads. */
-export const CRM_WORK_AFTER_DATE_COLUMNS = "visit_date, agent_hr_id, agent_crm_id, double_hr_id";
+export const CRM_WORK_AFTER_DATE_COLUMNS = "visit_date, agent_hr_id, agent_crm_id, double_hr_id, double2_hr_id";
 
 export type CrmWorkAfterDateRow = {
   agent_crm_id?: number | string | null;
   agent_hr_id?: string | null;
   double_hr_id?: string | null;
+  /** A chain visit’s second manager (slot 2) — the reader below already fetches those rows. */
+  double2_hr_id?: string | null;
   visit_date?: string | null;
 };
 
@@ -75,7 +77,10 @@ export function summarizeCrmWorkAfterDate(
     const stampedToHim = hrIdsMatch(row.agent_hr_id, input.hrId);
     const unstampedOnHisAccount =
       !String(row.agent_hr_id ?? "").trim() && ownCrmIds.has(crmIdKey(row.agent_crm_id) ?? "");
-    const asManager = hrIdsMatch(row.double_hr_id, input.hrId);
+    // Either partner slot: the manager-side read asks for slot 2 as well (applyVisitFilter’s
+    // doubleHrIds), and a chain visit’s second manager rode along exactly as the first did
+    // (re-audit, 2026-10-22 — those rows were fetched and then dropped here).
+    const asManager = hrIdsMatch(row.double_hr_id, input.hrId) || hrIdsMatch(row.double2_hr_id, input.hrId);
     if (!stampedToHim && !unstampedOnHisAccount && !asManager) continue;
     visits += 1;
     days.add(day);

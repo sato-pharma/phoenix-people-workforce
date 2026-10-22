@@ -10,12 +10,28 @@
  * AM and PM are never added together (the call rate is never averaged): every figure is a pair.
  * "Planned done" counts a planned customer once he has a visit today; a visit off the plan counts in
  * "logged" and never inflates the plan's figure.
+ *
+ * 🔴 "LOGGED" COUNTS WHAT THE KPIs COUNT, AND SAYS WHAT IT HELD BACK (re-audit, 2026-10-22). It used to
+ * count every saved row, so the 18 October off-plan visits still waiting for approval — in no KPI —
+ * stood in a manager's "logged" figure and made it disagree with the calendar and the day page, which
+ * count `visitCountsInKpi`. Each visit now carries its `holdBack` (`kpiHoldBackOf`); the held-back
+ * ones are counted apart and named on the line, because a visit waiting on somebody is work the rep
+ * really did. A refused visit is in neither. "Planned done" still reads any visit: it is the plan's
+ * progress, and a planned stop is never an off-plan one.
  */
 
+import type { KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 
 export type TeamTodayPlanned = { seatId: string; customerId: string; listType: PhoenixCrmDoctorListType };
-export type TeamTodayVisit = { seatId: string; customerId: string; listType: PhoenixCrmDoctorListType; capturedAt: string };
+export type TeamTodayVisit = {
+  seatId: string;
+  customerId: string;
+  listType: PhoenixCrmDoctorListType;
+  capturedAt: string;
+  /** Why it is in no KPI (`kpiHoldBackOf`); absent or null when it counts. */
+  holdBack?: KpiHoldBack | null;
+};
 
 export type TeamTodayFigures = {
   /** A plan for this week was sent (submitted or approved) — else there is nothing planned to finish. */
@@ -26,6 +42,10 @@ export type TeamTodayFigures = {
   pmPlannedDone: number;
   amLogged: number;
   pmLogged: number;
+  /** Visits saved today that count in nothing yet: an off-plan visit waiting for the manager and SFE. */
+  awaitingApproval: number;
+  /** Visits saved today that count in nothing yet: the customer is not validated. */
+  awaitingValidation: number;
   /** The latest visit's server time today, or null before the first. */
   lastVisitAt: string | null;
 };
@@ -38,6 +58,8 @@ const EMPTY: TeamTodayFigures = {
   pmPlannedDone: 0,
   amLogged: 0,
   pmLogged: 0,
+  awaitingApproval: 0,
+  awaitingValidation: 0,
   lastVisitAt: null,
 };
 
@@ -77,9 +99,13 @@ export function summarizeTeamToday(input: {
   for (const visit of input.visits) {
     const figures = out.get(visit.seatId);
     if (!figures) continue;
+    // The clock is his activity, so it reads every visit he saved, counted or not.
+    if (!figures.lastVisitAt || visit.capturedAt > figures.lastVisitAt) figures.lastVisitAt = visit.capturedAt;
+    if (visit.holdBack === "approval") figures.awaitingApproval += 1;
+    else if (visit.holdBack === "validation") figures.awaitingValidation += 1;
+    if (visit.holdBack) continue;
     if (visit.listType === "AM") figures.amLogged += 1;
     else figures.pmLogged += 1;
-    if (!figures.lastVisitAt || visit.capturedAt > figures.lastVisitAt) figures.lastVisitAt = visit.capturedAt;
   }
   return out;
 }
@@ -100,10 +126,18 @@ export function teamClockOf(capturedAt: string): string {
  * (`day-start-rules.ts`).
  */
 export function teamTodayLine(figures: TeamTodayFigures, lastVisitClock: string | null, startedClock?: string | null): string {
+  // What is held back is named, never folded in: "waiting" is not yet, and it is not a verdict on him.
+  const waiting = [
+    figures.awaitingApproval > 0 ? `${figures.awaitingApproval} waiting for approval` : null,
+    figures.awaitingValidation > 0 ? `${figures.awaitingValidation} waiting for customer validation` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const held = waiting ? ` · ${waiting}, not counted yet` : "";
   const logged =
-    figures.amLogged === 0 && figures.pmLogged === 0
+    figures.amLogged === 0 && figures.pmLogged === 0 && !waiting
       ? "no visit logged yet"
-      : `logged ${figures.amLogged} AM · ${figures.pmLogged} PM${lastVisitClock ? `, last at ${lastVisitClock}` : ""}`;
+      : `logged ${figures.amLogged} AM · ${figures.pmLogged} PM${lastVisitClock ? `, last at ${lastVisitClock}` : ""}${held}`;
   const started = startedClock ? `Started ${startedClock} · ` : "";
   if (!figures.planSent) return `${started}No plan sent for today · ${logged}`;
   // A list with nothing planned says so, the way the rep's own Today does — never "0 of 0".
@@ -118,6 +152,12 @@ export function teamTodayTone(figures: TeamTodayFigures): "good" | "progress" | 
   const hasPlanned = figures.amPlanned > 0 || figures.pmPlanned > 0;
   const allDone = figures.amPlannedDone === figures.amPlanned && figures.pmPlannedDone === figures.pmPlanned;
   if (hasPlanned && allDone) return "good";
-  const anyActivity = figures.amPlannedDone > 0 || figures.pmPlannedDone > 0 || figures.amLogged > 0 || figures.pmLogged > 0;
+  const anyActivity =
+    figures.amPlannedDone > 0 ||
+    figures.pmPlannedDone > 0 ||
+    figures.amLogged > 0 ||
+    figures.pmLogged > 0 ||
+    figures.awaitingApproval > 0 ||
+    figures.awaitingValidation > 0;
   return anyActivity ? "progress" : "idle";
 }

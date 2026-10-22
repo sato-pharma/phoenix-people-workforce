@@ -1000,13 +1000,19 @@ Railway could not deploy, so every scheduler had stopped at about 02:35 Cairo.
 - **The app** is `phoenix-worker-standby` (Frankfurt, one `shared-cpu-2x` machine, 2 GB). Its config is
   `infra/fly-standby/fly-worker.toml`: `PHOENIX_PROCESS_ROLE=worker`, `PHOENIX_LIVE_CRM_POLL=true`,
   `PHOENIX_HOST=fly-worker`, and **`RAILWAY_ENVIRONMENT_NAME=production` on purpose**: it is the CRM poller's host
-  pin (`resolveInProcessHostRefusal` in `src/lib/crm/live-poller.ts`). With no `RAILWAY_GIT_COMMIT_SHA` the release
-  gate reads `no_commit` and stays open. Until 22 Oct the file lived only in a Temp folder, which Windows empties.
-- 🔴 **Deployed by hand after every go-live — the workflow updates only the website.** It runs the image the go-live
-  just pushed to Fly's registry, so the worker never runs code the website does not:
+  pin (`resolveInProcessHostRefusal` in `src/lib/crm/live-poller.ts`). It also makes the release gate **required**
+  there: the image carries `RAILWAY_GIT_COMMIT_SHA` (built in by `fallback-image.yml`), so `/api/readyz` reads that
+  commit's recorded gate — read live on 22 Oct: `required: true, passed: true, reason: "recorded"`. Until 22 Oct the
+  file lived only in a Temp folder, which Windows empties.
+- 🔴 **The go-live moves it, right after the website** (re-audit, 2026-10-22). It used to be a hand step after every
+  go-live, and on 22 Oct it was missed: the website served `81a75f428` while the worker ran `65eafc9a7`, and System
+  Issues — which compares every error with the *website's* build — showed every worker error as Resolved. The
+  workflow's step "Move the background worker to the same commit" deploys the image the go-live just pushed and
+  waits for the worker's own `/api/healthz` to report it. If it fails, the website stays live, the step is marked
+  failed and Telegram says so; then, and only then, move it by hand:
 
   ```bash
-  flyctl deploy -a phoenix-worker-standby -c infra/fly-standby/fly-worker.toml --image registry.fly.io/phoenix-hr-standby:<sha> --strategy rolling
+  flyctl deploy -a phoenix-worker-standby -c infra/fly-standby/fly-worker.toml --image registry.fly.io/phoenix-hr-standby:<sha> --regions fra --ha=false --strategy rolling
   ```
 
   Prove it from `https://phoenix-worker-standby.fly.dev/api/healthz` (`revision`) and from the log lines

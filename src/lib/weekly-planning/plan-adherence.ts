@@ -386,6 +386,23 @@ export function isScoredInAdherenceHistory(status: string | null | undefined): b
   return !PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES.has(String(status ?? "").toLowerCase());
 }
 
+/**
+ * A district manager's history once he has Phoenix CRM weeks: each Phoenix week REPLACES the legacy
+ * weekly plan whose dates it overlaps (owner, 2026-10-16: "his Phoenix CRM week REPLACES the legacy
+ * plan once his team is live"). Concatenating the two scored one real week twice — Weaam Mahmoud,
+ * Mina Farouk and Taha Mohamed each hold both for the week of 17 Oct 2026 (re-audit, 2026-10-22), so
+ * the moment they send the Phoenix one the card would average the same week in twice. A legacy plan
+ * that overlaps no Phoenix week — every week before the go-live — stays exactly as it was.
+ */
+export function mergeManagerPlanWeeks(
+  legacy: readonly PlanAdherenceHistoryEntry[],
+  phoenixWeeks: readonly PlanAdherenceHistoryEntry[],
+): PlanAdherenceHistory {
+  const overlapsPhoenixWeek = (entry: PlanAdherenceHistoryEntry) =>
+    phoenixWeeks.some((week) => entry.periodStartDate <= week.periodEndDate && entry.periodEndDate >= week.periodStartDate);
+  return buildPlanAdherenceHistory([...legacy.filter((entry) => !overlapsPhoenixWeek(entry)), ...phoenixWeeks]);
+}
+
 export function buildPlanAdherenceHistory(
   entries: readonly PlanAdherenceHistoryEntry[],
 ): PlanAdherenceHistory {

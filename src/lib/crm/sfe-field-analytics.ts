@@ -72,6 +72,8 @@ type VisitRow = {
   contact_crm_id: number | null;
   crm_save_date: string | null;
   double_crm_id: number | null;
+  /** The partner's resolved HR id — the only way a Phoenix double visit names a manager with no CRM account. */
+  double_hr_id?: string | null;
   crm_visit_id: number | null;
   speciality: string | null;
   visit_date: string | null;
@@ -87,7 +89,7 @@ type CheckinRow = {
 };
 
 const VISIT_COLUMNS =
-  "agent_crm_id,agent_hr_id,agent_name,ampm,contact_crm_id,crm_save_date,double_crm_id,crm_visit_id,speciality,visit_date,visit_type,visit_type_description";
+  "agent_crm_id,agent_hr_id,agent_name,ampm,contact_crm_id,crm_save_date,double_crm_id,double_hr_id,crm_visit_id,speciality,visit_date,visit_type,visit_type_description";
 // The -30 field visit carries no contact, so only the rep's comment says it was a pharmacy. The
 // comment is read for those rows alone — across every visit in the window it would dominate the
 // payload (see the note on resolveVisitTypeLabel below).
@@ -304,7 +306,10 @@ export async function getSfeCrmFieldAnalytics(input: {
     else if (ampm === "AM") amVisits++;
     else if (ampm === "PM") pmVisits++;
     if ((bucket === "Pharmacies" || ampm === "AM" || ampm === "PM") && isPhoenixNativeVisitRow(visit)) phoenixVisits++;
-    if (visit.double_crm_id) doubleVisits++;
+    // A partner by CRM id, or — on a Phoenix row — by HR id alone: a Phoenix double visit whose manager
+    // has no CRM account carries him only as `double_hr_id` (re-audit, 2026-10-22). A stray resolved HR
+    // id on a VENDOR row is not a partner, the same rule as isCrmDoubleVisitRow.
+    if (visit.double_crm_id || (isPhoenixNativeVisitRow(visit) && (visit.double_hr_id ?? "").trim())) doubleVisits++;
 
     // The vendor sends the literal string "Unknown" for seven visit-type codes, which collapsed
     // 2,965 production visits into a single meaningless bucket in this breakdown. Resolve them to

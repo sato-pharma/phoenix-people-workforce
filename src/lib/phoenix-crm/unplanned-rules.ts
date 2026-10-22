@@ -236,6 +236,26 @@ export function visitCountsInKpi(input: {
   return input.unplannedStatus === "approved";
 }
 
+/** Why a visit is outside every KPI figure: still waiting on somebody, or refused for good. */
+export type KpiHoldBack = "validation" | "approval" | "refused";
+
+/**
+ * The reason `visitCountsInKpi` answered false, or null when the visit counts. Asked in the
+ * predicate's own order — validation first, because a visit to an unvalidated customer is held back
+ * whatever its approval says. An off-plan visit with no approval row yet reads as waiting for
+ * approval, never as refused: only a refusal is "not ever".
+ *
+ * It exists so a screen that counts only what the KPIs count can still SAY what it left out (re-audit,
+ * 2026-10-22: Team Today and the Visit Report counted 18 October off-plan visits still waiting for
+ * approval that no KPI counts; held out, they must still show — a visit waiting on somebody is work
+ * the rep really did).
+ */
+export function kpiHoldBackOf(input: Parameters<typeof visitCountsInKpi>[0]): KpiHoldBack | null {
+  if (visitCountsInKpi(input)) return null;
+  if (!input.customerValidated) return "validation";
+  return input.unplannedStatus === "refused" ? "refused" : "approval";
+}
+
 export type UnplannedReasonResult = { ok: true; value: string } | { ok: false; error: string };
 
 /**

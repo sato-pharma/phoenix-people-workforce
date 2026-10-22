@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { emptyTeamToday, summarizeTeamToday, teamTodayLine, teamTodayTone } from "../src/lib/phoenix-crm/team-today.ts";
+import { kpiHoldBackOf } from "../src/lib/phoenix-crm/unplanned-rules.ts";
 
 /**
  * Phoenix CRM — each rep's day on his managers' Team tab (owner, 2026-09-30: "the easiest CRM, yet
@@ -39,7 +40,18 @@ export function runPhoenixCrmTeamTodayTests(): void {
     assert.ok(gz6, "every seat asked for gets an answer");
     assert.deepEqual(
       { ...gz6 },
-      { planSent: true, amPlanned: 2, amPlannedDone: 1, pmPlanned: 1, pmPlannedDone: 0, amLogged: 1, pmLogged: 1, lastVisitAt: "2026-09-30T15:40:00.000Z" },
+      {
+        planSent: true,
+        amPlanned: 2,
+        amPlannedDone: 1,
+        pmPlanned: 1,
+        pmPlannedDone: 0,
+        amLogged: 1,
+        pmLogged: 1,
+        awaitingApproval: 0,
+        awaitingValidation: 0,
+        lastVisitAt: "2026-09-30T15:40:00.000Z",
+      },
       "planned-done counts planned customers visited; an off-plan visit counts in logged only",
     );
     assert.equal(figures.get("gz7")?.planSent, false, "no plan sent is said, never read as zero done");
@@ -81,6 +93,53 @@ export function runPhoenixCrmTeamTodayTests(): void {
     );
     assert.equal(teamTodayTone({ ...emptyTeamToday(), planSent: true, amPlanned: 2 }), "idle");
     assert.equal(teamTodayTone(emptyTeamToday()), "none");
+  }
+
+  // ── "Logged" counts what the KPIs count, and names what it held back (re-audit, 2026-10-22) ───────
+  {
+    const figures = summarizeTeamToday({
+      seatIds: ["gz6"],
+      seatsWithPlan: new Set(["gz6"]),
+      planned: [{ seatId: "gz6", customerId: "a1", listType: "AM" }],
+      visits: [
+        { seatId: "gz6", customerId: "a1", listType: "AM", capturedAt: "2026-10-18T07:10:00.000Z", holdBack: null },
+        { seatId: "gz6", customerId: "x1", listType: "AM", capturedAt: "2026-10-18T08:00:00.000Z", holdBack: "approval" },
+        { seatId: "gz6", customerId: "x2", listType: "PM", capturedAt: "2026-10-18T09:00:00.000Z", holdBack: "approval" },
+        { seatId: "gz6", customerId: "n1", listType: "PM", capturedAt: "2026-10-18T10:00:00.000Z", holdBack: "validation" },
+        { seatId: "gz6", customerId: "r1", listType: "PM", capturedAt: "2026-10-18T11:00:00.000Z", holdBack: "refused" },
+      ],
+    });
+    const gz6 = figures.get("gz6")!;
+    assert.equal(gz6.amLogged, 1, "an off-plan visit still waiting for approval is in no KPI, so not in logged");
+    assert.equal(gz6.pmLogged, 0, "nor one whose customer is not validated, nor a refused one");
+    assert.equal(gz6.awaitingApproval, 2);
+    assert.equal(gz6.awaitingValidation, 1);
+    assert.equal(gz6.amPlannedDone, 1, "the plan's progress is untouched");
+    assert.equal(gz6.lastVisitAt, "2026-10-18T11:00:00.000Z", "the clock is his activity, counted or not");
+    assert.equal(
+      teamTodayLine(gz6, "14:00"),
+      "Planned AM 1 of 1 · PM none planned · logged 1 AM · 0 PM, last at 14:00 · 2 waiting for approval, 1 waiting for customer validation, not counted yet",
+      "what is held back is named on the line, never hidden from the manager",
+    );
+
+    // The reason, asked in visitCountsInKpi's own order.
+    const base = { customerValidated: true, isUnplanned: false, unplannedKind: null, unplannedStatus: null } as const;
+    assert.equal(kpiHoldBackOf(base), null, "a planned visit to a validated customer counts");
+    assert.equal(kpiHoldBackOf({ ...base, customerValidated: false, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "refused" }), "validation", "validation first, whatever the approval says");
+    assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "manager_pending" }), "approval");
+    assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: null }), "approval", "no approval row yet is waiting, never refused");
+    assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "refused" }), "refused");
+    assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "approved" }), null);
+    assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_list", unplannedStatus: null }), null, "an out-of-list visit to a validated customer counts");
+
+    const onlyWaiting = { ...emptyTeamToday(), awaitingApproval: 1 };
+    assert.notEqual(teamTodayLine(onlyWaiting, "09:00"), "No plan sent for today · no visit logged yet", "a rep whose only visit waits for approval did work today");
+    assert.equal(teamTodayTone({ ...onlyWaiting, planSent: true, amPlanned: 2 }), "progress", "and his row is not idle");
+
+    const team = source("src/lib/phoenix-crm/server/team.ts");
+    assert.match(team, /holdBack: teamTodayHoldBack\(row\)/, "every visit on the line carries its hold-back");
+    assert.match(team, /unplanned:phoenix_crm_unplanned_visits!visit_id\(status\)/, "the approval is read with the visit");
+    assert.match(team, /customer:phoenix_crm_customers!customer_id\(validated_at\)/, "and the customer's validation");
   }
 
   // ── Read in batches, on the visit day, from SENT plans ───────────────────────────────────────────

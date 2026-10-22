@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   applyVisitFilter,
   collapseDuplicateVisitSubmissions,
+  hasDoublePartner,
   markPartnerCreditOnlyRows,
   REAL_DOUBLE_PARTNER_OR_FILTER,
   withExclusionCrmIdColumn,
@@ -222,6 +223,39 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
     "one person named in both slots is credited the day once, not twice",
   );
 
+  // Slot 1 naming a manager with NO CRM account (re-audit, 2026-10-22): a Phoenix double visit carries
+  // him by HR ID only. The old `doubleID != null` gate left his ride-along day uncredited — Nahed
+  // Tarek's five October double visits — while slot 2 already reached its manager by HR ID.
+  const slotOneNoAccount = buildIReports360FieldWorkforceMatrix({
+    employees: chainEmployees,
+    month: 9,
+    year: 2026,
+    todayIso: "2026-09-30",
+    visits: [{ ...rescuedVisit(false), agentHrId: "A-1", doubleID: null, doubleHrId: "A-9", doubleName: "PM Nine" }],
+  });
+  assert.equal(
+    rowOf(slotOneNoAccount.matrix, "A-9")[DAY_7],
+    1,
+    "THE SLOT-1 MANAGER WITH NO CRM ACCOUNT: his ride-along day is worked, reached by his HR ID",
+  );
+  assert.equal(
+    rowOf(slotOneNoAccount.matrix, "A-1")[DAY_7],
+    1,
+    "and the rep who logged it keeps his own day",
+  );
+  const selfAsPartner = buildIReports360FieldWorkforceMatrix({
+    employees: chainEmployees,
+    month: 9,
+    year: 2026,
+    todayIso: "2026-09-30",
+    visits: [{ ...rescuedVisit(false), agentHrId: "A-1", doubleID: 1, doubleHrId: "A-1", doubleName: "Rep.One" }],
+  });
+  assert.equal(
+    rowOf(selfAsPartner.matrix, "A-1")[DAY_7],
+    1,
+    "a partner CRM id equal to the agent's is still the agent himself — never a second credit",
+  );
+
   // ── 2. The marker survives the mirror-row mapping ─────────────────────────────────────────────
 
   const mirrorRow: VisitsMirrorRow = {
@@ -427,5 +461,27 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
     dayMaps,
     /doubleHrIds: wantedIds,\s*\n\s*creditDepartedAgentPartners: true,/,
     "the bounded per-employee read asks about the people on the DOUBLE side, so it must keep a departed agent's row too — a one-employee fingerprint re-scan goes down this branch, not the company scan",
+  );
+
+  // ── The duplicate collapse keeps a ride-along whose manager has NO CRM account (re-audit 2026-10-22) ─
+  // One stop saved twice: first solo, then as a Phoenix double naming the manager by HR id only. The
+  // CRM-id-only partner test let the solo save win and erased the manager's coaching credit.
+  assert.equal(hasDoublePartner({ source: "phoenix", crm_visit_id: -5, double_crm_id: null, double_hr_id: "A-10" }), true);
+  assert.equal(hasDoublePartner({ crm_visit_id: -5, double_crm_id: null, double_hr_id: "A-10" }), true, "a negative visit id is a Phoenix row");
+  assert.equal(
+    hasDoublePartner({ source: "ireports360", crm_visit_id: 77, double_crm_id: null, double_hr_id: "A-10" }),
+    false,
+    "a stray resolved HR id on a vendor row is not a partner",
+  );
+  const soloThenRideAlong = collapseDuplicateVisitSubmissions([
+    { agent_crm_id: 1403, contact_crm_id: 5001, visit_date: "2026-10-14", visit_type: 0, crm_visit_id: -10, crm_save_date: "2026-10-14T09:00:00", double_crm_id: null, double_hr_id: null },
+    { agent_crm_id: 1403, contact_crm_id: 5001, visit_date: "2026-10-14", visit_type: 0, crm_visit_id: -11, crm_save_date: "2026-10-14T09:05:00", double_crm_id: null, double_hr_id: "A-10" },
+  ]);
+  assert.equal(soloThenRideAlong.length, 1, "one real stop");
+  assert.equal(soloThenRideAlong[0].double_hr_id, "A-10", "the ride-along survives, so the manager keeps the day");
+  assert.match(
+    readFileSync("src/lib/crm/reads.ts", "utf8"),
+    /const DUPLICATE_DETECTION_COLUMNS = \[[^\]]*"double_hr_id"/,
+    "the collapse widens every projection with double_hr_id, or the partner test above reads undefined",
   );
 }

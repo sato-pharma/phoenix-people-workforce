@@ -73,6 +73,7 @@ import {
   type VisitReportValue,
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
+import { isUnplannedKind, isUnplannedVisitStatus, kpiHoldBackOf, type KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -332,6 +333,19 @@ function groupBy<T extends Row>(rows: ReadonlyArray<T>, key: (row: T) => string 
 
 const idOf = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
 
+/** Why a visit is in no KPI — the two halves of `visitCountsInKpi`, read off the rows this report already holds. */
+function visitReportHoldBack(visit: Row, customer: Row | null, approval: Row | null): KpiHoldBack | null {
+  const isUnplanned = visit.is_unplanned === true;
+  const unplannedKind = isUnplanned ? (isUnplannedKind(visit.unplanned_kind) ? visit.unplanned_kind : "out_of_plan") : null;
+  const status = approval?.status;
+  return kpiHoldBackOf({
+    customerValidated: typeof customer?.validated_at === "string",
+    isUnplanned,
+    unplannedKind,
+    unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
+  });
+}
+
 /**
  * Whose visit it is: the rep, or the manager on his own visit with no rep on it — the integrity board's
  * own rule (`personOnTheVisit`), never the seat's occupant. 🔴 Falling back to the occupant printed a
@@ -486,7 +500,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const needsNotes = has("placeNotes");
   const needsRecs = has("managerRecommendation");
   const needsReview = categories.has("validation");
-  const needsUnplanned = categories.has("approval");
+  // Read when its category was chosen, and whenever an off-plan visit is in the choice: the tiles count only what
+  // the KPIs count, and an off-plan visit counts only once it is approved (re-audit, 2026-10-22).
+  const needsUnplanned = categories.has("approval") || visits.some((visit) => visit.is_unplanned === true);
   const needsProvenance = has("fixAgeSeconds", "deviceInstall", "appRevision", "browser") || has("speedKmh");
   const needsEvidence = has("integrityDetectors", "integrityStrength", "mockDevice", "caseSettled");
   const needsEdits = has("editedBySuperAdmin");
@@ -764,6 +780,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       visitLat: typeof visit.lat === "number" ? visit.lat : null,
       visitLon: typeof visit.lon === "number" ? visit.lon : null,
       visitType: phoenixVisitKindLabel(visit.kind) ?? "",
+      kpiHoldBack: visitReportHoldBack(visit, customer, unplannedByVisit.get(visitId) ?? null),
     };
   });
 

@@ -454,8 +454,12 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       const ownKey = `${agentKey}|${dayIso}`;
       ownRegularCountByHrKeyAndDate.set(ownKey, (ownRegularCountByHrKeyAndDate.get(ownKey) ?? 0) + 1);
     }
+    // Slot 1 reaches its partner by HR ID too, not only by CRM id (re-audit, 2026-10-22): a Phoenix
+    // double visit's manager may have no CRM account — every hire since the vendor stopped issuing them,
+    // and Nahed Tarek's five October double visits — and the old `doubleID != null` gate left that
+    // manager's ride-along day uncredited. A CRM id equal to the agent's is still the agent himself.
     let doubleKey: string | null = null;
-    if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
+    if (visit.doubleID == null || visit.doubleID !== visit.agentID) {
       doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
       if (doubleKey && doubleKey !== agentKey) credit(doubleKey, visit);
     }

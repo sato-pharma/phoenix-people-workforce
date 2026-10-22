@@ -17,7 +17,9 @@ name: Emergency host
 #
 # 🔴 THE GATE IS NOT SKIPPED. Only a main commit whose own ci.yml push run has a green release-gate job can reach the
 # standby — off Railway the container's own /api/readyz gate is open, so this job is the gate.
-# 🔴 WEB ONLY. Railway's worker keeps the schedulers and the CRM poller (infra/fly-standby/fly.toml forces the web role).
+# 🔴 THE STANDBY IS WEB ONLY (infra/fly-standby/fly.toml forces the web role). The schedulers and the CRM poller run on
+# the separate Fly worker (phoenix-worker-standby, infra/fly-standby/fly-worker.toml); go-live moves it onto the same
+# image right after the website, so the two never run different code.
 # 🔴 A MIGRATION IS NOT COVERED, as on every route: apply it first (AGENTS.md §8).
 on:
   workflow_dispatch:
@@ -242,6 +244,32 @@ jobs:
           set -euo pipefail
           node scripts/emergency-host.mjs point --to fly --sha "$SHA"
           node scripts/emergency-host.mjs notify --text "EMERGENCY HOST LIVE: phoenix-hr.satopharma.com now runs ${SHA:0:9} on the Fly.io standby (Frankfurt). When Railway deploys again, run Emergency host with action = back-to-railway. ${RUN_URL}"
+      # 🔴 THE WORKER FOLLOWS THE WEBSITE (re-audit, 2026-10-22). The Fly worker used to be moved by hand after a go-live,
+      # a step nothing enforced: on 22 Oct the website served 81a75f428 while the worker still ran 65eafc9a7, and System
+      # Issues, which compares every error with the WEBSITE's own build, showed every worker error as "Resolved". The
+      # worker now takes the image this go-live just pushed, so the two never run different code. A worker that fails to
+      # move never undoes the website's go-live: the step is marked failed, the owner is told, and the website stays live.
+      - name: Move the background worker to the same commit
+        if: ${{ inputs.action == 'go-live' }}
+        continue-on-error: true
+        env:
+          WORKER_APP: ${{ vars.FLY_WORKER_APP || 'phoenix-worker-standby' }}
+        run: |
+          set -uo pipefail
+          if ! flyctl status -a "$WORKER_APP" > /dev/null 2>&1; then
+            echo "- no worker app ${WORKER_APP} on Fly — the jobs run elsewhere, nothing to move" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if flyctl deploy -a "$WORKER_APP" -c infra/fly-standby/fly-worker.toml \
+               --image "registry.fly.io/${FLY_APP}:${SHA}" \
+               --regions fra --ha=false --strategy rolling --wait-timeout 15m \
+             && FLY_APP="$WORKER_APP" node scripts/emergency-host.mjs wait-standby --sha "$SHA"; then
+            echo "- worker ${WORKER_APP} runs ${SHA:0:9}, the same commit as the website" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- 🔴 worker ${WORKER_APP} did NOT move to ${SHA:0:9}; the website is live on it. Move the worker by hand: docs/deployment.md, \"The worker on Fly\"" >> "$GITHUB_STEP_SUMMARY"
+            node scripts/emergency-host.mjs notify --text "Emergency host: the website is LIVE on ${SHA:0:9}, but the background worker did NOT move to it and still runs its old commit. ${RUN_URL}" || true
+            exit 1
+          fi
       - name: Tell the owner it failed
         if: failure()
         run: |

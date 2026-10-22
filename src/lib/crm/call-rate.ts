@@ -108,6 +108,7 @@ import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 
 /** Two AM accounts every working day (owner's standard). */
 export const AM_CALL_RATE_TARGET = 2;
@@ -565,8 +566,17 @@ function finalizeSlice<Target extends number | null>(
  * a CAMPAIGN call (-8) is NEVER a pharmacy call by this function — campaign rows carry no contact
  * and classifyVisit never applies the comment-sniffing route to them, so a campaign call always
  * lands in AM/PM/unspecified exactly as it did before this split existed.
+ *
+ * AND THE CUSTOMER'S OWN LIST, first — the third signal, and the one a Phoenix CRM pharmacy call
+ * carries: the unified view hands its `list_type` over as `ampm`, so `ampm = 'Pharmacy'` is a pharmacy
+ * whatever its speciality says. The same rule `isPharmacyVisitRow` (crm/visit-count-buckets.ts) has
+ * applied since 2026-10-04; this board kept reading the speciality alone, and a pharmacy a rep added in
+ * Phoenix has none — measured on production 2026-10-22, 257 October Phoenix pharmacy calls had a NULL
+ * speciality and landed in "unspecified", in no lane at all (35 of them Mariam Younan's). No
+ * iReports360 row carries `ampm = 'Pharmacy'`, so no vendor figure moves.
  */
 export function isPharmacyVisit(visit: VisitForCallRate): boolean {
+  if (isPharmacyListType(visit.ampm)) return true;
   if (isPharmacySpeciality(visit.speciality)) return true;
   return classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description).label === "Pharmacy Visit";
 }

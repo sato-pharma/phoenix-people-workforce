@@ -25,6 +25,7 @@ import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
@@ -157,7 +158,8 @@ export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 
 // ── Live departed-agent exclusion (unioned with the static safety-net above) ─────────────────
 // On top of the static list we UNION a live signal: any CRM agent whose sync-resolved agent_hr_id
-// belongs to an employee who is no longer active (employment_status ∉ {active, on_leave}). That
+// belongs to an employee who is no longer active (employment_status ∉ {active, on_leave}) AND whose
+// last working day has passed — someone serving notice is still in the field (`isDepartedFromCrm`). That
 // auto-hides a rep the moment HR flips their status — no code edit or deploy — while the static
 // list stays the permanent safety-net for the unresolvable placeholder/owner-excluded agents the
 // live join can never catch. Fail-safe: any error computing the live set falls back to the static
@@ -321,6 +323,26 @@ export function resolveLiveDepartedExclusion(input: {
   return input.scannedCrmIds.filter((id) => !input.activeEmployeeCrmIds.has(String(id)));
 }
 
+/**
+ * Whether a person has LEFT, for the CRM: their employment status is no longer active or on leave
+ * AND their last working day is behind them (Cairo). Pure; exported for its unit test.
+ *
+ * HR records a resignation the day it is accepted, weeks before the person stops — Hana Abdelaziz was
+ * set to "resigned" on 18 Oct 2026 with a last working day of 31 Oct, and status alone hid her whole
+ * CRM account from every company-wide read while she was still in the field: 41 October visits, 20 of
+ * them double visits with her own managers (re-audit, 2026-10-22). Until the last working day passes
+ * the person is still working, and their rows stay. No last working day recorded keeps the old
+ * answer — departed — because nothing says they are still here.
+ */
+export function isDepartedFromCrm(
+  employee: { employmentStatus: string | null | undefined; lastWorkingDate: string | null | undefined },
+  cairoToday: string,
+): boolean {
+  if (isActiveLifecycleStatus(employee.employmentStatus)) return false;
+  const lastDay = isoDayOrNull(employee.lastWorkingDate);
+  return !(lastDay !== null && lastDay >= cairoToday);
+}
+
 /** Compute the effective exclusion (static ∪ live departed). Never throws: a failure in the live
  * tier is logged and degrades to the static list alone. */
 async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
@@ -328,15 +350,17 @@ async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
   let departed: DepartedCrmAgent[] = [];
   try {
     const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+    const cairoToday = currentCairoDateOnlyIso();
     departed = employees
-      .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus) && Boolean(employee.hrId))
+      .filter((employee) => isDepartedFromCrm(employee, cairoToday) && Boolean(employee.hrId))
       .map((employee) => ({ hrId: employee.hrId, lastWorkingDate: isoDayOrNull(employee.lastWorkingDate) }));
     const departedHrIds = departed.map((agent) => agent.hrId);
     if (departedHrIds.length > 0) {
       const scannedCrmIds = await scanDepartedAgentCrmIds(departedHrIds);
+      // Everyone still working owns their slot — someone serving notice included.
       const activeEmployeeCrmIds = new Set(
         employees
-          .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus) && employee.crmId)
+          .filter((employee) => !isDepartedFromCrm(employee, cairoToday) && employee.crmId)
           .map((employee) => String(employee.crmId)),
       );
       liveIds = resolveLiveDepartedExclusion({ scannedCrmIds, activeEmployeeCrmIds });
@@ -915,6 +939,8 @@ type DuplicateVisitDetectionRow = {
   crm_save_date?: string | null;
   crm_visit_id?: number | null;
   double_crm_id?: number | null;
+  double_hr_id?: string | null;
+  source?: string | null;
   visit_date?: string | null;
   visit_type?: number | null;
 };
@@ -924,6 +950,7 @@ const DUPLICATE_DETECTION_COLUMNS = [
   "agent_crm_id",
   "contact_crm_id",
   "double_crm_id",
+  "double_hr_id",
   "visit_date",
   "visit_type",
   "crm_save_date",
@@ -941,9 +968,14 @@ function withDuplicateDetectionColumns(columns: string | undefined): string | un
 }
 
 /** True when this row carries a real double-visit partner (a manager riding along), as opposed
- * to a solo visit. `0` is the vendor's "no partner" sentinel alongside null. */
-function hasDoublePartner(row: DuplicateVisitDetectionRow): boolean {
-  return row.double_crm_id != null && row.double_crm_id !== 0;
+ * to a solo visit. `0` is the vendor's "no partner" sentinel alongside null. A Phoenix row names a
+ * manager with no CRM account by HR id alone, and that is a partner too — the same rule as
+ * {@link isCrmDoubleVisitRow} (re-audit, 2026-10-22: the CRM-id-only test let a solo save outrank the
+ * ride-along it duplicated, erasing that manager's coaching credit). A stray resolved HR id on a
+ * VENDOR row is not a partner. */
+export function hasDoublePartner(row: DuplicateVisitDetectionRow): boolean {
+  if (row.double_crm_id != null && row.double_crm_id !== 0) return true;
+  return isPhoenixNativeVisitRow(row) && String(row.double_hr_id ?? "").trim().length > 0;
 }
 
 /**

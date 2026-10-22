@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
-import { CRM_RESIGNED_AGENT_CRM_IDS, resolveLiveDepartedExclusion } from "../src/lib/crm/reads.ts";
+import { readFileSync } from "node:fs";
+
+import { CRM_RESIGNED_AGENT_CRM_IDS, isDepartedFromCrm, resolveLiveDepartedExclusion } from "../src/lib/crm/reads.ts";
 
 /**
  * Production incident, 2026-08-05: CRM slot 1399 belonged to B-97 (Nada Elsharkawy) from
@@ -83,5 +85,47 @@ export function runCrmDepartedExclusionHandoverTests() {
     resolveLiveDepartedExclusion({ scannedCrmIds: [], activeEmployeeCrmIds: new Set(["1399"]) }),
     [],
     "nothing was scanned as departed, so there is nothing to carve an exception out of",
+  );
+
+  // ── Re-audit, 2026-10-22: a resignation is recorded weeks before the last day. Hana Abdelaziz was ──
+  // ── set to "resigned" on 18 Oct with a last working day of 31 Oct, and status alone hid her whole ──
+  // ── CRM account — 41 October visits, 20 double visits with her managers — while she was working. ─
+  const today = "2026-10-22";
+  assert.equal(
+    isDepartedFromCrm({ employmentStatus: "resigned", lastWorkingDate: "2026-10-31" }, today),
+    false,
+    "someone serving notice is still in the field: their rows stay",
+  );
+  assert.equal(
+    isDepartedFromCrm({ employmentStatus: "resigned", lastWorkingDate: today }, today),
+    false,
+    "the last working day itself is still a working day",
+  );
+  assert.equal(
+    isDepartedFromCrm({ employmentStatus: "resigned", lastWorkingDate: "2026-10-21" }, today),
+    true,
+    "once the last working day has passed, the person has left",
+  );
+  assert.equal(
+    isDepartedFromCrm({ employmentStatus: "terminated", lastWorkingDate: null }, today),
+    true,
+    "no last working day recorded keeps the old answer: departed",
+  );
+  assert.equal(
+    isDepartedFromCrm({ employmentStatus: "active", lastWorkingDate: "2026-01-01" }, today),
+    false,
+    "an active person is never departed, whatever an old date says",
+  );
+  assert.equal(isDepartedFromCrm({ employmentStatus: "on_leave", lastWorkingDate: null }, today), false, "on leave is still employed");
+
+  // The live tier must ask this rule — for the departed scan AND for who owns a slot.
+  const reads = readFileSync(new URL("../src/lib/crm/reads.ts", import.meta.url), "utf8");
+  const compute = reads.slice(reads.indexOf("async function computeEffectiveExclusion"));
+  assert.match(compute, /isDepartedFromCrm\(employee, cairoToday\) && Boolean\(employee\.hrId\)/, "the departed scan reads the last working day");
+  assert.match(compute, /!isDepartedFromCrm\(employee, cairoToday\) && employee\.crmId/, "someone serving notice still owns their slot");
+  assert.doesNotMatch(
+    compute.slice(0, compute.indexOf("logError(")),
+    /!isActiveLifecycleStatus\(employee\.employmentStatus\)/,
+    "status alone never decides departure again",
   );
 }

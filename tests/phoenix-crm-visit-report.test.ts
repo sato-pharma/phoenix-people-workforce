@@ -374,6 +374,35 @@ function checkDashboard(): void {
 
   const empty = buildVisitReportDashboard({ days: [], fields, filled: {}, rows: [] });
   assert.equal(empty.tiles.find((tile) => tile.label === "On the plan")?.value, "—", "no visits is a dash, never 0%");
+
+  // 🔴 THE TILES COUNT WHAT THE KPIs COUNT (re-audit, 2026-10-22): 18 October off-plan visits still waiting for
+  // approval stood in "Visits" and in the per-day rate. Held-back rows stay LISTED and are named on the tile.
+  const withHeld = buildVisitReportDashboard({
+    days: ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
+    fields,
+    filled: { nextStep: 1, productsMissing: 1 },
+    rows: [
+      ...rows,
+      row(4, { kpiHoldBack: "approval", planned: false, values: { nextStep: null, productsMissing: null } }),
+      row(3, { kpiHoldBack: "validation", visitId: "V3b", values: { nextStep: null, productsMissing: null } }),
+    ],
+  });
+  const visitsTile = withHeld.tiles.find((tile) => tile.label === "Visits");
+  assert.equal(visitsTile?.value, "3", "a visit waiting for approval or for its customer's validation is in no figure");
+  assert.equal(
+    visitsTile?.hint,
+    "3 days with visits · plus 1 waiting for approval, 1 waiting for customer validation, listed and counted in no figure",
+  );
+  assert.deepEqual(
+    withHeld.tiles.filter((tile) => tile.label !== "Visits"),
+    dashboard.tiles.filter((tile) => tile.label !== "Visits"),
+    "every other tile reads exactly as if the held-back visits were not there",
+  );
+  assert.match(
+    withHeld.panels.find((panel) => panel.id === "next-steps")?.note ?? "",
+    /Recorded on 1 of 5 visits/,
+    "the panels still describe every visit recorded — only the tiles are KPI figures",
+  );
 }
 
 // ── 3 · a manager's own visits (owner, 2026-10-20: "Show, keep out of reps") ────────────────────
@@ -769,7 +798,12 @@ function checkSource(): void {
     "the fields that read a silent table are still exactly the ones the district manager's sight hides — change both together",
   );
   assert.match(loader, /const needsReview = categories\.has\("validation"\);/, "the validation table is read only when its category was chosen");
-  assert.match(loader, /const needsUnplanned = categories\.has\("approval"\);/, "and so is the approval table");
+  assert.match(
+    loader,
+    /const needsUnplanned = categories\.has\("approval"\) \|\| visits\.some\(\(visit\) => visit\.is_unplanned === true\);/,
+    "the approval table is read when its category was chosen, or when an off-plan visit's approval decides whether a tile counts it",
+  );
+  assert.match(loader, /kpiHoldBack: visitReportHoldBack\(visit, customer, unplannedByVisit\.get\(visitId\) \?\? null\)/, "every row says whether it counts in a KPI");
   assert.match(loader, /const needsDay = categories\.has\("day"\);/, "and the day's tables");
   assert.match(loader, /if \(needsEvidence \|\| needsBehaviour\) \{/, "the integrity cases are asked for only when an evidence field was chosen");
   assert.match(loader, /VISIT_REPORT_MAX_ROWS/, "a choice that would read an unbounded number of visits is refused");

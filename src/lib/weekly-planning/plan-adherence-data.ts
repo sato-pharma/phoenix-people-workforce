@@ -18,6 +18,7 @@ import {
   emptyPlanAdherenceEvidence,
   isCheckableActivity,
   isScoredInAdherenceHistory,
+  mergeManagerPlanWeeks,
   scorePlanAdherence,
   type PlanAdherenceEvidence,
   type PlanAdherenceHistory,
@@ -390,7 +391,7 @@ export async function loadPortalPlanAdherence(
     loadPlanAdherenceHistory(employeeHrId, { limit: 12 }),
     loadPhoenixCrmManagerWeeks(employeeHrId),
   ]);
-  const history = crmWeeks.length > 0 ? buildPlanAdherenceHistory([...legacy.entries, ...crmWeeks]) : legacy;
+  const history = crmWeeks.length > 0 ? mergeManagerPlanWeeks(legacy.entries, crmWeeks) : legacy;
   if (history.entries.length === 0) return null;
   return {
     averagePct: history.averagePct,

@@ -20,6 +20,7 @@
 
 import { normalizeSession } from "@/lib/crm/call-rate";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
@@ -215,7 +216,8 @@ export function customerLaneOf(
     );
     if (lane !== "campaign") return lane;
   }
-  if (isPharmacySpeciality(row.speciality)) return "pharmacy";
+  // A Phoenix pharmacy call carries its list as `ampm = 'Pharmacy'`, often with no speciality.
+  if (isPharmacyListType(row.ampm) || isPharmacySpeciality(row.speciality)) return "pharmacy";
   if (classifyVisit(row.visit_type, row.comment, row.visit_type_description).label === "Pharmacy Visit") return "pharmacy";
   const session = normalizeSession(row.ampm);
   return session === "unspecified" ? null : session;
