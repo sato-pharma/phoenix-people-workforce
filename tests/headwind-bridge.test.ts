@@ -1749,12 +1749,12 @@ function runServerImageTests() {
   // not be able to take the whole MDM down.
   assert.match(
     entrypoint,
-    /hmdm-phoenix-6\.39\.apk/,
+    /hmdm-phoenix-6\.40\.apk/,
     "the entrypoint re-provisions the Phoenix custom launcher by its exact filename — the name the launcher version url is pointed at",
   );
   assert.match(
     entrypoint,
-    /releases\/download\/launcher-6\.39-r1\//,
+    /releases\/download\/launcher-6\.40-r1\//,
     "fetched from the immutable fork release asset, the public URL a bare Railway container can reach",
   );
   assert.match(
