@@ -1106,17 +1106,12 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
               </button>
             </div>
 
-            {data.autoRegistered.length > 0 ? (
-              <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
-                Added to the custody register by themselves: {data.autoRegistered.join(", ")}.
+            {data.pendingRegistration > 0 ? (
+              <p className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                {data.pendingRegistration === 1
+                  ? "One enrolled tablet is not in the custody register yet. Plug it in and add it with “Connect a tablet by USB”."
+                  : `${data.pendingRegistration} enrolled tablets are not in the custody register yet. Plug each one in and add it with “Connect a tablet by USB”.`}
               </p>
-            ) : null}
-            {data.autoRegisterError ? (
-              <div className="mt-4">
-                <WarningBox title="A tablet was not added to the register">
-                  <p>{data.autoRegisterError}</p>
-                </WarningBox>
-              </div>
             ) : null}
 
             {data.registerError ? (

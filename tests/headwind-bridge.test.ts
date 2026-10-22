@@ -12,7 +12,9 @@ import {
 } from "../src/lib/devices/headwind/auth.ts";
 import {
   headwindActionCatalogue,
+  headwindAddonBody,
   isHeadwindActionId,
+  temporaryScreenLockPin,
   takeHeadwindAction,
   HEADWIND_ACTIONS,
   HEADWIND_MESSAGE_LIMIT,
@@ -36,6 +38,7 @@ import {
 import {
   configurationBranding,
   configurationSummary,
+  configurationWriteBody,
   linkHeadwindApp,
   moveHeadwindDeviceToConfiguration,
   setHeadwindBranding,
@@ -980,7 +983,50 @@ async function runConfigurationTests() {
   // applications, settings and files. A hand-built body — even a correct-looking one — therefore empties
   // the app list of every tablet carrying those rules. The only safe write is the server's own object
   // with one field changed.
-  assert.match(configs, /const next = \{ \.\.\.current, \.\.\.patch \}/, "the whole object is read back and returned with one field changed");
+  assert.match(configs, /return \{ \.\.\.current, \.\.\.patch, applications \}/, "the whole object is read back and returned with one field changed");
+  assert.match(
+    configs,
+    /`\/rest\/private\/configurations\/applications\/\$\{configurationId\}`/,
+    "🔴 and the app links come from their own read — the by-id read never carries them",
+  );
+  assert.match(configs, /const next = configurationWriteBody\(current, links, patch\)/, "the PUT body is built by the pure function pinned below");
+
+  // 🔴 THE BY-ID READ ANSWERS `applications: []` ON EVERY CONFIGURATION (read on production 2026-10-22,
+  // and `getConfigurationByIdFull` upstream never fills it), and the PUT deletes every link before it
+  // re-inserts the ones it is sent. So a body built from that read alone took every app off every
+  // tablet on those rules. The links are read from their own endpoint and the ones ON the configuration
+  // (action 1 install, 2 remove — never 0) go back, exactly as the console's own save sends them.
+  //
+  // BREAK-TEST: make configurationWriteBody return `{ ...current, ...patch }` and the first assertion
+  // fires with `[]` where `[79, 84]` was expected.
+  const rules = { applications: [], files: [{ id: 5 }], id: 3, name: "Rep tablets", password: "plain", restrictions: "no_factory_reset" };
+  const written = configurationWriteBody(
+    rules as never,
+    [
+      { action: 1, id: 79, pkg: "com.carriez.flutter_hbb" },
+      { action: 0, id: 12, pkg: "not.on.these.rules" },
+      { action: 2, id: 84, pkg: "org.telegram.messenger.web" },
+      { action: 1, pkg: "no.id" },
+      null,
+    ],
+    { desktopHeader: "Phoenix" },
+  );
+  assert.deepEqual(
+    (written.applications as Array<{ id: number }>).map((app) => app.id),
+    [79, 84],
+    "every app ON the rules goes back, install and remove alike — and only those",
+  );
+  assert.equal(written.desktopHeader, "Phoenix", "the patched field is changed");
+  assert.equal(written.restrictions, "no_factory_reset", "every other field rides through untouched");
+  assert.deepEqual(written.files, [{ id: 5 }], "and the file list the by-id read DOES carry is kept");
+  assert.equal(written.password, "plain", "the tablet password is carried through as the server holds it");
+  for (const unreadable of [null, { status: "OK" }, "error"]) {
+    assert.throws(
+      () => configurationWriteBody(rules as never, unreadable, { desktopHeader: "Phoenix" }),
+      HeadwindConfigurationError,
+      "🔴 an app-link read that is not a list REFUSES the save — sending it anyway would empty every tablet",
+    );
+  }
   assert.match(configs, /"\/rest\/private\/applications\/configurations"/, "attaching ONE app uses the surgical endpoint, which rewrites nothing else");
   assert.match(configs, /"\/rest\/private\/web-ui-files\/configurations"/, "and so does attaching one file");
   // 🔴 BOTH OF THESE FAIL AS AN HTTP 200 WHEN OMITTED, so nothing but the container's own log says why.
@@ -1181,6 +1227,32 @@ async function runCustodyActionTests() {
     "an action that does not exist",
   );
   assert.equal(untouched.calls.length, 0, "none of those reached the network");
+
+  // 🔴 THE SCREEN-LOCK RESET CARRIES THE NEW PIN (fixed 2026-10-22). The agent's `passwordReset` is the
+  // new password itself; the add-on reads it from `password`, and `passwordReset: true` alone reached
+  // the tablet as null — the reset did nothing while the row read as sent.
+  //
+  // BREAK-TEST: put back `return { deviceNumber, passwordReset: true }` and the deepEqual fires with
+  // the password missing.
+  assert.deepEqual(
+    headwindAddonBody("RESET_SCREEN_LOCK", "PHX-TAB-0007", null, "604193"),
+    { deviceNumber: "PHX-TAB-0007", password: "604193", passwordReset: true },
+    "the reset sends the PIN where the add-on reads it",
+  );
+  assert.throws(
+    () => headwindAddonBody("RESET_SCREEN_LOCK", "PHX-TAB-0007", null, null),
+    HeadwindActionError,
+    "and a reset with no PIN is refused rather than sent to be ignored",
+  );
+  assert.deepEqual(headwindAddonBody("LOCK", "PHX-TAB-0007", null), { deviceNumber: "PHX-TAB-0007", lock: true }, "the other actions are unchanged");
+  const draws = [111111, 123456, 987654, 42, 604193];
+  assert.equal(
+    temporaryScreenLockPin(() => draws.shift() as number),
+    "000042",
+    "a repeated digit and a straight run are skipped, and a short number is padded to six digits",
+  );
+  assert.match(temporaryScreenLockPin(), /^\d{6}$/, "the real PIN is six digits");
+  assert.throws(() => temporaryScreenLockPin(() => 0), HeadwindActionError, "a source that only gives 000000 ends in a refusal, never a weak PIN");
 
   const actions = stripComments(source("src/lib/devices/headwind/actions.ts"));
   // 🔴 NOT HEADWIND'S MESSAGING PLUGIN, WHICH IS THE OBVIOUS ANSWER AND IS A DEAD END.

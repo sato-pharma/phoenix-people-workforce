@@ -1605,7 +1605,7 @@ control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
 | **Location / "Locate"** | 🔴 no | Config 3 is `requestUpdates=DONOTTRACK`, so no continuous tracking; and the fix-refresh service runs only under the launcher's `MainActivity`, which the stock Lenovo home defeats. 0 location rows held. |
 | **Instant commands** (lock, wipe, app-removal, reboot, locate-wake) | 🔴 never delivered | `pushOptions=mqttAlarm` = MQTT on TCP 31000, never opened on Railway (775 failures, push history 0). The agent's HTTP-poll fallback is dead code in MQTT mode. Only the hourly sync carries anything. |
 | Add-on "lock" | ⚠️ overlay only | The agent's full-screen overlay, not a real `lockNow`; weak under the stock home. |
-| **Password reset** | 🔴 silent no-op | `actions.ts` sends `passwordReset: true` with **no** `password`; the add-on's `text("")` nulls it and `@JsonInclude(NON_NULL)` drops the field, yet the row is marked consumed. See §8.7. |
+| **Password reset** | ✅ fixed on the Phoenix side | Was a silent no-op: `actions.ts` sent `passwordReset: true` with **no** `password`; the add-on's `text()` nulled it and `@JsonInclude(NON_NULL)` dropped the field, yet the row was marked consumed. Phoenix now sends a one-time six-digit PIN (§8.7). Still to prove on a real tablet. |
 | App installs | 🔴 3 of 5 404 | Telegram, WPS, WhatsApp wiped every redeploy (WhatsApp fixed by #6232). Only RustDesk + launcher on 0007. |
 | Remote screen (RustDesk) | ⚠️ half | Installed on both; **0007 has no RustDesk ID** (`custom1` empty) so nobody can connect. Capture the id when 0007 is next online (§6.9). |
 | **Rep resets from Settings** | 🔴 yes, around the block | `no_factory_reset` stops the Settings reset only *while in force* — and the agent lifts it at the start of every sync, re-locking only after the install loop finishes, so **one 404 app leaves reset OFF**. A recovery-menu wipe is outside Headwind's reach; with no Google account and no FRP it returns a clean, unmanaged tablet. See §8.8. |
@@ -1621,9 +1621,10 @@ last built 14 Oct and nothing can deploy. Everything below changes the live MDM 
 tablets depend on, and a merge to `infra/headwind-phoenix-actions/` ships straight to it on the next
 deploy (§4.3) — with **no safe way to rehearse** on this machine (no local Docker; the Dockerfile's
 own history records a change declined for exactly this reason). So the server-side steps are written
-here as a playbook to **apply-and-verify when Railway is healthy**, not shipped as code in this PR. The
-only code this PR ships is the Phoenix-side custody confirm (§8.11), which needs no deploy. Do not merge
-any later server-side change on a green CI alone — green CI is not a working tablet (§4.3).
+here as a playbook to **apply-and-verify when Railway is healthy**, not shipped as code. The code that
+has shipped is all Phoenix-side and needs no tablet-server deploy: the custody confirm (§8.11), the
+screen-lock PIN (§8.7) and the configuration save that keeps the app links (§8.14). Do not merge any
+later server-side change on a green CI alone — green CI is not a working tablet (§4.3).
 
 ### 8.3 Close the public APK-upload write (do first; it is the urgent hole)
 
@@ -1688,21 +1689,26 @@ foreground service that refreshes the fix under the stock home, plus the `device
 (`locations.ts` already switches the plugin on and reads `gpsLat`/`gpsLon`). Do **not** force
 `requestUpdates=gps` on config 3 now — it lights a tracking notice and still feeds nothing useful.
 
-### 8.7 Password reset — the end-to-end fix (spec)
+### 8.7 Password reset — a one-time PIN, not a cleared lock (shipped, Phoenix side)
 
-"Reset the screen lock" (`RESET_SCREEN_LOCK`) is meant to CLEAR the lock, i.e. have the agent call
-`resetPasswordWithToken(admin, "", …)` with an empty password. The chain today drops it:
-`actions.ts` `addonBody` sends `{ passwordReset: true }` with no `password`; `PhoenixActionsResource.text("")`
-returns null; the decorator's `@JsonInclude(NON_NULL)` omits a null `passwordReset`; the agent sees no
-field and does nothing — but the sync hook still `markConsumed`s the row. Fix end to end:
-- `actions.ts`: for `RESET_SCREEN_LOCK` send an explicit empty-clear marker the add-on can carry, and
-  refuse with a clear sentence if the add-on cannot (never a silent success).
-- `PhoenixActionsResource` / `PhoenixActionStore`: let `password_reset` carry an explicit empty string
-  through to the agent as `passwordReset: ""` (distinct from "unset"), and do not mark a row consumed
-  when the field it carries is dropped.
-This is fleet-facing (a wrong value could set a password instead of clearing it), so it is verified on a
-real tablet before relying on it — add a Phoenix unit test on the request body shape, and prove the clear
-on 0007 or a new tablet.
+The agent's `passwordReset` is not a switch: it is the NEW password, handed to
+`dpm.resetPasswordWithToken`. The chain used to drop it — `actions.ts` sent `{ passwordReset: true }`
+with no `password`, `PhoenixActionsResource.text()` turned the missing value into null, the decorator's
+`@JsonInclude(NON_NULL)` left `passwordReset` out of the sync, and the agent did nothing while the sync
+hook still `markConsumed`ed the row.
+
+**What ships.** Clearing the lock would leave a field tablet open to whoever picks it up, so the reset
+sets a fresh six-digit PIN instead. `temporaryScreenLockPin()` draws it from `crypto.randomInt` and
+skips the guessable ones (one digit repeated, a straight run up or down); `headwindAddonBody` sends
+`{ deviceNumber, password: <pin>, passwordReset: true }` and refuses a reset with no PIN rather than
+send one to be ignored. The PIN reaches the person who pressed the button ONCE, in the reply; it is
+never in Phoenix's audit row, and the add-on clears its own copy when the tablet confirms. No add-on
+change was needed — a non-empty `password` already rides through to the agent.
+
+**Still to prove on a real tablet:** `resetPasswordWithToken` needs the reset token the agent set to be
+active, and on a tablet that already had a secure lock when the token was set, Android activates it
+only after one unlock. Prove it on a new tablet before relying on it. Pinned by
+`tests/headwind-bridge.test.ts` (the body shape and the PIN rules).
 
 ### 8.8 Reset hardening
 
@@ -1739,6 +1745,13 @@ calls `POST /api/devices/headwind/register` (Super Admin, same-origin, audited) 
 named tablet. Leave 0007 (Ganna) and 0002 as they are. This needs no deploy and is verified by its unit
 test.
 
+**The Google page too (follow-up, 22 Oct).** The "Rep tablets" page that lists Google's enrolled
+tablets (`getRepTabletsState` in `rep-tablets-service.ts`) had the same habit: every read added an
+unknown enrolled tablet to custody in the viewer's name. It now only counts them
+(`pendingRegistration`), and the page says to add each with "Connect a tablet by USB", the one door
+left on that page. Pinned by `tests/tablet-auto-register.test.ts`. The ManageEngine page still
+auto-registers — it is being retired, not changed.
+
 ### 8.12 The owner's clicks (I cannot do these — reported, never done for him)
 
 - Enable **2FA** on both console accounts (`admin`, `phoenix`) — §4.7.
@@ -1750,5 +1763,28 @@ test.
 1. `/rest/public/applications/upload` → 403 on all three hosts; `/files/<launcher>.apk` → 200; a tablet still syncs.
 2. A console/Phoenix APK upload survives a redeploy (volume).
 3. `polling`: an `APPLY_SETTINGS` lands within seconds; push history > 0; no tracking notice on the tablet.
-4. Password-reset clears the lock on a real tablet, and refuses cleanly when it cannot.
+4. "Reset the screen lock" sets the PIN Phoenix showed on a real tablet, and refuses cleanly when it cannot.
 5. A new managed tablet stays out of custody until a Super Admin confirms it (shipped here; unit-tested now).
+6. A home-screen change from Phoenix leaves every app link on config 3 as it was (§8.14).
+
+### 8.14 🔴 A configuration save must send the app links — the by-id read never has them
+
+Read from `hmdm-server` and on production, 22 Oct. `GET /rest/private/configurations/{id}`
+(`getConfigurationByIdFull`) fills `applicationSettings`, `applicationUsageParameters` and `files`, but
+`applications` always comes back `[]`; the links live behind
+`GET /rest/private/configurations/applications/{id}` (79 rows on config 3, 5 of them on the rules).
+`PUT /rest/private/configurations` deletes every app link and re-inserts only the ones it is sent, then
+re-checks `mainAppId` against them. So Phoenix's old round-trip (`{ ...current, ...patch }`, used by
+the home-screen look) would have taken every app — RustDesk, the launcher, the home-screen app — off
+every tablet on those rules the first time anyone saved a colour. It never ran in production.
+
+**What ships.** `configurationWriteBody(current, links, patch)` reads the links from their own endpoint
+and sends the ones with `action !== 0` (1 install, 2 remove), the same body the console's own save sends
+(`allApplications.filter(app => app.action != 0)`), and refuses the save if the link read is not a list.
+Any hand-run change to a configuration follows the same rule. Pinned by `tests/headwind-bridge.test.ts`.
+
+**Two agent facts the same read turned up.** The agent ignores `action` and reads only `remove`, which
+the server sets to `action == 2`: a link sent with `action` 0 ("Do not install" in the console) would
+still be downloaded and installed, which is why neither save ever sends one, and "remove" (2) on an app
+the tablet never installed is simply skipped. And one app whose file answers 404 stalls the install queue, so
+the agent never re-applies `no_factory_reset` (§8.8) — keep config 3 free of 404 apps.
