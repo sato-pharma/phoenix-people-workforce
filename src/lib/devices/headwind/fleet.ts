@@ -7,20 +7,21 @@
  * seen still shows — flagged as not in the register — because an unknown managed tablet is exactly
  * the thing a custody console should surface, not hide.
  *
- * THE FLEET READ IS ALSO WHAT FILLS THE REGISTER (owner, 2026-09-25: "do everything Google was going
- * to do"). A tablet that enrolled on the company's own Headwind server puts itself into the custody
- * register on this read, under the next `PHX-TAB-nnnn` tag, through the same `registerTablet` the
- * other two bridges call. ONLY WHEN THE REGISTER ITSELF WAS READABLE: adding blind would give a
- * tablet the register already knows a second tag. And only with an actor to write it in the name of,
- * so a read with nobody signed in stays a read.
+ * THE FLEET READ NO LONGER FILLS THE REGISTER (owner, 2026-10-22: "new tablets enter Device Custody
+ * only when a person confirms them"). Until that day a tablet that enrolled on the company's own
+ * Headwind server added ITSELF to the custody register on this read. That silent auto-create is gone:
+ * a managed tablet the register has never seen shows here flagged as not in the register, and
+ * `pendingRegistration` counts the ones a person could add — those carrying a serial or an IMEI. A
+ * person adds each from its own row through `/api/devices/headwind/register`; this read only reads.
  *
- * THE FIELD NAMES MATCH THE MANAGEENGINE FLEET'S ON PURPOSE — `rows`, `registerError`,
- * `autoRegistered`, `autoRegisterError`, `imeisToRecord`. The two sections sit on one page during the
- * changeover and a person reading them should not have to learn two vocabularies for one idea.
+ * THE FIELD NAMES MATCH THE MANAGEENGINE FLEET'S WHERE THEY STILL MEAN THE SAME THING — `rows`,
+ * `registerError`, `imeisToRecord`. `pendingRegistration` is this section's own: the ManageEngine half
+ * still auto-registers (it is being retired, not changed) and keeps `autoRegistered` /
+ * `autoRegisterError`, so forcing one vocabulary across a rule that now differs would hide the change.
  */
 
 import { listHeadwindDevices, matchHeadwindToRegister, type HeadwindDevice } from "@/lib/devices/headwind/devices";
-import { autoRegisterHeadwindTablets, headwindImeisToRecord } from "@/lib/devices/headwind/register-sync";
+import { headwindImeisToRecord, headwindTabletsToRegister } from "@/lib/devices/headwind/register-sync";
 import { isRustDeskConfigured } from "@/lib/devices/rustdesk/config";
 import { getDeviceRegisterData, loadReservedAssignments } from "@/lib/devices/service";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
@@ -71,10 +72,12 @@ export type HeadwindFleetState = {
   rows: RepHeadwindRow[];
   /** The custody register could not be read, so holders are unknown but the fleet still shows. */
   registerError: boolean;
-  /** Asset tags the tablets gave themselves on this read. */
-  autoRegistered: string[];
-  /** One tablet could not be added; the rest of the fleet still loaded. */
-  autoRegisterError: string | null;
+  /**
+   * Managed tablets the register has never seen that CARRY a serial or an IMEI — the ones a person can
+   * confirm into custody from their row. Not every unregistered tablet: one reporting neither cannot be
+   * told apart, so it is not offered. The count, never the act — nothing is added on this read.
+   */
+  pendingRegistration: number;
   /** Register entries holding no IMEI whose tablet reports one — what the copy would write. */
   imeisToRecord: number;
   /** Whether the company's RustDesk relay is set up, so the screen buttons can be offered. */
@@ -127,11 +130,12 @@ function toRow(
  * The whole fleet, matched to the register and ordered for the console: unregistered tablets first
  * (they need attention), then by asset tag or name.
  *
- * `actor` is who a register write is made in the name of. Without one, nothing is written and the
- * fleet is only read.
+ * `_actor` is kept for call-site compatibility only. The fleet read no longer writes to the custody
+ * register (owner, 2026-10-22: new tablets enter custody only when a person confirms them), so a read
+ * with nobody signed in and a read with the Super Admin signed in now do exactly the same thing.
  */
 export async function getHeadwindFleet(
-  actor: string | null = null,
+  _actor: string | null = null,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<HeadwindFleetState> {
@@ -146,16 +150,7 @@ export async function getHeadwindFleet(
       };
     });
 
-  let register = await loadRegister();
-
-  let autoRegistered: string[] = [];
-  let autoRegisterError: string | null = null;
-  if (actor && !registerError) {
-    const added = await autoRegisterHeadwindTablets(devices, register.devices, actor);
-    autoRegistered = added.registered;
-    autoRegisterError = added.error;
-    if (added.registered.length > 0 || added.error) register = await loadRegister();
-  }
+  const register = await loadRegister();
 
   // The live reservations, so a reserved tablet shows who it is held for and its reconcile/revoke
   // controls target the right assignment. A failure here never blocks the fleet — it just means no
@@ -180,9 +175,8 @@ export async function getHeadwindFleet(
 
   return {
     assignable: register.assignable ?? [],
-    autoRegisterError,
-    autoRegistered,
     imeisToRecord: registerError ? 0 : headwindImeisToRecord(devices, register.devices).length,
+    pendingRegistration: registerError ? 0 : headwindTabletsToRegister(devices, register.devices).length,
     registerError,
     // Read here rather than in the component: whether the relay is set up is a server fact, and the
     // browser must never be told the relay settings themselves to work it out.

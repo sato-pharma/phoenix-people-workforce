@@ -1,13 +1,20 @@
 /**
- * The custody register, filled by the tablets themselves — through Headwind this time.
+ * The custody register and the Headwind fleet — which managed tablets the register already knows,
+ * which ones are waiting, and adding ONE that a person has confirmed.
  *
- * WHY THIS EXISTS (owner, 2026-09-25: "do everything Google was going to do"). A tablet that enrolls
- * puts ITSELF into the custody register under the next `PHX-TAB-nnnn` tag, and the IMEI it reports is
- * copied onto its entry so nobody dials *#06#. That has been true of the Google half since
- * 2026-09-18 and of the ManageEngine half since 2026-09-25; a tablet that enrolls on the company's
- * own Headwind server must not be the one kind that arrives unknown. This module deliberately calls
- * the SAME `registerTablet` and `recordReportedImei` the other two call: one tablet must not be
- * describable two ways depending on which console noticed it first.
+ * 🔴 NEW TABLETS ENTER CUSTODY ONLY WHEN A PERSON CONFIRMS THEM (owner, 2026-10-22). Until that day a
+ * Headwind tablet that enrolled added ITSELF to the custody register the next time the fleet was read
+ * — the "do everything Google was going to do" rule of 2026-09-25. That silent auto-create is gone: a
+ * managed tablet the register has never seen now shows on the console as waiting, and a person adds it
+ * from its own row through `registerOneHeadwindTablet`. The pure `headwindTabletsToRegister` is kept,
+ * but it is now what COUNTS the tablets waiting, never what adds them. Adding one still goes through
+ * the SAME `registerTablet` the other bridges call, so one tablet is never describable two ways
+ * depending on which console noticed it first; only the trigger changed, from a read to a click.
+ *
+ * THE IMEI COPY IS UNCHANGED, AND IT IS A DIFFERENT THING. Copying the IMEI a tablet reports onto an
+ * entry that already exists but holds none fills a field on a row a person already confirmed — it
+ * creates no custody entry — so it still happens by itself through `recordReportedImei`, on the rules
+ * `headwindImeisToRecord` sets.
  *
  * WHAT COUNTS AS A REP TABLET HERE. Headwind's device list holds only devices whose agent enrolled on
  * the company's own server, and the company's server manages nothing but rep tablets — so every
@@ -22,7 +29,8 @@
  */
 
 import { imeisMatch } from "@/lib/devices/device-identity";
-import { matchHeadwindToRegisterDetailed, type HeadwindDevice } from "@/lib/devices/headwind/devices";
+import { listHeadwindDevices, matchHeadwindToRegisterDetailed, type HeadwindDevice } from "@/lib/devices/headwind/devices";
+import { HeadwindCommandInputError } from "@/lib/devices/headwind/target";
 import { normalizeImei, normalizeSerial, type RegisterTablet } from "@/lib/devices/managed-tablets";
 import { deviceErrorMessage, getDeviceRegisterData, recordReportedImei } from "@/lib/devices/service";
 import { registerTablet, type TabletFacts } from "@/lib/devices/tablet-auto-register";
@@ -112,42 +120,87 @@ export function headwindImeisToRecord(
   );
 }
 
-export type HeadwindAutoRegisterResult = {
-  /** Asset tags created on this read, in the order the tablets were added. */
-  registered: string[];
-  /** One tablet could not be added; the others were not held up by it. */
-  error: string | null;
-};
+export type HeadwindRegisterOneDecision =
+  | { ok: true; facts: TabletFacts }
+  | { ok: false; message: string };
 
 /**
- * Add every unregistered Headwind tablet to the custody register, in the actor's name.
+ * Whether ONE named Headwind tablet can be added to the custody register, and with which facts — a
+ * pure decision, no I/O, so every refusal can be proven without a database and without writing a row.
  *
- * The register is re-read between writes so each tablet is numbered against what the previous one
- * just created, never against a list read before any of them existed. A failure on one tablet is
- * reported and the loop carries on — a tablet the register refuses must not stop the rest of the
- * fleet arriving.
+ * The rules are the register's own, said once: a tablet that has left the fleet cannot be added; a
+ * tablet the register already holds is refused rather than given a second tag (the parity every bridge
+ * keeps); and a tablet carrying neither a serial nor an IMEI is refused, because nothing would then
+ * tell it apart from the next one. The device number is trimmed before it is matched — a stray space
+ * off a console must not turn a known tablet into "not in the fleet".
  */
-export async function autoRegisterHeadwindTablets(
+export function headwindRegisterOneDecision(
+  deviceNumber: string,
   devices: readonly HeadwindDevice[],
   register: readonly RegisterTablet[],
-  actor: string,
-): Promise<HeadwindAutoRegisterResult> {
-  const missing = headwindTabletsToRegister(devices, register);
-  if (missing.length === 0) return { error: null, registered: [] };
+): HeadwindRegisterOneDecision {
+  const wanted = clean(deviceNumber);
+  if (!wanted) return { message: "Say which tablet to add to the custody register.", ok: false };
 
-  const registered: string[] = [];
-  let error: string | null = null;
-  let entries = [...register];
-  for (const facts of missing) {
-    try {
-      const added = await registerTablet(facts, "headwind", actor, entries);
-      if (added.created) registered.push(added.assetTag);
-      entries = (await getDeviceRegisterData()).devices;
-    } catch (caught) {
-      error = `A tablet (serial ${facts.serialNumber ?? "not reported"}) could not be added to the custody register: ${deviceErrorMessage(caught)}`;
-    }
+  const device = devices.find((candidate) => clean(candidate.deviceNumber) === wanted);
+  if (!device) {
+    return {
+      message: "That tablet is not in the Headwind fleet any more. Reload the page and add it from its row.",
+      ok: false,
+    };
   }
-  return { error, registered };
+
+  const match = matchHeadwindToRegisterDetailed(device, register);
+  if (match) {
+    return { message: `This tablet is already in the custody register as ${match.entry.assetTag}.`, ok: false };
+  }
+
+  const facts: TabletFacts = {
+    imei: clean(device.imei),
+    manufacturer: clean(device.manufacturer),
+    model: clean(device.model),
+    serialNumber: clean(device.serialNumber),
+  };
+  if (!normalizeSerial(facts.serialNumber) && !normalizeImei(facts.imei)) {
+    return {
+      message:
+        "This tablet reports neither a serial number nor an IMEI, so nothing would tell it apart from another tablet. It cannot be added to custody until it reports one.",
+      ok: false,
+    };
+  }
+  return { facts, ok: true };
+}
+
+export type HeadwindRegisterOneResult = { assetTag: string; created: boolean };
+
+/**
+ * Add ONE named Headwind tablet to the custody register, in the actor's name — the person-confirmed
+ * step that replaced the silent auto-create removed on 2026-10-22.
+ *
+ * NOTHING HERE TAKES A VALUE FROM THE BROWSER BUT THE DEVICE NUMBER. The facts written are read from
+ * Headwind's own live list, and the tag is numbered against the register as it is now; a stale page or
+ * a forged request can ask to add a tablet that is already there or already gone, and gets the refusal
+ * `headwindRegisterOneDecision` returns, never a row whose contents it chose. The write goes through
+ * the SAME `registerTablet` the auto-create used, which writes its own REQUIRED audit row — so there
+ * is no second audit here, and no second write path a parity test would have to pin.
+ */
+export async function registerOneHeadwindTablet(
+  deviceNumber: string,
+  actor: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HeadwindRegisterOneResult> {
+  const devices = await listHeadwindDevices(fetchImpl, env);
+  // One read of the register answers both "is this tablet already known" and the entry list the new
+  // tag is numbered against — the same list `registerTablet` re-reads only if another writer races it.
+  const { devices: register } = await getDeviceRegisterData();
+
+  const decision = headwindRegisterOneDecision(deviceNumber, devices, register);
+  if (!decision.ok) throw new HeadwindCommandInputError(decision.message);
+
+  const facts = decision.facts;
+  const added = await registerTablet(facts, "headwind", actor, register);
+  return { assetTag: added.assetTag, created: added.created };
 }
 
 export type HeadwindImeiRecordResult = {

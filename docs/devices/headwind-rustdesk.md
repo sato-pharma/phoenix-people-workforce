@@ -585,11 +585,16 @@ Two more settings follow in §4.7 — the Cloudflare Access service token — **
 
 ### 4.7 Locking down the console — Cloudflare Access
 
-🔴 **Headwind Community has no two-factor sign-in** — that is a paid tier. The admin console would
-otherwise sit on the public internet with one password in front of it, and that password
-factory-resets tablets. **The owner's decision (2026-09-25): the console goes behind Cloudflare
-Access**, so nobody reaches the login page at all without first signing in to Cloudflare. This is
-the path; there is no second option to weigh.
+🔴 **CORRECTED 2026-10-22: Headwind Community DOES have two-factor sign-in** — the live server's
+`settings.twoFactor` flag exists and both console accounts (`admin`, `phoenix`) can turn it on; the
+earlier claim that 2FA is a paid tier was wrong. **But `/rest/public/jwt/login` skips 2FA and accepts
+the password alone** (read off the agent source), so 2FA protects the login *page* and not the token
+endpoint — which is why the token endpoint has to come off the public tablet hostname (see §8), not
+merely be guarded by 2FA. The admin console otherwise sits on the public internet with one password
+in front of it, and that password factory-resets tablets. **The owner's decision (2026-09-25): the
+console goes behind Cloudflare Access**, so nobody reaches the login page at all without first
+signing in to Cloudflare. 2FA on both accounts is the belt beside that brace — turn it on; it is the
+owner's own click in the console (Settings → the account → two-factor).
 
 **On Railway there is no tunnel and no `cloudflared` daemon** — there is no box to run one on, and
 none is needed. Railway already publishes the service on a public hostname; Access goes in front of
@@ -1581,3 +1586,169 @@ on which console noticed it first:
 
 - `registerTablet(facts, "headwind", …)` — `src/lib/devices/tablet-auto-register.ts`
 - `recordReportedImei({ …, source: "headwind" }, …)` — `src/lib/devices/service.ts`
+
+---
+
+## 8. The 22 Oct 2026 end-to-end audit, and the lockdown-and-features playbook
+
+Read live against the tablet server's own APIs, its 4,005-row device log and Phoenix's `audit_logs`,
+plus the upstream Headwind agent and server source. The owner asked, 22 Oct: can the rep reset the
+tablet, can apps (Outlook/Yahoo mail) be put on it, and does every function really work — location,
+control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
+
+### 8.1 What really works, and what does not
+
+| Function | Really working? | Why |
+|---|---|---|
+| Sync / check-in | ✅ | Hourly until each tablet went offline (0002 on 12 Oct, 0007 on 19 Oct). |
+| Remote factory reset (add-on) | ✅ once | 0002 on 26 Sep; it re-enrolled the same evening. |
+| **Location / "Locate"** | 🔴 no | Config 3 is `requestUpdates=DONOTTRACK`, so no continuous tracking; and the fix-refresh service runs only under the launcher's `MainActivity`, which the stock Lenovo home defeats. 0 location rows held. |
+| **Instant commands** (lock, wipe, app-removal, reboot, locate-wake) | 🔴 never delivered | `pushOptions=mqttAlarm` = MQTT on TCP 31000, never opened on Railway (775 failures, push history 0). The agent's HTTP-poll fallback is dead code in MQTT mode. Only the hourly sync carries anything. |
+| Add-on "lock" | ⚠️ overlay only | The agent's full-screen overlay, not a real `lockNow`; weak under the stock home. |
+| **Password reset** | 🔴 silent no-op | `actions.ts` sends `passwordReset: true` with **no** `password`; the add-on's `text("")` nulls it and `@JsonInclude(NON_NULL)` drops the field, yet the row is marked consumed. See §8.7. |
+| App installs | 🔴 3 of 5 404 | Telegram, WPS, WhatsApp wiped every redeploy (WhatsApp fixed by #6232). Only RustDesk + launcher on 0007. |
+| Remote screen (RustDesk) | ⚠️ half | Installed on both; **0007 has no RustDesk ID** (`custom1` empty) so nobody can connect. Capture the id when 0007 is next online (§6.9). |
+| **Rep resets from Settings** | 🔴 yes, around the block | `no_factory_reset` stops the Settings reset only *while in force* — and the agent lifts it at the start of every sync, re-locking only after the install loop finishes, so **one 404 app leaves reset OFF**. A recovery-menu wipe is outside Headwind's reach; with no Google account and no FRP it returns a clean, unmanaged tablet. See §8.8. |
+| Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose a native mail app (§8.9). |
+| **Custody register** | ✅ fixed in this PR | Was auto-registering by serial/IMEI; now a person confirms each tablet (§8.11). |
+| **Console / upload path open on every name** | 🔴 | One Tomcat serves the console, the private API and the public write paths on `mdm`, `mdm-console` and the Railway host. `/rest/public/applications/upload` is gated only by `MD5(deviceNumber + hash.secret)` where `hash.secret` is the published default (no `SHARED_SECRET` set), and device numbers are guessable — so an app row can be written into `/files` and served to tablets. 2FA is available but off. See §8.3. |
+
+### 8.2 🔴 THE GATE — apply NOTHING in §8.3–§8.10 until Railway is healthy, and verify the server-side changes on a real redeploy before the PR is merged
+
+As of 22 Oct, Railway has an **open platform-wide deploy pause with a security advisory** (revoke
+Railway-stored env vars, review logs; Railway is rotating its own bucket credentials). `phoenix-headwind`
+last built 14 Oct and nothing can deploy. Everything below changes the live MDM server that real rep
+tablets depend on, and a merge to `infra/headwind-phoenix-actions/` ships straight to it on the next
+deploy (§4.3) — with **no safe way to rehearse** on this machine (no local Docker; the Dockerfile's
+own history records a change declined for exactly this reason). So the server-side steps are written
+here as a playbook to **apply-and-verify when Railway is healthy**, not shipped as code in this PR. The
+only code this PR ships is the Phoenix-side custody confirm (§8.11), which needs no deploy. Do not merge
+any later server-side change on a green CI alone — green CI is not a working tablet (§4.3).
+
+### 8.3 Close the public APK-upload write (do first; it is the urgent hole)
+
+`POST /rest/public/applications/upload` (`PublicResource.java`) writes an APK into a customer's
+`/files` and inserts an `applications` row pointing tablets at it, gated only by the published-default
+hash. Nothing legitimate on this fleet uses it — tablets download finished APKs from `/files/<name>`
+(a different, static path they must keep reaching), and the only client of the upload endpoint is the
+desktop "AppList" utility, which the owner does not use. So it is safe to refuse.
+
+**Minimal, safe first rule (Tomcat RewriteValve).** Add a Host-level `RewriteValve` and a
+`conf/Catalina/localhost/rewrite.config` (conf/ is not under the `work/` volume, so it survives a
+redeploy) carrying exactly:
+
+```
+RewriteCond %{REQUEST_URI} ^/rest/public/applications/upload
+RewriteRule .* - [F]
+```
+
+`[F]` returns 403 on every hostname. This blocks only the upload POST and touches no tablet path.
+Wire the valve by COPYing a patched `server.xml` in the Dockerfile (it is never rewritten at start),
+or inject `WEB-INF/rewrite.config` into the WAR the same way the add-on jar is injected (`jar uf`) and
+declare the valve in `conf/context.xml`; add a build-time parse check so a malformed config fails the
+build, not the server's boot. **Verify on redeploy:** `curl -s -o /dev/null -w "%{http_code}"` on
+`/rest/public/applications/upload` → 403 on all three hosts, while `/files/hmdm-phoenix-6.39.apk` still
+→ 200 and a tablet still syncs.
+
+**The staged host-split (second, separate, higher-risk step).** Allow only the tablet-facing public
+paths on `mdm` and move the console + private API to `mdm-console` behind Access. This can break every
+tablet's sync if the allowlist is wrong, and it requires Phoenix to reach `mdm-console` through a
+Cloudflare Access service token — so it is its own change with its own verification (§8.10), done only
+after §8.3's minimal rule is proven and a tablet is in hand to test against. The tablet-facing public
+allowlist to preserve on `mdm`: `/files/`, `sync/configuration`, `sync/info`, `notifications/device`,
+`notifications/polling`, `devicelog/log/(rules|list)`, `deviceinfo` public + `plugin-settings/device`,
+`devicelocations/update`, and `devicereset/public/(reboot|password)`.
+
+### 8.4 Durable `/files` — the Railway volume (the "small disk" the owner approved)
+
+`/files` lives under `/usr/local/tomcat/work`, recreated bare on every redeploy — which is why console
+uploads vanish and the entrypoint has to re-fetch RustDesk, the launcher and WhatsApp. A Railway volume
+mounted at the files dir makes a one-time console upload durable (and removes the need for an entrypoint
+block per app). Create it via the Railway GraphQL `volumeCreate` on the `phoenix-headwind` service,
+mount path `/usr/local/tomcat/work/files`, region `europe-west4-drams3a` (the service's region — a
+volume is region-pinned; see `railway-services-are-born-in-sfo-and-volumes-are-region-pinned`). Verify:
+redeploy and confirm a test file under `/files` survives.
+
+### 8.5 Instant commands — switch config 3 `pushOptions` to `polling`
+
+MQTT (31000) is never delivered. Headwind's `polling` mode long-polls `/rest/notification/polling/{n}`
+over 443 and the agent then receives pushes within seconds instead of at the hourly sync. **Precondition
+(the never-show-tracking golden rule, `rep-tablet-never-shows-tracking-golden-rule`):** confirm on a real
+tablet that `polling` shows no persistent notification before cutting it over. Change it on the
+configuration (config id 3) through the console or the Phoenix configurations API. Verify: send one
+benign `APPLY_SETTINGS` (`configUpdated`) and watch the add-on push history advance past 0 and the device
+sync within seconds.
+
+### 8.6 Location — it belongs to the custom launcher build
+
+Check-in location needs `requestUpdates` ≠ `DONOTTRACK` **and** the launcher's `MainActivity` running,
+which the stock Lenovo home defeats; the free build's location-history upload is a stub. So durable
+location is part of the custom launcher task (`headwind-rep-tablet-custom-launcher-build-required`): a
+foreground service that refreshes the fix under the stock home, plus the `deviceinfo` plugin switched on
+(`locations.ts` already switches the plugin on and reads `gpsLat`/`gpsLon`). Do **not** force
+`requestUpdates=gps` on config 3 now — it lights a tracking notice and still feeds nothing useful.
+
+### 8.7 Password reset — the end-to-end fix (spec)
+
+"Reset the screen lock" (`RESET_SCREEN_LOCK`) is meant to CLEAR the lock, i.e. have the agent call
+`resetPasswordWithToken(admin, "", …)` with an empty password. The chain today drops it:
+`actions.ts` `addonBody` sends `{ passwordReset: true }` with no `password`; `PhoenixActionsResource.text("")`
+returns null; the decorator's `@JsonInclude(NON_NULL)` omits a null `passwordReset`; the agent sees no
+field and does nothing — but the sync hook still `markConsumed`s the row. Fix end to end:
+- `actions.ts`: for `RESET_SCREEN_LOCK` send an explicit empty-clear marker the add-on can carry, and
+  refuse with a clear sentence if the add-on cannot (never a silent success).
+- `PhoenixActionsResource` / `PhoenixActionStore`: let `password_reset` carry an explicit empty string
+  through to the agent as `passwordReset: ""` (distinct from "unset"), and do not mark a row consumed
+  when the field it carries is dropped.
+This is fleet-facing (a wrong value could set a password instead of clearing it), so it is verified on a
+real tablet before relying on it — add a Phoenix unit test on the request body shape, and prove the clear
+on 0007 or a new tablet.
+
+### 8.8 Reset hardening
+
+Add to config 3 `restrictions`: `no_safe_boot`, `no_debugging_features`, `no_add_user` (keep
+`no_factory_reset`). Honest limit: none of these stop a recovery-menu wipe. The failed-download-lifts-the-
+block behaviour is upstream launcher logic — the real cure is the custom launcher re-locking on failure;
+interim, keep config 3 free of 404 apps so the install loop always completes and re-locks. **Enterprise
+FRP** (a fork `setFactoryResetProtectionPolicy`) is the only thing that makes a recovery wipe come back
+still locked — fork work.
+
+### 8.9 A native mail app on the tablet (the owner's choice, 22 Oct)
+
+No Google account → no Play Store, so mail arrives as an uploaded APK. Pick an IMAP client that ships a
+direct APK (FairEmail or K-9/Thunderbird; the Outlook APK is an alternative), upload it through the
+console onto the volume (§8.4) so it is durable, and preconfigure the Turbify IMAP host so the rep only
+enters their address and password: `imap.satopharma.com` / `smtp.satopharma.com` (both CNAME
+`cpanel356.turbify.biz`), IMAP 993 SSL, SMTP 465 SSL. `webmail.satopharma.com` in the browser is the
+zero-install fallback.
+
+### 8.10 The `mdm-console` / Access / env cutover (with §8.3's host-split)
+
+Point Phoenix's Headwind base URL at `mdm-console.satopharma.com` (the private-API host) and give it a
+Cloudflare Access **service token** so its server-to-server calls pass Access: set
+`HEADWIND_MDM_ACCESS_CLIENT_ID` / `HEADWIND_MDM_ACCESS_CLIENT_SECRET` (support already in `auth.ts`),
+created in the Cloudflare Zero Trust dashboard (already live from MeshCentral). Tablets keep using
+`mdm.satopharma.com` — confirmed that no tablet-facing URL is built from Phoenix's base URL. Set the env
+before the host-split rule is cut over, or Phoenix loses the console.
+
+### 8.11 Custody confirm — shipped in this PR (Phoenix code)
+
+The fleet read no longer auto-creates custody rows (the owner's 22 Oct decision: a person confirms each
+new tablet). An unregistered managed tablet is surfaced with an "Add to custody" control; confirming it
+calls `POST /api/devices/headwind/register` (Super Admin, same-origin, audited) which registers that one
+named tablet. Leave 0007 (Ganna) and 0002 as they are. This needs no deploy and is verified by its unit
+test.
+
+### 8.12 The owner's clicks (I cannot do these — reported, never done for him)
+
+- Enable **2FA** on both console accounts (`admin`, `phoenix`) — §4.7.
+- Set a **long config-3 agent password** (today `12345678`; its MD5 is what the public config leaks).
+- Create the Cloudflare Access **service token** for Phoenix and add **Access** on `mdm-console`.
+
+### 8.13 Verification checklist (run when Railway is healthy)
+
+1. `/rest/public/applications/upload` → 403 on all three hosts; `/files/<launcher>.apk` → 200; a tablet still syncs.
+2. A console/Phoenix APK upload survives a redeploy (volume).
+3. `polling`: an `APPLY_SETTINGS` lands within seconds; push history > 0; no tracking notice on the tablet.
+4. Password-reset clears the lock on a real tablet, and refuses cleanly when it cannot.
+5. A new managed tablet stays out of custody until a Super Admin confirms it (shipped here; unit-tested now).
