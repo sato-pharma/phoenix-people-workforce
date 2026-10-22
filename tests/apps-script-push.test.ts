@@ -296,4 +296,30 @@ export async function runAppsScriptPushTests() {
   assert.match(refusal, /script\.deployments/, "the run must fail naming the missing scope, never report success");
   assert.match(refusal, /apps-script-authorize\.mjs/);
   assert.equal(narrow.state.deployments[0].deploymentConfig.versionNumber, 5);
+
+  // ── 10. A project another account owns: read its web app, NEVER move it ────
+  // 22 Oct 2026: moving the Direct Orders deployment as the grant's account (an editor there)
+  // turned its /exec URL into HTTP 403 "Access denied" for every caller, and moving it back to the
+  // old version did not undo it. Only the owning account's own redeploy works.
+  const directOrders = APPS_SCRIPT_TARGETS.find((entry) => entry.key === "direct-orders");
+  assert.equal(directOrders?.moveWebApp, false, "Direct Orders belongs to another account — the push must never move its web app");
+  for (const entry of APPS_SCRIPT_TARGETS.filter((e) => e.key !== "direct-orders")) {
+    assert.notEqual(entry.moveWebApp, false, `${entry.key} is the grant account's own project, so its web app is kept current`);
+  }
+
+  const OWNER_ONLY = { ...TARGET, moveWebApp: false };
+  const foreign = fakeGoogle({ deployments: [structuredClone(pinned)], head: structuredClone(current), versions: { 5: structuredClone(stale) } });
+  let ownerOnly = "";
+  await withStubbedGoogle(foreign.fake as typeof fetch, () =>
+    pushTarget(FULL_GRANT, OWNER_ONLY).catch((error: Error) => {
+      ownerOnly = error.message;
+    }),
+  );
+  assert.equal(foreign.calls.some((c) => c.method !== "GET"), false, "nothing is written to a project another account owns when only its web app is behind");
+  assert.match(ownerOnly, /version 5/, "the failure names the version the web app is stuck on");
+  assert.match(ownerOnly, /Manage deployments/, "and says what the owning account must do");
+
+  const foreignCurrent = fakeGoogle({ deployments: [structuredClone(pinned)], head: structuredClone(current), versions: { 5: structuredClone(current) } });
+  await withStubbedGoogle(foreignCurrent.fake as typeof fetch, () => pushTarget(FULL_GRANT, OWNER_ONLY));
+  assert.deepEqual(foreignCurrent.calls.map((c) => c.method), ["GET", "GET", "GET"], "an owner-only web app already on HEAD's code passes quietly");
 }

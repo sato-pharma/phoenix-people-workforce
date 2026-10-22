@@ -330,6 +330,17 @@ async function syncWebApp(auth, target, scriptId, headFiles) {
     return;
   }
 
+  if (target.moveWebApp === false) {
+    // Never moved from here — see `moveWebApp` in the manifest. Failing is the point: the old
+    // version keeps answering Phoenix with code HEAD has already replaced, and nothing else says so.
+    throw new Error(
+      `${target.sheet}'s web app serves version ${versionNumber}, which is not the code just pushed, ` +
+        `and this project belongs to another Google account, so the push does not move it (an editor's ` +
+        `move turns the /exec URL into "Access denied"). The owning account must open the script, ` +
+        `Deploy → Manage deployments → Edit the web app → Version: New version → Deploy.`,
+    );
+  }
+
   if (checkOnly) {
     console.log(`would  ${target.key} — ${target.sheet}'s web app is on version ${versionNumber}, behind HEAD: deploy a new version to it.`);
     return;

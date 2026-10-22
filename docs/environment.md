@@ -429,7 +429,13 @@ behind. Reading Google's own file means the secret goes from disk into one HTTPS
 nowhere else. Dismissing that dialog is not fatal but it is not free either: the only way back is
 to add a SECOND secret to the same client.
 
-Two further flags exist for re-running it:
+`--clasp-client` (22 Oct 2026) replaces `--client-file` when no Google Cloud client secret is at
+hand — the original was lost on 2026-09-05. It reads only the client id and secret of the OAuth
+client Google's own Apps Script CLI (clasp) signs in with from `~/.clasprc.json`, never that file's
+tokens, and the consent asks for the same two scopes, so the grant is no wider. Sign in as
+`achieverrr303@gmail.com` and approve.
+
+Two more further flags exist for re-running it:
 
 - `--write-env-local` additionally writes the three values into `.env.local`, which is gitignored.
   Actions secrets are **write-only** — once stored, nothing can read them back — so a run that only
@@ -472,10 +478,18 @@ which URL Phoenix holds), and leaves the editor's `/dev` HEAD deployment alone. 
 
 This needs the `script.deployments` scope, which the original grant did not ask for. Until the grant
 is re-issued, a run still writes HEAD and then FAILS naming the missing scope, rather than reporting
-success while the web app stays behind. Each web app runs `executeAs: USER_DEPLOYING`, so after a
-move it executes as the account the grant belongs to; Marketing and CV Lifecycle are that account's
-own projects, and the Direct Orders version 5 was deployed within a minute of Marketing's first, the
-same morning, so it is very likely already that account too.
+success while the web app stays behind.
+
+🔴 **THE PUSH NEVER MOVES THE DIRECT ORDERS WEB APP, BECAUSE THAT PROJECT BELONGS TO ANOTHER GOOGLE
+ACCOUNT.** Its manifest entry carries `moveWebApp: false`. Measured 22 Oct 2026, 04:28 Cairo: moving
+its deployment to version 6 as `achieverrr303@gmail.com` (an editor there, the grant's own account)
+turned the `/exec` URL into HTTP 403 *"Access denied — you need permission"* for every caller, right
+secret or wrong, and moving it back to version 5 the same way did not undo it — so the editor's move,
+not the code, is what Google refuses. Marketing Requests and CV Lifecycle are that account's own
+projects; Marketing moved from version 3 to 4 at the same minute and answered `ok` at once. For an
+owner-only project the push still reads the web app and FAILS, naming the version it serves, when that
+is not HEAD's code — the repair is the owning account's own **Deploy → Manage deployments → Edit →
+Version: New version → Deploy**, which keeps the same URL. Never flip the flag to fix a red run.
 
 The API this uses REPLACES every file in a project — there is no per-file write. So the pusher
 reads the project first and sends every existing file back with only the managed one swapped, and
