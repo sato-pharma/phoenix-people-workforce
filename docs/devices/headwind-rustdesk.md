@@ -1625,7 +1625,7 @@ control, lock. The plan is `~/.claude/plans/close-the-what-is-polished-dawn.md`.
 | App installs | 🟡 built, on at deploy | Telegram, WPS and WhatsApp were wiped every redeploy, so only RustDesk + launcher reached 0007. WhatsApp is re-fetched since #6232; Telegram (telegram.org) and WPS Office (WPS's own CDN) are re-fetched at every start by the launcher-6.40 PR, each from its publisher. Config 3 sets the three to install only once each `/files/` path answers 200. |
 | Remote screen (RustDesk) | ⚠️ half | Installed on both; **0007 has no RustDesk ID** (`custom1` empty) so nobody can connect. Capture the id when 0007 is next online (§6.9). |
 | **Rep resets from Settings** | 🟡 built (6.40) | The agent used to lift `no_factory_reset` at the start of every sync and re-lock only after the install loop, so one 404 app left reset OFF. 6.40 keeps the protective restrictions locked for the whole sync, and adds FRP (a recovery-menu wipe comes back locked to a Google account) — both built, verified at the pilot. See §8.8. |
-| Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose a native mail app (§8.9). |
+| Company email on tablet | ⚠️ needs an app | `satopharma.com` is Turbify cPanel; any IMAP app works, but none is installed. The owner chose Microsoft Outlook (22 Oct), which reaches the tablets as a copied `.xapk` on the durable volume (§8.9). |
 | **Custody register** | ✅ fixed in this PR | Was auto-registering by serial/IMEI; now a person confirms each tablet (§8.11). |
 | **Console / upload path open on every name** | 🔴 | One Tomcat serves the console, the private API and the public write paths on `mdm`, `mdm-console` and the Railway host. `/rest/public/applications/upload` is gated only by `MD5(deviceNumber + hash.secret)` where `hash.secret` is the published default (no `SHARED_SECRET` set), and device numbers are guessable — so an app row can be written into `/files` and served to tablets. A second open upload, `/rest/videos`, sits outside `/rest/private` with no check at all. Both are refused by a Tomcat rule built 22 Oct, live on the next `phoenix-headwind` deploy. 2FA is available but off. See §8.3. |
 
@@ -1788,11 +1788,29 @@ TB328XU at the pilot before relying on it.
 
 ### 8.9 A native mail app on the tablet (the owner's choice, 22 Oct)
 
-No Google account → no Play Store, so mail arrives as an uploaded APK. Pick an IMAP client that ships a
-direct APK (FairEmail or K-9/Thunderbird; the Outlook APK is an alternative), upload it through the
-console onto the volume (§8.4) so it is durable, and preconfigure the Turbify IMAP host so the rep only
-enters their address and password: `imap.satopharma.com` / `smtp.satopharma.com` (both CNAME
-`cpanel356.turbify.biz`), IMAP 993 SSL, SMTP 465 SSL. `webmail.satopharma.com` in the browser is the
+No Google account → no Play Store, so mail arrives as a file the tablet server serves. K-9 Mail was
+offered and refused as too basic (22 Oct): he wants a modern mailbox. **He chose Microsoft Outlook**
+(`com.microsoft.office.outlook`) over Spark and FairEmail, knowing its AI (Copilot) works only on a
+Microsoft 365 mailbox — so the company's Turbify mailbox gets Outlook's modern client without Copilot.
+
+Outlook publishes no direct APK (Play only), and it is never taken from a third-party APK mirror. The
+route, in order:
+
+1. **Copy it once from an Android phone that installed it from Play** — Play delivers it as split APKs:
+   `adb shell pm path com.microsoft.office.outlook` lists them, `adb pull` each one (adb is Google's
+   platform-tools; not on the laptop as of 22 Oct).
+2. **Zip the splits into one `outlook-<version>.xapk`, every `.apk` at the zip's root** — the launcher
+   installs a `.xapk` itself: `InstallUtils` hands any file ending `.xapk` to `XapkUtils`, which unpacks
+   each root `.apk` entry into one install session.
+3. **Upload it through the console onto the durable volume (§8.4)** — it cannot be re-fetched at start
+   like Telegram or WPS, because there is no publisher URL; without the volume it would vanish on the
+   next redeploy. So this step waits for Railway, like §8.4.
+4. **Add it to config 3 as install**, once `/files/outlook-<version>.xapk` answers 200.
+
+The rep adds the account in Outlook as IMAP: `imap.satopharma.com` 993 SSL, `smtp.satopharma.com` 465
+SSL (both CNAME `cpanel356.turbify.biz`). Outlook syncs an IMAP account through Microsoft's cloud, so
+Microsoft holds the mailbox login — the same trade every hosted mail client makes. No Play means no
+self-update: a newer Outlook is a new copy and upload. `webmail.satopharma.com` in the browser stays the
 zero-install fallback.
 
 ### 8.10 The `mdm-console` / Access cutover — in this order, and only this order
@@ -1854,8 +1872,11 @@ auto-registers — it is being retired, not changed.
   three values §8.10 step 3 names (the AUD tag, the token's Client ID and Client Secret).
 - **For the factory-reset lock (§8.8):** create the Google account **it.satopharma@gmail.com** (the
   address he chose) and hand over its **numeric FRP account ID** — the long number tied to the account,
-  not the address. Get it by signing into the account at `people.googleapis.com/v1/people/me?personFields=metadata`
-  (the `people/<digits>` it returns), or via the Google account's own data; FRP cannot use a bare email.
+  not the address; FRP cannot use a bare email. Get it from the People API's own "Try this method" panel
+  (developers.google.com/people/api/rest/v1/people/get — `resourceName` = `people/me`, `personFields` =
+  `metadata`, Execute, sign in as that account): it answers `people/<digits>`. The bare
+  `people.googleapis.com` endpoint needs an OAuth token, so opening it while signed in does not work.
+  **Done 22 Oct** — the account exists and the id is on file in the laptop memory note, never in this repo.
   Once the ID is in hand, Phoenix writes it into config 3's launcher `frp_accounts` application setting —
   no rebuild. Until then the lock stays off and a recovery-menu wipe returns a clean tablet.
 

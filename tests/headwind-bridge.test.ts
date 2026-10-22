@@ -1829,6 +1829,40 @@ function runServerImageTests() {
     "and both run BEFORE the hand-over to Headwind's entrypoint",
   );
 
+  // 🔴 EVERY START-UP DOWNLOAD IS BOUNDED, AND THE EVERYDAY APPS NEVER HOLD THE SERVER DOWN.
+  //
+  // phoenix-headwind has no health check (healthcheckPath null, read 2026-10-22), so traffic switches the
+  // moment the container starts and the MDM answers nothing until the exec. wget's defaults (20 tries,
+  // a 900 s read timeout) let one stalled CDN hold every tablet off the server for hours, and WhatsApp,
+  // Telegram and WPS are ~390 MB that no enrolment needs. So every fetch goes through one bounded helper,
+  // the three everyday apps run in a background subshell, and only what enrolment needs (RustDesk and
+  // the launcher) stays in front of Tomcat.
+  assert.match(entrypoint, /wget -q -T 30 -t 2 -O "\$1" "\$2"/, "wget is bounded: two tries, 30 s each");
+  assert.match(
+    entrypoint,
+    /curl -fsSL --connect-timeout 15 --max-time 900 -o "\$1" "\$2"/,
+    "and curl, if it is ever the one present, has a hard ceiling",
+  );
+  assert.doesNotMatch(entrypoint, /^\s*(wget -q -O|curl -fsSL -o) /m, "no app download bypasses the bounded helper");
+  const background = entrypoint.match(/\n\(\n([\s\S]*?)\n\) &\n\nexec \/docker-entrypoint\.sh "\$@"/);
+  assert.ok(background, "the everyday apps run in a background subshell that closes right before the exec");
+  for (const app of ['WHATSAPP_APK="WhatsApp.apk"', 'provision_official_apk "Telegram.apk"', 'provision_official_apk "wps_']) {
+    assert.ok(background[1].includes(app), `${app} is fetched in the background, so Tomcat starts at once`);
+  }
+  for (const enrolment of ["RUSTDESK_APK=", "PHX_LAUNCHER_APK=", 'provision_official_apk "hmdm-phoenix-6.39.apk"']) {
+    assert.ok(!background[1].includes(enrolment), `${enrolment} stays in the foreground, because enrolment needs it`);
+  }
+
+  // 🔴 AND 6.39 KEEPS BEING SERVED UNTIL THE LAUNCHER'S URL HAS MOVED. Configuration 3 points the launcher
+  // (app 46 / version 10045) at /files/hmdm-phoenix-6.39.apk, and the url moves to 6.40 by hand only after
+  // the server is up — so a redeploy serving 6.40 alone would 404 every enrolment in between.
+  assert.match(
+    entrypoint,
+    /provision_official_apk "hmdm-phoenix-6\.39\.apk" \\\n\s+"https:\/\/github\.com\/Gawish-1997\/hmdm-android\/releases\/download\/launcher-6\.39-r1\/hmdm-phoenix-6\.39\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
+    "the previous launcher is re-provisioned from its own pinned release beside 6.40",
+  );
+  assert.match(entrypoint, /^PHX_LAUNCHER_PREVIOUS_SIZE=6286121\b/m, "pinned to the 6.39 asset's exact size");
+
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
   // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars
