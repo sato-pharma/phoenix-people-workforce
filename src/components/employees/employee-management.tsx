@@ -86,6 +86,7 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { CrmWorkAfterWarning, dayBefore } from "@/components/resignations/crm-work-after-warning";
 
 
 type EmployeeManagementProps = {
@@ -4481,6 +4482,11 @@ export function EmployeeManagement({
                 type="date"
                 value={resignationForm.effectiveDate}
               />
+              <CrmWorkAfterWarning
+                className="md:col-span-2"
+                date={resignationForm.effectiveDate}
+                hrId={resigningEmployee.hrId}
+              />
               <SelectField
                 label="employee_status"
                 onChange={(value) => updateResignationForm("employeeStatus", value)}
@@ -4579,6 +4585,19 @@ export function EmployeeManagement({
                 tone="orange"
                 value={declineOfferForm.includeInPayroll}
               />
+              <CrmWorkAfterWarning
+                className="md:col-span-2"
+                date={declineOfferForm.lastWorkingDate}
+                hrId={decliningEmployee.hrId}
+              />
+              {declineOfferForm.includeInPayroll === "yes" ? null : (
+                <CrmWorkAfterWarning
+                  className="md:col-span-2"
+                  date={dayBefore(decliningEmployee.hireDate)}
+                  hrId={decliningEmployee.hrId}
+                  variant="since-hire-unpaid"
+                />
+              )}
               <label className="block md:col-span-2">
                 <span className="mb-1.5 block text-xs font-medium text-text-secondary">
                   note (optional)

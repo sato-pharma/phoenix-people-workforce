@@ -977,6 +977,7 @@ import { runEmployeeRegionResolverTests } from "./employee-region-resolver.test.
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts";
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
+import { runCrmWorkAfterExitDateTests } from "./crm-work-after-exit-date.test.ts";
 import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runResignationsHistoryExportTests } from "./resignations-history-export.test.ts";
@@ -4973,6 +4974,7 @@ await runTest("employee region resolver (au line-area-region crosswalk derivatio
 await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
+await runTest("exit forms count only the leaver's own CRM work after the last working day", runCrmWorkAfterExitDateTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignations full-history export (every record regardless of tab or filter, names not ids, Cairo times, gated on resignations:export)", runResignationsHistoryExportTests);
