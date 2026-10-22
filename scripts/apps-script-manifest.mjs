@@ -19,6 +19,12 @@
  *                                  filename. `Code` is the default an empty project starts with.
  * @property {string} scriptIdEnv   Environment variable holding that project's script id.
  * @property {string} sheet         Human name, for the messages the owner actually reads.
+ * @property {boolean} [moveWebApp] False when the project belongs to a Google account OTHER than
+ *                                  the one the grant is from. Then the push never moves its web
+ *                                  app: an editor's deployment update turns the /exec URL into
+ *                                  "Access denied" for every caller (measured on Direct Orders,
+ *                                  22 Oct 2026), and only the owning account can put it right. The
+ *                                  push still reads it and FAILS when it serves an old version.
  */
 
 /** @type {readonly AppsScriptTarget[]} */
@@ -36,6 +42,11 @@ export const APPS_SCRIPT_TARGETS = [
     remoteFile: "Code",
     scriptIdEnv: "DIRECT_ORDERS_APPS_SCRIPT_ID",
     sheet: "Direct Orders",
+    // Owned by another Google account and only SHARED with the grant's account. Moving its web
+    // app as that editor broke the /exec URL outright on 22 Oct 2026 (HTTP 403 "Access denied",
+    // right secret or wrong), and moving it back to version 5 did not restore it. Only the owner's
+    // own Deploy → Manage deployments → Edit → New version keeps it working.
+    moveWebApp: false,
   },
   {
     key: "marketing-requests",
@@ -46,8 +57,19 @@ export const APPS_SCRIPT_TARGETS = [
   },
 ];
 
-/** The OAuth scope `projects.updateContent` needs. Nothing broader is requested. */
-export const APPS_SCRIPT_SCOPE = "https://www.googleapis.com/auth/script.projects";
+/** `projects.updateContent` and `projects.versions.create` need this one. */
+export const APPS_SCRIPT_PROJECTS_SCOPE = "https://www.googleapis.com/auth/script.projects";
+
+/**
+ * `projects.deployments.list` and `projects.deployments.update` need this one. Without it the push
+ * writes the project's HEAD and the sheet's web app keeps serving whatever VERSION it was deployed
+ * at — which is how the Direct Orders `/exec` URL sat on version 5 of 5 Aug 2026 for eleven weeks
+ * while every push since went to HEAD only (found 22 Oct 2026).
+ */
+export const APPS_SCRIPT_DEPLOYMENTS_SCOPE = "https://www.googleapis.com/auth/script.deployments";
+
+/** What the consent asks for, space-separated as OAuth wants it. Nothing broader is requested. */
+export const APPS_SCRIPT_SCOPE = [APPS_SCRIPT_PROJECTS_SCOPE, APPS_SCRIPT_DEPLOYMENTS_SCOPE].join(" ");
 
 /** The three credentials, named once so the pusher, the authorizer and the docs cannot drift. */
 export const OAUTH_ENV = {
