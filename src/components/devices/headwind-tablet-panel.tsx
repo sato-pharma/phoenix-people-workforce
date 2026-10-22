@@ -23,8 +23,8 @@
  * text with nothing truncated, and Cairo times. The shared pieces are in `headwind-panel-kit.tsx`.
  */
 
-import { Loader2, MapPin } from "lucide-react";
-import { useState } from "react";
+import { FolderOpen, Loader2, MapPin, UploadCloud } from "lucide-react";
+import { useRef, useState } from "react";
 
 import {
   Busy,
@@ -36,9 +36,12 @@ import {
   PANEL_ARMED,
   Panel,
   postJson,
+  readJson,
   useDisarmAfterWindow,
   useRead,
 } from "@/components/devices/headwind-panel-kit";
+import { TabletFleetMap } from "@/components/devices/tablet-fleet-map";
+import { fixesToPoints } from "@/lib/devices/headwind/dashboard";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import {
@@ -273,6 +276,20 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
             where that difference decides whether somebody goes looking for a tablet.
           */}
           <p className="break-words text-[11px] font-semibold text-slate-500">{movements.data.note}</p>
+          {/*
+            The trail before the list. Each fix is a numbered stop joined in time order, so a route
+            reads at a glance where the list reads as a log. The map draws only when there is a fix to
+            place — the note already says what an empty history means, and an empty map frame under it
+            would say it a second time in a worse way.
+          */}
+          {movements.data.fixes.length > 0 ? (
+            <TabletFleetMap
+              caption="Each numbered stop is one reported position, joined oldest to newest. The trail is only as dense as the tablet's check-ins — a straight line between two stops is not a road, only the two points we were told."
+              kind="trail"
+              points={fixesToPoints(movements.data.fixes)}
+              title="This tablet's trail"
+            />
+          ) : null}
           {movements.data.fixes.length > 0 ? (
             <ul className="space-y-1">
               {movements.data.fixes.map((fix) => (
@@ -303,6 +320,224 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
           <button className={PANEL_ACTION} onClick={() => setRound((current) => current + 1)} type="button">
             Read the movements again
           </button>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Files — the files this tablet's rules push, plus a live file browse over RustDesk.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type ConfigurationFile = { fileId: number | null; name: string; description: string | null; url: string | null };
+type FilesRead = {
+  configurationId: number | null;
+  configurationName: string | null;
+  files: ConfigurationFile[];
+  note: string;
+};
+type ScreenTarget = { target: { connectUrl: string } | null; reason: string | null };
+
+/** Open a custom-scheme link (RustDesk) without navigating the admin page away from under the person. */
+function openExternal(url: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.rel = "noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+type FilesState = {
+  deviceNumber: string;
+  round: number;
+  armed: number | null;
+  busy: string | null;
+  uploading: boolean;
+  notice: string | null;
+  failure: string | null;
+};
+
+const NO_FILES_PENDING = { armed: null, busy: null, failure: null, notice: null, round: 0, uploading: false } as const;
+
+/**
+ * 🔴 "FILES ON THIS TABLET" MEANS THE FILES ON THIS TABLET'S RULES, AND THAT REACHES EVERY TABLET ON
+ * THEM. Headwind keeps no per-tablet file store to read or write — a file is on a tablet because it is
+ * in that tablet's configuration. So this panel is honest about it in the note and in the armed Remove,
+ * which says the file leaves every tablet on these rules, not only this one. Browsing ONE tablet's real
+ * storage is a RustDesk file-transfer session on the Super Admin's own computer — the button below opens
+ * it; there is no `rustdesk://file-transfer` deep link, so it opens the connection and says which tab.
+ */
+function FilesPanel({ deviceNumber, tabletName }: { deviceNumber: string; tabletName: string }) {
+  const query = encodeURIComponent(deviceNumber);
+  const [state, setState] = useState<FilesState>({ deviceNumber, ...NO_FILES_PENDING });
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  // Derived during the render, never reset in an effect — the rule every panel here follows, so an
+  // armed Remove or a half-chosen upload for one tablet never follows the panel onto another rep's.
+  const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_FILES_PENDING };
+  useDisarmAfterWindow(own.armed === null ? null : String(own.armed), () =>
+    setState((current) => ({ ...current, armed: null })),
+  );
+  const files = useRead<FilesRead>(`/api/devices/headwind?deviceNumber=${query}&view=files&round=${own.round}`);
+  const configurationId = files.data?.configurationId ?? null;
+
+  async function remove(file: ConfigurationFile) {
+    if (file.fileId === null || configurationId === null) return;
+    if (own.armed !== file.fileId) {
+      setState({ ...own, armed: file.fileId, failure: null, notice: null });
+      return;
+    }
+    setState({ ...own, armed: null, busy: String(file.fileId), failure: null, notice: null });
+    try {
+      const result = await postJson<{ message: string }>("/api/devices/headwind/configurations", {
+        change: "file",
+        configurationId,
+        fileId: file.fileId,
+        remove: true,
+      });
+      setState({ ...own, armed: null, busy: null, failure: null, notice: result.message, round: own.round + 1 });
+    } catch (caught: unknown) {
+      setState({ ...own, armed: null, busy: null, failure: failureText(caught, "Could not take that file off the rules."), notice: null });
+    }
+  }
+
+  async function upload(file: File) {
+    if (configurationId === null) return;
+    setState({ ...own, busy: null, failure: null, notice: null, uploading: true });
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      form.append("kind", "file");
+      form.append("configurationId", String(configurationId));
+      const response = await fetch("/api/devices/headwind/upload", { body: form, cache: "no-store", method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+      if (!response.ok) {
+        throw new Error(typeof payload?.message === "string" ? payload.message : "The server refused the file.");
+      }
+      if (fileInput.current) fileInput.current.value = "";
+      setState({
+        ...own,
+        failure: null,
+        notice: typeof payload?.message === "string" ? payload.message : "Sent.",
+        round: own.round + 1,
+        uploading: false,
+      });
+    } catch (caught: unknown) {
+      setState({ ...own, failure: failureText(caught, "Could not send that file to the tablets."), notice: null, uploading: false });
+    }
+  }
+
+  async function browseLive() {
+    setState({ ...own, busy: "browse", failure: null, notice: null });
+    try {
+      const screen = await readJson<ScreenTarget>(`/api/devices/headwind?deviceNumber=${query}&view=screen&mode=control`);
+      if (!screen.target) {
+        setState({ ...own, busy: null, failure: screen.reason ?? "This tablet is not set up for a remote session yet.", notice: null });
+        return;
+      }
+      openExternal(screen.target.connectUrl);
+      setState({
+        ...own,
+        busy: null,
+        failure: null,
+        notice:
+          "Opening RustDesk on your computer for a live session with this tablet. In RustDesk, use the " +
+          "File Transfer tab to browse and move this tablet's own files — that is live, one tablet, and " +
+          "separate from the pushed files listed above.",
+      });
+    } catch (caught: unknown) {
+      setState({ ...own, busy: null, failure: failureText(caught, "Could not open a session with this tablet."), notice: null });
+    }
+  }
+
+  return (
+    <Panel title="Files on this tablet">
+      {files.loading ? <Busy what="the files" /> : null}
+      {files.error ? <Failed message={files.error} /> : null}
+      {own.notice ? <Done message={own.notice} /> : null}
+      {own.failure ? <Failed message={own.failure} /> : null}
+      {files.data && !files.loading && !files.error ? (
+        <div className="space-y-2">
+          <p className="break-words text-[11px] font-semibold text-slate-500">{files.data.note}</p>
+
+          {files.data.files.length > 0 ? (
+            <ul className="space-y-1">
+              {files.data.files.map((file) => (
+                <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1" key={`${file.fileId ?? file.name}`}>
+                  {file.url ? (
+                    <a
+                      className="break-all text-[11px] font-bold text-slate-900 underline"
+                      href={file.url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {file.name}
+                    </a>
+                  ) : (
+                    <span className="break-all text-[11px] font-bold text-slate-900">{file.name}</span>
+                  )}
+                  {file.description ? (
+                    <span className="break-words text-[11px] font-semibold text-slate-500">{file.description}</span>
+                  ) : null}
+                  {file.fileId !== null && configurationId !== null ? (
+                    <button
+                      className={own.armed === file.fileId ? PANEL_ARMED : PANEL_ACTION}
+                      disabled={own.busy !== null || own.uploading}
+                      onClick={() => void remove(file)}
+                      type="button"
+                    >
+                      {own.busy === String(file.fileId) ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+                      {own.armed === file.fileId
+                        ? `Press again to remove ${file.name} from every tablet on these rules`
+                        : "Remove"}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[11px] font-semibold text-slate-500">No files are pushed through this tablet&rsquo;s rules yet.</p>
+          )}
+
+          {configurationId !== null ? (
+            <div className="border-t border-slate-100 pt-2">
+              <p className={MICRO_LABEL}>Send a file to these rules</p>
+              <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                It reaches every tablet on these rules at its next check-in, not only this one.
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <input
+                  className={cn(phxFieldClassName, "max-w-xs flex-1 basis-56")}
+                  disabled={own.uploading || own.busy !== null}
+                  onChange={(event) => {
+                    const chosen = event.target.files?.[0];
+                    if (chosen) void upload(chosen);
+                  }}
+                  ref={fileInput}
+                  type="file"
+                />
+                {own.uploading ? (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Sending <UploadCloud className="h-3 w-3" aria-hidden />
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="border-t border-slate-100 pt-2">
+            <p className={MICRO_LABEL}>Browse this tablet&rsquo;s own files, live</p>
+            <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+              The list above is what the rules push to every tablet. To look at the real files on{" "}
+              <span className="font-bold text-slate-900">{tabletName}</span> itself, open a RustDesk session and use its
+              File Transfer tab. The session opens on your own computer; Phoenix never carries the screen or the files.
+            </p>
+            <button className={`mt-1 ${PANEL_ACTION}`} disabled={own.busy !== null} onClick={() => void browseLive()} type="button">
+              {own.busy === "browse" ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <FolderOpen className="h-3 w-3" aria-hidden />}
+              Browse this tablet&rsquo;s files live
+            </button>
+          </div>
         </div>
       ) : null}
     </Panel>
@@ -911,6 +1146,8 @@ export function HeadwindTabletPanel({
       <AppsPanel deviceNumber={deviceNumber} />
 
       <MovementsPanel deviceNumber={deviceNumber} />
+
+      <FilesPanel deviceNumber={deviceNumber} tabletName={tabletName} />
 
       <WipePanel deviceNumber={deviceNumber} tabletName={tabletName} />
 

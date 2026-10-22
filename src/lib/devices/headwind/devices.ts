@@ -131,6 +131,15 @@ export type HeadwindDevice = {
   rustDeskId: string | null;
   /** Headwind has no "removed" state — a device is enrolled or it is not in the list at all. */
   enrollmentStatus: string | null;
+  /**
+   * Everything the agent itself reported, exactly as it arrived (parsed if it came as a JSON string).
+   *
+   * 🔴 THE PROMOTED FIELDS ABOVE ARE READ OUT OF THIS SAME BLOB. It is carried whole so the detail
+   * read can show the long tail a hand-written field list would drop — the day the agent sends a new
+   * fact, it appears, without a code change. It is server-to-server only and never reaches a browser
+   * as-is; the detail reader humanises it and drops identifiers before anything is shown.
+   */
+  info: Record<string, unknown>;
   /** Kept for the register matcher's sake: every Headwind-managed device is Android. */
   isAndroid: boolean;
   platformLabel: string;
@@ -167,6 +176,7 @@ function normalizeDevice(record: RawRecord, configurationNames: Map<string, stri
     // bridges, which do have states worth showing.
     enrollmentStatus: "Enrolled",
     imei: pickString(record, ["imei"]) ?? pickString(info, ["imei", "imei1"]),
+    info,
     isAndroid: true,
     lastContactAt: isoTime(record, ["lastUpdate", "lastContact", "lastSeen"]),
     latitude: latitude ?? pickNumber(location, ["lat", "latitude"]),

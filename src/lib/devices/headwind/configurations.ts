@@ -184,6 +184,61 @@ export async function getHeadwindConfiguration(
   return { branding: configurationBranding(raw), configuration: configurationSummary(raw) };
 }
 
+/** One file carried by a set of rules — never the whole configuration object it sits inside. */
+export type HeadwindConfigurationFile = {
+  /** The server-side file id — what a remove or a re-link is addressed to. Null reads as "cannot act on it". */
+  fileId: number | null;
+  /** What a person calls the file: its path on the tablet, else its description, else its stored name. */
+  name: string;
+  description: string | null;
+  /** Where the file is downloaded from, only where the server gives a URL — never a guessed path. */
+  url: string | null;
+};
+
+/**
+ * The files a configuration pushes, projected to the four fields a browser may see.
+ *
+ * 🔴 THE FILE LIST IS ON THE BY-ID READ, THE APP LINKS ARE NOT (see `configurationWriteBody`).
+ * `getConfigurationByIdFull` fills `files`, so the list comes straight off the read here — unlike the
+ * app links, which need their own endpoint. Each entry is read from a candidate list of keys rather
+ * than one pinned spelling, the same defensive reading the device blob gets, so a server upgrade that
+ * renames a field blanks nothing silently. A file with no id and no name at all is dropped — there is
+ * nothing a person could do with it and nothing to label it.
+ */
+export function configurationFiles(raw: HeadwindConfiguration): HeadwindConfigurationFile[] {
+  const list = Array.isArray(raw.files) ? raw.files : [];
+  const files: HeadwindConfigurationFile[] = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const fileId = asCount(record.fileId) ?? asCount(record.id);
+    const name =
+      asText(record.path) ??
+      asText(record.description) ??
+      asText(record.filePath) ??
+      (fileId !== null ? `File ${fileId}` : null);
+    if (!name) continue;
+    files.push({
+      // `externalUrl` is a boolean flag on some builds and a string URL on others; `asText` keeps only a string.
+      description: asText(record.description),
+      fileId,
+      name,
+      url: asText(record.url) ?? asText(record.externalUrl),
+    });
+  }
+  return files;
+}
+
+/** The safe read for a browser: the files a set of rules pushes, with nothing secret in them. */
+export async function getHeadwindConfigurationFiles(
+  configurationId: number,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ configuration: HeadwindConfigurationSummary; files: HeadwindConfigurationFile[] }> {
+  const raw = await readHeadwindConfiguration(configurationId, fetchImpl, env);
+  return { configuration: configurationSummary(raw), files: configurationFiles(raw) };
+}
+
 /**
  * The body a whole-configuration PUT sends: the server's own object, the patch over it, and the app
  * links put back — the same body the Headwind console's own save sends.

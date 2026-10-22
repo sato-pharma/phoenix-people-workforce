@@ -4151,6 +4151,18 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Enroll a company tablet with a QR code and set the rules every rep tablet follows.",
     permissions: [{ resource: "company_devices", action: "approve" }],
   },
+  // Same gate, same rail as Rep Tablets: this is the monitoring face of the same fleet — where each
+  // tablet is, what is on it, its screen and everything it can be driven to do. Enrolling and rules
+  // stay on Rep Tablets above; watching and driving the fleet live here. The page and every
+  // `/api/devices/headwind*` handler assert `company_devices:approve`, so this row never reaches a seat
+  // the page turns away.
+  {
+    href: "/devices/tablets/dashboard",
+    icon: MapPinned,
+    label: "Tablet Dashboard",
+    description: "See every company tablet at a glance — where it is, what is on it, its screen, and everything it can be driven to do.",
+    permissions: [{ resource: "company_devices", action: "approve" }],
+  },
   {
     href: "/retention",
     icon: HeartPulse,
@@ -5057,6 +5069,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/devices",
           "/devices/managed-play",
           "/devices/tablets",
+          "/devices/tablets/dashboard",
         ],
       },
       {
