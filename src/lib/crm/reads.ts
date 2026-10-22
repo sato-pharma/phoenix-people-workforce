@@ -81,9 +81,9 @@ export function isCrmDoubleVisitRow(row: {
  * crm-resigned-agents-exclusion-list). */
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1221,
-  1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
+  1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1304, 1330, 1345, 1351,
   1354, 1357, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
-  1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
+  1396, 1402, 1407, 1409, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
   1512, 1514, 1515, 1516, 1518, 1519, 1522, 1524, 1528,
   // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
   // CEO 1474, George.Rafaat (Sharkia 1/C) 1500. (Mahmoud.Gamal 1272 already listed above.)
@@ -141,6 +141,13 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // to 12 Sep she logged 39 visits there, all invisible — to Field Workforce Compliance and the
   // no-activity deduction detector as well. The previous occupant's rows stay unattributed: the
   // pre-hire guard refuses every row dated before her hire. Eighth of this failure class.
+  // 2026-10-22: crm_ids 1437 and 1303 REMOVED — two leavers' slots reseated on 2026-10-01 hires,
+  // each now the employees.crm_id of an ACTIVE Medical Representative: 1437 = AI-0023 (Mariam
+  // Younan, Sohag 2 / A) and 1303 = AI-0025 (Norhan Gamal). Every visit either logged since her
+  // hire — 142 and 110 rows, Phoenix CRM visits included, since the unified view's exclusion key is
+  // the account — was invisible: her own KPIs and visits, and her District Manager's double visits
+  // with her (Weaam Mahmoud reported 21 of them missing on 14, 17 and 20 Oct). Ninth and tenth of
+  // this failure class; the previous holders' pre-hire rows stay unattributed by the pre-hire guard.
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the

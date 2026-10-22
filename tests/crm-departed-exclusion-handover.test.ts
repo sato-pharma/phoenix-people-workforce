@@ -43,6 +43,14 @@ export function runCrmDepartedExclusionHandoverTests() {
     !CRM_RESIGNED_AGENT_CRM_IDS.includes(1166),
     "crm_id 1166 is an active rep's handed-over slot and must not sit on the static resigned list, or her visits stay invisible to Field Workforce Compliance and the no-activity detector",
   );
+  // 1437 (AI-0023, Mariam Younan) and 1303 (AI-0025, Norhan Gamal) — both reseated on 2026-10-01
+  // hires; left here, her visits and her District Manager's double visits with her vanished.
+  for (const reseated of [1437, 1303]) {
+    assert.ok(
+      !CRM_RESIGNED_AGENT_CRM_IDS.includes(reseated),
+      `crm_id ${reseated} is an active rep's handed-over slot and must not sit on the static resigned list, or her visits and her manager's double visits with her stay invisible`,
+    );
+  }
   assert.ok(
     CRM_RESIGNED_AGENT_CRM_IDS.includes(1474),
     "the owner's deliberate exclusions (the CEO, 1474) must stay on the static list",
