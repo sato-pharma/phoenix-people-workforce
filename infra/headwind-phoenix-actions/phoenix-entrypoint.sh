@@ -92,6 +92,52 @@ SQL
   rm -f /tmp/phoenix-https.sql
 fi
 
+# 🔴 EVERY APP DOWNLOAD BELOW IS BOUNDED. Railway's phoenix-headwind has NO health check (read live
+# 2026-10-22: healthcheckPath null), so traffic switches to a new container the moment it starts, and
+# the MDM answers nothing until this script reaches the exec at the bottom. wget's defaults are 20 tries
+# and a 900 s read timeout, so a stalled CDN used to be able to hold the whole server down for hours.
+# Two tries at 30 s each bounds a stalled source to minutes (the image's wget is GNU, from Ubuntu jammy);
+# curl, if it is ever the one present, gets a hard 15-minute ceiling.
+fetch_url() {
+  # $1 the destination file, $2 the URL. Returns non-zero on any failure; every caller treats that as "retry next start".
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -T 30 -t 2 -O "$1" "$2"
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 15 --max-time 900 -o "$1" "$2"
+  else
+    return 1
+  fi
+}
+apk_size_ok() {
+  # $1 the size read, $2 the exact size (empty for a floating official source), $3 the minimum size
+  if [ -n "$2" ]; then [ "$1" = "$2" ]; else [ "$1" -ge "$3" ] 2>/dev/null; fi
+}
+provision_official_apk() {
+  # $1 the file name configuration 3 serves at /files/, $2 the publisher's URL, $3 exact size or "", $4 minimum size
+  pa_name="$1"; pa_url="$2"; pa_exact="$3"; pa_min="$4"
+  pa_dest="$FILES_DIR/$pa_name"
+  pa_have="$([ -f "$pa_dest" ] && wc -c < "$pa_dest" | tr -d ' ' || echo 0)"
+  if apk_size_ok "$pa_have" "$pa_exact" "$pa_min"; then
+    echo "phoenix-entrypoint(files): $pa_name already present ($pa_have bytes)"
+    return 0
+  fi
+  echo "phoenix-entrypoint(files): $pa_name missing or wrong size ($pa_have) — fetching it from its publisher"
+  pa_tmp="$FILES_DIR/.$pa_name.part"
+  rm -f "$pa_tmp"
+  pa_fetched=""
+  fetch_url "$pa_tmp" "$pa_url" && pa_fetched="yes" || true
+  pa_got="$([ -f "$pa_tmp" ] && wc -c < "$pa_tmp" | tr -d ' ' || echo 0)"
+  pa_magic="$([ -f "$pa_tmp" ] && dd if="$pa_tmp" bs=2 count=1 2>/dev/null || true)"
+  if [ -n "$pa_fetched" ] && apk_size_ok "$pa_got" "$pa_exact" "$pa_min" && [ "$pa_magic" = "PK" ]; then
+    mv -f "$pa_tmp" "$pa_dest"
+    echo "phoenix-entrypoint(files): installed $pa_name ($pa_got bytes)"
+  else
+    rm -f "$pa_tmp"
+    echo "phoenix-entrypoint(files): could not fetch a valid $pa_name (got $pa_got bytes) — it will retry next start" >&2
+  fi
+  return 0
+}
+
 # 🔴 RE-PROVISION THE ONE CONSOLE-ADDED APP HEADWIND DOES NOT RE-FETCH: RustDesk.
 #
 # Headwind serves /files/<name> from $BASE_DIR/files, which lives under /usr/local/tomcat/work — the
@@ -125,11 +171,7 @@ else
   TMP="$FILES_DIR/.$RUSTDESK_APK.part"
   rm -f "$TMP"
   fetched=""
-  if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$TMP" "$RUSTDESK_URL" && fetched="yes" || true
-  elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$TMP" "$RUSTDESK_URL" && fetched="yes" || true
-  fi
+  fetch_url "$TMP" "$RUSTDESK_URL" && fetched="yes" || true
   got_size="$([ -f "$TMP" ] && wc -c < "$TMP" | tr -d ' ' || echo 0)"
   magic="$([ -f "$TMP" ] && dd if="$TMP" bs=2 count=1 2>/dev/null || true)"
   if [ -n "$fetched" ] && [ "$got_size" = "$RUSTDESK_SIZE" ] && [ "$magic" = "PK" ]; then
@@ -153,8 +195,8 @@ fi
 # size + zip-magic check before it is moved into place, and it NEVER aborts startup — a failed fetch logs
 # and the server still boots, so a bad release can never take the whole MDM down. The release asset is
 # immutable, so its byte size is pinned and a wrong size is refused.
-PHX_LAUNCHER_APK="hmdm-phoenix-6.39.apk"
-PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.39-r1/${PHX_LAUNCHER_APK}"
+PHX_LAUNCHER_APK="hmdm-phoenix-6.40.apk"
+PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.40-r1/${PHX_LAUNCHER_APK}"
 PHX_LAUNCHER_SIZE=6286121   # bytes — the exact size of the signed Phoenix launcher release asset
 PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
 have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
@@ -165,11 +207,7 @@ else
   PHX_TMP="$FILES_DIR/.$PHX_LAUNCHER_APK.part"
   rm -f "$PHX_TMP"
   phx_fetched=""
-  if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$PHX_TMP" "$PHX_LAUNCHER_URL" && phx_fetched="yes" || true
-  elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$PHX_TMP" "$PHX_LAUNCHER_URL" && phx_fetched="yes" || true
-  fi
+  fetch_url "$PHX_TMP" "$PHX_LAUNCHER_URL" && phx_fetched="yes" || true
   phx_got="$([ -f "$PHX_TMP" ] && wc -c < "$PHX_TMP" | tr -d ' ' || echo 0)"
   phx_magic="$([ -f "$PHX_TMP" ] && dd if="$PHX_TMP" bs=2 count=1 2>/dev/null || true)"
   if [ -n "$phx_fetched" ] && [ "$phx_got" = "$PHX_LAUNCHER_SIZE" ] && [ "$phx_magic" = "PK" ]; then
@@ -181,6 +219,19 @@ else
   fi
 fi
 
+# 🔴 AND KEEP SERVING 6.39 UNTIL THE LAUNCHER'S URL HAS MOVED TO 6.40. Configuration 3 still points the
+# launcher (app 46 / version 10045) at /files/hmdm-phoenix-6.39.apk, and that url is moved by hand only
+# AFTER this server is up — so a redeploy that served 6.40 alone would 404 every enrolment in between.
+# Drop this line in a later change, once version 10045 names 6.40. Same Phoenix key, same pinned size.
+PHX_LAUNCHER_PREVIOUS_SIZE=6286121   # bytes — the signed 6.39 release asset (the same size as 6.40 by coincidence)
+provision_official_apk "hmdm-phoenix-6.39.apk" \
+  "https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.39-r1/hmdm-phoenix-6.39.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
+
+# 🔴 THE EVERYDAY APPS ARE FETCHED IN THE BACKGROUND, SO TOMCAT STARTS AT ONCE. WhatsApp, Telegram and WPS
+# are about 390 MB together and no enrolment needs them (RustDesk and the launcher above stay in the
+# foreground because enrolment does). The subshell keeps running after the exec below hands this process
+# to Headwind; a tablet that asks before a file has landed gets a 404 and simply retries on its next sync.
+(
 # 🔴 RE-PROVISION WHATSAPP — same wiped-on-restart problem as RustDesk and the launcher above, but
 # sourced DIFFERENTLY and on purpose.
 #
@@ -212,11 +263,7 @@ else
   WA_TMP="$FILES_DIR/.$WHATSAPP_APK.part"
   rm -f "$WA_TMP"
   wa_fetched=""
-  if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
-  elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
-  fi
+  fetch_url "$WA_TMP" "$WHATSAPP_URL" && wa_fetched="yes" || true
   wa_got="$([ -f "$WA_TMP" ] && wc -c < "$WA_TMP" | tr -d ' ' || echo 0)"
   wa_magic="$([ -f "$WA_TMP" ] && dd if="$WA_TMP" bs=2 count=1 2>/dev/null || true)"
   if [ -n "$wa_fetched" ] && [ "$wa_got" -ge "$WHATSAPP_MIN_SIZE" ] 2>/dev/null && [ "$wa_magic" = "PK" ]; then
@@ -227,5 +274,25 @@ else
     echo "phoenix-entrypoint(files): could not fetch a valid $WHATSAPP_APK (got $wa_got bytes) — it will retry next start" >&2
   fi
 fi
+
+# 🔴 RE-PROVISION TELEGRAM AND WPS OFFICE — the last two of configuration 3's everyday apps that a bare
+# work/ leaves a 404. Measured 2026-10-22: /files/Telegram.apk and /files/wps_18.25.2_abi32_en00000.apk
+# both answered 404, so neither ever reached a rep tablet. Both come straight from their publisher:
+#   - Telegram from telegram.org's own direct-download link (package org.telegram.messenger.web, the
+#     build Telegram publishes outside Play). It floats like WhatsApp's, so it gets a size FLOOR and the
+#     zip magic, never an exact size; the version only climbs, so the agent's benign "Ignoring downgrade
+#     request" is the worst a newer file can cause. 🔴 That means NO integrity pin on a FIRST install —
+#     accepted on purpose, exactly as for WhatsApp: the trust is HTTPS to telegram.org itself, and every
+#     later update must carry the same signing key as the installed app or Android refuses it. A sha256
+#     pin would break on every Telegram release, which is the 404 this block exists to end.
+#   - WPS Office from WPS's own CDN, a per-version file, so it is pinned to its exact size like RustDesk.
+# Same defensive shape as every block above: temp download, checks before the move, and a failed fetch
+# logs and falls through — it NEVER aborts startup, and retries on the next start.
+TELEGRAM_MIN_SIZE=41943040   # 40 MiB floor — the official build measured 70,867,407 bytes on 2026-10-22
+WPS_SIZE=171366058           # bytes — the exact size of WPS's own wps_18.25.2_abi32_en00000.apk
+provision_official_apk "Telegram.apk" "https://telegram.org/dl/android/apk" "" "$TELEGRAM_MIN_SIZE"
+provision_official_apk "wps_18.25.2_abi32_en00000.apk" \
+  "https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/32bit/wps_18.25.2_abi32_en00000.apk" "$WPS_SIZE" 0
+) &
 
 exec /docker-entrypoint.sh "$@"

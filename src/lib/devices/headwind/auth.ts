@@ -14,7 +14,8 @@
  *
  * 🔴 THE PASSWORD IS SENT AS AN MD5 HASH, NOT AS ITSELF, AND THAT IS HEADWIND'S WIRE FORMAT, NOT A
  * SECURITY CHOICE OF OURS. `POST /rest/public/jwt/login` takes `{ login, password }` where `password`
- * is the lower-case hex MD5 of the real one; sending the plain password fails to sign in. The real
+ * is the UPPER-CASE hex MD5 of the real one (`headwindPasswordHash` below; the console's own login
+ * upper-cases it); sending the plain password fails to sign in. The real
  * password never leaves this module, and the transport is HTTPS either way. Do not "upgrade" this to
  * SHA-256 — the server would simply refuse every sign-in.
  *

@@ -1749,12 +1749,12 @@ function runServerImageTests() {
   // not be able to take the whole MDM down.
   assert.match(
     entrypoint,
-    /hmdm-phoenix-6\.39\.apk/,
+    /hmdm-phoenix-6\.40\.apk/,
     "the entrypoint re-provisions the Phoenix custom launcher by its exact filename — the name the launcher version url is pointed at",
   );
   assert.match(
     entrypoint,
-    /releases\/download\/launcher-6\.39-r1\//,
+    /releases\/download\/launcher-6\.40-r1\//,
     "fetched from the immutable fork release asset, the public URL a bare Railway container can reach",
   );
   assert.match(
@@ -1796,6 +1796,72 @@ function runServerImageTests() {
     entrypoint.indexOf("WHATSAPP_APK=") < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
     "and it runs BEFORE the hand-over to Headwind's entrypoint, since nothing after an exec ever runs",
   );
+
+  // 🔴 TELEGRAM AND WPS OFFICE ARE RE-PROVISIONED THE SAME WAY, EACH FROM ITS OWN PUBLISHER.
+  //
+  // Measured 2026-10-22: /files/Telegram.apk and /files/wps_18.25.2_abi32_en00000.apk both answered 404,
+  // so configuration 3 had two everyday apps no rep tablet could ever install. Telegram floats (a size
+  // floor plus the zip magic, like WhatsApp); WPS is a per-version file, pinned to its exact size. Drop
+  // either call, or point it at a re-hosted copy, and the tablets lose that app on the next rebuild.
+  assert.match(
+    entrypoint,
+    /provision_official_apk "Telegram\.apk" "https:\/\/telegram\.org\/dl\/android\/apk" "" "\$TELEGRAM_MIN_SIZE"/,
+    "Telegram is fetched from telegram.org's own direct download under the filename configuration 3 serves, with a size floor rather than an exact size",
+  );
+  assert.match(
+    entrypoint,
+    /provision_official_apk "wps_18\.25\.2_abi32_en00000\.apk" \\\n\s+"https:\/\/wdl1\.pcfg\.cache\.wpscdn\.com\/wpsdl\/wpsoffice\/download\/32bit\/wps_18\.25\.2_abi32_en00000\.apk" "\$WPS_SIZE" 0/,
+    "WPS Office is fetched from WPS's own CDN and pinned to its exact size",
+  );
+  assert.match(entrypoint, /^WPS_SIZE=171366058\b/m, "the WPS pin is the size WPS's own file measured on 2026-10-22");
+  assert.match(
+    entrypoint,
+    /apk_size_ok "\$pa_got" "\$pa_exact" "\$pa_min" && \[ "\$pa_magic" = "PK" \]/,
+    "a fetched Telegram or WPS file is moved into place only when it clears its size check AND starts with the zip magic",
+  );
+  assert.match(
+    entrypoint,
+    /could not fetch a valid \$pa_name[\s\S]*it will retry next start[\s\S]*return 0\n\}/,
+    "a failed Telegram or WPS fetch logs and returns 0 — under set -eu anything else would abort startup and down the MDM",
+  );
+  assert.ok(
+    entrypoint.indexOf('provision_official_apk "wps_') < entrypoint.indexOf('exec /docker-entrypoint.sh "$@"'),
+    "and both run BEFORE the hand-over to Headwind's entrypoint",
+  );
+
+  // 🔴 EVERY START-UP DOWNLOAD IS BOUNDED, AND THE EVERYDAY APPS NEVER HOLD THE SERVER DOWN.
+  //
+  // phoenix-headwind has no health check (healthcheckPath null, read 2026-10-22), so traffic switches the
+  // moment the container starts and the MDM answers nothing until the exec. wget's defaults (20 tries,
+  // a 900 s read timeout) let one stalled CDN hold every tablet off the server for hours, and WhatsApp,
+  // Telegram and WPS are ~390 MB that no enrolment needs. So every fetch goes through one bounded helper,
+  // the three everyday apps run in a background subshell, and only what enrolment needs (RustDesk and
+  // the launcher) stays in front of Tomcat.
+  assert.match(entrypoint, /wget -q -T 30 -t 2 -O "\$1" "\$2"/, "wget is bounded: two tries, 30 s each");
+  assert.match(
+    entrypoint,
+    /curl -fsSL --connect-timeout 15 --max-time 900 -o "\$1" "\$2"/,
+    "and curl, if it is ever the one present, has a hard ceiling",
+  );
+  assert.doesNotMatch(entrypoint, /^\s*(wget -q -O|curl -fsSL -o) /m, "no app download bypasses the bounded helper");
+  const background = entrypoint.match(/\n\(\n([\s\S]*?)\n\) &\n\nexec \/docker-entrypoint\.sh "\$@"/);
+  assert.ok(background, "the everyday apps run in a background subshell that closes right before the exec");
+  for (const app of ['WHATSAPP_APK="WhatsApp.apk"', 'provision_official_apk "Telegram.apk"', 'provision_official_apk "wps_']) {
+    assert.ok(background[1].includes(app), `${app} is fetched in the background, so Tomcat starts at once`);
+  }
+  for (const enrolment of ["RUSTDESK_APK=", "PHX_LAUNCHER_APK=", 'provision_official_apk "hmdm-phoenix-6.39.apk"']) {
+    assert.ok(!background[1].includes(enrolment), `${enrolment} stays in the foreground, because enrolment needs it`);
+  }
+
+  // 🔴 AND 6.39 KEEPS BEING SERVED UNTIL THE LAUNCHER'S URL HAS MOVED. Configuration 3 points the launcher
+  // (app 46 / version 10045) at /files/hmdm-phoenix-6.39.apk, and the url moves to 6.40 by hand only after
+  // the server is up — so a redeploy serving 6.40 alone would 404 every enrolment in between.
+  assert.match(
+    entrypoint,
+    /provision_official_apk "hmdm-phoenix-6\.39\.apk" \\\n\s+"https:\/\/github\.com\/Gawish-1997\/hmdm-android\/releases\/download\/launcher-6\.39-r1\/hmdm-phoenix-6\.39\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
+    "the previous launcher is re-provisioned from its own pinned release beside 6.40",
+  );
+  assert.match(entrypoint, /^PHX_LAUNCHER_PREVIOUS_SIZE=6286121\b/m, "pinned to the 6.39 asset's exact size");
 
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
