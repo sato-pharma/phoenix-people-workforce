@@ -73,6 +73,30 @@ export function runEmergencyHostTests(): void {
     assert.doesNotMatch(flyToml, /RAILWAY_ENVIRONMENT_NAME/, "the standby never claims to be Railway production");
   }
 
+  // ── 1b. The Fly worker (owner, 2026-10-22: "Separate worker on Fly") ─────────────────────────────────────────────
+  // Its config lived only in a Temp folder until it moved here; every hand deploy after a go-live reads this file.
+  {
+    const workerToml = withoutFullLineComments(readFileSync("infra/fly-standby/fly-worker.toml", "utf8"));
+    assert.match(workerToml, /^app = "phoenix-worker-standby"$/m, "the worker config names its own app, so a deploy with it can never land on the website");
+    assert.match(workerToml, /^primary_region = "fra"$/m, "the worker lives in Frankfurt, beside the database");
+    assert.match(workerToml, /^\s*min_machines_running = 1$/m, "the worker always keeps one machine");
+    assert.match(workerToml, /^\s*auto_stop_machines = "off"$/m, "a worker that idles to zero stops every scheduler and the poller");
+    const workerEnv = /^\[env\]\n([\s\S]*?)(?:^\[|$(?![\s\S]))/m.exec(workerToml)?.[1] ?? "";
+    assert.match(workerEnv, /^\s*PHOENIX_PROCESS_ROLE = "worker"$/m, "the Fly worker runs the schedulers");
+    assert.match(workerEnv, /^\s*PHOENIX_LIVE_CRM_POLL = "true"$/m, "the Fly worker runs the CRM poller");
+    assert.match(
+      workerEnv,
+      /^\s*RAILWAY_ENVIRONMENT_NAME = "production"$/m,
+      "the poller's host pin: without it the in-process poller refuses to start on Fly",
+    );
+    const forced = [...workerEnv.matchAll(/^\s*([A-Z_]+) = /gm)].map((m) => m[1]);
+    assert.ok(forced.length >= 3, "fly-worker.toml's [env] was read");
+    const { dropped } = filterVariables(Object.fromEntries(forced.map((name) => [name, "copied"])));
+    for (const name of forced) {
+      assert.ok(dropped.includes(name), `${name} is forced by fly-worker.toml, so the variable copy (a Fly secret, which outranks [env]) must drop it`);
+    }
+  }
+
   // ── The variable file `flyctl secrets import` reads ───────────────────────────────────────────────────────────────
   {
     assert.equal(renderSecrets({ A: "1", B: "x=y" }), "A=1\nB=x=y\n");
