@@ -26,6 +26,7 @@ import {
   RgTh,
   RgTile,
 } from "@/components/resignations/resignations-ui";
+import { CrmWorkAfterWarning } from "@/components/resignations/crm-work-after-warning";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import {
   ALL_RESIGNATION_FILTER,
@@ -855,6 +856,7 @@ export function ResignationsWorkspace({
                 value={form.effectiveDate}
               />
             </RgField>
+            <CrmWorkAfterWarning className="sm:col-span-2" date={form.effectiveDate} hrId={form.employeeHrId} />
             <div className="sm:col-span-2">
               <RgField label="Reason">
                 <RgInput
@@ -929,6 +931,7 @@ export function ResignationsWorkspace({
                 value={editDates.effectiveDate}
               />
             </RgField>
+            <CrmWorkAfterWarning className="sm:col-span-2" date={editDates.effectiveDate} hrId={editing.employeeHrId} />
           </div>
         </RgDialog>
       ) : null}

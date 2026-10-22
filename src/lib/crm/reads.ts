@@ -1882,6 +1882,53 @@ export async function getVisitAgentNames(dateFrom: string, dateTo: string): Prom
   return Array.from(names).sort();
 }
 
+/**
+ * The distinct CRM accounts that logged visits in [dateFrom, dateTo] with NO `agent_hr_id` stamped,
+ * whose label contains `labelContains` — for the exit forms' warning
+ * (src/lib/resignations/crm-work-after-date.ts), which looks for the account a leaver inherited
+ * without it ever being put on their record. Without the departed-agent exclusion, for the reason
+ * {@link getAgentCrmIdentityRows} gives: the person asked about is the one leaving. Identity columns
+ * only, never a count. Full keyset scan; returns `[]` if the schema is missing.
+ */
+export async function getUnstampedAgentAccounts(options: {
+  dateFrom: string;
+  dateTo: string;
+  labelContains: string;
+}): Promise<Array<{ agentCrmId: number | string; agentName: string | null }>> {
+  const needle = options.labelContains.replace(/[%_]/g, "").trim();
+  if (!needle) return [];
+  const supabase = getSupabaseAdmin();
+  const accounts = new Map<string, { agentCrmId: number | string; agentName: string | null }>();
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_UNIFIED_VIEW)
+      .select("id, agent_crm_id, agent_name")
+      .is("agent_hr_id", null)
+      .gte("visit_date", options.dateFrom)
+      .lte("visit_date", options.dateTo)
+      .ilike("agent_name", `%${needle}%`)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_crm_id: number | string | null; agent_name: string | null }>;
+    for (const row of page) {
+      if (row.agent_crm_id == null) continue;
+      const key = String(row.agent_crm_id);
+      if (!accounts.has(key)) accounts.set(key, { agentCrmId: row.agent_crm_id, agentName: row.agent_name });
+    }
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+  return [...accounts.values()];
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape (see
    VisitFilterableQuery note); the paginated builder mixes filter + transform methods. */
 type PagedVisitQuery = {
