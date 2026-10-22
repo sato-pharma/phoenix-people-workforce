@@ -84,6 +84,8 @@ import {
   type HeadwindDevice,
 } from "../src/lib/devices/headwind/devices.ts";
 import { headwindErrorResponse } from "../src/lib/devices/headwind/http.ts";
+import { getHeadwindDeviceDetail } from "../src/lib/devices/headwind/detail.ts";
+import { cairoDateTime } from "../src/lib/format/cairo-datetime.ts";
 import {
   normalizeRemoteScreenId,
   setHeadwindRemoteScreenId,
@@ -1578,6 +1580,45 @@ function runDoorTests() {
   );
 }
 
+async function runDeviceDetailTests() {
+  resetHeadwindTokenCache();
+  // 🔴 THE CHECK-IN TIMES READ IN CAIRO, NEVER AS THE RAW INSTANT. The fleet read hands the detail its
+  // two moments as ISO strings under camelCase keys (`lastContactAt`, `locatedAt`) — no underscore, so
+  // the old key pattern missed both and the panel printed `2025-09-26T15:20:00.000Z` to a person in
+  // Cairo (measured on PHX-TAB-0008, 2026-10-22).
+  const listed = makeFetch({
+    api: [
+      {
+        body: {
+          data: {
+            items: [
+              {
+                id: 9,
+                info: { location: { lat: 30.0444, lon: 31.2357, ts: 1_758_800_000_000 }, model: "TB328XU" },
+                lastUpdate: 1_758_900_000_000,
+                number: "PHX-TAB-0008",
+              },
+            ],
+          },
+          status: "OK",
+        },
+        status: 200,
+      },
+    ],
+  });
+  const detail = await getHeadwindDeviceDetail("PHX-TAB-0008", listed.fetch, ENV);
+  const checkIn = detail.sections.find((section) => section.title === "Check-in");
+  assert.ok(checkIn, "the Check-in section is there");
+  const lastContact = checkIn.facts.find((fact) => fact.label === "Last contact at");
+  const located = checkIn.facts.find((fact) => fact.label === "Located at");
+  assert.equal(lastContact?.value, cairoDateTime("2025-09-26T15:20:00.000Z"), "last contact reads as a Cairo date and time");
+  assert.match(lastContact?.value ?? "", /18:20$/, "15:20 UTC is 18:20 in Cairo that day — the hour moved, it was not merely reformatted");
+  assert.equal(located?.value, cairoDateTime("2025-09-25T11:33:20.000Z"), "and so does the moment the position was taken");
+  for (const fact of checkIn.facts) {
+    assert.doesNotMatch(fact.value, /\d{4}-\d{2}-\d{2}T\d{2}:/, `${fact.label} never reaches the page as a raw ISO instant`);
+  }
+}
+
 function runShipsDarkTests() {
   // 🔴 THE WHOLE SECTION SHIPS DARK. Nothing renders and no request is made until the company's own
   // server exists and its settings are on Railway — which is what makes this safe to merge to
@@ -1590,20 +1631,16 @@ function runShipsDarkTests() {
   // code for a server that does not exist is a code that enrolls a tablet into nothing.
   assert.match(page, /\{headwindReady \? <HeadwindEnrollment \/> : null\}/, "the enrollment card ships dark with the rest");
   assert.match(page, /\{headwindReady \? <HeadwindServerSettings \/> : null\}/, "and so do the fleet-wide settings");
-  // 🔴 FLIPPED 2026-09-26, BY THE OWNER'S DECISION, AND THE OLD PIN IS LEFT HERE IN WORDS SO THE
-  // FLIP READS AS A CHOICE RATHER THAN A REGRESSION. It used to require ManageEngine ABOVE Headwind,
-  // because every tablet was still in ManageEngine and the page should open with where they are. What
-  // changed is that ManageEngine's actions stopped working through Phoenix - every one of them answers
-  // "Insufficient Data for Processing Request" - and he decided not to repair a system the company is
-  // leaving. So the page now opens with the one that works and the one the fleet is moving to, and
-  // ManageEngine reads as the block underneath, on its way out. When the last tablet has moved, those
-  // four lines come off and this assertion goes with them.
-  const headwindAt = page.indexOf("<HeadwindFleet");
-  const manageEngineAt = page.indexOf("<ManageEngineFleet");
-  assert.ok(
-    headwindAt >= 0 && manageEngineAt >= 0 && headwindAt < manageEngineAt,
-    "Headwind is the section the page opens with: it is the one that works, and the one the fleet is moving to",
-  );
+  // 🔴 MANAGEENGINE IS OFF THE PAGE SINCE 2026-10-22 — the step the owner set out on 2026-09-26. Until
+  // then this asserted Headwind ABOVE ManageEngine (flipped that day, when ManageEngine's actions stopped
+  // working and he chose not to repair a system the company was leaving), with the note that "when the
+  // last tablet has moved, those four lines come off and this assertion goes with them". Every rep
+  // tablet is now enrolled in Headwind as device owner, so the four lines came off. The components and
+  // their routes stay in the repo; only the render is gone, and the doc comment says how to bring it back.
+  for (const component of ["ManageEngineEnrollment", "ManageEngineRepTabletRules", "ManageEngineAppRepository", "ManageEngineFleet"]) {
+    assert.doesNotMatch(page, new RegExp(`<${component}\\b`), `${component} no longer renders on the tablets page`);
+  }
+  assert.doesNotMatch(page, /isManageEngineConfigured/, "and the page no longer asks whether ManageEngine is set up");
 
   // 🔴 AND THE PAGE SAYS THE MANAGEENGINE ACTIONS DO NOT WORK, rather than letting him find out by
   // pressing them. He pressed all nine on 2026-09-26 and got nothing but a red line, which is an hour
@@ -3117,6 +3154,7 @@ export async function runHeadwindBridgeTests() {
   await runCloudflareAccessTests();
   await runClientTests();
   await runDeviceTests();
+  await runDeviceDetailTests();
   runMatcherTests();
   runRegisterSyncTests();
   await runCommandTests();

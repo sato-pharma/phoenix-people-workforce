@@ -28,13 +28,38 @@
  */
 
 import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
+
+/** Tailwind's `md` — the width where the desktop table shows and the phone cards hide. */
+const TABLE_QUERY = "(min-width: 768px)";
+
+function subscribeToTableWidth(callback: () => void) {
+  const query = window.matchMedia(TABLE_QUERY);
+  query.addEventListener("change", callback);
+  return () => query.removeEventListener("change", callback);
+}
+
+/**
+ * 🔴 WHICH LAYOUT IS ON SCREEN, SO AN OPENED TABLET MOUNTS ITS PANEL ONCE. The fleet renders the
+ * desktop table AND the phone cards at the same time and lets CSS hide one, so an opened tablet used to
+ * mount `HeadwindTabletPanel` twice — every deep read (apps, details, location, history) ran twice, and
+ * the hidden copy kept its own armed and busy state. The server snapshot is `true`; nothing is open on
+ * first paint, so it never decides what the server renders.
+ */
+function useTableLayout(): boolean {
+  return useSyncExternalStore(
+    subscribeToTableWidth,
+    () => window.matchMedia(TABLE_QUERY).matches,
+    () => true,
+  );
+}
+
 const ACTION_BUTTON =
   "inline-flex items-center gap-1.5 border border-slate-300 px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
 const DANGER_ACTION =
@@ -188,6 +213,8 @@ export function HeadwindFleet() {
   const [locations, setLocations] = useState<Record<string, string>>({});
   /** One tablet is open at a time — its deep reads only run while it is. */
   const [openDeviceNumber, setOpenDeviceNumber] = useState<string | null>(null);
+  /** And it opens in the ONE layout on screen — see `useTableLayout`. */
+  const tableLayout = useTableLayout();
 
   const load = useCallback(async (isCurrent: () => boolean) => {
     try {
@@ -498,7 +525,7 @@ export function HeadwindFleet() {
                     onRefresh={refresh}
                     onScreen={openScreen}
                     onToggle={toggleOpen}
-                    open={openDeviceNumber === row.deviceNumber}
+                    open={tableLayout && openDeviceNumber === row.deviceNumber}
                     remoteScreenReady={data?.remoteScreenReady ?? false}
                     assignable={data?.assignable ?? []}
                     row={row}
@@ -527,7 +554,7 @@ export function HeadwindFleet() {
                 onRefresh={refresh}
                 onScreen={openScreen}
                 onToggle={toggleOpen}
-                open={openDeviceNumber === row.deviceNumber}
+                open={!tableLayout && openDeviceNumber === row.deviceNumber}
                 remoteScreenReady={data?.remoteScreenReady ?? false}
                 assignable={data?.assignable ?? []}
                 row={row}

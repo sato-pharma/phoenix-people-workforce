@@ -19,13 +19,15 @@
  * "nothing has ever happened to this tablet" are not the same sentence and must not look alike.
  *
  * NAMES, NEVER CODES (AGENTS.md §4). Keys become sentences (`batteryLevel` → "Battery level"),
- * booleans become Yes and No, epoch milliseconds become an ISO instant the page renders in Cairo
- * time, and raw identifiers a person cannot act on are dropped from the display entirely.
+ * booleans become Yes and No, epoch milliseconds become a Cairo date and time HERE (the panel prints a
+ * fact's value as it arrives, so an ISO instant reached the page as raw UTC until 2026-10-22), and raw
+ * identifiers a person cannot act on are dropped from the display entirely.
  *
  * NOTHING HERE WRITES.
  */
 
 import { listHeadwindDevices } from "@/lib/devices/headwind/devices";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type RawRecord = Record<string, unknown>;
@@ -82,23 +84,40 @@ export function humanizeHeadwindKey(key: string): string {
   return [opener, ...rest].join(" ");
 }
 
+/**
+ * Whether a key names a moment. `lastContactAt` and `locatedAt` are camelCase with no underscore, so
+ * the `…At` ending is matched on its own — the old pattern missed both, which is why the Check-in
+ * section printed raw UTC.
+ */
+function isInstantKey(key: string): boolean {
+  return /(time|date|_at|seen|stamp|update)/i.test(key) || /At$/.test(key);
+}
+
 /** Whether a number is a millisecond epoch rather than a plain quantity. Both halves matter. */
 function looksLikeEpochMs(key: string, value: number): boolean {
-  if (!/(time|date|_at|seen|stamp|update)/i.test(key)) return false;
+  if (!isInstantKey(key)) return false;
   return value > 1_000_000_000_000 && value < 4_000_000_000_000;
 }
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
 function formatValue(key: string, value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return null;
-    if (looksLikeEpochMs(key, value)) return new Date(value).toISOString();
+    if (looksLikeEpochMs(key, value)) return cairoDateTime(new Date(value).toISOString());
     return Number.isInteger(value) ? value.toLocaleString("en-US") : String(value);
   }
   if (typeof value === "string") {
     const text = value.trim();
-    return text ? text : null;
+    if (!text) return null;
+    // The fleet read hands over its moments as ISO strings — Cairo time here, never the raw instant.
+    if (isInstantKey(key) && ISO_INSTANT.test(text)) {
+      const cairo = cairoDateTime(text);
+      return cairo === "—" ? text : cairo;
+    }
+    return text;
   }
   return null;
 }

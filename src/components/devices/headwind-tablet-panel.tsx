@@ -491,12 +491,12 @@ function AppsPanel({ deviceNumber }: { deviceNumber: string }) {
                     title={
                       app.isRemoteScreenApp
                         ? "Removing this ends screen sharing on this tablet until it is installed again."
-                        : `Removes ${app.packageName} from the tablet. Nothing is shown to the rep.`
+                        : `Removes ${app.name} from the tablet. Nothing is shown to the rep.`
                     }
                     type="button"
                   >
                     {own.busy === app.packageName ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-                    {own.armed === app.packageName ? `Press again to remove ${app.packageName}` : "Remove"}
+                    {own.armed === app.packageName ? `Press again to remove ${app.name}` : "Remove"}
                   </button>
                 )}
               </li>
@@ -678,8 +678,8 @@ function CustodyPanel(props: CustodyProps) {
     return (
       <Panel title="Custody">
         <p className="text-[11px] font-semibold text-slate-500">
-          This tablet is not in the custody register yet. It adds itself the next time the fleet is read; then
-          it can be assigned or reserved from here.
+          This tablet is not in the custody register yet. A person adds it: once the tablet has reported its
+          serial number, press Add to custody on its row above. Then it can be assigned or reserved from here.
         </p>
       </Panel>
     );

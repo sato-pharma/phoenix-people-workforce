@@ -1011,12 +1011,20 @@ function runEnrollmentDoorTests() {
   );
   assert.match(audit, /entityType: "manageengine_enrollment_template"/);
 
-  // The page order, and what became of Google's half.
+  // What became of ManageEngine's half, and of Google's. ManageEngine enrolled first from 2026-09-25
+  // (Google refused every scan at a device quota of zero); on 2026-10-22 the last rep tablet was in
+  // Headwind as device owner, so its four lines came off the page as the owner set out on 2026-09-26.
   const page = enrollmentSource("app/(admin)/devices/tablets/page.tsx");
-  assert.ok(
-    page.indexOf("<ManageEngineEnrollment") !== -1 &&
-      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<ManageEngineFleet"),
-    "ManageEngine enrolls first — Google refuses every scan until it approves the project's device quota",
+  assert.doesNotMatch(
+    stripComments(page),
+    /<ManageEngine(Enrollment|Fleet|RepTabletRules|AppRepository)\b/,
+    "ManageEngine is OFF the tablets page (2026-10-22) — every rep tablet is in Headwind now",
+  );
+  // Taken off the page, NOT deleted — same as Google's console below.
+  assert.match(
+    enrollmentSource("src/components/devices/manageengine-fleet.tsx"),
+    /export function ManageEngineFleet/,
+    "the ManageEngine fleet component stays in the repo, whole",
   );
   // Read the RENDER, not the prose: the doc comment names `<RepTabletsConsole …/>` on purpose, as the
   // one line to re-add the day Google's quota lands, so the check must ignore comments or it trips on
