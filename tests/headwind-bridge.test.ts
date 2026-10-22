@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   getHeadwindToken,
@@ -2837,6 +2837,91 @@ async function runRemoteScreenIdTests() {
   assert.match(fleet, /onRemoteScreenIdSaved=\{props\.onRefresh\}/, "and refreshes the row when the panel saves one");
 }
 
+/**
+ * 🔴 EVERY ADD-ON ENDPOINT LIVES UNDER `/private/` OR `/public/`, AND UNDER THE FILTER THAT GUARDS IT.
+ *
+ * Headwind's own convention is that `/rest/plugins/<id>/private/*` needs a login and
+ * `/rest/plugins/<id>/public/*` is open on purpose — but the convention is only words: what actually
+ * refuses a stranger is the `filter(...)` list in `PhoenixRestModule`, and a JAX-RS path is the CLASS
+ * `@Path` joined to the METHOD `@Path`. A new method written as `@Path("/status")`, or a new resource
+ * bound without a matching filter entry, compiles, deploys and serves with no login at all, and nothing
+ * in Phoenix would notice. Read the two halves together, as Jersey does, and refuse any endpoint that
+ * no registered filter covers. (Pinned 2026-10-22, after an audit of the same rule needed a look-ahead
+ * regex the search tool could not run and was done by hand.)
+ */
+function runPluginPathTests() {
+  const root = "infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix";
+  const restModule = stripComments(source(`${root}/guice/module/PhoenixRestModule.java`));
+  const pluginConfig = stripComments(source(`${root}/PhoenixPluginConfigurationImpl.java`));
+
+  const listed = (name: string) => {
+    const block = restModule.match(new RegExp(`${name}\\s*=\\s*Arrays\\.asList\\(([^)]*)\\)`));
+    assert.ok(block, `PhoenixRestModule declares ${name}`);
+    return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  };
+  const protectedPatterns = listed("PROTECTED_RESOURCES");
+  const publicPatterns = listed("PUBLIC_RESOURCES");
+
+  for (const filter of ["JWTFilter", "AuthFilter", "PrivateIPFilter"]) {
+    assert.match(
+      restModule,
+      new RegExp(`filter\\(PROTECTED_RESOURCES\\)\\.through\\(${filter}\\.class\\)`),
+      `the protected paths go through ${filter} — drop it and a private endpoint answers without a login`,
+    );
+  }
+  assert.match(restModule, /filter\(PUBLIC_RESOURCES\)\.through\(PublicIPFilter\.class\)/, "the public paths keep Headwind's PublicIPFilter");
+
+  // The module's own comment says the plugin id is repeated as a literal and pinned here: it is.
+  const pluginId = pluginConfig.match(/PLUGIN_ID\s*=\s*"([^"]+)"/)?.[1];
+  assert.equal(pluginId, "phoenix-actions", "the plugin id the console addresses");
+  assert.deepEqual(
+    protectedPatterns,
+    [`/rest/plugins/${pluginId}/private/*`],
+    "the protected filter covers exactly the plugin id's private tree — a drift leaves the real endpoints unfiltered",
+  );
+  for (const pattern of [...protectedPatterns, ...publicPatterns]) {
+    assert.ok(pattern.endsWith("/*"), `${pattern} is a prefix pattern`);
+  }
+  const prefixOf = (pattern: string) => pattern.slice(0, -1);
+
+  const bound = new Set([...restModule.matchAll(/\bbind\((\w+)\.class\)/g)].map((m) => m[1]));
+  const endpoints: string[] = [];
+  for (const file of readdirSync(new URL(`../${root}/rest/`, import.meta.url))) {
+    if (!file.endsWith(".java")) continue;
+    const java = stripComments(source(`${root}/rest/${file}`));
+    const declaration = java.match(/@Path\("([^"]*)"\)\s*public\s+class\s+(\w+)/);
+    if (!declaration) {
+      assert.doesNotMatch(java, /@Path\("/, `${file} carries @Path on methods but none on its class — read it by hand`);
+      continue;
+    }
+    const [, classPath, className] = declaration;
+    assert.ok(bound.has(className), `${className} serves @Path routes, so PhoenixRestModule must bind it`);
+
+    const body = java.slice(java.indexOf(declaration[0]) + declaration[0].length);
+    const methodPaths = [...body.matchAll(/@Path\("([^"]*)"\)/g)].map((m) => m[1]);
+    const verbs = body.match(/@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/g) ?? [];
+    assert.equal(
+      methodPaths.length,
+      verbs.length,
+      `every endpoint in ${className} carries its own @Path — a verb on the bare class path ${classPath} sits outside both /private/ and /public/`,
+    );
+    for (const methodPath of methodPaths) endpoints.push(`/rest${classPath}${methodPath}`);
+  }
+
+  assert.ok(endpoints.length >= 5, `the scan found the add-on's endpoints (found ${endpoints.length}) — a parser that finds none proves nothing`);
+  assert.ok(endpoints.includes("/rest/plugins/phoenix-actions/private/status"), "the status endpoint Phoenix asks first is among them");
+  for (const endpoint of endpoints) {
+    const isPrivate = protectedPatterns.some((p) => endpoint.startsWith(prefixOf(p)));
+    const isPublic = publicPatterns.some((p) => endpoint.startsWith(prefixOf(p)));
+    assert.ok(
+      isPrivate || isPublic,
+      `${endpoint} is under no filter registered in PhoenixRestModule, so it would answer anyone with no login`,
+    );
+    if (isPrivate) assert.match(endpoint, /\/private\//, `${endpoint} is filtered as private and named /private/`);
+    if (isPublic) assert.match(endpoint, /\/public\//, `${endpoint} is filtered as public and named /public/`);
+  }
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -2859,6 +2944,7 @@ export async function runHeadwindBridgeTests() {
   runErrorMappingTests();
   runDoorTests();
   runServerImageTests();
+  runPluginPathTests();
   runOriginCertificateCheckTests();
   runBootstrapScriptTests();
   runConsoleUiTests();
