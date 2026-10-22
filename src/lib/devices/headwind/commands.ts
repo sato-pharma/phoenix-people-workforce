@@ -186,7 +186,7 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
       "Puts a full-screen lock over the tablet. Nothing on it can be used until it is unlocked from here — the rep's own PIN will not clear it.",
     destructive: false,
     id: "LOCK",
-    label: "Lock now",
+    label: "Lock the tablet",
     pastTense: "Locked",
   },
   {
@@ -215,7 +215,7 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
       "Factory-resets the tablet — everything on it is erased and it comes back at the welcome screen, ready to be enrolled again. Use it for a stolen tablet, or one being retired and started clean.",
     destructive: true,
     id: "FACTORY_RESET",
-    label: "Full factory reset",
+    label: "Factory reset",
     pastTense: "Factory-reset",
   },
 ] as const;

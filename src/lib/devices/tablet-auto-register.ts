@@ -127,7 +127,7 @@ export type TabletRegistrationSource = "enrollment" | "usb" | "manageengine" | "
 
 const SOURCE_NOTES: Readonly<Record<TabletRegistrationSource, string>> = {
   enrollment: "Added automatically when the tablet enrolled on the rep tablet rules.",
-  headwind: "Added automatically when the tablet enrolled on the company's own Headwind server.",
+  headwind: "Added to custody from the Rep Tablets page after it enrolled on the company's own Headwind server.",
   manageengine: "Added automatically when the tablet enrolled in ManageEngine on the company's code.",
   usb: "Added automatically when the tablet was plugged into Phoenix by USB.",
 };

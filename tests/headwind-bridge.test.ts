@@ -42,6 +42,7 @@ import {
   linkHeadwindApp,
   moveHeadwindDeviceToConfiguration,
   setHeadwindBranding,
+  HEADWIND_DESKTOP_HEADERS,
   HEADWIND_ICON_SIZES,
   HeadwindConfigurationError,
 } from "../src/lib/devices/headwind/configurations.ts";
@@ -84,6 +85,9 @@ import {
   type HeadwindDevice,
 } from "../src/lib/devices/headwind/devices.ts";
 import { headwindErrorResponse } from "../src/lib/devices/headwind/http.ts";
+import { getHeadwindDeviceDetail } from "../src/lib/devices/headwind/detail.ts";
+import { deviceActorNames, UNNAMED_DEVICE_ACTOR } from "../src/lib/devices/actor-names.ts";
+import { cairoDateTime } from "../src/lib/format/cairo-datetime.ts";
 import {
   normalizeRemoteScreenId,
   setHeadwindRemoteScreenId,
@@ -523,6 +527,11 @@ async function runDeviceTests() {
   assert.equal(deviceRecordsFromSearch([{ number: "A" }]).length, 1, "the array on its own");
   assert.deepEqual(deviceRecordsFromSearch({ devices: { totalItemsCount: 0 } }), [], "a genuinely empty page");
   assert.deepEqual(deviceRecordsFromSearch(null), [], "and nothing at all");
+  // 🔴 A SHAPE IT CANNOT PLACE IS AN ERROR, NEVER AN EMPTY FLEET — the 2026-09-26 outage read as "no
+  // tablets" precisely because an unknown shape fell through to [].
+  for (const unreadable of [{ devices: { page: 1 } }, { configurations: {} }, "nonsense"] as const) {
+    assert.throws(() => deviceRecordsFromSearch(unreadable), HeadwindRequestError, `an unreadable reply (${JSON.stringify(unreadable)}) says so`);
+  }
 
   // 🔴 AND THE OTHER TWO READERS OF THAT SEARCH GO THROUGH IT. Both had their own copy of the flat
   // read: one reported no installed apps for every tablet, the other refused every configuration move
@@ -957,6 +966,7 @@ async function runConfigurationTests() {
     [{ backgroundColor: "navy", configurationId: 4 }, "a colour word is not a hex colour"],
     [{ configurationId: 4, textColor: "#FFF" }, "and three digits is not six — the launcher would ignore it"],
     [{ configurationId: 4, iconSize: "HUGE" }, "an icon size the launcher does not understand is refused rather than sent and ignored"],
+    [{ configurationId: 4, desktopHeader: "TOP" }, "the title says WHAT it shows — a position like TOP is not one of Headwind's kinds"],
     [{ configurationId: 4 }, "and a form where nothing changed sends nothing to a hundred tablets"],
     [{ configurationId: "4" as never, desktopHeader: "x" }, "a set of rules has to be named by its id"],
   ] as const) {
@@ -1044,6 +1054,14 @@ async function runConfigurationTests() {
   assert.doesNotMatch(configs, /console\.(log|info|warn|error|debug)/, "the configuration object is never logged — it carries a plaintext password");
   assert.doesNotMatch(configs, /newValues: \{[^}]*current/, "and never written into an audit row whole");
   assert.match(configs, /HEADWIND_ICON_SIZES/, "the icon sizes are the three the launcher understands");
+  // What the title shows is Headwind's own enum (DesktopHeader.java), and the console offers it as a
+  // choice — never a free-text box with "TOP" in it, which wrote a value the enum cannot hold.
+  assert.deepEqual([...HEADWIND_DESKTOP_HEADERS], ["NO_HEADER", "DEVICE_ID", "DESCRIPTION", "TEMPLATE"]);
+  const settingsUi = stripComments(source("src/components/devices/headwind-server-settings.tsx"));
+  for (const kind of HEADWIND_DESKTOP_HEADERS) {
+    assert.ok(settingsUi.includes(`value: "${kind}"`), `the console offers ${kind} as a choice`);
+  }
+  assert.doesNotMatch(settingsUi, /placeholder="TOP"/, "and the title is no longer a free-text position");
   assert.deepEqual([...HEADWIND_ICON_SIZES], ["SMALL", "MEDIUM", "LARGE"]);
   assert.match(configs, /kioskMode/, "the key is kioskMode — `kiosk` is the plausible-looking name the server ignores");
 }
@@ -1578,6 +1596,93 @@ function runDoorTests() {
   );
 }
 
+async function runDeviceDetailTests() {
+  resetHeadwindTokenCache();
+  // 🔴 THE CHECK-IN TIMES READ IN CAIRO, NEVER AS THE RAW INSTANT. The fleet read hands the detail its
+  // two moments as ISO strings under camelCase keys (`lastContactAt`, `locatedAt`) — no underscore, so
+  // the old key pattern missed both and the panel printed `2025-09-26T15:20:00.000Z` to a person in
+  // Cairo (measured on PHX-TAB-0008, 2026-10-22).
+  const listed = makeFetch({
+    api: [
+      {
+        body: {
+          data: {
+            items: [
+              {
+                id: 9,
+                info: { location: { lat: 30.0444, lon: 31.2357, ts: 1_758_800_000_000 }, model: "TB328XU" },
+                lastUpdate: 1_758_900_000_000,
+                number: "PHX-TAB-0008",
+              },
+            ],
+          },
+          status: "OK",
+        },
+        status: 200,
+      },
+    ],
+  });
+  const detail = await getHeadwindDeviceDetail("PHX-TAB-0008", listed.fetch, ENV);
+  const checkIn = detail.sections.find((section) => section.title === "Check-in");
+  assert.ok(checkIn, "the Check-in section is there");
+  const lastContact = checkIn.facts.find((fact) => fact.label === "Last contact at");
+  const located = checkIn.facts.find((fact) => fact.label === "Located at");
+  assert.equal(lastContact?.value, cairoDateTime("2025-09-26T15:20:00.000Z"), "last contact reads as a Cairo date and time");
+  assert.match(lastContact?.value ?? "", /18:20$/, "15:20 UTC is 18:20 in Cairo that day — the hour moved, it was not merely reformatted");
+  assert.equal(located?.value, cairoDateTime("2025-09-25T11:33:20.000Z"), "and so does the moment the position was taken");
+  for (const fact of checkIn.facts) {
+    assert.doesNotMatch(fact.value, /\d{4}-\d{2}-\d{2}T\d{2}:/, `${fact.label} never reaches the page as a raw ISO instant`);
+  }
+}
+
+async function runDeviceActorNameTests() {
+  // 🔴 WHO DID IT IS A NAME, NEVER THE HR ID IT WAS STORED UNDER (AGENTS.md §4). The tablet history and
+  // the enrollment card's "saved by" both printed the raw column. The lookup is the shared
+  // `namesByHrId`, driven here through its structural client — never the real `employees` table.
+  const asked: string[][] = [];
+  const client = {
+    from: () => ({
+      select: () => ({
+        in: async (_column: string, values: string[]) => {
+          asked.push(values);
+          return { data: [{ full_name: "Omar Gawish", hr_id: "B-10", nickname: null }], error: null };
+        },
+      }),
+    }),
+  };
+  const nameOf = await deviceActorNames(["B-10", "b-10", "super_admin", null], client);
+  assert.equal(nameOf("B-10"), "Omar Gawish", "an HR id reads as the person's name");
+  assert.equal(nameOf("b-10"), "Omar Gawish", "in whatever case it was stored");
+  assert.equal(nameOf("super_admin"), UNNAMED_DEVICE_ACTOR, "an actor with no name on file is 'a colleague', never the code");
+  assert.equal(nameOf(null), null, "and no actor is no actor");
+  assert.equal(asked.length, 1, "one lookup for the whole list, not one per row");
+
+  const failing = {
+    from: () => ({ select: () => ({ in: async () => ({ data: null, error: { message: "down" } }) }) }),
+  };
+  assert.equal((await deviceActorNames(["B-10"], failing))("B-10"), UNNAMED_DEVICE_ACTOR, "a failed lookup costs the names, never the history");
+
+  const history = stripComments(source("src/lib/devices/headwind/detail.ts"));
+  assert.match(history, /deviceActorNames\(/, "the tablet history names who acted");
+  assert.match(history, /\.limit\(HEADWIND_HISTORY_LIMIT \+ 1\)/, "and reads one past its limit, so the panel can say there is more");
+  const enrollmentModule = stripComments(source("src/lib/devices/headwind/enrollment.ts"));
+  assert.equal((enrollmentModule.match(/deviceActorNames\(/g) ?? []).length, 2, "the enrollment card's 'saved by' is a name on load and on save");
+
+  // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE — otherwise every tablet offers "Add to custody",
+  // a duplicate custody row one click away.
+  const fleetModule = stripComments(source("src/lib/devices/headwind/fleet.ts"));
+  assert.match(fleetModule, /unregistered: !registerError && entry === null,/, "with the register unread, no tablet is called unregistered");
+  const fleetUi = stripComments(source("src/components/devices/headwind-fleet.tsx"));
+  assert.match(fleetUi, /Custody not readable/, "and the row says the register could not be read");
+  assert.match(fleetUi, /setLoadError\(null\);/, "a read that worked clears the last one's failure");
+  assert.match(fleetUi, /Last known position/, "the locate button says what it shows");
+  assert.doesNotMatch(fleetUi, /Where is it/, "not a question it cannot answer live");
+
+  const enrollmentUi = stripComments(source("src/components/devices/headwind-enrollment.tsx"));
+  assert.match(enrollmentUi, /"com\.hmdm\.launcher": "Headwind MDM agent"/, "the agent reads as a name, not its package");
+  assert.doesNotMatch(enrollmentUi, /🔴/, "and the warning is an amber chip in words, never an emoji");
+}
+
 function runShipsDarkTests() {
   // 🔴 THE WHOLE SECTION SHIPS DARK. Nothing renders and no request is made until the company's own
   // server exists and its settings are on Railway — which is what makes this safe to merge to
@@ -1590,20 +1695,16 @@ function runShipsDarkTests() {
   // code for a server that does not exist is a code that enrolls a tablet into nothing.
   assert.match(page, /\{headwindReady \? <HeadwindEnrollment \/> : null\}/, "the enrollment card ships dark with the rest");
   assert.match(page, /\{headwindReady \? <HeadwindServerSettings \/> : null\}/, "and so do the fleet-wide settings");
-  // 🔴 FLIPPED 2026-09-26, BY THE OWNER'S DECISION, AND THE OLD PIN IS LEFT HERE IN WORDS SO THE
-  // FLIP READS AS A CHOICE RATHER THAN A REGRESSION. It used to require ManageEngine ABOVE Headwind,
-  // because every tablet was still in ManageEngine and the page should open with where they are. What
-  // changed is that ManageEngine's actions stopped working through Phoenix - every one of them answers
-  // "Insufficient Data for Processing Request" - and he decided not to repair a system the company is
-  // leaving. So the page now opens with the one that works and the one the fleet is moving to, and
-  // ManageEngine reads as the block underneath, on its way out. When the last tablet has moved, those
-  // four lines come off and this assertion goes with them.
-  const headwindAt = page.indexOf("<HeadwindFleet");
-  const manageEngineAt = page.indexOf("<ManageEngineFleet");
-  assert.ok(
-    headwindAt >= 0 && manageEngineAt >= 0 && headwindAt < manageEngineAt,
-    "Headwind is the section the page opens with: it is the one that works, and the one the fleet is moving to",
-  );
+  // 🔴 MANAGEENGINE IS OFF THE PAGE SINCE 2026-10-22 — the step the owner set out on 2026-09-26. Until
+  // then this asserted Headwind ABOVE ManageEngine (flipped that day, when ManageEngine's actions stopped
+  // working and he chose not to repair a system the company was leaving), with the note that "when the
+  // last tablet has moved, those four lines come off and this assertion goes with them". Every rep
+  // tablet is now enrolled in Headwind as device owner, so the four lines came off. The components and
+  // their routes stay in the repo; only the render is gone, and the doc comment says how to bring it back.
+  for (const component of ["ManageEngineEnrollment", "ManageEngineRepTabletRules", "ManageEngineAppRepository", "ManageEngineFleet"]) {
+    assert.doesNotMatch(page, new RegExp(`<${component}\\b`), `${component} no longer renders on the tablets page`);
+  }
+  assert.doesNotMatch(page, /isManageEngineConfigured/, "and the page no longer asks whether ManageEngine is set up");
 
   // 🔴 AND THE PAGE SAYS THE MANAGEENGINE ACTIONS DO NOT WORK, rather than letting him find out by
   // pressing them. He pressed all nine on 2026-09-26 and got nothing but a red line, which is an hour
@@ -2359,7 +2460,18 @@ function runConsoleUiTests() {
   assert.match(panel, /postJson<\{ message: string \}>\("\/api\/devices\/headwind\/wipe", \{ deviceNumber \}\)/, "the wipe body names a tablet and nothing else");
   assert.doesNotMatch(panel, /apps: \[|folders: \[/, "the browser cannot choose what a wipe erases");
   // And the second press says out loud what goes, from the server's own list — never "confirm".
-  assert.match(panel, /Press again to erase \$\{erases\.join\(", "\)\} from \$\{deviceNumber\}/, "the armed wipe names the camera roll out loud, because the owner chose the scope that takes field photos");
+  assert.match(panel, /Press again to erase \$\{erases\.join\(", "\)\} from \$\{tabletName\}/, "the armed wipe names the camera roll out loud, because the owner chose the scope that takes field photos");
+  // …and names the tablet as a person calls it (its asset tag), not Headwind's device number.
+  assert.match(panel, /tabletName = deviceNumber,/, "the tablet's name falls back to its device number only when the register has no tag");
+  // 🔴 A PRESS-AGAIN BUTTON DOES NOT STAY LOADED. Every armed control on the panel disarms after the
+  // kit's shared window, so a stray press minutes later starts over instead of erasing a tablet.
+  assert.match(kit, /export const ARM_WINDOW_MS = 8_000;/, "the kit owns one arm window");
+  assert.equal(
+    (panel.match(/useDisarmAfterWindow\(own\.armed(Revoke)?,/g) ?? []).length,
+    4,
+    "actions, wipe, app removal and revoke all disarm on their own",
+  );
+  assert.doesNotMatch(`${panel}\n${settings}`, /PANEL_INPUT/, "every field wears the shared form tokens, not a panel copy");
   assert.doesNotMatch(panel, /Are you sure|confirm\?/i, "no dialog stands in for saying what happens");
 
   // 🔴 NOTHING HERE KEEPS A CREDENTIAL ANYWHERE A CREDENTIAL SURVIVES. The enrollment payload and a new
@@ -3117,6 +3229,8 @@ export async function runHeadwindBridgeTests() {
   await runCloudflareAccessTests();
   await runClientTests();
   await runDeviceTests();
+  await runDeviceDetailTests();
+  await runDeviceActorNameTests();
   runMatcherTests();
   runRegisterSyncTests();
   await runCommandTests();
