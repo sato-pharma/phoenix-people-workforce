@@ -1711,6 +1711,141 @@ try {
     }
   }
 
+  // C20 — a push that touches `.claude/` must carry a FRESH cloud mirror (owner, 2026-10-23: "make
+  // it mechanical", after "refresh the cloud mirror in the next PR that touches .claude").
+  //
+  // WHY A GUARD AND NOT A RULE. `.claude/cloud-context/memory-mirror/` IS the Phoenix memory a cloud
+  // session wakes up with — it never sees `~/.claude` — so it is only ever as fresh as its last
+  // MERGED refresh. The drift is measured already (`scripts/cloud-mirror-drift-refresh.mjs` writes a
+  // reading the SessionStart guard prints), but nothing acted on it, so the mirror went stale between
+  // refreshes and a cloud session was handed facts the laptop had already overtaken: on 2026-10-02
+  // the mirror still said an `analytics.sos_fact` price gap was OPEN 86 minutes after it was fixed and
+  // shipped. A `.claude` PR is the natural vehicle for the fix, which is what makes this the moment
+  // to enforce it rather than a thing to remember.
+  //
+  // 🔴 IT COMPARES LIVE MEMORY AGAINST THE MIRROR IN **HEAD**, NOT IN `origin/main`, AND THE
+  // DIFFERENCE IS WHAT MAKES THE CLAUSE FIXABLE. The question here is not "has the merged mirror
+  // drifted" (that is the SessionStart reading's question, answered off a possibly stale ref and from
+  // a 24-hour cache); it is "does the branch I am pushing carry a current mirror". Read off HEAD, the
+  // refusal clears the moment `sync-cloud-context.mjs` has run and been committed — the session fixes
+  // it and pushes again. Keyed off the cache instead, it would still refuse after the fix, because
+  // that reading is throttled to 30 minutes, and a guard nobody can satisfy is a guard switched off.
+  //
+  // Narrow on purpose, and cheap in the common case: the two modules are loaded only after a push has
+  // been seen to touch `.claude/`, so an ordinary push and every other Bash call pay one `git diff`
+  // of names and nothing else. A cloud runner has no live memory directory at all, so the reading
+  // fails and the clause allows — the same way every other reading here fails open.
+  //
+  // `PHX_MIRROR_OK=1 <cmd>` pushes anyway — for a `.claude` change that must go out before the
+  // refresh (a hook fix mid-incident), the honest reason to override it.
+  const MIRROR_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_MIRROR_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+
+  if (
+    GIT_PUSH.test(pushText) &&
+    !/--dry-run|--help|(?:^|\s)-h(?:\s|$)/.test(pushText) &&
+    !MIRROR_STAND_DOWN.test(cmd) &&
+    process.env.PHX_MIRROR_OK !== '1'
+  ) {
+    let pushRoot = '';
+    for (const candidate of [input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
+      if (!candidate) continue;
+      try {
+        if (statSync(String(candidate)).isDirectory()) {
+          pushRoot = String(candidate);
+          break;
+        }
+      } catch {
+        /* not a directory we can see */
+      }
+    }
+
+    // `scripts/sync-cloud-context.mjs` is what identifies THIS repo — the clause names that command
+    // as the fix, so a checkout without it is not a checkout this clause has anything to say about.
+    if (pushRoot && existsSync(join(pushRoot, 'scripts', 'sync-cloud-context.mjs'))) {
+      let touchesClaude = false;
+      try {
+        const names = execFileSync('git', ['diff', '--name-only', 'origin/main...HEAD'], {
+          cwd: pushRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 20000,
+        });
+        touchesClaude = names
+          .split(/\r?\n/)
+          .some((name) => name.trim().startsWith('.claude/'));
+      } catch {
+        /* no origin/main, a detached head, a fresh clone: nothing to say, allow */
+      }
+
+      if (touchesClaude) {
+        let drift = null;
+        try {
+          // Dynamic, and inside this try, exactly as C13 loads its own module: a missing or broken
+          // one allows the push rather than taking the hook down at load, and nothing is parsed on
+          // the hot path of an ordinary Bash call.
+          const { readMirrorFromRef } = await import(
+            new URL('../../scripts/cloud-mirror-source.mjs', import.meta.url).href
+          );
+          const { cloudMirrorDrift } = await import(
+            new URL('../../scripts/cloud-mirror-drift.mjs', import.meta.url).href
+          );
+          const { resolveMemoryDir } = await import(
+            new URL('../../scripts/lib/memory-dir.mjs', import.meta.url).href
+          );
+
+          const memoryDir = resolveMemoryDir(pushRoot);
+          const live = new Map();
+          for (const name of readdirSync(memoryDir)) {
+            if (!name.toLowerCase().endsWith('.md') || name.includes('.bak')) continue;
+            live.set(name, readFileSync(join(memoryDir, name), 'utf8'));
+          }
+          // The mirror as the PUSH would ship it. `null` is "could not read", never "current", and
+          // this reader hands back the `Map` itself — `readCloudMirror`'s `{files, source}` wrapper
+          // is the one that reports which source it used, and taking `.files` off this one silently
+          // compares against `undefined`, which reads as EVERY file missing.
+          const mirror = readMirrorFromRef({ root: pushRoot, ref: 'HEAD' });
+          if (mirror !== null && mirror.size > 0 && live.size > 0) {
+            drift = cloudMirrorDrift({ live, mirror });
+          }
+        } catch {
+          drift = null; /* no live memory (a cloud runner), unreadable mirror: allow */
+        }
+
+        if (drift && drift.drifted > 0) {
+          const some = (list) => list.slice(0, 4).join(', ') + (list.length > 4 ? ', …' : '');
+          const detail = [
+            drift.missing.length ? `${drift.missing.length} missing (${some(drift.missing)})` : '',
+            drift.stale.length ? `${drift.stale.length} stale (${some(drift.stale)})` : '',
+            drift.extra.length ? `${drift.extra.length} retired but still shipping (${some(drift.extra)})` : '',
+          ]
+            .filter(Boolean)
+            .join('\n  ');
+
+          deny(
+            'C20 — this push touches `.claude/`, and the cloud mirror it would ship has drifted from ' +
+              'the laptop\'s live memory, so it is refused.\n\n  ' +
+              detail +
+              `\n\nOf ${drift.compared} live memory file(s), ${drift.drifted} would reach a cloud ` +
+              'session WRONG. The mirror is the whole of the Phoenix memory a cloud session wakes up ' +
+              'with — it never sees ~/.claude — and it is only ever as fresh as its last merged ' +
+              'refresh, which is why a PR that already touches `.claude/` is the one that carries it.\n\n' +
+              'Refresh it into this branch and commit, then push again:\n  ' +
+              'node scripts/sync-cloud-context.mjs\n\n' +
+              'That also files any new note under its module and rebuilds the notes blocks, which is ' +
+              'what keeps the required `validate` job off an orphan.\n\n' +
+              'Measured against the mirror in HEAD, not origin/main: this refusal clears as soon as ' +
+              'the refresh is committed here.\n\n' +
+              'If this `.claude` change has to go out before the refresh, push again as:\n  ' +
+              (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+                ? '$env:PHX_MIRROR_OK=1; <the same command>'
+                : 'PHX_MIRROR_OK=1 <the same command>'),
+          );
+        }
+      }
+    }
+  }
+
   // C11 — `synthetic-journeys` is the production smoke suite, and its cadence is a COST decision
   // that was already taken: it ran hourly until 2026-08-29 (17 runs/day) and was deliberately cut to
   // every three hours (6 runs/day) to save Actions minutes, at the stated price of worst-case

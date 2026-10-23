@@ -306,3 +306,53 @@ still has the design in mind. Each refusal writes the remedy out: the `form-toke
   cases; `tests/form-design-guard.test.ts` drives the hook as a subprocess over 8 painted shapes and
   11 measured negatives, both template directions, Edit/MultiEdit arrival, the removal edit, both
   scopes, every entry of `EXEMPT`, the dispatch wiring and the one-detector pin.
+
+## bash-guard C20 — a `.claude` push carries the cloud-mirror refresh
+
+The owner asked for it mechanically on 2026-10-23 ("make it mechanical"), the same morning he said
+"refresh the cloud mirror in the next PR that touches .claude" — the second instruction being the
+rule and the first being the demand that nothing have to remember it.
+
+**What it is for.** `.claude/cloud-context/memory-mirror/` IS the Phoenix memory a cloud session
+wakes up with: a cloud clone never sees `~/.claude`, so the mirror on `main` is the whole of its
+two-tier recall. It is therefore only ever as fresh as its last MERGED refresh. The drift was already
+measured — `scripts/cloud-mirror-drift-refresh.mjs` takes a reading off the SessionStart path and
+`.claude/hooks/memory-index-guard.mjs` prints it — but nothing anywhere ACTED on the reading, so the
+mirror sat stale between refreshes. Measured 2026-10-02: five of 1,061 mirrored files no longer
+matched live memory and three memories written since the last refresh were missing outright, among
+them `saginko-repriced-retail-from-october-direct-from-today` — the mirror still said the
+`analytics.sos_fact` flat-price gap was *"OPEN GAP found 2026-10-01, NOT yet fixed"* 86 minutes after
+it was fixed and its migration applied. A cloud session sent at that area would have been told to go
+and fix something already done, and nothing on its side could ever have corrected it.
+
+**What it does.** On a `git push` from a checkout holding `scripts/sync-cloud-context.mjs`, it asks
+one cheap question first — does `origin/main...HEAD` touch any `.claude/` path? If not, the clause is
+silent and the push pays one `git diff` of names. If it does, it compares the laptop's live memory
+against the mirror as the push would ship it, and refuses with the drifted files NAMED, the one
+command that fixes it, and its stand-down.
+
+🔴 **The reading is taken against the mirror in `HEAD`, never `origin/main` and never the
+SessionStart cache, and that is what makes the refusal fixable.** The question here is not "has the
+merged mirror drifted" — that is the SessionStart reading's question, answered off a possibly stale
+ref and from a reading up to 24 hours old. It is "does the branch I am pushing carry a current
+mirror". Read off HEAD, the refusal clears the moment the refresh is committed on the branch, in the
+same turn. Keyed off the cache it would survive its own fix, because that reading is throttled to 30
+minutes, and a guard nobody can satisfy is a guard switched off within the hour.
+
+🔴 **A test case where the mirror is current everywhere proves nothing about the ref.** Measured
+2026-10-23: flipping the clause to `ref: "origin/main"` left the whole suite green, because with
+`main` and the branch agreeing both refs give the same answer. The case that pins it is the real
+one — `main` behind, the refresh committed on the branch — and it must assert ALLOW.
+
+- **The fix it names:** `node scripts/sync-cloud-context.mjs`. That command also files any new note
+  under its module and rebuilds the notes blocks, which is the half that keeps the required
+  `validate` job off an orphan note.
+- **Untouched:** a push that touches no `.claude/` file however stale the mirror is, a `--dry-run`,
+  and a machine with no memory directory at all — a cloud runner has none, so there is no live side
+  to compare and the clause allows, the same fail-open contract every other reading here keeps.
+- **Stand-down:** `PHX_MIRROR_OK=1`, for a `.claude` change that has to go out before the refresh (a
+  hook fix mid-incident). The two modules it needs are loaded dynamically, only after a push has been
+  seen to touch `.claude/`, so an ordinary Bash call parses neither.
+- **Pinned by** `tests/cloud-mirror-push-guard.test.ts`: seven cases, each building its own bare
+  origin, work repo and memory directory under `CLAUDE_CONFIG_DIR`, so the suite never reads the
+  laptop's real memory and passes on a runner that has none.
