@@ -648,6 +648,7 @@ policy):
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 30m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
+   | `phoenix-crm-agent-crm-ids-reconcile` | `*/15 * * * *` | 1h | pg_cron job `crm-agent-crm-ids-reconcile`, inside the database · **in-house only** |
    | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org job `8351275` |
 
    **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
@@ -742,6 +743,7 @@ policy):
    | `phoenix-ireports360-live-poll` | `crm` | The in-process poller's own tick, every five minutes. A brief red is usually the production process restarting on a deploy, which is why its grace is 30 minutes; a sustained red means the poller is dead and CRM has stopped pulling iReports360. |
    | `phoenix-ireports360-sync` | `crm` | The rolling iReports360 visits sync, every three hours between 06:00 and 21:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
    | `phoenix-reconcile-visits` | `crm` | The weekly full-window iReports360 reconciliation, Sunday 04:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
+   | `phoenix-crm-agent-crm-ids-reconcile` | `crm in-house-only` | The 15-minute pg_cron reconcile inside the database that keeps the departed-agent CRM id cache in step with the visits; nothing else refreshes it. A red means the cache has frozen, so a CRM id first used after it stopped is missing from the departed-agent exclusion that Double Visit Analytics, Field Workforce Compliance and the payroll no-activity detector read. |
    | `phoenix-job-heartbeat-sweep` | `platform` | The sweeper for the in-house dead-man's switch: it judges every declared job against its schedule and pages a human when one stops reporting. A red here means the thing that watches everything else has stopped. |
 
    🔴 **STANDING A JOB DOWN AND BRINGING IT BACK NEEDS `watchingSince`, or the restore alarms about
@@ -893,6 +895,16 @@ it is firing (the register recorded a success at 13:19 Cairo on 2026-10-15), and
 being refused because the project is at its ceiling — so the drain is watched inside Phoenix only. A
 monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
 paragraph exists instead of a green dashboard.
+
+**One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
+is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,
+`crm_agent_crm_ids_reconcile_run()`, records success through `phx_record_job_heartbeat()` — the
+SQL twin of `recordJobHeartbeat`, writing only its own outcome's timestamp — after each run. It
+never calls Healthchecks, so it is in-house only by nature. 🔴 **A failing run is deliberately not
+caught**: pg_cron runs the command in one transaction, so a caught failure would read `succeeded`
+in `cron.job_run_details`; uncaught, it reads FAILED there and stranded here, both true. The other
+six pg_cron jobs on production are still unwatched. Account: `docs/crm-agent-crm-ids-cache.md`,
+"Who watches the reconcile".
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.
