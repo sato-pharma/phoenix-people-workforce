@@ -1,6 +1,6 @@
 ---
 name: captureStallInSentry-is-the-web-event-loop-stall-alert
-description: Sentry PHOENIX-WORKFORCE-6 / captureStallInSentry is the web process's event-loop freeze warning, and its count is a FLOOR — one event per 30 min per container; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour.
+description: Sentry PHOENIX-WORKFORCE-6 / captureStallInSentry is the web process's event-loop freeze warning, and its count is a FLOOR — one event per 30 min per container; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour; after the GC reading ships they also say whether a GC was the freeze (`gcExplainsStall`).
 metadata:
   type: project
 ---
@@ -35,9 +35,11 @@ process's own single thread, blocked.
 
 **Leading candidate: a major V8 GC** — the frequency tracks traffic (every few minutes in the
 evening, hourly when idle) and the period drifts, which is allocation-driven rather than clock-driven.
-Unproven, because the alert cannot name a culprit — see
-[[the-process-health-timings-and-jobs-windows-are-always-empty]]. A `PerformanceObserver` on `gc`
-entries in the same line settles it in one cycle.
+Unproven until the GC reading shipped (PR opened 23 Oct 2026 evening, branch `codex/gc-reading`): once it is live every
+`event_loop_stall` line carries `gcExplainsStall`, `gcLongest` and `gcTotalMs`, and the `process_health` line carries `gc`
+per kind — so the same grep above settles it: `gcExplainsStall:true` on the 5 s freezes = major GC; `false` with only
+ms-long collections = something else blocking the thread. The timings/jobs windows stay empty — see
+[[the-process-health-timings-and-jobs-windows-are-always-empty]].
 
 **Why it matters:** every request in flight waits out the freeze; Railway's own latency on the web
 service reads p90 1.33 s, p95 1.59 s, p99 3.31 s over 6.3 K requests an hour. Related:

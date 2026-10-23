@@ -27,6 +27,7 @@
   "a-concurrent-pnpm-install-makes-node-modules-look-broken": "sessions",
   "a-conflicted-pr-runs-no-ci-at-all": "engineering",
   "a-constructor-parameter-property-cannot-be-tested-here": "sales-closing",
+  "a-crm-migration-reaches-production-before-its-pr-merges": "database",
   "a-crm-photo-fixture-path-must-be-slot-shaped": "phoenix-crm",
   "a-cron-that-fails-nightly-can-do-so-forever-unwatched": "platform",
   "a-customer-map-move-finishes-itself-overnight-but-never-for-a-published-month": "sales-imports",
