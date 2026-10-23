@@ -174,10 +174,17 @@ export async function runPhoenixCrmTapToRetryTests(): Promise<void> {
   );
   const refreshFailed = reportList.slice(reportList.indexOf("export function RefreshFailed"), reportList.indexOf("export function DaysToggle"));
   assert.ok(refreshFailed.includes("Try again"), "RefreshFailed must offer the retry itself, not leave it to each caller");
-  const insights = source("src/components/phoenix-crm/insight-reports.tsx");
-  const refreshUses = [...insights.matchAll(/<RefreshFailed[^/]*\/>/g)].map((match) => match[0]);
-  assert.ok(refreshUses.length >= 5, `every insight report must show the refresh notice (found ${refreshUses.length})`);
-  for (const use of refreshUses) assert.ok(use.includes("onRetry={resource.reload}"), `the refresh notice must be wired to reload: ${use}`);
+  // Swept across the WHOLE module, not one file: the first sweep read `insight-reports.tsx` alone
+  // and missed thirteen more in `reports-tab.tsx`, which only the type gate then caught (#6315).
+  const refreshFiles = ["src/components/phoenix-crm/insight-reports.tsx", "src/components/phoenix-crm/reports-tab.tsx"];
+  let refreshTotal = 0;
+  for (const path of refreshFiles) {
+    const uses = [...source(path).matchAll(/<RefreshFailed[^/]*\/>/g)].map((match) => match[0]);
+    assert.ok(uses.length > 0, `${path}: expected to show the refresh notice`);
+    for (const use of uses) assert.ok(use.includes("onRetry={resource.reload}"), `${path}: the refresh notice must be wired to reload: ${use}`);
+    refreshTotal += uses.length;
+  }
+  assert.ok(refreshTotal >= 18, `every report's refresh notice must be wired (found ${refreshTotal}, expected the 5 insight reports plus the 13 in the reports tab)`);
   assert.ok(
     source("src/components/phoenix-crm/daily-plan-report.tsx").includes('<CrmSaveError message={resource.error} onRetry={resource.reload} title="This plan could not be refreshed" tone="warn" />'),
     "the plan report's own refresh notice must offer the retry too",
