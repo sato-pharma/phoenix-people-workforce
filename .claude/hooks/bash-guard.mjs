@@ -703,6 +703,10 @@ const GREP_BIG_LAST_SEGMENT = new Set([
   'temp', 'tmp', 'windows', 'program files', 'program files (x86)', 'programdata',
 ]);
 const GREP_GLOB = /[*?[\]{}]/;
+/** A glob segment that names a FILE — `*.md`, `instrumentation*.ts`, `eslint.config.*`, `*.{ts,tsx}`. */
+const GREP_FILE_GLOB = /\.[\w*?[\]{},-]+$/;
+/** A glob segment that is nothing BUT globs and dots — `*`, `**`, `.*`, `?`: it matches any folder. */
+const GREP_BARE_GLOB = /^[.*?]+$/;
 
 /** `F:\a`, `f:/a`, `/f/a` → { drive: 'f', parts: ['a'] }; relative → { drive: null, abs: false }. */
 function grepPathParts(path) {
@@ -749,6 +753,37 @@ function grepExpand(word, vars) {
  */
 const GREP_ROOT_EXCLUDES = ['node_modules', '.git', '.next', 'worktrees', '.codex-worktrees'];
 
+/**
+ * `~/.claude`'s three STORES, which hold no rule, hook, script or memory note a session searches —
+ * and which are the whole reason a grep of it was refused. Measured 2026-10-23 over the live tree:
+ * 66,401 path entries and 13.9 GB in all, of which `backups` is 36,845 entries / 1.4 GB,
+ * `projects` (the transcripts) 9,276 / 12.0 GB and `file-history` 6,196 / 278 MB — so skipping the
+ * three leaves 14,051 entries and 147 MB, about 1% of the bytes. Excluding only `projects`, as the
+ * first cut of this did, removes 14% of the entries and leaves the walk slow: grep's cost is the
+ * BYTES it reads, and by that measure the one child is 86% of the problem on its own.
+ */
+const GREP_CLAUDE_HOME_STORES = ['projects', 'backups', 'file-history'];
+
+/**
+ * The excludes each FIXABLE family needs. A segment naming several families takes the UNION, and a
+ * repo-root grep never gets the `~/.claude` ones: `--exclude-dir` applies to a folder NAMED on the
+ * command line too, so an exclude that is not needed can silently search nothing. Naming a store
+ * directly (`grep -rn x ~/.claude/backups`) is placed by its own last segment and passes untouched.
+ */
+const GREP_FIX_EXCLUDES = {
+  fix: GREP_ROOT_EXCLUDES,
+  'fix-claude-home': GREP_CLAUDE_HOME_STORES,
+};
+
+/** `<home>/.claude` itself — not a folder inside it, and not another user's. */
+function grepIsClaudeHome(resolved) {
+  const home = grepPathParts(homedir().replace(/\\/g, '/'));
+  if (!home.abs || home.drive !== resolved.drive) return false;
+  if (resolved.parts.length !== home.parts.length + 1) return false;
+  if (resolved.parts[resolved.parts.length - 1].toLowerCase() !== '.claude') return false;
+  return home.parts.every((part, i) => part.toLowerCase() === resolved.parts[i].toLowerCase());
+}
+
 const grepOsPath = ({ drive, parts }) => (drive ? `${drive}:/` : '/') + parts.join('/');
 
 /** A repo or worktree root, or the `.claude` inside one — big, but fast once the excludes are added. */
@@ -765,10 +800,11 @@ function grepRootIsFixable(resolved) {
   return isRepoRoot(resolved);
 }
 
-/** 'ok' — walk it; 'fix' — a root that is fine with GREP_ROOT_EXCLUDES; 'big' — refuse. */
+/** 'ok' — walk it; a `fix*` — a root that is fine with that family's excludes; 'big' — refuse. */
 function grepVerdictForResolved(resolved) {
   // Any repo root — this one by name, another by its `.git` — gets the excludes, big list or not.
   if (grepRootIsFixable(resolved)) return 'fix';
+  if (grepIsClaudeHome(resolved)) return 'fix-claude-home';
   return grepTreeIsBig(resolved) ? 'big' : 'ok';
 }
 
@@ -780,12 +816,28 @@ function grepPathVerdict(word, cwd, vars) {
   if (path.parts.includes('..') && !cwd && !path.abs) return 'big';
   const globAt = path.parts.findIndex((part) => GREP_GLOB.test(part));
   if (globAt >= 0) {
-    // Only a glob in the LAST segment is placeable; `*.md` matches files, which never recurse.
-    if (globAt !== path.parts.length - 1) return 'big';
-    if (/^\*\.[\w.-]+$/.test(path.parts[globAt])) return 'ok';
-    const parent = { ...path, parts: path.parts.slice(0, -1) };
-    if (!parent.abs && !cwd) return parent.parts.length > 0 && !parent.parts.includes('..') && !grepTreeIsBig({ parts: ['?', '?', ...parent.parts] }) ? 'ok' : 'big';
-    return grepTreeIsBig(parent.abs ? parent : grepResolve(cwd, parent)) ? 'big' : 'ok';
+    const last = path.parts[path.parts.length - 1];
+    // A glob naming a FILE matches files, and grep never recurses into a file — so where it sits
+    // says nothing about the walk, and the folder holding it is irrelevant. This is why
+    // `instrumentation*.ts`, `eslint.config.*` and `docker-compose*.yml` at a repo root are fine
+    // (measured: 9 of the 21 refusals of 22-23 Oct 2026 were exactly this shape).
+    if (globAt === path.parts.length - 1 && GREP_FILE_GLOB.test(last) && !GREP_BARE_GLOB.test(last)) return 'ok';
+    // A BARE glob as the FIRST segment stands for every sibling of the folder the grep runs in — at
+    // a drive, home or workspace root that is the whole tree. `*`, `.*` and `*/src` stay refused.
+    if (globAt === 0 && GREP_BARE_GLOB.test(path.parts[0])) return 'big';
+    // Otherwise judge the path with each glob replaced by a placeholder: the depth and every
+    // literal segment still count, and a glob can only ever NARROW what is walked. So
+    // `src/lib/expense*/*.ts` and `_wt-*/supabase/migrations` are placed by their literal parts.
+    // Trailing placeholders are dropped first, or `node_modules/*` would be judged by the `*` and
+    // read as a small folder while it walks the whole of node_modules.
+    const probeParts = path.parts.map((part) => (GREP_GLOB.test(part) ? '?' : part));
+    while (probeParts.length > 1 && probeParts[probeParts.length - 1] === '?') probeParts.pop();
+    const probe = { ...path, parts: probeParts };
+    if (probe.abs) return grepVerdictForResolved(grepResolve({ ...probe, parts: [] }, probe));
+    if (cwd) return grepVerdictForResolved(grepResolve(cwd, probe));
+    if (probe.parts.includes('..')) return 'big';
+    const named = probe.parts.filter((part) => part !== '.');
+    return named.length && !grepTreeIsBig({ parts: ['?', '?', ...named] }) ? 'ok' : 'big';
   }
   if (path.abs) return grepVerdictForResolved(grepResolve({ ...path, parts: [] }, path));
   if (cwd) return grepVerdictForResolved(grepResolve(cwd, path));
@@ -889,8 +941,10 @@ function recursiveGrepVerdict(segment, cwd, vars) {
   // No path walks the cwd — the same as `.`.
   const verdicts = (paths.length ? paths : ['.']).map((path) => grepPathVerdict(path, cwd, vars));
   if (verdicts.includes('big')) return { verdict: 'big' };
-  const missing = GREP_ROOT_EXCLUDES.filter((name) => !excluded.has(name));
-  if (!verdicts.includes('fix') || !missing.length) return { verdict: 'ok' };
+  // A segment naming two fixable families needs both families' excludes, in family order.
+  const required = [...new Set(verdicts.flatMap((verdict) => GREP_FIX_EXCLUDES[verdict] ?? []))];
+  const missing = required.filter((name) => !excluded.has(name));
+  if (!missing.length) return { verdict: 'ok' };
   return { verdict: 'fix', missing };
 }
 
@@ -901,7 +955,15 @@ function recursiveGrepVerdict(segment, cwd, vars) {
  * index, the root greps that only lack excludes.
  */
 function recursiveGrepVerdicts(segments, startCwd) {
+  // `$TEMP`, `$TMP` and `$TMPDIR` are set for every shell here and name the scratchpad root, where a
+  // session unpacks a downloaded source tree and works in it. Unseeded they could not be placed, so
+  // the grep was refused — 6 of the 21 refusals of 22-23 Oct 2026, one of them retried four times.
+  // The Temp ROOT itself stays refused: its last segment is in GREP_BIG_LAST_SEGMENT. `$PWD` is
+  // deliberately NOT seeded — a grep of it is a grep of `.`, which the root rewrite already answers.
   const vars = { HOME: homedir().replace(/\\/g, '/') };
+  for (const name of ['TEMP', 'TMP', 'TMPDIR']) {
+    if (process.env[name]) vars[name] = process.env[name].replace(/\\/g, '/');
+  }
   let cwd = startCwd ? grepPathParts(String(startCwd)) : null;
   if (cwd && !cwd.abs) cwd = null;
   const fixes = [];
@@ -1012,11 +1074,13 @@ try {
   if (grepVerdicts.big || /\balias\s+grep=/.test(cmd)) {
     deny(
       'Recursive grep hangs from a drive, home or Temp root, the workspace folder, `node_modules`, ' +
-        '`.claude/worktrees`, ~/.claude or ~/.claude/projects, or a path it cannot place ' +
-        '(an unknown variable, `$(…)`, `.`/`..` under an unknown cwd) — up to ~346k path entries, 10-40s+. ' +
+        '`.claude/worktrees` or ~/.claude/projects, or a path it cannot place ' +
+        '(an unknown variable, `$(…)`, `.`/`..` under an unknown cwd, a bare `*`/`.*` glob) — up to ' +
+        '~346k path entries, 10-40s+. ' +
         'A recursive grep over NAMED folders or files is fine — `grep -rn "x" src .claude/rules docs/*.md ' +
-        'package.json`, an absolute path to a small folder, or a variable set earlier in the same command — ' +
-        'and so is a repo or worktree root (`.`) or its `.claude` with ' +
+        'package.json`, an absolute path to a small folder, a file glob anywhere (`instrumentation*.ts`, ' +
+        '`src/**/*.ts`), or a variable set earlier in the same command (`$TEMP` included) — ' +
+        'and so is a repo or worktree root (`.`), its `.claude`, or ~/.claude, with ' +
         GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ') + ' (this hook adds them itself). ' +
         'For a whole tree use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
@@ -1026,13 +1090,15 @@ try {
   if (grepVerdicts.fixes.length) {
     const rewritten =
       input.tool_name === 'Bash' && strippedForGrep === cmd ? grepWithExcludes(cmd, grepSegments, grepVerdicts.fixes) : null;
-    const flags = GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ');
+    const added = [...new Set(grepVerdicts.fixes.flatMap((fix) => fix.missing))];
+    const flags = added.map((name) => `--exclude-dir=${name}`).join(' ');
     if (rewritten && commandIsReadOnly(cmd)) {
-      grepRewrite = rewritten;
+      grepRewrite = { command: rewritten, flags };
     } else {
       deny(
-        'Recursive grep of a repo or worktree root (`.`, no path) or its `.claude` walks node_modules, .git ' +
-          'and the worktrees (~346k path entries, 10-40s+) — but with ' + flags + ' it takes about 3.5 s. ' +
+        'Recursive grep of a repo or worktree root (`.`, no path), its `.claude` or ~/.claude walks the ' +
+          'big children — node_modules, .git, the worktrees, the transcript store ' +
+          '(~346k path entries, 10-40s+) — but with ' + flags + ' it takes about 3.5 s. ' +
           (rewritten
             ? 'Run it again with them added:\n' + rewritten
             : 'Add those flags to each such grep and run it again.') +
@@ -2274,9 +2340,9 @@ try {
           hookEventName: 'PreToolUse',
           permissionDecision: 'allow',
           permissionDecisionReason:
-            'bash-guard C1 added ' + GREP_ROOT_EXCLUDES.map((name) => `--exclude-dir=${name}`).join(' ') +
-            ' to a recursive grep of a repo root, so it takes seconds instead of walking ~346k path entries.',
-          updatedInput: { ...input.tool_input, command: grepRewrite },
+            'bash-guard C1 added ' + grepRewrite.flags +
+            ' to a recursive grep of a root, so it takes seconds instead of walking ~346k path entries.',
+          updatedInput: { ...input.tool_input, command: grepRewrite.command },
         },
       }),
     );
