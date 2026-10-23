@@ -2224,9 +2224,13 @@ export type MedicalRepPortalData = {
 export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract">;
 
 export const getEmployeePortalShellData = cache(async (access: AccessContext): Promise<EmployeePortalShellData> => {
-  const currentUser = await resolvePortalCurrentUser(access);
+  // The directory does not depend on who the viewer is, so it loads beside the viewer's own auth row instead of
+  // after it (performance brief, 2026-10-23): the shell used to pay the two reads one after the other.
+  const [currentUser, directory] = await Promise.all([
+    resolvePortalCurrentUser(access),
+    getEmployeeDirectory(),
+  ]);
   const currentHrId = normalizeHrId(currentUser.hrId);
-  const directory = await getEmployeeDirectory();
   const employee = currentHrId
     ? findDirectoryEmployeeByHrId(directory, currentHrId) ?? fallbackEmployee(access)
     : fallbackEmployee(access);

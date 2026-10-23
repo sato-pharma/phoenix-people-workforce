@@ -56,8 +56,10 @@ export async function dmPlansInPhoenixCrm(hrId: string | null | undefined, optio
   const org = options.org ?? (await loadPhoenixCrmOrg());
   const seats = managerPlanSeats(org, hrId);
   if (seats.length === 0) return seniorPlansInPhoenixCrm(org, hrId, options.cairoToday);
-  if (await owesTheLegacyWeeklyPlan(hrId)) return false;
-  const live = await loadLiveTeamSeatIdsForDisplay(options.cairoToday);
+  // The title read and the live-team read are independent, so they run side by side (performance brief,
+  // 2026-10-23): this answers the sidebar row on every portal page. The title still wins over the live team.
+  const [owes, live] = await Promise.all([owesTheLegacyWeeklyPlan(hrId), loadLiveTeamSeatIdsForDisplay(options.cairoToday)]);
+  if (owes) return false;
   if (live === null) return true;
   return dmPlansInPhoenixCrmFor(seats, (seat) => seatIsInLiveTeam(seat, live));
 }
@@ -72,8 +74,8 @@ export async function dmPlansInPhoenixCrm(hrId: string | null | undefined, optio
 async function seniorPlansInPhoenixCrm(org: OrgIndex, hrId: string, cairoToday: string | undefined): Promise<boolean> {
   const seats = seniorPlanSeats(org, hrId);
   if (seats.length === 0) return false;
-  if (await owesTheLegacyWeeklyPlan(hrId)) return false;
-  const live = await loadLiveTeamSeatIdsForDisplay(cairoToday);
+  const [owes, live] = await Promise.all([owesTheLegacyWeeklyPlan(hrId), loadLiveTeamSeatIdsForDisplay(cairoToday)]);
+  if (owes) return false;
   if (live === null) return true;
   return seats.some((seat) => seatHasLiveTeamBelow(org.seats, seat.seatId, live));
 }

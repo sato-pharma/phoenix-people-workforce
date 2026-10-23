@@ -98,10 +98,14 @@ export async function loadSingleVisitDaysView(viewer: PhoenixCrmViewer, isTest: 
   const writer = managerPlanWriter(viewer);
   if (!writer || writer.kind !== "dm" || !viewer.hrId) return EMPTY_VIEW;
   const weeks = managerPlanWeeks(viewer.cairoToday);
-  const asks = await loadSingleVisitDayAsks({ managerHrId: viewer.hrId, weekStarts: weeks, isTest });
-  const names = await loadPeopleNames(asks.map(waitingOnOf));
   const days = weeks.flatMap((week) => managerWeekDays(week));
-  const holidays = days.length > 0 ? await loadPlanHolidays(days[0], days[days.length - 1]) : new Map<string, string>();
+  // The holidays depend only on the two weeks, never on his asks, so they load beside them (performance
+  // brief, 2026-10-23) instead of after the names.
+  const [asks, holidays] = await Promise.all([
+    loadSingleVisitDayAsks({ managerHrId: viewer.hrId, weekStarts: weeks, isTest }),
+    days.length > 0 ? loadPlanHolidays(days[0], days[days.length - 1]) : Promise.resolve(new Map<string, string>()),
+  ]);
+  const names = await loadPeopleNames(asks.map(waitingOnOf));
   const held = heldDatesOf(asks);
   const canAsk = viewer.canCreate && !(viewer.isSuperAdmin && !viewer.isTestPersona);
   return {

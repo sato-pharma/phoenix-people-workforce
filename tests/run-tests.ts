@@ -1251,6 +1251,7 @@ import { runApprovalsHubRowCapTests } from "./approvals-hub-row-cap.test.ts";
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
 import { runApprovePlansPageSpeedTests } from "./approve-plans-page-speed.test.ts";
+import { runPhoenixPerformanceAccelerationTests } from "./phoenix-performance-acceleration.test.ts";
 import { runDecidedForMeRowCapTests } from "./decided-for-me-row-caps.test.ts";
 import { runPortalHomeNoDeadApprovalsFetchTests } from "./portal-home-no-dead-approvals-fetch.test.ts";
 import { runEmployeeDirectoryStaleBoundTests } from "./employee-directory-stale-bound.test.ts";
@@ -5328,6 +5329,7 @@ await runTest("approvals hub feeds are paged, never capped (a hidden request is 
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
 await runTest("the approve-plans page reads only the plan module, own plan headers and one role batch (6-13 s on production)", runApprovePlansPageSpeedTests);
+await runTest("signed-out pages go straight to sign-in, the exclusion function reads base tables, and independent page reads run together (performance brief, 2026-10-23)", runPhoenixPerformanceAccelerationTests);
 await runTest("decided-for-me is paged, totally ordered, and raises a failed read instead of showing a quiet week", runDecidedForMeRowCapTests);
 await runTest("portal home does not fetch the approvals feed for a number nobody renders", runPortalHomeNoDeadApprovalsFetchTests);
 await runTest("employee directory bounds its stale-cache fallback and cannot renew itself off stale data", runEmployeeDirectoryStaleBoundTests);

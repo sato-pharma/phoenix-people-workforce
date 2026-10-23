@@ -78,6 +78,12 @@ export default async function BusinessReviewPage({ searchParams }: PageProps) {
   // ONE canonical range call for all three lines and every month in the window — never per view.
   // `from`/`to` are raw request input and are resolved, not trusted: anything out of range is
   // clamped to a real window and the adjustment is reported on the page.
+  // STARTED EARLY (2026-10-23, performance brief): the seat map below depends on the session
+  // alone, never on the review, so it is read beside the company-wide read instead of after it.
+  // It starts only after the role gate above, and the guard keeps a rejection from surfacing
+  // unhandled while the review loads; the await below still throws it.
+  const scopeLoad = loadReviewPortalScope({ hrId: access.hrId ?? null, sessionRole: access.role });
+  scopeLoad.catch(() => {});
   const { review, resolution, available } = await loadBusinessReview({
     from: firstSearchParam(params?.from) ?? null,
     to: firstSearchParam(params?.to) ?? null,
@@ -91,7 +97,7 @@ export default async function BusinessReviewPage({ searchParams }: PageProps) {
   // built from the session, `resolveReviewFilter` that can only remove), so a value in the URL can
   // never widen the scope — the guarantee the whole scope-filter module exists for. Region and area
   // may each be several (owner, 2026-09-27).
-  const { scope } = await loadReviewPortalScope({ hrId: access.hrId ?? null, sessionRole: access.role });
+  const { scope } = await scopeLoad;
   const scopeLines: ReviewLine[] =
     scope.kind === "company" ? [...REVIEW_LINE_ORDER] : scope.kind === "none" ? [] : [scope.line];
   const areasByLine: Partial<Record<ReviewLine, AreaSummary[]>> = {};

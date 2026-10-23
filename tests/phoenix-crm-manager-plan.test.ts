@@ -672,12 +672,12 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const switchSource = source("src/lib/phoenix-crm/server/manager-plan-switch.ts");
   assert.match(
     functionBody(switchSource, "export async function dmPlansInPhoenixCrm("),
-    /if \(seats\.length === 0\) return seniorPlansInPhoenixCrm\(org, hrId, options\.cairoToday\);\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
+    /if \(seats\.length === 0\) return seniorPlansInPhoenixCrm\(org, hrId, options\.cairoToday\);[\s\S]*?const \[owes, live\] = await Promise\.all\(\[owesTheLegacyWeeklyPlan\(hrId\), loadLiveTeamSeatIdsForDisplay\(options\.cairoToday\)\]\);\s*if \(owes\) return false;/,
     "a seat holder whose title owes the legacy plan is never switched off it",
   );
   assert.match(
     functionBody(switchSource, "async function seniorPlansInPhoenixCrm("),
-    /if \(seats\.length === 0\) return false;\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
+    /if \(seats\.length === 0\) return false;\s*const \[owes, live\] = await Promise\.all\(\[owesTheLegacyWeeklyPlan\(hrId\), loadLiveTeamSeatIdsForDisplay\(cairoToday\)\]\);\s*if \(owes\) return false;/,
     "nor is a regional or national seat holder whose title owes it",
   );
   assert.match(functionBody(switchSource, "async function owesTheLegacyWeeklyPlan("), /owesAWeeklyPlan\(row\.job_title\)/, "read from the job title, exactly as the charge reads it");
