@@ -130,6 +130,6 @@ export function runRailwayDeploySettingsDriftTests() {
     assert.ok(names.includes(name), `the parser did not read ${name} out of .railway/railway.ts, so it would go unchecked`);
   }
   assert.equal(real.services["phoenix-people-workforce"].healthcheckPath, "/api/readyz");
-  assert.ok(real.services["phoenix-people-workforce"].healthcheckTimeout >= 600, "the app's window was not read as the release gate needs it");
+  assert.ok((real.services["phoenix-people-workforce"].healthcheckTimeout ?? 0) >= 600, "the app's window was not read as the release gate needs it");
   assert.ok(real.volumes.includes("headwind-db-eu-volume"), "the parser did not read the Headwind database volume");
 }
