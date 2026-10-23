@@ -342,9 +342,28 @@ jobs:
       # Do NOT re-add a `.next` cache to soften this: tried 2026-08-29, measured from both
       # directions, 37KB cache and 148s warm against 143s cold. The note on the deleted cache
       # step above records the evidence.
+      # 🔴 THE BUILD RAN THE RUNNER OUT OF MEMORY, AND THE ONLY SIGN WAS "The operation was canceled".
+      # Measured 23 Oct 2026: this runner is 2 CPUs, 7.9 GB RAM and 3 GB swap, and a one-process
+      # `next build` held 6.1 GB through "Collecting page data" while that stage's worker added 1.0 GB
+      # more — available memory fell to 60 MB with swap 100% full, the stage swapped for 5 minutes, and
+      # on four runs that day the kernel killed it (exit 137, "Killed", "The runner has received a
+      # shutdown signal"). A re-run usually passed, so it read as a flake on whatever PR it hit.
+      #
+      # THE FIX IS TWO PROCESSES. `--experimental-build-mode compile` compiles and exits, handing its
+      # ~6.5 GB back; `generate` then collects page data and renders in a FRESH process that peaked
+      # at 2.6 GB with 5.3 GB still available (same runner type, side by side, run 39886149636). It
+      # also cut the build from 8.2 to 3.6 minutes. The compile itself still peaks near 6.9 GB with
+      # ~2.5 GB swapped, so the step first adds 6 GB of swap as the safety net for that half.
+      # Railway's Dockerfile keeps the one-process `pnpm run build` — its builder is not this runner,
+      # and the standalone assembly and login smoke below prove the split output serves.
       - name: Build
         if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'
-        run: pnpm run build
+        run: |
+          sudo fallocate -l 6G /mnt/phx-build-swap && sudo chmod 600 /mnt/phx-build-swap \
+            && sudo mkswap /mnt/phx-build-swap >/dev/null && sudo swapon /mnt/phx-build-swap \
+            || echo "::warning::extra swap could not be added; building with the runner's own 3 GB"
+          pnpm exec next build --experimental-build-mode compile
+          pnpm exec next build --experimental-build-mode generate
 
       # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
       # by inspection — right globs, matching files, green CI — and did nothing, because tracing
