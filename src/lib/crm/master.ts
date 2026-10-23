@@ -34,7 +34,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, REAL_DOUBLE_PARTNER_OR_FILTER, resolveVisitTime } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, dayScanSlices, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, REAL_DOUBLE_PARTNER_OR_FILTER, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
@@ -2249,6 +2249,75 @@ export function crmMasterExportLabel(input: CrmMasterFilter = {}): string {
   return CRM_MASTER_DATASETS.find((tab) => tab.id === dataset)?.label ?? dataset;
 }
 
+/** One page of {@link walkMasterExportPages}: the rows for `day` (null = the whole window) that sort
+ * strictly after `cursor` (null = the first page) on the export's order. `null` means the mirror
+ * schema is not present, which ends the walk silently, exactly as the export's contract requires. */
+export type MasterExportPageReader = (slice: {
+  cursor: { at: string; id: number } | null;
+  day: string | null;
+}) => Promise<CrmMasterRow[] | null>;
+
+/** The PostgREST filter for "strictly after this row" on `(dateColumn desc, idColumn desc)`. Pure,
+ * exported for its unit test. The compound form is what makes the page boundary exact: a plain
+ * `dateColumn.lt` would drop every other row sharing that timestamp, and a `dateColumn.lte` would
+ * hand the same rows back for ever. */
+export function masterExportCursorFilter(dateColumn: string, idColumn: string, cursor: { at: string; id: number }): string {
+  return `${dateColumn}.lt."${cursor.at}",and(${dateColumn}.eq."${cursor.at}",${idColumn}.lt.${cursor.id})`;
+}
+
+/**
+ * The export's page walk: keyset, newest first, one calendar day at a time when the window is
+ * bounded. Pure apart from `read`, and exported for its unit test.
+ *
+ * This replaced an OFFSET walk (`.range(from, from + PAGE - 1)`), which makes the database build and
+ * throw away every row before the page — the same defect loadCheckins fixed for the rep's pin list
+ * (reps-list.ts). Measured on production, 2026-10-23: ONE page of this export over 2026-01-01 →
+ * 2026-10-23 produced 142,363 rows through the check-ins door, read 116,832 buffers and took
+ * 1,361 ms, because an ordered read of a unified door cannot stop early — no index gives the sort
+ * order, the contact-truth join is a hash join, and the planner's estimate for the door's cutover
+ * clause is 1,207 rows against 142,363 real ones. At 5,000 rows a page that is 29 pages, each
+ * repeating the whole scan: ~3.4 million buffer touches and ~39 seconds of database work for one
+ * export. It is the shape that cut the connection and produced the corrupted workbook on 2026-07-29.
+ *
+ * Each page now starts strictly after the last row of the one before, on the SAME order the OFFSET
+ * walk used, and a bounded window is cut into calendar days, newest day first, which bounds every
+ * page to one day's rows whatever plan Postgres picks. `(date, id)` is a TOTAL order on all three
+ * doors, verified on production the same day: 142,363 check-ins and 148,484 visits (and the same
+ * 148,484 through the check-in-flags view), every id non-null and distinct, iReports360's positive
+ * and the synthesised Phoenix ones negative. So no page boundary can duplicate or drop a row. The
+ * days are disjoint and cover the window, so emitting them newest first IS the single ordered scan's
+ * order — the same argument readCompanyWindow makes on the read side. `days: null` (no date filter,
+ * or a window past the day-slice cap) keeps ONE keyset walk: the quadratic re-read still goes, and no
+ * window derived from the data could silently drop a row that sits outside it.
+ */
+export async function* walkMasterExportPages(opts: {
+  dateColumn: string;
+  days: string[] | null;
+  idColumn: string;
+  maxRows: number;
+  pageSize: number;
+  read: MasterExportPageReader;
+}): AsyncGenerator<CrmMasterRow[], void, unknown> {
+  const { dateColumn, days, idColumn, maxRows, pageSize, read } = opts;
+  let emitted = 0;
+  for (const day of days ?? [null]) {
+    let cursor: { at: string; id: number } | null = null;
+    for (;;) {
+      if (emitted >= maxRows) return;
+      const rows = await read({ cursor, day });
+      if (rows === null) return;
+      if (rows.length === 0) break;
+      yield rows;
+      emitted += rows.length;
+      // A SHORT page is the end of this day (or of the whole window): asking again can only return
+      // nothing. A FULL one may have stopped mid-day, so the next page resumes from its last row.
+      if (rows.length < pageSize) break;
+      const last = rows[rows.length - 1];
+      cursor = { at: String(last[dateColumn]), id: Number(last[idColumn]) };
+    }
+  }
+}
+
 /**
  * Streams EVERY matching row for a dataset + filters as derived pages — no row cap. Same filters and
  * derived columns as the paginated master view, but yielded page-by-page so the export route can
@@ -2373,31 +2442,56 @@ export async function* streamCrmMasterExportPages(
   const excludedInList = await getEffectiveExcludedInList();
 
   // 5000, not the master view's usual 1000: fewer outer round trips for the same total row count.
-  // Confirmed empirically (2026-07-29 incident) that PostgREST honours a 5000-row .range() with no
-  // silent cap — `.range(0, 4999)` returns exactly 5000 rows on this project, not truncated to some
-  // smaller default. The real fix for that incident's multi-minute export duration was eliminating
-  // the per-page check-ins correlation query (see preloadCheckinsIndexForExport above) — this PAGE
-  // size increase is a smaller, secondary win on top of that for the base fetch itself.
+  // Confirmed empirically (2026-07-29 incident, re-confirmed 2026-10-23 straight against this door
+  // with a bare `limit=5000`, which returned exactly 5000 rows) that PostgREST honours a 5000-row
+  // page here with no silent cap. That matters more than the round-trip count now: the loop below
+  // ends a slice when a page comes back SHORT, so a silent server cap would end the export early and
+  // under-report. The real fix for that incident's multi-minute export duration was eliminating the
+  // per-page check-ins correlation query (see preloadCheckinsIndexForExport above) — this PAGE size
+  // increase is a smaller, secondary win on top of that for the base fetch itself.
   const PAGE = 5000;
   // Pure runaway stop (NOT a product cap): far above the whole mirror (~108k visits today), so every
   // real filtered export streams in full. Guards against an infinite loop if a query somehow returned
   // full pages forever.
   const MAX_EXPORT_ROWS = 1_000_000;
-  for (let from = 0; from < MAX_EXPORT_ROWS; from += PAGE) {
-    const base = supabase.from(table).select(select);
-    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
-    const { data, error } = await (filtered as unknown as typeof base)
-      .order(dateColumn, { ascending: false })
-      .order(idColumn, { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) {
-      if (isCrmSchemaMissingError(error)) return;
-      throw new Error(error.message);
-    }
-    const pageRows = (data ?? []) as unknown as CrmMasterRow[];
-    if (pageRows.length === 0) return;
+  // Pages are KEYSET, newest first, one calendar day at a time when the window is bounded — the
+  // OFFSET walk this replaced re-read the whole window on every page. The measurement, the total-order
+  // proof and the reason an unbounded export keeps one walk are on walkMasterExportPages above.
+  const pages = walkMasterExportPages({
+    dateColumn,
+    days: dayScanSlices(range.dateFrom, range.dateTo)?.slice().reverse() ?? null,
+    idColumn,
+    maxRows: MAX_EXPORT_ROWS,
+    pageSize: PAGE,
+    read: async ({ cursor, day }) => {
+      const base = supabase.from(table).select(select);
+      let page = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList) as unknown as typeof base;
+      if (day) {
+        // Inside the caller's own bounds, so the days partition exactly the rows the window holds.
+        // A check-in carries a timestamp and takes the half-open day applyMasterFilters uses for the
+        // window's own upper bound; a visit keys on a plain date column, where the day IS the value.
+        page = isCheckins
+          ? page.gte(dateColumn, `${day}T00:00:00`).lt(dateColumn, `${addDaysIso(day, 1)}T00:00:00`)
+          : page.eq(dateColumn, day);
+      }
+      // PostgREST ANDs repeated `or=` groups, so the cursor composes with the partner filter the
+      // double-visits dataset adds rather than replacing it — verified against production on
+      // 2026-10-23: the partner group alone matched 17,161 rows, and adding a second, deliberately
+      // false group matched 0.
+      if (cursor) page = page.or(masterExportCursorFilter(dateColumn, idColumn, cursor));
+      const { data, error } = await page
+        .order(dateColumn, { ascending: false })
+        .order(idColumn, { ascending: false })
+        .limit(PAGE);
+      if (error) {
+        if (isCrmSchemaMissingError(error)) return null;
+        throw new Error(error.message);
+      }
+      return (data ?? []) as unknown as CrmMasterRow[];
+    },
+  });
+  for await (const pageRows of pages) {
     await attachDerived(dataset, pageRows, range, viewer, resources);
     yield pageRows;
-    if (pageRows.length < PAGE) return;
   }
 }
