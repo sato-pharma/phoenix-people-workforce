@@ -8,6 +8,7 @@ import { describeDrainHealth } from "@/lib/notifications/drain-health";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +48,8 @@ export async function GET(request: Request) {
     message: "Notification processing run is not authorized.",
   });
   if (denied) return denied;
+  const wrongProcess = refuseOnPageServer("notifications/process");
+  if (wrongProcess) return wrongProcess;
   try {
     // The Vercel cron (every ~30 min, see vercel.json) passes ?limit= so a backlog can
     // drain faster than the once-daily Vercel cron. Vercel auto-attaches the CRON_SECRET
