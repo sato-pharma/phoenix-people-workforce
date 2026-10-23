@@ -34,7 +34,7 @@ import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { listStrandedDirectOrders, type StrandedDirectOrderRow } from "@/lib/direct-orders/service";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { resolveApproverPlanStage, resolveSubmitterIsDistrictManager } from "@/lib/weekly-planning/service";
+import { resolveApproverPlanStage, resolveSubmitterIsDistrictManager, resolveSubmittersAreDistrictManagers } from "@/lib/weekly-planning/service";
 import { authRoleForHrId, loadDistrictManagerAppRoleMatcher } from "@/lib/weekly-planning/service";
 import {
   isSecondApproverForManager,
@@ -561,7 +561,7 @@ async function fetchExcuseTypesForIds(ids: string[]): Promise<Map<string, string
 }
 
 export async function getResponderVacationHistory(access: AccessContext): Promise<ResponderHistoryItem[]> {
-  const all = await getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]);
+  const all = await getMyApprovalHistory(access, { only: "leave" }).catch(() => [] as HistoricalApprovalItem[]);
   const leave = all.filter((item) => item.module === "leave");
   const types = await fetchVacationTypesForIds(leave.map((item) => historyRawId(item.id)));
   return leave.map((item) => ({
@@ -572,7 +572,7 @@ export async function getResponderVacationHistory(access: AccessContext): Promis
 }
 
 export async function getResponderExcuseHistory(access: AccessContext): Promise<ResponderHistoryItem[]> {
-  const all = await getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]);
+  const all = await getMyApprovalHistory(access, { only: "excuse" }).catch(() => [] as HistoricalApprovalItem[]);
   const excuse = all.filter((item) => item.module === "excuse");
   const types = await fetchExcuseTypesForIds(excuse.map((item) => historyRawId(item.id)));
   return excuse.map((item) => ({
@@ -595,14 +595,14 @@ function historyRawId(id: string): string {
 // when it gets decided — approve/reject/return all just update its status in place, same list.
 
 export async function getMyVacationRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
-  const all = await getMyRequestItems(access).catch(() => [] as MyRequestItem[]);
+  const all = await getMyRequestItems(access, { only: "leave" }).catch(() => [] as MyRequestItem[]);
   return all
     .filter((item) => item.module === "leave")
     .map((item) => ({ ...item, href: vacationApprovalHref(access, historyRawId(item.id)) }));
 }
 
 export async function getMyExcuseRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
-  const all = await getMyRequestItems(access).catch(() => [] as MyRequestItem[]);
+  const all = await getMyRequestItems(access, { only: "excuse" }).catch(() => [] as MyRequestItem[]);
   return all
     .filter((item) => item.module === "excuse")
     .map((item) => ({ ...item, href: excuseApprovalHref(access, historyRawId(item.id)) }));
@@ -1562,7 +1562,17 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const awaiting: PlanBucketItem[] = [];
   const upcoming: PlanBucketItem[] = [];
 
-  for (const raw of error ? [] : ((data as Array<Record<string, unknown>> | null) ?? [])) {
+  const planRows = error ? [] : ((data as Array<Record<string, unknown>> | null) ?? []);
+  // One login-role read for the whole queue, never one awaited per row inside the loop.
+  const submitterIsDm = await resolveSubmittersAreDistrictManagers(
+    planRows.map((raw) => ({
+      employee_hr_id: String(raw.employee_hr_id ?? ""),
+      employee_job_title: String(raw.employee_job_title ?? ""),
+      manager_hr_id: raw.manager_hr_id ? String(raw.manager_hr_id) : null,
+      status: String(raw.status ?? "") as EmployeePlanStatus,
+    })),
+  );
+  for (const [index, raw] of planRows.entries()) {
     const status = String(raw.status ?? "") as EmployeePlanStatus;
     const employeeHrId = String(raw.employee_hr_id ?? "");
     // Own submissions live on the dedicated "My Requests" tab, never as an approvable item.
@@ -1586,12 +1596,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       managerHrId,
       access,
       employeeJobTitle,
-      await resolveSubmitterIsDistrictManager({
-        employee_hr_id: employeeHrId,
-        employee_job_title: employeeJobTitle,
-        manager_hr_id: managerHrId,
-        status,
-      }),
+      submitterIsDm[index],
     );
     if (stage) {
       awaiting.push({ ...base, stage });
@@ -1755,7 +1760,7 @@ async function fetchPlanKindsForIds(ids: string[]): Promise<Map<string, string>>
 
 export async function getResponderPlanHistory(access: AccessContext): Promise<ResponderHistoryItem[]> {
   const [all, crmDecisions, directory] = await Promise.all([
-    getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]),
+    getMyApprovalHistory(access, { only: "weekly_plan" }).catch(() => [] as HistoricalApprovalItem[]),
     // The Phoenix CRM district-manager weeks, asks to edit, own-list removals and single-visit days he decided.
     loadManagerDecisionsBy(access.hrId, Boolean(access.testPersona)).catch(() => []),
     getEmployeeDirectory(),
@@ -1812,7 +1817,7 @@ function crmRequestStatus(
 
 export async function getMyPlanRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
   const [all, crmRequests, directory] = await Promise.all([
-    getMyRequestItems(access).catch(() => [] as MyRequestItem[]),
+    getMyRequestItems(access, { only: "weekly_plan" }).catch(() => [] as MyRequestItem[]),
     // The district manager's own Phoenix CRM weeks, asks to edit, own-list removals and single-visit days.
     loadManagerOwnRequests(access.hrId, Boolean(access.testPersona)).catch(() => []),
     getEmployeeDirectory(),
