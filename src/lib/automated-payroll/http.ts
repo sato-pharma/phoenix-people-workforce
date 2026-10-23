@@ -15,6 +15,11 @@ import { describeBankCoverage, type BankCoverage } from "./exports/bank-coverage
 export { resolveAccessContext } from "@/lib/auth/server";
 
 export function jsonError(error: unknown, fallback = "Automated Payroll request failed."): NextResponse {
+  const { status, clientMessage } = classifyRouteError(error, fallback);
+  return NextResponse.json({ success: false, error: clientMessage }, { status });
+}
+
+function classifyRouteError(error: unknown, fallback: string): { status: number; clientMessage: string } {
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
 
@@ -34,7 +39,60 @@ export function jsonError(error: unknown, fallback = "Automated Payroll request 
 
   const clientMessage =
     status === 500 ? fallback : message.replace(/^(forbidden|conflict|validation|not found)\s*:?\s*/i, "");
-  return NextResponse.json({ success: false, error: clientMessage }, { status });
+  return { status, clientMessage };
+}
+
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+
+/**
+ * A REFUSED DOWNLOAD READS AS A PAGE, NOT AS JSON (owner, 2026-10-23 — "readable page").
+ *
+ * The finance downloads are started by sending the browser to the route (`downloadFromApiRoute`, and
+ * plain links on the Finance Command Center), so when one refuses — the month moved since Part 2 was
+ * confirmed, a bank account changed, Part 1 not confirmed yet — finance landed on raw
+ * `{"success":false,"error":…}` text. A browser asking for a page now gets one, carrying the same
+ * message and a way back; anything else (a script, a fetch) still gets the JSON it parses.
+ */
+export function downloadError(
+  request: Request,
+  error: unknown,
+  fallback = "Automated Payroll request failed.",
+): NextResponse {
+  const accept = request.headers.get("accept") ?? "";
+  if (!accept.includes("text/html")) return jsonError(error, fallback);
+  const { status, clientMessage } = classifyRouteError(error, fallback);
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download not produced · Phoenix</title>
+<style>
+  body { margin: 0; background: #f5f7fa; color: #0b1f33; font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 64px auto; padding: 0 16px; }
+  section { background: #fff; border: 1px solid #d5dde6; border-top: 3px solid #0a527d; padding: 24px; }
+  p.label { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #0a527d; font-weight: 600; }
+  h1 { margin: 0 0 12px; font-size: 20px; }
+  p.message { margin: 0 0 20px; overflow-wrap: anywhere; }
+  a { display: inline-block; padding: 8px 14px; background: #0a527d; color: #fff; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <p class="label">Automated Payroll</p>
+    <h1>No file was produced</h1>
+    <p class="message">${escapeHtml(clientMessage)}</p>
+    <a href="/admin/automated-payroll/finance">Back to finance downloads</a>
+  </section>
+</main>
+</body>
+</html>`;
+  return new NextResponse(html, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 /**

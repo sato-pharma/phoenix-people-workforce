@@ -1,4 +1,4 @@
-import { jsonError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
+import { downloadError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
 import { buildFinanceSheet } from "@/lib/automated-payroll/run-service";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const month = Number(url.searchParams.get("month"));
     const year = Number(url.searchParams.get("year"));
     if (!Number.isInteger(month) || !Number.isInteger(year)) {
-      return jsonError(new Error("Validation: month and year are required."));
+      return downloadError(request, new Error("Validation: month and year are required."));
     }
     const scope = url.searchParams.get("scope") === "part1" ? "part1" : "full";
     const { buffer, coverage, fileName } = await buildFinanceSheet(access, { month, year }, scope);
@@ -20,6 +20,6 @@ export async function GET(request: Request) {
     // may not carry, so the answer has to arrive with the file rather than be looked for.
     return xlsxResponse(buffer, fileName, coverage);
   } catch (error) {
-    return jsonError(error, "Failed to download the finance sheet.");
+    return downloadError(request, error, "Failed to download the finance sheet.");
   }
 }

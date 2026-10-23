@@ -24,9 +24,37 @@ Technical audit, 2026-10-23 (PR #6289). The rule line in `.claude/rules/payroll.
 - **A claim is retried when its holder has let go.** `claimTransition` also retries when the holder released the run
   (`transitionInProgress`).
 
+## Where the money goes is stamped too (owner, 2026-10-23)
+
+The totals catch every change to an amount, not to a destination. A bank or account number edited on the
+employee record after Part 2 confirm moved no total, and the FAB and CIB files read both straight from the
+live row. The owner was asked and answered **"Block it"**.
+
+- Part 2 confirm now also stamps `confirmedBankDetails`: per person (compact HR id), a SHA-256 fingerprint of
+  the run id, the person, the bank name (trimmed, upper-cased) and the account (trimmed), the same reading the
+  files make. **No account number is stored** — the audit trail is kept for ever.
+- It rides on BOTH stamp rows (`part2_totals_stamped` and `part2_confirmed`). `readPart2ConfirmedStamp` takes the
+  newest of the two, and `part2_confirmed` is written last, so leaving it off that row would switch the check off.
+- The confirm compares the fingerprints again under its claim, like the totals.
+- The full finance sheet and the Part 2 FAB and CIB files refuse when anyone's fingerprint moved, or anyone was
+  added or dropped, naming who (`assertBankDetailsMatchPart2Confirm`). Same window as the totals: only while the
+  run is `ready`.
+- **A stamp written before 2026-10-23 carries no fingerprints and is held to its totals alone** — refusing it
+  would block a month for a check that did not exist when it was confirmed. Read on production the day this
+  shipped: no run was `ready` (October 2026 was in Part 1), so no live month was affected either way.
+- Publish is not held to the fingerprints: payslips record what was paid, and the files are what pay.
+
+## A refused download reads as a page (owner, 2026-10-23)
+
+The finance downloads are started by sending the browser to the route, so a refusal used to land finance on raw
+`{"success":false,"error":…}` text. `downloadError` (`src/lib/automated-payroll/http.ts`) answers a request that
+accepts `text/html` with a plain page carrying the same message and a link back to the finance downloads;
+anything else still gets the JSON. The three finance routes (`finance/download`, `fab-download`, `cib-download`)
+use it for every refusal.
+
 ## What the review left open
 
 - Step confirm computes its rows before taking the hold. This was already the case before #6289.
-- The stamp compares totals, not row by row.
+- The stamp compares totals and each person's bank destination, not every per-person amount.
 - Part 2 non-employee entries take no hold.
-- Production was not read to check whether any `ready` run lacks a stamp.
+- Production read 2026-10-23: no `ready` run lacked a stamp (none was `ready`).

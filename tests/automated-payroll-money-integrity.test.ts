@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { downloadError } from "../src/lib/automated-payroll/http.ts";
 import {
   assertMatchesPart2Confirm,
   assertPart2FileMatchesStamp,
+  compareBankDetails,
   confirmedBeforeStampExisted,
   describeMissingPart2Stamp,
+  PART2_BANK_DETAILS_KEY,
+  part2BankDetails,
+  readConfirmedBankDetails,
 } from "../src/lib/automated-payroll/publish-guard.ts";
 import { holdRun, type RunHoldDeps } from "../src/lib/automated-payroll/run-hold.ts";
 import {
@@ -231,6 +236,79 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
     assert.doesNotThrow(() => assertPart2FileMatchesStamp(october, STAMP, STAMP));
   }
 
+  // ==== A changed bank or account refuses the Part 2 file (owner, 2026-10-23 — "block it") ==========
+  {
+    const RUN = "run-october";
+    const confirmedRows = [
+      { compact: "a1", bankName: "FAB", bankAccount: "1000200030004000" },
+      { compact: "b2", bankName: "CIB", bankAccount: "100045678901" },
+    ];
+    const names = new Map([["a1", "Mona Adel"], ["b2", "Karim Samir"]]);
+    const nameOf = (compact: string) => names.get(compact) ?? "a person no longer on this month's sheet";
+    const confirmed = part2BankDetails(RUN, confirmedRows);
+    const october = { phase: "ready", part2ConfirmedAt: "2026-10-27T10:00:00Z" };
+    const newAccount = part2BankDetails(RUN, [confirmedRows[0], { ...confirmedRows[1], bankAccount: "100099999999" }]);
+    assert.throws(
+      () => assertPart2FileMatchesStamp(october, STAMP, STAMP, { confirmed, current: newAccount, nameOf }),
+      /Conflict: Karim Samir's bank details have changed since Part 2 was confirmed/,
+      "HEADLINE: an account number edited after Part 2 confirm refuses the file, naming whose — the totals did not move",
+    );
+    const newBank = part2BankDetails(RUN, [{ ...confirmedRows[0], bankName: "CIB" }, confirmedRows[1]]);
+    assert.throws(
+      () => assertPart2FileMatchesStamp(october, STAMP, STAMP, { confirmed, current: newBank, nameOf }),
+      /Mona Adel's bank details have changed/,
+      "a bank switched from FAB to CIB refuses too — it moves the person between the two files",
+    );
+    assert.doesNotThrow(
+      () =>
+        assertPart2FileMatchesStamp(october, STAMP, STAMP, {
+          confirmed,
+          current: part2BankDetails(RUN, [{ ...confirmedRows[0], bankName: " fab ", bankAccount: " 1000200030004000 " }, confirmedRows[1]]),
+          nameOf,
+        }),
+      "the files trim the account and upper-case the bank, so neither difference is a change",
+    );
+    assert.doesNotThrow(
+      () => assertPart2FileMatchesStamp(october, STAMP, STAMP, { confirmed: null, current: newAccount, nameOf }),
+      "a stamp written before the fingerprints existed is held to its totals alone",
+    );
+    assert.doesNotThrow(
+      () => assertPart2FileMatchesStamp({ phase: "published", part2ConfirmedAt: "2026-10-27T10:00:00Z" }, STAMP, STAMP, { confirmed, current: newAccount, nameOf }),
+      "a published month still re-downloads — the same window as the totals",
+    );
+    assert.deepEqual(compareBankDetails(confirmed, part2BankDetails(RUN, confirmedRows.slice(0, 1))), ["b2"], "someone dropped counts as a change");
+    assert.throws(
+      () => assertPart2FileMatchesStamp(october, STAMP, STAMP, { confirmed, current: part2BankDetails(RUN, confirmedRows.slice(0, 1)), nameOf: (c) => (c === "b2" ? "a person no longer on this month's sheet" : nameOf(c)) }),
+      /a person no longer on this month's sheet's bank details/,
+    );
+    const two = part2BankDetails(RUN, confirmedRows.map((row) => ({ ...row, bankAccount: `${row.bankAccount}9` })));
+    assert.throws(
+      () => assertPart2FileMatchesStamp(october, STAMP, STAMP, { confirmed, current: two, nameOf }),
+      /The bank details of 2 people have changed since Part 2 was confirmed \(Mona Adel, Karim Samir\)/,
+    );
+    // The stamp is a fingerprint, never the account: the audit trail is kept for ever.
+    const serialised = JSON.stringify({ [PART2_BANK_DETAILS_KEY]: confirmed });
+    assert.ok(!serialised.includes("1000200030004000") && !serialised.includes("100045678901"), "no account number is stored in the stamp");
+    assert.deepEqual(readConfirmedBankDetails(JSON.parse(serialised)), confirmed, "and it reads back exactly as written");
+    assert.equal(readConfirmedBankDetails({ confirmedTotals: STAMP }), null, "a pre-fingerprint stamp reads as none");
+    assert.notDeepEqual(part2BankDetails("another-run", confirmedRows), confirmed, "fingerprints are keyed to the run");
+  }
+
+  // ==== A refused download reads as a page in the browser, JSON elsewhere (owner, 2026-10-23) ========
+  {
+    const refusal = new Error("Conflict: Karim Samir's bank details have changed since Part 2 was confirmed. <b>x</b>");
+    const page = downloadError(new Request("https://phx.test/api/automated-payroll/finance/fab-download", { headers: { accept: "text/html,application/xhtml+xml" } }), refusal);
+    assert.equal(page.status, 409);
+    assert.match(page.headers.get("content-type") ?? "", /^text\/html/, "HEADLINE: a browser download that refuses gets a page, not raw JSON");
+    const body = await page.text();
+    assert.match(body, /No file was produced/);
+    assert.match(body, /Karim Samir&#39;s bank details have changed since Part 2 was confirmed\. &lt;b&gt;x&lt;\/b&gt;/, "the message is shown, escaped, without its Conflict prefix");
+    assert.match(body, /href="\/admin\/automated-payroll\/finance"/, "with a way back");
+    const json = downloadError(new Request("https://phx.test/api/automated-payroll/finance/fab-download", { headers: { accept: "*/*" } }), refusal);
+    assert.match(json.headers.get("content-type") ?? "", /application\/json/, "a script or fetch still gets the JSON it parses");
+    assert.equal(((await json.json()) as { error: string }).error.startsWith("Karim Samir"), true);
+  }
+
   // ==== A claim left by a request that died says when it clears =====================================
   {
     const stuck = { transitionAction: "Confirming Part 2", transitionStartedAt: "2026-10-23T08:00:00Z", phase: "part2" as RunPhase };
@@ -322,11 +400,20 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
   ] as const) {
     assert.ok(bodyOf(runService, builder).includes(guard), `${builder.replace("export async function ", "")} must check its Part 2 file against the stamp (F-08b)`);
   }
-  assert.match(
-    bodyOf(runService, "async function assertFileMatchesPart2Confirm"),
-    /assertPart2FileMatchesStamp\(run, await readPart2ConfirmedTotals\(run\.id\), part2Totals\(rows\.length, reconcile\(rows\)\)\)/,
-    "the three builders run the one download rule on the rows they are about to write",
-  );
+  {
+    const fileCheck = bodyOf(runService, "async function assertFileMatchesPart2Confirm");
+    assert.match(
+      fileCheck,
+      /assertPart2FileMatchesStamp\(run, stamp\.totals, part2Totals\(rows\.length, reconcile\(rows\)\), \{\s*confirmed: stamp\.bankDetails,\s*current: part2BankDetails\(run\.id, rows\),/,
+      "the three builders run the one download rule — totals and bank details — on the rows they are about to write",
+    );
+    assert.match(fileCheck, /const stamp = await readPart2ConfirmedStamp\(run\.id\)/);
+  }
+  for (const route of ["download", "fab-download", "cib-download"]) {
+    const source = readFileSync(`app/api/automated-payroll/finance/${route}/route.ts`, "utf8");
+    assert.ok(!/jsonError\(/.test(source), `the ${route} route answers a refused browser download with a page (downloadError), never raw JSON`);
+    assert.match(source, /return downloadError\(request, error,/);
+  }
 
   const confirm2 = bodyOf(runService, "export async function confirmPart2");
   const stampAt = confirm2.indexOf("await writeRequiredAutomatedPayrollAudit(");
@@ -336,6 +423,12 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
   const ledgerAt = confirm2.indexOf("await recordOverpaidCarryForward(");
   assert.ok(ledgerAt > stampAt, "and before the carry-forward ledger, so a stamp that fails leaves no debt behind");
   assert.match(confirm2, /const \{ rows: rowsUnderClaim \} = await assembleForRun\(run\)/, "Part 2 confirm re-reads the run under its claim");
+  assert.equal(
+    confirm2.match(/\[PART2_BANK_DETAILS_KEY\]: confirmedBankDetails/g)?.length,
+    2,
+    "the bank fingerprints ride on BOTH stamp rows — the reader takes the newest, and part2_confirmed is written last",
+  );
+  assert.match(confirm2, /compareBankDetails\(\s*confirmedBankDetails,\s*part2BankDetails\(runId, rowsUnderClaim\),?\s*\)/, "and a bank change under the claim refuses the confirm");
 
   assert.match(bodyOf(runService, "export async function confirmPart1"), /frozenFirstPartsDiffer\(/, "and so does Part 1");
   assert.match(
