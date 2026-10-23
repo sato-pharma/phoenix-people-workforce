@@ -7,6 +7,7 @@ import {
   isCustomTemplateLayerMissing,
   loadCustomTemplatePage,
 } from "@/lib/hiring-pack/custom-template-store";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ function apiError(error: unknown) {
   if (isCustomTemplateLayerMissing(error)) {
     return { message: "Company templates are not set up yet.", status: 409 };
   }
-  return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
+  return { message: clientSafeErrorMessage(error, "Something went wrong."), status: 500 };
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ pageId: string }> }) {

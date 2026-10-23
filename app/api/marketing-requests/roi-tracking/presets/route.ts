@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
   deleteMarketingRoiPreset,
   listMarketingRoiPresets,
@@ -17,7 +17,7 @@ function presetsApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return { code: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), status: 403 };
   }
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const message = errorMessageOf(error);
   const normalized = message.toLowerCase();
   if (
     normalized.includes("marketing_roi_filter_presets") ||

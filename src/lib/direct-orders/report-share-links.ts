@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { csvCell } from "@/lib/export/csv-cell";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
@@ -323,12 +324,9 @@ export async function resolveDirectOrderReportShareLink(input: {
   };
 }
 
-/** RFC4180 quoting — a pharmacy name containing a comma must survive the round trip. */
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
+// `csvCell` is the shared one (`@/lib/export/csv-cell`): RFC4180 quoting — a pharmacy name containing
+// a comma must survive the round trip — and a typed cell that starts with `=`, `+`, `-` or `@` is
+// neutralised before the sheet opens it (audit S-APP-08).
 
 /**
  * CSV of the order table for the owner's live Google Sheet.

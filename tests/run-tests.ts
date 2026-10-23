@@ -2670,6 +2670,14 @@ import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-onc
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
+import {
+  runApiErrorWrappedDatabaseTextTests,
+  runCsvFormulaNeutraliserTests,
+  runIncentiveThresholdConstantTests,
+  runProductionPlanningRequestSequenceTests,
+  runSatoEmailFinalSanitizeTests,
+  runVacationDecisionFormTests,
+} from "./app-layer-audit.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10599,6 +10607,30 @@ await runTest(
 await runTest(
   "the Regular · No Check-in tabs of CRM Master cannot fail on a missing column: crm_visits_checkin_flags, as its last migration defines it, carries every column CRM Master's visit select asks for (the second manager and the Phoenix visit detail included), and keeps security_invoker and its locked-out browser roles",
   runCrmCheckinFlagsCarriesMasterSelectTests,
+);
+await runTest(
+  "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",
+  runSatoEmailFinalSanitizeTests,
+);
+await runTest(
+  "the production planner drops a late answer for the product he left: every load takes a ticket and only the newest may write the screen, a plan in flight when the product changed is stale, and a plan is shown — and can be saved — only under its own product",
+  runProductionPlanningRequestSequenceTests,
+);
+await runTest(
+  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — never the outage screen and never a database sentence",
+  runVacationDecisionFormTests,
+);
+await runTest(
+  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, raw error text in route files can only go down, and no public or share route carries any",
+  runApiErrorWrappedDatabaseTextTests,
+);
+await runTest(
+  "the 90% incentive threshold is one exported constant, checked against the locked 2026 curve read-only, and the six performance screens import it instead of carrying their own copy",
+  runIncentiveThresholdConstantTests,
+);
+await runTest(
+  "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
+  runCsvFormulaNeutraliserTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

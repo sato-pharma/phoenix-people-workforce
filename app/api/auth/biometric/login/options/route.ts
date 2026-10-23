@@ -9,6 +9,7 @@ import {
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
 import { rejectUntrustedForwardedOrigin } from "@/lib/security/origins";
+import { describeUnexpectedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(
       "[auth/biometric/login/options] failed",
-      error instanceof Error ? error.message : error,
+      describeUnexpectedError(error),
     );
     return NextResponse.json(
       { error: "options_failed", message: "Could not start biometric sign-in." },

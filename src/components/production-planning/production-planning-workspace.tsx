@@ -91,6 +91,7 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 // Retyping them here is how a select and a server-side CHECK start to disagree.
 import { costCoverage } from "@/lib/production-planning/costing";
 import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
+import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
 import { COMPOSITION_BASES, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
   coerceProductionPlanningLanguage,
@@ -578,8 +579,16 @@ export function ProductionPlanningWorkspace() {
   const [overridePct, setOverridePct] = useState("");
   const [willSend, setWillSend] = useState<Record<string, string>>({});
   const [plan, setPlan] = useState<WirePlan | null>(null);
+  // 🔴 ONE TICKET PER REQUEST, AND ONLY THE NEWEST MAY WRITE (audit P7-04). Switching the product
+  // fires a new GET while the old one may still be in flight; without this a late answer for the
+  // product he left painted its figures under the one he is on, and Save posted them as that one.
+  const [loads] = useState(createRequestSequence);
+  const [calculations] = useState(createRequestSequence);
 
   const load = useCallback(async () => {
+    const ticket = loads.begin();
+    // A plan still being calculated belongs to the payload this load replaces.
+    calculations.invalidate();
     setLoading(true);
     setError(null);
     try {
@@ -598,6 +607,7 @@ export function ProductionPlanningWorkspace() {
       if (productId) params.set("productId", productId);
       const response = await fetch(`/api/production-planning?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as WireWorkspace | { message?: string } | null;
+      if (!loads.isCurrent(ticket)) return;
       if (!response.ok) {
         setError((payload as { message?: string })?.message ?? t.loadFailed);
         setData(null);
@@ -611,16 +621,17 @@ export function ProductionPlanningWorkspace() {
       // product is read as `productId || data.productId`, so an unset choice follows the server's
       // own default and only an actual change refetches.
     } catch {
+      if (!loads.isCurrent(ticket)) return;
       setError(t.loadFailed);
       setData(null);
     } finally {
-      setLoading(false);
+      if (loads.isCurrent(ticket)) setLoading(false);
     }
     // The failure MESSAGE is language-dependent, so it is a real dependency: without it a reader who
     // flips the toggle and then loses the network would be shown the message in the language they
     // just left. The refetch a language change now triggers costs one request and returns the same
     // payload - the query carries no language - so it is a message correctness fix, not a reload.
-  }, [productId, t.loadFailed]);
+  }, [loads, calculations, productId, t.loadFailed]);
 
   useEffect(() => {
     // The repo's `react-hooks/set-state-in-effect` is an error, and a fetch-on-mount effect trips
@@ -670,6 +681,7 @@ export function ProductionPlanningWorkspace() {
   const selectedProductId = productId || data?.productId || "";
 
   const calculate = useCallback(async () => {
+    const ticket = calculations.begin();
     const result = (await post("/plan", {
       productId: selectedProductId,
       mode,
@@ -678,8 +690,12 @@ export function ProductionPlanningWorkspace() {
       overridePct: overridePct.trim() === "" ? null : overridePct.trim(),
       willSendByMaterialId: willSend,
     })) as WirePlan | null;
-    if (result) setPlan(result);
-  }, [post, selectedProductId, mode, requestedQty, sampleUnits, overridePct, willSend]);
+    if (result && calculations.isCurrent(ticket)) setPlan(result);
+  }, [calculations, post, selectedProductId, mode, requestedQty, sampleUnits, overridePct, willSend]);
+
+  // The plan on screen, only while it is the selected product's. A plan for the product he just left
+  // is withheld — which also disables Save, so it can never be posted under the other product's id.
+  const shownPlan = planForSelection(plan, selectedProductId);
 
   const saveAndReload = useCallback(
     async (path: string, body: Record<string, unknown>) => {
@@ -764,8 +780,9 @@ export function ProductionPlanningWorkspace() {
             data={data}
             mode={mode}
             onCalculate={calculate}
-            onCommit={(commit) =>
-              saveAndReload("/plans", {
+            onCommit={(commit) => {
+              if (!shownPlan) return;
+              void saveAndReload("/plans", {
                 productId: selectedProductId,
                 mode,
                 requestedQty,
@@ -773,8 +790,8 @@ export function ProductionPlanningWorkspace() {
                 overridePct: overridePct.trim() === "" ? null : overridePct.trim(),
                 willSendByMaterialId: willSend,
                 commit,
-              })
-            }
+              });
+            }}
             onModeChange={setMode}
             onOverrideChange={setOverridePct}
             onProductChange={setProductId}
@@ -784,7 +801,7 @@ export function ProductionPlanningWorkspace() {
               setWillSend((current) => ({ ...current, [materialId]: value }))
             }
             overridePct={overridePct}
-            plan={plan}
+            plan={shownPlan}
             productId={selectedProductId}
             requestedQty={requestedQty}
             sampleUnits={sampleUnits}
@@ -797,7 +814,7 @@ export function ProductionPlanningWorkspace() {
         ) : null}
 
         {tab === "cost" ? (
-          <CostTab busy={busy} canWrite={canWrite} data={data} onSave={saveAndReload} plan={plan} />
+          <CostTab busy={busy} canWrite={canWrite} data={data} onSave={saveAndReload} plan={shownPlan} />
         ) : null}
 
         {tab === "run" ? (

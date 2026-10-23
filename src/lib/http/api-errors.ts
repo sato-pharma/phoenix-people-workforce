@@ -31,6 +31,51 @@ export function conflictError(message: string, code = "conflict") {
 }
 
 /**
+ * Sentences only Postgres, PostgREST, Supabase or the network write — never our own prose.
+ *
+ * Each pattern is a phrase a hand-written domain message has no reason to use: they name the
+ * schema (relations, columns, constraints, policies, types) or the transport. Matched anywhere in
+ * the message, because a wrapper often prefixes its own words (`Save failed: duplicate key value…`).
+ */
+const INFRASTRUCTURE_TEXT_PATTERNS: readonly RegExp[] = [
+  // Postgres always QUALIFIES or QUOTES the object (`relation "public.x"`, `column employees.y`,
+  // `function public.f(uuid)`), which is what keeps our own "the column mapping does not exist" out.
+  /\b(relation|column|function|table|schema|type|operator|constraint|sequence|view|index|role|extension)\s+("[^"]+"|[\w$]+\.[\w.$]+(\([^)]*\))?|[\w$]+\([^)]*\))\s+does not exist\b/i,
+  /\bduplicate key value violates\b/i,
+  /\bviolates (foreign key|unique|check|not-null|exclusion) constraint\b/i,
+  /\bnull value in column\b/i,
+  /\binvalid input (syntax|value) for (type|enum)\b/i,
+  /\bpermission denied for (table|schema|relation|function|sequence|database|view)\b/i,
+  /\bsyntax error at or near\b/i,
+  /\bin the schema cache\b/i,
+  /\bcould not find a relationship between\b/i,
+  /\bJSON object requested, multiple \(or no\) rows returned\b/i,
+  /\bcannot coerce the result to a single JSON object\b/i,
+  /\bviolates row-level security policy\b/i,
+  /\bvalue too long for type\b/i,
+  /\bout of range for type\b/i,
+  /\binfinite recursion detected in policy\b/i,
+  /\bthere is no unique or exclusion constraint matching\b/i,
+  /\bmore than one row returned by a subquery\b/i,
+  /\bfailed to parse (select|filter|order|logic tree)\b/i,
+  /\bcolumn reference "[^"]+" is ambiguous\b/i,
+  /\bstructure of query does not match function result type\b/i,
+  /\bcanceling statement due to\b/i,
+  /\bPGRST\d{3}\b/,
+  /\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/,
+  // undici's own words, alone or after a wrapper's colon — not our "Google Drive metadata fetch failed."
+  /(^|:\s*)fetch failed\b/i,
+  /\bupstream connect error\b/i,
+  /\bremaining connection slots are reserved\b/i,
+];
+
+/** True when a message reads as database or transport text rather than a sentence we wrote. */
+export function looksLikeInfrastructureText(message: string): boolean {
+  if (!message) return false;
+  return INFRASTRUCTURE_TEXT_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+/**
  * True when a thrown value came from INFRASTRUCTURE (PostgREST/Postgres, Supabase Auth/Storage/
  * Functions, Node socket errors) rather than from our own domain code.
  *
@@ -51,7 +96,13 @@ export function isInfrastructureError(error: unknown): boolean {
   // Our own ApiError is deliberate, already-sanitized output — never treat it as infrastructure.
   if (error instanceof ApiError) return false;
 
-  const candidate = error as { code?: unknown; details?: unknown; hint?: unknown; name?: unknown };
+  const candidate = error as { code?: unknown; details?: unknown; hint?: unknown; message?: unknown; name?: unknown };
+
+  // 🔴 A RE-WRAPPED database error has lost its fields but not its words. About 270 domain sites
+  // do `throw new Error(error.message)`, which strips code/details/hint and used to sail past every
+  // check below with Postgres's own sentence intact (technical audit 23 Oct 2026, F-19). Postgres
+  // and PostgREST write in a recognisable voice, so the message is checked too.
+  if (typeof candidate.message === "string" && looksLikeInfrastructureText(candidate.message)) return true;
 
   // PostgREST's signature fields. Nothing we throw by hand sets these.
   if (candidate.details != null || candidate.hint != null) return true;

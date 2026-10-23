@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
   createMarketingValidationRecord,
   getMarketingValidationWorkspace,
@@ -20,11 +20,7 @@ function marketingValidationApiError(error: unknown) {
     };
   }
 
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : String(error ?? "");
+  const message = errorMessageOf(error);
   const normalized = message.toLowerCase();
   if (
     normalized.includes("marketing_customer") ||
