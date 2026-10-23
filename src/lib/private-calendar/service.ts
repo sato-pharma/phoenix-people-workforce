@@ -9,7 +9,7 @@ import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytic
 import { loadFieldVisitPrivateCalendarItems } from "@/lib/private-calendar/field-visits";
 import { loadManagerOwnVisitPrivateCalendarItems } from "@/lib/private-calendar/manager-own-visit-items";
 import { loadPhoenixWorkEvidencePrivateCalendarItems, withoutDoorCoveredPhoenixWork } from "@/lib/private-calendar/phoenix-work-evidence-items";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows, isActiveDirectoryEmployee, isWithinNoticePeriod } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
@@ -388,6 +388,30 @@ export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
   return isPrivateCalendarGlobalViewer(access);
 }
 
+/**
+ * The employees the Private Calendar reads for a window starting on `fromDate`: the active directory,
+ * plus anyone still inside a notice period that the window reaches.
+ *
+ * 🔴 WHY THE WIDER READ (owner, 2026-10-23: "drop after his resignation date not submission date").
+ * `employees.employment_status` flips to `resigned` and `organogram_visible` to false the moment a
+ * resignation is SUBMITTED, which took a Medical Representative off this calendar on 18 October for a
+ * last working day of 31 October — while she went on logging 10 and 12 customer visits a day. Her
+ * calendar could not be opened, and `getPrivateCalendarDayEvidence` answered the System Audit with an
+ * empty day, which it reported as 22 logged visits "lost at the calendar itself" (VISIT-S4-MISSING).
+ * A leaver drops off the day AFTER their exit day, never at submission.
+ *
+ * `isWithinEmploymentWindow` still decides each individual DAY (see the attendance read below), so a
+ * person included here contributes nothing outside their own employment — this only decides whose
+ * data is read at all.
+ *
+ * NOT used by `getCompanyNoActivityDays`, which keeps the active-only roster on purpose; see the note
+ * there.
+ */
+async function privateCalendarEmployees(fromDate: string): Promise<EmployeeDirectoryRow[]> {
+  const rows = await getEmployeeDirectoryRows({ includeInactive: true });
+  return rows.filter((employee) => isActiveDirectoryEmployee(employee) || isWithinNoticePeriod(employee, fromDate));
+}
+
 export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
   // Historically distinguished "what actually happened" from planned/intended activity, and it has
@@ -406,7 +430,7 @@ export async function getPrivateCalendarWorkspace(input: {
   await assertPermission(input.access, "attendance", "read");
 
   const { start, end } = monthBounds(input.year, input.month);
-  const employees = await getEmployeeDirectoryRows();
+  const employees = await privateCalendarEmployees(start);
   const globalHrIds = configuredPrivateCalendarGlobalHrIds();
   const byCanonicalHrId = buildPrivateCalendarHierarchyIndex(employees);
   const visibleEmployees = sortEmployees(
@@ -591,6 +615,10 @@ export async function getCompanyNoActivityDays(input: {
 }): Promise<CompanyNoActivityDay[]> {
   await assertPermission(input.access, "deductions", "read");
 
+  // ACTIVE ONLY, deliberately — unlike the calendar reads above, which cover a notice period
+  // (isWithinNoticePeriod). This engine is what the Deductions No Records Activity connector and the
+  // weekly gap notice call, so widening it would start raising deduction candidates against people
+  // working out their notice. That is the owner's call in the Deductions module, not a side effect here.
   const employees = await getEmployeeDirectoryRows();
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
@@ -706,9 +734,11 @@ export async function getPrivateCalendarDayEvidence(
   const end = wanted.map((day) => day.date).sort().at(-1) as string;
   const wantedKeys = new Set(wanted.map((day) => privateCalendarHrIdKey(day.employeeHrId)).filter(Boolean));
 
-  const directory = await getEmployeeDirectoryRows();
+  const directory = await privateCalendarEmployees(start);
   const employees = directory.filter((employee) => wantedKeys.has(privateCalendarHrIdKey(employee.hrId)));
   if (employees.length === 0) return out;
+  // Which of the asked employees the loaders below actually read. See the skip in the day loop.
+  const read = new Set(employees.map((employee) => privateCalendarHrIdKey(employee.hrId)));
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(start, end);
 
@@ -764,6 +794,14 @@ export async function getPrivateCalendarDayEvidence(
     const key = dayEvidenceKey(day.employeeHrId, day.date);
     if (out.has(key)) continue;
     const employeeKey = privateCalendarHrIdKey(day.employeeHrId);
+    // 🔴 AN EMPLOYEE NOBODY READ IS NOT A DAY WITH NOTHING ON IT. Every loader above was given
+    // `hrIds` — the asked employees this calendar covers — so for anyone else the filter below can
+    // only ever return [], and writing the entry anyway answered "readable, and the day is empty".
+    // That confident blank is what made the System Audit report 12 logged customer visits as "lost
+    // at the calendar itself" (VISIT-S4-MISSING, 23 October 2026) and would have had a dispute
+    // reviewer read a true claim against a blank. No entry at all is the honest answer, and every
+    // caller already reads a missing one as "could not be read".
+    if (!employeeKey || !read.has(employeeKey)) continue;
     out.set(key, {
       date: day.date,
       employeeHrId: day.employeeHrId,
