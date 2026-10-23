@@ -1078,6 +1078,18 @@ function withoutPmBand() {
 }
 
 /** Builds the whole board for one viewer. */
+/**
+ * THE KPIs BOARD IS A DISPLAY BOARD, so its whole-company visit and check-in windows may come from a
+ * copy up to a minute old (owner, 2026-10-16), shared by every viewer of the same month and period.
+ * Every manager's Command Center, the KPIs pages, the trend and the business review all build this
+ * board, and each one used to read the same company month again: a probe plus one request a day, three
+ * projections, at 226-348 ms a request (pg_stat_statements, 22-23 Oct 2026). Concurrent loads of the
+ * same window now share one read too. The scope gate (getDoctorCoverageScope, isAgentInScope) still
+ * runs on the rows for each viewer; a narrowed read (a scope of a few people) always reads live. No
+ * money, deduction, approval or notification is decided from this board, so each of its three
+ * company reads below says `reuseRecentWindow: true` in so many words.
+ */
+
 export async function getKpisBoard(input: {
   access: AccessContext;
   month: string;
@@ -1202,7 +1214,12 @@ export async function getKpisBoard(input: {
     // Through YESTERDAY (ruling C1): its working days are the denominator every rate on this board
     // divides by, the rep KPI reports below included.
     agentsRead.then((agents) =>
-      loadCallRateReport({ dateFrom: callRange.dateFrom, dateTo: callRange.dateTo, ...(agents ? { agents } : {}) }),
+      loadCallRateReport({
+        dateFrom: callRange.dateFrom,
+        dateTo: callRange.dateTo,
+        reuseRecentWindow: true,
+        ...(agents ? { agents } : {}),
+      }),
     ),
     // THE PERIOD REACHES BOTH KPIs. Until 2026-09-04 this was `{ month: input.month }` and the
     // picker moved the call rate alone, so "Week 1" scored week 1's calls against the whole month's
@@ -1215,6 +1232,7 @@ export async function getKpisBoard(input: {
         // The Coverage tab picks one rep's doctors out of this list, so it must not be cut at the
         // drill-down cap. The rows are in memory either way; only the chosen rep's leave this file.
         uncapped: Boolean(input.coverageDoctors),
+        reuseRecentWindow: true,
         ...(agents ? { agents } : {}),
       }),
     ),
@@ -1385,6 +1403,7 @@ export async function getKpisBoard(input: {
           // through today and only the call-rate count stops at yesterday — over the same working days.
           callRateTo: callRange.dateTo,
           workingDays: callRate.workingDays,
+          reuseRecentWindow: true,
           holidays: windowHolidays.dates,
           // Rule 2: the 8-12 PM band is gone under the Phoenix rules — PM passes at 10 or more.
           standards: phoenix ? withoutPmBand() : undefined,

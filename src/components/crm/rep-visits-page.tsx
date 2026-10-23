@@ -116,7 +116,9 @@ export async function RepVisitsPageBody({
   let loadError: string | null = null;
   try {
     const [report, repNameByHrId, jobTitleByHrId, tree, scope] = await Promise.all([
-      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo, holidays, ...(agents ? { agents } : {}) }),
+      // A display page: when the rep's own accounts could not be resolved and the whole company is
+      // read, that window may be the same minute-old copy the KPIs board reads (crm/reads.ts).
+      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo, holidays, reuseRecentWindow: true, ...(agents ? { agents } : {}) }),
       loadRepNamesByHrId().catch(() => undefined),
       loadJobTitlesByHrId().catch(() => undefined),
       loadOrgPlacementTree().catch(() => null),
