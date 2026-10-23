@@ -179,9 +179,9 @@ function wiringTests(): void {
   );
 }
 
-// A check leg that is not in the report gate AND the Telegram gate fails SILENTLY: every leg carries
-// continue-on-error, so the job is green whatever it finds, and those two conditions are the only
-// things that turn a finding into a message. That is the 2026-08-06 incident (three days, 412
+// A check leg that is not in the report gate, the Telegram gate AND the verdict gate fails SILENTLY:
+// every leg carries continue-on-error, so only those three conditions turn a finding into a message
+// and a red run. That is the 2026-08-06 incident (three days, 412
 // exposed customer names) in a new coat, and it is exactly what adding a leg invites.
 function workflowGateTests(): void {
   const source = readFileSync(".github/workflows/migration-drift-check.yml", "utf8").replace(/\r\n/g, "\n");
@@ -195,7 +195,7 @@ function workflowGateTests(): void {
   assert.ok(legIds.includes("migrations_staging_sweep"), "the staging sweep leg must exist in the daily workflow");
 
   const gates = steps.filter((s) => /\n {8}if:\s*\$\{\{ always\(\) && \(steps\./.test(s));
-  assert.equal(gates.length, 2, "expected exactly two outcome-gated steps: the report and the Telegram alert");
+  assert.equal(gates.length, 3, "expected exactly three outcome-gated steps: the report, the Telegram alert and the verdict that fails the run");
   for (const id of legIds) {
     for (const gate of gates) {
       assert.ok(

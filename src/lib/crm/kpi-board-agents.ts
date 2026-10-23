@@ -93,3 +93,31 @@ export async function resolveKpiBoardAgents(
     return null;
   }
 }
+
+/**
+ * The reps to read for ONE rep's call-rate page (2026-10-23), by the board key it was opened with
+ * (`kpiCallRateRepKey`), or null to read the whole field force as before.
+ *
+ * The page rebuilds the call-rate board to find the clicked row, and it read every rep's month to do
+ * so — one request per day to the visits and check-ins views, each rebuilding every Phoenix entry
+ * day. Only the clicked row is drawn, and a row is built from its own account's rows alone:
+ *   · `crm:<id>` — the account's rows, all of which carry that CRM id. Its identity (the first
+ *     non-blank hr id on them), its duplicate collapse and its check-in match never look past it.
+ *   · `hr:<id>` — opens that person's busiest account among the scoped rows, so every account of his
+ *     is read: the same discovery as a one-person scope above, which also finds his rows with no CRM id.
+ * Anything else, or a discovery that fails, reads the whole field force: slower, never wrong.
+ */
+export async function resolveRepKeyAgents(
+  repKey: string,
+  window: { from: string; to: string },
+  readers: KpiBoardAgentReaders = DOOR_READERS,
+): Promise<KpiBoardAgents | null> {
+  const crm = /^crm:(\d+)$/.exec(repKey.trim());
+  if (crm) {
+    const id = Number(crm[1]);
+    return Number.isSafeInteger(id) ? { crmIds: [id], hrIds: [] } : null;
+  }
+  const hr = /^hr:(.+)$/.exec(repKey.trim());
+  if (hr && hr[1].trim()) return resolveKpiBoardAgents({ kind: "agents", basis: "self", agentHrIds: [hr[1].trim()], label: repKey }, window, readers);
+  return null;
+}
