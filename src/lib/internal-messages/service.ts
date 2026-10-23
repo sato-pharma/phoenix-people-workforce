@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
+import { ilikeContainsValue, ilikeExactValue } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type AuthUserRow = {
@@ -223,12 +224,14 @@ async function resolveRecipient(value: string): Promise<InternalRecipientView> {
   const normalizedHrId = normalizeHrId(query);
   const email = lower(query);
 
-  if (isEmail(email)) {
+  // Every value below is quoted, as in searchInternalMessageRecipients (audit F-02).
+  const quotedEmail = ilikeExactValue(email);
+  if (isEmail(email) && quotedEmail) {
     const [{ data: userData, error: userError }, employee] = await Promise.all([
       supabase
         .from("app_auth_users")
         .select("login_id,hr_id,name,email,auth_email,role,is_active")
-        .or(`email.ilike.${email},auth_email.ilike.${email}`)
+        .or(`email.ilike.${quotedEmail},auth_email.ilike.${quotedEmail}`)
         .limit(1)
         .maybeSingle(),
       loadEmployeeByEmail(email),
@@ -239,10 +242,15 @@ async function resolveRecipient(value: string): Promise<InternalRecipientView> {
     if (recipient) return recipient;
   }
 
+  const quotedLogin = ilikeExactValue(query);
+  const quotedHrId = ilikeExactValue(normalizedHrId || query);
+  if (!quotedLogin || !quotedHrId) {
+    throw new Error("Recipient was not found. Use a Phoenix login ID, HR ID, or work email.");
+  }
   const { data: userData, error: userError } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,name,email,auth_email,role,is_active")
-    .or(`login_id.ilike.${query},hr_id.ilike.${normalizedHrId || query}`)
+    .or(`login_id.ilike.${quotedLogin},hr_id.ilike.${quotedHrId}`)
     .limit(1)
     .maybeSingle();
 
@@ -300,8 +308,12 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
   if (search.length < 2) return [];
 
   const supabase = getSupabaseAdmin();
-  const normalized = normalizeHrId(search) || search;
-  const pattern = `%${search}%`;
+  // QUOTED, never spliced (technical audit, 2026-10-23, F-02). Any signed-in user reaches this
+  // search, and it filters app_auth_users: raw text with a comma could append a condition of its
+  // own — a password_hash prefix, say — and turn the endpoint into a yes/no oracle.
+  const pattern = ilikeContainsValue(search);
+  const normalized = ilikeExactValue(normalizeHrId(search) || search);
+  if (!pattern || !normalized) return [];
 
   const [{ data: users, error: usersError }, { data: employees, error: employeesError }] = await Promise.all([
     supabase

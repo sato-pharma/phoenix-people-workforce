@@ -13,6 +13,7 @@
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
+import { clientAddress } from "@/lib/security/client-address";
 
 export type LogSeverity = "DEBUG" | "INFO" | "NOTICE" | "WARNING" | "ERROR" | "CRITICAL";
 
@@ -149,10 +150,9 @@ export const logError = (message: string, options?: LogOptions) => logStructured
 const KNOWN_STALE_CRON_USER_AGENTS = new Set(["Google-Cloud-Scheduler"]);
 const KNOWN_STALE_CRON_IP_PREFIX = "34.116.39.";
 
-// Same `x-forwarded-for` convention as requestIp() in src/lib/security/api-rate-limit.ts.
+// The same address requestIp() in src/lib/security/api-rate-limit.ts keys on (client-address.ts).
 function sourceIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwardedFor || request.headers.get("x-real-ip")?.trim() || null;
+  return clientAddress(request);
 }
 
 /**

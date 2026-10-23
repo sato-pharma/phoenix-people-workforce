@@ -1047,6 +1047,7 @@ import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
+import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
 import { runHrSeatSectionDrawersTests } from "./hr-seat-section-drawers.test.ts";
 import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
@@ -4629,6 +4630,13 @@ await runTest(
   + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
   + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
   runHrResourcingSeatTests,
+);
+await runTest(
+  "Access boundaries (every page a seat is fenced from checks the fence itself, not only the layout in-app "
+  + "navigation skips; the compliance APIs are fenced with their page; a salary-blind seat is never a dispute "
+  + "reviewer; an unreadable scope refuses; search text is quoted, never filter grammar; the caller address is "
+  + "the one the edge saw; a setup link is spent before the password; sign-out leaves only once it landed)",
+  runAccessBoundariesTests,
 );
 await runTest(
   "HR Reminders (the HR team's shared notes: the team is exactly the roles holding the grant; a note is private, shared "

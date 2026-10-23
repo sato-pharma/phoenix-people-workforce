@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AttendanceExceptionsManager } from "@/components/attendance/attendance-exceptions-manager";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ type EmployeeRow = { full_name: string | null; hr_id: string };
 
 export default async function AttendanceExceptionsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/exceptions");
   if (!canAccessSystemAdministratorWorkspace(access)) {
     redirect("/admin/access");
   }

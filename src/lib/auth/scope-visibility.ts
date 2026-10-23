@@ -51,15 +51,21 @@ type LoginScopeOverrideColumns = Pick<
 
 // ONE read of a login's three override columns per request. A Sales vs Target render asked
 // app_auth_users for the same row three times, once per column (line, product, sales scope).
-// A failed read answers null, exactly as each single-column read did.
+//
+// 🔴 A FAILED READ THROWS (technical audit, 2026-10-23, F-15). It used to answer null, and null means
+// "no override" — the role's own, wider rule. So a product-restricted viewer saw the whole line
+// whenever this read failed. An access read that cannot be made refuses; it never widens.
 export const loadLoginScopeOverrides = cache(async (loginId: string): Promise<LoginScopeOverrideColumns | null> => {
   if (!loginId) return null;
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("app_auth_users")
     .select("line_scope_override, product_scope_override, sales_scope_override")
     .eq("login_id", loginId)
     .maybeSingle();
+  if (error) {
+    throw new Error(`Could not read this login's visibility scope, so nothing was shown: ${error.message}`);
+  }
   return (data as LoginScopeOverrideColumns | null) ?? null;
 });
 
@@ -75,7 +81,7 @@ export async function getUserProductScopeOverride(loginId: string): Promise<stri
   return Array.isArray(raw) ? raw : null;
 }
 
-/** The raw persisted sales scope override, or null when unset, unreadable or not a login. */
+/** The raw persisted sales scope override, or null when unset or not a login. Throws when unreadable. */
 export async function getUserSalesScopeOverrideRaw(loginId: string): Promise<string | null> {
   if (!loginId) return null;
   return (await loadLoginScopeOverrides(loginId))?.sales_scope_override ?? null;

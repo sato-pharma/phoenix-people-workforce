@@ -6,6 +6,7 @@ import {
   EmployeeSearchList,
   type Employee360ListItem,
 } from "@/components/employee-360/employee-search-list";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployee360VisibleRows } from "@/lib/employee-360/access";
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Employee360IndexPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/employee-360");
   const rows = await getEmployeeDirectoryRows({ includeInactive: false });
 
   // Employee 360 is a FIELD-FORCE report: only the six covered role families appear.

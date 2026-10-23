@@ -1,6 +1,7 @@
 import { ProbationTracker } from "@/components/probation/probation-tracker";
 import { redirect } from "next/navigation";
 
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import {
@@ -43,6 +44,7 @@ function probationPageError(error: unknown) {
 
 export default async function ProbationPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/probation");
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/probation");
   }

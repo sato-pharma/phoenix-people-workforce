@@ -6,6 +6,7 @@ import {
   readJsonObject,
   requireCoachingPermission,
 } from "@/app/api/coaching/_lib/route-utils";
+import { clientAddress } from "@/lib/security/client-address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(request: Request, context: RouteContext) {
     const payload = await readJsonObject(request, { allowEmpty: true });
     const report = await acknowledgeCoachingReport(id, access, {
       acknowledgmentText: typeof payload.acknowledgmentText === "string" ? payload.acknowledgmentText : null,
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ipAddress: clientAddress(request),
       userAgent: request.headers.get("user-agent"),
     });
 

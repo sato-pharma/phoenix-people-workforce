@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { DailyDeductionsWorkspace } from "@/components/admin/daily-deductions-workspace";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cairoTodayIso, resolveDefaultRange } from "@/lib/daily-deductions/range.ts";
 
@@ -16,6 +17,7 @@ const VIEW_ROLES = new Set(["Super Admin", "CEO", "HR Operations"]);
 
 export default async function AdminDailyDeductionsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/daily-deductions");
   if (!VIEW_ROLES.has(access.role)) {
     redirect("/employee-portals");
   }

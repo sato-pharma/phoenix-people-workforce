@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { CvDatabaseManager } from "@/components/cv/cv-database-manager";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cvLibraryRowsFromCandidates } from "@/lib/cv/cv-library";
 import { listCandidates } from "@/lib/recruitment/candidates";
@@ -30,6 +31,7 @@ export const dynamic = "force-dynamic";
 // this line is the revocation. tests/cv-database-recruiting-boundary.test.ts pins both halves.
 export default async function CvDatabasePage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/cv-database");
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     redirect("/employee-portals");
   }

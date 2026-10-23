@@ -24,6 +24,7 @@ import {
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
 import { verifyRecaptcha } from "@/lib/security/recaptcha";
+import { clientAddress } from "@/lib/security/client-address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -116,7 +117,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const captcha = await verifyRecaptcha(
     String(form.get("recaptchaToken") ?? "") || null,
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    clientAddress(request),
   );
   if (!captcha.ok) return json(request, { error: "captcha_failed" }, 400);
 

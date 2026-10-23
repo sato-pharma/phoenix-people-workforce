@@ -422,7 +422,39 @@ export async function completePasswordSetup(input: { password: string; token: st
   const now = new Date().toISOString();
   let bridgeWarning: string | null = null;
 
-  const currentUser = await getAuthUser(tokenRow.login_id);
+  // THE LINK IS SPENT BEFORE THE PASSWORD IS WRITTEN, IN ONE CONDITIONAL UPDATE (technical audit,
+  // 2026-10-23, F-12). The usability check above is a separate read, and the link used to be marked
+  // used only after the password write, with no "not yet used" condition — so two submissions of
+  // one link both passed the check and both set a password, the second silently replacing the first.
+  // Only the request whose update finds the link still unused goes on.
+  const { data: claimed, error: claimError } = await supabase
+    .from("password_setup_tokens")
+    .update({ updated_at: now, used_at: now })
+    .eq("token_hash", tokenRow.token_hash)
+    .is("used_at", null)
+    .select("token_hash");
+  if (claimError) {
+    throw claimError;
+  }
+  if (!claimed || claimed.length === 0) {
+    throw new Error("This password setup link has already been used.");
+  }
+  // A password write that fails hands the link back, so the person can try again with it.
+  const releaseLink = async () => {
+    await supabase
+      .from("password_setup_tokens")
+      .update({ updated_at: new Date().toISOString(), used_at: null })
+      .eq("token_hash", tokenRow.token_hash)
+      .eq("used_at", now);
+  };
+
+  let currentUser: Awaited<ReturnType<typeof getAuthUser>>;
+  try {
+    currentUser = await getAuthUser(tokenRow.login_id);
+  } catch (error) {
+    await releaseLink().catch(() => undefined);
+    throw error;
+  }
 
   const { error: userError } = await supabase
     .from("app_auth_users")
@@ -439,6 +471,7 @@ export async function completePasswordSetup(input: { password: string; token: st
     .eq("login_id", tokenRow.login_id);
 
   if (userError) {
+    await releaseLink().catch(() => undefined);
     throw userError;
   }
 
@@ -475,18 +508,6 @@ export async function completePasswordSetup(input: { password: string; token: st
       error instanceof Error
         ? error.message
         : "Failed to update Supabase auth bridge after password setup.";
-  }
-
-  const { error: tokenError } = await supabase
-    .from("password_setup_tokens")
-    .update({
-      updated_at: now,
-      used_at: now,
-    })
-    .eq("token_hash", tokenRow.token_hash);
-
-  if (tokenError) {
-    throw tokenError;
   }
 
   await writeRequiredAuditLog({

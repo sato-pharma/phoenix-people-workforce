@@ -4,6 +4,7 @@ import { CalendarDays, ClipboardCheck, ShieldCheck } from "lucide-react";
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { PlansWorkspace } from "@/components/employee-portal/plans-workspace";
 import { canAccess } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
 
@@ -15,6 +16,7 @@ export default async function AdminWeeklyPlansPage({
   searchParams: Promise<{ plan?: string | string[] }>;
 }) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/weekly-plans");
   const canReadPlans = await canAccess(access, "weekly_plans", "read");
   if (!canReadPlans && access.role !== "CEO" && access.role !== "Super Admin") {
     redirect("/employee-portals");

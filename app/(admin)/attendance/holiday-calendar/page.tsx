@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { HolidayCalendarManager } from "@/components/attendance/holiday-calendar-manager";
 import { buildHolidayCalendarYearView } from "@/lib/attendance/holiday-overrides";
 import { canAccessAttendanceSetup } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ type Props = {
 
 export default async function AttendanceHolidayCalendarPage({ searchParams }: Props) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/holiday-calendar");
   if (!await canAccessAttendanceSetup(access, "read")) {
     redirect("/employee-portals");
   }

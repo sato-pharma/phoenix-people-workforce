@@ -3,12 +3,14 @@ import { redirect } from "next/navigation";
 import { DeviceUserMappingManager } from "@/components/attendance/device-user-mapping-manager";
 import { getAttendanceDeviceUserMappingDashboard } from "@/lib/attendance/device-user-mapping";
 import { canAccessAttendanceSetup } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AttendanceDeviceUserMappingPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/device-user-mapping");
   if (!await canAccessAttendanceSetup(access, "read")) {
     redirect("/employee-portals");
   }

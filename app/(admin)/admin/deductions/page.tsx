@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { DeductionsWorkspace } from "@/components/admin/deductions-workspace";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 
@@ -46,6 +47,7 @@ export default async function AdminDeductionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/deductions");
   if (!VIEW_ROLES.has(access.role)) {
     redirect("/employee-portals");
   }

@@ -6,6 +6,7 @@ import { CvLifecycleShareLinksView } from "@/components/recruitment/cv-lifecycle
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { systemDeployment } from "@/config/system-settings";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export const dynamic = "force-dynamic";
 // (tests/every-offered-link-opens.test.ts).
 export default async function CvLifecycleSheetLinksPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/recruitment/cv-lifecycle-sheet");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   if (!(await canAccess(access, "recruitment", "export"))) redirect("/employee-portals");
 

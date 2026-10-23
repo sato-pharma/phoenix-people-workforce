@@ -6,6 +6,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { ReturnedCvsQueue } from "@/components/recruitment/returned-cvs-queue";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listReturnedCvQueue } from "@/lib/recruitment/district-returns";
 import { fenceReturnedCvQueue } from "@/lib/recruitment/workspace/fence";
@@ -32,6 +33,7 @@ export const dynamic = "force-dynamic";
 // Manager CV Engagement report made next door.
 export default async function ReturnedCvsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/recruitment/returned-cvs");
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     redirect("/employee-portals");
   }

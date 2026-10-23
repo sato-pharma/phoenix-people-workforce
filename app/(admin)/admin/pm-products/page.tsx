@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { PmProductsEditor } from "@/components/admin/pm-products-editor";
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { listPmProductAssignments, listPmProductOptions } from "@/lib/employee-360/pm-products";
@@ -16,6 +17,7 @@ const READ_ROLES = new Set<PhoenixRole>(["Super Admin", "CEO", "SFE Manager"]);
 
 export default async function PmProductsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/pm-products");
   if (!READ_ROLES.has(access.role)) redirect("/");
 
   const [rows, options, assignments] = await Promise.all([

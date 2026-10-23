@@ -49,3 +49,17 @@ export function ilikeAnyFilter(columns: readonly string[], term: string): string
   const value = quotePostgrestValue(`%${cleaned}%`);
   return columns.map((column) => `${column}.ilike.${value}`).join(",");
 }
+
+/** A quoted `ilike` value that matches `term` as typed (wildcards neutralised as above), for an
+ * identifier column — an HR id, a login id, an email. Null when nothing searchable is left, which
+ * callers treat as "no match", never as "no filter". */
+export function ilikeExactValue(term: string): string | null {
+  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  return cleaned ? quotePostgrestValue(cleaned) : null;
+}
+
+/** A quoted `ilike` value that matches rows CONTAINING `term`. Null when nothing searchable is left. */
+export function ilikeContainsValue(term: string): string | null {
+  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  return cleaned ? quotePostgrestValue(`%${cleaned}%`) : null;
+}

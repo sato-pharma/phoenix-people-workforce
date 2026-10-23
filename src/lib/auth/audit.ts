@@ -11,17 +11,11 @@ import {
 } from "@/lib/auth/login-throttle-policy";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientAddress } from "@/lib/security/client-address";
 
+/** The address Railway's edge saw (client-address.ts) — the caller writes the left of X-Forwarded-For. */
 export function getRequestIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const [firstIp] = forwardedFor.split(",");
-    const ip = firstIp?.trim();
-    if (ip) return ip;
-  }
-
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  return realIp || null;
+  return clientAddress(request);
 }
 
 export async function writeAuthAudit(input: {
