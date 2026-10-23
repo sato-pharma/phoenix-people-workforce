@@ -62,7 +62,14 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     // streamRepCards: a Medical Rep's slow cards (achievement, rank, field KPIs, his record) arrive
     // still running and fill under Suspense, so the page paints on the fast reads alone (owner,
     // 2026-10-23: "the process of shifting from page to page never take more than 1 second").
-    snapshot = await getPortalHomeSnapshot(access, { kpiMonth: one(params.kpiMonth), streamRepCards: true });
+    // streamRoleExtras: the same for a District, Regional or National Sales Manager and the
+    // Marketing Manager — his team, region or national figures, rankings, CRM board and inbox fill
+    // under their own Suspense, and the identity band and pending actions paint first.
+    snapshot = await getPortalHomeSnapshot(access, {
+      kpiMonth: one(params.kpiMonth),
+      streamRepCards: true,
+      streamRoleExtras: true,
+    });
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals", module: "home-snapshot", role: access.role, hrId: access.hrId },

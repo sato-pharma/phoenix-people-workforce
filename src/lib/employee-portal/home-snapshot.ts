@@ -594,6 +594,17 @@ export type PortalHomeSnapshot = {
    * other caller (the home API route, the Training Manager page) still gets a whole snapshot.
    */
   repCards?: PortalHomeRepCards | null;
+  /**
+   * District, Regional and National Sales Manager and the Marketing Manager only, and only when the
+   * page asked for it (`streamRoleExtras`): the role's slow landing reads — the team, region or
+   * national figures, the rankings, the CRM first-visit board, the marketing inbox — handed over
+   * STILL RUNNING, so the identity band, pending actions and dashboards grid paint without them and
+   * each section fills under its own Suspense (2026-10-23, performance roadmap phase 2). While this is
+   * set, the six role fields on the snapshot itself are null and must be read from here. It never
+   * rejects (`getRoleSpecificExtras` resolves the empty extras on any failure). Absent everywhere
+   * else, so the home API route and the Training Manager page still get a whole snapshot.
+   */
+  roleCards?: Promise<PortalHomeRoleExtras> | null;
 };
 
 /** What a Medical Rep's achievement tile and his "Achievement by month" panel are drawn from. */
@@ -624,6 +635,23 @@ type RoleSpecificExtras = Pick<
   PortalHomeSnapshot,
   "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational" | "nsmBoard" | "rmRegional"
 >;
+
+/** The six role fields a manager's landing draws its slow sections from — see `roleCards`. */
+export type PortalHomeRoleExtras = RoleSpecificExtras;
+
+/**
+ * The roles whose landing streams its role extras. The Product Manager and Group Product Manager are
+ * left awaited on purpose: their one extra is a single count and a short pay-date list, read inside
+ * the portal command center's own layout, so streaming it would add a boundary and save nothing.
+ */
+// Spelled exactly as PortalCommandCenter's switch spells them: a role that falls through that switch
+// to the standard dashboard never reads roleCards, so it must never have its extras streamed away.
+const STREAM_ROLE_EXTRAS_ROLES = new Set([
+  "District Manager",
+  "National Sales Manager",
+  "Regional Manager",
+  "Marketing Manager",
+]);
 
 const emptyRoleExtras: RoleSpecificExtras = {
   pmMarketing: null,
@@ -1076,6 +1104,12 @@ export async function getPortalHomeSnapshot(
      * serializes to `{}`.
      */
     streamRepCards?: boolean;
+    /**
+     * District, Regional and National Sales Manager and Marketing Manager only: hand the role extras
+     * back unawaited, on `roleCards`. The same rule as `streamRepCards` — only a caller that renders
+     * the promise through Suspense may ask; the JSON home route must not.
+     */
+    streamRoleExtras?: boolean;
   },
 ): Promise<PortalHomeSnapshot> {
   // STARTED, NOT AWAITED (2026-10-01, "slow to transfer between page and page"). Nothing below needs
@@ -1095,6 +1129,9 @@ export async function getPortalHomeSnapshot(
   // the page could draw nothing until the slowest of them had answered. Streamed, they fill their
   // own cards as they land and the page itself paints on the fast reads alone.
   const streamRepCards = options?.streamRepCards === true && isMr && hrId !== "";
+  // The same for a sales or marketing manager: his team, region or national figures and the CRM
+  // board are the slowest reads of his landing, and nothing else on it waits for them.
+  const streamRoleExtras = options?.streamRoleExtras === true && STREAM_ROLE_EXTRAS_ROLES.has(role);
 
   // Start MR sales query + the role-specific KPI extras immediately so they run in parallel
   // with the batch below. getRoleSpecificExtras never throws — it resolves emptyRoleExtras
@@ -1230,8 +1267,38 @@ export async function getPortalHomeSnapshot(
       ? wrapPromise(countPlanAwaiting(access))
       : Promise.resolve(null);
 
-  // All three fire in parallel (sequential in dev to protect Turbopack workers).
-  const [vacationResult, excuseResult, batchResult] = await devSafePromiseAllSettled([
+  // The latest payslip — the newest approved or locked batch, then this employee's record in it —
+  // is ONE chain started here and awaited only with the last reads below. It used to sit inside the
+  // pending-counts wave and then run its second read on its own, so every non-rep landing waited on
+  // two extra sequential round trips before it could paint. It never rejects: a failed read reads as
+  // no payslip, exactly as before.
+  const latestPayslipPromise: Promise<PortalHomeSnapshot["latestPayslip"]> = hrId
+    ? (async () => {
+        const { data: batch, error: batchError } = await supabase
+          .from("salary_batches")
+          .select("id, year, month")
+          .in("status", ["approved", "locked"])
+          .order("year", { ascending: false })
+          .order("month", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (batchError || !batch) return null;
+        const { data: record } = await supabase
+          .from("salary_records")
+          .select("net_salary")
+          .eq("batch_id", batch.id)
+          .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
+          .maybeSingle();
+        if (!record?.net_salary) return null;
+        return {
+          month: `${batch.year}-${String(batch.month).padStart(2, "0")}`,
+          netSalary: Number(record.net_salary),
+        };
+      })().catch(() => null)
+    : Promise.resolve(null);
+
+  // Both fire in parallel (sequential in dev to protect Turbopack workers).
+  const [vacationResult, excuseResult] = await devSafePromiseAllSettled([
     () =>
       wrapPromise(
         supabase
@@ -1248,17 +1315,6 @@ export async function getPortalHomeSnapshot(
           .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
           .eq("status", "pending_manager"),
       ),
-    () =>
-      wrapPromise(
-        supabase
-          .from("salary_batches")
-          .select("id, year, month")
-          .in("status", ["approved", "locked"])
-          .order("year", { ascending: false })
-          .order("month", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ),
   ]);
 
   const pendingVacationCount =
@@ -1267,24 +1323,6 @@ export async function getPortalHomeSnapshot(
     excuseResult.status === "fulfilled" ? (excuseResult.value.count ?? 0) : 0;
   const pendingCountsAvailable =
     vacationResult.status === "fulfilled" && excuseResult.status === "fulfilled";
-
-  // One fast lookup: employee's record in the latest batch.
-  let latestPayslip: PortalHomeSnapshot["latestPayslip"] = null;
-  if (batchResult.status === "fulfilled" && batchResult.value.data && hrId) {
-    const batch = batchResult.value.data;
-    const { data: record } = await supabase
-      .from("salary_records")
-      .select("net_salary")
-      .eq("batch_id", batch.id)
-      .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-      .maybeSingle();
-    if (record?.net_salary) {
-      latestPayslip = {
-        month: `${batch.year}-${String(batch.month).padStart(2, "0")}`,
-        netSalary: Number(record.net_salary),
-      };
-    }
-  }
 
   // Await the fast MR + manager counts together (they've been in-flight since the start).
   const [expenseResult, managerPlanResult] = await Promise.allSettled([expensePromise, managerPlanCountPromise]);
@@ -1351,9 +1389,10 @@ export async function getPortalHomeSnapshot(
   // does on the Vacation Report and the request page — omitting it silently kept this tile on
   // the hire-anniversary reset for an employee whose real period had already rolled over.
   const balance = getVacationBalancePeriod({ employeeHrId: hrId, hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews, cvFolders] =
+  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews, cvFolders, latestPayslip] =
     await Promise.all([
-      roleExtrasPromise,
+      // Streamed: the role extras ride on roleCards, so the page does not wait for them here.
+      streamRoleExtras ? Promise.resolve(emptyRoleExtras) : roleExtrasPromise,
       dvFocusPromise,
       earlyBirdStarsPromise,
       planAdherencePromise,
@@ -1361,6 +1400,7 @@ export async function getPortalHomeSnapshot(
       repCards ? Promise.resolve(null) : leaveDaysRemainingPromise,
       myInterviewsPromise,
       cvFoldersPromise,
+      latestPayslipPromise,
     ]);
 
   return {
@@ -1390,5 +1430,6 @@ export async function getPortalHomeSnapshot(
     dvFocus,
     cvFolders,
     repCards,
+    roleCards: streamRoleExtras ? roleExtrasPromise : null,
   };
 }

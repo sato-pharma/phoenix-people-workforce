@@ -41,6 +41,7 @@ import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -151,8 +152,11 @@ const ACTIONS: readonly ActionStripItem[] = [
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus, earlyBirdStars } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, dvFocus, earlyBirdStars } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
+  // The national figures and the boards are the slow reads; everything else paints without them,
+  // and each section that needs them fills under its own Suspense.
+  const extras = roleExtrasOf(snapshot);
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
@@ -164,7 +168,9 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <ManagerCvFoldersRow summary={snapshot.cvFolders} />
 
-      <NationalKeycards nsmNational={nsmNational} />
+      <Suspense fallback={<MmSectionSkeleton title="National Performance" />}>
+        <AwaitRoleExtras extras={extras}>{({ nsmNational }) => <NationalKeycards nsmNational={nsmNational} />}</AwaitRoleExtras>
+      </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
 
@@ -173,39 +179,51 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         Incentives shown below are not yet confirmed by HR.
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <RankingPanel
-          title="Top Medical Reps"
-          subtitle="by achievement %"
-          icon={Trophy}
-          rows={nsmBoard?.topReps ?? []}
-          showManager
-          windowLabel={nsmNational?.windowLabel ?? null}
-        />
-        <RankingPanel
-          title="Districts (DSMs)"
-          subtitle="by achievement %"
-          icon={Network}
-          rows={nsmBoard?.dsms ?? []}
-          windowLabel={nsmNational?.windowLabel ?? null}
-        />
-      </div>
+      <Suspense fallback={<MmSectionSkeleton title="Top Medical Reps" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ nsmNational, nsmBoard }) => (
+            <>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <RankingPanel
+                  title="Top Medical Reps"
+                  subtitle="by achievement %"
+                  icon={Trophy}
+                  rows={nsmBoard?.topReps ?? []}
+                  showManager
+                  windowLabel={nsmNational?.windowLabel ?? null}
+                />
+                <RankingPanel
+                  title="Districts (DSMs)"
+                  subtitle="by achievement %"
+                  icon={Network}
+                  rows={nsmBoard?.dsms ?? []}
+                  windowLabel={nsmNational?.windowLabel ?? null}
+                />
+              </div>
 
-      {/* One note for BOTH boards: departedCount spans the reps and the DSMs together, so
-          repeating it under each panel would state the same people twice. */}
-      {nsmBoard && nsmBoard.departedCount > 0 ? (
-        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-          <DepartedFromBoardNote
-            count={nsmBoard.departedCount}
-            sales={nsmBoard.departedSales}
-            totalLabel="National Performance"
-          />
-        </div>
-      ) : null}
+              {/* One note for BOTH boards: departedCount spans the reps and the DSMs together, so
+                  repeating it under each panel would state the same people twice. */}
+              {nsmBoard && nsmBoard.departedCount > 0 ? (
+                <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+                  <DepartedFromBoardNote
+                    count={nsmBoard.departedCount}
+                    sales={nsmBoard.departedSales}
+                    totalLabel="National Performance"
+                  />
+                </div>
+              ) : null}
+            </>
+          )}
+        </AwaitRoleExtras>
+      </Suspense>
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
-      <CrmFirstVisitBoard action={<EarlyBirdsSyncAction />} crm={nsmBoard?.crm ?? null} />
+      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ nsmBoard }) => <CrmFirstVisitBoard action={<EarlyBirdsSyncAction />} crm={nsmBoard?.crm ?? null} />}
+        </AwaitRoleExtras>
+      </Suspense>
 
       <ActionStrip items={ACTIONS} />
 

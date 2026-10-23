@@ -586,11 +586,11 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(functionBody(legacy, "export async function getEmployeePlansWorkspace("), /movedToPhoenixCrm = employee \? await plansInPhoenixCrm\(access\) : false;[\s\S]*employee &&\s*!movedToPhoenixCrm &&/, "the legacy workspace offers him no new plan");
 
   const navArgs = ["District Manager", "District Manager", "Anti Infective", "Sales", "B-12", false, false, true, false, false, false] as const;
-  const legacyNav = resolveEmployeePortalNavVisibility(...navArgs, false);
-  const switchedNav = resolveEmployeePortalNavVisibility(...navArgs, true);
-  assert.equal(legacyNav.showPlansTab, true, "a district manager on the legacy form keeps his Plans tab");
-  assert.equal(switchedNav.showPlansTab, true, "a switched district manager KEEPS the Plans tab — it is his history now (owner, 2026-10-17)");
-  assert.equal(switchedNav.showPlanningCalendarTab, true, "and keeps the Planning Calendar");
+  // The nav no longer takes the plan-switch answer at all (2026-10-23): legacy or switched, a district
+  // manager gets the same tabs, so there is one call and no switch argument for it to ignore.
+  const managerNav = resolveEmployeePortalNavVisibility(...navArgs);
+  assert.equal(managerNav.showPlansTab, true, "a district manager, legacy or switched, KEEPS the Plans tab — it is his history now (owner, 2026-10-17)");
+  assert.equal(managerNav.showPlanningCalendarTab, true, "and keeps the Planning Calendar");
 
   // His history, read only (owner, 2026-10-17: "make it unhidden, but make them not able to submit … only
   // able to see their historical plans"): the page shows PlansHistory, never the builder, to a switched
