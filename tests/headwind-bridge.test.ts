@@ -36,6 +36,7 @@ import {
   HeadwindCommandUnconfirmedError,
 } from "../src/lib/devices/headwind/commands.ts";
 import {
+  applicationLinkEntries,
   configurationBranding,
   configurationFiles,
   configurationSummary,
@@ -47,6 +48,7 @@ import {
   HEADWIND_DESKTOP_HEADERS,
   HEADWIND_ICON_SIZES,
   HeadwindConfigurationError,
+  writeHeadwindAppLink,
 } from "../src/lib/devices/headwind/configurations.ts";
 import {
   fixesToPoints,
@@ -1079,6 +1081,88 @@ async function runConfigurationTests() {
     "and a move with no tablet named",
   );
   assert.equal(untouched.calls.length, 0, "every one of those was refused before the network");
+
+  // 🔴 AN ENTRY WITH NO `id` IS A NEW LINK ROW. Measured on production 2026-10-23: setting Telegram (84),
+  // WPS Office (85) and WhatsApp (86) to install on "Rep tablets" (3) left each app on those rules TWICE
+  // — the old remove link (1002-1004) beside a new install link (1012-1014). So the app's links are read
+  // first, the existing link's id is sent, a duplicate pair is collapsed onto its lowest id (the others
+  // sent with action 0, which deletes them), and only a pair with no link goes without an id.
+  //
+  // BREAK-TEST: make applicationLinkEntries `return [entry]` unconditionally and the first deepEqual
+  // fires with no `id` where 1002 was expected.
+  async function linkThrough(links: unknown) {
+    const stub = makeFetch({
+      api: [
+        { body: { data: links, status: "OK" }, status: 200 },
+        { body: { status: "OK" }, status: 200 },
+      ],
+    });
+    const result = await writeHeadwindAppLink({ action: 1, applicationId: 84, configurationId: 3 }, stub.fetch, ENV);
+    const api = stub.calls.filter((call) => !call.url.includes("/rest/public/jwt/login"));
+    return { api, result };
+  }
+  const otherRules = { action: 1, applicationId: 84, configurationId: 5, id: 2001 };
+  const notOnRules = { action: 0, applicationId: 84, configurationId: 4, id: null };
+
+  const updated = await linkThrough([notOnRules, { action: 2, applicationId: 84, configurationId: 3, id: 1002, remove: true, showIcon: true }, otherRules]);
+  assert.equal(updated.api.length, 2, "one read of the app's links, then one write");
+  assert.equal(updated.api[0].init.method, "GET");
+  assert.ok(updated.api[0].url.endsWith("/rest/private/applications/configurations/84"), "the links are read for THIS app");
+  assert.equal(updated.api[1].init.method, "POST");
+  assert.ok(updated.api[1].url.endsWith("/rest/private/applications/configurations"));
+  assert.deepEqual(
+    JSON.parse(String(updated.api[1].init.body)),
+    {
+      applicationId: 84,
+      configurations: [{ action: 1, applicationId: 84, configurationId: 3, id: 1002, remove: false, showIcon: true }],
+    },
+    "🔴 the existing link's id is sent, so Headwind UPDATES it instead of adding a second link — and only this configuration's link is touched",
+  );
+  assert.deepEqual(updated.result, { linkId: 1002, removedDuplicateIds: [] });
+
+  const collapsed = await linkThrough([
+    { action: 1, applicationId: 84, configurationId: 3, id: 1012 },
+    otherRules,
+    { action: 2, applicationId: 84, configurationId: 3, id: 1002 },
+  ]);
+  assert.deepEqual(
+    JSON.parse(String(collapsed.api[1].init.body)).configurations,
+    [
+      { action: 1, applicationId: 84, configurationId: 3, id: 1002, remove: false, showIcon: true },
+      { action: 0, applicationId: 84, configurationId: 3, id: 1012, remove: false, showIcon: true },
+    ],
+    "🔴 a pair already carrying two links keeps the LOWEST id and sends every other with action 0, which deletes it",
+  );
+  assert.deepEqual(collapsed.result, { linkId: 1002, removedDuplicateIds: [1012] });
+
+  const fresh = await linkThrough([notOnRules, otherRules]);
+  const freshEntries = JSON.parse(String(fresh.api[1].init.body)).configurations as Array<Record<string, unknown>>;
+  assert.deepEqual(
+    freshEntries,
+    [{ action: 1, applicationId: 84, configurationId: 3, remove: false, showIcon: true }],
+    "an app on NO link for those rules is sent without an id — that is the one case a new link is right",
+  );
+  assert.equal("id" in freshEntries[0], false, "and the id is absent, not null");
+  assert.deepEqual(fresh.result, { linkId: null, removedDuplicateIds: [] });
+
+  assert.deepEqual(
+    applicationLinkEntries({ action: 2, applicationId: 84, configurationId: 3, showIcon: false }, [{ configurationId: 3, id: 1002 }]),
+    [{ action: 2, applicationId: 84, configurationId: 3, id: 1002, remove: false, showIcon: false }],
+    "the requested action and the link's own showIcon ride on the updated link",
+  );
+  for (const unreadable of [null, { status: "OK" }, "error"]) {
+    const stub = makeFetch({ api: [{ body: { data: unreadable, status: "OK" }, status: 200 }] });
+    await assert.rejects(
+      () => writeHeadwindAppLink({ action: 1, applicationId: 84, configurationId: 3 }, stub.fetch, ENV),
+      HeadwindConfigurationError,
+      "🔴 a link read that is not a list REFUSES the write — sending without an id would duplicate the link",
+    );
+    assert.equal(
+      stub.calls.filter((call) => call.init.method === "POST" && !call.url.includes("/rest/public/jwt/login")).length,
+      0,
+      "and nothing was posted",
+    );
+  }
 
   const configs = stripComments(source("src/lib/devices/headwind/configurations.ts"));
   // 🔴 THE OPAQUE ROUND-TRIP. `PUT /rest/private/configurations` WIPES AND RE-INSERTS the configuration's

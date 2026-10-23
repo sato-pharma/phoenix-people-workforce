@@ -403,6 +403,104 @@ export async function setHeadwindBranding(
   };
 }
 
+/** One entry of `POST /rest/private/applications/configurations` — a link row to write. */
+export type HeadwindAppLinkEntry = {
+  id?: number;
+  action: 0 | 1 | 2;
+  applicationId: number;
+  configurationId: number;
+  remove: false;
+  showIcon: boolean;
+};
+
+/**
+ * The entries that put ONE app on ONE configuration, given the app's links as the server holds them.
+ *
+ * 🔴 AN ENTRY WITH NO `id` IS A NEW LINK ROW, EVEN WHEN THE APP IS ALREADY ON THOSE RULES. Headwind
+ * inserts it beside the old one, so the configuration then carries the app twice with two different
+ * actions. Measured on production 2026-10-23: setting Telegram, WPS Office and WhatsApp to install on
+ * "Rep tablets" left each with its old remove link (1002, 1003, 1004) AND a new install link (1012,
+ * 1013, 1014). So the existing link's `id` is sent and the row is updated in place; when the pair
+ * already carries more than one link, the lowest id is kept and every other one is sent with
+ * `action: 0`, which is how this endpoint deletes a link. Only a pair with no link at all goes without
+ * an id. `links` is the `data` of `GET /rest/private/applications/configurations/{applicationId}`.
+ */
+export function applicationLinkEntries(
+  input: { applicationId: number; configurationId: number; action: 0 | 1 | 2; showIcon?: boolean },
+  links: unknown,
+): HeadwindAppLinkEntry[] {
+  if (!Array.isArray(links)) {
+    throw new HeadwindConfigurationError(
+      "The Headwind server did not say which tablet rules this app is already on, so nothing was changed — sending it now could put the app on those rules twice. Try again in a minute.",
+    );
+  }
+  const existing = links
+    .filter((link): link is { id: number } => {
+      if (typeof link !== "object" || link === null) return false;
+      const { configurationId, id } = link as { configurationId?: unknown; id?: unknown };
+      return Number.isInteger(id) && configurationId === input.configurationId;
+    })
+    .map((link) => link.id)
+    .sort((a, b) => a - b);
+
+  // 🔴 `showIcon` AND `remove` ARE REQUIRED IN EACH ENTRY, AND OMITTING THEM IS A 200 TOO. Headwind
+  // dereferences both while building the link row, so a minimal entry throws a bare
+  // `java.lang.NullPointerException` and the server answers `error.internal.server` under an HTTP
+  // **200** — measured on production 2026-09-28 linking the Phoenix app to configuration 3, where the
+  // same call succeeded the instant these two fields were added. `applicationId` inside the entry is
+  // NOT enough on its own; it was tried and failed identically.
+  //
+  // 🔴 `showIcon` HERE IS THE LINK'S OWN, not the application's. The app row carries one as well and
+  // they are separate rows in Headwind — this is whether the icon shows for tablets on THIS
+  // configuration, which is why it travels with the link and defaults to the app's own setting.
+  const entry: HeadwindAppLinkEntry = {
+    action: input.action,
+    applicationId: input.applicationId,
+    configurationId: input.configurationId,
+    remove: false,
+    showIcon: input.showIcon !== false,
+  };
+  const [kept, ...duplicates] = existing;
+  if (kept === undefined) return [entry];
+  return [
+    { ...entry, id: kept },
+    ...duplicates.map((id) => ({ ...entry, action: 0 as const, id })),
+  ];
+}
+
+/**
+ * Read the app's links, then write the one for this configuration — updating the link that is
+ * already there rather than adding a second (`applicationLinkEntries`). Returns the link id that was
+ * updated (null for a new link) and the duplicate link ids that were deleted.
+ */
+export async function writeHeadwindAppLink(
+  input: { applicationId: number; configurationId: number; action: 0 | 1 | 2; showIcon?: boolean },
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ linkId: number | null; removedDuplicateIds: number[] }> {
+  const links = await callHeadwind<unknown>(
+    `/rest/private/applications/configurations/${input.applicationId}`,
+    { method: "GET" },
+    fetchImpl,
+    env,
+  );
+  const configurations = applicationLinkEntries(input, links);
+  await callHeadwind(
+    "/rest/private/applications/configurations",
+    {
+      body: JSON.stringify({ applicationId: input.applicationId, configurations }),
+      method: "POST",
+    },
+    fetchImpl,
+    env,
+  );
+  const [first, ...rest] = configurations;
+  return {
+    linkId: first.id ?? null,
+    removedDuplicateIds: rest.map((entry) => entry.id as number),
+  };
+}
+
 /**
  * Attach an app already on the server to a configuration, or take it off — WITHOUT rewriting the
  * configuration.
@@ -424,43 +522,20 @@ export async function linkHeadwindApp(
     throw new HeadwindConfigurationError("An app is either installed, hidden or removed — nothing else.");
   }
 
-  // 🔴 `showIcon` AND `remove` ARE REQUIRED IN EACH ENTRY, AND OMITTING THEM IS A 200 TOO. Headwind
-  // dereferences both while building the link row, so a minimal entry throws a bare
-  // `java.lang.NullPointerException` and the server answers `error.internal.server` under an HTTP
-  // **200** — measured on production 2026-09-28 linking the Phoenix app to configuration 3, where the
-  // same call succeeded the instant these two fields were added. `applicationId` inside the entry is
-  // NOT enough on its own; it was tried and failed identically.
-  //
-  // 🔴 `showIcon` HERE IS THE LINK'S OWN, not the application's. The app row carries one as well and
-  // they are separate rows in Headwind — this is whether the icon shows for tablets on THIS
-  // configuration, which is why it travels with the link and defaults to the app's own setting.
-  await callHeadwind(
-    "/rest/private/applications/configurations",
-    {
-      body: JSON.stringify({
-        applicationId: input.applicationId,
-        configurations: [
-          {
-            action: input.action,
-            applicationId: input.applicationId,
-            configurationId: input.configurationId,
-            remove: false,
-            showIcon: input.showIcon !== false,
-          },
-        ],
-      }),
-      method: "POST",
-    },
-    fetchImpl,
-    env,
-  );
+  const { linkId, removedDuplicateIds } = await writeHeadwindAppLink(input, fetchImpl, env);
 
   const verb = input.action === 1 ? "installed on" : input.action === 2 ? "removed from" : "hidden on";
   await writeRequiredAuditLog({
     actorLoginId: actor,
     entityId: String(input.configurationId),
     entityType: "headwind_configuration",
-    newValues: { action: input.action, applicationId: input.applicationId, change: "application" },
+    newValues: {
+      action: input.action,
+      applicationId: input.applicationId,
+      change: "application",
+      linkId,
+      removedDuplicateLinkIds: removedDuplicateIds,
+    },
     oldValues: null,
     summary: `App ${input.applicationId} ${verb} configuration ${input.configurationId}`,
   });
