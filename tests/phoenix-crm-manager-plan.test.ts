@@ -11,7 +11,10 @@ import { fieldWeekStart, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar
 import {
   ceoHrIdOf,
   countManagerOutcomes,
+  countsAsPlannersVisitWithDm,
   countsAsPlannersVisitWithRep,
+  managerSlotKinds,
+  parseManagerDmVisit,
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   isManagerAskLive,
   managerEvidenceKey,
@@ -1934,4 +1937,48 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   ).replace(/\r\n/g, "\n");
   assert.match(writeUpMigration, /add column if not exists detail_comment text/, "the column the write-up lands in");
   assert.match(writeUpMigration, /add column if not exists detail_edited_at timestamptz/, "and the stamp beside it");
+
+  // ── With a district manager (owner, 2026-10-23: "add an option for him to visit with DM … also GPM or PM") ──
+  assert.equal(managerSlotKinds("dm").some((entry) => entry.key === "with_dm"), false, "a district manager is never offered With a district manager");
+  for (const kind of ["rsm", "nsm", "pm"] as const) {
+    assert.equal(managerSlotKinds(kind).some((entry) => entry.key === "with_dm"), true, `the ${kind} is offered With a district manager`);
+  }
+  const withDm = (extra: Record<string, unknown>) =>
+    parseManagerSlotDraft({ date: "2026-10-25", half: "AM", kind: "with_dm", scopeDmSeatId: "DM-1", scopeLineCode: "pedia", ...extra });
+  const parsedDm = withDm({ areaSeatIds: ["T-1", "T-2", "T-1", " "] });
+  assert.equal(parsedDm.ok, true, "a with-DM half-day with ticked areas parses");
+  if (parsedDm.ok) {
+    assert.deepEqual(parsedDm.value.areaSeatIds, ["T-1", "T-2"], "its areas are kept once each, blanks dropped");
+    assert.deepEqual(parsedDm.value.customers, [], "and it names no customer");
+    assert.equal(parsedDm.value.scopeDmSeatId, "DM-1", "it keeps the district manager he picked");
+    assert.equal(managerSlotScopeError("dm", parsedDm.value, []), "With a district manager is not one of a district manager's half-days.", "the save refuses it to a district manager");
+    const scopes = [{ key: "dm:DM-1", dmSeatId: "DM-1", lineCode: "pedia", lineName: "Pedia", dmHrId: "B-1", regionSeatId: null, regionHrId: null }];
+    assert.equal(managerSlotScopeError("nsm", parsedDm.value, scopes), null, "and lets a national sales manager plan it in one of his districts");
+    assert.equal(managerSlotScopeError("nsm", { ...parsedDm.value, scopeDmSeatId: "DM-9" }, scopes), "Choose one of the district managers shown. Reload the page.", "but not in a district that is not his");
+  }
+  assert.equal(withDm({ areaSeatIds: [] }).ok, false, "with no area ticked it is refused");
+  assert.equal(withDm({ scopeDmSeatId: null, scopeLineCode: "pedia", areaSeatIds: ["T-1"] }).ok, false, "a whole line has no district manager to go with");
+  assert.equal(withDm({ areaSeatIds: ["T-1"], customers: [{ customerId: "00000000-0000-4000-8000-000000000001" }] }).ok, false, "and it carries areas, never customers");
+
+  const chain = { kind: "chain", managerHrId: "B-1", seniorHrId: "B-50", productManagerHrId: null };
+  assert.equal(countsAsPlannersVisitWithDm(chain, "B-50", "B-1"), true, "a chain visit naming the district manager and the NSM answers the half-day");
+  assert.equal(countsAsPlannersVisitWithDm({ ...chain, managerHrId: "B-2" }, "B-50", "B-1"), false, "a chain visit with ANOTHER district manager does not");
+  assert.equal(countsAsPlannersVisitWithDm({ kind: "double", managerHrId: "B-1", seniorHrId: null }, "B-50", "B-1"), false, "a double visit without him does not");
+  assert.equal(countsAsPlannersVisitWithDm({ kind: "chain", managerHrId: "B-1", seniorHrId: null, productManagerHrId: "B-70" }, "B-70", "B-1"), true, "a product manager on the chain visit answers his own");
+  assert.equal(countsAsPlannersVisitWithDm({ ...chain, managerHrId: null }, "B-50", null), true, "a vacant district asks the visit for him alone");
+
+  const dmVisit = parseManagerDmVisit({ dm_hr_id: "b-1", areas: [{ seat_id: "T-1", area_code: "A1", area_name: "Nasr City", seat_ids: ["T-1", "T-3"] }, { seat_id: "" }] });
+  assert.deepEqual(dmVisit, { dmHrId: "B-1", areas: [{ seatId: "T-1", areaCode: "A1", areaName: "Nasr City", seatIds: ["T-1", "T-3"] }] }, "the stored areas read back, an unnamed one dropped");
+  assert.equal(parseManagerDmVisit({ areas: [] }), null, "no area is no content");
+  assert.equal(
+    managerEvidenceKey({ kind: "with_dm", repSeatId: null, date: "2026-10-25", customerId: null, managerCustomerId: null, areaSeatId: "T-1" }),
+    "dm|2026-10-25|T-1",
+    "one area on one day is one thing to do, whichever half holds it",
+  );
+
+  const withDmMigration = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261023233000_phoenix_crm_manager_plan_with_dm.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.match(withDmMigration, /kind = 'with_dm' and scope_dm_seat_id is not null/, "the database holds a with-DM half-day to a district manager");
+  assert.match(withDmMigration, /elsif v_kind = 'with_dm' then\s+if v_planner = 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refuses one from a district manager");
 }
