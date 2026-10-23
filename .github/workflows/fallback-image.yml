@@ -66,6 +66,7 @@ on:
       - .github/workflows/fallback-image.yml
       - scripts/fallback-image-deploy.mjs
       - Dockerfile
+      - infra/runtime-extras/**
 
 permissions:
   contents: read
@@ -217,11 +218,18 @@ jobs:
             echo "::error::No registry would give out the base image (${BASE}); the build cannot start."
             exit 1
           fi
+          # 🔴 A DIGEST-PINNED FROM (audit F-22, 2026-10-23) cannot be re-tagged: Docker refuses a tag that carries a digest,
+          # and the build resolves `name@sha256:…` by that exact name. So for a pinned base, a mirror's copy is handed to the
+          # build as a named context instead (--build-context "<FROM ref>=docker-image://<mirror ref>"), which BuildKit uses
+          # in place of the FROM. The digest still decides the bytes: the mirror was asked for that digest, not the tag.
           if [ "${pulled}" != "${BASE}" ]; then
-            docker tag "${pulled}" "${BASE}"
+            case "${BASE}" in
+              *@sha256:*) echo "BASE_CONTEXT=${BASE}=docker-image://${pulled}" >> "$GITHUB_ENV" ;;
+              *) docker tag "${pulled}" "${BASE}" ;;
+            esac
             echo "::warning::The base image came from ${pulled}, not ${BASE} (rate-limited). It is the same official image, but check the digest below against Railway's last build log if it matters."
           fi
-          docker image inspect "${BASE}" --format 'base image digest: {{index .RepoDigests 0}}' >> "$GITHUB_STEP_SUMMARY" || true
+          docker image inspect "${pulled}" --format 'base image digest: {{index .RepoDigests 0}}' >> "$GITHUB_STEP_SUMMARY" || true
           echo "base image source: ${pulled}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build the image (the repository's own Dockerfile, unchanged)
@@ -234,6 +242,7 @@ jobs:
           set +a
           build_args=()
           for name in $(cut -d= -f1 "${RUNNER_TEMP}/build-values.env"); do build_args+=(--build-arg "$name"); done
+          if [ -n "${BASE_CONTEXT:-}" ]; then build_args+=(--build-context "${BASE_CONTEXT}"); fi
           # No SENTRY_AUTH_TOKEN on purpose: next.config.ts uploads source maps only when it is set, and a fallback
           # build must not depend on, or spend, an observability credential. RAILWAY_GIT_COMMIT_SHA only names the release.
           docker build "${build_args[@]}" \
@@ -246,8 +255,9 @@ jobs:
         run: |
           set -euo pipefail
           # Railway injects RAILWAY_GIT_COMMIT_SHA only into a build it ran itself. An image deploy would carry none, and
-          # the release gate treats "no commit" as "nothing to wait for" — so the gate would silently open. Baking the
-          # commit in keeps /api/readyz waiting for the row, and keeps /api/healthz `revision` truthful.
+          # since 23 Oct 2026 the release gate holds a commit-less production container at `no_commit` for good (before
+          # that it silently opened). Baking the commit in lets /api/readyz pass once the row exists, and keeps
+          # /api/healthz `revision` truthful.
           printf 'FROM %s:build\nENV RAILWAY_GIT_COMMIT_SHA=%s\n' "${IMAGE}" "${SHA}" | docker build --tag "${IMAGE}:${SHA}" -
 
       - name: Boot the image and read its revision

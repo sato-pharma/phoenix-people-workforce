@@ -880,6 +880,7 @@ import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-sch
 import { runMarketingRoiRefreshPeriodSkipTests } from "./marketing-roi-refresh-period-skip.test.ts";
 import { runCrmContactMasterRefreshSpeedTests } from "./crm-contact-master-refresh-speed.test.ts";
 import { runSosRollupRefreshBatchLockTests } from "./sos-rollup-refresh-batch-lock.test.ts";
+import { runServiceRoleStatementTimeoutTests } from "./service-role-statement-timeout.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -2592,6 +2593,7 @@ import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-pre
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
 import { runFallbackImageDeployTests } from "./fallback-image-deploy.test.ts";
+import { runDockerfileReproducibleTests } from "./dockerfile-reproducible.test.ts";
 import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
@@ -2686,6 +2688,7 @@ import {
   runSatoEmailFinalSanitizeTests,
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
+import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4430,6 +4433,10 @@ await runTest(
   "each per-batch Closing rollup rebuild (fact, channel, distributor-product) takes a transaction lock on its own name and the batch before its first delete, so two rebuilds of one batch run one after the other and never count it twice",
   runSosRollupRefreshBatchLockTests,
 );
+await runTest(
+  "service_role has the owner's 5-minute statement_timeout, and no function declares more time than that — a function's own SET cannot raise its caller's limit",
+  runServiceRoleStatementTimeoutTests,
+);
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
 await runTest(
@@ -5722,7 +5729,7 @@ await runTest(
   runCiEslintCacheNodeRuntimeTests,
 );
 await runTest(
-  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
+  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
   runReleaseGateTests,
 );
 await runTest(
@@ -10239,6 +10246,7 @@ await runTest("phoenix crm: no save bar takes two presses to discard", runPhoeni
 await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 await runTest("urgent deploy: runs only off main, the guard hands over only when every urgent PR is live, probes read the marker", runUrgentDeployTests);
 await runTest("fallback image: bakes the Dockerfile's NEXT_PUBLIC values, stamps the commit so the release gate stays shut, needs a green release-gate, refuses staging, never runs on a push to main", runFallbackImageDeployTests);
+await runTest("the production image is built from pinned inputs (audit F-22, 2026-10-23): the base image is pinned by digest, sharp and puppeteer-core come from npm ci against the committed infra/runtime-extras lockfile with an integrity hash on every package, no npm install or hand-typed version is left in the Dockerfile, the two versions equal the ones pnpm-lock.yaml resolves, and the fallback route can still build a digest-pinned base from a mirror", runDockerfileReproducibleTests);
 await runTest("emergency host: the Fly.io standby is web-only (no scheduler, no CRM poller, no Railway identity), flips the domain only from a known state to a host that answers with a certificate, needs a green release-gate, and is started by hand only", runEmergencyHostTests);
 
 await runTest("rollup build: a member merging mid-build is survived, not a crash", runRollupBuildVerdictTests);
@@ -10658,11 +10666,11 @@ await runTest(
   runProductionPlanningRequestSequenceTests,
 );
 await runTest(
-  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — never the outage screen and never a database sentence",
+  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — signed by the server, so a crafted link shows the fixed sentence and never its own — never the outage screen, never a database sentence, and never a claim that nothing was saved",
   runVacationDecisionFormTests,
 );
 await runTest(
-  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, raw error text in route files can only go down, and no public or share route carries any",
+  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, every redacted error is still logged once as api_error_redacted with its real text, raw error text in route files can only go down, and no public or share route carries any",
   runApiErrorWrappedDatabaseTextTests,
 );
 await runTest(
@@ -10672,6 +10680,10 @@ await runTest(
 await runTest(
   "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
   runCsvFormulaNeutraliserTests,
+);
+await runTest(
+  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  runNeedsYouDigestRunsOutsideTheFanoutTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

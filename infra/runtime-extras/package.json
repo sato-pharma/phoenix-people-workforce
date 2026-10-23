@@ -1,0 +1,9 @@
+{
+  "name": "phoenix-runtime-extras",
+  "private": true,
+  "description": "The two packages the Dockerfile adds to the production image after Next's standalone trace (see the Dockerfile). Versions MUST equal pnpm-lock.yaml's; tests/dockerfile-reproducible.test.ts fails otherwise. Regenerate with: node scripts/sync-runtime-extras.mjs",
+  "dependencies": {
+    "puppeteer-core": "25.15.0",
+    "sharp": "0.35.5"
+  }
+}

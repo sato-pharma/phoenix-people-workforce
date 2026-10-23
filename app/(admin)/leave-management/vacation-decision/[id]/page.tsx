@@ -8,6 +8,7 @@ import {
 } from "@/lib/vacation/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import {
+  vacationDecisionErrorToShow,
   vacationDecisionFailureMessage,
   vacationDecisionFormProblem,
   vacationDecisionRetryPath,
@@ -58,9 +59,14 @@ export default async function VacationDecisionPage({
   const { id } = await params;
   const query = await searchParams;
   const decision = parseVacationDecision(firstParam(query.decision)) ?? "approve";
-  // What the last submit was refused for. Rendered as text (React escapes it) and capped, because
-  // it arrives in the address.
-  const decisionError = (firstParam(query.decisionError) ?? "").trim().slice(0, 300);
+  // What the last submit was refused for. It arrives in the address, so it is shown only when the
+  // server's own signature verifies; a crafted link gets the fixed sentence, never its own words.
+  const decisionError = vacationDecisionErrorToShow(
+    id,
+    decision,
+    firstParam(query.decisionError),
+    firstParam(query.decisionErrorSig),
+  );
   const reasonRequired = decision === "reject";
 
   let data: Awaited<ReturnType<typeof getVacationDecisionConfirmationData>> | null = null;
