@@ -162,11 +162,11 @@ function SystemToolsBand() {
           title="Master Data"
         />
         <QuickLinkCard
-          headline="Gaps, duplicates & bad rows"
-          href="/admin/data-health"
+          headline="Errors, integrity checks & login security"
+          href="/admin/system-audit"
           icon={<Database className="h-3.5 w-3.5" />}
-          sub="Open Data Health"
-          title="Data Health"
+          sub="Open the System Audit"
+          title="System Audit"
         />
         <QuickLinkCard
           headline="Employees, lifecycle & org"

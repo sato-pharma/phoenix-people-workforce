@@ -1,11 +1,12 @@
 import { systemClock, type ReconciliationClock, type ReconciliationTimer } from "@/lib/reconciliation/clock";
 import { classifyReconciliationOutcome, shouldAlert, summarizeReconciliationResults } from "@/lib/reconciliation/compare";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
-import type {
-  ReconciliationCheck,
-  ReconciliationCheckResult,
-  ReconciliationOutcome,
-  ReconciliationReport,
+import {
+  RECONCILIATION_FINDINGS_CAP,
+  type ReconciliationCheck,
+  type ReconciliationCheckResult,
+  type ReconciliationOutcome,
+  type ReconciliationReport,
 } from "@/lib/reconciliation/types";
 
 /**
@@ -17,7 +18,8 @@ import type {
 /**
  * Three at a time. Every check reads production Postgres, several of them run heavy aggregates
  * (the SoS dashboard fan-out, the payroll batch sweep), and the 8s statement timeout is shared —
- * firing sixteen at once would make the harness the thing that breaks the database it is watching.
+ * firing all twenty-two at once would make the harness the thing that breaks the database it is
+ * watching.
  */
 const DEFAULT_CONCURRENCY = 3;
 
@@ -30,7 +32,7 @@ const DEFAULT_CHECK_TIMEOUT_MS = 60_000;
 /**
  * The ceiling for the WHOLE run, which the per-check ceiling alone cannot give.
  *
- * Sixteen checks, three at a time, at 60s each is six waves — up to 360s, past the route's own
+ * Twenty-two checks, three at a time, at 60s each is eight waves — up to 480s, past the route's own
  * 300s maxDuration. The platform would then kill the request mid-run and the night would produce
  * no report and no alert at all: the harness would go silent in exactly the situation it exists to
  * announce. Bounding the run below maxDuration leaves room for the notification and turns "we ran
@@ -68,7 +70,7 @@ function errorMessage(error: unknown): string {
  * Runs one check and ALWAYS returns a result.
  *
  * A thrown check is recorded as "errored", never rethrown: one broken check must not blind the
- * other fifteen, and an error is itself a finding — "we could not tell" is the state this harness
+ * others, and an error is itself a finding — "we could not tell" is the state this harness
  * exists to stop mistaking for "everything is fine". `holds` stays null rather than false so a
  * failure to measure can never be read as a passing measurement.
  */
@@ -85,6 +87,9 @@ async function runOne(
     domain: check.domain,
     severity: check.severity,
     expectation: check.expectation,
+    // Carried on every result, not only the known-open ones that print it: the System Audit ledger
+    // stores it as the issue's probable root cause, and the stored report names it on its own line.
+    ...(check.openDefect ? { openDefect: check.openDefect } : {}),
   };
 
   // A check must never be given more time than the whole run has left, or the last wave would push
@@ -119,6 +124,10 @@ async function runOne(
       if (timer) timer.cancel();
     }
 
+    // The rows behind a disagreement ride through untouched, capped per check. The cap is stated as
+    // a number on the result, so a check with 3,000 affected rows reads "500 shown, 2,500 more",
+    // never as a check with 500.
+    const findings = Array.isArray(outcome.findings) ? outcome.findings : [];
     return {
       ...base,
       status: classifyReconciliationOutcome(check.expectation, outcome.holds),
@@ -131,6 +140,12 @@ async function runOne(
           : `${outcome.detail} — known open defect: ${check.openDefect ?? "documented on the check"}`,
       durationMs: clock.now() - startedAt,
       error: null,
+      ...(findings.length > 0
+        ? {
+            findings: findings.slice(0, RECONCILIATION_FINDINGS_CAP),
+            findingsTruncated: Math.max(0, findings.length - RECONCILIATION_FINDINGS_CAP),
+          }
+        : {}),
     };
   } catch (error) {
     return {
@@ -173,9 +188,14 @@ export async function runReconciliationCheckList(
 }
 
 /**
- * The alert body. Leads with what a human must do, names every breach in full, and states the
- * known-open findings separately so a persistent, already-understood defect never reads as a new
- * emergency.
+ * The whole night in words. Leads with what a human must do, names every breach in full, and
+ * states the known-open findings separately so a persistent, already-understood defect never reads
+ * as a new emergency.
+ *
+ * NO LONGER SENT ON ITS OWN. The separate breach notification was retired on 2026-10-23: a breach
+ * is now a System Audit issue, and the one daily System Audit message carries it
+ * (src/lib/system-audit/daily-message.ts). This text stays for the cron route's response and for
+ * anyone reading a stored report by hand.
  */
 export function buildReconciliationAlertMessage(report: ReconciliationReport): string {
   const lines: string[] = [];
@@ -183,7 +203,12 @@ export function buildReconciliationAlertMessage(report: ReconciliationReport): s
   const errored = report.results.filter((result) => result.status === "errored");
   const knownOpen = report.results.filter((result) => result.status === "known-open");
 
-  lines.push(`⚠️ Reconciliation breach — ${report.generatedAt} Cairo`);
+  // The checks that could not be answered are in the TITLE, not only the body: a night where half
+  // the checks errored and none breached must not read like a quiet night with one small finding.
+  const notAnswered = errored.length > 0 ? `, ${errored.length} could not be answered` : "";
+  lines.push(
+    `⚠️ Reconciliation breach — ${breaches.length} of ${report.counts.total} checks disagree${notAnswered} — ${report.generatedAt} Cairo`,
+  );
   lines.push("");
   lines.push(
     `${breaches.length} of ${report.counts.total} checks disagree with themselves${errored.length > 0 ? `, and ${errored.length} could not be answered` : ""}.`,
@@ -194,7 +219,9 @@ export function buildReconciliationAlertMessage(report: ReconciliationReport): s
     lines.push(`• ${result.title}`);
     if (result.left && result.right) {
       lines.push(`  Screen: ${result.left.value}`);
-      lines.push(`  Actual: ${result.right.value}`);
+      // "Second source", not "Actual": the right side is the same fact derived another way, and it
+      // can be the wrong one of the two — calling it the actual figure prejudges the investigation.
+      lines.push(`  Second source: ${result.right.value}`);
     }
     lines.push(`  ${result.detail}`);
   }
@@ -205,6 +232,6 @@ export function buildReconciliationAlertMessage(report: ReconciliationReport): s
   }
 
   lines.push("");
-  lines.push("Full report → /api/cron/reconciliation-check");
+  lines.push("Full report → /admin/system-audit (Integrity checks)");
   return lines.join("\n");
 }

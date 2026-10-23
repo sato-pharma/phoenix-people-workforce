@@ -1,4 +1,4 @@
-// IP blocklist used by the login path (enforcement) and the System Issues security lens
+// IP blocklist used by the login path (enforcement) and the System Audit login-security section
 // (admin management). Blocks are time-bound by default (see the migration) so a mistake
 // self-heals; enforcement is fail-open so a DB blip can never lock everyone out.
 
@@ -68,25 +68,24 @@ export async function unblockIp(ip: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Admin: currently-active blocks (for the security lens). Best-effort — [] on failure. */
+/**
+ * Admin: currently-active blocks (for the login-security section). THROWS on a failed read — it
+ * used to return [] and the screen then said "no IPs are blocked" while blocks were in force. The
+ * caller names the source as unavailable instead. Enforcement (isIpBlocked above) stays fail-open.
+ */
 export async function getBlockedIps(): Promise<BlockedIp[]> {
-  try {
-    const nowIso = new Date().toISOString();
-    const { data, error } = await getSupabaseAdmin()
-      .from("blocked_ips")
-      .select("ip, reason, blocked_by, created_at, expires_at")
-      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map((row: Record<string, unknown>) => ({
-      blockedBy: (row.blocked_by as string | null) ?? null,
-      createdAt: row.created_at as string,
-      expiresAt: (row.expires_at as string | null) ?? null,
-      ip: row.ip as string,
-      reason: (row.reason as string | null) ?? null,
-    }));
-  } catch (error) {
-    logError("getBlockedIps failed", { labels: { event: "ip_blocklist_load_failed" }, error });
-    return [];
-  }
+  const nowIso = new Date().toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from("blocked_ips")
+    .select("ip, reason, blocked_by, created_at, expires_at")
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    blockedBy: (row.blocked_by as string | null) ?? null,
+    createdAt: row.created_at as string,
+    expiresAt: (row.expires_at as string | null) ?? null,
+    ip: row.ip as string,
+    reason: (row.reason as string | null) ?? null,
+  }));
 }

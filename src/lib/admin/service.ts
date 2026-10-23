@@ -2,65 +2,48 @@ import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
-  buildSalesOwnershipContext,
   classifyEmployeeNode,
-  classifySalesOwnership,
-  salesOwnershipLabel,
   shouldFlagMissingAccessForEmployeeNode,
   type EmployeeNodeInput,
   type EmployeeNodeType,
-  type SalesOwnershipClassification,
-  type SalesOwnershipRecord,
-  type SalesOwnershipVacancySignal,
 } from "@/lib/workforce-classification";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { isDisposableFixtureText, isDisposableFixtureYear } from "@/lib/fixture-hygiene";
-import { loadCanonicalDashboardRecords, type CanonicalDashboardRecord } from "@/lib/sales/dashboard-canonical";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { isDisposableFixtureText } from "@/lib/fixture-hygiene";
 import { isManagerOptionalHrId } from "@/lib/employees/hierarchy-governance";
-import {
-  getOperationalMonitoringStats,
-  type AdminMonitoringStats,
-  type MonitoringSecurityEventsRequest,
-} from "@/lib/operations/events";
 import { summarizeDeviceUserMappings } from "@/lib/attendance/metrics";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
-import { getWorkforceMetrics } from "@/lib/platform/metrics";
+import { getWorkforceMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { type AccessContext } from "@/lib/auth/permissions";
 
-export async function getAdminMonitoringStats(
-  eventRequest: MonitoringSecurityEventsRequest = {},
-): Promise<AdminMonitoringStats> {
-  return getOperationalMonitoringStats(eventRequest);
-}
-
+/**
+ * The workforce-health figures the Command Center data shape and the phase-smoke scripts read.
+ *
+ * The /admin/data-health page this used to feed was retired on 23 Oct 2026 (it redirects to
+ * /admin/system-audit). Everything ONLY that page read went with it: the sales-ownership
+ * classification and its four sales queues, the orphan-HR-id view, the vacancy list, the
+ * pharmacy-mapping coverage, and three node-type queues that were built only from login-eligible
+ * employees and so could never be non-zero. What is left is honest about failure: a source that
+ * could not be read leaves its figure `null` and names itself in `unavailable`.
+ */
 export type DataHealthStats = {
   summary: {
     totalEmployees: number;
     structureNodes: number;
     activeEmployees: number;
-    healthyEmployees: number;
-    issuesCount: number;
-    healthRate: number;
-    activeEmployeesMissingAuthAccess: number;
-    nonLoginAggregationNodes: number;
-    historicalRecords: number;
-    vacancyNodes: number;
     vacantPositions: number;
-    employeeLinkageWarnings: number;
-    attendanceMappingIssues: number;
-    attendanceReadinessRate: number;
-    leaveApprovedRequests: number;
-    leavePendingRequests: number;
-    leaveRejectedRequests: number;
-    unresolvedSalesExceptions: number;
-    marketingPharmacyCoverageRate: number;
-    marketingUnmappedPharmacyTargets: number;
+    /** Active, login-eligible employees the audit graded — the ONE population both figures below use. */
+    gradedEmployees: number;
+    /** gradedEmployees minus the DISTINCT people among them with at least one issue. Null when access could not be read. */
+    healthyEmployees: number | null;
+    /** healthyEmployees ÷ gradedEmployees × 100. Null when nobody was graded or access could not be read. */
+    healthRate: number | null;
+    attendanceMappingIssues: number | null;
+    attendanceReadinessRate: UncomputedRate;
+    leaveApprovedRequests: number | null;
+    leavePendingRequests: number | null;
+    leaveRejectedRequests: number | null;
   };
-  salesClassification: Record<SalesOwnershipClassification, {
-    label: string;
-    records: number;
-    salesValue: number;
-  }>;
   employeeIssues: Array<{
     hr_id: string;
     full_name: string;
@@ -72,41 +55,15 @@ export type DataHealthStats = {
     health_status: string;
     reason: string;
   }>;
-  salesIssues: Array<{
-    record_id: string | null;
-    batch_id: string | null;
-    /** The closing month the exception sits in — the only locator the canonical engine has. */
-    period: string | null;
-    row_number: number | null;
-    employee_hr_id: string | null;
-    manager_hr_id: string | null;
-    line: string | null;
-    territory: string | null;
-    product: string;
-    sales_value: number;
-    classification: SalesOwnershipClassification;
-    linkage_health_status: string;
-    reason: string;
-  }>;
-  orphanAudit: Array<{
-    source: string;
-    hr_id: string;
-    rows_count: number;
-    sample_name: string | null;
-  }>;
-  vacancyAudit: Array<{
-    vacancy_id: string | null;
-    vacancy_code: string | null;
-    area_name: string | null;
-    line_name: string | null;
-    manager_hr_id: string | null;
-    status: string | null;
-  }>;
+  /** Plain-words names of the sources that could not be read; their figures above are `null`. */
+  unavailable: string[];
 };
 
 export type SalaryFlag = {
   id: string;
   hrId: string | null;
+  /** The employee's display name; filled only when asked for (`withNames`), null when not found. */
+  employeeName: string | null;
   flagType: string | null;
   severity: string | null;
   message: string | null;
@@ -116,46 +73,56 @@ export type SalaryFlag = {
 };
 
 export type SalaryFlagsResult = {
+  /** EVERY matching flag — paged, never cut at a row limit. */
   flags: SalaryFlag[];
   total: number;
   unresolvedCount: number;
 };
 
-export async function getSalaryFlags(showResolved = false): Promise<SalaryFlagsResult> {
-  const supabase = getSupabaseAdmin();
-
-  let query = supabase
-    .from("salary_flags")
-    .select("id, hr_id, flag_type, severity, message, resolved_at, resolved_by, created_at", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  if (!showResolved) {
-    query = query.is("resolved_at", null);
-  }
-
-  const { data, error, count } = await query;
-  if (error) throw error;
-
-  const unresolvedResult = showResolved
-    ? await supabase.from("salary_flags").select("*", { count: "exact", head: true }).is("resolved_at", null)
-    : null;
-
-  const flags: SalaryFlag[] = (data ?? []).map((row: Record<string, unknown>) => ({
+function toSalaryFlag(row: Record<string, unknown>): SalaryFlag {
+  return {
     id: row.id as string,
     hrId: (row.hr_id as string | null) ?? null,
+    employeeName: null,
     flagType: (row.flag_type as string | null) ?? null,
     severity: (row.severity as string | null) ?? null,
     message: (row.message as string | null) ?? null,
     resolvedAt: (row.resolved_at as string | null) ?? null,
     resolvedBy: (row.resolved_by as string | null) ?? null,
     createdAt: row.created_at as string,
-  }));
+  };
+}
 
+/**
+ * Salary flags, newest first. Paged in full: this used to stop at 500 rows without saying so, so
+ * the 501st flag existed in the table and on no screen. With `showResolved` the list holds every
+ * flag and `unresolvedCount` is counted from the same rows, so the two can never disagree.
+ */
+export async function getSalaryFlags(
+  showResolved = false,
+  options: { withNames?: boolean } = {},
+): Promise<SalaryFlagsResult> {
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<Record<string, unknown>>(() => {
+    let query = supabase
+      .from("salary_flags")
+      .select("id, hr_id, flag_type, severity, message, resolved_at, resolved_by, created_at")
+      .order("created_at", { ascending: false });
+    if (!showResolved) query = query.is("resolved_at", null);
+    return query;
+  }, "id");
+
+  let flags = rows.map(toSalaryFlag);
+  // Names only for the screen that lists the flags; the count-only callers (Command Center, the CEO
+  // landing page, the needs-you board) do not pay for the extra read.
+  if (options.withNames && flags.length > 0) {
+    const names = await namesByHrId(flags.map((flag) => flag.hrId));
+    flags = flags.map((flag) => ({ ...flag, employeeName: names.get(flag.hrId) }));
+  }
   return {
     flags,
-    total: count ?? 0,
-    unresolvedCount: showResolved ? (unresolvedResult?.count ?? 0) : (count ?? 0),
+    total: flags.length,
+    unresolvedCount: flags.filter((flag) => flag.resolvedAt === null).length,
   };
 }
 
@@ -168,15 +135,6 @@ export async function resolveSalaryFlag(id: string, resolvedBy: string): Promise
   if (error) throw error;
 }
 
-const salesOwnershipClassifications: SalesOwnershipClassification[] = [
-  "assigned_employee_sales",
-  "vacant_territory_sales",
-  "non_assignable_territory_sales",
-  "line_level_sales",
-  "others_unassigned_sales",
-  "unresolved_sales_exception",
-];
-
 const dataHealthAccessContext: AccessContext = {
   hrId: "DATA_HEALTH_SYSTEM",
   loginId: "data-health.system",
@@ -184,10 +142,6 @@ const dataHealthAccessContext: AccessContext = {
   scope: "system",
   source: "system",
 };
-// The full governance audit classifies every canonical sales row to build the breakdown, so it
-// is intentionally heavy (it only runs on /admin/data-health now that the Command Center derives
-// its summary cheaply). A longer cache keeps repeat visits instant without staling the audit
-// meaningfully — it is a read-only review surface.
 // unstable_cache (not a plain module-level variable) so the cache actually survives
 // across serverless invocations on separate Lambda instances — a module-level `let`
 // only helps repeat requests lucky enough to land on the same still-warm instance.
@@ -210,30 +164,6 @@ function rowNumber(row: Record<string, unknown>, key: string) {
   return Number.isFinite(number) ? number : null;
 }
 
-function relationName(value: unknown, key: string) {
-  const source = Array.isArray(value) ? value[0] : value;
-  if (!source || typeof source !== "object") return null;
-  return rowText(source as Record<string, unknown>, key);
-}
-
-function emptySalesClassificationSummary(): DataHealthStats["salesClassification"] {
-  return Object.fromEntries(
-    salesOwnershipClassifications.map((classification) => [
-      classification,
-      {
-        label: salesOwnershipLabel(classification),
-        records: 0,
-        salesValue: 0,
-      },
-    ]),
-  ) as DataHealthStats["salesClassification"];
-}
-
-function addLineLookup(map: Map<string, number>, name: string | null | undefined, id: number | null | undefined) {
-  if (!name || typeof id !== "number") return;
-  map.set(normalizeHealthKey(name), id);
-}
-
 function employeeToNodeInput(employee: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"][number]): EmployeeNodeInput {
   return {
     areaId: employee.areaId,
@@ -252,154 +182,93 @@ function employeeToNodeInput(employee: Awaited<ReturnType<typeof getEmployeeDire
   };
 }
 
-function vacancySignalFromRow(row: Record<string, unknown>): SalesOwnershipVacancySignal {
+/**
+ * Health over ONE population: the active, login-eligible employees. `healthyEmployees` is that
+ * count minus the DISTINCT people among them with an issue. The old figure subtracted the issue
+ * count from the workforce-metrics headcount — two different populations — so the rate could move
+ * without a single record changing. Pure, so the arithmetic is testable without a database.
+ */
+export function computeEmployeeHealth(input: {
+  gradedHrIds: readonly string[];
+  issueHrIds: readonly string[];
+}): { gradedEmployees: number; healthyEmployees: number; healthRate: number | null } {
+  const graded = new Set(input.gradedHrIds.map(normalizeHealthKey).filter(Boolean));
+  const withIssue = new Set(input.issueHrIds.map(normalizeHealthKey).filter((key) => graded.has(key)));
+  const healthyEmployees = graded.size - withIssue.size;
   return {
-    areaId: rowNumber(row, "area_id"),
-    areaName: relationName(row.areas, "name"),
-    lineId: rowNumber(row, "line_id"),
-    lineName: relationName(row.lines, "name"),
-    managerHrId: rowText(row, "manager_hr_id"),
-    status: rowText(row, "status"),
-    vacancyCode: rowText(row, "vacancy_code"),
-    vacancyId: rowText(row, "id"),
-  };
-}
-
-function salesOwnershipRecordFromCanonical(record: CanonicalDashboardRecord): SalesOwnershipRecord {
-  return {
-    employeeCrmId: record.employeeCrmId,
-    employeeHrId: record.employeeHrId,
-    employeeLookupKey: record.employeeLookupKey,
-    employeeName: record.employeeName,
-    line: record.line,
-    managerHrId: record.managerHrId,
-    territory: record.territory,
+    gradedEmployees: graded.size,
+    healthRate: graded.size > 0 ? (healthyEmployees / graded.size) * 100 : null,
+    healthyEmployees,
   };
 }
 
 async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
   const supabase = getSupabaseAdmin();
+  const unavailable: string[] = [];
 
-  const [
-    directory,
-    appAuthUsers,
-    accessProfiles,
-    salesRows,
-    vacancyRows,
-    attendanceMappings,
-    vacationRows,
-    orphanAudit,
-  ] = await Promise.all([
+  async function settle<T>(label: string, read: () => Promise<T>): Promise<T | null> {
+    try {
+      return await read();
+    } catch {
+      unavailable.push(label);
+      return null;
+    }
+  }
+
+  // The directory and the shared workforce metrics are the core: without them there is nothing to
+  // grade, so their failure rejects the whole call (the Command Center names it). Every other source
+  // settles on its own and leaves its own figures null.
+  const [directory, sharedWorkforce, appAuthUsers, accessProfiles, attendanceMappings, vacationRows] = await Promise.all([
     getEmployeeDirectory(),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase.from("app_auth_users").select("hr_id,is_active,login_id"),
-    "hr_id"),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
-    "hr_id"),
-    // Rule #1: the governance audit classifies the rows the product actually reports on. It used
-    // to page `sales_records`, so it audited the ownership of a table no sales surface reads any
-    // more — a clean bill of health there said nothing about what employees and managers see.
-    loadCanonicalDashboardRecords(),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("position_vacancies")
-        .select("id,vacancy_code,area_id,line_id,manager_hr_id,status,areas(name),lines(name)"),
-    "id"),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("attendance_device_user_map")
-        .select("employee_hr_id,is_active,non_employee_label"),
-    "id"),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("v2_vacation_requests")
-        .select("employee_hr_id,status,payment_status,duration_days,manager_decision"),
-    "id").catch(() => []),
-    supabase.from("v_hr_id_orphan_audit").select("*"),
+    getWorkforceMetrics(dataHealthAccessContext),
+    settle("Sign-in accounts", () =>
+      fetchAllRows<Record<string, unknown>>(() => supabase.from("app_auth_users").select("hr_id,is_active,login_id"), "hr_id")),
+    settle("Access profiles", () =>
+      fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
+        "hr_id",
+      )),
+    settle("Attendance device mappings", () =>
+      fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("attendance_device_user_map").select("employee_hr_id,is_active,non_employee_label"),
+        "id",
+      )),
+    // It used to `.catch(() => [])`, which turned a failed read into "no leave requests at all".
+    settle("Vacation requests", () =>
+      fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("v2_vacation_requests").select("employee_hr_id,status,payment_status,duration_days,manager_decision"),
+        "id",
+      )),
   ]);
 
   const businessEmployees = directory.employees.filter((employee) =>
     !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
   );
-  // Same fixture hygiene the legacy path applied, against the canonical record's own fields.
-  const businessSalesRows = salesRows.filter((record) =>
-    !isDisposableFixtureYear(record.year) &&
-    !isDisposableFixtureText(record.employeeHrId) &&
-    !isDisposableFixtureText(record.employeeLookupKey) &&
-    !isDisposableFixtureText(record.employeeName) &&
-    !isDisposableFixtureText(record.managerHrId) &&
-    !isDisposableFixtureText(record.territory) &&
-    !isDisposableFixtureText(record.product),
-  );
-  const businessVacancyRows = vacancyRows.filter((row) => !isDisposableFixtureText(rowText(row, "vacancy_code")));
-  const businessVacationRows = vacationRows.filter((row) => !isDisposableFixtureText(rowText(row, "employee_hr_id")));
-
   const employeeNodes = businessEmployees.map(employeeToNodeInput);
+  const accessReadable = appAuthUsers !== null && accessProfiles !== null;
   const authHrIds = new Set(
-    appAuthUsers
+    (appAuthUsers ?? [])
       .filter((row) => row.is_active !== false)
       .map((row) => normalizeHealthKey(row.hr_id))
       .filter(Boolean),
   );
   const accessProfileHrIds = new Set(
-    accessProfiles
+    (accessProfiles ?? [])
       .filter((row) => row.is_active !== false)
       .map((row) => normalizeHealthKey(row.hr_id))
       .filter(Boolean),
   );
   const employeeByHrId = new Map(employeeNodes.map((employee) => [normalizeHealthKey(employee.hrId), employee]));
-  const lineIdByName = new Map<string, number>();
-  const areaIdByName = new Map<string, number>();
-  const lineIdByAreaId = new Map<number, number>();
-
-  for (const line of directory.lookups.lines) {
-    const id = Number(line.value);
-    if (Number.isFinite(id)) addLineLookup(lineIdByName, line.label, id);
-  }
-  for (const area of directory.lookups.areas) {
-    const areaId = Number(area.value);
-    if (Number.isFinite(areaId)) {
-      areaIdByName.set(normalizeHealthKey(area.label), areaId);
-      if (typeof area.lineId === "number") lineIdByAreaId.set(areaId, area.lineId);
-    }
-  }
-  for (const employee of businessEmployees) {
-    addLineLookup(lineIdByName, employee.lineName, employee.lineId);
-    if (employee.areaName && typeof employee.areaId === "number") areaIdByName.set(normalizeHealthKey(employee.areaName), employee.areaId);
-    if (typeof employee.areaId === "number" && typeof employee.lineId === "number") lineIdByAreaId.set(employee.areaId, employee.lineId);
-  }
-
-  const openVacancyRows = businessVacancyRows.filter((row) => rowText(row, "status") === "open");
-
-  const ownershipContext = buildSalesOwnershipContext({
-    areaIdByName,
-    employees: employeeNodes,
-    lineIdByAreaId,
-    lineIdByName,
-    vacancies: openVacancyRows.map(vacancySignalFromRow),
-  });
 
   const employeeIssues: DataHealthStats["employeeIssues"] = [];
-  let historicalRecords = 0;
-  let vacancyNodes = 0;
-  let nonLoginAggregationNodes = 0;
+  const gradedHrIds: string[] = [];
 
   for (const employee of employeeNodes) {
     const node = classifyEmployeeNode(employee);
-    if (node.node_type === "historical_record") historicalRecords += 1;
-    if (node.node_type === "vacancy_node") vacancyNodes += 1;
-    if (
-      node.node_type === "system_placeholder" ||
-      node.node_type === "others_unassigned_node" ||
-      node.node_type === "non_login_aggregation_node"
-    ) {
-      nonLoginAggregationNodes += 1;
-    }
-
     if (!node.eligible_for_login) continue;
 
     const hrId = rowText(employee, "hrId") ?? rowText(employee, "hr_id") ?? "";
+    gradedHrIds.push(hrId);
     const normalizedHrId = normalizeHealthKey(hrId);
     const hasAuthUser = authHrIds.has(normalizedHrId);
     const hasAccessProfile = accessProfileHrIds.has(normalizedHrId);
@@ -409,7 +278,9 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     let healthStatus = "ok";
     let reason = "Active employee access and linkage are classified.";
 
-    if (shouldFlagMissingAccessForEmployeeNode(employee, { hasAccessProfile, hasAuthUser })) {
+    // Access is graded only when both access sources were read — otherwise every employee would
+    // read as "missing access" because of a failed read, not a missing account.
+    if (accessReadable && shouldFlagMissingAccessForEmployeeNode(employee, { hasAccessProfile, hasAuthUser })) {
       if (!hasAuthUser && !hasAccessProfile) healthStatus = "missing_auth_access";
       else if (!hasAuthUser) healthStatus = "missing_auth_user";
       else healthStatus = "missing_access_profile";
@@ -446,128 +317,62 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     }
   }
 
-  const salesClassification = emptySalesClassificationSummary();
-  const salesIssues: DataHealthStats["salesIssues"] = [];
+  const health = computeEmployeeHealth({ gradedHrIds, issueHrIds: employeeIssues.map((issue) => issue.hr_id) });
 
-  for (const record of businessSalesRows) {
-    const ownership = classifySalesOwnership(salesOwnershipRecordFromCanonical(record), ownershipContext);
-    const salesValue = record.salesValue;
-    salesClassification[ownership.classification].records += 1;
-    salesClassification[ownership.classification].salesValue += salesValue;
+  const attendanceMappingSummary = attendanceMappings
+    ? summarizeDeviceUserMappings(
+        attendanceMappings.map((row) => ({
+          employeeHrId: rowText(row, "employee_hr_id"),
+          isActive: row.is_active !== false,
+          // Without this an identified driver or guard keeps counting as a missing mapping, which
+          // is the whole defect this column exists to close.
+          nonEmployeeLabel: rowText(row, "non_employee_label"),
+        })),
+      )
+    : null;
+  const businessVacationRows = vacationRows
+    ? vacationRows.filter((row) => !isDisposableFixtureText(rowText(row, "employee_hr_id")))
+    : null;
+  const leaveMetrics = businessVacationRows
+    ? buildVacationPlatformMetrics(
+        businessVacationRows
+          .map((row) => ({
+            durationDays: rowNumber(row, "duration_days") ?? 0,
+            managerDecision: rowText(row, "manager_decision") === "approved" || rowText(row, "manager_decision") === "rejected"
+              ? rowText(row, "manager_decision") as "approved" | "rejected"
+              : null,
+            paymentStatus: rowText(row, "payment_status") === "paid" ? "paid" : "unpaid",
+            status:
+              rowText(row, "status") === "approved" || rowText(row, "status") === "rejected" || rowText(row, "status") === "pending_manager"
+                ? rowText(row, "status") as "approved" | "rejected" | "pending_manager"
+                : "pending_manager",
+          })),
+      )
+    : null;
 
-    if (ownership.classification === "unresolved_sales_exception") {
-      salesIssues.push({
-        // The canonical engine has no row id and no upload batch — a row exists because the
-        // closing says it does. The month plus the line/area/product identifies it instead.
-        record_id: null,
-        batch_id: record.batchId,
-        period: record.period,
-        classification: ownership.classification,
-        employee_hr_id: record.employeeHrId ?? null,
-        line: record.line,
-        linkage_health_status: ownership.classification,
-        manager_hr_id: record.managerHrId ?? null,
-        product: record.product ?? "Unknown",
-        reason: ownership.reason,
-        row_number: record.rowNumber,
-        sales_value: salesValue,
-        territory: record.territory,
-      });
-    }
-  }
-
-  const activeEmployeesMissingAuthAccess = employeeIssues.filter((issue) =>
-    ["missing_auth_access", "missing_auth_user", "missing_access_profile"].includes(issue.health_status),
-  ).length;
-  const employeeLinkageWarnings = employeeIssues.length - activeEmployeesMissingAuthAccess;
-  const issuesCount = employeeIssues.length + salesIssues.length;
-  const attendanceMappingSummary = summarizeDeviceUserMappings(
-    attendanceMappings.map((row) => ({
-      employeeHrId: rowText(row, "employee_hr_id"),
-      isActive: row.is_active !== false,
-      // Without this the data-health tile keeps counting identified drivers and guards as
-      // missing mappings, which is the whole defect this column exists to close.
-      nonEmployeeLabel: rowText(row, "non_employee_label"),
-    })),
-  );
-  const leaveMetrics = buildVacationPlatformMetrics(
-    businessVacationRows.map((row) => ({
-      durationDays: rowNumber(row, "duration_days") ?? 0,
-      managerDecision: rowText(row, "manager_decision") === "approved" || rowText(row, "manager_decision") === "rejected"
-        ? rowText(row, "manager_decision") as "approved" | "rejected"
-        : null,
-      paymentStatus: rowText(row, "payment_status") === "paid" ? "paid" : "unpaid",
-      status:
-        rowText(row, "status") === "approved" || rowText(row, "status") === "rejected" || rowText(row, "status") === "pending_manager"
-          ? rowText(row, "status") as "approved" | "rejected" | "pending_manager"
-          : "pending_manager",
-    })),
-  );
-  const sharedWorkforce = await getWorkforceMetrics(dataHealthAccessContext);
-  const sharedActiveEmployees = sharedWorkforce.activeEmployees;
-  const healthyEmployees = Math.max(0, sharedActiveEmployees - employeeIssues.length);
-  const healthRate = sharedActiveEmployees > 0 ? (healthyEmployees / sharedActiveEmployees) * 100 : 100;
-  const orphans = (Array.isArray(orphanAudit.data) ? orphanAudit.data : [])
-    .filter((row) => !isDisposableFixtureText(rowText(row as Record<string, unknown>, "hr_id")));
-  const vacancyAudit = openVacancyRows.map((row) => ({
-    area_name: relationName(row.areas, "name"),
-    line_name: relationName(row.lines, "name"),
-    manager_hr_id: rowText(row, "manager_hr_id"),
-    status: rowText(row, "status"),
-    vacancy_code: rowText(row, "vacancy_code"),
-    vacancy_id: rowText(row, "id"),
-  }));
-  // Marketing-request pharmacy -> brick/region mapping coverage (best-effort; never breaks the page).
-  let marketingPharmacyCoverageRate = 100;
-  let marketingUnmappedPharmacyTargets = 0;
-  try {
-    const coverage = await supabase.rpc("phx_marketing_pharmacy_mapping_coverage");
-    if (!coverage.error) {
-      const row = (Array.isArray(coverage.data) ? coverage.data[0] : null) as
-        { total_targets?: number; mapped_targets?: number } | null;
-      const total = Number(row?.total_targets ?? 0);
-      const mapped = Number(row?.mapped_targets ?? 0);
-      marketingUnmappedPharmacyTargets = Math.max(0, total - mapped);
-      marketingPharmacyCoverageRate = total > 0 ? (mapped / total) * 100 : 100;
-    }
-  } catch {
-    // RPC unavailable (e.g. fresh DB) — keep the safe defaults.
-  }
-
-  const result: DataHealthStats = {
+  return {
     summary: {
-      activeEmployees: sharedActiveEmployees,
-      activeEmployeesMissingAuthAccess,
-      attendanceMappingIssues: attendanceMappingSummary.unmapped,
-      attendanceReadinessRate: attendanceMappingSummary.readinessRate,
-      employeeLinkageWarnings,
-      healthRate,
-      healthyEmployees,
-      historicalRecords,
-      issuesCount,
-      leaveApprovedRequests: leaveMetrics.approvedRequests,
-      leavePendingRequests: leaveMetrics.pendingRequests,
-      leaveRejectedRequests: leaveMetrics.rejectedRequests,
-      marketingPharmacyCoverageRate,
-      marketingUnmappedPharmacyTargets,
-      nonLoginAggregationNodes,
+      activeEmployees: sharedWorkforce.activeEmployees,
+      // "0 of 0 device users mapped" is not 100% ready — it is a table nobody filled.
+      attendanceMappingIssues: attendanceMappingSummary ? attendanceMappingSummary.unmapped : null,
+      attendanceReadinessRate: attendanceMappingSummary && attendanceMappingSummary.total > 0 ? attendanceMappingSummary.readinessRate : null,
+      gradedEmployees: health.gradedEmployees,
+      healthRate: accessReadable ? health.healthRate : null,
+      healthyEmployees: accessReadable ? health.healthyEmployees : null,
+      leaveApprovedRequests: leaveMetrics ? leaveMetrics.approvedRequests : null,
+      leavePendingRequests: leaveMetrics ? leaveMetrics.pendingRequests : null,
+      leaveRejectedRequests: leaveMetrics ? leaveMetrics.rejectedRequests : null,
       structureNodes: sharedWorkforce.totalStructure,
       totalEmployees: sharedWorkforce.totalEmployees,
-      unresolvedSalesExceptions: salesIssues.length,
       vacantPositions: sharedWorkforce.openVacancies,
-      vacancyNodes,
     },
     employeeIssues,
-    salesClassification,
-    salesIssues,
-    orphanAudit: orphans,
-    vacancyAudit,
+    unavailable,
   };
-  return result;
 }
 
 export const getDataHealthStats = unstable_cache(
   getDataHealthStatsUncached,
-  ["data-health-stats"],
+  ["data-health-stats-v2"],
   { revalidate: DATA_HEALTH_STATS_CACHE_TTL_SECONDS },
 );

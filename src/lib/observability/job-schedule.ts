@@ -3,7 +3,7 @@
  * silence means something.
  *
  * WHY THIS IS DUPLICATED FROM THE DOC TABLE, AND WHY THAT IS SAFE.
- * `docs/observability.md` holds the same 41 rows and is the source of truth for
+ * `docs/observability.md` holds the same 46 rows and is the source of truth for
  * `scripts/healthchecks-sync.mjs`, which pushes schedules to Healthchecks.io. That table cannot be
  * the runtime source as well: this module runs inside the deployed Next.js server, and a Next
  * standalone build traces imported FILES — it does not copy `docs/`. Reading the markdown at
@@ -220,6 +220,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // no stand-down window to exempt — only a restored job carries that date.
   { slug: "phoenix-brick-move-drain", kind: "cron", schedule: "19,39,59 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-reconciliation-check", kind: "cron", schedule: "40 4 * * *", graceSeconds: 2 * HOUR },
+  // The nightly System Audit sweep (src/lib/system-audit/sweep.ts): every detector one at a time, the
+  // verifier, then the one daily message. 04:57 Cairo, seventeen minutes after the integrity checks
+  // above have written their findings, on a minute nothing else in the account holds. Must match
+  // scripts/cronjob-sync.mjs exactly. In-house only — the Healthchecks project has no slot left.
+  { slug: "phoenix-system-audit-sweep", kind: "cron", schedule: "57 4 * * *", graceSeconds: 2 * HOUR },
   // Twelve ticks inside a single hour, then 23 hours of deliberate silence. This is exactly the
   // shape a naive "expected period" calculation gets wrong — it would read the 23-hour gap as a
   // strand every single day. The register computes the previous scheduled fire from the expression

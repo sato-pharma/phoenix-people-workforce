@@ -17,7 +17,6 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { redactForAi } from "../src/lib/error-monitor/ai-redact.ts";
 import {
   CREDENTIAL_ROUTE_PREFIXES,
   redactSecretsFromRoute,
@@ -166,16 +165,6 @@ export function runErrorMonitorRedactRouteTests() {
     /\[app-error:not-persisted\][^\n]*redactSecretsFromRoute\(input\.route\)/.test(service),
     `${SERVICE_FILE}: the not-persisted console line must redact too — an application log is a sink like any other`,
   );
-
-  // ── 8. Defence in depth on the AI triage path ──────────────────────────────
-  // New rows are clean at capture, but rows already in the table are not, and those are what
-  // gets read and sent to OpenAI. redactForAi's own patterns never matched a bare token.
-  assert.equal(
-    redactForAi("GET /password-setup/example-token_0001-not-a-credential failed"),
-    "GET /password-setup/[token] failed",
-  );
-  assert.ok(!redactForAi("/share/territory/example-token_0002-not-a-credential").includes("example-token_0002-not-a-credential"));
-  // And the existing behaviour is unchanged.
-  assert.equal(redactForAi("Forbidden: employee B-59 cannot read expenses"), "Forbidden: employee [id] cannot read expenses");
-  assert.equal(redactForAi("Switched to client-side rendering"), "Switched to client-side rendering");
+  // Section 8 (the AI triage redactor, redactForAi) left with the System Issues page's AI triage
+  // on 23 Oct 2026 (src/lib/error-monitor/ai-redact.ts was deleted with it).
 }

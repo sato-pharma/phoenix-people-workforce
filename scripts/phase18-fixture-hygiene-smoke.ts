@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getDataHealthStats } from "@/lib/admin/service";
-import { getOperationalMonitoringStats, getOperationalRecentActivity } from "@/lib/operations/events";
+import { getOperationalRecentActivity } from "@/lib/operations/events";
+import { loadLoginSecurityOverview } from "@/lib/security/login-security";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 loadLocalEnv();
@@ -117,7 +118,7 @@ async function main() {
     buildFixtureHygieneReport(),
     getAdminCommandCenterData(accessContext),
     getDataHealthStats(),
-    getOperationalMonitoringStats({ pageSize: 5 }),
+    loadLoginSecurityOverview(),
     getOperationalRecentActivity(accessContext, { limit: 10 }),
   ]);
 
@@ -142,7 +143,7 @@ async function main() {
     !operations.recent.some((event) => /phase1[567]/i.test(`${event.userName} ${event.description}`)),
     operations.recent,
   );
-  addCheck("Monitoring security feed remains reachable", Number(monitoring.recentEvents.total) >= 0, monitoring.recentEvents.total);
+  addCheck("Monitoring security feed remains reachable", monitoring.recentActivity !== null && monitoring.unavailable.length === 0, { recentEvents: monitoring.recentActivity?.total ?? null, unavailable: monitoring.unavailable });
   addCheck("raw Audit Logs fixture traces are reported, not silently deleted", report.rawAuditResidue >= 0, report.rawAuditResidue);
 
   console.log(JSON.stringify({

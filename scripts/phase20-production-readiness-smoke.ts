@@ -4,7 +4,8 @@ import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getDataHealthStats } from "@/lib/admin/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { isDisposableFixtureText, isDisposableFixtureYear } from "@/lib/fixture-hygiene";
-import { getOperationalMonitoringStats, getOperationalRecentActivity } from "@/lib/operations/events";
+import { getOperationalRecentActivity } from "@/lib/operations/events";
+import { loadLoginSecurityOverview } from "@/lib/security/login-security";
 import { getPlatformMetrics } from "@/lib/platform/metrics";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -197,7 +198,7 @@ async function verifyDashboards() {
   const [commandCenter, dataHealth, monitoring, operations, platform] = await Promise.all([
     getAdminCommandCenterData(accessContext),
     getDataHealthStats(),
-    getOperationalMonitoringStats({ pageSize: 5 }),
+    loadLoginSecurityOverview(),
     getOperationalRecentActivity(accessContext, { limit: 10 }),
     getPlatformMetrics(accessContext),
   ]);
@@ -242,7 +243,7 @@ async function verifyDashboards() {
     !operations.recent.some((event) => /phase1[567]/i.test(`${event.userName} ${event.description}`)),
     operations.recent,
   );
-  addCheck("Monitoring raw security feed remains accountable", Number(monitoring.recentEvents.total) >= 0, monitoring.recentEvents.total);
+  addCheck("Monitoring raw security feed remains accountable", monitoring.recentActivity !== null && monitoring.unavailable.length === 0, { recentEvents: monitoring.recentActivity?.total ?? null, unavailable: monitoring.unavailable });
   addCheck(
     "Platform workforce totals match shared structure rule",
     Number(platform.workforce.totalStructure) >= Number(platform.workforce.activeEmployees),

@@ -56,11 +56,10 @@ Current admin pages:
 
 - `/admin`
 - `/admin/access`
-- `/admin/data-health`
 - `/admin/email-notifications`
 - `/admin/email-reply-composer`
 - `/admin/logs`
-- `/admin/monitoring`
+- `/admin/system-audit` (replaced `/admin/data-health`, `/admin/monitoring`, `/admin/system-issues` and `/admin/error-monitor` on 2026-10-23; those addresses redirect here)
 - `/admin/outstation/expenses`, `/admin/outstation/expenses/dashboard`
 - `/admin/outstation/heatmaps`
 - `/admin/outstation/policy`

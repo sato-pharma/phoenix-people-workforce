@@ -37,7 +37,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const AUDIENCE_KEY = "weekly_system_health_digest" as const;
 const EVENT_TYPE = "database_restarted";
 const ACTOR = "database-restart-watch";
-const SCREEN_URL = "/admin/system-issues";
+const SCREEN_URL = "/admin/system-audit";
 
 export type DatabaseRestartCheckResult = {
   delivered: number;
@@ -138,7 +138,7 @@ export async function runDatabaseRestartCheck(): Promise<DatabaseRestartCheckRes
           priority: "high",
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
-          telegram: { ctaLabel: "Open system issues", ctaUrl: SCREEN_URL },
+          telegram: { ctaLabel: "Open the System Audit", ctaUrl: SCREEN_URL },
           title,
         });
         delivered += 1;

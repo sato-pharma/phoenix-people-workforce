@@ -1,58 +1,13 @@
 import assert from "node:assert/strict";
 
-import {
-  buildAccountDirectory,
-  DEFAULT_ATTEMPT_WINDOW_DAYS,
-  partitionUserAttempts,
-  resolveAttemptWindowFrom,
-} from "../src/lib/error-monitor/service.ts";
+import { buildAccountDirectory } from "../src/lib/error-monitor/service.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
+// The per-user attempt window and the real/unknown partition this file also pinned
+// (resolveAttemptWindowFrom, partitionUserAttempts, DEFAULT_ATTEMPT_WINDOW_DAYS) were removed on
+// 23 Oct 2026 with the System Issues page that was their only reader. The account directory stays:
+// the login-security lens still names people through it.
 export function runErrorMonitorUserAttemptsTests() {
-  const now = new Date("2026-07-16T12:00:00Z").getTime();
-
-  // ── Default window: no dateFrom → DEFAULT_ATTEMPT_WINDOW_DAYS (30) ago ───────
-  const defaulted = resolveAttemptWindowFrom(null, now);
-  const expected = new Date(now - DEFAULT_ATTEMPT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(defaulted, expected);
-  // The applied bound is exactly ~30 days before "now" (guards against an off-by-one window).
-  assert.equal((now - new Date(defaulted).getTime()) / 86_400_000, 30);
-  // undefined behaves like null (both mean "no explicit filter").
-  assert.equal(resolveAttemptWindowFrom(undefined, now), expected);
-
-  // ── Explicit dateFrom overrides the default (UI widening keeps working) ──────
-  assert.equal(resolveAttemptWindowFrom("2026-05-01", now), "2026-05-01");
-  assert.equal(resolveAttemptWindowFrom("2026-05-01T00:00:00Z", now), "2026-05-01T00:00:00Z");
-
-  // ── Partition: real accounts kept, identity-less rows folded into an aggregate ─
-  const realKeys = new Set(["admin-hr", "aa", "b-10", "a-8", "a-12"]);
-  const isReal = (hrId: string) => realKeys.has(hrId.trim().toLowerCase());
-  const rows = [
-    { hrId: "admin-hr", attemptCount: 2 }, // real
-    { hrId: "AA", attemptCount: 1 }, // real (case-insensitive match)
-    { hrId: "invalid-user", attemptCount: 5 }, // unknown / test noise
-    { hrId: "__codex_probe__", attemptCount: 3 }, // unknown
-    { hrId: "invalid-user", attemptCount: 4 }, // same unknown user, second bucket
-    { hrId: "smoke-test-nonexistent-zzz", attemptCount: 1 }, // unknown
-  ];
-  const { realRows, unknownAttempts } = partitionUserAttempts(rows, isReal);
-
-  // Only the two real accounts survive in the per-user list.
-  assert.deepEqual(
-    realRows.map((r) => r.hrId),
-    ["admin-hr", "AA"],
-  );
-  // Every non-real attempt is summed: 5 + 3 + 4 + 1 = 13.
-  assert.equal(unknownAttempts.attemptCount, 13);
-  // Distinct unknown usernames (invalid-user counted once): 3.
-  assert.equal(unknownAttempts.distinctCount, 3);
-
-  // ── All-real input → empty unknown bucket, no rows dropped ───────────────────
-  const allReal = partitionUserAttempts([{ hrId: "b-10", attemptCount: 9 }], isReal);
-  assert.equal(allReal.realRows.length, 1);
-  assert.equal(allReal.unknownAttempts.attemptCount, 0);
-  assert.equal(allReal.unknownAttempts.distinctCount, 0);
-
   // ── Directory indexes accounts by BOTH login_id and hr_id ────────────────────
   // Failed logins are keyed by login_id; app errors by hr_id. For accounts where those
   // differ (the Super Admin logs in as "admin-HR" but has hr_id "PHX-1"), keying by only

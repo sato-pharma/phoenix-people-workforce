@@ -397,6 +397,11 @@ export type AuditEntityType =
   // heartbeat sweep. Written only when something is wrong: a row every 15 minutes saying
   // "all fine" would bury the log in 96 entries a day and hide the real ones.
   | "scheduled_job_health"
+  // Added 2026-10-23 with /admin/system-audit (Super Admin only): a status change on an audit issue,
+  // one occurrence marked no-defect / unknown, and every export (who, the filters, the row count).
+  | "system_audit_status"
+  | "system_audit_triage"
+  | "system_audit_export"
   | "system_cleanup"
   | "user"
   | "user_activity_access"

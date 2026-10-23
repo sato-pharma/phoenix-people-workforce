@@ -50,7 +50,8 @@ const ceoBlockedRedirectRoutes = [
 const ceoBlockedHighRiskRoutes = [
   "/employees",
   "/admin/access",
-  "/admin/data-health",
+  // The System Audit replaced Data Health on 23 Oct 2026 and is Super Admin only.
+  "/admin/system-audit",
   "/attendance/device-user-mapping",
   "/attendance/policies",
   "/payroll",
