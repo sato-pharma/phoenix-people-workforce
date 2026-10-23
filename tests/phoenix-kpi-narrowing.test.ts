@@ -110,10 +110,13 @@ export async function runPhoenixKpiNarrowingTests() {
     }
 
     // Every check-in a credited visit can match (its CRM id, else its hr id).
-    const visitKeys = new Set(credited.map((row) => checkinAgentKey(row.agent_crm_id, row.agent_hr_id)).filter((key) => key != null));
+    const visitKeys = new Set(
+      credited.map((row) => checkinAgentKey(row.agent_crm_id, row.agent_hr_id)).filter((key): key is string => key != null),
+    );
     const keptCheckins = new Set(selectedBy(narrowing, CHECKINS));
     for (const checkin of CHECKINS) {
-      if (visitKeys.has(checkinAgentKey(checkin.agent_crm_id, checkin.agent_hr_id))) {
+      const key = checkinAgentKey(checkin.agent_crm_id, checkin.agent_hr_id);
+      if (key != null && visitKeys.has(key)) {
         assert.ok(keptCheckins.has(checkin), `${scopeIds.join("+")}: check-in ${JSON.stringify(checkin)} matches a scoped visit and must be read`);
       }
     }
