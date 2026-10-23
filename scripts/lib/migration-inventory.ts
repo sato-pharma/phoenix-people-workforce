@@ -1564,6 +1564,45 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // command is the owner's to make, and until it does the two projects differ by this one index. Do
   // not read this entry as parity.
   "20261023181000_crm_drop_duplicate_visits_agent_index.sql",
+  // 2026-10-23. The admin "Reset module data" button, which had never deleted a row. The file is one
+  // `begin; ... commit;` opening with
+  // `drop function if exists public.phx_admin_reset_module_data(text)`, which the Supabase MCP's
+  // classifier declines (it was declined on production before this was written), so it went the
+  // standing route — scripts/apply-sql-file.mjs (AGENTS.md §8), STAGING AND PRODUCTION, with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com. That route writes NO
+  // schema_migrations row on either project (production's ledger holds 20261023180700 and nothing
+  // for 20261023181500), while the body is live on both. It was applied as 20261023181000 and
+  // renamed here: #6354 landed 20261023181000_crm_drop_duplicate_visits_agent_index.sql on main
+  // with the same stamp. The rename is free precisely BECAUSE this route writes no ledger row —
+  // nothing in either database names the file, only the body, whose md5 is below.
+  //
+  // 🔴 NOT taken on existence — a `create or replace` is satisfied by an older body. Digested after
+  // applying, and IDENTICAL on the two projects: md5(prosrc) 326aaf9fcdfaf0c4671d81c979e5bdc7,
+  // length 12,425 — the same md5 as this file's own body between its $function$ tags with LF
+  // endings, so the running function is this file byte for byte, not a near-miss. prosecdef true,
+  // proconfig {search_path=public}, ACL exactly `postgres=EXECUTE | service_role=EXECUTE`, so no
+  // browser key reaches it. Exactly ONE signature survives the apply —
+  // `phx_admin_reset_module_data(text, integer)`; the one-argument form is gone, which is what
+  // stops PostgREST refusing the call as ambiguous once the return shape changed.
+  //
+  // THE DEFECT IT REPAIRS WAS PROVEN OVER PostgREST, not asserted from the two earlier incidents.
+  // PostgREST connects as `authenticator`, which preloads safeupdate; a direct SQL session does not,
+  // which is why nineteen bare `delete from <table>` statements worked in every editor and had never
+  // once run from the app. Measured on staging the same day with two throwaway SECURITY DEFINER
+  // functions over a scratch table, called with the service-role key through
+  // cifwmndunmlxjhyjugxa.supabase.co/rest/v1/rpc: the bare delete answered HTTP 400, SQLSTATE 21000,
+  // "DELETE requires a WHERE clause"; the WHERE-scoped one answered HTTP 200 having deleted 1 row.
+  // SECURITY DEFINER does not exempt it — the hook is session-level. Both probes and the scratch
+  // table were dropped afterwards.
+  //
+  // DELIBERATELY NOT EXERCISED AGAINST REAL DATA on either project: the function's whole job is to
+  // delete, production has no PITR, and staging's 317,806 Source of Sales rows and 42,085 weekly
+  // rows are a test corpus nobody asked to clear (both counts re-read unchanged after the probes).
+  // Its shape is pinned instead — nine batch-scoped deletes, the `l.unlocked_at is null` lock join,
+  // marketing_request_events never a target, direct_order_marketing_offsets ahead of
+  // marketing_requests, and all 27 tables declared in RESET_GROUPS in FK order.
+  // Pinned by tests/admin-reset-module-data.test.ts.
+  "20261023181500_admin_reset_module_data_deletes_actually_run.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
