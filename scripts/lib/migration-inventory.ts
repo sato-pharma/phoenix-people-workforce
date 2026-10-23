@@ -1280,6 +1280,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // public.release_gates itself (20261019171347 is in this list for its production apply, and an entry here
   // silences every project), so that file was applied to staging first, the same morning.
   "20261023093100_release_gate_writer_login.sql",
+  // ── 2026-10-23: the singleton-loop lease (#6297, audit P5-05). On production it was live before this entry's
+  // session reached it — public.job_leases was absent at a read about 09:10 Cairo and present minutes later —
+  // and that session's own apply then went the standing route, because `mcp__supabase-staging__apply_migration`
+  // answered {"status":"declined"} twice on this file (owner's MCQ pick "Apply it"): `node
+  // scripts/apply-sql-file.mjs <file> staging`, then production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com, each a no-op ("relation job_leases already
+  // exists, skipping"; `create or replace` re-states the same function). Production holds NO ledger row for it
+  // (0 rows matching 20261023140000 or job_lease); staging holds one. Verified by digest, not presence:
+  // md5(pg_proc.prosrc) for public.claim_job_lease reads 74aee73622004b3e59c564a10b1e5a70 on
+  // ozucdzovmcqvepbozvqf AND cifwmndunmlxjhyjugxa, md5-equal to this file's dollar-quoted body (as-is LF,
+  // leading newline included); the function is new, so there is no pre-image body. prosecdef false (SECURITY
+  // INVOKER), proconfig {search_path=pg_catalog, public}, proacl {postgres=X/postgres,service_role=X/postgres}
+  // on both, so the REVOKE landed. public.job_leases has relrowsecurity true, its one policy is
+  // phx_job_leases_service_role, and anon and authenticated hold no SELECT. Working on production: one lease
+  // row, job_key crm-live-poll, held by a worker process.
+  "20261023140000_job_leases.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
