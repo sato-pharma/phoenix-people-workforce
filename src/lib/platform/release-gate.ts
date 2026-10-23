@@ -11,8 +11,11 @@
 // both passed. Nothing is skipped: the checks still run on every merge, the deploy still cannot go live
 // without them, and a red check leaves the old version serving.
 //
-// FAIL CLOSED. A production container whose row cannot be read is NOT ready. A container that is not
-// production Railway (a laptop, CI, any other host) is never held, because no row could ever arrive for it.
+// FAIL CLOSED. A production container whose row cannot be read is NOT ready, and neither is one that names
+// no commit at all (a hand `railway up` with no urgent marker, an image deploy that lost its ENV layer): there
+// is nothing CI could ever have recorded for it, so it is held, never waved through (audit P6-03 / D-03,
+// 2026-10-23). A container that is not production Railway (a laptop, CI, any other host) is never held,
+// because no row could ever arrive for it.
 //
 // Import-free on purpose, like deploy-identity.ts: the decision is plain data in, plain data out, so the
 // tests cover every branch with no database. The one read lives in release-gate-store.ts.
@@ -30,7 +33,10 @@ export type ReleaseGateReason =
   | "not_production_railway"
   /** An upload with no git commit: the urgent route's `railway up`, which skips the checks by the owner's own words. */
   | "urgent_upload"
-  /** Production on Railway, but the platform gave no commit at all, so there is nothing to look up. */
+  /**
+   * Production on Railway, but the platform gave no commit at all and there is no urgent marker. Nothing CI
+   * records can ever match it, so it is HELD (fail closed, since 2026-10-23) — never a reason to pass.
+   */
   | "no_commit"
   /** PHOENIX_RELEASE_GATE=off — the emergency switch. */
   | "switched_off"
@@ -66,14 +72,16 @@ export function clearReleaseGateCache(): void {
 /**
  * Is this container one the gate applies to, and which commit does it stand for?
  *
- * Applies only to production on Railway with a git commit and no urgent upload and no off switch. Every
- * other state is `required: false`, and the reason says which, so /api/readyz can show why a probe passed.
+ * Applies to every production container on Railway that is neither an urgent upload nor switched off. A
+ * container with NO commit is required and can never pass (`sha: null`, reason `no_commit`). Every other
+ * state is `required: false`, and the reason says which, so /api/readyz can show why a probe passed.
  */
 export function resolveReleaseGateScope(
   env: ReleaseGateEnv,
   urgentRevision: string | null,
 ):
-  | { required: false; reason: "not_production_railway" | "urgent_upload" | "no_commit" | "switched_off" }
+  | { required: false; reason: "not_production_railway" | "urgent_upload" | "switched_off" }
+  | { required: true; sha: null; reason: "no_commit" }
   | { required: true; sha: string; malformed: boolean } {
   if (String(env.RAILWAY_ENVIRONMENT_NAME ?? "").trim().toLowerCase() !== "production") {
     return { required: false, reason: "not_production_railway" };
@@ -83,7 +91,7 @@ export function resolveReleaseGateScope(
   }
   if (urgentRevision) return { required: false, reason: "urgent_upload" };
   const sha = String(env.RAILWAY_GIT_COMMIT_SHA ?? "").trim().toLowerCase();
-  if (sha === "") return { required: false, reason: "no_commit" };
+  if (sha === "") return { required: true, sha: null, reason: "no_commit" };
   return { required: true, sha, malformed: !FULL_SHA.test(sha) };
 }
 
@@ -98,6 +106,7 @@ export async function evaluateReleaseGate(input: {
 }): Promise<ReleaseGateDecision> {
   const scope = resolveReleaseGateScope(input.env, input.urgentRevision);
   if (!scope.required) return { required: false, passed: true, reason: scope.reason, sha: null };
+  if (scope.sha === null) return { required: true, passed: false, reason: "no_commit", sha: null };
   if (scope.malformed) return { required: true, passed: false, reason: "malformed_commit", sha: scope.sha };
   if (releasedInThisProcess.has(scope.sha)) {
     return { required: true, passed: true, reason: "recorded", sha: scope.sha };
