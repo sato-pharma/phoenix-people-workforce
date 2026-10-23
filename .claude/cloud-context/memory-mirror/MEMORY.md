@@ -29,10 +29,7 @@
 
 
 ## Inbox — new notes land here
-- [Re-read the PR before widening its branch](re-read-the-pr-before-widening-its-branch.md) — he may merge it mid-work; the push then recreates the deleted branch and the widening needs a NEW PR.
-- [A roll-up can absorb a PR opened after his approval](a-roll-up-can-absorb-a-pr-opened-after-his-approval.md) — re-ask before merging a roll-up whose members grew; a member merged first is fine if its files match main, then `--settle`.
-- [PowerShell rmdir of a spaced path is blocked](a-powershell-rmdir-of-a-spaced-path-is-blocked-as-a-system-path.md) — the triage skill's `cmd /c rmdir` is refused before it runs; remove a worktree's node_modules junction with `[IO.Directory]::Delete($p, $false)`.
-- [The MCP bundle marks `cache(` pure by TEXT](the-mcp-pure-marker-is-inserted-as-text.md) — a comment saying “row cache (path.ts), generalised:” closed the docblock and esbuild parsed the prose; the error names a line with no code on it.
+- [A CRM migration reaches production before its PR merges](a-crm-migration-reaches-production-before-its-pr-merges.md) — the live function carried an OPEN, RED PR's wider version on both databases; read `md5(prosrc)` and the grants, never the migration file or `main`.
 
 
 
