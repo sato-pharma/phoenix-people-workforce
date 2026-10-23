@@ -57,9 +57,16 @@ export function runSalesChannelsByRepClosingValueTests() {
   // paid units x a factory price, and only a direct order reads the sheet's typed value. The
   // `coalesce(r.value, 0)` count below is what stops the sheet value creeping back, and the live
   // product-master join is still asserted a few lines down.
+  //
+  // It moved once more on 2026-10-23, and for SPEED, not for the rule: phx_factory_price is SECURITY
+  // DEFINER and carries a SET, so Postgres cannot inline it and every row-level mention was a real
+  // call with two correlated subqueries. The resolver is now called once per distinct
+  // (product_code, invoice_period) in a `period_price` CTE and left-joined, so the body may also read
+  // `<alias>.period_price`. It resolves the same number for the same row — proven on production over
+  // all 405,724 import rows, 0 mismatches — and the direct arm below is untouched.
   assert.match(
     body,
-    /case when coalesce\(r\.is_direct, false\) then coalesce\(r\.value, 0\) else coalesce\(r\.qty, 0\) \* coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\) end as value/,
+    /case when coalesce\(r\.is_direct, false\) then coalesce\(r\.value, 0\) else coalesce\(r\.qty, 0\) \* coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)|[a-z_]+\.period_price), 0\) end as value/,
     `Channels by Rep must value a distributor row at paid units x factory price and a direct order at its own value, as the closing does (${file})`,
   );
   assert.equal(

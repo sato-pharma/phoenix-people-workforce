@@ -1472,6 +1472,34 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // employee restored it (220), and the reconcile then found 0 differences.
   // Pinned by tests/crm-person-by-hr-key-cache.test.ts.
   "20261023153000_crm_person_by_hr_key_cache.sql",
+
+  // 2026-10-23. phx_refresh_sos_channel_rollup asks for each product's period price ONCE per
+  // (product, period) instead of twice per fact row. The file is one `begin; ... commit;` holding a
+  // function body with `delete from` in it, which the Supabase MCP's classifier declines (it was
+  // declined on production before this was written), so it went the standing route —
+  // scripts/apply-sql-file.mjs (AGENTS.md §8), with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com. That route writes NO
+  // schema_migrations row, while the body is live.
+  //
+  // 🔴 NOT taken on existence — a `create or replace` is satisfied by an older body. Digested on
+  // production after applying: md5(prosrc) bb821585b3d85b661f020a3d5a8ab243, length 6,065, prosecdef
+  // true, proconfig {search_path=public, statement_timeout=120s}, ACL exactly
+  // `postgres=X/postgres | service_role=X/postgres` — so no browser key reaches it. The body
+  // contains `period_price` and no longer contains a per-row `phx_factory_price(f.product_code…`
+  // call. The advisory batch lock 20261023070100 added is still the first statement, before the
+  // delete, as tests/sos-rollup-refresh-batch-lock.test.ts requires.
+  //
+  // SPEED ONLY, and the answer was proven unchanged BEFORE the file was written. The function is
+  // never called to test it (it deletes and re-inserts), so the proof was taken one level in, at the
+  // `retail` CTE — the only CTE this migration changes: its whole output computed both ways and
+  // compared as TEXT, `(row)::text` through `EXCEPT ALL` in BOTH directions, over the ten largest
+  // validated batches, 144,163 fact rows, 0 differences either way. Every statement downstream of
+  // `retail` is identical text in the two bodies. The hoisting rule itself was proven over the whole
+  // relation: all 295,418 rows of source_of_sales_fact_rollup, 225 distinct (product_code, period)
+  // keys, 0 mismatches — the Saginko override (SA001, 111.15 through 2026-09, 170.52 from 2026-10)
+  // included, on both sides of its boundary.
+  // Pinned by tests/sales-reads-price-each-pair-once.test.ts.
+  "20261023171200_phx_refresh_sos_channel_rollup_prices_each_product_once.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

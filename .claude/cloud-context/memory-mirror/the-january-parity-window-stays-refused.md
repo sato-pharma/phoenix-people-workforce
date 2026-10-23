@@ -35,3 +35,16 @@ it and move on — it is not a new fault and not a regression of
 NEWEST window with a different number is a different thing entirely: that was Phoenix-born visits
 being counted as vendor losses, fixed in #6313 and accounted in
 `docs/crm-parity-sweep-mirror-only.md`.
+
+**Re-run 2026-10-23 12:12 Cairo, at his own request, and it refused again — identically.** CRM
+11,236 vs mirror 11,574, extra 338, `repairedDeleted: 0`; `ireports360_sync_deletions` unchanged at
+593 and the window still holds all 11,574 visits. The recorded reason is the ceiling: 338 is over
+the 250-row `PARITY_MAX_DELETE_ROWS` limit, so the sweep leaves it for a human rather than deleting
+settled rows unattended.
+
+🔴 **The ceiling is the ONLY thing standing between those rows and deletion, so never run the live
+sweep on this window without reproducing the comparison read-only first.** If the vendor's answer
+ever shifts and the gap falls under 250 (or under the share ceiling), the sweep will DELETE them in
+the same run that produces the number, with nothing to stop it. The read-only form is the same
+vendor fetch plus `compareVisitIdSets` and `decideParityAction`, writing nothing. See
+[[a-refused-parity-window-can-heal-itself]] for how to force one window.
