@@ -1263,6 +1263,30 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20261023070000_phx_refresh_sos_fact_rollup_takes_a_batch_lock.sql",
   "20261023070100_phx_refresh_sos_channel_rollup_takes_a_batch_lock.sql",
   "20261023070200_phx_refresh_sos_distributor_product_rollup_takes_a_batch_lock.sql",
+  // ── PRODUCTION leg only, 2026-10-23, same shape as the three above. STAGING is NOT drifted and
+  // needs no exception: it carries an exact ledger row, version 20261023140000 / name job_leases,
+  // recorded by `mcp__supabase-staging__apply_migration`. PRODUCTION has ZERO rows matching either
+  // `20261023140%` or name `%job_lease%` — the MCP answered {"status":"declined"} for this file, so
+  // it was applied with `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node
+  // scripts/apply-sql-file.mjs <file> production`, the standing route (.claude/rules/database.md),
+  // which writes NO ledger row. This set is global, so one entry covers both legs of the check.
+  //
+  // Verified by digest and by catalog, never from schema_migrations. md5(pg_proc.prosrc) for
+  // public.claim_job_lease is 74aee73622004b3e59c564a10b1e5a70, length 782, IDENTICAL on
+  // ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa — the production copy is byte-for-byte the
+  // staging copy applied from the same file. proconfig {search_path=pg_catalog, public} and
+  // prosecdef false (security invoker, as the file specifies) on both.
+  //
+  // Production catalog after the apply: public.job_leases present (pg_class.relkind='r'),
+  // relrowsecurity true, exactly 1 policy (phx_job_leases_service_role), claim_job_lease present;
+  // execute held by service_role only — anon execute false, anon select on the table false. The
+  // pre-image is the apply's own NOTICE: `policy "phx_job_leases_service_role" ... does not exist,
+  // skipping`, so production genuinely had nothing of this file before it ran. The migration adds
+  // one table and one function and changes no existing data.
+  //
+  // Safe in both orders by design, per the file's own header: the shipping code treats a missing
+  // claim_job_lease() as "held", which is the behaviour that was already live.
+  "20261023140000_job_leases.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
