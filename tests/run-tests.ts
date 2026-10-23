@@ -2688,6 +2688,7 @@ import {
   runSatoEmailFinalSanitizeTests,
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
+import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10679,6 +10680,10 @@ await runTest(
 await runTest(
   "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
   runCsvFormulaNeutraliserTests,
+);
+await runTest(
+  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  runNeedsYouDigestRunsOutsideTheFanoutTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

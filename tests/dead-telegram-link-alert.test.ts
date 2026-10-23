@@ -93,7 +93,13 @@ export function runDeadTelegramLinkAlertTests(): void {
     // (`event="cron_run_summary" failedCount>0`), so a stale number silently under-reports how many
     // sub-jobs exist — and the file's own comment records that it has drifted before. Counting the
     // passes is the only version of this assertion that cannot itself go stale.
-    const body = daily.slice(daily.indexOf("] = await Promise.all(["), daily.indexOf("\n  ]);"));
+    // 🔴 The window starts at `onJobFailure`'s DEFINITION, not at the fan-out, because a sub-job
+    // does not have to be inside the `Promise.all` to run. The Needs You digest is awaited on its
+    // own just above it (2026-10-23) so its 22 sources do not spend their budgets queueing behind
+    // the other 30 — counting only the array would have read that as a LOST pass and demanded
+    // `totalJobs` be cut to 30, which would have under-reported a job that still runs and can
+    // still fail. The definition itself carries no `.catch(onJobFailure(`, so it adds nothing.
+    const body = daily.slice(daily.indexOf("function onJobFailure"), daily.indexOf("\n  ]);"));
     const passes = (body.match(/\.catch\(\s*onJobFailure\(/g) ?? []).length;
     const declared = Number(/const totalJobs = (\d+);/.exec(daily)?.[1] ?? "0");
     assert.equal(
