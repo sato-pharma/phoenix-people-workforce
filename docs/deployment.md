@@ -649,6 +649,7 @@ service is approved and declared in `.railway/railway.ts`.
   left out, so the tablet server is not redeployed: with a volume attached Railway stops the old
   container before starting the new one, and the tablets lose their server for the restart
   (measured on 22 Oct, when attaching the disk took it down for about an hour behind a queued deploy).
+- 🔴 **Nothing re-applies the settings at a deploy any more, so a dashboard edit STAYS — the daily `secret-drift-check.yml` now reads them.** Its third leg, `scripts/check-railway-deploy-settings.mjs`, compares what Railway stores for production — each service's healthcheck path and window, its restart policy, and every volume mount — with `.railway/railway.ts`, and names a live volume the file does not declare. Drift reaches Telegram and the job still concludes success (a red scheduled suite would withhold a deploy); exit 2, "cannot tell", is a warning, never a pass. Run it by hand with `RAILWAY_API_TOKEN` and `RAILWAY_PROJECT_ID` set. Pinned by `tests/railway-deploy-settings-drift.test.ts`.
 - **The merge restarts the tablet server once.** Deleting `infra/headwind-phoenix-actions/railway.toml`
   matches its watch pattern, so the merge rebuilds `phoenix-headwind` (about a minute and a half of no
   server, with the disk keeping every APK). Prove it from that build's log (`load build definition from
