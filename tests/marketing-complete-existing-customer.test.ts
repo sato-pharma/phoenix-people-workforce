@@ -493,7 +493,7 @@ export function runMarketingCompleteExistingCustomerTests() {
   );
   assert.match(
     workspace,
-    /const canSave = !isSaving && canSaveMarketingValidation\(customers, isDeskMode\)/,
+    /const canSave = !isSaving && canSaveMarketingValidation\(gateCustomers, isDeskMode\)/,
     "the workspace's Save must read that one gate, never a second boolean that could drift from it",
   );
   // The owner's standing UI rule: never truncate with an ellipsis, never let text wrap.

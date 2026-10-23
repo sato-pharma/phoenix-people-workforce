@@ -25,6 +25,7 @@ import {
   CODELESS_VENUES_GO_TO_DIRECT_ORDERS,
   venueWithoutDistributorCodeMessage,
 } from "@/lib/marketing-requests/coded-venues-only";
+import { describeMissingDoctorPick, type CrmDoctorPickState } from "@/lib/marketing-requests/crm-doctor-pick";
 import {
   VENUE_TYPE_UNANSWERED_MESSAGE,
   venueRequiresDistributorCode,
@@ -66,6 +67,11 @@ export type SaveGatePharmacy = {
 export type SaveGateCustomer = {
   capture: SaveGateCapture;
   customerComplete: boolean;
+  /**
+   * The area → doctor pick (owner, 2026-10-23: no free-typed doctor name). Absent on a customer
+   * already on record, whose name is locked; present on every new customer line.
+   */
+  doctorPick?: CrmDoctorPickState;
   name: string;
   pharmacies: readonly SaveGatePharmacy[];
 };
@@ -133,6 +139,9 @@ export function describeMissingSaveRequirement(
 ): string | null {
   for (const [customerIndex, customer] of customers.entries()) {
     const customerLabel = customer.name.trim() ? `"${customer.name.trim()}"` : `Customer ${customerIndex + 1}`;
+    // Area first, then the doctor from that area's CRM lists — or "Not on the list", then a name.
+    const missingPick = customer.doctorPick ? describeMissingDoctorPick(customer.doctorPick, customerIndex + 1) : null;
+    if (missingPick) return missingPick;
     if (!customer.name.trim()) return `Enter a name for Customer ${customerIndex + 1}.`;
     // Desk mode saves straight to validated, so a missing pin would mint a "validated" customer
     // with no coordinates at all — worse than the field path, where incomplete evidence simply

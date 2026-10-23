@@ -142,6 +142,8 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { resolveMarketingCustomerValidationBadge } from "@/lib/marketing-requests/customer-validation-badge";
+import { crmListFlag, UNPICKED_CRM_DOCTOR, type ResolvedCrmDoctorPick } from "@/lib/marketing-requests/crm-doctor-pick";
+import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { ValidationBadge } from "@/lib/validation/validation-badge";
 import { decodeVenueTarget, encodeVenueTarget } from "@/lib/marketing-requests/venue-type";
 import {
@@ -314,6 +316,12 @@ export type MarketingRequestDecisionSummary = {
   // ── Rich request context so the approver decides in place (no click-through needed) ──
   chain: MarketingDecisionChainStep[];
   customerName: string | null;
+  /**
+   * Set when the customer's name was TYPED at validation because the doctor is not on a rep's Phoenix
+   * CRM list (owner, 2026-10-23: "allow typing, but flag, clearly flag in all approval steps"). The
+   * sentence itself, from `crmListFlag`; null for a picked doctor and for a customer from before the rule.
+   */
+  customerCrmListFlag: string | null;
   estimatedCost: number;
   expectedRoiValue: number;
   lineName: string | null;
@@ -798,6 +806,8 @@ export type MarketingApproverInboxRow = {
   approvalHistory: MarketingApproverChainRung[];
   currentStepName: string;
   customerName: string;
+  /** The "typed by hand, not on a rep's CRM list" flag (`crmListFlag`), shown on the row itself. */
+  customerCrmListFlag: string | null;
   decisionLabels: MarketingDecisionLabels;
   estimatedCost: number;
   id: string;
@@ -1009,6 +1019,9 @@ type NormalizedMarketingValidationCustomer = {
   capturedAt: string | null;
   capturedLatitude: number | null;
   capturedLongitude: number | null;
+  /** The area → doctor pick — see `MarketingValidationCustomerInput.crmAreaSeatId`. */
+  crmAreaSeatId: string | null;
+  crmCustomerId: string | null;
   customerType: MarketingCustomerType;
   displayName: string;
   evidenceHasTimestamp: boolean;
@@ -2316,6 +2329,8 @@ function normalizeValidationCustomer(
     capturedAt: nullableIsoTimestamp(inputCustomer?.capturedAt, `${customerLabel} capture time`),
     capturedLatitude: nullableCoordinate(inputCustomer?.capturedLatitude, `${customerLabel} latitude`, -90, 90),
     capturedLongitude: nullableCoordinate(inputCustomer?.capturedLongitude, `${customerLabel} longitude`, -180, 180),
+    crmAreaSeatId: cleanText(inputCustomer?.crmAreaSeatId),
+    crmCustomerId: cleanText(inputCustomer?.crmCustomerId),
     customerType: normalizeCustomerType(inputCustomer?.customerType),
     displayName,
     evidenceHasTimestamp: inputCustomer?.evidenceHasTimestamp === true,
@@ -4197,7 +4212,7 @@ export async function getMarketingRequestDecisionSummary(
         // `speciality` does NOT exist on marketing_customers — naming it here threw
         // "column does not exist" and took the whole approval window down to its safe state.
         // The real column for the free-text qualifier is `other_type_description`.
-        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name, validation_status, validated_at, validated_by_hr_id, evidence_photo_captured_at")
+        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name, validation_status, validated_at, validated_by_hr_id, evidence_photo_captured_at, crm_list_status")
         .eq("id", request.customerId)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -4266,6 +4281,7 @@ export async function getMarketingRequestDecisionSummary(
     validation_status?: MarketingValidationStatus | null;
     validated_at?: string | null;
     validated_by_hr_id?: string | null;
+    crm_list_status?: string | null;
   } | null;
   const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
   const customerName = cleanText(customerRow?.display_name);
@@ -4310,6 +4326,7 @@ export async function getMarketingRequestDecisionSummary(
     status: request.status,
     chain,
     customerName: customerName ?? null,
+    customerCrmListFlag: crmListFlag(customerRow?.crm_list_status),
     estimatedCost: request.estimatedCost,
     expectedRoiValue: request.expectedRoiValue,
     lineName: requester?.lineName ?? null,
@@ -6592,6 +6609,33 @@ export async function createMarketingValidationRecord(
 
   const normalized = normalizeMarketingValidationInput(input);
 
+  // --- The area → doctor pick, re-checked for every NEW customer before anything is written ----
+  // (owner, 2026-10-23). A picked doctor's name is taken from the rep's CRM list, so the link is
+  // true; a typed one ("Not on the list", or an offline capture queued before the rule) is saved as
+  // typed and flagged `not_on_list` on every approval step. A customer already on record keeps its
+  // identity untouched, so it is never re-picked here.
+  // The CRM read is loaded only when something was picked, so a typed-name save never pays for it.
+  const doctorPickReach: { reach?: OrgSeat[] } = {};
+  const doctorPicks = new Map<NormalizedMarketingValidationCustomer, ResolvedCrmDoctorPick>();
+  for (const entry of normalized.customers) {
+    if (entry.existingCustomerId) continue;
+    const pick = entry.crmAreaSeatId || entry.crmCustomerId
+      ? await (await import("@/lib/marketing-requests/crm-doctor-pick-service")).resolveCrmDoctorPick(
+        access,
+        { areaSeatId: entry.crmAreaSeatId, crmCustomerId: entry.crmCustomerId },
+        doctorPickReach,
+      )
+      : UNPICKED_CRM_DOCTOR;
+    if (pick.phoenixCrmCustomerId && [...doctorPicks.values()].some((seen) => seen.phoenixCrmCustomerId === pick.phoenixCrmCustomerId)) {
+      throw validationError(`"${pick.displayName ?? entry.displayName}" appears more than once in this submission.`, "duplicate_customer");
+    }
+    if (pick.displayName && pick.displayName !== entry.displayName) {
+      entry.displayName = pick.displayName;
+      entry.normalizedName = normalizeLookupKey(pick.displayName);
+    }
+    doctorPicks.set(entry, pick);
+  }
+
   // --- "My Pharmacies" picks, resolved once for the whole submission -------------------------
   // The client sent ids and nothing else, so the shop's name, location, evidence and distributor
   // codes are read here from the stored rows. Resolving up front also means an unusable pick fails
@@ -6917,7 +6961,11 @@ export async function createMarketingValidationRecord(
         .insert({
           ...capturedColumns,
           area_id: owner.areaId ?? null,
+          // The hand-chosen area sits in its own columns; area_id and the GPS area above are untouched.
+          chosen_area_name: doctorPicks.get(normalizedCustomer)?.chosenAreaName ?? null,
+          chosen_area_seat_id: doctorPicks.get(normalizedCustomer)?.chosenAreaSeatId ?? null,
           created_by_hr_id: hrIdForStorage(actorHrId),
+          crm_list_status: doctorPicks.get(normalizedCustomer)?.crmListStatus ?? "not_on_list",
           customer_code: generateMarketingCode("MKT-HCP"),
           customer_type: normalizedCustomer.customerType,
           display_name: normalizedCustomer.displayName,
@@ -6926,6 +6974,7 @@ export async function createMarketingValidationRecord(
           normalized_name: normalizedCustomer.normalizedName,
           other_type_description: normalizedCustomer.otherTypeDescription,
           owner_hr_id: ownerHrId,
+          phoenix_crm_customer_id: doctorPicks.get(normalizedCustomer)?.phoenixCrmCustomerId ?? null,
         })
         .select("*")
         .single();
@@ -8871,7 +8920,7 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
   const [customersResult, typesResult] = await Promise.all([
     customerIds.length > 0
-      ? supabase.from("marketing_customers").select("id, display_name").in("id", customerIds)
+      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status").in("id", customerIds)
       : Promise.resolve({ data: [], error: null }),
     typeIds.length > 0
       ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
@@ -8881,6 +8930,8 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   if (typesResult.error) throw typesResult.error;
   const customerNameById = new Map(((customersResult.data ?? []) as Array<{ id: string; display_name?: string | null }>)
     .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
+  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ id: string; crm_list_status?: string | null }>)
+    .map((row) => [row.id, crmListFlag(row.crm_list_status)] as const));
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
@@ -8901,6 +8952,7 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     ),
     currentStepName: step.stepName,
     customerName: customerNameById.get(request.customerId) ?? request.customerId,
+    customerCrmListFlag: customerCrmFlagById.get(request.customerId) ?? null,
     decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),
     estimatedCost: request.estimatedCost,
     id: request.id,
@@ -9244,7 +9296,7 @@ export async function getApproverDecidedRequests(
   const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
   const [customersResult, typesResult, employeeRows] = await Promise.all([
     customerIds.length > 0
-      ? supabase.from("marketing_customers").select("id, display_name").in("id", customerIds)
+      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status").in("id", customerIds)
       : Promise.resolve({ data: [], error: null }),
     typeIds.length > 0
       ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
@@ -9255,6 +9307,8 @@ export async function getApproverDecidedRequests(
   if (typesResult.error) throw typesResult.error;
   const customerNameById = new Map(((customersResult.data ?? []) as Array<{ display_name?: string | null; id: string }>)
     .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
+  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ id: string; crm_list_status?: string | null }>)
+    .map((row) => [row.id, crmListFlag(row.crm_list_status)] as const));
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
@@ -9300,6 +9354,7 @@ export async function getApproverDecidedRequests(
       approvalHistory: buildMarketingApproverChain(chain, employeeRows, myStep?.id ?? null),
       currentStepName: finalStep?.stepName ?? MARKETING_HISTORY_OUTCOME_LABEL[outcome],
       customerName: customerNameById.get(request.customerId) ?? request.customerId,
+      customerCrmListFlag: customerCrmFlagById.get(request.customerId) ?? null,
       decidedAt,
       decisionLabels: normalizeMarketingDecisionLabels(null),
       estimatedCost: request.estimatedCost,

@@ -159,3 +159,14 @@ The first release should prioritize correct data capture and workflow integrity 
 Create the first database migration and TypeScript domain types for the MVP tables above.
 
 Prompt 2 should not build the UI yet. It should include indexes, check constraints, RLS enabled, and enough seed data for request types and default workflow steps.
+
+## Customer Validation picks the doctor from a Phoenix CRM list (2026-10-23)
+
+The owner's words: "the district manager or the manager is no more able to add in the customer validation free type doctor name … he will choose the area … then cascading will appear the doctors in this area for the rep in his team", and "the area he will put by his hand, it will not replace the area of the GPS". On a doctor missing from the list: "allow typing, but flag, clearly flag in all approval steps."
+
+- **Who sees which areas.** A Medical Rep picks from his own list, area fixed. A District, Regional or National Sales Manager chooses among the territories at and below him in the organogram (`territoriesInScope`). Product, Group Product, Marketing and SFE Managers, the CEO and the Super Admin choose any area in the company. Rules: `src/lib/marketing-requests/crm-doctor-pick.ts`; reads: `crm-doctor-pick-service.ts`; route: `GET /api/marketing-requests/crm-doctors`.
+- **What the list holds.** One area can hold several rep seats (different lines share it), so choosing an area reads every rep list of that area. Only AM/PM doctors, status active or pending, never a test row; the pick never writes to Phoenix CRM.
+- **The server decides the name.** `resolveCrmDoctorPick` re-reads the chosen doctor inside the viewer's reach and takes the name from the CRM row; the same doctor picked twice in one save is refused.
+- **The area stays separate.** The chosen area is stored in `marketing_customers.chosen_area_seat_id` / `chosen_area_name`. `area_id` still comes from the owner and the GPS `extracted_area_name` is never overwritten.
+- **The flag.** "Not on the list" opens a typed name, saved with `crm_list_status = 'not_on_list'` and shown by `NotOnCrmListFlag` on the inbox card, the approval window and the decision page. A save with nothing picked (an offline replay) is saved and flagged, never refused. NULL means a customer from before the rule and is not flagged.
+- Migration `20261023181501_marketing_customer_crm_doctor_link.sql`; pinned by `tests/marketing-crm-doctor-pick.test.ts`.
