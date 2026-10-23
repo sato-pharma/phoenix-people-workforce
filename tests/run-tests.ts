@@ -1927,6 +1927,7 @@ import { runPhoenixCrmTeamShorterTests } from "./phoenix-crm-team-shorter.test.t
 import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
+import { runPhoenixCrmTapToRetryTests } from "./phoenix-crm-tap-to-retry.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
@@ -7261,6 +7262,11 @@ await runTest(
 await runTest(
   "Phoenix CRM answers the portal's + (owner, 2026-09-29: Add visit and Make weekly plan for a medical rep, first in the menu). The links name a tab and an ask the page reads; the page answers with a counter the tab watches, never a remount, so a visit half entered survives a stray tap; and the ask comes off the address once read, so the second tap on the same action is a change the page sees",
   runPhoenixCrmPortalIntentTests,
+);
+
+await runTest(
+  "Phoenix CRM tap to retry (owner, 2026-10-23: \"add a tap-to-retry to the Phoenix CRM pages when the connection drops\" — 1,161 rows of the browsers' own network wordings in app_error_events over 14 days, across 62 releases and all three platforms, where a READ already offered Try again and a SAVE offered a sentence and nothing to press. Only a dropped connection is retryable: a refusal is a decision that answers the same way however often the same payload arrives, and a signed-out session needs a sign-in first. The attempt is kept WHOLE — the same payload, so a visit keeps its client id and is not filed twice, and the same completion, so a retry that works actually closes the panel — and every save surface in the module is wired mechanically, because the defect was a dead sentence nobody noticed",
+  runPhoenixCrmTapToRetryTests,
 );
 
 await runTest(

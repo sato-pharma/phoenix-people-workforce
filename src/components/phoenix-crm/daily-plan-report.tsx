@@ -35,6 +35,7 @@ import {
   CrmLoading,
   CrmNote,
   CrmPill,
+  CrmSaveError,
   CrmTable,
   crmInputClassName,
   crmTdClassName,
@@ -406,9 +407,7 @@ export function DailyPlanSection({
     <>
       {resource.error ? (
         <div className="px-4 pt-4 sm:px-5">
-          <CrmNote title="This plan could not be refreshed" tone="warn">
-            {resource.error}
-          </CrmNote>
+          <CrmSaveError message={resource.error} onRetry={resource.reload} title="This plan could not be refreshed" tone="warn" />
         </div>
       ) : null}
       {report.leaveUnread ? (

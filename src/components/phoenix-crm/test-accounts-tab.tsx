@@ -28,6 +28,7 @@ import {
   CrmNote,
   CrmPanel,
   CrmPill,
+  CrmSaveError,
   CrmSelect,
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
@@ -101,25 +102,27 @@ function TestApprovalCard({ item, onDecided }: { item: TestApprovalItem; onDecid
       setProblem("Choose the grade and the potential before approving.");
       return;
     }
-    const done = await action.run(label, () =>
-      crmPost<{ kind: string; id: string }>(
-        "/api/phoenix-crm/test-approvals/decide",
-        {
-          kind: item.kind,
-          id: item.id,
-          decision,
-          note: note.trim() || null,
-          version: item.version,
-          stage: item.stage,
-          requestedAt: item.requestedAt,
-          approvedGrade: item.grading ? grade : undefined,
-          potentialGrade: item.grading ? potential : undefined,
-          refusalReason: item.refusalReasons ? reason || null : undefined,
-        },
-        "decided",
-      ),
+    await action.run(
+      label,
+      () =>
+        crmPost<{ kind: string; id: string }>(
+          "/api/phoenix-crm/test-approvals/decide",
+          {
+            kind: item.kind,
+            id: item.id,
+            decision,
+            note: note.trim() || null,
+            version: item.version,
+            stage: item.stage,
+            requestedAt: item.requestedAt,
+            approvedGrade: item.grading ? grade : undefined,
+            potentialGrade: item.grading ? potential : undefined,
+            refusalReason: item.refusalReasons ? reason || null : undefined,
+          },
+          "decided",
+        ),
+      () => onDecided(),
     );
-    if (done) onDecided();
   }
 
   const busy = action.busy !== null;
@@ -211,7 +214,8 @@ function TestApprovalCard({ item, onDecided }: { item: TestApprovalItem; onDecid
             value={note}
           />
         </CrmField>
-        {problem ?? action.error ? <CrmNote tone="bad">{problem ?? action.error}</CrmNote> : null}
+        {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+        {!problem && action.error ? <CrmSaveError message={action.error} onRetry={action.retry} title={null} /> : null}
       </div>
     </CrmCard>
   );
