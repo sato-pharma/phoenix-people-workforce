@@ -84,7 +84,7 @@ function runPermissionTests() {
 
 type RouteGate = {
   route: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   action: PermissionAction;
   audit: "mutation" | "access-read" | "export" | null;
   auditRequired: boolean;
@@ -107,6 +107,17 @@ function exportGet(route: string, action: PermissionAction = "read"): RouteGate 
 
 function post(route: string, action: PermissionAction): RouteGate {
   return { route, method: "POST", action, audit: "mutation", auditRequired: true };
+}
+
+/**
+ * A PATCH: an edit of something already saved, audited like any other write.
+ *
+ * Its own helper rather than an option on `post`, because the two are not interchangeable at the door:
+ * a POST creates, while a PATCH may only touch a row that exists, so the service behind it is asked
+ * whose row it is. Same read grant, same CSRF, same audit row.
+ */
+function patch(route: string, action: PermissionAction): RouteGate {
+  return { route, method: "PATCH", action, audit: "mutation", auditRequired: true };
 }
 
 const API_ROOT = "app/api/phoenix-crm";
@@ -303,6 +314,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("manager-plans/single-visit-days/decide", "read"),
   get("manager-plans/visits"),
   post("manager-plans/visits", "read"),
+  // A manager writes up a single visit he already logged (owner, 2026-10-23).
+  patch("manager-plans/visits", "read"),
   get("manager-plans/report"),
   // A rep's ask for a visit with somebody (owner, 2026-10-02) — his manager, a product manager of his
   // line, or a chain visit with his district manager and the manager above. A SEPARATE workflow from
@@ -509,7 +522,7 @@ function runRouteTests() {
     assert.deepEqual(entry.permission, { resource: "phoenix_crm", action: gate.action }, `${label}: the registry declares the action the handler asserts`);
     assert.equal(entry.authMode, "session", `${label} is a session route`);
     assert.equal(entry.guard, "assert-permission", `${label} is gated by assertPermission`);
-    assert.equal(entry.csrf.required, method !== "GET", `${label}: every POST and DELETE checks the origin, and no GET claims to`);
+    assert.equal(entry.csrf.required, method !== "GET", `${label}: every write checks the origin, and no GET claims to`);
     assert.equal(entry.audit.classification, gate.audit ?? undefined, `${label}: audit classification`);
     assert.equal(entry.audit.required, gate.auditRequired, `${label}: audit required`);
     assert.equal(findAccessRegistryEntry(entry.pattern, method)?.pattern, entry.pattern, `${label} resolves to its own entry, never a blanket`);
@@ -523,8 +536,15 @@ function runRouteTests() {
     methodsByPath.set(path, new Set([...(methodsByPath.get(path) ?? []), gate.method]));
   }
   let calls = 0;
+  let patchCalls = 0;
   for (const file of walk("src/components/phoenix-crm")) {
     const source = readFileSync(file, "utf8");
+    // A screen may hold its route in a file-local constant (`const VISITS = "/api/..."`), so the sweep
+    // resolves those before reading a call's first argument; without that it silently matches nothing.
+    const pathConstants = new Map(
+      [...source.matchAll(/\bconst ([A-Z][A-Z0-9_]*) = "(\/api\/[^"]+)";/g)].map((match) => [match[1], match[2]]),
+    );
+    const pathOf = (argument: string): string | null => pathConstants.get(argument) ?? (argument.startsWith("/api/") ? argument : null);
     for (const match of source.matchAll(/["'`](\/api\/[^"'`?$]*)/g)) {
       assert.ok(methodsByPath.has(match[1]), `${file} calls ${match[1]}, which is not a Phoenix CRM route`);
     }
@@ -536,8 +556,17 @@ function runRouteTests() {
       calls += 1;
       assert.ok(methodsByPath.get(match[1])?.has("GET"), `${file} reads ${match[1]}, which takes no GET`);
     }
+    // api.ts DECLARES crmPatch, so its own `crmPatch<T>(path` is not a call to a route.
+    for (const match of file.endsWith("/api.ts") ? [] : source.matchAll(/\bcrmPatch(?:<[^();{}\n]*>)?\(\s*([A-Za-z0-9_]+|"[^"]+")/g)) {
+      const route = pathOf(match[1].replace(/"/g, ""));
+      assert.ok(route, `${file} patches ${match[1]}, which is not a path it declares`);
+      calls += 1;
+      patchCalls += 1;
+      assert.ok(methodsByPath.get(route)?.has("PATCH"), `${file} patches ${route}, which takes no PATCH`);
+    }
   }
   assert.ok(calls >= 15, `the screens' calls were found only ${calls} times — the scan has stopped seeing them`);
+  assert.ok(patchCalls >= 1, "the crmPatch sweep found no call at all - it has stopped seeing the write-up box");
 }
 
 // ── 3. Isolation from the pilot and from iReports360 ────────────────────────────────────────────────

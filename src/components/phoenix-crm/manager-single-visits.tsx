@@ -392,7 +392,7 @@ function VisitWriteUp({
             setError(null);
             setText(event.target.value);
           }}
-          placeholder="The account you had no time for at the door."
+          placeholder="What came of the visit, written up in full."
           rows={4}
           value={text}
         />
