@@ -1155,6 +1155,7 @@ export const MODULES = [
       ".claude/hooks/**",
       ".claude/settings.json",
       "scripts/{new-session,repo-doctor,sync-worktree-env,sync-cloud-context,memory-index-budget,memory-index-reachability,dev-server}*",
+      "scripts/cloud-mirror/**",
       "scripts/module-memory/**",
       "docs/{module-memory,memory-index-budget,agents-worktree-and-machine-limits,agents-session-traps}*",
     ],
