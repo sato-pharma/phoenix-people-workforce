@@ -1001,6 +1001,9 @@ const LATER_MIGRATIONS = [
   // The Super Admin's delete (owner, 2026-10-23): one new table that keeps a copy of everything it deletes,
   // locked by the same four statements, and one brand-new function replacing nothing — it appends at the end.
   "supabase/migrations/20261023223001_phoenix_crm_admin_delete_anything.sql",
+  // The same tool taught a month's plan and a district manager's own visit: it REPLACES that function and widens
+  // one CHECK on its log table, so it appends after the migration that made them.
+  "supabase/migrations/20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

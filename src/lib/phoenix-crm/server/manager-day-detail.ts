@@ -6,7 +6,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
-import { readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -49,6 +49,8 @@ import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 
 export type PhoenixCrmManagerDayDetail = {
   isTest: boolean;
+  /** The Super Admin may delete any visit on this day as if it never happened (owner, 2026-10-23). */
+  adminDeletes: boolean;
   date: string;
   manager: {
     seatId: string;
@@ -137,6 +139,7 @@ export async function loadPhoenixCrmManagerDayDetail(
 
   const above = subject.aboveHrId;
   return {
+    adminDeletes: canEnterMissedRecords(viewer),
     date,
     figures: managerDayFigures(visits),
     isTest,

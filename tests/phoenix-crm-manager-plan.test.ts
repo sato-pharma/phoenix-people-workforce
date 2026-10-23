@@ -506,9 +506,26 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     "20261019103745_phoenix_crm_manager_visit_place.sql",
     "20261023035106_manager_visit_detail_writeup.sql",
   ]);
+  // The Super Admin's delete (owner, 2026-10-23) takes ONE of his visits out by id, with a copy kept. It counts,
+  // sums and reports nothing: its only function is that delete, and the table is named in exactly two places.
+  const deletesOwnVisitsOnly = new Set(["20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql"]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+    if (deletesOwnVisitsOnly.has(file)) {
+      const body = stripSqlComments(text);
+      assert.equal(/create\s+(or\s+replace\s+)?(view|materialized)/i.test(body), false, `${file} may not wrap his own visits in a view`);
+      assert.deepEqual(
+        [...body.matchAll(/create\s+or\s+replace\s+function\s+public\.(\w+)/gi)].map((match) => match[1]),
+        ["phoenix_crm_admin_delete"],
+        `${file} may create only the delete, never a reader of his own visits`,
+      );
+      const leftover = body
+        .replace(/from public\.phoenix_crm_manager_visits x where x\.id = v_id and x\.is_test = v_is_test for update;/g, "")
+        .replace(/delete from public\.phoenix_crm_manager_visits where id = v_id;/g, "");
+      assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to lock one row and delete it`);
+      continue;
+    }
     if (widensOwnVisitsOnly.has(file)) {
       const body = stripSqlComments(text);
       assert.equal(

@@ -4,12 +4,17 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import {
+  adminDeleteTargetOfManagerDayVisit,
   ADMIN_DELETE_KINDS,
   ADMIN_DELETE_WORDS,
   isAdminDeleteKind,
   parseAdminDelete,
 } from "../src/lib/phoenix-crm/admin-delete-rules.ts";
-import { phoenixCrmPlanEditNoticeKeyPrefix, phoenixCrmPlanNoticeKeyPrefix } from "../src/lib/phoenix-crm/server/notifications.ts";
+import {
+  phoenixCrmMonthlyNoticeKeyPrefix,
+  phoenixCrmPlanEditNoticeKeyPrefix,
+  phoenixCrmPlanNoticeKeyPrefix,
+} from "../src/lib/phoenix-crm/server/notifications.ts";
 
 /**
  * Phoenix CRM — the Super Admin deletes a plan, a visit or a day record as if it never happened
@@ -35,12 +40,20 @@ function source(path: string): string {
 export async function runPhoenixCrmAdminDeleteTests(): Promise<void> {
   // ── 1 · The kinds and the parse ─────────────────────────────────────────────────────────────────
   {
-    assert.deepEqual([...ADMIN_DELETE_KINDS], ["rep_plan", "manager_plan", "visit", "day_activity"]);
+    assert.deepEqual([...ADMIN_DELETE_KINDS], ["rep_plan", "manager_plan", "visit", "day_activity", "monthly_plan", "manager_visit"]);
     for (const kind of ADMIN_DELETE_KINDS) {
       assert.equal(isAdminDeleteKind(kind), true);
       assert.ok(ADMIN_DELETE_WORDS[kind].button.length > 0 && ADMIN_DELETE_WORDS[kind].takes.length > 0, `${kind} says what it deletes`);
     }
-    assert.equal(isAdminDeleteKind("payroll_row"), false, "only the four kinds");
+    assert.equal(isAdminDeleteKind("payroll_row"), false, "only the six kinds");
+    assert.equal(isAdminDeleteKind("double_visit_plan"), false, "the retired double-visit planner has no screen, so no kind");
+
+    // A card on a manager's day names where its visit came from: his own table, or a rep's visit.
+    assert.deepEqual(adminDeleteTargetOfManagerDayVisit(`own:${ID}`), { kind: "manager_visit", id: ID });
+    assert.deepEqual(adminDeleteTargetOfManagerDayVisit(`rep:${ID}`), { kind: "visit", id: ID });
+    assert.deepEqual(adminDeleteTargetOfManagerDayVisit(`ride:${ID}:B-9`), { kind: "visit", id: ID });
+    assert.equal(adminDeleteTargetOfManagerDayVisit("own:not-an-id"), null);
+    assert.equal(adminDeleteTargetOfManagerDayVisit(`other:${ID}`), null, "a source this tool cannot name draws no button");
     assert.equal(isAdminDeleteKind(undefined), false);
 
     assert.deepEqual(parseAdminDelete({ kind: "visit", id: ID.toUpperCase() }), { ok: true, value: { kind: "visit", id: ID } });
@@ -143,5 +156,58 @@ export async function runPhoenixCrmAdminDeleteTests(): Promise<void> {
     const button = source("src/components/phoenix-crm/admin-delete.tsx");
     assert.match(button, /setConfirming\(true\)/, "asks once more before it goes");
     assert.match(button, /A copy is kept\./, "says a copy is kept");
+  }
+
+  // ── 5 · A month's plan and a manager's own visit (the second migration) ────────────────────────
+  {
+    const sql = raw("supabase/migrations/20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql");
+    assert.match(sql, /check \(kind in \('rep_plan', 'manager_plan', 'visit', 'day_activity', 'monthly_plan', 'manager_visit'\)\)/, "the log admits both new kinds");
+    assert.match(sql, /revoke execute on function public\.phoenix_crm_admin_delete\(jsonb\) from public, anon, authenticated;/);
+    assert.match(sql, /grant execute on function public\.phoenix_crm_admin_delete\(jsonb\) to service_role;/);
+
+    const branches = sql.split(/\n  (?:elsif|if) v_kind = /).slice(1);
+    assert.equal(branches.length, 6, "the four old kinds are kept, and two are added");
+    for (const branch of branches) {
+      const copyAt = branch.indexOf("insert into public.phoenix_crm_admin_deletions");
+      const deleteAt = branch.indexOf("delete from");
+      assert.ok(copyAt > 0 && copyAt < deleteAt, "the copy is kept before a single row is deleted");
+    }
+
+    // A month: its weeks are the plans whose Saturday falls in it, each deleted through the same function
+    // (so each keeps its own copy), and only then the month's history and header.
+    const month = branches[4];
+    assert.match(month, /pl\.week_start >= \(v_record ->> 'month_start'\)::date/);
+    assert.match(month, /pl\.week_start < \(\(v_record ->> 'month_start'\)::date \+ interval '1 month'\)::date/, "a week belongs to the month its Saturday falls in");
+    assert.match(month, /pl\.seat_id = v_seat/, "only this seat's weeks");
+    const weeksAt = month.indexOf("public.phoenix_crm_admin_delete(");
+    const eventsAt = month.indexOf("delete from public.phoenix_crm_monthly_plan_events where monthly_plan_id = v_id;");
+    const headerAt = month.indexOf("delete from public.phoenix_crm_monthly_plans where id = v_id;");
+    assert.ok(weeksAt > 0 && weeksAt < eventsAt && eventsAt < headerAt, "weeks, then the month's history, then its header");
+
+    // A manager's own visit is a row on its own.
+    const visit = branches[5];
+    assert.match(visit, /delete from public\.phoenix_crm_manager_visits where id = v_id;/);
+    assert.match(visit, /raise exception 'phoenix_crm:visit_not_found'/);
+
+    for (const statement of sql.match(/^\s*(?:delete from|update) public\.[^;]*;/gm) ?? []) {
+      assert.match(statement, /\bwhere\b/i, `qualified: ${statement.trim().slice(0, 80)}`);
+    }
+
+    // The service withdraws the month's notices and each week's, after the database has deleted.
+    const service = source("src/lib/phoenix-crm/server/admin-delete.ts");
+    assert.match(service, /kind === "monthly_plan"/);
+    assert.match(service, /for \(const week of weeks\)/, "every week the month took with it");
+    assert.ok(service.indexOf("callPhoenixCrm") < service.indexOf("for (const week of weeks)"), "after the database deleted");
+    assert.equal(phoenixCrmMonthlyNoticeKeyPrefix(ID), `phoenix_crm:monthly:${ID}:`, "the prefix every monthly notice was written under");
+    const notifications = source("src/lib/phoenix-crm/server/notifications.ts");
+    assert.match(notifications, /idempotencyKey: `phoenix_crm:monthly:\$\{notice\.monthlyPlanId\}:v\$\{notice\.version\}:submitted`/, "the key a monthly notice is written under is the prefix's own");
+
+    // The screens: a month on the planner, a visit on a manager's day — each from the server's own answer.
+    const board = source("src/components/phoenix-crm/plan-board.tsx");
+    assert.match(board, /view\.adminDeletes && view\.plan \? \(\s*<div[^>]*>\s*<AdminDelete[^>]*kind="monthly_plan"/, "a month's plan");
+    const dayView = source("src/components/phoenix-crm/manager-day-view.tsx");
+    assert.match(dayView, /view\.adminDeletes && visits\.length > 0/);
+    assert.match(dayView, /adminDeleteTargetOfManagerDayVisit\(visit\.id\)/);
+    assert.match(source("src/lib/phoenix-crm/server/manager-day-detail.ts"), /adminDeletes: canEnterMissedRecords\(viewer\)/);
   }
 }

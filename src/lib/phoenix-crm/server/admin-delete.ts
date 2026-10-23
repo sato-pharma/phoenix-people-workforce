@@ -36,7 +36,15 @@ export async function adminDeleteRecord(viewer: PhoenixCrmViewer, raw: unknown):
     p: { kind, id, actor_hr_id: viewer.hrId, is_test: isTest },
   });
 
-  if (kind === "rep_plan" || kind === "manager_plan") {
+  if (kind === "monthly_plan") {
+    // The month's own notices, then each week it took with it (with the requests to edit that week).
+    await withdrawPhoenixCrmPlanNotices({ kind, planId: id, editRequestIds: [] });
+    const weeks = Array.isArray(result.weeks) ? (result.weeks as Row[]) : [];
+    for (const week of weeks) {
+      const requestIds = Array.isArray(week.edit_request_ids) ? week.edit_request_ids.map(String) : [];
+      await withdrawPhoenixCrmPlanNotices({ kind: "rep_plan", planId: String(week.id), editRequestIds: requestIds });
+    }
+  } else if (kind === "rep_plan" || kind === "manager_plan") {
     const requestIds = Array.isArray(result.edit_request_ids) ? result.edit_request_ids.map(String) : [];
     await withdrawPhoenixCrmPlanNotices({ kind, planId: id, editRequestIds: requestIds });
   } else if (kind === "visit") {

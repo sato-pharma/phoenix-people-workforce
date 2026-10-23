@@ -2103,6 +2103,11 @@ export function phoenixCrmPlanNoticeKeyPrefix(planId: string): string {
   return `phoenix_crm:plan:${planId}:`;
 }
 
+/** Every notice ever raised about one monthly plan — each version and step. */
+export function phoenixCrmMonthlyNoticeKeyPrefix(monthlyPlanId: string): string {
+  return `phoenix_crm:monthly:${monthlyPlanId}:`;
+}
+
 /** Every notice ever raised about one request to edit a week — each version and status. */
 export function phoenixCrmPlanEditNoticeKeyPrefix(requestId: string): string {
   return `phoenix_crm:plan_edit:${requestId}:`;
@@ -2117,12 +2122,16 @@ export function phoenixCrmPlanEditNoticeKeyPrefix(requestId: string): string {
  * deletion that has already happened in the database.
  */
 export async function withdrawPhoenixCrmPlanNotices(plan: {
-  kind: "rep_plan" | "manager_plan";
+  kind: "rep_plan" | "manager_plan" | "monthly_plan";
   planId: string;
   editRequestIds: ReadonlyArray<string>;
 }): Promise<void> {
   const prefixes = [
-    plan.kind === "rep_plan" ? phoenixCrmPlanNoticeKeyPrefix(plan.planId) : managerPlanNoticeKeyPrefix(plan.planId),
+    plan.kind === "rep_plan"
+      ? phoenixCrmPlanNoticeKeyPrefix(plan.planId)
+      : plan.kind === "monthly_plan"
+        ? phoenixCrmMonthlyNoticeKeyPrefix(plan.planId)
+        : managerPlanNoticeKeyPrefix(plan.planId),
     ...plan.editRequestIds.map(phoenixCrmPlanEditNoticeKeyPrefix),
   ];
   for (const prefix of prefixes) {

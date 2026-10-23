@@ -326,7 +326,7 @@ export type MonthlyPlannerView = {
   customers: PlannerCustomer[];
   viewerIsRep: boolean;
   viewerIsReviewer: boolean;
-  /** The Super Admin may delete a week's plan as if it never happened (owner, 2026-10-23). */
+  /** The Super Admin may delete a week's plan, or the whole month's, as if it never happened (owner, 2026-10-23). */
   adminDeletes: boolean;
   /** The one week the rep plans now (calendar.ts `repPlanWeek`) — where his board opens. */
   repWeek: string;
