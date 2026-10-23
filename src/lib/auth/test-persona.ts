@@ -61,6 +61,15 @@ export const TEST_ACCOUNT_WRITABLE_PREFIXES = ["/api/phoenix-crm/", "/api/auth/"
  */
 export const TEST_ACCOUNT_READONLY_POSTS = ["/api/milestones/my-card", "/api/spotlight/me/sheet"] as const;
 
+/**
+ * POST routes that write ONLY the test account's own diagnostic record, filed under ITS login and
+ * flagged `is_test` — never under the employee it mirrors. `/api/errors/screen` is the picture of an
+ * error or a block the test account met (owner, 23 Oct 2026): `screenOwnerFor` in
+ * src/lib/error-monitor/user-error-screens.ts files it under the test login with `hr_id` empty, which
+ * is exactly how the System Audit files a test account's errors. Exact paths, never a prefix.
+ */
+export const TEST_ACCOUNT_OWN_DIAGNOSTIC_POSTS = ["/api/errors/screen"] as const;
+
 export function isTestAccount(access: Pick<AccessContext, "testPersona"> | null | undefined): boolean {
   return Boolean(access?.testPersona);
 }
@@ -70,6 +79,7 @@ export function testAccountMayRun(method: string | null | undefined, pathname: s
   if (READ_METHODS.has(String(method ?? "GET").toUpperCase())) return true;
   const path = String(pathname ?? "");
   if ((TEST_ACCOUNT_READONLY_POSTS as readonly string[]).includes(path)) return true;
+  if (String(method ?? "").toUpperCase() === "POST" && (TEST_ACCOUNT_OWN_DIAGNOSTIC_POSTS as readonly string[]).includes(path)) return true;
   return TEST_ACCOUNT_WRITABLE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 

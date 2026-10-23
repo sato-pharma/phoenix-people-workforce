@@ -30,6 +30,7 @@ import { runSystemAuditReconciliationLedgerTests } from "./system-audit-reconcil
 import { runSystemAuditSyncRunsTests } from "./system-audit-sync-runs.test.ts";
 import { runSystemAuditJobFailuresTests } from "./system-audit-job-failures.test.ts";
 import { runSystemAuditDataLinkageTests } from "./system-audit-data-linkage.test.ts";
+import { runUserErrorScreensTests } from "./user-error-screens.test.ts";
 import { runSystemAuditVerifierTests } from "./system-audit-verifier.test.ts";
 import { runSystemAuditSweepTests } from "./system-audit-sweep.test.ts";
 import { runSystemAuditDailyMessageTests } from "./system-audit-daily-message.test.ts";
@@ -1686,6 +1687,8 @@ import { runSosTopCustomersAggregationTests } from "./sos-top-customers-aggregat
 import { runCrmPortalCoveragePopulationsTests } from "./crm-portal-coverage-populations.test.ts";
 import { runExportFollowsScreenFiltersTests } from "./export-follows-screen-filters.test.ts";
 import { runNotificationDeliveryIntegrityTests } from "./notification-delivery-integrity.test.ts";
+import { runNotificationStoredNoticeTests } from "./notification-stored-notice.test.ts";
+import { runSystemAuditRootCauseFixesTests } from "./system-audit-root-cause-fixes.test.ts";
 import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expense-approval-state-metrics.test.ts";
 
 import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.test.ts";
@@ -2878,6 +2881,7 @@ await runTest("the nightly integrity run is stored and every breached or unanswe
 await runTest("a failed or stuck iReports360 sync run becomes a finding and verifies itself once a later run covers its dates", runSystemAuditSyncRunsTests);
 await runTest("a failed background job or a missed scheduled-job heartbeat becomes a finding, named in plain words", runSystemAuditJobFailuresTests);
 await runTest("a login with no access profile, a missing attendance device map or a vacancy holder mismatch is one finding per person", runSystemAuditDataLinkageTests);
+await runTest("an error or block a person meets leaves a screenshot: refusals photographed, skip list and throttle honoured, the caller answer untouched, test accounts filed under themselves, 90-day retention only nightly, pictures for the Super Admin only", runUserErrorScreensTests);
 await runTest("only the verifier sets FIXED — VERIFIED, after 7 quiet days and real exposure, and a recurrence on a fixed build reopens it", runSystemAuditVerifierTests);
 await runTest("the nightly system audit sweep runs the detectors one at a time under a lease and stops on an unhealthy database", runSystemAuditSweepTests);
 await runTest("the system audit sends at most one message a Cairo day, only for new, newly shared or reopened issues", runSystemAuditDailyMessageTests);
@@ -6007,6 +6011,8 @@ await runTest("CRM-fed portal ratios divide comparable populations (no >100% cov
 await runTest("exports answer the same question as the screen that launched them (direct orders + company vacation report + monthly closing Office)", runExportFollowsScreenFiltersTests);
 
 await runTest("one human receives one notification (person-level recipient dedup), in_app is only claimed for categories the bell renders", runNotificationDeliveryIntegrityTests);
+await runTest("a stored notice is never rewritten once it reached somebody, for every sender", runNotificationStoredNoticeTests);
+await runTest("the confirmed defects the System Audit root-cause report found stay fixed", runSystemAuditRootCauseFixesTests);
 
 await runTest("outstation metrics use the canonical 3-state approval detector (rejected is never pending; Approved means the payable everywhere)", runOutstationExpenseApprovalStateMetricsTests);
 await runTest("CRM unmapped-agent alerts (invisible-work tripwire: new/reused/drifted identities alert, historical stay silent, weekly idempotency key)", runCrmUnmappedAgentAlertTests);

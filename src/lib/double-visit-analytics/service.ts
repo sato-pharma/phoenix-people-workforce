@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { type AccessContext, normalizeHrIdForAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -3097,8 +3098,11 @@ function emptyIntegrityCounts(): Record<DoubleVisitIntegrityIssueType, number> {
 }
 
 export async function getDoubleVisitDataIntegrityReport(access: AccessContext): Promise<DoubleVisitIntegrityReport> {
-  if (access.role !== "Super Admin") {
-    throw new Error("Forbidden: only Super Admin can view the Double Visit Data Integrity report.");
+  // The same door as the page and the admin CRM workspace (Super Admin + SFE Manager, owner 2026-08-02).
+  // A Super-Admin-only check here let the SFE Manager in through the page and then crashed it under
+  // him (System Audit APP-564C1D30, 2 Aug 2026).
+  if (!canUseAdminCrmWorkspace(access)) {
+    throw new Error("Forbidden: the Double Visit Data Integrity report is for the admin CRM workspace roles.");
   }
   if (!(await isDoubleVisitSchemaReady())) {
     return {
@@ -3189,8 +3193,8 @@ export async function getDoubleVisitRecoveredChains(input: {
   dateFrom: string;
   dateTo: string;
 }): Promise<DoubleVisitRecoveredChain[]> {
-  if (input.access.role !== "Super Admin") {
-    throw new Error("Forbidden: only Super Admin can view recovered double-visit chains.");
+  if (!canUseAdminCrmWorkspace(input.access)) {
+    throw new Error("Forbidden: recovered double-visit chains are for the admin CRM workspace roles.");
   }
   if (!(await isDoubleVisitSchemaReady())) return [];
 

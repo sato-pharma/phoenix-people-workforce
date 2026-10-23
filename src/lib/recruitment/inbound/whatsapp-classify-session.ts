@@ -625,6 +625,11 @@ export async function startClassification(input: StartClassificationInput): Prom
       })
       .select(SESSION_COLUMNS)
       .single();
+    // Two CVs from one sender arriving in the same second both find no open conversation; the open-
+    // conversation unique index lets exactly one insert land, and THAT request asks question one. The
+    // loser is not a failure — the applicant is already being asked — so it says so instead of
+    // logging a crash and answering send_failed (3 Oct 2026 21:12 Cairo, System Audit APP-B05C8CA4).
+    if (error && (error as { code?: string }).code === "23505") return "already_open";
     if (error) throw error;
 
     const sent = await sendStep(inserted as SessionRow, jobTitleMenu());

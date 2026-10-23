@@ -206,6 +206,79 @@ export function seatWindowVerdict(
     : { covered: false, reason: "team_stopped" };
 }
 
+// ── R1 — the team the seat sat under ON the visit day ──────────────────────────────────────────────
+
+/** One dated row of `au_v_seat_occupancy_all`: the seat sat under `managerSeatId` over [from, to). */
+export type SeatHistoryRow = { seatId: string; managerSeatId: string | null; effectiveFrom: string; effectiveTo: string | null };
+
+/** One row of `phoenix_crm_team_starts`: the team counts Phoenix CRM visits over [startsOn, stopsOn). */
+export type TeamStartWindow = { teamSeatId: string; startsOn: string; stopsOn: string | null };
+
+/** A visit whose team on the visit day would decide it differently from the team the view reads today. */
+export type TeamMove = { id: string; seatId: string; teamThen: string; teamNow: string | null; countedThen: boolean; countedNow: boolean };
+
+export type TeamMoveNote = "team_moved_same_verdict" | "seat_history_missing" | "seat_history_ambiguous";
+
+/** The team a seat sat under on a day, from its dated history. Half-open, as the history is written. */
+export function teamOnDay(
+  seatId: string,
+  date: string,
+  history: readonly SeatHistoryRow[],
+): { team: string } | { team: null; reason: "seat_history_missing" | "seat_history_ambiguous" } {
+  const teams = new Set(
+    history
+      .filter((row) => row.seatId === seatId && row.effectiveFrom <= date && (row.effectiveTo === null || date < row.effectiveTo))
+      .map((row) => row.managerSeatId)
+      .filter((team): team is string => Boolean(team)),
+  );
+  if (teams.size === 1) return { team: [...teams][0] };
+  return { team: null, reason: teams.size === 0 ? "seat_history_missing" : "seat_history_ambiguous" };
+}
+
+/**
+ * Lead R1. `crm_visits_unified` decides a visit by the seat's team TODAY — `phoenix_crm_started_team_seats()`
+ * joins `au.seats.parent_seat_id`, which carries no date. A seat that moved teams has its older visits
+ * judged by the new team's start. For each countable, quiet visit this compares the team the seat sat
+ * under on the visit day (the dated history) with today's team, and returns only the visits where the
+ * two teams' starts DISAGREE about counting it — a move that changes nothing is counted, not returned.
+ */
+export function teamMoveVerdicts(input: {
+  visits: readonly SavedVisit[];
+  quietCutoff: string;
+  windows: readonly StartedSeatWindow[];
+  history: readonly SeatHistoryRow[];
+  teamStarts: readonly TeamStartWindow[];
+}): { moved: TeamMove[]; notes: Partial<Record<TeamMoveNote, number>> } {
+  const moved: TeamMove[] = [];
+  const notes: Partial<Record<TeamMoveNote, number>> = {};
+  const note = (reason: TeamMoveNote) => {
+    notes[reason] = (notes[reason] ?? 0) + 1;
+  };
+  const cutoff = Date.parse(input.quietCutoff);
+  for (const visit of input.visits) {
+    if (visit.isTest || visit.removed || !canonicalHrIdKey(visit.repHrId) || Date.parse(visit.factsChangedAt) > cutoff) continue;
+    if (!countableVerdict(visit).countable) continue;
+    const then = teamOnDay(visit.seatId, visit.visitDate, input.history);
+    if (then.team === null) {
+      note(then.reason);
+      continue;
+    }
+    // Today's team: the one the view joins, else the seat's open history row.
+    const open = input.history
+      .filter((row) => row.seatId === visit.seatId && row.effectiveTo === null && row.managerSeatId)
+      .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0];
+    const teamNow = input.windows.find((window) => window.seatId === visit.seatId)?.teamSeatId ?? open?.managerSeatId ?? null;
+    if (teamNow === then.team) continue;
+    const countedNow = seatWindowVerdict(visit.seatId, visit.visitDate, input.windows).covered;
+    const countedThen = input.teamStarts.some(
+      (start) => start.teamSeatId === then.team && visit.visitDate >= start.startsOn && (start.stopsOn === null || visit.visitDate < start.stopsOn),
+    );
+    if (countedNow === countedThen) note("team_moved_same_verdict");
+    else moved.push({ id: visit.id, seatId: visit.seatId, teamThen: then.team, teamNow, countedThen, countedNow });
+  }
+  return { moved, notes };
+}
+
 /**
  * The door row `crm_visits_unified` builds from a saved visit, for a visit the door did not return —
  * the same column formulas as its Phoenix branch, so a lost visit can still be followed downstream.

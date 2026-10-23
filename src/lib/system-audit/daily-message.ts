@@ -6,6 +6,7 @@ import {
   resolveNotificationRoleEnabled,
 } from "@/lib/notifications/role-recipients";
 import { createSystemNotification, type SystemNotificationResult } from "@/lib/notifications/system";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadAlertCandidates, markIssuesAlerted, type AlertCandidate } from "@/lib/system-audit/repository";
 
 /**
@@ -49,6 +50,8 @@ export type SystemAuditDailyMessageDeps = {
   markAlerted: (issueIds: string[]) => Promise<number>;
   audienceEnabled: () => Promise<boolean>;
   recipients: () => Promise<{ recipients: Recipient[]; warnings: string[] }>;
+  /** true = today's message already reached this person; null = could not tell (then send as before). */
+  alreadyToldToday: (day: string, hrId: string) => Promise<boolean | null>;
   notify: (input: Parameters<typeof createSystemNotification>[0]) => Promise<SystemNotificationResult>;
   audit: (input: Parameters<typeof writeAuditLog>[0]) => Promise<unknown>;
   now: () => Date;
@@ -59,10 +62,34 @@ const defaultDeps: SystemAuditDailyMessageDeps = {
   markAlerted: (issueIds) => markIssuesAlerted(issueIds),
   audienceEnabled: () => resolveNotificationRoleEnabled(AUDIENCE_KEY),
   recipients: () => resolveNotificationPersonRecipients(AUDIENCE_KEY, "System audit daily message recipients"),
+  alreadyToldToday: async (day, hrId) => {
+    // The notice's event_key IS its idempotency key (unique), and its deliveries hang off it.
+    const supabase = getSupabaseAdmin();
+    const { data: event, error } = await supabase
+      .from("notification_events")
+      .select("id")
+      .eq("event_key", systemAuditDailyKey(day, hrId))
+      .maybeSingle();
+    if (error) return null;
+    if (!event) return false;
+    const { data: deliveries, error: deliveryError } = await supabase
+      .from("notification_deliveries")
+      .select("status")
+      .eq("notification_event_id", (event as { id: string }).id)
+      .in("status", ["sent", "pending", "retrying"])
+      .limit(1);
+    if (deliveryError) return null;
+    return (deliveries ?? []).length > 0;
+  },
   notify: (input) => createSystemNotification(input),
   audit: (input) => writeAuditLog(input),
   now: () => new Date(),
 };
+
+/** One notice per person per Cairo day — the idempotency key, and so the notice's event_key. */
+export function systemAuditDailyKey(day: string, hrId: string): string {
+  return `system-audit-daily:${day}:${hrId}`;
+}
 
 /** The Cairo calendar day — the unit "once a day" is counted in, so it is the owner's day. */
 export function cairoDayKey(now: Date): string {
@@ -149,12 +176,32 @@ export async function sendSystemAuditDailyMessage(
       return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "no recipients" };
     }
 
-    const { title, message } = buildSystemAuditDailyMessage(candidates);
     const day = cairoDayKey(deps.now());
+    // A person already told today is NOT asked again. The idempotency key would refuse the second
+    // delivery anyway, but the refused call still rewrites the stored notice — its title, body and
+    // sent time, which the in-app bell shows — with text that was never delivered. On 23 Oct 2026 the
+    // 10:56 message listing 365 issues was overwritten by an 11:53 re-run reading "3 issues". A read
+    // that fails (null) sends as before: the key still stops a double send.
+    const toldToday = await Promise.all(
+      recipients.map((recipient) => deps.alreadyToldToday(day, recipient.hrId).catch(() => null)),
+    );
+    const pending = recipients.filter((_, index) => toldToday[index] !== true);
+    if (pending.length === 0) {
+      await deps.audit({
+        actorLoginId: ACTOR,
+        entityId: "system_audit.daily_message",
+        entityType: "notification",
+        newValues: { candidates: candidates.length, day, delivered: 0, marked: 0, alreadyToldToday: recipients.length },
+        summary: "System Audit daily message already sent today; its issues stay for the next message.",
+      });
+      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "already sent today" };
+    }
+
+    const { title, message } = buildSystemAuditDailyMessage(candidates);
     let delivered = 0;
     let told = false;
     await Promise.all(
-      recipients.map(async (recipient) => {
+      pending.map(async (recipient) => {
         const result = await deps.notify({
           actionUrl: SYSTEM_AUDIT_PAGE_URL,
           actorId: ACTOR,
@@ -166,7 +213,7 @@ export async function sendSystemAuditDailyMessage(
             candidates: candidates.length,
             day,
             // One per recipient per Cairo day: a second send that day is impossible by construction.
-            idempotencyKey: `system-audit-daily:${day}:${recipient.hrId}`,
+            idempotencyKey: systemAuditDailyKey(day, recipient.hrId),
             issueIds: issueIds.slice(0, 50),
           },
           // module: "system" is the module enabled for Telegram in

@@ -1263,6 +1263,28 @@ export async function queryVisits<T = CrmVisitRow>(
 }
 
 /**
+ * Which of these ids the unified view holds, and whom each row credits (`agent_hr_id`) — asked by id,
+ * with NO departed-agent exclusion and no collapse, because the question is whether the view holds the
+ * row at all. For the System Audit's check that a manager's own visit never reaches the door (the
+ * visit-lifecycle detector), never for a count. Unlike the reads above it THROWS on any error, a
+ * missing view included: an empty answer here must mean "not in the view", never "could not ask".
+ */
+export async function readUnifiedVisitAgentsByIds(ids: readonly string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const wanted = [...new Set(ids.filter(Boolean))];
+  const supabase = getSupabaseAdmin();
+  for (let start = 0; start < wanted.length; start += 100) {
+    const { data, error } = await supabase
+      .from(CRM_VISITS_UNIFIED_VIEW)
+      .select("id,agent_hr_id")
+      .in("id", wanted.slice(start, start + 100));
+    if (error) throw new Error(`crm_visits_unified by id: ${error.message}`);
+    for (const row of (data ?? []) as Array<{ id: string; agent_hr_id: string | null }>) out.set(String(row.id), row.agent_hr_id ?? null);
+  }
+  return out;
+}
+
+/**
  * Bounded, DB-ordered single fetch — for "latest N" style reads that need a real order + hard
  * cap rather than a full scan. Returns `[]` (never throws) when the mirror schema is missing.
  */

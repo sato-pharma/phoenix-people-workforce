@@ -21,6 +21,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ApiError, conflictError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
 import {
   insertRecordConversationComment,
@@ -5430,6 +5431,10 @@ export async function getDirectOrderRequest(
   requestId: string,
 ): Promise<{ request: DirectOrderRequest; steps: DirectOrderStepState[] } | null> {
   await assertPermission(access, "direct_orders", "read");
+  // An address that is not an order id at all (`/admin/direct-orders/validations]` — a stray bracket,
+  // 20 Oct 2026) is the same answer as an unknown id: no such request. Sent to the database it was a
+  // 22P02 invalid-uuid error and a crashed page (System Audit APP-518F5E21 / APP-39BE50BC).
+  if (!isUuid(requestId)) return null;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from("direct_order_requests").select("*").eq("id", requestId).maybeSingle();
   if (error) throw error;

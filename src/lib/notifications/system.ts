@@ -42,6 +42,7 @@ import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governan
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { noticeAlreadyReached, REACHED_DELIVERY_STATUSES } from "@/lib/notifications/stored-notice";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -879,7 +880,42 @@ async function loadTelegramConnection(input: CreateSystemNotificationInput) {
   }
 }
 
+/**
+ * The id of the stored notice for this key when it already reached somebody, else null.
+ * A read that fails answers null, and the write below runs as before: its own error handling (an
+ * old schema, a real outage) is unchanged, and the delivery claim still stops a second send.
+ */
+async function reachedNoticeId(eventKey: string): Promise<string | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: event, error } = await supabase
+      .from("notification_events")
+      .select("id")
+      .eq("event_key", eventKey)
+      .maybeSingle();
+    if (error || !event) return null;
+    const eventId = String((event as { id?: string | number }).id ?? "");
+    if (!eventId) return null;
+    const { data: deliveries, error: deliveryError } = await supabase
+      .from("notification_deliveries")
+      .select("status")
+      .eq("notification_event_id", eventId)
+      .in("status", [...REACHED_DELIVERY_STATUSES])
+      .limit(1);
+    if (deliveryError) return null;
+    const statuses = ((deliveries ?? []) as Array<{ status?: string | null }>).map((row) => row.status);
+    return noticeAlreadyReached(statuses) ? eventId : null;
+  } catch {
+    return null;
+  }
+}
+
 async function createNotificationEvent(input: CreateSystemNotificationInput, eventKey: string, recipient: RecipientProfile) {
+  // A notice that already reached somebody is never rewritten (stored-notice.ts): a repeat send with
+  // the same key is refused delivery below, and must not change what the bell shows either.
+  const reachedId = await reachedNoticeId(eventKey);
+  if (reachedId) return reachedId;
+
   const now = new Date().toISOString();
   const category = categoryFor(input);
   const inAppContent = await renderChannelContent(input, "in_app");

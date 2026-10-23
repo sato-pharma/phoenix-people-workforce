@@ -1608,6 +1608,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // marketing_requests, and all 27 tables declared in RESET_GROUPS in FK order.
   // Pinned by tests/admin-reset-module-data.test.ts.
   "20261023181500_admin_reset_module_data_deletes_actually_run.sql",
+  // ── 2026-10-23 ~19:10 Cairo, written by the session that applied them (PR #6359, owner's merge word
+  // "merge 6359 when green"). mcp__supabase-production__apply_migration answered {"status":"declined"}
+  // for the screens file, so both went through scripts/apply-sql-file.mjs, the standing route
+  // (.claude/rules/database.md), which writes NO schema_migrations row: zero rows carry either
+  // version or name on ozucdzovmcqvepbozvqf or cifwmndunmlxjhyjugxa, read after the apply.
+  // The screens file: readback on BOTH projects — relrowsecurity true, bucket user-error-screens
+  // public false with file_size_limit 1572864, system_audit_issues_family_check allows 'user_screen',
+  // grants to service_role (and the owner) only, zero to anon or authenticated, both service_role
+  // policies present. New table and bucket, no existing row changed.
+  // The index file: production got `CREATE INDEX CONCURRENTLY IF NOT EXISTS
+  // phoenix_crm_touch_trail_day_id_idx ON public.phoenix_crm_touch_trail (visit_day, id)` run on its
+  // own (no transaction) so the 425 MB table every tablet writes to never waited on a lock; pg_index
+  // reads indisvalid true, indisready true, 55 MB. Staging got the file as written; indisvalid true.
+  "20261023203000_user_error_screens.sql",
+  "20261023210000_phoenix_crm_touch_trail_day_id_index.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

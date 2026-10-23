@@ -14,6 +14,7 @@ export const SYSTEM_AUDIT_FAMILIES = [
   "sync_run",
   "job_failure",
   "data_linkage",
+  "user_screen",
 ] as const;
 export type SystemAuditFamily = (typeof SYSTEM_AUDIT_FAMILIES)[number];
 
@@ -24,6 +25,7 @@ export const SYSTEM_AUDIT_FAMILY_LABELS: Record<SystemAuditFamily, string> = {
   sync_run: "iReports360 sync",
   job_failure: "Background job",
   data_linkage: "Record linkage",
+  user_screen: "Error or block a person saw (screenshot)",
 };
 
 export const SYSTEM_AUDIT_STATUSES = [

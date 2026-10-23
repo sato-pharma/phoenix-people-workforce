@@ -5,6 +5,7 @@ import {
   appErrorRowsFromCsv,
   assertOffPeakCairo,
   cairoDateOf,
+  issuesToMarkAfterHistory,
   parseCsv,
   parseHistoricalArgs,
 } from "../scripts/system-audit-historical.ts";
@@ -88,8 +89,32 @@ function testCsv() {
   assert.deepEqual(appErrorRowsFromCsv(""), []);
 }
 
+/**
+ * 23 Oct 2026: by noon the sweep had already run four times on production and three live findings
+ * were waiting for the next daily message. --apply used to mark EVERY waiting issue as told, which
+ * would have swallowed those three; it marks only what the historical run itself made waiting.
+ */
+function testMarksOnlyHistory() {
+  const waitingBefore = ["live-visit-missing", "live-auth-error", "live-detector-failed"];
+  const waitingAfter = [
+    { issueId: "live-visit-missing" },
+    { issueId: "history-1" },
+    { issueId: "live-auth-error" },
+    { issueId: "history-2" },
+    { issueId: "live-detector-failed" },
+  ];
+  assert.deepEqual(
+    issuesToMarkAfterHistory(waitingBefore, waitingAfter),
+    ["history-1", "history-2"],
+    "Only the issues the historical run made waiting are marked as told; the live ones stay for the daily message",
+  );
+  assert.deepEqual(issuesToMarkAfterHistory([], waitingAfter).length, 5, "On an empty ledger every waiting issue is history");
+  assert.deepEqual(issuesToMarkAfterHistory(waitingBefore, []), [], "Nothing waiting, nothing marked");
+}
+
 export async function runSystemAuditHistoricalRunnerTests() {
   testArguments();
   testOffPeak();
   testCsv();
+  testMarksOnlyHistory();
 }

@@ -317,6 +317,9 @@ export const accessRegistry = [
   // it opens from; the object path is read from the row, never taken from the caller.
   sessionApi({ methods: ["GET"], pattern: "/api/admin/system-audit/screenshot/:eventId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/security", permission: null, guard: "domain-helper" }),
+  // One screenshot of what a person saw, streamed from the private bucket for the row drawer (owner,
+  // 23 Oct 2026: as-is, Super Admin only, 90 days).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/screens/:id", permission: null, guard: "domain-helper" }),
   // Blocking or unblocking a login IP changes who can authenticate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/block-ip", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Notification Recipients editor (which roles get told about a cron-triggered system
@@ -2492,6 +2495,10 @@ export const accessRegistry = [
   // (e.g. a crash on the login page before any session exists) — identity is
   // read from the session cookie when present, never trusted from the body.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
+  // The error screenshot (owner, 23 Oct 2026): the picture of an error or a block the signed-in caller
+  // just met, filed under the caller's own session identity — never one from the body. Signed-in only
+  // (a guest gets 401), same-origin checked, 40 an hour per person; read back only by the Super Admin.
+  sessionApi({ methods: ["POST"], pattern: "/api/errors/screen", permission: null, guard: "domain-helper", csrfRequired: true }),
   // The picture of the screen the crash report above was filed from. A TOKEN route, not a session
   // one: it reads no cookie and resolves no identity, because the ticket is the whole authorisation
   // — and a session guard here would be theatre, since the employee whose page broke is often not

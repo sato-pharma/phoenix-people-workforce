@@ -206,6 +206,17 @@ export function appErrorRowsFromCsv(text: string): AppErrorEventRow[] {
   });
 }
 
+/**
+ * Which issues --apply marks as already told: ONLY those this run made waiting. An issue that was
+ * already waiting for the daily message BEFORE the run is a live finding nobody has been told about
+ * yet (on 23 Oct 2026 the sweep had run four times by noon and three such issues were waiting) —
+ * marking it would swallow it from tomorrow's message.
+ */
+export function issuesToMarkAfterHistory(waitingBeforeRun: Iterable<string>, waitingAfterRun: readonly { issueId: string }[]): string[] {
+  const before = new Set(waitingBeforeRun);
+  return waitingAfterRun.map((candidate) => candidate.issueId).filter((issueId) => !before.has(issueId));
+}
+
 function csvCell(value: unknown): string {
   const text = value === null || value === undefined ? "" : String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -290,6 +301,10 @@ async function main(): Promise<void> {
     }
   }
 
+  // Read BEFORE any detector writes: what is already waiting for the daily message stays waiting.
+  const waitingBeforeRun = args.apply ? (await loadAlertCandidates()).map((candidate) => candidate.issueId) : [];
+  if (args.apply) console.log(`Already waiting for the daily message before this run: ${waitingBeforeRun.length} issue(s) — left for it.`);
+
   const fileSink = args.apply ? null : createFileSink();
   const sink: FindingSink = fileSink ?? createDatabaseSink();
 
@@ -364,8 +379,12 @@ async function main(): Promise<void> {
     console.log(`Triage seed: ${seeded} of ${TRIAGE_SEED.length} applied as ${actor}`);
 
     const candidates = await loadAlertCandidates();
-    const marked = await markIssuesAlerted(candidates.map((candidate) => candidate.issueId));
-    console.log(`Marked as already told: ${marked} issue(s) — the first daily message carries only what is new after tonight.`);
+    const historyOnly = issuesToMarkAfterHistory(waitingBeforeRun, candidates);
+    const marked = historyOnly.length > 0 ? await markIssuesAlerted(historyOnly) : 0;
+    console.log(
+      `Marked as already told: ${marked} issue(s) this run made waiting — history is not news. ` +
+        `${candidates.length - historyOnly.length} issue(s) that were waiting before the run stay for the next daily message.`,
+    );
 
     for (const { detector, result } of results) {
       if (detector === reconciliation.id || !result.watermarkTo || result.status === "errored") continue;

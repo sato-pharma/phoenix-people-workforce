@@ -39,6 +39,30 @@ function isLocalDevelopmentRequest(request: Request) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+/**
+ * True when the heartbeat failed because the DATABASE was slow or down, not because the session is
+ * bad. A Cloudflare 52x page is the same outage as a timeout, seen from the other side. Both of the
+ * heartbeat’s database steps use this one test: until 23 Oct 2026 only the session read did, and the
+ * request-counting step before it rethrew its timeout, so every open page crashed with a 500 during
+ * each database restart — 106 times for 50 people, mostly 22 Oct 12:00-15:00 Cairo (APP-20D39617).
+ */
+function isSessionServiceOutage(error: unknown): boolean {
+  return (
+    isSupabaseTimeout(error) ||
+    isSessionVerificationUnavailable(error) ||
+    Boolean(classifySupabaseUnreachable(describeThrown(error)))
+  );
+}
+
+// 503, never 401: the client signs the person out on a 401 alone. The cookies are left untouched and
+// the next heartbeat retries about a minute later.
+function sessionServiceUnavailable() {
+  return NextResponse.json(
+    { error: "db_timeout", message: "Session service temporarily unavailable." },
+    { status: 503 },
+  );
+}
+
 export async function POST(request: Request) {
   const cookieHeader = request.headers.get("cookie");
   const sessionToken = getCookieValue(cookieHeader, phoenixSessionCookieName);
@@ -51,7 +75,12 @@ export async function POST(request: Request) {
       windowMs: 60 * 1000,
     });
   } catch (error) {
-    if (!isApiRateLimitError(error)) throw error;
+    // The counting step reads the database too: during a restart it times out, and that is the same
+    // outage the session read below already answers with a 503 — never a crash (APP-20D39617).
+    if (!isApiRateLimitError(error)) {
+      if (isSessionServiceOutage(error)) return sessionServiceUnavailable();
+      throw error;
+    }
     return NextResponse.json(
       {
         error: "rate_limited",
@@ -71,16 +100,7 @@ export async function POST(request: Request) {
     // cookies are deliberately left untouched — the next heartbeat retries about a minute later.
     // A Cloudflare 52x page is the same outage as a timeout, seen from the other side: Supabase answered
     // through the edge that it was down. It used to be rethrown here as an unhandled 500.
-    if (
-      isSupabaseTimeout(error) ||
-      isSessionVerificationUnavailable(error) ||
-      classifySupabaseUnreachable(describeThrown(error))
-    ) {
-      return NextResponse.json(
-        { error: "db_timeout", message: "Session service temporarily unavailable." },
-        { status: 503 },
-      );
-    }
+    if (isSessionServiceOutage(error)) return sessionServiceUnavailable();
     throw error;
   }
 

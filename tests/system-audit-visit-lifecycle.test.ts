@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { canonicalHrIdForDisplay, canonicalHrIdKey } from "../src/lib/hr-id.ts";
 import {
   createVisitLifecycleDetector,
   VISIT_LIFECYCLE_DETECTOR_ID,
   type CalendarDayReading,
+  type ManagerOwnVisit,
   type RepDayTouch,
   type VisitLifecyclePorts,
 } from "../src/lib/system-audit/detectors/visit-lifecycle.ts";
@@ -16,7 +17,9 @@ import {
   type DoorRow,
   type PersonFacts,
   type SavedVisit,
+  type SeatHistoryRow,
   type StartedSeatWindow,
+  type TeamStartWindow,
 } from "../src/lib/system-audit/detectors/visit-lifecycle-expected.ts";
 import type { AuditOccurrenceInput, DetectorContext, DetectorResult, FindingBatch, FindingSink } from "../src/lib/system-audit/types.ts";
 
@@ -50,6 +53,16 @@ type World = {
   /** Extra visits the KPIs board counts, by `${hrKey}|${YYYY-MM}`. */
   kpiExtra?: Record<string, number>;
   failCalendar?: boolean;
+  /** The dated seat history; by default every started seat sat under its own team all along. */
+  history?: SeatHistoryRow[];
+  /** The team starts; by default each window's team, as the window says. */
+  teamStarts?: TeamStartWindow[];
+  legacyManagerVisits?: ManagerOwnVisit[];
+  planVisits?: ManagerOwnVisit[];
+  /** Whom the unified view credits for a manager's own visit it holds, by id. */
+  unifiedAgents?: Record<string, string | null>;
+  /** The unified view does not answer: the probe says so, and every door read answers `[]`, as queryVisits does. */
+  doorDown?: string;
 };
 
 function person(hrId: string, crmId: number, overrides: Partial<PersonFacts> = {}): PersonFacts {
@@ -141,9 +154,11 @@ function portsFor(world: World): VisitLifecyclePorts {
       return world.windows;
     },
     async readUnifiedRows(input) {
+      if (world.doorDown) return [];
       return world.fixtures.filter(({ visit: saved, flags }) => flags.inUnified && input.ids.includes(saved.id)).map(({ visit: saved }) => doorRow(saved));
     },
     async readDoorVisits(input) {
+      if (world.doorDown) return [];
       const keys = new Set(input.hrIds.map((hrId) => canonicalHrIdKey(hrId)));
       const crmIds = new Set(input.crmIds);
       const phoenix = world.fixtures
@@ -180,6 +195,29 @@ function portsFor(world: World): VisitLifecyclePorts {
     },
     async readHolidays() {
       return { complete: true, dates: new Set<string>() };
+    },
+    async probeDoor() {
+      return world.doorDown ?? null;
+    },
+    async readSeatHistory() {
+      return (
+        world.history ??
+        world.windows.map((window) => ({ seatId: window.seatId, managerSeatId: window.teamSeatId, effectiveFrom: "2020-01-01", effectiveTo: null }))
+      );
+    },
+    async readTeamStarts() {
+      return world.teamStarts ?? world.windows.map((window) => ({ teamSeatId: window.teamSeatId, startsOn: window.startsOn, stopsOn: window.stopsOn }));
+    },
+    async readLegacyManagerVisits({ from, to }) {
+      return (world.legacyManagerVisits ?? []).filter((own) => own.date >= from && own.date <= to);
+    },
+    async readManagerPlanVisits({ from, to }) {
+      return (world.planVisits ?? []).filter((own) => own.date >= from && own.date <= to);
+    },
+    async readUnifiedAgentsByIds(ids) {
+      const out = new Map<string, string | null>();
+      for (const id of ids) if (world.unifiedAgents && id in world.unifiedAgents) out.set(id, world.unifiedAgents[id]);
+      return out;
     },
   };
 }
@@ -447,6 +485,126 @@ export async function runSystemAuditVisitLifecycleTests() {
     const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()], vendorRows: [vendor], kpiExtra: { "b-200|2026-11": 1 } };
     const { occurrences } = await run(world);
     assert.deepEqual(roots(occurrences).map((row) => row.signatureKey), ["visit:s3:reader:vendor"], "the vendor row beside a Phoenix CRM day is its own root");
+  }
+
+  // ── S5: the call rate counting MORE than the rules allow is its own root; a visit still in motion is not ──
+  {
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), fixture()], kpiExtra: { "b-200|2026-11": 2 } };
+    const { occurrences } = await run(world);
+    const root = roots(occurrences);
+    assert.deepEqual(root.map((row) => row.signatureKey), ["visit:s5:kpis:extra"], "two visits counted with no visit behind them are one call-rate root");
+    assert.equal(root[0].errorCode, "VISIT-S5-EXTRA");
+    assert.equal(root[0].affectedDate, "2026-11-01", "a month-level row sits on the month's first day");
+    assert.equal((root[0].evidence as { excess: number }).excess, 2, "the excess is what the board counts beyond the rules' most");
+
+    // The board already counts a visit whose approval moved an hour ago; this run cannot judge it yet.
+    const moving: World = {
+      people: [REP],
+      windows: [SEAT_A],
+      excluded: [],
+      fixtures: [fixture(), fixture({ factsChangedAt: "2026-11-18T11:00:00.000Z" })],
+    };
+    const quiet = await run(moving);
+    assert.deepEqual(
+      quiet.occurrences.map((row) => row.signatureKey),
+      [],
+      "a visit still in motion that the board already counts is not an over-count",
+    );
+  }
+
+  // ── R6: a unified view that does not answer — every door read is UNREAD, never a lost visit ──
+  {
+    const world: World = {
+      people: [REP],
+      windows: [SEAT_A],
+      excluded: [],
+      fixtures: [fixture(), fixture()],
+      doorDown: 'relation "public.crm_visits_unified" does not exist',
+    };
+    const { result, occurrences } = await run(world);
+    assert.deepEqual(
+      [...new Set(occurrences.map((row) => row.signatureKey))].sort(),
+      ["visit:s2:unified:unreadable", "visit:s3:reader:unreadable", "visit:s5:kpis:unreadable"],
+      "two visits behind a view that is gone are unread at every stage that reads it — never 'missing from the view'",
+    );
+    assert.equal(result.status, "partial", "a run whose door did not answer is partial");
+    assert.ok(result.unreadableSources.includes("crm_visits_unified (the view itself did not answer)"), "and names the view");
+  }
+
+  // ── A manager's own visit: credited to the manager it stays; credited to a rep, or served at all from the own-visit table, is a leak ──
+  {
+    const manager = person("B-900", 7001, { jobTitle: "District Sales Manager" });
+    let ownSequence = 0;
+    const own = (date = DAY): ManagerOwnVisit => {
+      ownSequence += 1;
+      return { id: `00000000-0000-4000-9000-${String(ownSequence).padStart(12, "0")}`, managerHrId: manager.hrId, date, savedAt: `${date}T08:00:00.000Z` };
+    };
+    const legacyKept = own();
+    const legacyLeaked = own();
+    const legacyOld = own("2026-11-01");
+    const planKept = own();
+    const planLeaked = own();
+    const world: World = {
+      people: [REP, manager],
+      windows: [SEAT_A],
+      excluded: [],
+      fixtures: [],
+      legacyManagerVisits: [legacyKept, legacyLeaked, legacyOld],
+      planVisits: [planKept, planLeaked],
+      // Credited to the manager in another casing is still the manager.
+      unifiedAgents: { [legacyKept.id]: "b-900", [legacyLeaked.id]: REP.hrId, [legacyOld.id]: REP.hrId, [planLeaked.id]: manager.hrId },
+    };
+    const { result, occurrences } = await run(world);
+    assert.deepEqual(
+      roots(occurrences).map((row) => row.signatureKey).sort(),
+      ["visit:manager_own:legacy_leak", "visit:manager_own:plan_leak"],
+      "a legacy own visit credited to a rep, and an own single visit served by the view, are each a root",
+    );
+    const legacyRow = occurrences.find((row) => row.signatureKey === "visit:manager_own:legacy_leak");
+    assert.deepEqual(legacyRow?.sourceRefs, [legacyLeaked.id], "only the visit credited to someone else");
+    assert.equal(legacyRow?.employeeName, "Rep B-900", "the row is the manager's");
+    assert.deepEqual((legacyRow?.evidence as { creditedTo: string[] }).creditedTo, [canonicalHrIdForDisplay(REP.hrId)], "and names whom the view credits");
+    assert.deepEqual(occurrences.find((row) => row.signatureKey === "visit:manager_own:plan_leak")?.sourceRefs, [planLeaked.id]);
+    assert.equal(result.excludedCounts.manager_own_visit_legacy, 1, "the legacy visit credited to the manager is counted and stays, as ruled");
+    assert.equal(result.excludedCounts.manager_own_visit_plan, 1, "the own single visit the view does not hold is counted");
+    assert.equal(
+      (result.report as { managerOwnChecked: { legacy: number } }).managerOwnChecked.legacy,
+      2,
+      "a cron run reads the last seven days only — the 1 November visit waits for a historical run",
+    );
+  }
+
+  // ── R1: a seat that moved teams, judged by today's team where the team it sat under that day decides the other way ──
+  {
+    const moved: StartedSeatWindow = { seatId: "SEAT-M", teamSeatId: "TEAM-NEW", startsOn: "2026-11-21", stopsOn: null };
+    const steady: StartedSeatWindow = { seatId: "SEAT-S", teamSeatId: "TEAM-NEW2", startsOn: "2026-10-01", stopsOn: null };
+    const history: SeatHistoryRow[] = [
+      { seatId: "SEAT-M", managerSeatId: "TEAM-OLD", effectiveFrom: "2026-09-01", effectiveTo: "2026-11-17" },
+      { seatId: "SEAT-M", managerSeatId: "TEAM-NEW", effectiveFrom: "2026-11-17", effectiveTo: null },
+      { seatId: "SEAT-S", managerSeatId: "TEAM-OLD", effectiveFrom: "2026-09-01", effectiveTo: "2026-11-17" },
+      { seatId: "SEAT-S", managerSeatId: "TEAM-NEW2", effectiveFrom: "2026-11-17", effectiveTo: null },
+    ];
+    const teamStarts: TeamStartWindow[] = [
+      { teamSeatId: "TEAM-OLD", startsOn: "2026-10-01", stopsOn: null },
+      { teamSeatId: "TEAM-NEW", startsOn: "2026-11-21", stopsOn: null },
+      { teamSeatId: "TEAM-NEW2", startsOn: "2026-10-01", stopsOn: null },
+    ];
+    const lostToTheMove = fixture({ seatId: "SEAT-M" }, { ...NONE, inCountable: true });
+    const sameEitherWay = fixture({ repHrId: REP_TWO.hrId, seatId: "SEAT-S" });
+    const world: World = { people: [REP, REP_TWO], windows: [moved, steady], excluded: [], fixtures: [lostToTheMove, sameEitherWay], history, teamStarts };
+    const { result, occurrences, writes } = await run(world);
+    const root = roots(occurrences);
+    assert.deepEqual(root.map((row) => row.signatureKey), ["visit:s2:unified:team_moved"], "the moved seat's visit is one R1 row");
+    assert.deepEqual(root[0].sourceRefs, [lostToTheMove.visit.id]);
+    assert.deepEqual(
+      (root[0].evidence as { moves: Array<{ teamThen: string; countedThen: boolean; countedNow: boolean }> }).moves.map((move) => [move.teamThen, move.countedThen, move.countedNow]),
+      [["TEAM-OLD", true, false]],
+      "the team it sat under that day had started; today's team had not",
+    );
+    const issue = writes.flatMap((batch) => batch.issues).find((entry) => entry.signatureKey === "visit:s2:unified:team_moved");
+    assert.equal(issue?.rootCauseLevel, "probable", "which team decides is a reading of the rule, so the cause is PROBABLE");
+    assert.equal(result.excludedCounts.team_not_started, 1, "the view's own verdict is still counted as the rule it applies");
+    assert.equal(result.excludedCounts.team_moved_same_verdict, 1, "a move both teams' starts agree on is counted, not reported");
   }
 
   // ── A calendar that cannot be read is UNKNOWN, never a pass and never a loss ──
