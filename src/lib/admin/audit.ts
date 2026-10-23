@@ -1,15 +1,7 @@
 
-import {
-  AUDIT_INSERT_RETRY_TIMEOUT_MS,
-  AUDIT_INSERT_TIMEOUT_MS,
-  auditLogAlreadyLanded,
-  auditLogRow,
-  maybeDrainAuditLogOutbox,
-  queueAuditLog,
-} from "@/lib/admin/audit-outbox";
+import { persistAuditLogThroughOutbox } from "@/lib/admin/audit-outbox";
 import { getOperationalAuditLogs } from "@/lib/operations/events";
 import { logError } from "@/lib/observability/log";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
   // Bulk repointing of rows from one area to another, performed by the Super Admin from the Area
@@ -502,46 +494,17 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
   return getOperationalAuditLogs(filter);
 }
 
-async function insertAuditLog(input: AuditLogInput, timeoutMs: number = AUDIT_INSERT_TIMEOUT_MS) {
-  const supabase = getSupabaseAdmin({ requestTimeoutMs: timeoutMs });
-  const { error } = await supabase.from("audit_logs").insert(auditLogRow(input));
-
-  if (error) {
-    throw error;
-  }
-}
-
 /**
  * Fast attempt, then ONE slower retry, then the outbox. Returns the error that ended it, or null.
  *
  * The 3-second first attempt is what keeps the audit trail off the critical path of a request, and
  * it stays. What changed on 23 Oct 2026 is what happens when it expires: it used to be a log line
- * and a lost row — 109 of them in 21 days, 40 on 22 Oct alone. Now the write is retried with room
- * to breathe, and if that fails too the whole input is parked in `audit_log_outbox` for a later
- * drain. Owner's instruction: "both, plus never lose a row".
- *
- * 🔴 THE RETRY PROBES FIRST. A 3-second abort is the CLIENT giving up, not Postgres rolling back,
- * so retrying blind would write some rows twice. `auditLogAlreadyLanded` reads the row back through
- * `idx_audit_logs_actor_entity` before the second attempt.
+ * and a lost row — 109 of them in 21 days, 40 inside the three hours when production Postgres
+ * restarted four times. The mechanism, including the probe that stops a blind retry writing the
+ * row twice, is `src/lib/platform/write-outbox.ts`; the `audit_logs` half of it is
+ * `src/lib/admin/audit-outbox.ts`. Owner's instruction: "both, plus never lose a row".
  */
-async function persistAuditLog(input: AuditLogInput): Promise<unknown | null> {
-  const attemptedAt = new Date().toISOString();
-  try {
-    await insertAuditLog(input);
-    maybeDrainAuditLogOutbox();
-    return null;
-  } catch (firstError) {
-    if (await auditLogAlreadyLanded(input, attemptedAt)) return null;
-    try {
-      await insertAuditLog(input, AUDIT_INSERT_RETRY_TIMEOUT_MS);
-      maybeDrainAuditLogOutbox();
-      return null;
-    } catch (retryError) {
-      await queueAuditLog(input, attemptedAt, retryError ?? firstError);
-      return retryError;
-    }
-  }
-}
+const persistAuditLog = persistAuditLogThroughOutbox;
 
 export async function writeAuditLog(input: AuditLogInput) {
   const error = await persistAuditLog(input);
