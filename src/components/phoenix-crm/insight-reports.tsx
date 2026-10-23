@@ -157,7 +157,7 @@ export function CapacitySection({ idPrefix, resource }: { idPrefix: string; reso
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <TestNote includeTest={report.includeTest} />
       <CrmBlock>
         <CrmStatGrid>
@@ -330,7 +330,7 @@ export function HeardSection({ idPrefix, resource, today }: { idPrefix: string; 
   if (ownProducts && ownProducts.basis === "none") {
     return (
       <>
-        <RefreshFailed error={resource.error} />
+        <RefreshFailed error={resource.error} onRetry={resource.reload} />
         <div className="border-t border-slate-100">
           <CrmEmpty
             message="This report reads your own products, and none are set for you. Your product list is the one Weekly Sales and Scope & Visibility both keep."
@@ -343,7 +343,7 @@ export function HeardSection({ idPrefix, resource, today }: { idPrefix: string; 
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <TestNote includeTest={report.includeTest} />
       {ownProducts ? (
         <div className="px-4 pt-4 sm:px-5">
@@ -522,7 +522,7 @@ export function StockSection({ idPrefix, resource }: { idPrefix: string; resourc
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <TestNote includeTest={report.includeTest} />
       <CrmBlock>
         <CrmStatGrid>
@@ -677,7 +677,7 @@ export function SamplesSection({ idPrefix, resource }: { idPrefix: string; resou
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <TestNote includeTest={report.includeTest} />
       {report.month.inProgress ? (
         <div className="px-4 pt-4 sm:px-5">

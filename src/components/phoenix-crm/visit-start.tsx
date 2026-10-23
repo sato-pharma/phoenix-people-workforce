@@ -41,7 +41,7 @@ import {
 import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
 import { countText } from "@/components/phoenix-crm/format";
 import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
-import { CrmBackBar, CrmBlock, CrmButton, CrmCheck, CrmField, CrmNote, CrmPanel, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import { CrmBackBar, CrmBlock, CrmButton, CrmCheck, CrmField, CrmNote, CrmPanel, CrmSaveError, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import type { OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { plannedStartEmptyNote } from "@/lib/phoenix-crm/today-rules";
@@ -142,8 +142,11 @@ function ActivityEntry({
   const busy = action.busy !== null;
 
   async function save() {
-    const saved = await action.run("day-activity", () => saveDayActivity(seatId, test, { activityType: activity, halfDay, note: note.trim() || null }));
-    if (saved !== undefined) onSaved(saved.activity, label);
+    await action.run(
+      "day-activity",
+      () => saveDayActivity(seatId, test, { activityType: activity, halfDay, note: note.trim() || null }),
+      (saved) => onSaved(saved.activity, label),
+    );
   }
 
   return (
@@ -168,11 +171,7 @@ function ActivityEntry({
           />
         </CrmField>
         <p className="text-xs font-semibold text-slate-500">Recorded so your manager can see the day. It changes none of your figures.</p>
-        {action.error ? (
-          <CrmNote title="Not saved" tone="bad">
-            {action.error}
-          </CrmNote>
-        ) : null}
+        {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} /> : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">
           <CrmButton busy={busy} onClick={() => void save()} variant="primary">
             Save {label}

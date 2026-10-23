@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { crmPost, crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
 import { CompanyPicker } from "@/components/phoenix-crm/visit-company-picker";
-import { CrmButton, CrmCheck, CrmChoice, CrmField, CrmLoadError, CrmLoading, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCheck, CrmChoice, CrmField, CrmLoadError, CrmLoading, CrmNote, CrmSaveError, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { COMPANY_PICKS, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisitEdit, VisitEditForm } from "@/lib/phoenix-crm/view-types";
@@ -66,9 +66,11 @@ function EditForm({
       products,
       comment,
     };
-    const saved = await action.run("save", () => crmPost<SavedVisitEdit>("/api/phoenix-crm/visit-edit", body, "saved"));
-    if (saved === undefined) return;
-    onSaved(saved);
+    await action.run(
+      "save",
+      () => crmPost<SavedVisitEdit>("/api/phoenix-crm/visit-edit", body, "saved"),
+      (saved) => onSaved(saved),
+    );
   }
 
   return (
@@ -170,11 +172,7 @@ function EditForm({
         />
       </CrmField>
 
-      {action.error ? (
-        <CrmNote title="Not saved" tone="bad">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} /> : null}
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton busy={busy} disabled={!ready} onClick={() => void save()} variant="primary">
           Save the correction

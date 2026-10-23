@@ -10,7 +10,7 @@
  * moved on).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export class CrmRequestError extends Error {
   readonly code: string;
@@ -107,6 +107,28 @@ export function errorCodeOf(error: unknown): string | null {
 }
 
 /**
+ * Is sending this again the right answer? ONLY when the connection is what stopped it.
+ *
+ * 🔴 A REFUSAL IS NEVER RETRIED. The server's refusals are decisions — a customer already on the
+ * list, a plan that moved on, a visit too far from the place — and they answer the same way however
+ * many times the same payload arrives, so a Try again beside one is a button that cannot work.
+ * `signed_out` is excluded for the opposite reason: it CAN succeed, but only after the rep signs in
+ * again, and the sentence already says so.
+ *
+ * `code === "offline"` is the one `request()` raises when `fetch` itself threw — the rep walked into
+ * a lift, the phone changed network, the tab was put to sleep. Measured on production 23 Oct 2026:
+ * 1,161 of these in 14 days across iOS, Android and desktop, median 12.5 minutes into a visible
+ * session, with nothing to press afterwards.
+ *
+ * The same distinction already governs the rep's plan board, one layer up: `saveStatusLine` in
+ * src/lib/phoenix-crm/plan-week-draft.ts offers Try again for `failed` and never for `blocked`.
+ * Keep the two agreeing — a refusal is the board's sentence to state, never a button.
+ */
+export function isRetryableFailure(error: unknown): boolean {
+  return errorCodeOf(error) === "offline";
+}
+
+/**
  * A fresh id for a save that may be sent twice (a visit retried after a dropped connection). Called
  * in event handlers only — never while rendering.
  */
@@ -196,27 +218,62 @@ export type CrmAction = {
   busy: string | null;
   error: string | null;
   clearError: () => void;
-  /** Runs one save; resolves undefined when it was refused (the sentence is in `error`). */
-  run: <T>(label: string, work: () => Promise<T>) => Promise<T | undefined>;
+  /**
+   * The save the connection stopped, sent again — the SAME payload, and the same `then` after it,
+   * so a screen that advanced on success still advances. `null` when there is nothing to retry or
+   * when retrying is the wrong answer (`isRetryableFailure`), which is what lets a screen render
+   * the button only where it can work: `onRetry={action.retry}`.
+   */
+  retry: (() => void) | null;
+  /**
+   * Runs one save; resolves undefined when it was refused (the sentence is in `error`).
+   *
+   * `then` is what the screen does with the answer — close the panel, tell the parent, clear the
+   * idempotency id. 🔴 **It belongs HERE, not after the `await`**, because a retry replays the
+   * attempt and must replay its completion with it; a follow-up left behind the call runs on the
+   * first attempt only, and a rep whose Try again worked would watch the screen stay where it was.
+   */
+  run: <T>(label: string, work: () => Promise<T>, then?: (value: T) => void) => Promise<T | undefined>;
 };
+
+/** The attempt a dropped connection stopped, kept whole so Try again re-sends exactly it. */
+type StoppedAttempt = { label: string; then?: (value: never) => void; work: () => Promise<unknown> };
 
 export function useCrmAction(): CrmAction {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState<StoppedAttempt | null>(null);
 
-  const run = useCallback(async <T,>(label: string, work: () => Promise<T>): Promise<T | undefined> => {
+  const run = useCallback(async <T,>(label: string, work: () => Promise<T>, then?: (value: T) => void): Promise<T | undefined> => {
     setBusy(label);
     setError(null);
+    setStopped(null);
     try {
-      return await work();
+      const value = await work();
+      then?.(value);
+      return value;
     } catch (caught) {
       setError(messageOf(caught));
+      // The payload is already inside `work`, so this re-sends what the rep submitted rather than
+      // what he would have to type again — and with the same client id where the save carries one,
+      // which is why re-sending is safer than asking him to fill the form a second time.
+      if (isRetryableFailure(caught)) setStopped({ label, then: then as StoppedAttempt["then"], work });
       return undefined;
     } finally {
       setBusy(null);
     }
   }, []);
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => {
+    setError(null);
+    setStopped(null);
+  }, []);
 
-  return { busy, clearError, error, run };
+  const retry = useMemo(() => {
+    if (stopped === null) return null;
+    return () => {
+      void run(stopped.label, stopped.work, stopped.then as (value: unknown) => void);
+    };
+  }, [run, stopped]);
+
+  return { busy, clearError, error, retry, run };
 }

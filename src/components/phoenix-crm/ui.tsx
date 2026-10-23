@@ -263,6 +263,40 @@ export function CrmLoadError({ message, onRetry }: { message: string; onRetry?: 
   );
 }
 
+/**
+ * A save that did not go through, with the one thing a rep can do about it.
+ *
+ * 🔴 THE BUTTON APPEARS ONLY WHEN SENDING THE SAME THING AGAIN CAN WORK — pass `action.retry`,
+ * which `useCrmAction` leaves null for a refusal and for a signed-out session, so a decision the
+ * server already made never grows a button that asks the rep to press it twice. A dropped
+ * connection is the case this exists for: before it, the sentence stood alone and the rep had to
+ * find the form, fill it in and press Save again.
+ */
+export function CrmSaveError({
+  message,
+  onRetry,
+  title = "Not saved",
+  tone = "bad",
+}: {
+  message: string;
+  onRetry?: (() => void) | null;
+  title?: ReactNode;
+  tone?: NoteTone;
+}) {
+  return (
+    <CrmNote title={title} tone={tone}>
+      <span className="block">{message}</span>
+      {onRetry ? (
+        <span className="mt-2 block">
+          <CrmButton onClick={onRetry} size="sm">
+            Try again
+          </CrmButton>
+        </span>
+      ) : null}
+    </CrmNote>
+  );
+}
+
 const STAT_BARS: Record<Tone, string> = {
   bad: "border-l-rose-500",
   good: "border-l-emerald-500",
