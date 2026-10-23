@@ -35,6 +35,8 @@ import {
   managerPlanSummaryText,
   managerSlotKindLabel,
   managerDmVisitTitle,
+  managerSeniorVisitTitle,
+  countsAsDmsVisitWithSenior,
   managerVisitWindow,
   type ManagerCountRow,
   type ManagerHalf,
@@ -177,6 +179,12 @@ async function loadWithRepDone(
         keys.add(`dmany|${seatId}|${date}`);
         const visitManager = personKey(textOrNull(row.manager_hr_id));
         if (visitManager) keys.add(`dm|${seatId}|${date}|${visitManager}`);
+        // With my manager or product manager (owner, 2026-10-23): a district manager's area is answered by a chain
+        // visit naming him as its manager AND the person he picked (`countsAsDmsVisitWithSenior`).
+        for (const picked of [row.senior_hr_id, row.product_manager_hr_id]) {
+          const pickedKey = personKey(textOrNull(picked));
+          if (pickedKey && countsAsDmsVisitWithSenior(visit, manager, pickedKey)) keys.add(`sr|${seatId}|${date}|${pickedKey}`);
+        }
         done.set(manager, keys);
       }
     }
@@ -224,7 +232,7 @@ export async function computeManagerReports(
     loadWithRepDone(
       managers,
       slots.flatMap((slot) =>
-        slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : slot.kind === "with_dm" ? (slot.dmVisit?.areas.flatMap((area) => area.seatIds) ?? []) : [],
+        slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : slot.kind === "with_dm" ? (slot.dmVisit?.areas.flatMap((area) => area.seatIds) ?? []) : slot.kind === "with_senior" ? (slot.seniorVisit?.areas.flatMap((area) => area.seatIds) ?? []) : [],
       ),
       weekStart,
       isTest,
@@ -240,7 +248,7 @@ export async function computeManagerReports(
     visitedBy.set(visit.managerHrId, keys);
   }
   const [repNames, deciderNames] = await Promise.all([
-    loadPeopleNames([...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.dmVisit?.dmHrId)]),
+    loadPeopleNames([...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.dmVisit?.dmHrId), ...slots.map((slot) => slot.seniorVisit?.seniorHrId)]),
     loadPeopleNames(planRows.flatMap((plan) => [plan.firstApproverHrId, plan.secondApproverHrId, plan.decidedByHrId])),
   ]);
   const personName = (hrId: string) => (deciderNames.has(hrId) ? nameOf(deciderNames, hrId) : nameOf(names, hrId));
@@ -285,6 +293,28 @@ export async function computeManagerReports(
         });
         const halves = daysByDate.get(slot.date) ?? [];
         halves.push({ half: slot.half, kind: slot.kind, kindLabel: managerSlotKindLabel(slot.kind), title: managerDmVisitTitle(dmName, slot.areaName), note: slot.note, customers: areaRows });
+        daysByDate.set(slot.date, halves);
+        continue;
+      }
+      if (slot.kind === "with_senior") {
+        const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
+        const seniorName = seniorHrId ? nameOf(repNames, seniorHrId) : null;
+        const keys = withRepDone.get(managerHrId);
+        const areaRows = (slot.seniorVisit?.areas ?? []).map((area): ManagerReportCustomer => {
+          const done = Boolean(seniorHrId) && area.seatIds.some((seatId) => keys?.has(`sr|${seatId}|${slot.date}|${seniorHrId}`) ?? false);
+          const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
+          countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: area.seatId }) });
+          return { key: null, name: area.areaName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null };
+        });
+        const halves = daysByDate.get(slot.date) ?? [];
+        halves.push({
+          half: slot.half,
+          kind: slot.kind,
+          kindLabel: managerSlotKindLabel(slot.kind),
+          title: managerSeniorVisitTitle(seniorName, slot.seniorVisit?.title ?? null, slot.areaName),
+          note: slot.note,
+          customers: areaRows,
+        });
         daysByDate.set(slot.date, halves);
         continue;
       }

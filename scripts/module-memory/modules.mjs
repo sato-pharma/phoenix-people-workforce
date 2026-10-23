@@ -409,6 +409,27 @@ export const MODULES = [
     keywords: ["customer marks", "go first", "frequency pips", "highlight the customers", "marketing request on the customer"],
     tables: [],
   },
+  // 🔴 SPLIT, 2026-10-23, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN AGAIN: its 35th rule — a district
+  // manager's half-day with his manager or product manager — measured its injected pointer at 4,038 bytes against
+  // the 4,000 margin `tests/module-memory.test.ts` holds. The two half-days spent with another manager (`with_dm`,
+  // `with_senior`) are one family and move together; every glob here is also `phoenix-crm-manager-plan`'s, so a
+  // file here loads the pair and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-manager-ride-alongs",
+    title: "Phoenix CRM — a manager's half-day with another manager",
+    scope: "The half-days a manager spends with another manager rather than a rep: a regional, national or product manager's With a district manager (`with_dm`), and a district manager's With my manager or product manager (`with_senior`), its organogram picker, the areas ticked, Done by a chain visit, and how the Approvals Hub shows them.",
+    globs: [
+      "src/lib/phoenix-crm/manager-plan-rules.ts",
+      "src/lib/phoenix-crm/server/manager-plans.ts",
+      "src/lib/phoenix-crm/server/manager-plan-report.ts",
+      "src/components/phoenix-crm/manager-plan-board.tsx",
+      "src/components/approvals-hub/manager-plan-request-detail.tsx",
+      "supabase/migrations/*phoenix_crm_manager_plan_with_*",
+      "tests/phoenix-crm-manager-plan*",
+    ],
+    keywords: ["with a district manager", "with my manager", "visit with dm", "with the regional manager", "with the product manager", "ride-along half-day"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
   // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
   // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the

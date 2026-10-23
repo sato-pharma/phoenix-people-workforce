@@ -15,7 +15,9 @@ import {
   isManagerPlanStatus,
   isManagerSlotKind,
   parseManagerDmVisit,
+  parseManagerSeniorVisit,
   type ManagerDmVisit,
+  type ManagerSeniorVisit,
   type ManagerHalf,
   type ManagerPlannerKind,
   type ManagerPlanStage,
@@ -169,11 +171,13 @@ export type ManagerSlotRow = {
   scopeLineCode: string | null;
   /** With a district manager (owner, 2026-10-23): who he goes with and the areas he ticked. Null on every other kind. */
   dmVisit: ManagerDmVisit | null;
+  /** With my manager or product manager (owner, 2026-10-23): a district manager's pick and the areas he ticked. Null on every other kind. */
+  seniorVisit: ManagerSeniorVisit | null;
   note: string | null;
 };
 
 const SLOT_COLUMNS =
-  "id, plan_id, plan_date, half, kind, rep_seat_id, rep_hr_id, activity_type, area_seat_id, area_code, area_name, scope_dm_seat_id, scope_line_code, dm_visit, note";
+  "id, plan_id, plan_date, half, kind, rep_seat_id, rep_hr_id, activity_type, area_seat_id, area_code, area_name, scope_dm_seat_id, scope_line_code, dm_visit, senior_visit, note";
 
 function slotRowOf(raw: unknown): ManagerSlotRow | null {
   const row = record(raw);
@@ -196,6 +200,7 @@ function slotRowOf(raw: unknown): ManagerSlotRow | null {
     scopeDmSeatId: textOrNull(row.scope_dm_seat_id),
     scopeLineCode: textOrNull(row.scope_line_code),
     dmVisit: row.kind === "with_dm" ? parseManagerDmVisit(row.dm_visit) : null,
+    seniorVisit: row.kind === "with_senior" ? parseManagerSeniorVisit(row.senior_visit) : null,
     note: textOrNull(row.note),
   };
 }

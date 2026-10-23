@@ -446,7 +446,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const medicalRepName = medicalRepHrId ? (rep?.fullName ?? null) : null;
     const medicalRepDisplayName = medicalRepHrId ? (rep?.displayName || medicalRepName) : null;
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName);
-    const area = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" ? halfDay.areaName : null;
+    const area = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" ? halfDay.areaName : null;
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
       activityTitle,

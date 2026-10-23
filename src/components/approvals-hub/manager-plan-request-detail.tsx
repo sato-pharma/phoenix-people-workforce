@@ -77,6 +77,25 @@ function Tracker({ title, steps }: { title: string; steps: ManagerHubStep[] }) {
   );
 }
 
+type HubSlot = ManagerHubPlanDetail["board"]["days"][number]["slots"][number];
+
+/**
+ * A district manager's half-day with his manager or product manager (owner, 2026-10-23: "make sure the approval go
+ * into workflows and appear in a polished way for the approver"): what kind it is, who goes, and — under it — each
+ * ticked area as a chip. A national manager's With a district manager keeps its one line, as merged (owner: "leave nsm").
+ */
+function RideAlong({ slot }: { slot: HubSlot }) {
+  const who = slot.seniorName ?? "A manager no longer on the list";
+  const title = slot.seniorTitle;
+  return (
+    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="border border-sky-300 bg-sky-50 px-1.5 py-px text-phx-2xs font-black uppercase tracking-wide text-sky-800">{slot.kindLabel}</span>
+      <span className="break-words text-sm font-bold text-slate-900">{who}</span>
+      {title ? <span className="break-words text-xs font-semibold text-slate-500">{title}</span> : null}
+    </span>
+  );
+}
+
 function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
   const days = detail.board.days.filter((day) => day.halves.length > 0 || day.holiday);
   return (
@@ -100,8 +119,27 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                 <div key={slot.half} className="px-3 py-2">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{slot.half}</span>
-                    <span className="break-words text-sm font-bold text-slate-900">{slot.summary ?? "Nothing planned"}</span>
+                    {slot.kind === "with_senior" ? (
+                      <RideAlong slot={slot} />
+                    ) : (
+                      <span className="break-words text-sm font-bold text-slate-900">{slot.summary ?? "Nothing planned"}</span>
+                    )}
                   </div>
+                  {slot.kind === "with_senior" && slot.tickedAreas.length > 0 ? (
+                    <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Areas">
+                      {slot.tickedAreas.map((area) => (
+                        <li
+                          key={area.seatId}
+                          className={`max-w-full border px-2 py-0.5 text-xs ${area.vacant ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-700"}`}
+                        >
+                          <span className="break-words font-semibold" dir="auto">
+                            {area.name}
+                          </span>
+                          {area.vacant ? <span className="font-bold"> · Vacant</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {slot.kind === "admin" && slot.note ? <p className="mt-1 break-words text-xs text-slate-600">{slot.note}</p> : null}
                   {slot.kind !== "admin" && slot.note ? <p className="mt-1 break-words text-xs text-slate-600">Note: {slot.note}</p> : null}
                   {slot.customers.length > 0 ? (
