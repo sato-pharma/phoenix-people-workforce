@@ -24,7 +24,7 @@ addEventListener("load", () => {
 });
 </script>`;
 const tmp = html.replace(/\.html$/, ".measure.html");
-writeFileSync(tmp, readFileSync(html, "utf8").replace("</body>", probe + "</body>"));
+writeFileSync(tmp, readFileSync(html, "utf8").replace("</body>", probe + "</body>")); // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag — a fixed probe injected into a local copy the designer measures
 const dom = execFileSync(chrome, ["--headless=new", "--disable-gpu", `--user-data-dir=${profile}`, "--window-size=794,1123",
   "--virtual-time-budget=5000", "--dump-dom", "file:///" + tmp.replace(/\\/g, "/")], { encoding: "utf8", maxBuffer: 1 << 30 });
 console.log((dom.match(/<pre id="measure">([\s\S]*?)<\/pre>/) || [, "no measurement"])[1]);

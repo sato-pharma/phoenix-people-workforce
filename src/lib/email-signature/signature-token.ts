@@ -24,7 +24,8 @@ function key(): Buffer {
 
 function openWith(raw: Buffer, secretKey: Buffer): string | null {
   try {
-    const decipher = createDecipheriv("aes-256-gcm", secretKey, raw.subarray(0, 12));
+    // authTagLength pins the tag at the full 16 bytes, so a shortened tag is refused rather than checked.
+    const decipher = createDecipheriv("aes-256-gcm", secretKey, raw.subarray(0, 12), { authTagLength: 16 });
     decipher.setAuthTag(raw.subarray(12, 28));
     const id = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
     return id || null;

@@ -89,7 +89,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install flyctl
-        run: |
+        run: | # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell — Fly's own installer over HTTPS, the documented way to get flyctl on a runner
           set -euo pipefail
           curl -fsSL https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
@@ -190,7 +190,7 @@ jobs:
     with:
       ref: ${{ needs.gate.outputs.sha }}
       deploy: none
-    secrets: inherit
+    secrets: inherit # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit — the called workflow is this repository's own fallback-image.yml
 
   standby:
     needs: [gate, image]
@@ -211,7 +211,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install flyctl
-        run: |
+        run: | # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell — Fly's own installer over HTTPS, the documented way to get flyctl on a runner
           set -euo pipefail
           curl -fsSL https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
@@ -291,7 +291,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install flyctl
-        run: |
+        run: | # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell — Fly's own installer over HTTPS, the documented way to get flyctl on a runner
           set -euo pipefail
           curl -fsSL https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
