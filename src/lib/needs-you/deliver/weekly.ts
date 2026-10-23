@@ -21,7 +21,7 @@
  * code defaults, and the Telegram-failure fallback. A sent email cannot be recalled.
  *
  * It rides the 06:36 daily route and self-gates to one weekday, the same shape as
- * `runWeeklySystemHealthDigest`. No new schedule: see `./daily.ts` for why a dedicated cron job is
+ * the weekly system health digest had (retired 2026-10-23). No new schedule: see `./daily.ts` for why a dedicated cron job is
  * the expensive mistake here.
  */
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -42,8 +42,8 @@ export const NEEDS_YOU_WEEKLY_JOB = "needs-you-weekly-email";
 export const NEEDS_YOU_WEEKLY_EVENT = "needs_you_weekly_digest";
 
 /**
- * Sunday — the start of the Egyptian work week, and the same day `runWeeklySystemHealthDigest`
- * uses. The complete board is a planning document, so it belongs at the start of the week rather
+ * Sunday — the start of the Egyptian work week, and the day the retired weekly system health digest
+ * used. The complete board is a planning document, so it belongs at the start of the week rather
  * than the end of one. 0=Sun … 6=Sat.
  */
 export const NEEDS_YOU_WEEKLY_WEEKDAY = 0;

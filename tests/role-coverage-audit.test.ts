@@ -12,7 +12,8 @@ import { ROLE_COVERAGE_MODULES } from "../src/lib/admin/role-coverage/registry.t
 // Owner, 2026-10-20: "many modules all over Phoenix show only reports on reps, and when you filter
 // by manager you find no manager; others only head-office employees and you find no field force …
 // every single role that is applicable to appear in a module — find it, show it, and add it to the
-// Super Admin deep audit." The audit is the Role Coverage section of /admin/data-health. This suite
+// Super Admin deep audit." The audit is the Role coverage section of /admin/system-audit (moved
+// there from the retired /admin/data-health on 23 Oct 2026). This suite
 // pins the two halves a later session could quietly weaken: how a person is bucketed, and how a
 // module's own people list is scored against the roster.
 

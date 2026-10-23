@@ -32,14 +32,18 @@ import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecyc
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * `null` on any figure means its source could not be read — and the reason is named in
+ * `AdminCommandCenterData.dataUnavailable`. A reader shows "Unavailable", never 0 or 100%.
+ */
 export type DataHealthMetrics = {
-  attendanceMappingIssues: number;
+  attendanceMappingIssues: number | null;
   attendanceReadinessRate: UncomputedRate;
-  leaveApprovedRequests: number;
-  leavePendingRequests: number;
-  leaveRejectedRequests: number;
-  employeeHealthRate: number;
-  healthyEmployees: number;
+  leaveApprovedRequests: number | null;
+  leavePendingRequests: number | null;
+  leaveRejectedRequests: number | null;
+  employeeHealthRate: number | null;
+  healthyEmployees: number | null;
   totalEmployees: number;
   totalStructure: number;
   vacantPositions: number;
@@ -184,8 +188,8 @@ async function readAllRows<T = Record<string, unknown>>(
 
 // Linkage against SoS Monthly Closing. This used to run two `count(*)` queries over
 // `sales_records` filtered on `link_status` — a health score for a table nothing reads, sitting
-// next to a "Fix" link that opens /admin/data-health, which reports on the canonical rows. The
-// card and its own drill-down would have disagreed.
+// next to a "Fix" link that opened the (since retired) Data Health page, which reported on the
+// canonical rows. The card and its own drill-down would have disagreed.
 async function fetchSalesHealthCounts(accessContext: AccessContext): Promise<{
   error: string | null;
   linkedRows: number;
@@ -227,13 +231,14 @@ function buildDataHealth(
   });
 
   return {
-    attendanceMappingIssues: 0,
-    // `null`, never 1. This builder reads no attendance data at all, and the old literal claimed a
-    // perfect fingerprint-mapping score off a query that was never run.
+    // `null`, never 0 or 1. This builder reads no attendance or leave data at all, and the old
+    // literals claimed a perfect fingerprint-mapping score and an empty leave queue off queries that
+    // were never run.
+    attendanceMappingIssues: null,
     attendanceReadinessRate: null,
-    leaveApprovedRequests: 0,
-    leavePendingRequests: 0,
-    leaveRejectedRequests: 0,
+    leaveApprovedRequests: null,
+    leavePendingRequests: null,
+    leaveRejectedRequests: null,
     employeeHealthRate,
     healthyEmployees,
     missingJobTitle,
@@ -273,9 +278,8 @@ function buildDataHealthFromStats(
 }
 
 // Lightweight health summary for the Command Center, derived from the cheap platform metrics +
-// sales linkage counts it already fetches — so the page never pays for the full governance audit,
-// which classifies every canonical closing row one by one. That audit lives on
-// /admin/data-health.
+// sales linkage counts it already fetches — so it never pays for the workforce-health audit
+// (getDataHealthStats), which grades every employee record one by one.
 function buildDataHealthFromMetrics(
   platformMetrics: Awaited<ReturnType<typeof getPlatformMetrics>>,
   salesCounts: { linkedRows: number; totalRows: number },
@@ -666,8 +670,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     if (eligibleResult.error) dataUnavailable.push(eligibleResult.error);
 
     // Derived from the cheap metrics already loaded above — NOT the full governance audit, which
-    // classifies every canonical row one by one and was the cause of the ~10s Command Center
-    // load. The exact audit lives on /admin/data-health.
+    // grades every record one by one and was the cause of the ~10s Command Center load.
     const health = buildDataHealthFromMetrics(platformMetrics, salesHealth);
 
     const overview = {
@@ -840,6 +843,10 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   const dataHealthStats = dataHealthResult.status === "fulfilled" ? dataHealthResult.value : null;
   if (dataHealthResult.status === "rejected") {
     dataUnavailable.push("Data health structure totals unavailable.");
+  } else {
+    // Each source the audit could not read leaves its own figure null — name it here so the null
+    // reads as "Unavailable", never as a quiet zero.
+    for (const source of dataHealthResult.value.unavailable) dataUnavailable.push(`Data health: ${source} unavailable.`);
   }
   if (employeesResult.status === "fulfilled" || dataHealthStats) {
     const e = employeesResult.status === "fulfilled" ? employeesResult.value.summary : null;

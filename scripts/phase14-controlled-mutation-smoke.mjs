@@ -134,8 +134,8 @@ async function run() {
 
     const baseline = {
       commandCenter: await apiJson(page, "Command Center baseline", "/admin", { method: "GET" }, [200, 405]),
-      dataHealth: await apiJson(page, "Data Health baseline", "/admin/data-health", { method: "GET" }, [200, 405]),
-      monitoring: await apiJson(page, "Monitoring baseline", "/admin/monitoring", { method: "GET" }, [200, 405]),
+      // Data Health and Monitoring retired into the System Audit on 23 Oct 2026.
+      systemAudit: await apiJson(page, "System Audit baseline", "/admin/system-audit", { method: "GET" }, [200, 405]),
       auditLogs: await apiJson(page, "Audit Logs API baseline", "/api/admin/logs?pageSize=1", { method: "GET" }, 200),
     };
 
@@ -226,8 +226,7 @@ async function run() {
 
     const postChecks = [
       await apiJson(page, "Command Center post-smoke reachable", "/admin", { method: "GET" }, [200, 405]),
-      await apiJson(page, "Data Health post-smoke reachable", "/admin/data-health", { method: "GET" }, [200, 405]),
-      await apiJson(page, "Monitoring post-smoke reachable", "/admin/monitoring", { method: "GET" }, [200, 405]),
+      await apiJson(page, "System Audit post-smoke reachable", "/admin/system-audit", { method: "GET" }, [200, 405]),
       await apiJson(page, "Audit Logs post-smoke reachable", "/api/admin/logs?pageSize=1", { method: "GET" }, 200),
     ];
 

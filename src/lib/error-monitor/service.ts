@@ -1,11 +1,11 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
-import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
+import { getCurrentReleaseTag, shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
 import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 import { logError } from "@/lib/observability/log";
-import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export type ErrorEventSource = "server" | "client";
 
@@ -46,8 +46,8 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
  * table's 903 rows are `environment='development'`, spanning 2026-07-06..07-30, and they read
  * exactly like an outage — bursts of `X is not defined` on whatever page was being built that
  * day. Those historical rows still exist (deleting production data needs owner approval), so
- * filtering them out on READ is what makes /admin/error-monitor and /admin/system-issues
- * truthful. The write-side gate only stops new ones accumulating.
+ * filtering them out on READ is what makes any reader of this table (today the System Audit
+ * detectors behind /admin/system-audit) truthful. The write-side gate only stops new ones accumulating.
  *
  * NOT safe as a plain `neq` — that was the bug (2026-08-13). The paragraph here used to claim the
  * column has no NULLs because logAppError "always sets" it. It does not: the insert below took
@@ -55,9 +55,9 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
  * /api/admin/outstation/expenses started logging its own 500s directly (2026-08-12) it passed no
  * environment, and `NULL != 'development'` is NULL rather than true, so PostgREST's `neq` dropped
  * those rows from EVERY read. Sixteen production errors — twelve unreadable ones and four real
- * `permission denied for table expense_claims` — existed in the table and appeared on neither
- * /admin/error-monitor nor /admin/system-issues. A dashboard that silently hides errors is worse
- * than no dashboard.
+ * `permission denied for table expense_claims` — existed in the table and appeared on neither of
+ * the two error dashboards of the day (both retired 23 Oct 2026 for /admin/system-audit). A
+ * dashboard that silently hides errors is worse than no dashboard.
  *
  * Fixed at both ends: the writer below now stamps `environment`/`release` itself so a caller
  * cannot omit them, and reads use the NULL-safe filter so the rows already written stay visible.
@@ -65,8 +65,11 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
  */
 const DEVELOPMENT_ENVIRONMENT = "development";
 
-/** NULL-safe form of "not development", for `.or(...)`. A bare `.neq` drops NULL-stamped rows. */
-const NON_DEVELOPMENT_ENVIRONMENT_FILTER = `environment.is.null,environment.neq.${DEVELOPMENT_ENVIRONMENT}`;
+/**
+ * NULL-safe form of "not development", for `.or(...)`. A bare `.neq` drops NULL-stamped rows.
+ * Exported so every reader of app_error_events applies the same rule.
+ */
+export const NON_DEVELOPMENT_ENVIRONMENT_FILTER = `environment.is.null,environment.neq.${DEVELOPMENT_ENVIRONMENT}`;
 
 /** The stamp every row gets when its caller does not supply one. Matches /api/errors/client. */
 function currentEnvironmentLabel(): string {
@@ -178,289 +181,6 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
   }
 }
 
-export type ErrorEventFilter = {
-  hrId?: string | null;
-  moduleKey?: string | null;
-  source?: ErrorEventSource | null;
-  dateFrom?: string | null;
-  dateTo?: string | null;
-  page?: number;
-  pageSize?: number;
-};
-
-export type ErrorEventRow = {
-  id: string;
-  createdAt: string;
-  source: ErrorEventSource;
-  hrId: string | null;
-  loginId: string | null;
-  role: string | null;
-  moduleKey: string;
-  moduleLabel: string;
-  route: string | null;
-  message: string;
-  stack: string | null;
-  digest: string | null;
-  environment: string | null;
-};
-
-export type ErrorEventPage = {
-  events: ErrorEventRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  pageCount: number;
-};
-
-export async function getErrorEvents(filter: ErrorEventFilter = {}): Promise<ErrorEventPage> {
-  const supabase = getSupabaseAdmin();
-  const page = Math.max(1, filter.page ?? 1);
-  const pageSize = Math.min(200, Math.max(1, filter.pageSize ?? 50));
-  const offset = (page - 1) * pageSize;
-
-  let query = supabase
-    .from("app_error_events")
-    .select(
-      "id, created_at, source, hr_id, login_id, role, module_key, module_label, route, message, stack, digest, environment",
-      { count: "exact" },
-    )
-    .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + pageSize - 1);
-
-  if (filter.hrId) query = query.ilike("hr_id", `%${filter.hrId}%`);
-  if (filter.moduleKey) {
-    const moduleFilter = ilikeAnyFilter(["module_key", "module_label"], filter.moduleKey);
-    if (moduleFilter) query = query.or(moduleFilter);
-  }
-  if (filter.source) query = query.eq("source", filter.source);
-  if (filter.dateFrom) query = query.gte("created_at", filter.dateFrom);
-  if (filter.dateTo) query = query.lte("created_at", `${filter.dateTo}T23:59:59Z`);
-
-  const { data, error, count } = await query;
-  if (error) throw error;
-
-  const total = count ?? 0;
-  const events: ErrorEventRow[] = (data ?? []).map((row: Record<string, unknown>) => ({
-    createdAt: row.created_at as string,
-    digest: (row.digest as string | null) ?? null,
-    environment: (row.environment as string | null) ?? null,
-    hrId: (row.hr_id as string | null) ?? null,
-    id: String(row.id),
-    loginId: (row.login_id as string | null) ?? null,
-    message: (row.message as string) ?? "",
-    moduleKey: (row.module_key as string) ?? "other",
-    moduleLabel: (row.module_label as string) ?? "Other",
-    role: (row.role as string | null) ?? null,
-    route: (row.route as string | null) ?? null,
-    source: row.source as ErrorEventSource,
-    stack: (row.stack as string | null) ?? null,
-  }));
-
-  return { events, page, pageCount: Math.max(1, Math.ceil(total / pageSize)), pageSize, total };
-}
-
-/**
- * Returns the set of error signatures (`module_key|route`) that have occurred on the
- * given release — i.e. the errors still happening on the currently-deployed build.
- * Used by the System Issues dashboard to derive Active vs Resolved status with no manual
- * action. Queries only two small columns (indexed on release-adjacent access) and dedups
- * in memory. Best-effort: on query failure returns an empty set (everything reads
- * Resolved) rather than throwing and breaking the dashboard.
- */
-export async function getActiveErrorSignatures(currentRelease: string): Promise<Set<string>> {
-  try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("app_error_events")
-      .select("module_key, route")
-      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-      .eq("release", currentRelease);
-    if (error) throw error;
-
-    const signatures = new Set<string>();
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      const moduleKey = (row.module_key as string) ?? "other";
-      const route = (row.route as string | null) ?? null;
-      signatures.add(`${moduleKey}|${route ?? ""}`);
-    }
-    return signatures;
-  } catch (error) {
-    logError("Failed to load active error signatures (all will read Resolved)", { labels: { event: "active_error_signatures_load_failed" }, error });
-    return new Set();
-  }
-}
-
-export type ErrorClusterAggregate = {
-  moduleLabel: string;
-  route: string | null;
-  count: number;
-  firstSeen: string;
-  lastSeen: string;
-  releases: string[];
-  sampleMessage: string;
-};
-
-/**
- * Aggregates app_error_events over the last `days` into one row per signature
- * (module + route), for the AI cluster summary: occurrence count, first/last seen, the
- * distinct deploy releases it appeared in, and a representative message. Grouped in
- * application code (small, retention-bounded table). Best-effort — returns [] on failure.
- */
-export async function getErrorClusterAggregates(days = 7): Promise<ErrorClusterAggregate[]> {
-  try {
-    const since = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await getSupabaseAdmin()
-      .from("app_error_events")
-      .select("module_label, route, release, message, created_at")
-      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-      .gte("created_at", since)
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-
-    const bySignature = new Map<string, ErrorClusterAggregate & { releaseSet: Set<string> }>();
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      const moduleLabel = (row.module_label as string) ?? "Other";
-      const route = (row.route as string | null) ?? null;
-      const createdAt = row.created_at as string;
-      const key = `${moduleLabel}|${route ?? ""}`;
-      const existing = bySignature.get(key);
-      if (existing) {
-        existing.count += 1;
-        if (createdAt < existing.firstSeen) existing.firstSeen = createdAt;
-        if (createdAt > existing.lastSeen) existing.lastSeen = createdAt;
-        const rel = row.release as string | null;
-        if (rel) existing.releaseSet.add(rel);
-      } else {
-        const releaseSet = new Set<string>();
-        const rel = row.release as string | null;
-        if (rel) releaseSet.add(rel);
-        bySignature.set(key, {
-          count: 1,
-          firstSeen: createdAt,
-          lastSeen: createdAt,
-          moduleLabel,
-          releaseSet,
-          releases: [],
-          route,
-          sampleMessage: (row.message as string) ?? "",
-        });
-      }
-    }
-
-    return Array.from(bySignature.values())
-      .map(({ releaseSet, ...rest }) => ({ ...rest, releases: Array.from(releaseSet) }))
-      .sort((a, b) => b.count - a.count);
-  } catch (error) {
-    logError("Failed to load error cluster aggregates", { labels: { event: "error_cluster_aggregates_load_failed" }, error });
-    return [];
-  }
-}
-
-export type WeeklyHealthTopError = {
-  label: string;
-  route: string | null;
-  count: number;
-  status: IssueStatus;
-};
-
-export type WeeklyHealthSummary = {
-  windowDays: number;
-  totalErrors: number;
-  distinctSignatures: number;
-  activeSignatures: number;
-  resolvedSignatures: number;
-  newSignatures: number;
-  topErrors: WeeklyHealthTopError[];
-};
-
-/**
- * One roll-up of app_error_events for the weekly health digest, keyed on the SAME
- * signature (module_key|route) the dashboard's deploy-aware status uses — so its
- * active/resolved counts match what an admin sees when they open the tab. "New" signatures
- * are those with no occurrence before the window (one extra indexed baseline query on the
- * retention-bounded table). Best-effort: returns an all-zero summary on failure so the
- * digest can never throw inside the daily cron's Promise.all.
- */
-export async function getWeeklyHealthSummary(days = 7): Promise<WeeklyHealthSummary> {
-  const windowDays = Math.min(30, Math.max(1, days));
-  const empty: WeeklyHealthSummary = {
-    activeSignatures: 0,
-    distinctSignatures: 0,
-    newSignatures: 0,
-    resolvedSignatures: 0,
-    topErrors: [],
-    totalErrors: 0,
-    windowDays,
-  };
-
-  try {
-    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-    const supabase = getSupabaseAdmin();
-    const [windowRes, baselineRes, activeSignatures] = await Promise.all([
-      supabase
-        .from("app_error_events")
-        .select("module_key, module_label, route")
-        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-        .gte("created_at", since),
-      // Signatures seen BEFORE the window — anything not here is genuinely new this week.
-      supabase
-        .from("app_error_events")
-        .select("module_key, route")
-        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-        .lt("created_at", since),
-      getActiveErrorSignatures(getCurrentReleaseTag()),
-    ]);
-    if (windowRes.error) throw windowRes.error;
-
-    const baselineKeys = new Set<string>();
-    for (const row of (baselineRes.data ?? []) as Record<string, unknown>[]) {
-      baselineKeys.add(signatureKey((row.module_key as string) ?? "other", (row.route as string | null) ?? null));
-    }
-
-    const bySig = new Map<string, { key: string; label: string; route: string | null; count: number }>();
-    let totalErrors = 0;
-    for (const row of (windowRes.data ?? []) as Record<string, unknown>[]) {
-      totalErrors += 1;
-      const moduleKey = (row.module_key as string) ?? "other";
-      const route = (row.route as string | null) ?? null;
-      const key = signatureKey(moduleKey, route);
-      const existing = bySig.get(key);
-      if (existing) existing.count += 1;
-      else bySig.set(key, { count: 1, key, label: (row.module_label as string) ?? "Other", route });
-    }
-
-    let active = 0;
-    let fresh = 0;
-    for (const agg of bySig.values()) {
-      if (deriveAppErrorStatus(agg.key, activeSignatures) === "active") active += 1;
-      if (!baselineKeys.has(agg.key)) fresh += 1;
-    }
-
-    const topErrors: WeeklyHealthTopError[] = Array.from(bySig.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-      .map((agg) => ({
-        count: agg.count,
-        label: agg.label,
-        route: agg.route,
-        status: deriveAppErrorStatus(agg.key, activeSignatures),
-      }));
-
-    return {
-      activeSignatures: active,
-      distinctSignatures: bySig.size,
-      newSignatures: fresh,
-      resolvedSignatures: bySig.size - active,
-      topErrors,
-      totalErrors,
-      windowDays,
-    };
-  } catch (error) {
-    logError("Failed to build weekly health summary", { labels: { event: "weekly_health_summary_failed" }, error });
-    return empty;
-  }
-}
-
 export type ReproTrailEntry = {
   createdAt: string;
   moduleLabel: string;
@@ -505,16 +225,22 @@ export async function getReproTrail(hrId: string | null | undefined, beforeIso: 
   }
 }
 
-// ── Login security lens (Tab 2) ─────────────────────────────────────────────────
+// ── Login security lens ─────────────────────────────────────────────────────────
 // Thresholds aligned to the real lockout policy in src/lib/auth/login-throttle-policy.ts:
 //   account ≥10 failures / 15min → 30min lock; IP ≥15 failures / 15min → blocked, except that an IP
 //   different accounts signed in from in the last 24h (a shared office) gets 10 per account, capped at 150.
 // Over a 7-day window we surface cumulative "notable" activity, not the per-15min gate.
-const SECURITY_WINDOW_FETCH_CAP = 20_000;
 const BRUTE_FORCE_IP_MIN_FAILS = 10;
 const HAMMERED_ACCOUNT_MIN_FAILS = 5;
 const CREDENTIAL_STUFFING_MIN_ACCOUNTS = 3;
 const DISTRIBUTED_ATTACK_MIN_IPS = 3;
+/**
+ * How far back "a place this account has signed in from before" reaches. It used to be all of
+ * history in one unpaged select — which PostgREST cut at 1,000 arbitrary rows, so most known
+ * locations were never read and an ordinary sign-in from the office read as a new location. A
+ * bounded, fully paged window is the honest version: "new" means "not seen in the 90 days before".
+ */
+export const KNOWN_LOCATION_BASELINE_DAYS = 90;
 
 export type BruteForceIp = { ip: string; failCount: number; distinctAccounts: number; lastSeen: string; credentialStuffing: boolean; blocked: boolean };
 export type HammeredAccount = { hrId: string; name: string | null; failCount: number; distinctIps: number; lastSeen: string; distributed: boolean };
@@ -523,12 +249,17 @@ export type NewLocationLogin = { hrId: string; name: string | null; ip: string; 
 
 export type LoginSecuritySignals = {
   windowDays: number;
+  baselineDays: number;
   bruteForceIps: BruteForceIp[];
   hammeredAccounts: HammeredAccount[];
   lockedAccounts: LockedAccount[];
   newLocationLogins: NewLocationLogin[];
   blockedIps: BlockedIp[];
-  truncated: boolean;
+  /**
+   * The sources that could NOT be read, in plain words. A list fed by a source named here is empty
+   * because it was never read — the screen must say "Unavailable" for it, never "none".
+   */
+  unavailable: string[];
 };
 
 export type AccountIdentity = { name: string | null; role: string | null };
@@ -540,9 +271,8 @@ export type AccountDirectoryRow = { login_id?: unknown; hr_id?: unknown; name?: 
  * Builds the canonical-id → identity map, indexing each account by BOTH its login_id and its
  * hr_id. Attempts are keyed by login_id (failed logins) OR hr_id (app errors), and for some
  * accounts those differ — e.g. the Super Admin logs in as "admin-HR" but has hr_id "PHX-1".
- * Keying by only one (as this did before) silently dropped the other's rows from the per-user
- * view AND made the real-account filter treat that account's errors as unknown. Pure +
- * injectable so the dual-key behavior is unit-testable without a live DB.
+ * Keying by only one (as this did before) silently dropped the other's rows. Pure + injectable so
+ * the dual-key behavior is unit-testable without a live DB.
  */
 export function buildAccountDirectory(rows: AccountDirectoryRow[]): Map<string, AccountIdentity> {
   const map = new Map<string, AccountIdentity>();
@@ -560,482 +290,161 @@ export function buildAccountDirectory(rows: AccountDirectoryRow[]): Map<string, 
 }
 
 /**
- * Small directory mapping canonical login_id/hr_id → display name + role (app_auth_users is
- * ~150 rows, so fetching all is cheap). Used to show "Ahmed Hassan (Medical Rep)" instead of
- * a bare hr_id, and to resolve names in the security lens. Best-effort — empty on failure.
+ * Directory mapping canonical login_id/hr_id → display name + role, so the security screens show
+ * "Ahmed Hassan (Medical Rep)" instead of a bare id. Paged (the table passed 200 rows in October
+ * 2026 and nothing stops it passing 1,000), and it THROWS on a failed read: it used to ignore the
+ * error and return an empty map, which made every account in the lens read as nameless.
  */
 export async function getAccountDirectory(): Promise<Map<string, AccountIdentity>> {
-  try {
-    const { data } = await getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id, name, role");
-    return buildAccountDirectory((data ?? []) as AccountDirectoryRow[]);
-  } catch (error) {
-    logError("Failed to load account directory", { labels: { event: "account_directory_load_failed" }, error });
-    return new Map();
-  }
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<AccountDirectoryRow>(
+    () => supabase.from("app_auth_users").select("login_id, hr_id, name, role"),
+    "login_id",
+  );
+  return buildAccountDirectory(rows);
 }
 
 /**
- * Turns auth_login_attempts (which carries an ip + success per attempt) into a security
- * lens: brute-force IPs, hammered accounts, currently-locked accounts, and new-location
- * logins. Both successes and failures are recorded, so new-location detection compares a
- * window's successful-login IPs against each account's earlier known IPs. Aggregated in
- * app code (mirrors getUserAttemptSummary); best-effort — returns empty signals on error.
+ * Turns auth_login_attempts (which carries an ip + success per attempt) into a security lens:
+ * brute-force IPs, hammered accounts, currently-locked accounts, and new-location logins.
+ *
+ * Every source is PAGED — the 7-day window alone held 949 rows on 23 Oct 2026, one week short of
+ * the 1,000-row cut the old single select hit without saying so. And a source that fails is
+ * NAMED in `unavailable` instead of quietly becoming an empty list: an empty brute-force table
+ * must mean "nobody is hammering the login", never "the read failed".
  */
 export async function getLoginSecuritySignals(days = 7): Promise<LoginSecuritySignals> {
   const supabase = getSupabaseAdmin();
   const windowDays = Math.min(30, Math.max(1, days));
-  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const sinceMs = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+  const since = new Date(sinceMs).toISOString();
+  const baselineSince = new Date(sinceMs - KNOWN_LOCATION_BASELINE_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = new Date().toISOString();
-  const empty: LoginSecuritySignals = { blockedIps: [], bruteForceIps: [], hammeredAccounts: [], lockedAccounts: [], newLocationLogins: [], truncated: false, windowDays };
+  const unavailable: string[] = [];
 
-  try {
-    const [directory, windowRes, baselineRes, lockedRes, blockedIps] = await Promise.all([
-      getAccountDirectory(),
-      supabase
-        .from("auth_login_attempts")
-        .select("login_id, ip, success, attempted_at")
-        .gte("attempted_at", since)
-        .order("attempted_at", { ascending: false })
-        .limit(SECURITY_WINDOW_FETCH_CAP),
-      // Known-location baseline: distinct (account, ip) from successful logins BEFORE the window.
-      supabase
-        .from("auth_login_attempts")
-        .select("login_id, ip")
-        .eq("success", true)
-        .lt("attempted_at", since)
-        .limit(SECURITY_WINDOW_FETCH_CAP),
-      supabase
-        .from("app_auth_users")
-        .select("login_id, hr_id, name, failed_login_attempts, locked_until, last_failed_login_at")
-        .gt("locked_until", nowIso),
-      getBlockedIps(),
-    ]);
-
-    const windowRows = (windowRes.data ?? []) as Record<string, unknown>[];
-    const truncated = windowRows.length >= SECURITY_WINDOW_FETCH_CAP;
-    const blockedIpSet = new Set(blockedIps.map((b) => b.ip));
-
-    // Baseline known (account|ip) pairs.
-    const knownPairs = new Set<string>();
-    for (const row of (baselineRes.data ?? []) as Record<string, unknown>[]) {
-      const acct = canonicalHrIdKey(row.login_id as string);
-      const ip = (row.ip as string | null) ?? "";
-      if (acct && ip) knownPairs.add(`${acct}|${ip}`);
+  async function settle<T>(label: string, read: () => Promise<T>): Promise<T | null> {
+    try {
+      return await read();
+    } catch (error) {
+      logError("Login security source could not be read", { labels: { event: "login_security_source_failed", source: label }, error });
+      unavailable.push(label);
+      return null;
     }
+  }
 
-    const ipAgg = new Map<string, { failCount: number; accounts: Set<string>; lastSeen: string }>();
-    const acctAgg = new Map<string, { failCount: number; ips: Set<string>; lastSeen: string }>();
-    const newLocations: NewLocationLogin[] = [];
-    const seenWindowPairs = new Set<string>();
+  const [directory, windowRows, baselineRows, lockedRows, blockedIps] = await Promise.all([
+    settle("Account names", () => getAccountDirectory()),
+    settle(`Sign-in attempts (last ${windowDays} days)`, () =>
+      fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("auth_login_attempts").select("id, login_id, ip, success, attempted_at").gte("attempted_at", since),
+        "id",
+      )),
+    // Known-location baseline: (account, ip) pairs with a successful sign-in before the window.
+    settle("Known sign-in locations", () =>
+      fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("auth_login_attempts")
+            .select("id, login_id, ip")
+            .eq("success", true)
+            .gte("attempted_at", baselineSince)
+            .lt("attempted_at", since),
+        "id",
+      )),
+    settle("Locked accounts", () =>
+      fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("app_auth_users")
+            .select("login_id, hr_id, name, failed_login_attempts, locked_until, last_failed_login_at")
+            .gt("locked_until", nowIso),
+        "login_id",
+      )),
+    settle("Blocked IP list", () => getBlockedIps()),
+  ]);
 
-    for (const row of windowRows) {
-      const acct = canonicalHrIdKey(row.login_id as string);
-      const ip = (row.ip as string | null) ?? "";
-      const at = row.attempted_at as string;
-      const success = Boolean(row.success);
-      if (!acct) continue;
+  const nameOf = (acct: string) => directory?.get(acct)?.name ?? null;
+  const blockedIpSet = new Set((blockedIps ?? []).map((b) => b.ip));
 
-      if (!success) {
-        if (ip) {
-          const e = ipAgg.get(ip) ?? { accounts: new Set<string>(), failCount: 0, lastSeen: at };
-          e.failCount += 1;
-          e.accounts.add(acct);
-          if (at > e.lastSeen) e.lastSeen = at;
-          ipAgg.set(ip, e);
-        }
-        const a = acctAgg.get(acct) ?? { failCount: 0, ips: new Set<string>(), lastSeen: at };
-        a.failCount += 1;
-        if (ip) a.ips.add(ip);
-        if (at > a.lastSeen) a.lastSeen = at;
-        acctAgg.set(acct, a);
-      } else if (ip) {
-        const pairKey = `${acct}|${ip}`;
-        // First success on a (account, ip) not in the pre-window baseline = a new location.
-        if (!knownPairs.has(pairKey) && !seenWindowPairs.has(pairKey)) {
-          seenWindowPairs.add(pairKey);
-          newLocations.push({ at, hrId: canonicalHrIdForDisplay(acct) ?? acct, ip, name: directory.get(acct)?.name ?? null });
-        }
+  // Baseline known (account|ip) pairs.
+  const knownPairs = new Set<string>();
+  for (const row of baselineRows ?? []) {
+    const acct = canonicalHrIdKey(row.login_id as string);
+    const ip = (row.ip as string | null) ?? "";
+    if (acct && ip) knownPairs.add(`${acct}|${ip}`);
+  }
+
+  const ipAgg = new Map<string, { failCount: number; accounts: Set<string>; lastSeen: string }>();
+  const acctAgg = new Map<string, { failCount: number; ips: Set<string>; lastSeen: string }>();
+  const newLocations: NewLocationLogin[] = [];
+  const seenWindowPairs = new Set<string>();
+
+  // Oldest first, so the FIRST success on a new (account, ip) pair is the one reported.
+  const orderedWindowRows = [...(windowRows ?? [])].sort((a, b) =>
+    String(a.attempted_at ?? "").localeCompare(String(b.attempted_at ?? "")),
+  );
+  for (const row of orderedWindowRows) {
+    const acct = canonicalHrIdKey(row.login_id as string);
+    const ip = (row.ip as string | null) ?? "";
+    const at = row.attempted_at as string;
+    const success = Boolean(row.success);
+    if (!acct) continue;
+
+    if (!success) {
+      if (ip) {
+        const e = ipAgg.get(ip) ?? { accounts: new Set<string>(), failCount: 0, lastSeen: at };
+        e.failCount += 1;
+        e.accounts.add(acct);
+        if (at > e.lastSeen) e.lastSeen = at;
+        ipAgg.set(ip, e);
+      }
+      const a = acctAgg.get(acct) ?? { failCount: 0, ips: new Set<string>(), lastSeen: at };
+      a.failCount += 1;
+      if (ip) a.ips.add(ip);
+      if (at > a.lastSeen) a.lastSeen = at;
+      acctAgg.set(acct, a);
+    } else if (ip && baselineRows) {
+      // Without the baseline every success would read as a new location — so none is reported,
+      // and "Known sign-in locations" is already named in `unavailable`.
+      const pairKey = `${acct}|${ip}`;
+      if (!knownPairs.has(pairKey) && !seenWindowPairs.has(pairKey)) {
+        seenWindowPairs.add(pairKey);
+        newLocations.push({ at, hrId: canonicalHrIdForDisplay(acct) ?? acct, ip, name: nameOf(acct) });
       }
     }
+  }
 
-    const bruteForceIps: BruteForceIp[] = Array.from(ipAgg.entries())
-      .filter(([, e]) => e.failCount >= BRUTE_FORCE_IP_MIN_FAILS || e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS)
-      .map(([ip, e]) => ({ blocked: blockedIpSet.has(ip), credentialStuffing: e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS, distinctAccounts: e.accounts.size, failCount: e.failCount, ip, lastSeen: e.lastSeen }))
-      .sort((a, b) => b.failCount - a.failCount)
-      .slice(0, 25);
+  const bruteForceIps: BruteForceIp[] = Array.from(ipAgg.entries())
+    .filter(([, e]) => e.failCount >= BRUTE_FORCE_IP_MIN_FAILS || e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS)
+    .map(([ip, e]) => ({ blocked: blockedIpSet.has(ip), credentialStuffing: e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS, distinctAccounts: e.accounts.size, failCount: e.failCount, ip, lastSeen: e.lastSeen }))
+    .sort((a, b) => b.failCount - a.failCount)
+    .slice(0, 25);
 
-    const hammeredAccounts: HammeredAccount[] = Array.from(acctAgg.entries())
-      .filter(([, e]) => e.failCount >= HAMMERED_ACCOUNT_MIN_FAILS)
-      .map(([acct, e]) => ({ distinctIps: e.ips.size, distributed: e.ips.size >= DISTRIBUTED_ATTACK_MIN_IPS, failCount: e.failCount, hrId: canonicalHrIdForDisplay(acct) ?? acct, lastSeen: e.lastSeen, name: directory.get(acct)?.name ?? null }))
-      .sort((a, b) => b.failCount - a.failCount)
-      .slice(0, 25);
+  const hammeredAccounts: HammeredAccount[] = Array.from(acctAgg.entries())
+    .filter(([, e]) => e.failCount >= HAMMERED_ACCOUNT_MIN_FAILS)
+    .map(([acct, e]) => ({ distinctIps: e.ips.size, distributed: e.ips.size >= DISTRIBUTED_ATTACK_MIN_IPS, failCount: e.failCount, hrId: canonicalHrIdForDisplay(acct) ?? acct, lastSeen: e.lastSeen, name: nameOf(acct) }))
+    .sort((a, b) => b.failCount - a.failCount)
+    .slice(0, 25);
 
-    const lockedAccounts: LockedAccount[] = ((lockedRes.data ?? []) as Record<string, unknown>[]).map((row) => {
-      const acct = canonicalHrIdKey(row.login_id as string) ?? canonicalHrIdKey(row.hr_id as string) ?? "";
-      return {
-        failedAttempts: Number(row.failed_login_attempts ?? 0),
-        hrId: canonicalHrIdForDisplay(acct) ?? String(row.login_id ?? ""),
-        lastFailedAt: (row.last_failed_login_at as string | null) ?? null,
-        lockedUntil: row.locked_until as string,
-        name: directory.get(acct)?.name ?? (row.name as string | null) ?? null,
-      };
-    });
-
+  const lockedAccounts: LockedAccount[] = (lockedRows ?? []).map((row) => {
+    const acct = canonicalHrIdKey(row.login_id as string) ?? canonicalHrIdKey(row.hr_id as string) ?? "";
     return {
-      blockedIps,
-      bruteForceIps,
-      hammeredAccounts,
-      lockedAccounts,
-      newLocationLogins: newLocations.slice(0, 25),
-      truncated,
-      windowDays,
+      failedAttempts: Number(row.failed_login_attempts ?? 0),
+      hrId: canonicalHrIdForDisplay(acct) ?? String(row.login_id ?? ""),
+      lastFailedAt: (row.last_failed_login_at as string | null) ?? null,
+      lockedUntil: row.locked_until as string,
+      name: nameOf(acct) ?? (row.name as string | null) ?? null,
     };
-  } catch (error) {
-    logError("Failed to load login security signals", { labels: { event: "login_security_signals_load_failed" }, error });
-    return empty;
-  }
-}
+  });
 
-// ── Deploy timeline + regression detection ──────────────────────────────────────
-export type TimelineBucket = { day: string; count: number };
-export type DeployMarker = { release: string; firstSeen: string };
-export type Regression = { moduleLabel: string; route: string | null; currentRelease: string; earliestRelease: string; gapReleases: number; count: number };
-
-export type DeployTimeline = {
-  windowDays: number;
-  buckets: TimelineBucket[];
-  markers: DeployMarker[];
-  regressions: Regression[];
-};
-
-// Revision names sort by their numeric segment (phoenix-hr-00066-toh → 66). Falls back to
-// string compare for non-standard release tags (commit SHAs / "unknown").
-function releaseOrdinal(release: string): number {
-  const m = release.match(/-(\d{3,})-/) ?? release.match(/(\d{3,})/);
-  return m ? Number(m[1]) : NaN;
-}
-
-/**
- * Errors-per-day over `days`, the deploy revisions that produced errors (as timeline
- * markers), and regressions — signatures that occur on the current release AND on an
- * earlier release with at least one intervening error-producing release where they did
- * NOT appear (i.e. they went quiet across a deploy, then came back). Aggregated in app
- * code; best-effort — returns empty timeline on failure.
- */
-export async function getDeployTimeline(currentRelease: string, days = 14): Promise<DeployTimeline> {
-  const windowDays = Math.min(60, Math.max(1, days));
-  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-  const empty: DeployTimeline = { buckets: [], markers: [], regressions: [], windowDays };
-
-  try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("app_error_events")
-      .select("module_key, module_label, route, release, created_at")
-      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-      .gte("created_at", since)
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
-
-    // Per-day counts.
-    const dayCounts = new Map<string, number>();
-    // release → earliest created_at (for markers) and the full set of error-producing releases.
-    const releaseFirstSeen = new Map<string, string>();
-    // signature → set of releases it appeared on.
-    const sigReleases = new Map<string, Set<string>>();
-    const sigMeta = new Map<string, { moduleLabel: string; route: string | null; count: number }>();
-
-    for (const row of rows) {
-      const createdAt = row.created_at as string;
-      const day = createdAt.slice(0, 10);
-      dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
-
-      const release = (row.release as string | null) ?? null;
-      if (release) {
-        const prev = releaseFirstSeen.get(release);
-        if (!prev || createdAt < prev) releaseFirstSeen.set(release, createdAt);
-      }
-
-      const moduleKey = (row.module_key as string) ?? "other";
-      const route = (row.route as string | null) ?? null;
-      const sig = `${moduleKey}|${route ?? ""}`;
-      if (release) {
-        const set = sigReleases.get(sig) ?? new Set<string>();
-        set.add(release);
-        sigReleases.set(sig, set);
-      }
-      const meta = sigMeta.get(sig) ?? { count: 0, moduleLabel: (row.module_label as string) ?? "Other", route };
-      meta.count += 1;
-      sigMeta.set(sig, meta);
-    }
-
-    const buckets: TimelineBucket[] = Array.from(dayCounts.entries())
-      .map(([day, count]) => ({ count, day }))
-      .sort((a, b) => (a.day < b.day ? -1 : 1));
-
-    const markers: DeployMarker[] = Array.from(releaseFirstSeen.entries())
-      .map(([release, firstSeen]) => ({ firstSeen, release }))
-      .sort((a, b) => (a.firstSeen < b.firstSeen ? -1 : 1));
-
-    // Globally-ordered list of error-producing releases (by revision ordinal, else first-seen).
-    const orderedReleases = markers
-      .map((m) => m.release)
-      .filter((r) => Number.isFinite(releaseOrdinal(r)))
-      .sort((a, b) => releaseOrdinal(a) - releaseOrdinal(b));
-    const currentOrdinal = releaseOrdinal(currentRelease);
-    const releaseIndex = new Map(orderedReleases.map((r, i) => [r, i]));
-
-    const regressions: Regression[] = [];
-    if (Number.isFinite(currentOrdinal)) {
-      for (const [sig, releases] of sigReleases.entries()) {
-        if (!releases.has(currentRelease)) continue; // must be active on the current release
-        const sigOrdinals = Array.from(releases)
-          .filter((r) => Number.isFinite(releaseOrdinal(r)))
-          .map((r) => releaseIndex.get(r))
-          .filter((i): i is number => i !== undefined)
-          .sort((a, b) => a - b);
-        if (sigOrdinals.length < 2) continue;
-        const earliestIdx = sigOrdinals[0];
-        const latestIdx = sigOrdinals[sigOrdinals.length - 1];
-        // Gap = intervening error-producing releases where this signature did NOT appear.
-        const gap = latestIdx - earliestIdx - (sigOrdinals.length - 1);
-        if (gap >= 1) {
-          const meta = sigMeta.get(sig);
-          regressions.push({
-            count: meta?.count ?? 0,
-            currentRelease,
-            earliestRelease: orderedReleases[earliestIdx],
-            gapReleases: gap,
-            moduleLabel: meta?.moduleLabel ?? "Other",
-            route: meta?.route ?? null,
-          });
-        }
-      }
-    }
-    regressions.sort((a, b) => b.count - a.count);
-
-    return { buckets, markers, regressions, windowDays };
-  } catch (error) {
-    logError("Failed to load deploy timeline", { labels: { event: "deploy_timeline_load_failed", currentRelease }, error });
-    return empty;
-  }
-}
-
-export type UserAttemptCategory = "app_error" | "failed_login";
-
-export type UserAttemptRow = {
-  hrId: string;
-  category: UserAttemptCategory;
-  moduleKey: string;
-  moduleLabel: string;
-  route: string | null;
-  attemptCount: number;
-  firstSeen: string;
-  lastSeen: string;
-  sampleMessage: string;
-};
-
-export type UserAttemptFilter = {
-  hrId?: string | null;
-  dateFrom?: string | null;
-  dateTo?: string | null;
-};
-
-export type UserAttemptSummary = {
-  rows: UserAttemptRow[];
-  /** True if either source hit the per-fetch row cap — narrow the date range for full accuracy. */
-  truncated: boolean;
-  /** ISO timestamp of the lower bound actually applied to both sources (default window or the caller's dateFrom). */
-  windowFrom: string;
-};
-
-/** Aggregated "everything that didn't resolve to a real app_auth_users account" bucket. */
-export type UnknownAttemptsSummary = {
-  attemptCount: number;
-  distinctCount: number;
-};
-
-/**
- * Default lookback for the System Issues "Per-User Attempts" tab. All-time history (retention
- * keeps ~90 days) makes stale/one-off failures dominate the view, so we default to the last
- * 30 days; an explicit dateFrom from the UI still overrides it.
- */
-export const DEFAULT_ATTEMPT_WINDOW_DAYS = 30;
-
-const ATTEMPT_FETCH_PAGE_SIZE = 1000;
-const ATTEMPT_FETCH_ROW_CAP = 20_000;
-
-/**
- * Resolves the effective lower-bound timestamp for the attempts query: the caller's explicit
- * dateFrom when provided, otherwise DEFAULT_ATTEMPT_WINDOW_DAYS ago. Pure + injectable `now`
- * so the windowing is unit-testable without a live DB.
- */
-export function resolveAttemptWindowFrom(dateFrom: string | null | undefined, now: number = Date.now()): string {
-  if (dateFrom) return dateFrom;
-  return new Date(now - DEFAULT_ATTEMPT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-}
-
-/**
- * Partitions aggregated attempt rows into rows tied to a real account (predicate true) and an
- * aggregate of everything else (test/synthetic/probe/typo login ids). Distinct unknown users
- * are counted by canonical HR_ID key so the same fake login across many modules counts once.
- * Pure — the caller injects `isRealAccount` so this is testable without a live directory/DB.
- */
-export function partitionUserAttempts<T extends { hrId: string; attemptCount: number }>(
-  rows: T[],
-  isRealAccount: (hrId: string) => boolean,
-): { realRows: T[]; unknownAttempts: UnknownAttemptsSummary } {
-  const realRows: T[] = [];
-  const unknownKeys = new Set<string>();
-  let attemptCount = 0;
-  for (const row of rows) {
-    if (isRealAccount(row.hrId)) {
-      realRows.push(row);
-    } else {
-      attemptCount += row.attemptCount;
-      unknownKeys.add(canonicalHrIdKey(row.hrId) ?? row.hrId);
-    }
-  }
-  return { realRows, unknownAttempts: { attemptCount, distinctCount: unknownKeys.size } };
-}
-
-/**
- * Aggregates app_error_events + failed auth_login_attempts into per-HR_ID, per-module/route
- * attempt counts for the System Issues "Per-user" tab. Grouping runs in application code
- * (not SQL) so no migration is needed — retention already bounds app_error_events to 90 days,
- * keeping row counts fetchable. Both sources page in ATTEMPT_FETCH_PAGE_SIZE batches up to
- * ATTEMPT_FETCH_ROW_CAP; hitting the cap sets `truncated: true` rather than silently dropping rows.
- */
-export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Promise<UserAttemptSummary> {
-  const supabase = getSupabaseAdmin();
-  // Default to a recent window so the tab reflects live activity, not ~90 days of retained
-  // history; an explicit filter.dateFrom still overrides. Applied to BOTH sources below.
-  const windowFrom = resolveAttemptWindowFrom(filter.dateFrom);
-  const dateTo = filter.dateTo ? `${filter.dateTo}T23:59:59Z` : null;
-
-  type Bucket = {
-    hrId: string;
-    category: UserAttemptCategory;
-    moduleKey: string;
-    moduleLabel: string;
-    route: string | null;
-    attemptCount: number;
-    firstSeen: string;
-    lastSeen: string;
-    sampleMessage: string;
+  return {
+    baselineDays: KNOWN_LOCATION_BASELINE_DAYS,
+    blockedIps: blockedIps ?? [],
+    bruteForceIps,
+    hammeredAccounts,
+    lockedAccounts,
+    newLocationLogins: newLocations.sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 25),
+    unavailable,
+    windowDays,
   };
-  const buckets = new Map<string, Bucket>();
-  let truncated = false;
-
-  function record(input: {
-    rawHrId: string | null | undefined;
-    category: UserAttemptCategory;
-    moduleKey: string;
-    moduleLabel: string;
-    route: string | null;
-    timestamp: string;
-    message: string;
-  }) {
-    const hrKey = canonicalHrIdKey(input.rawHrId);
-    if (!hrKey) return;
-    const key = `${hrKey}|${input.category}|${input.moduleKey}|${input.route ?? ""}`;
-    const existing = buckets.get(key);
-    if (existing) {
-      existing.attemptCount += 1;
-      if (input.timestamp < existing.firstSeen) existing.firstSeen = input.timestamp;
-      if (input.timestamp > existing.lastSeen) existing.lastSeen = input.timestamp;
-    } else {
-      buckets.set(key, {
-        attemptCount: 1,
-        category: input.category,
-        firstSeen: input.timestamp,
-        hrId: canonicalHrIdForDisplay(input.rawHrId) ?? hrKey,
-        lastSeen: input.timestamp,
-        moduleKey: input.moduleKey,
-        moduleLabel: input.moduleLabel,
-        route: input.route,
-        sampleMessage: input.message,
-      });
-    }
-  }
-
-  // App errors (server + client), tagged by hr_id at capture time.
-  {
-    let offset = 0;
-    for (;;) {
-      let query = supabase
-        .from("app_error_events")
-        .select("hr_id, module_key, module_label, route, message, created_at")
-        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
-        .not("hr_id", "is", null)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
-
-      if (filter.hrId) query = query.ilike("hr_id", `%${filter.hrId}%`);
-      query = query.gte("created_at", windowFrom);
-      if (dateTo) query = query.lte("created_at", dateTo);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      const rows = data ?? [];
-      for (const row of rows as Record<string, unknown>[]) {
-        record({
-          category: "app_error",
-          message: (row.message as string) ?? "",
-          moduleKey: (row.module_key as string) ?? "other",
-          moduleLabel: (row.module_label as string) ?? "Other",
-          rawHrId: row.hr_id as string | null,
-          route: (row.route as string | null) ?? null,
-          timestamp: row.created_at as string,
-        });
-      }
-      offset += ATTEMPT_FETCH_PAGE_SIZE;
-      if (rows.length < ATTEMPT_FETCH_PAGE_SIZE) break;
-      if (offset >= ATTEMPT_FETCH_ROW_CAP) {
-        truncated = true;
-        break;
-      }
-    }
-  }
-
-  // Failed login attempts. login_id is the HR_ID credential used to sign in.
-  {
-    let offset = 0;
-    for (;;) {
-      let query = supabase
-        .from("auth_login_attempts")
-        .select("login_id, attempted_at")
-        .eq("success", false)
-        .order("attempted_at", { ascending: false })
-        .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
-
-      if (filter.hrId) query = query.ilike("login_id", `%${filter.hrId}%`);
-      query = query.gte("attempted_at", windowFrom);
-      if (dateTo) query = query.lte("attempted_at", dateTo);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      const rows = data ?? [];
-      for (const row of rows as Record<string, unknown>[]) {
-        record({
-          category: "failed_login",
-          message: "Failed login attempt",
-          moduleKey: "auth",
-          moduleLabel: "Login",
-          rawHrId: row.login_id as string | null,
-          route: "/login",
-          timestamp: row.attempted_at as string,
-        });
-      }
-      offset += ATTEMPT_FETCH_PAGE_SIZE;
-      if (rows.length < ATTEMPT_FETCH_PAGE_SIZE) break;
-      if (offset >= ATTEMPT_FETCH_ROW_CAP) {
-        truncated = true;
-        break;
-      }
-    }
-  }
-
-  const rowsOut = Array.from(buckets.values()).sort((a, b) => b.attemptCount - a.attemptCount);
-  return { rows: rowsOut, truncated, windowFrom };
 }

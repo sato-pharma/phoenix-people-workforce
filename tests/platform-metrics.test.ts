@@ -140,10 +140,10 @@ export function runPlatformMetricsTests() {
   assert.match(commandCenterSource, /platformMetrics\.expenses\.approvedAmount/);
 
   const dataHealthSource = readFileSync("src/lib/admin/service.ts", "utf8");
-  assert.match(dataHealthSource, /const businessVacancyRows = vacancyRows\.filter/);
-  assert.match(dataHealthSource, /const openVacancyRows = businessVacancyRows\.filter/);
-  assert.match(dataHealthSource, /vacancies: openVacancyRows\.map\(vacancySignalFromRow\)/);
-  assert.match(dataHealthSource, /const vacancyAudit = openVacancyRows\.map/);
+  // The vacancy list and the sales-ownership classification that read position_vacancies left with
+  // the retired Data Health page (23 Oct 2026). Vacant seats come from the shared workforce metrics.
+  assert.match(dataHealthSource, /vacantPositions: sharedWorkforce\.openVacancies/);
+  assert.doesNotMatch(dataHealthSource, /from\("position_vacancies"\)/);
   assert.doesNotMatch(dataHealthSource, /openVacancies: vacancyRows\.length/);
 
   const overviewSource = readFileSync("src/lib/overview/service.ts", "utf8");

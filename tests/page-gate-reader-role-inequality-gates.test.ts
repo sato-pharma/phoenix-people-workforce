@@ -224,7 +224,7 @@ export async function runPageGateReaderRoleInequalityGateTests(): Promise<void> 
     ["/admin/finance-leave-management", ["(admin)", "admin", "finance-leave-management"]],
     ["/admin/payroll-copilot", ["(admin)", "admin", "payroll-copilot"]],
     ["/admin/payroll-copilot/insurance-wages", ["(admin)", "admin", "payroll-copilot", "insurance-wages"]],
-    ["/admin/system-issues", ["(admin)", "admin", "system-issues"]],
+    // /admin/system-issues left this list on 23 Oct 2026: it is now a redirect to /admin/system-audit.
   ];
   for (const [href, segments] of constGated) {
     const source = pageSource(...segments);

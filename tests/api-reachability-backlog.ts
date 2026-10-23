@@ -378,14 +378,6 @@ export const API_REACHABILITY_BACKLOG: readonly ApiReachabilityGap[] = [
 
   // ── nothing names it, and no page is its twin ────────────────────────────────────────────────
   {
-    route: "/api/admin/errors",
-    authMode: "session",
-    kind: "no-caller-anywhere",
-    reason:
-      "Wraps @/lib/error-monitor/service. No page, no component, no script and no test mentions the path — the only file in the repository that names it is the access registry. The error-monitor UI reads its data elsewhere: /admin/error-monitor is itself a stub that permanently redirects to /admin/system-issues.",
-    recorded: "2026-10-08",
-  },
-  {
     route: "/api/admin/daily-deductions/publish",
     authMode: "session",
     kind: "no-caller-anywhere",

@@ -775,12 +775,13 @@ const NAV_ITEMS = [
   { href: "/coaching/analytics",                     icon: ShieldCheck,  label: "Coaching",           sub: "Rep performance & KPIs" },
   { href: "/admin/approvals-hub",                    icon: CheckCircle2, label: "Approvals Hub",      sub: "Pending approvals" },
   { href: "/organogram",                             icon: Users,        label: "Organogram",         sub: "Org chart & hierarchy" },
-  { href: "/admin/data-health",                      icon: ShieldCheck,  label: "Data Health",        sub: "System quality score" },
+  // Data Health until it retired into the Super-Admin-only System Audit on 23 Oct 2026.
+  { href: "/admin/system-audit",                     icon: ShieldCheck,  label: "System Audit",       sub: "Errors & integrity checks" },
 ];
 
 // The SFE Manager's own module list, not the CEO's with holes punched in it. Every href below
 // is one his sidebar already resolves (verified against the admin nav + hub items for the role),
-// which is why the CEO entries for /employees, /organogram, /admin/data-health and
+// which is why the CEO entries for /employees, /organogram, /admin/system-audit and
 // /admin/outstation/expense-command are absent — each of those redirects him to
 // /employee-portals or renders a Forbidden card.
 const SFE_NAV_ITEMS = [
@@ -806,7 +807,7 @@ function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ad
   const items = variant === "sfe"
     ? SFE_NAV_ITEMS
     : access.role === "CEO"
-    ? NAV_ITEMS.filter((item) => item.href !== "/employees" && item.href !== "/admin/data-health")
+    ? NAV_ITEMS.filter((item) => item.href !== "/employees" && item.href !== "/admin/system-audit")
     : NAV_ITEMS;
 
   // Five across, so ten links are two full rows. Four left two blank cells at the end.

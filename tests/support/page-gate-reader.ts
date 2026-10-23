@@ -628,8 +628,8 @@ export function hasEntryExit(source: string): boolean {
 }
 
 /**
- * A page that forwards and renders nothing — `app/(admin)/admin/error-monitor/page.tsx` is twelve
- * lines that call `redirect("/admin/observability/errors")`.
+ * A page that forwards and renders nothing — `app/(admin)/admin/error-monitor/page.tsx` is ten
+ * lines that call `redirect("/admin/system-audit")`.
  *
  * It matters because such a stub is a LINK, not a page. The reverse guard already treats
  * `redirect("/x")` written anywhere as a link TO /x; this is the other half of that statement — the

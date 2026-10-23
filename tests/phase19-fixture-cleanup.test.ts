@@ -15,7 +15,10 @@ export function runPhase19FixtureCleanupTests() {
   assert.match(phase19Source, /raw PHASE audit traces for accountability/);
   assert.match(phase19Source, /getAdminCommandCenterData/);
   assert.match(phase19Source, /getDataHealthStats/);
-  assert.match(phase19Source, /getOperationalMonitoringStats/);
+  // The Monitoring aggregate retired on 23 Oct 2026; the security feed is read through the System
+  // Audit's login-security loader now.
+  assert.match(phase19Source, /loadLoginSecurityOverview/);
+  assert.doesNotMatch(phase19Source, /getOperationalMonitoringStats/);
   assert.match(phase19Source, /Monitoring business activity excludes PHASE15\/16\/17 fixture actors/);
   assert.doesNotMatch(phase19Source, /locked_at:\s*null/);
   assert.doesNotMatch(phase19Source, /status:\s*"uploaded"/);

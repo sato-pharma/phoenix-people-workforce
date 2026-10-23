@@ -209,13 +209,16 @@ export async function runMalformedUuidIdGuardsTests() {
   // lost its own semantics.
   const ALLOWED_UUID_PATTERN_FILES = new Set([
     "src/lib/http/uuid.ts",
-    // Deliberately NOT folded, both with a different contract from a lookup guard:
+    // Deliberately NOT folded, with a different contract from a lookup guard:
     //   metrics.ts  — isUuidLike TRIMS, because it suppresses uuids from notification detail rows.
-    //   ai-redact.ts  — a global, word-boundary scanner that finds uuids ANYWHERE in a
-    //                    string to redact them, never a test of whether one value IS a uuid.
-    // A lookup guard must be anchored and must not trim; folding either would break one of the two.
+    // A lookup guard must be anchored and must not trim; folding it would break one of the two.
+    // (error-monitor/ai-redact.ts, a global uuid scanner, was listed here until it was deleted with
+    // the System Issues page's AI triage on 23 Oct 2026.)
     "src/lib/communication/metrics.ts",
-    "src/lib/error-monitor/ai-redact.ts",
+    //   system-audit/signature.ts — an UNANCHORED, global scanner that masks every uuid inside an
+    // error message to "<uuid>" so retries of one error share a signature; it never guards a
+    // lookup. Its one anchored check (is this path segment an id?) imports isUuid.
+    "src/lib/system-audit/signature.ts",
   ]);
 
   const uuidPattern = /\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/;

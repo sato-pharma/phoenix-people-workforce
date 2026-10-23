@@ -246,13 +246,14 @@ export function runNavigationActivePathTests() {
     false,
     "CEO must not see the Admin Tools band — any of its four sections — even if a permission lookup grants admin",
   );
-  // Two Admin Tools cards name the CEO (System Issues, Email Control Center) but the band's gate
-  // is Super-Admin-only, exactly as the hub row was — so they stay off his rail. Promoting the
+  // Admin Tools cards that name the CEO (Email Control Center, CEO Email Composer — System Issues
+  // was one until it retired into the Super-Admin-only System Audit on 23 Oct 2026) still stay off
+  // his rail, because the band's gate is Super-Admin-only, exactly as the hub row was. Promoting the
   // cards on their own gates alone is what would have put them there, which is the whole reason
   // the band carries a gate of its own.
   assert.equal(
     ceoCleanupNav.some((navSection) =>
-      navSection.items.some((navItem) => navItem.href === "/admin/system-issues"),
+      navSection.items.some((navItem) => navItem.href === "/admin/email-control-center"),
     ),
     false,
     "CEO must not reach an Admin Tools module his hub could never open",

@@ -190,7 +190,7 @@ export const accessRegistry = [
   // Super Admin only, on top of the same dev-only env+localhost gate as /api/dev-auth above
   // (see isLocalDevelopmentRequest): auto-picks a real active employee for a role+line and
   // swaps the caller's own session for a dev-preview session as that employee. Role gate is
-  // in-route (domain-helper) rather than a permission resource, matching /api/admin/system-issues.
+  // in-route (domain-helper) rather than a permission resource, matching /api/admin/system-audit.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: readOnly, pattern: "/api/dev-auth/preview", permission: null, guard: "domain-helper" }),
   // Same Super Admin + dev-only gate as the preview route above: read-only candidate listing
   // that powers the picker's Line -> Region -> Area -> Name cascade client-side.
@@ -263,7 +263,8 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/retention-risk-sweep", reason: "Tells HR Operations, HR Advisory, Super Admin, the SFE Manager and the subject's own line manager when an employee reaches five consecutive working days of recorded leave, or a Medical Rep reaches five consecutive working days with no CRM entry of any kind (owner instruction 2026-09-06, recipients chosen by him). Exists because payroll pays Part 1 at the start of the month and Part 2 the day after, and people collect both and resign: 23 of 59 recorded resignations land in the first ten days of a month, five medical reps resigned on 9 August 2026 alone, and four of those five had gone quiet in the CRM five or more days earlier with nothing raised. In-app, email and Telegram; never push, which would put a named employee on a lock screen. Reads the employee directory, the CRM visits mirror and leave requests; the notification body carries employee names, so it is PII-bearing and its audience is role-gated rather than open. Re-sends nothing on a repeat run — the idempotency key carries each streak's START date, so one announcement per streak; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/retention-risk-pre-payroll", reason: "The pre-payroll \"take care, HR\" digest: one message listing every employee currently flagged for retention risk, sent on the 25th so there are working days left to check on somebody before Part 1 pays. Owner instruction 2026-09-06, who asked for this AND a second notice when Part 1 is confirmed in the wizard — the two carry different `reason` values in the idempotency key so neither suppresses the other. Same audience, channels and PII footprint as /api/cron/retention-risk-sweep. Sends even when nobody is flagged: a notice that appears only when there is bad news cannot be told apart from one that has silently stopped working. Guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/brevo-keepalive", reason: "Resets Brevo's 90-day inactivity expiry on the email failover key and reports a revoked key; guarded by CRON_SECRET." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/reconciliation-check", reason: "Read-only reconciliation harness comparing each domain service against an independent derivation; guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/reconciliation-check", reason: "Reconciliation harness comparing each domain service against an independent derivation; it changes no business data and writes only its own run and findings to the System Audit ledger; guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/system-audit-sweep", reason: "System Audit sweep: runs the integrity detectors, folds new occurrences into the audit ledger and sends the one daily message to the system health audience; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/db-health-snapshot", reason: "Snapshots pg_stat_statements into pg_stat_statements_snapshots so slow-query history is retained and queryable. Exists because neither log_min_duration_statement nor track_io_timing can be enabled here — Supabase's config API rejects both keys and ALTER DATABASE refuses them as superuser-context GUCs — which is how the 2026-08-10 audit found a 17.5s query that had run 192 times unreported. Reads server statistics only and writes no business data; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/expense-claims-refresh", reason: "Rebuilds the expense_claims read mirror from the legacy outstation tables. Reads have been live on that mirror since 2026-08-12 while writes still go to legacy, so it is correct only for as long as something rebuilds it — and phx_refresh_expense_claims() had no caller at all, so it drifted for ten days and hid 31 approved claims worth EGP 15,294.74 from the approvals queue. Reads and rewrites no business data of its own; the mirror is derived entirely from the legacy tables. Reports parity in the response body, because a 200 here means the rebuild ran, not that the mirror is correct; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/territory-restamp", reason: "Nightly re-stamp of OPEN Source-of-Sales periods to today's geography — the scheduled counterpart to the Territory Drilldown's Sync button, which was the rule's only trigger even though what breaks it is silent (one employee insert auto-seats them and flips line_area_map.area_state, staling 8 of 8 periods off 3 inserts with no error). Skips every period with a published closing, because publishing does not freeze a closing's figures — snapshot_units was NULL on every published row on 2026-08-29 — so re-stamping one would move numbers under a closing already sent. Notifies nobody by design; its trace is the audit row the sync already writes. Guarded by CRON_SECRET." }),
@@ -283,7 +284,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/users/**", permission: [{ resource: "admin_access", action: "read" }, { resource: "user_admin", action: "update" }] }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PATCH"], pattern: "/api/admin/permissions", permission: [{ resource: "admin_access", action: "read" }, { resource: "permission_admin", action: "update" }] }),
   // PM product master: Super Admin writes, CEO/SFE Manager/Super Admin read — enforced
-  // in-route by role (domain-helper), like the system-issues admin routes.
+  // in-route by role (domain-helper), like the system-audit admin routes.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/pm-products", permission: null, guard: "domain-helper" }),
   // Pharmacy Search. Access mirrors the Customers Database hub it is listed under: Super Admin and
   // CEO short-circuit, everyone else needs sales:import. That short-circuit is why these carry
@@ -299,24 +300,22 @@ export const accessRegistry = [
   // register and never touches source_of_sales_customer_map, so it cannot move sales attribution.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/pharmacy-search/save", permission: { resource: "sales", action: "import" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/logs", permission: { resource: "admin", action: "read" } }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/errors", permission: { resource: "admin", action: "read" } }),
   // The Sentry Check page's server half: Super Admin only (the `admin` resource is hard-locked to that seat), and on
   // production it throws on purpose so Sentry sees a real request error. It reads and writes nothing of ours.
   sessionApi({ methods: ["POST"], pattern: "/api/admin/sentry-check", permission: { resource: "admin", action: "read" }, csrfRequired: true }),
-  // System Issues dashboard is CEO + Super Admin (checks access.role === "CEO" ||
-  // canAccessSystemAdministratorWorkspace(access) directly) rather than the "admin"
-  // permission resource, which is hard-locked to Super Admin only.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-issues", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-issues/attempts", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-issues/repro-trail", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-issues/security", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/notify-user", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-issues/timeline", permission: null, guard: "domain-helper" }),
-  // Super-Admin-only: blocking/unblocking a login IP changes who can authenticate.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/block-ip", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // AI triage — POSTs that call OpenAI (cost); CEO + Super Admin only, rate-limited in-route.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/explain", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/summary", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The System Error & Data Integrity Audit (/admin/system-audit), which replaced System Issues,
+  // Monitoring, Error Monitor and Data Health on 23 Oct 2026. Super Admin only: every handler calls
+  // assertSystemAdministratorWorkspaceAccess first — an in-route role gate rather than a permission
+  // resource, so the guard is "domain-helper" with permission null. Every write is CSRF-checked and
+  // leaves an audit row.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/export", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/issues/:id/status", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // GET is the row drawer's evidence; POST marks that one occurrence as no defect or unknown.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/system-audit/occurrences/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/security", permission: null, guard: "domain-helper" }),
+  // Blocking or unblocking a login IP changes who can authenticate.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/block-ip", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Notification Recipients editor (which roles get told about a cron-triggered system
   // notification): Super Admin only end-to-end, both view and edit — there's no "CEO needs to
   // see this" oversight story for internal notification-routing plumbing. Its page is
@@ -435,7 +434,6 @@ export const accessRegistry = [
   // Super Admin + SFE Manager only, via assertCompanyActivityReportReadAccess (direct role
   // check) — same pattern as the vacation company-report export above, not the permission matrix.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/company-activity-report/export", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/monitoring/events-csv", permission: { resource: "admin", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/data-backup", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/admin/data-backup/status/:jobId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/data-backup/download/:jobId", permission: null, guard: "domain-helper" }),
@@ -1701,7 +1699,7 @@ export const accessRegistry = [
   // file routes above. Gated by canViewManagerCvEngagement (the report's audience: Super Admin, CEO
   // and the three NSMs), an in-route domain predicate rather than a permission resource, so the guard
   // is "domain-helper" with permission null exactly like /api/dev-auth/preview and
-  // /api/admin/system-issues. Unlike the audited hiring-manager file routes, these record NOTHING: no
+  // /api/admin/system-audit. Unlike the audited hiring-manager file routes, these record NOTHING: no
   // "opened" mark (which would pollute the very engagement signal the report measures) and no access
   // audit — so audit stays not-required. Read-only; no mutation, no CSRF surface. Listed as two
   // entries so the bytes route (/files/*) and the list route (/files) each resolve to their own.

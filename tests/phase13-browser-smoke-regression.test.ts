@@ -12,10 +12,11 @@ export function runPhase13BrowserSmokeRegressionTests() {
   assert.doesNotMatch(appShellSource, /admin-design-system/);
   assert.doesNotMatch(adminTokensSource, /"use client"/);
 
-  assert.match(dataHealthSource, /const businessVacancyRows = vacancyRows\.filter/);
-  assert.match(dataHealthSource, /const openVacancyRows = businessVacancyRows\.filter/);
-  assert.match(dataHealthSource, /vacancies: openVacancyRows\.map\(vacancySignalFromRow\)/);
-  assert.match(dataHealthSource, /const vacancyAudit = openVacancyRows\.map/);
+  // The vacancy list and the sales-ownership classification that read position_vacancies left with
+  // the retired Data Health page (23 Oct 2026). Vacant seats come from the shared workforce metrics,
+  // never from a raw position_vacancies row count.
+  assert.match(dataHealthSource, /vacantPositions: sharedWorkforce\.openVacancies/);
+  assert.doesNotMatch(dataHealthSource, /from\("position_vacancies"\)/);
 
   assert.match(portalExpensesSource, /redirect\("\/employee-portals\/expense-dashboard"\)/);
   assert.doesNotMatch(portalExpensesSource, /redirect\("\/employee-portals"\)/);

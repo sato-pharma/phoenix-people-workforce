@@ -115,9 +115,12 @@ export function runCommunicationSourceOfTruthTests() {
   const notificationEmailSource = readFileSync("src/lib/notifications/email.ts", "utf8");
   assert.match(notificationEmailSource, /summarizeNotificationOutboxRows/);
 
+  // operations/events.ts stopped summarising notifications on 23 Oct 2026, when the Monitoring page
+  // it fed was retired. summarizeNotificationMonitoring stays the one summary — the nightly
+  // notifications integrity check compares against it — and nothing re-derives it by hand.
   const operationsSource = readFileSync("src/lib/operations/events.ts", "utf8");
-  assert.match(operationsSource, /summarizeNotificationMonitoring/);
   assert.doesNotMatch(operationsSource, /notificationLogRows\.filter/);
+  assert.doesNotMatch(operationsSource, /from\("notification_events"\)/);
 
   const templateServiceSource = readFileSync("src/lib/email-templates/service.ts", "utf8");
   assert.match(templateServiceSource, /summarizeEmailTemplateReadiness/);

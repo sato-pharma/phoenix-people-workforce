@@ -102,7 +102,7 @@ let transcriptionAnswer: boolean | null = null;
 
 /**
  * The handover breadcrumb is throttled to at most one per window — not latched for the tab's whole life. It
- * exists because the handover makes no request of its own, so `/admin/error-monitor` would otherwise have
+ * exists because the handover makes no request of its own, so `/admin/system-audit` would otherwise have
  * nothing to show that the Firefox path is being taken. On Firefox that handover is the NORMAL path on
  * every recording, so logging each one buries real errors under a steady stream of non-errors. A
  * one-per-page-load latch went too far the other way: after the very first handover it fell permanently
@@ -408,7 +408,7 @@ export function CrmSpeak({
             // So the panel stops promising words as he talks — it said "writing as you talk" until now.
             setStarted((was) => ({ ...was, text: "server" }));
             // One breadcrumb per window: this failure is invisible from the server because the request was
-            // never made, so `/admin/error-monitor` needs to see it happen — but on Firefox it is the normal
+            // never made, so `/admin/system-audit` needs to see it happen — but on Firefox it is the normal
             // path on every recording, so logging each one would drown real errors. Throttled, not latched:
             // a heartbeat keeps proving the path is live instead of going silent forever after the first.
             const now = Date.now();

@@ -56,6 +56,25 @@ export type ReconciliationSide = {
   value: string;
 };
 
+/**
+ * One row behind a disagreement — the person (or record) it lands on, so the System Audit ledger
+ * can say WHO a breach touches instead of only that it happened. Optional on every check: a check
+ * that cannot name a person yields none, and the ledger then records one system row per breach
+ * episode instead (src/lib/system-audit/reconciliation-ledger.ts).
+ */
+export type ReconciliationFinding = {
+  /** The HR id as the check read it; null for a record no person owns. */
+  hrId: string | null;
+  /** The Cairo calendar day the disagreement is about (YYYY-MM-DD), when it is about one. */
+  affectedDate?: string | null;
+  relatedTable?: string | null;
+  relatedId?: string | null;
+  /** What is wrong for this one row, in words a non-engineer can act on. */
+  detail: string;
+  /** The screen where this row is fixed, when the check knows it better than its domain does. */
+  moduleHref?: string | null;
+};
+
 export type ReconciliationOutcome = {
   left: ReconciliationSide;
   right: ReconciliationSide;
@@ -66,6 +85,8 @@ export type ReconciliationOutcome = {
    * capped by naming the cap ("first 10 of 46"), which is a statement, not a truncation.
    */
   detail: string;
+  /** The rows behind the disagreement. Optional, so every existing check is unchanged. */
+  findings?: ReconciliationFinding[];
 };
 
 export type ReconciliationCheck = {
@@ -85,7 +106,7 @@ export type ReconciliationCheck = {
  * breached   — they disagree and were expected to agree. This is the one that pages a human.
  * known-open — they disagree exactly as documented; reported, not paged.
  * errored    — the check itself failed. Recorded as a result, never thrown: one broken check
- *              must not blind the other fifteen.
+ *              must not blind the others (22 are registered in checks/index.ts).
  */
 export type ReconciliationStatus = "holds" | "breached" | "known-open" | "errored";
 
@@ -103,7 +124,16 @@ export type ReconciliationCheckResult = {
   detail: string;
   durationMs: number;
   error: string | null;
+  /** The check's documented open defect, carried so the stored report and the ledger can name it. */
+  openDefect?: string;
+  /** The first RECONCILIATION_FINDINGS_CAP findings the check returned. */
+  findings?: ReconciliationFinding[];
+  /** How many findings were left off by the cap — said as a number, never dropped in silence. */
+  findingsTruncated?: number;
 };
+
+/** Per check, so one runaway check cannot bloat the stored report past the ledger's 256 KB row. */
+export const RECONCILIATION_FINDINGS_CAP = 500;
 
 export type ReconciliationCounts = {
   total: number;

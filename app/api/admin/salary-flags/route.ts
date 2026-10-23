@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     }
     const url = new URL(request.url);
     const showResolved = url.searchParams.get("showResolved") === "true";
-    const result = await getSalaryFlags(showResolved);
+    const result = await getSalaryFlags(showResolved, { withNames: true });
     return NextResponse.json(result);
   } catch (error) {
     if (isForbiddenError(error)) {
@@ -37,7 +37,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 
-    const body = await request.json() as { id?: string };
+    const body = await request.json() as { id?: string; showResolved?: unknown };
     if (!body.id) {
       return NextResponse.json({ message: "Missing flag id." }, { status: 400 });
     }
@@ -52,7 +52,9 @@ export async function PATCH(request: Request) {
       summary: `Salary flag #${body.id} resolved by ${resolvedBy}`,
     }).catch(() => undefined);
 
-    const updated = await getSalaryFlags(false);
+    // Re-read the list the screen is SHOWING. This used to re-read the unresolved list whatever the
+    // "Show resolved" toggle said, so resolving one flag silently switched the toggle's list back.
+    const updated = await getSalaryFlags(body.showResolved === true, { withNames: true });
     return NextResponse.json(updated);
   } catch (error) {
     if (isForbiddenError(error)) {

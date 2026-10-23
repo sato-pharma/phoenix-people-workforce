@@ -30,7 +30,8 @@ export function runPhase17WorkflowUiActionClosureTests() {
 
   assert.match(operationsSource, /isDisposablePayrollFixture/);
   assert.match(operationsSource, /isDisposableSalesFixture/);
-  assert.match(operationsSource, /isDisposableOfferFixture/);
+  // isDisposableOfferFixture left with the dropped job_offer_audit_logs source (23 Oct 2026).
+  assert.doesNotMatch(operationsSource, /job_offer_audit_logs/);
 
   assert.match(
     phase17SmokeSource,

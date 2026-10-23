@@ -18,17 +18,38 @@ import { runEmployee360TeamPlanComplianceTests } from "./employee-360-team-plan-
 import { runEmployee360PeriodCairoTests } from "./employee-360-period-cairo.test.ts";
 import { runRoleCoverageAuditTests } from "./role-coverage-audit.test.ts";
 import { runManagerFilterTests } from "./manager-filter.test.ts";
-import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
+import { runSpreadsheetSafeTests } from "./spreadsheet-safe.test.ts";
+import { runSystemAuditExportTests } from "./system-audit-export.test.ts";
+import { runSystemAuditPageQueryTests } from "./system-audit-page-query.test.ts";
+import { runSystemAuditRoutesAccessTests } from "./system-audit-routes-access.test.ts";
+import { runSystemAuditPageDesignTests } from "./system-audit-page-design.test.ts";
+import { runSystemAuditMovedSectionsTests } from "./system-audit-moved-sections.test.ts";
+import { runSystemAuditReconciliationLedgerTests } from "./system-audit-reconciliation-ledger.test.ts";
+import { runSystemAuditSyncRunsTests } from "./system-audit-sync-runs.test.ts";
+import { runSystemAuditJobFailuresTests } from "./system-audit-job-failures.test.ts";
+import { runSystemAuditDataLinkageTests } from "./system-audit-data-linkage.test.ts";
+import { runSystemAuditVerifierTests } from "./system-audit-verifier.test.ts";
+import { runSystemAuditSweepTests } from "./system-audit-sweep.test.ts";
+import { runSystemAuditDailyMessageTests } from "./system-audit-daily-message.test.ts";
+import { runSystemAuditHistoricalRunnerTests } from "./system-audit-historical-runner.test.ts";
+import { runSystemAuditSignatureTests } from "./system-audit-signature.test.ts";
+import { runSystemAuditNoiseTests } from "./system-audit-noise.test.ts";
+import { runSystemAuditCollapseTests } from "./system-audit-collapse.test.ts";
+import { runSystemAuditSidebarLabelTests } from "./system-audit-sidebar-label.test.ts";
+import { runSystemAuditPortalSidebarRowsDriftTests } from "./system-audit-portal-sidebar-rows-drift.test.ts";
+import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
+import { runSystemAuditPeriodCountsTests } from "./system-audit-period-counts.test.ts";
+import { runSystemAuditAppErrorFoldTests } from "./system-audit-app-error-fold.test.ts";
+import { runSystemAuditFileSinkTests } from "./system-audit-file-sink.test.ts";
+import { runSystemAuditVisitLifecycleTests } from "./system-audit-visit-lifecycle.test.ts";
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runForbiddenErrorAndNullRecipientTests } from "./forbidden-error-and-null-recipient.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorThirdPartyAttributionTests } from "./error-monitor-third-party-attribution.test.ts";
-import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
 import { runErrorMonitorRedactRouteTests } from "./error-monitor-redact-route.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
-import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runCalculatorEngineTests } from "./calculator-engine.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
@@ -2814,12 +2835,35 @@ await runTest(
   runTestWiringCompleteTests,
 );
 await runTest("crm portal scope (exact-match agentHrIds, fail-closed, no ?view= governance panels)", runCrmPortalScopeTests);
-await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest(
   "outstation review map pins the raster renderer (the vector one fails on 159 of 159 rows)",
   runOutstationReviewMapRasterTests,
 );
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
+await runTest("spreadsheet export guard neutralises a formula lead after whitespace, a tab, a CR or a full-width sign", runSpreadsheetSafeTests);
+await runTest("system audit export carries every filtered row in the 11 columns, in Cairo time, with no live formula in the CSV or the XLSX", runSystemAuditExportTests);
+await runTest("system audit page query parses, round-trips and refuses bad filters, and only the verifier sets FIXED — VERIFIED", runSystemAuditPageQueryTests);
+await runTest("every system audit route resolves the caller and runs the Super Admin guard before any data call", runSystemAuditRoutesAccessTests);
+await runTest("system audit page fits the screen: square edges, fixed tables that switch on their own width, no ellipsis", runSystemAuditPageDesignTests);
+await runTest("the sections moved into the system audit say Unavailable, never 0, page every read and keep the locked look", runSystemAuditMovedSectionsTests);
+await runTest("the nightly integrity run is stored and every breached or unanswered check becomes a ledger finding, never a pass", runSystemAuditReconciliationLedgerTests);
+await runTest("a failed or stuck iReports360 sync run becomes a finding and verifies itself once a later run covers its dates", runSystemAuditSyncRunsTests);
+await runTest("a failed background job or a missed scheduled-job heartbeat becomes a finding, named in plain words", runSystemAuditJobFailuresTests);
+await runTest("a login with no access profile, a missing attendance device map or a vacancy holder mismatch is one finding per person", runSystemAuditDataLinkageTests);
+await runTest("only the verifier sets FIXED — VERIFIED, after 7 quiet days and real exposure, and a recurrence on a fixed build reopens it", runSystemAuditVerifierTests);
+await runTest("the nightly system audit sweep runs the detectors one at a time under a lease and stops on an unhealthy database", runSystemAuditSweepTests);
+await runTest("the system audit sends at most one message a Cairo day, only for new, newly shared or reopened issues", runSystemAuditDailyMessageTests);
+await runTest("the historical system audit runner refuses office hours and unknown flags, and reads the evidence snapshot exactly", runSystemAuditHistoricalRunnerTests);
+await runTest("system audit signature folds Chrome, Safari and Firefox spellings and React arguments into one key, and never a chunk hash", runSystemAuditSignatureTests);
+await runTest("system audit noise rules exclude and count each class, and keep Connection closed and a null environment", runSystemAuditNoiseTests);
+await runTest("system audit folds retries in one page load or within 10 minutes into one operation, never across two people", runSystemAuditCollapseTests);
+await runTest("system audit names the exact sidebar row the person's own role sees, for every admin and HR rail", runSystemAuditSidebarLabelTests);
+await runTest("the server-safe portal sidebar mirror matches the employee portal rail row for row", runSystemAuditPortalSidebarRowsDriftTests);
+await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
+await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
+await runTest("the app-error detector folds bursts into operations, writes at most 500 at a time, and a re-run changes nothing", runSystemAuditAppErrorFoldTests);
+await runTest("the historical file sink merges exactly like the ledger SQL", runSystemAuditFileSinkTests);
+await runTest("the visit lifecycle detector writes one root row per lost visit and nothing for any business-rule exclusion", runSystemAuditVisitLifecycleTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);
 await runTest(
   "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
@@ -2833,10 +2877,8 @@ await runTest(
   "error monitor third-party attribution (a Google Maps throw is not an Outstation defect)",
   runErrorMonitorThirdPartyAttributionTests,
 );
-await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
 await runTest("error monitor redact route", runErrorMonitorRedactRouteTests);
 await runTest("error monitor per-user attempts (30d default window + real-account partition)", runErrorMonitorUserAttemptsTests);
-await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("command palette items (one row per href — the hub fold-in must not duplicate a destination)", runCommandPaletteItemsTests);
 await runTest("nav single gate no bypass", runNavSingleGateNoBypassTests);

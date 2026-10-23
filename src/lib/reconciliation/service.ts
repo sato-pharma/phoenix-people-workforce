@@ -9,7 +9,7 @@ export type { RunReconciliationOptions } from "@/lib/reconciliation/runner";
  * Runs every reconciliation check with bounded concurrency and returns a structured report.
  *
  * Never throws — a failing check is a recorded result, not an exception, so one broken check
- * cannot blind the other fifteen. Read-only by design: nothing here writes to the database,
+ * cannot blind the other twenty-one. Read-only by design: nothing here writes to the database,
  * because a harness that mutated while measuring could not be trusted to be measuring what the
  * users actually see, and it must stay safe to run at any hour against production.
  */

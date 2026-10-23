@@ -3044,13 +3044,15 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "Put any page in the row above the page title, the row below it, the top strip, or any module. Changes your own navigation only.",
     roles: ["Super Admin"],
   },
+  // System Audit replaced three rows on 23 Oct 2026: Monitoring (/admin/monitoring), System Issues
+  // (/admin/system-issues) and Data Health (/admin/data-health). Each old address now redirects
+  // here. Super Admin only, matching the page's own gate (assertSystemAdministratorWorkspaceAccess).
   {
-    href: "/admin/monitoring",
-    icon: Radar,
-    label: "Monitoring",
-    description: "Authentication signals and email/notification delivery telemetry.",
-    permissions: [{ resource: "admin" }],
-    excludedRoles: ["CEO"],
+    href: "/admin/system-audit",
+    icon: TriangleAlert,
+    label: "System Audit",
+    description: "System errors, data integrity checks, login security, salary flags and role coverage — one evidence-based audit.",
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/logs",
@@ -3059,13 +3061,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "Full audit trail of administrative actions across the platform.",
     permissions: [{ resource: "admin" }],
     excludedRoles: ["CEO"],
-  },
-  {
-    href: "/admin/system-issues",
-    icon: TriangleAlert,
-    label: "System Issues",
-    description: "Supabase + GCP Cloud Logging errors, and per-employee error/failed-login attempt counts.",
-    roles: ["Super Admin", "CEO"],
   },
   // "Cron Control" (/admin/cron-control) stood here until 2026-08-30. It drove the GCP Cloud
   // Scheduler, which died with GCP billing on 2026-08-01, so the card opened a permanent error
@@ -3134,14 +3129,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "Every automated email's pre-send validation checks, confidence score, and any held for review.",
     permissions: [{ resource: "communication" }],
     roles: ["Super Admin"],
-  },
-  {
-    href: "/admin/data-health",
-    icon: Database,
-    label: "Data Health",
-    description: "Data integrity checks across core tables and pipelines.",
-    permissions: [{ resource: "admin" }],
-    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/activity-control",
@@ -5426,9 +5413,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         heading: "Platform Health",
         sectionId: "admin-tools",
         hrefs: [
-          "/admin/monitoring",
-          "/admin/system-issues",
-          "/admin/data-health",
+          "/admin/system-audit",
           "/admin/synthetic-journeys",
           "/admin/sentry-check",
           "/admin/activity-control",

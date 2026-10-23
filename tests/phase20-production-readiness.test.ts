@@ -10,7 +10,10 @@ export function runPhase20ProductionReadinessTests() {
   assert.match(phase20Source, /buildProtectedFixtureReport/);
   assert.match(phase20Source, /getAdminCommandCenterData/);
   assert.match(phase20Source, /getDataHealthStats/);
-  assert.match(phase20Source, /getOperationalMonitoringStats/);
+  // The Monitoring aggregate retired on 23 Oct 2026; the security feed is read through the System
+  // Audit's login-security loader now.
+  assert.match(phase20Source, /loadLoginSecurityOverview/);
+  assert.doesNotMatch(phase20Source, /getOperationalMonitoringStats/);
   assert.match(phase20Source, /getOperationalRecentActivity/);
   assert.match(phase20Source, /getPlatformMetrics/);
   assert.match(phase20Source, /protected PHASE payroll fixtures are approved, locked, or Part 1 paid/);

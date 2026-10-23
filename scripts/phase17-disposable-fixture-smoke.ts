@@ -5,7 +5,8 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getDataHealthStats } from "@/lib/admin/service";
 import { upsertEmployee } from "@/lib/employees/employee-directory";
-import { getOperationalMonitoringStats, getOperationalRecentActivity } from "@/lib/operations/events";
+import { getOperationalRecentActivity } from "@/lib/operations/events";
+import { loadLoginSecurityOverview } from "@/lib/security/login-security";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { approveOutstationRequestForPayroll } from "@/lib/outstation/service";
 import { deleteSalesBatch, replaceSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
@@ -372,13 +373,13 @@ async function runMetricSmoke() {
   const [commandCenter, dataHealth, monitoring, operations] = await Promise.all([
     getAdminCommandCenterData(adminAccess),
     getDataHealthStats(),
-    getOperationalMonitoringStats({ pageSize: 5 }),
+    loadLoginSecurityOverview(),
     getOperationalRecentActivity(adminAccess, { limit: 10 }),
   ]);
 
   addCheck("Command Center totals load after PHASE17 mutations", Number(commandCenter.health.totalEmployees) >= 0, commandCenter.health);
   addCheck("Data Health totals load after PHASE17 mutations", Number(dataHealth.summary.structureNodes) >= Number(dataHealth.summary.activeEmployees), dataHealth.summary);
-  addCheck("Monitoring totals load after PHASE17 mutations", Number(monitoring.recentEvents.total) >= 0, monitoring.recentEvents.total);
+  addCheck("Monitoring totals load after PHASE17 mutations", monitoring.recentActivity !== null && monitoring.unavailable.length === 0, { recentEvents: monitoring.recentActivity?.total ?? null, unavailable: monitoring.unavailable });
   addCheck(
     "Operational business feed excludes disposable PHASE17 actors",
     !operations.recent.some((event) => /phase17\.fixture\.smoke/i.test(event.userName)),

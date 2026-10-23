@@ -247,6 +247,14 @@ export async function runJobHeartbeatRegisterTests() {
     "the restored digest must carry a parseable, past watchingSince, or its stand-down window alarms again",
   );
 
+  // The System Audit sweep: 04:57 Cairo, seventeen minutes after the integrity checks it follows,
+  // with two hours of grace — a sweep that sat a night out after a database restart still reports.
+  const sweep = JOB_SCHEDULES.find((declaration) => declaration.slug === "phoenix-system-audit-sweep");
+  assert.ok(sweep, "phoenix-system-audit-sweep must be declared, or a sweep that stops firing is never noticed");
+  assert.equal(sweep?.kind, "cron");
+  assert.equal(sweep?.schedule, "57 4 * * *", "the sweep fires at 04:57 Cairo, after the 04:40 integrity checks");
+  assert.equal(sweep?.graceSeconds, 2 * 60 * 60, "two hours of grace before a missed sweep is called stranded");
+
   // ---------------------------------------------------------------------------
   // 6. "Ran and reported failure" — the signal the external switch only ever showed on a dashboard.
   // ---------------------------------------------------------------------------

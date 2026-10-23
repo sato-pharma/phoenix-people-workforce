@@ -694,7 +694,7 @@ async function runVacationWorkflow(employeeHrId: string, managerHrId: string) {
 async function runMetricChecks() {
   const [dataHealth, monitoring, activeEmployeesResult, openVacanciesResult] = await Promise.all([
     getDataHealthStats(),
-    import("@/lib/operations/events").then(({ getOperationalMonitoringStats }) => getOperationalMonitoringStats({ pageSize: 5 })),
+    import("@/lib/security/login-security").then(({ loadLoginSecurityOverview }) => loadLoginSecurityOverview()),
     supabase
       .from("employees")
       .select("hr_id", { count: "exact", head: true })
@@ -723,9 +723,9 @@ async function runMetricChecks() {
     activeEmployees: dataHealth.summary.activeEmployees,
     totalStructure: dataHealth.summary.structureNodes,
   });
-  addCheck("Monitoring totals load after disposable mutations", Number(monitoring.recentEvents.total) >= 0, {
-    recentEvents: monitoring.recentEvents.total,
-    totalEvents24h: monitoring.operations.totalEvents24h,
+  addCheck("Login security totals load after disposable mutations", monitoring.recentActivity !== null && monitoring.unavailable.length === 0, {
+    recentEvents: monitoring.recentActivity?.total ?? null,
+    unavailable: monitoring.unavailable,
   });
   addCheck("Platform workforce formula remains active employees plus open vacancies", totalStructure === activeEmployees + openVacancies, {
     activeEmployees,
