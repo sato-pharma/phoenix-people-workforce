@@ -23,8 +23,15 @@
 // REFUSES a push over the suite on 2026-10-04, he answered *"keep the pre-push test as a rule, no
 // guard"*. The deny arm stays typecheck-only, and the cases below fail if it ever grows.
 //
-// It drives the real hook as a subprocess, exactly as settings.json runs it, and writes the record with
-// the real `mergeVerdictRecord`, so the writer's format and the reader cannot drift apart.
+// 🔴 AND SINCE 2026-10-23 THE REMINDER IS PINNED ON EVERY PUSH (owner, choosing "warn on every push"
+// over leaving it narrow and over refusing). A push whose commit has no recorded `check-contracts`
+// pass gets one short line; a recorded CLEAN pass for that exact sha silences it; a pass recorded for
+// the parent, or one written against a dirty tree, does not. The deny arm is still typecheck-only, and
+// the cases below fail if either reminder ever grows into a refusal.
+//
+// It drives the real hook as a subprocess, exactly as settings.json runs it, and writes both records with
+// the real `mergeVerdictRecord` and `writeContractsPass`, so a writer's format and the reader cannot
+// drift apart.
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -32,6 +39,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { CONTRACTS_DIR_NAME, readContractsPass, writeContractsPass } from "../scripts/lib/check-contracts-record.mjs";
 import { VERDICT_DIR_NAME, mergeVerdictRecord } from "../scripts/remote-check-plan.mjs";
 import { wiredHookGroups } from "./support/hook-wiring.ts";
 
@@ -66,6 +74,7 @@ type Fixture = {
   commit: (file: string, text?: string) => string;
   record: (sha: string, stages: Record<string, "PASS" | "FAIL">, excerpt?: string) => void;
   recordRaw: (sha: string, text: string) => void;
+  contracts: (sha: string, overrides?: Record<string, unknown>) => void;
 };
 
 function makeFixture(): Fixture {
@@ -85,6 +94,7 @@ function makeFixture(): Fixture {
   git(work, "push", "-q", "-u", "origin", "main");
   git(work, "checkout", "-q", "-b", "feat/x");
   const verdictDir = join(work, ".git", VERDICT_DIR_NAME);
+  const contractsDir = join(work, ".git", CONTRACTS_DIR_NAME);
 
   const callsFile = join(root, "calls.log");
   writeFileSync(callsFile, "");
@@ -110,6 +120,11 @@ function makeFixture(): Fixture {
     recordRaw: (sha, text) => {
       mkdirSync(verdictDir, { recursive: true });
       writeFileSync(join(verdictDir, `${sha}.json`), text);
+    },
+    contracts: (sha, overrides) => {
+      mkdirSync(contractsDir, { recursive: true });
+      const record = { sha, clean: true, gates: 16, seconds: 8.1, at: "2026-10-23T15:00:00.000Z", ...(overrides ?? {}) };
+      writeFileSync(join(contractsDir, `${sha}.json`), JSON.stringify(record));
     },
   };
 }
@@ -168,13 +183,21 @@ export function runPushTypecheckGuardTests() {
   assert.doesNotMatch(hookSource, /remote-check\.mjs['"`]\s*,/, "the push guard must not run remote-check");
   const declared = /const VERDICT_DIR_NAME = '([^']+)'/.exec(hookSource)?.[1];
   assert.equal(declared, VERDICT_DIR_NAME, "the hook must read the directory remote-check writes (remote-check-plan.mjs VERDICT_DIR_NAME)");
+  const declaredContracts = /const CONTRACTS_DIR_NAME = '([^']+)'/.exec(hookSource)?.[1];
+  assert.equal(
+    declaredContracts,
+    CONTRACTS_DIR_NAME,
+    "the hook must read the directory check-contracts writes (check-contracts-record.mjs CONTRACTS_DIR_NAME)",
+  );
 
   const fx = makeFixture();
   try {
     // ── No record: allowed at once, silently ─────────────────────────────────────────────────────────
     fx.commit("src/lib/example/rules.ts");
     const fresh = expect(fx, "git push -u origin feat/x", "allow");
-    assert.equal(fresh.context, "", "with no record there is nothing to say");
+    assert.match(fresh.context, /BEFORE THIS PUSH/, `with nothing recorded, the contracts reminder is what it says.\n${fresh.context}`);
+    assert.doesNotMatch(fresh.context, /remote-check already has a verdict/, "there is no verdict to reuse");
+    assert.doesNotMatch(fresh.context, /THE RULE/, "and no test file was added");
     assert.ok(fresh.ms < 10000, `an unrecorded push must not wait — it took ${fresh.ms}ms`);
 
     // ── A recorded typecheck FAIL for THIS sha stops the push, with tsc's own lines ──────────────────
@@ -277,6 +300,7 @@ export function runPushTypecheckGuardTests() {
   }
 
   runNewTestFileReminderTests();
+  runContractsReminderTests();
 }
 
 /**
@@ -289,7 +313,10 @@ function runNewTestFileReminderTests() {
     // ── A push that adds no test file says nothing about the suite ───────────────────────────────────
     fx.commit("src/lib/example/rules.ts");
     const plain = expect(fx, "git push -u origin feat/x", "allow");
-    assert.equal(plain.context, "", `a push adding no test file must stay silent.\n${plain.context}`);
+    assert.doesNotMatch(plain.context, /THE RULE/, `a push adding no test file gets no test-file rule.\n${plain.context}`);
+    assert.match(plain.context, /BEFORE THIS PUSH/, `but it does get the contracts line.\n${plain.context}`);
+    assert.match(plain.context, /node scripts\/check-contracts\.mjs/, "which names the command");
+    assert.match(plain.context, /note, not a gate/, "and says plainly that it does not refuse");
 
     // ── A push that ADDS one is told the rule — and is ALLOWED, because a guard over the suite is
     //    the one thing the owner ruled out (2026-10-04, "keep the pre-push test as a rule, no guard") ─
@@ -303,6 +330,7 @@ function runNewTestFileReminderTests() {
     assert.match(reminded.context, /adds 1 test file\b/, `one file reads in the singular.\n${reminded.context}`);
     assert.match(reminded.context, /no `test` verdict is recorded/, "it must say why it is reminding");
     assert.match(reminded.context, new RegExp(addedSha.slice(0, 9)), "it must name the sha the verdict must be about");
+    assert.doesNotMatch(reminded.context, /BEFORE THIS PUSH/, `the short line must not repeat the same command.\n${reminded.context}`);
     // Every spelling of that push reminds, and NONE of them refuses.
     for (const command of ["git push", "git push origin HEAD", "git push --force-with-lease origin feat/x"]) {
       const spelled = expect(fx, command, "allow");
@@ -337,10 +365,11 @@ function runNewTestFileReminderTests() {
     git(fx.work, "push", "-q", "-u", "origin", "feat/x");
     fx.commit("tests/fold-name.test.ts"); // a MODIFIED test file is not an added one
     const modified = expect(fx, "git push origin feat/x", "allow");
-    assert.equal(modified.context, "", `editing an existing test file is not adding one.\n${modified.context}`);
+    assert.doesNotMatch(modified.context, /THE RULE/, `editing an existing test file is not adding one.\n${modified.context}`);
+    assert.match(modified.context, /BEFORE THIS PUSH/, "the contracts line still applies to every push");
     fx.commit("src/lib/example/rules.ts");
     const after = expect(fx, "git push origin feat/x", "allow");
-    assert.equal(after.context, "", `and neither is a push with no test file at all.\n${after.context}`);
+    assert.doesNotMatch(after.context, /THE RULE/, `and neither is a push with no test file at all.\n${after.context}`);
     // A new test file after the branch is known to the remote still reminds.
     fx.commit("tests/venue-picker.test.tsx"); // .tsx counts too
     const tsx = expect(fx, "git push origin feat/x", "allow");
@@ -352,9 +381,94 @@ function runNewTestFileReminderTests() {
     for (const near of ["tests/support/comment-strip.ts", "src/lib/example/rules.test.helper.ts", "docs/tests.md"]) {
       fx.commit(near);
       const quiet = expect(fx, "git push origin feat/x", "allow");
-      assert.equal(quiet.context, "", `${near} is not a test file of this repo.\n${quiet.context}`);
+      assert.doesNotMatch(quiet.context, /THE RULE/, `${near} is not a test file of this repo.\n${quiet.context}`);
       git(fx.work, "push", "-q", "origin", "feat/x");
     }
+  } finally {
+    rmSync(fx.root, { recursive: true, force: true });
+  }
+}
+/**
+ * The 2026-10-23 widening, in its own fixture: EVERY push is reminded about `check-contracts` unless
+ * this exact commit has a recorded clean pass. It is a note on every path below — the owner chose
+ * "warn on every push" over refusing, and his 2026-10-04 ruling against a guard over the suite stands.
+ */
+function runContractsReminderTests() {
+  const fx = makeFixture();
+  try {
+    const sha = fx.commit("src/lib/example/rules.ts");
+
+    // ── Nothing recorded: the line, naming the command and this commit ───────────────────────────────
+    const reminded = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(reminded.context, /BEFORE THIS PUSH/, `an unproved commit is reminded.\n${reminded.context}`);
+    assert.match(reminded.context, new RegExp(sha.slice(0, 9)), "the line names the commit nothing is recorded for");
+    assert.match(reminded.context, /8 seconds/, "and says what it costs");
+    assert.match(reminded.context, /PHX_PUSH_CHECK_OFF=1/, "and how to silence it for one push");
+    assert.ok(reminded.ms < 10000, `a reminded push must not wait — it took ${reminded.ms}ms`);
+
+    // The stand-down the line itself offers must work, in both dialects.
+    const stoodDown = expect(fx, "git push -u origin feat/x", "allow", { env: { PHX_PUSH_CHECK_OFF: "1" } });
+    assert.equal(stoodDown.context, "", `the stand-down must silence it completely.\n${stoodDown.context}`);
+    const inline = expect(fx, "PHX_PUSH_CHECK_OFF=1 git push -u origin feat/x", "allow");
+    assert.equal(inline.context, "", `and so must the inline spelling.\n${inline.context}`);
+    const ps = expect(fx, "$env:PHX_PUSH_CHECK_OFF=1; git push -u origin feat/x", "allow", { tool: "PowerShell" });
+    assert.equal(ps.context, "", `and the PowerShell spelling.\n${ps.context}`);
+    assert.match(
+      expect(fx, "git push -u origin feat/x", "allow", { tool: "PowerShell" }).context,
+      /[$]env:PHX_PUSH_CHECK_OFF=1;/,
+      "the stand-down it offers is in the dialect that asked",
+    );
+
+    // ── A recorded CLEAN pass for this exact sha silences it, with nothing else to say ───────────────
+    fx.contracts(sha);
+    const quiet = expect(fx, "git push -u origin feat/x", "allow");
+    assert.equal(quiet.context, "", `a recorded clean pass is the reminder satisfied.\n${quiet.context}`);
+
+    // ── A pass recorded for the PARENT never speaks for this commit ──────────────────────────────────
+    const second = fx.commit("src/lib/example/rules.ts");
+    const moved = expect(fx, "git push -u origin feat/x", "allow");
+    assert.match(moved.context, /BEFORE THIS PUSH/, `the parent's pass cannot speak for this one.\n${moved.context}`);
+    assert.match(moved.context, new RegExp(second.slice(0, 9)), "and the line names the new commit");
+
+    // ── A pass recorded against a DIRTY tree is not a pass for the commit ────────────────────────────
+    fx.contracts(second, { clean: false });
+    assert.match(
+      expect(fx, "git push -u origin feat/x", "allow").context,
+      /BEFORE THIS PUSH/,
+      "a record written against a dirty tree proves nothing about the commit",
+    );
+    // ── Neither is a record naming a different sha, or an unreadable one ─────────────────────────────
+    fx.contracts(second, { sha: "0".repeat(40) });
+    assert.match(expect(fx, "git push -u origin feat/x", "allow").context, /BEFORE THIS PUSH/, "a record must name this sha");
+    mkdirSync(join(fx.work, ".git", CONTRACTS_DIR_NAME), { recursive: true });
+    writeFileSync(join(fx.work, ".git", CONTRACTS_DIR_NAME, `${second}.json`), "{ not json");
+    assert.match(expect(fx, "git push -u origin feat/x", "allow").context, /BEFORE THIS PUSH/, "a malformed record reminds, never throws");
+
+    // ── A recorded typecheck FAIL still refuses, and the widening did not add a second deny arm ──────
+    fx.record(second, { typecheck: "FAIL" }, TSC_LINES);
+    const denied = expect(fx, "git push -u origin feat/x", "deny");
+    assert.match(denied.reason, /PUSH REFUSED/, "the deny arm is unchanged");
+    assert.doesNotMatch(denied.reason, /BEFORE THIS PUSH/, "and the contracts line is never a refusal");
+
+    // ── The record the real writer produces is the record the hook reads ─────────────────────────────
+    // Pinned against `scripts/lib/check-contracts-record.mjs` itself, so the two cannot drift apart.
+    const third = fx.commit("src/lib/example/rules.ts");
+    writeFileSync(join(fx.work, "untracked.txt"), "an untracked file is not a dirty tree\n");
+    const written = writeContractsPass(fx.work, { gates: 16, seconds: 8.2 });
+    assert.ok(written, "a clean checkout must record, and an untracked file must not stop it");
+    assert.equal(written?.sha, third, "the record is about HEAD");
+    assert.deepEqual(readContractsPass(fx.work, third)?.sha, third, "and reads back for that sha");
+    assert.equal(expect(fx, "git push -u origin feat/x", "allow").context, "", "so the hook goes quiet");
+
+    // A tracked edit IS a dirty tree: nothing is recorded, and what HEAD held is cleared.
+    appendFileSync(join(fx.work, "src/lib/example/rules.ts"), "// edited after the gates ran\n");
+    assert.equal(writeContractsPass(fx.work, { gates: 16, seconds: 8.2 }), null, "a dirty tree records nothing");
+    assert.equal(readContractsPass(fx.work, third), null, "and the earlier pass is cleared, not left standing");
+    assert.match(
+      expect(fx, "git push -u origin feat/x", "allow").context,
+      /BEFORE THIS PUSH/,
+      "so the push is reminded again",
+    );
   } finally {
     rmSync(fx.root, { recursive: true, force: true });
   }

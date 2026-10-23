@@ -222,6 +222,37 @@ export function runCheckContractsTests() {
   );
   assert.ok(existsSync(path.join(ROOT, GATE_RUNNER)), `GATE_RUNNER names a file that does not exist: ${GATE_RUNNER}`);
 
+  // 4b. THE PER-COMMIT RECORD THE PRE-PUSH REMINDER READS. The owner widened that reminder to EVERY
+  // push on 2026-10-23, so it needs a way to be satisfied: a clean full run writes a record for the
+  // committed sha and the next push of that commit says nothing. Pinned on source because observing
+  // the behaviour costs a real 8-second run — and because what can go wrong is not the writing but
+  // the FORGETTING. A pass recorded, then a run that fails, then a push that stays quiet on the
+  // strength of the stale record, is the one shape that makes the reminder worse than no reminder.
+  assert.ok(
+    launcher.includes("from './lib/check-contracts-record.mjs'"),
+    "scripts/check-contracts.mjs must reach the per-commit record through scripts/lib/check-contracts-record.mjs — the writer and .claude/hooks/push-typecheck-guard.mjs's reader are deliberately one module",
+  );
+  for (const [code, why] of [
+    ["2", "a NO VERDICT run"],
+    ["1", "a FAILED gate"],
+  ] as const) {
+    assert.match(
+      launcher,
+      new RegExp(`forgetAnyRecordedPass\\(\\);\\s*process\\.exit\\(${code}\\);`),
+      `${why} must clear this commit's recorded pass before exiting: the record decides whether the push guard says anything, and a stale one silences the reminder on a run that did not pass`,
+    );
+  }
+  assert.match(
+    launcher,
+    /if \(skippedTools\.length === 0\) \{\s*const recorded = writeContractsPass\(/,
+    "the pass is recorded ONLY inside the `skippedTools.length === 0` branch — a run where a tool gate was SKIPPED has not read every gate, and quieting the reminder on partial coverage is exactly what the skip line exists to prevent",
+  );
+  assert.match(
+    launcher,
+    /\} else \{\s*forgetAnyRecordedPass\(\);\s*\}/,
+    "a run with a SKIPPED tool gate must clear whatever this commit held rather than leave an earlier full pass standing",
+  );
+
   // 5. It is wired as a script and NOT into the `ci` chain. tests/ci-gate-parity.test.ts requires
   // every check:* named in `ci` to appear literally in a .github/workflows/*.yml file, and a CI
   // step would be waste anyway — the sharded suite already runs all of these.
