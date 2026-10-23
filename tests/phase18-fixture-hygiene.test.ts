@@ -25,7 +25,7 @@ export function runPhase18FixtureHygieneTests() {
   assert.match(payrollExpensesSource, /isDisposableExpenseReportRow/);
   assert.match(salesServiceSource, /isDisposableSalesBatchRow/);
   assert.match(salesServiceSource, /isDisposableSalesRecordRow/);
-  assert.match(adminServiceSource, /businessSalesRows/);
+  // businessSalesRows left with the sales-ownership classification of the retired Data Health page.
   assert.match(adminServiceSource, /businessVacationRows/);
   assert.match(commandCenterSource, /\.lt\("year", 2090\)/);
   assert.match(operationsSource, /@\/lib\/fixture-hygiene/);
@@ -36,7 +36,10 @@ export function runPhase18FixtureHygieneTests() {
   assert.match(phase18SmokeSource, /Approved or locked payroll fixture rows must be retained or removed by database reset/);
   assert.match(phase18SmokeSource, /getAdminCommandCenterData/);
   assert.match(phase18SmokeSource, /getDataHealthStats/);
-  assert.match(phase18SmokeSource, /getOperationalMonitoringStats/);
+  // The Monitoring aggregate retired on 23 Oct 2026; the security feed is read through the System
+  // Audit's login-security loader now.
+  assert.match(phase18SmokeSource, /loadLoginSecurityOverview/);
+  assert.doesNotMatch(phase18SmokeSource, /getOperationalMonitoringStats/);
   assert.doesNotMatch(phase18SmokeSource, /\.delete\(/);
   assert.doesNotMatch(phase18SmokeSource, /\.update\(/);
   assert.doesNotMatch(phase18SmokeSource, /\.insert\(/);

@@ -107,20 +107,20 @@ function JourneyDetailDrawer({ result, onClose }: { result: SyntheticJourneyResu
     setFeedback(copied ? "Copied developer handoff text to clipboard." : text);
   }
 
-  // Opens System Issues, which is where a failed journey is actually investigated: it shows the
-  // same self-hosted app_error_events plus Cloud Logging, live Service Health and per-user attempt
-  // counts.
+  // Opens the System Audit, which is where a failed journey is actually investigated: it shows the
+  // self-hosted app_error_events as folded issues with their occurrences. It opened System Issues
+  // until that page retired into the System Audit on 23 Oct 2026.
   //
   // This pushed `/admin/ai-bug-investigator` until 2026-10-08 — a page that has never existed in
   // this repo, so the button copied the handoff text and then dead-ended on a 404. That name
   // survived in three strings in this file and nowhere else: no route, no component, no navigation
-  // entry. `/admin/error-monitor` is not the destination either — it is itself a stub that
-  // permanently redirects here.
-  async function handleOpenInSystemIssues() {
+  // entry. `/admin/error-monitor` and `/admin/system-issues` are not the destination either —
+  // both are stubs that permanently redirect to the System Audit.
+  async function handleOpenInSystemAudit() {
     const text = buildDeveloperHandoffText(result);
     const copied = await copyText(text);
-    setFeedback(copied ? "Copied handoff text — opening System Issues…" : text);
-    router.push("/admin/system-issues");
+    setFeedback(copied ? "Copied handoff text — opening the System Audit." : text);
+    router.push("/admin/system-audit");
   }
 
   return (
@@ -217,10 +217,10 @@ function JourneyDetailDrawer({ result, onClose }: { result: SyntheticJourneyResu
             </button>
             <button
               className="inline-flex items-center justify-center rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100"
-              onClick={handleOpenInSystemIssues}
+              onClick={handleOpenInSystemAudit}
               type="button"
             >
-              Open in System Issues
+              Open in the System Audit
             </button>
           </div>
           {feedback && <p className="whitespace-pre-wrap text-xs text-slate-500">{feedback}</p>}

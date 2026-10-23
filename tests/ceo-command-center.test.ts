@@ -426,7 +426,7 @@ export function runCeoCommandCenterTests() {
     "CEO Phase B smart navigation must not link to the redirecting monthly sales route",
   );
   assert.match(ceoPhaseBSource, /SmartNavGrid access=\{access\} variant=\{variant\}/);
-  assert.match(ceoPhaseBSource, /item\.href !== "\/employees" && item\.href !== "\/admin\/data-health"/);
+  assert.match(ceoPhaseBSource, /item\.href !== "\/employees" && item\.href !== "\/admin\/system-audit"/);
 
   // ── SFE Manager variant scope ──────────────────────────────────────────────
   // /admin/sfe-command-center reuses these CEO components with variant="sfe". The SFE Manager's
@@ -440,7 +440,7 @@ export function runCeoCommandCenterTests() {
   for (const denied of [
     "/employees",
     "/organogram",
-    "/admin/data-health",
+    "/admin/system-audit",
     "/admin/outstation/expense-command",
     "/admin/m-payroll",
   ]) {

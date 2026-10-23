@@ -164,7 +164,8 @@ function readReferences(absoluteFile: string, repoRelative: string): PathReferen
     // the inner backtick: `` `/api/admin/monitoring/events-csv${q ? `?${q}` : ""}` `` captures only
     // as far as that inner tick, so neither replacement pass above can close it. Everything past an
     // interpolation nobody can parse is unknown, so truncate there and let it span segments. Without
-    // this the CSV export link read as an orphan while the button worked perfectly.
+    // this the CSV export link read as an orphan while the button worked perfectly (that link was the
+    // retired Monitoring page's, gone since 23 Oct 2026; the shape it taught is still common).
     const unparseable = raw.indexOf("${");
     if (unparseable >= 0) raw = `${raw.slice(0, unparseable)}${WILDCARD}`;
     // An ABSOLUTE url whose origin is interpolated — `` `${baseUrl}/api/notifications/test` `` in

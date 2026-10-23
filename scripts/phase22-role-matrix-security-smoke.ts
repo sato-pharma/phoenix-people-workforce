@@ -314,8 +314,8 @@ function verifyStaticEntryPoints() {
   const attendancePoliciesRoute = readFileSync("app/api/attendance/policies/route.ts", "utf8");
   const attendanceDeviceMappingRoute = readFileSync("app/api/attendance/device-user-mappings/route.ts", "utf8");
   const adminCommandCenterPage = readFileSync("app/(admin)/admin/page.tsx", "utf8");
-  const adminDataHealthPage = readFileSync("app/(admin)/admin/data-health/page.tsx", "utf8");
-  const adminMonitoringPage = readFileSync("app/(admin)/admin/monitoring/page.tsx", "utf8");
+  // Data Health and Monitoring retired into the System Audit on 23 Oct 2026; their pages redirect.
+  const adminSystemAuditPage = readFileSync("app/(admin)/admin/system-audit/page.tsx", "utf8");
   const adminLogsPage = readFileSync("app/(admin)/admin/logs/page.tsx", "utf8");
   // src/components/admin/admin-command-center.tsx was RETIRED on 2026-08-30 along with the generic
   // /admin dashboard it rendered, so the two checks that read it are gone rather than relaxed. What
@@ -327,8 +327,7 @@ function verifyStaticEntryPoints() {
 
   addCheck("Admin payroll page redirects non-company payroll scopes to payslips", /getPayrollScope\(access\)[\s\S]*redirect\("\/payslips"\)/.test(payrollPage));
   addCheck("Admin command center allows overview read without full admin", /canAccess\(access, "admin", "read"\)[\s\S]*canAccess\(access, "overview", "read"\)/.test(adminCommandCenterPage));
-  addCheck("Admin data health remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminDataHealthPage));
-  addCheck("Admin monitoring remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminMonitoringPage));
+  addCheck("Admin system audit remains Super Admin gated", /assertSystemAdministratorWorkspaceAccess\(/.test(adminSystemAuditPage) && !/canAccess\(access, "overview", "read"\)/.test(adminSystemAuditPage));
   addCheck("Admin audit logs remain full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminLogsPage));
   addCheck("Generic /admin dashboard stays retired for the HR seats", /DEDICATED_COMMAND_CENTER_ROLES[\s\S]*"HR Advisory"[\s\S]*"HR Operations"/.test(adminCommandCenterPage));
   addCheck("Retired admin command center is not rendered by /admin", !/admin-command-center/.test(adminCommandCenterPage));

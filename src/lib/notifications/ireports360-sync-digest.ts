@@ -6,7 +6,7 @@ import type { UnrecognizedVisitTypeAlert } from "@/lib/crm/unrecognized-visit-ty
 
 // Notifies Super Admins over Telegram/in-app every time a CRM (iReports360) pull finishes —
 // success or failure — so someone always knows the visits mirror is fresh without having to
-// check ireports360_visits_sync_runs manually. Mirrors runWeeklySystemHealthDigest's recipient
+// check ireports360_visits_sync_runs manually. Mirrors the retired (2026-10-23) weekly health digest's recipient
 // + delivery pattern: module: "telegram" deliberately bypasses the editable-template path
 // (see telegram-templates.ts) because this is a code-composed ops digest, not a per-employee
 // workflow notification.

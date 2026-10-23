@@ -306,7 +306,7 @@ export function runPhoenixCrmVoiceTranscribeTests() {
   assert.match(route, /assertPermission\(access, "phoenix_crm", "create"\)/, `${ROUTE} gates the words behind the same permission as entering a visit`);
   assert.match(route, /export const dynamic = "force-dynamic"/, `${ROUTE} is never cached or prefetched`);
   assert.match(route, /isVoiceTranscriptionConfigured\(\)/, `${ROUTE} answers whether this can write words at all — the control asks BEFORE it promises any, because a browser cannot see the key`);
-  assert.doesNotMatch(route, /GROQ_API_KEY|Groq/, `${ROUTE} never names the service or its key to a phone — a boolean is the whole answer, and the rest belongs in /admin/error-monitor`);
+  assert.doesNotMatch(route, /GROQ_API_KEY|Groq/, `${ROUTE} never names the service or its key to a phone — a boolean is the whole answer, and the rest belongs in /admin/system-audit`);
 
   // ── Every failure is a sentence the rep can act on, and none is fatal ─────────
   // The transcription runs after the upload has landed, so the recording is already safe: a refusal costs

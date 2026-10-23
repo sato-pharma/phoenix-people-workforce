@@ -354,13 +354,26 @@ const JOBS = {
   "reconciliation-check": {
     title: "Phoenix — nightly reconciliation harness",
     path: "/api/cron/reconciliation-check",
-    // 04:40 Cairo. After the 03:20 re-stamp has settled the geography the CRM checks read, and well
-    // before the 06:36 daily notification run — so a breach is found and paged while there is still
-    // a morning left to act on it. Nothing else in the account runs at :40.
+    // 04:40 Cairo. After the 03:20 re-stamp has settled the geography the CRM checks read, and before
+    // the 04:57 System Audit sweep, whose one daily message carries any breach found here (this job
+    // sends nothing of its own since 2026-10-23). Nothing else in the account runs at :40.
     schedule: { hours: [4], minutes: [40], mdays: [-1], months: [-1], wdays: [-1] },
     // 16 checks, entirely read-only, measured end to end at 15.6s against production — inside the
     // 30s platform cut with room to spare. 300 matches the rest of the account; the platform still
     // cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
+  "system-audit-sweep": {
+    title: "Phoenix — System Audit nightly sweep",
+    path: "/api/cron/system-audit-sweep",
+    // 04:57 Cairo, matching docs/observability.md and JOB_SCHEDULES. Seventeen minutes after the
+    // 04:40 integrity checks have written their findings, so the one daily System Audit message
+    // carries them too, and well before anyone starts work. Nothing else in the account runs at :57
+    // in this hour, so a red execution here names one job.
+    schedule: { hours: [4], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    // Six detectors one at a time under a 240 s budget, then the message: past the 30 s platform cut
+    // on most nights, so cron-job.org logs a timeout while the server finishes and the heartbeat
+    // register is the witness (see header). 300 matches the route's own maxDuration.
     requestTimeout: 300,
   },
   "retention-risk-sweep": {

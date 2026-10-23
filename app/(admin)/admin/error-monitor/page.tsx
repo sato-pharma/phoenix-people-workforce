@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 
-// The Error Monitor is retired: it was a strict subset of System Issues, which shows the
-// same self-hosted app_error_events (via the still-live getErrorEvents service) plus GCP
-// Cloud Logging, live Service Health, per-user attempt counts, and the security lens.
-// Permanently redirect so any bookmarks/links land on the superset dashboard.
+// The Error Monitor was retired long ago into System Issues, and System Issues itself was retired
+// on 23 Oct 2026 for the System Audit. Kept as a forward so old bookmarks and alert buttons land
+// on the page that replaced both.
 export const dynamic = "force-dynamic";
 
 export default function ErrorMonitorPage() {
-  redirect("/admin/system-issues");
+  redirect("/admin/system-audit");
 }

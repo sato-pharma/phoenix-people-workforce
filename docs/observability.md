@@ -20,12 +20,12 @@ project is therefore gone, including the pieces that used to page the owner:
 | Cloud Monitoring alert policies (5xx rate, p95 latency, uptime, scheduler failure, auth-failure spike, config drift) | **Dead** — see "Metrics & alerting" below |
 | "Phoenix HR production ERROR log alert" (the Sentry replacement) | **Dead** — nothing emails the owner on a production ERROR any more |
 | Cloud Logging retention, log-based metrics, and the log query language | **Dead** — use `railway logs` |
-| The `/admin/system-issues` "live infra logs" half | **Dead** — shows its "not connected" banner |
+| The old `/admin/system-issues` "live infra logs" half | **Removed** (2026-09-30); the page itself retired into `/admin/system-audit` on 2026-10-23 |
 | Healthchecks.io dead-man's-switch | **Alive** — third-party, outside GCP, `HEALTHCHECKS_PING_KEY` is set on the Railway service |
-| `app_error_events` table + `/admin/system-issues` app-error half | **Alive** — it is in Supabase, not GCP |
+| `app_error_events` table + the `/admin/system-audit` Incidents tab | **Alive** — it is in Supabase, not GCP |
 
 **Net effect: errors are still recorded, but nothing pages anyone.** Discovering a production
-problem currently depends on someone looking at `/admin/system-issues`, `railway logs`, or a
+problem currently depends on someone looking at `/admin/system-audit`, `railway logs`, or a
 Healthchecks notification for a cron that stopped pinging. Replacing the alerting layer is open
 work, not a solved problem.
 
@@ -593,6 +593,7 @@ policy):
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` · **in-house only** |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
+   | `phoenix-system-audit-sweep` | `57 4 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 20m | cron-job.org job `8344730` |
    | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |
    | `phoenix-recruitment-cv-digest` | `47 0,6,12,18 * * *` | 1h | cron-job.org job `8334658` |
@@ -685,7 +686,8 @@ policy):
    | `phoenix-db-health-snapshot` | `platform` | Takes the query-statistics snapshot every six hours. A red means there is no recent baseline to compare a slow page against. |
    | `phoenix-territory-restamp` | `sales` | The nightly 03:20 territory restamp that keeps each customer's territory current against the master data. A red means sales rows are being attributed on a stale territory. |
    | `phoenix-brick-move-drain` | `sales in-house-only` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. It is the one declared job with NO external check at all, so only the in-house register watches it. |
-   | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 reconciliation check that alerts on a breach between the sales sources. A red means a breach would not have been raised with anyone. |
+   | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 integrity checks. They store their report and write every breach into the System Audit ledger, which the 04:57 daily message carries; they send nothing of their own. A red means last night's checks were neither stored nor reported. |
+   | `phoenix-system-audit-sweep` | `platform in-house-only silent-when-clean` | The nightly 04:57 System Audit sweep: every detector in turn, the verifier, then one in-app and Telegram message, sent only when an issue is new, newly shared or reopened, so a quiet morning is correct. A red means last night's findings were not collected and nobody was told. |
    | `phoenix-crm-contact-lists` | `crm` | Rebuilds the CRM doctor and pharmacy contact lists every five minutes through hour 5. It pings directly rather than through the wrapper, because this route answers 500 without throwing. |
    | `phoenix-expense-claims-refresh` | `hr` | Rebuilds the expense-claims read mirror from the legacy outstation tables every hour. Production reads are live on that mirror, so a red means the claims people are reading go stale. |
    | `phoenix-recruitment-cv-digest` | `recruitment silent-when-clean` | Emails each hiring manager who had candidates pushed to them in the last six hours a summary of what they received and from whom. Silent when no manager received any. |
@@ -1020,6 +1022,37 @@ was deleted on 2026-09-08 — it had been kept as a dead file, and Semgrep flagg
 which is a poor reason to carry code that authenticates to a billing-closed project. Recover it from
 git history if the reasoning is ever wanted; the account above is the part worth keeping.
 
+## The System Audit sweep and its one daily message
+
+`/api/cron/system-audit-sweep` (`src/lib/system-audit/sweep.ts`) runs at **04:57 Cairo**, seventeen
+minutes after the 04:40 integrity checks, and writes into the System Audit ledger that
+`/admin/system-audit` reads. It runs the detectors **one at a time** — errors people were shown,
+iReports360 sync runs, failed and stranded jobs, record linkage, visits not carried through — then
+the verifier, which alone sets FIXED — VERIFIED and reopens a fix that recurs.
+
+- **It spares the database it audits.** A lease stops two sweeps overlapping; a database restart in
+  the last 18 hours (read from `database_restarts`, never noted — noting it would swallow the restart
+  alarm) makes the detectors sit the night out with their watermarks unmoved; a detector failing with
+  a timeout, a cancelled statement, a dropped connection or a gateway 5xx stops the sweep and records
+  every detector after it as aborted, not tried. 240 s in all, 90 s per detector.
+- **One message a day, and only when something changed.** After the sweep, one in-app and Telegram
+  notice (`system_audit_daily`, audience `weekly_system_health_digest`, never email or push) lists
+  what is new, newly shared or reopened — counts by reason, ten issues by name, "and K more on the
+  page". Nothing new sends nothing. The reconciliation check's own breach message was retired on
+  2026-10-23; its breaches ride this one.
+- **The ledger's starting point is one historical run.** `scripts/system-audit-historical.ts` runs
+  every detector once over a past window (default the last 90 days, the error table's retention). It
+  prints the Supabase host before anything else and refuses 09:00–17:00 Cairo and any flag it does not
+  know. Without `--apply` it writes nothing to the database: three files (`MASTER_ERROR_AUDIT.csv`,
+  `excluded-noise.csv`, `coverage.json`) land under `xlsx/system-audit-historical/`, with the errors
+  read from a CSV snapshot given as `--app-errors`. With `--apply` it writes the ledger, applies the
+  reviewed triage seed (`src/lib/system-audit/triage-seed.ts`, empty until a person has checked each
+  entry against evidence), marks everything already found as told so the first daily message carries
+  only what is new, and sets the watermarks the nightly sweep carries on from. The verifier is not
+  part of it — a past window has no "after the fix" to measure.
+- **In-house only.** No Healthchecks slot is left, so the heartbeat register is its only watcher; a
+  red there means last night's findings were neither collected nor told.
+
 ## Synthetic journeys
 
 `src/lib/synthetic-journeys/` is a Playwright smoke suite (`pnpm run synthetic:test`) that walks key
@@ -1038,31 +1071,19 @@ Railway, which satisfies the outside-the-platform requirement.
 service metrics — CPU, memory, network, restarts. There are no log-based metrics and no alert
 policies; these are things you look at, not things that page you.
 
-## System Issues dashboard (`/admin/system-issues`, Super Admin + CEO)
+## The System Audit page (`/admin/system-audit`, Super Admin only)
 
-Two tabs, gated by direct role check (not the `admin` permission resource, which is
-hard-locked to Super Admin — see `isRolePermissionWithinHardBoundary` in
-`src/lib/auth/permissions.ts`):
+On 2026-10-23 one page replaced four: System Issues (`/admin/system-issues`), Error Monitor
+(`/admin/error-monitor`), Monitoring (`/admin/monitoring`) and Data Health
+(`/admin/data-health`). Each old address now redirects to `/admin/system-audit`, and every alert
+button that opened one of them opens it. Its tabs are Incidents (the folded `app_error_events` and
+integrity findings), Integrity checks, Login security (locked accounts, forced resets, exact failed
+sign-in counts, the 7-day security lens and the IP block list), Salary flags (every flag, never cut
+at a row limit) and Role coverage, moved intact. A source that cannot be read says "Unavailable",
+never zero. Retired with the old pages: the AI triage, the per-user attempt counts, the deploy
+timeline, the weekly system health digest and the Monitoring CSV export.
 
-- **Issues & Errors** — shows `app_error_events` (self-hosted, app-level). It was once built to
-  *merge* those with live GCP Cloud Logging entries so infra-level failures that never reach
-  application code (container crash, OOM kill, cold-start failure) were visible too. 🔴 **That half
-  is gone** — the GCP project's billing is closed (GCP is dead, not standby), so the Cloud Logging
-  reader (`src/lib/observability/gcp-logs.ts`) and its "not connected" panel were **removed**
-  (2026-09-30) along with the `@google-cloud/logging` dependency, which was the sole thing pulling
-  `@grpc/grpc-js` into the production graph and repeatedly withholding Railway deploys on its
-  transitive HIGH advisory. **Container-level failures are not surfaced in the UI** — use
-  `railway logs` for those. Re-pointing this at the Railway log API is open work.
-- **The Service Health card is GONE (2026-10-16).** It read Cloud Run availability and latency from
-  Cloud Monitoring, which died with the GCP billing, so it showed "unavailable" permanently and made the
-  whole page read as broken; `gcp-metrics.ts` and its test went with it. Nothing replaces it here —
-  availability and latency are `railway logs` and Sentry's trace explorer.
-- **The job-heartbeat sweep no longer writes to `app_error_events`.** It ran every 15 minutes and logged
-  an ERROR for as long as a job stayed stranded: 955 of the week's 1,401 rows (96 a day on 10-12 Oct),
-  burying every real browser error. It is a WARNING line now; the alert (in-app + Telegram, one a Cairo
-  day) and the `audit_logs` row are unchanged. A stranded job is read from `job_heartbeats`, not this table.
-- **Per-User Attempts** — aggregates `app_error_events` + failed `auth_login_attempts`
-  grouped by HR ID + module/route, computed in application code (`getUserAttemptSummary`
-  in `src/lib/error-monitor/service.ts`), not a DB view/RPC — no migration required.
-  Row-capped per source at 20,000 (paged in 1,000-row batches); hitting the cap sets
-  `truncated: true` in the response, surfaced as a banner rather than a silent drop.
+Container-level failures (crash, OOM kill, cold-start failure) still never reach application code,
+so they are not on the page — use `railway logs` for those, and Sentry's trace explorer for
+availability and latency. The job-heartbeat sweep writes a WARNING line, not an
+`app_error_events` row; a stranded job is read from `job_heartbeats`.

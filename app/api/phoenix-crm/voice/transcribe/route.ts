@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 // browser with no speech engine of its own, offering "the words are written when you stop" with nothing
 // behind it is the failure the pinned wording exists to prevent — the rep finds out at a clinic door. So
 // the screen asks, and the answer is a boolean and nothing else. It never says which service, which key,
-// or why it is missing; that belongs in /admin/error-monitor, not on a phone.
+// or why it is missing; that belongs in /admin/system-audit, not on a phone.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);

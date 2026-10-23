@@ -51,9 +51,9 @@ unchanged across the cutover. No secret values appear in this document._
    with the GCP shutdown and nothing has replaced them; Sentry was separately retired 2026-07-31.
    The only thing that still pages anyone is the **Healthchecks.io** dead-man's-switch, and it only
    answers one question — did a cron job run at all. Check its dashboard for any check showing
-   `DOWN`, check `/admin/system-issues` → **Issues & Errors** tab (app-level `app_error_events`;
-   the infra-log half shows a permanent "not connected" banner — that's expected, not a bug, use
-   `railway logs` for infra-level failures instead), and check the Railway dashboard's service
+   `DOWN`, check `/admin/system-audit` → **Incidents** tab (app-level `app_error_events`; it replaced
+   System Issues on 2026-10-23 and never showed infra-level failures — use `railway logs` for those),
+   and check the Railway dashboard's service
    metrics (CPU / memory / restarts). None of these push a notification — you have to go look.
 3. **Check logs:**
    ```bash

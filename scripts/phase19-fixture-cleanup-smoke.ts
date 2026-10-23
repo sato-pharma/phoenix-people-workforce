@@ -4,7 +4,8 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData } from "@/lib/admin/command-center";
 import { getDataHealthStats } from "@/lib/admin/service";
 import { isDisposableFixtureText, isDisposableFixtureYear } from "@/lib/fixture-hygiene";
-import { getOperationalMonitoringStats, getOperationalRecentActivity } from "@/lib/operations/events";
+import { getOperationalRecentActivity } from "@/lib/operations/events";
+import { loadLoginSecurityOverview } from "@/lib/security/login-security";
 import { deleteSalaryBatch } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -250,7 +251,7 @@ async function verifyDashboards() {
   const [commandCenter, dataHealth, monitoring, operations] = await Promise.all([
     getAdminCommandCenterData(accessContext),
     getDataHealthStats(),
-    getOperationalMonitoringStats({ pageSize: 5 }),
+    loadLoginSecurityOverview(),
     getOperationalRecentActivity(accessContext, { limit: 10 }),
   ]);
 
@@ -269,7 +270,7 @@ async function verifyDashboards() {
     Number(dataHealth.summary.structureNodes) >= Number(dataHealth.summary.activeEmployees),
     dataHealth.summary,
   );
-  addCheck("Monitoring security feed remains reachable", Number(monitoring.recentEvents.total) >= 0, monitoring.recentEvents.total);
+  addCheck("Monitoring security feed remains reachable", monitoring.recentActivity !== null && monitoring.unavailable.length === 0, { recentEvents: monitoring.recentActivity?.total ?? null, unavailable: monitoring.unavailable });
   addCheck(
     "Monitoring business activity excludes PHASE15/16/17 fixture actors",
     !operations.recent.some((event) => /phase1[567]/i.test(`${event.userName} ${event.description}`)),

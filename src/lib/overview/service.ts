@@ -89,6 +89,8 @@ export type OverviewDashboardData = {
       timestamp: string; 
       userName: string; 
     }>;
+    /** Activity sources that could not be read — named, so an outage never reads as a quiet day. */
+    staleSources: string[];
   };
   vacancies: {
     openVacancies: number;
@@ -385,6 +387,7 @@ export async function getOverviewDashboard(
     },
     activity: {
       recent: operationalActivity.recent,
+      staleSources: operationalActivity.staleSources,
     },
     vacancies: {
       openVacancies: platformMetrics.workforce.openVacancies,

@@ -4,8 +4,8 @@ const baseUrl = "http://localhost:3000";
 
 const adminPages = [
   ["/admin", ["Command Center", "Total Structure", "Active Employees"]],
-  ["/admin/data-health", ["Data Health", "Total Structure", "Vacant Positions", "151", "125", "26"]],
-  ["/admin/monitoring", ["Monitoring"]],
+  // Data Health and Monitoring retired into the System Audit on 23 Oct 2026.
+  ["/admin/system-audit", ["System Error & Data Integrity Audit"]],
   ["/admin/logs", ["Audit Logs"]],
   ["/employees", ["Employee Master Data", "Add Employee", "Upload"]],
   ["/reports/vacancies", ["Vacancies"]],

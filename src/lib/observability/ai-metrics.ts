@@ -14,7 +14,7 @@
 // text off a screen. The last known-good signal was days earlier.
 //
 // NOW: a FAILURE writes one row to app_error_events through logAppError — the single writer
-// behind /admin/error-monitor and /admin/system-issues. That table is already deployed, already
+// behind /admin/system-audit (formerly /admin/error-monitor and /admin/system-issues). That table is already deployed, already
 // read, already Railway-native, and already has retention. Successes write nothing: this is an
 // alarm, not a metrics pipeline, and a row per successful call would bury the failures it exists
 // to show.
@@ -89,7 +89,7 @@ const COMPONENT_LABELS: Record<AiCallComponent, string> = {
  *
  * A dead key does not fail once — aiSuggest batches at 60 rows and loops, so a single click can
  * throw the same error a dozen times, and a scheduled CV sweep far more. Un-throttled, the first
- * real outage would bury /admin/error-monitor under thousands of identical rows, which is its own
+ * real outage would bury /admin/system-audit under thousands of identical rows, which is its own
  * kind of blindness.
  */
 export const FAILURE_THROTTLE_MS = 5 * 60_000;
