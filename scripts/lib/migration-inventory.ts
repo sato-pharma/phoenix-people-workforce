@@ -1411,6 +1411,38 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // route and the whole reason these entries exist.
   "20261023051847_system_audit_ledger.sql",
   "20261023051848_system_audit_functions.sql",
+  // 2026-10-23. The Phoenix contact-truth cache, the sibling of 20261023091035. The Supabase MCP
+  // declines this shape (`drop trigger if exists`, and a `delete` inside a function body, which the
+  // classifier reads as the statement being run), so it went the standing route — scripts/apply-sql-file.mjs
+  // (AGENTS.md §8), staging then production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com.
+  // That route writes NO schema_migrations row on either project, while all of it is live.
+  //
+  // 🔴 NOT taken on existence — a `create or replace` is satisfied by an older body. All SIX functions
+  // were digested on production after applying:
+  //   phoenix_crm_contact_truth_calc         d17fb92d3410fde039f21faf927afc9b, len 608
+  //   phoenix_crm_contact_truth_rebuild      ec256cc04f8b6706ffd1538bf70e88bd, len 559
+  //   phoenix_crm_contact_truth_touch        90277acd02f8577968476f6fbbc004d1, len 541
+  //   phoenix_crm_contact_truth_on_customer  f8d79ad2b3d559f261115b232f9ec4de, len 293
+  //   phoenix_crm_contact_truth_on_truncate  1fd94103b72565e42305b8478d8cc5a9, len 81
+  //   phoenix_crm_contact_truth_reconcile    92c7b4e4346709e182cc1264214b9846, len 738
+  // prosecdef true on all six and 0 of them reachable with a browser key (each ACL is exactly
+  // postgres=X/postgres service_role=X/postgres, so PUBLIC, anon and authenticated hold none).
+  // crm_contact_phoenix_truth_cache exists with relrowsecurity true and its primary key; the view
+  // crm_contact_phoenix_truth still carries security_invoker=true and now reads the cache; both
+  // triggers are on phoenix_crm_customers beside its three pre-existing ones; the cron job
+  // phoenix-crm-contact-truth-reconcile is scheduled `*/15 * * * *`.
+  //
+  // Effect proved, not asserted. The backfill wrote 2,285 rows with 0 differences against
+  // phoenix_crm_contact_truth_calc() before committing — 2,285 is exactly the number of winners the
+  // old hash built (`actual rows=2285` in the pre-change plan) out of 2,287 qualifying customer rows.
+  // Measured by delta over two calls of one pg_stat_statements entry each: an ordered first page over
+  // an 83-day window went 2,948.2 ms -> 121.1 ms, and a dense single-day page 11.5 ms -> 2.3 ms.
+  // The trigger was proved on STAGING, not production, because phoenix_crm_customers carries an AFTER
+  // trigger that writes a contact-name row and a no-op update on production would have written one:
+  // one cache row deleted for contact 103614, a no-op update (`set speciality = speciality`) put it
+  // back, and the reconcile then found 0 differences.
+  // Pinned by tests/crm-contact-phoenix-truth-cache.test.ts.
+  "20261023140001_crm_contact_phoenix_truth_cache.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
