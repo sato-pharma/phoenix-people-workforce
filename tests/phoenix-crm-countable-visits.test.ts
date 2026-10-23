@@ -244,6 +244,28 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
       /\) as customer_validated\b/,
       `the newest definition of the view (${latestView}) still carries customer_validated`,
     );
+
+    // THE CUSTOMER JOIN IS LEFT SINCE 2026-10-23, so the planner drops it for every reader that never
+    // asks for customer_validated — phoenix_crm_rep_entry_days() above all, which rebuilds every
+    // entry day from all history on each read of the two unified doors and paid 13,569 of its 18,025
+    // buffer reads for a customer it never looks at. The rows cannot differ: customer_id is NOT NULL
+    // and carries the foreign key, and the coalesce keeps the column two-state. Moving it back to an
+    // inner join is a silent slowdown that no figure would ever show.
+    const newest = source(`supabase/migrations/${latestView}`);
+    const viewAt = newest.lastIndexOf("create or replace view public.phoenix_crm_countable_visits");
+    // To the view's own REVOKE, never to the first ";" — SQL `--` prose survives stripComments and
+    // carries semicolons of its own.
+    const newestView = newest.slice(viewAt, newest.indexOf("revoke all on table public.phoenix_crm_countable_visits", viewAt));
+    assert.match(
+      newestView,
+      /\bleft join public\.phoenix_crm_customers c on c\.id = v\.customer_id/,
+      `the newest view (${latestView}) joins the customer LEFT, so a reader that never asks for customer_validated skips it`,
+    );
+    assert.match(
+      newestView,
+      /coalesce\(c\.validated_at is not null or c\.list_type = 'Pharmacy', false\) as customer_validated/,
+      "and the column stays two-state: never null, whatever the join",
+    );
   }
 
   // ── Which readers ask for it, and which deliberately do not ───────────────────────────────────
