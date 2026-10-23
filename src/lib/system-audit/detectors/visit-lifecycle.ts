@@ -1181,12 +1181,17 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
 
       // Facts kept beside the visit: an approval moving, a recording claimed, reviewed or deleted, an edit.
       const byVisit: Array<{ visit_id: string | null; at: string }> = [];
-      // `tiebreak` is each table's own key, so the page order is total.
+      // `tiebreak` is each table's own key, so the page order is total — and it is THAT TABLE'S key,
+      // never the habitual `id`. phoenix_crm_visit_recordings is keyed on `path` and has no `id`
+      // column at all, and phoenix_crm_unplanned_visits is keyed on `visit_id`; a PostgREST order by
+      // a column that does not exist fails the WHOLE read with 42703, which is how this detector
+      // died on its first production run (23 Oct 2026, "column
+      // phoenix_crm_visit_recordings.id does not exist"), taking every visit-lifecycle check with it.
       const besides: Array<{ table: string; column: string; tiebreak: string }> = [
         { table: "phoenix_crm_unplanned_visits", column: "updated_at", tiebreak: "visit_id" },
-        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "id" },
+        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_edits", column: "edited_at", tiebreak: "id" },
       ];
       for (const { table, column, tiebreak } of besides) {
@@ -1268,9 +1273,9 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
             (from, to) =>
               supabase
                 .from("phoenix_crm_visit_recordings")
-                .select("id,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
+                .select("path,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
                 .in("visit_id", chunk)
-                .order("id")
+                .order("path")
                 .range(from, to),
           ),
           readPaged<{ visit_id: string; removed_at: string }>("phoenix_crm_removed_visits", (from, to) =>
