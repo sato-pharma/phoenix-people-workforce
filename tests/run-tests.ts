@@ -2012,6 +2012,7 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
 import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
+import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7650,6 +7651,11 @@ await runTest(
 await runTest(
   "One employee row per HR id is a cached table, and the rule still lives in ONE body (the two union doors carried SEVEN copies of `select distinct on (upper(btrim(hr_id))) ... from employees order by upper(btrim(hr_id)), hr_id` — one per person slot — so a single day's first page sorted and de-duplicated all 220 employees up to seven times, 736 buffers and 16.73 ms against 283 and 11.09 after): crm_person_by_hr_key_calc holds the rule and is the only thing in the migration that reads public.employees or names `distinct on`, the rebuild, the trigger and the reconcile all recompute through it, the statement trigger on employees names all THREE deciding columns because one left out is a staleness hole no figure shows, the cache is revoked from every browser role and granted to service_role alone exactly as the doors are, the two iReports360 name slots read the blank-as-NULL name while the five Phoenix slots read the raw one (swapped, the door still runs), neither door keeps an inline copy, and the migration refuses to commit a backfill that disagrees with the truth",
   runCrmPersonByHrKeyCacheTests,
+);
+
+await runTest(
+  "The departed-agent CRM exclusion reads a 254-row cache, and ONLY the cache (phx_crm_agent_crm_ids_for_hr_ids ran `select distinct agent_crm_id from crm_visits_unified` on every cold exclusion cache — 220 ms and 57,005 buffers on production with the live-shaped 108-person input, scanning ~136,000 visit rows and quicksorting 140,616 of them to return 76 integers; dropping the duplicate index the day before moved the plan and not the time, 189 ms against 220, which is what proved the shape rather than the index is the cost): crm_agent_crm_ids_calc holds the one body and is the only thing in the migration that reads crm_visits_unified, the rebuild refills THROUGH it and its DELETE carries `where true` because safeupdate refuses an unqualified one over PostgREST and that is how the joining form died on 2026-10-23, the reconcile compares the VALUES both ways and repairs, the door keeps its exact signature, volatility, security, search_path, statement_timeout and grants so src/lib/crm/reads.ts and its PGRST202 page-walk fallback are untouched, it does NOT fall back to _calc() because an empty cache must surface rather than hide behind the slow path, the cache is revoked from every browser role and granted to service_role alone, the migration refuses to commit on a disagreement OR on 0 rows, and the 15-minute reconcile is the staleness bound rather than a safety net because the view's ~10 inputs leave no one table to trigger on",
+  runCrmAgentCrmIdsCacheTests,
 );
 
 await runTest(
