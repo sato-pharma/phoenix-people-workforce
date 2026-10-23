@@ -4,6 +4,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { quotePostgrestValue } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -90,14 +91,29 @@ export function isPayslipRowVisibleToAudience(
  * rules forbid.
  *
  * `ilike` with no wildcard is an exact, case-insensitive match, which is precisely the comparison
- * isPayslipRowVisibleToAudience makes. No value here contains a comma, which is what would
- * otherwise break the or-string.
+ * isPayslipRowVisibleToAudience makes.
+ *
+ * EVERY VALUE IS QUOTED through the shared helper, not spliced in raw. In an `or(...)` expression
+ * `,` and `()` are structural, so one job title holding either — "Medical Rep, Pedia",
+ * "Supervisor (Delta)" — would cut the expression short and leave the conditions after it as
+ * fragments carrying no operator: an HTTP 400 at best, a filter nobody wrote at worst. The old
+ * comment here asserted that no value contains a comma; that was true of the titles the retired HR
+ * Business Partner seat passed, and it is a promise about data that the next narrower audience
+ * would have had to keep without knowing it existed. Audit finding B04-04.
+ *
+ * Wildcards are deliberately NOT neutralised. Blanking a `%` to a space (what ilikeExactValue does
+ * for a search box) would make a title that genuinely contains one match no row at all, hiding
+ * payslips from the viewer who is entitled to them. A wildcard can only WIDEN this SQL narrowing,
+ * and THE BOUNDARY above re-applies the predicate in JavaScript to every row that comes back — so
+ * a widening is caught and a narrowing would not be.
+ *
+ * Null, never "", when there is nothing to filter by: `.or("")` is an HTTP 400.
  */
-function payslipAudienceOrFilter(audience: PayslipCenterAudience): string | null {
+export function payslipAudienceOrFilter(audience: PayslipCenterAudience): string | null {
   if (audience.kind === "company") return null;
-  const terms = audience.jobTitles.map((title) => `job_title.ilike.${title}`);
-  if (audience.selfHrId) terms.push(`hr_id.ilike.${audience.selfHrId}`);
-  return terms.join(",");
+  const terms = audience.jobTitles.map((title) => `job_title.ilike.${quotePostgrestValue(title)}`);
+  if (audience.selfHrId) terms.push(`hr_id.ilike.${quotePostgrestValue(audience.selfHrId)}`);
+  return terms.length > 0 ? terms.join(",") : null;
 }
 
 /**

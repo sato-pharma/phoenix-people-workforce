@@ -17,6 +17,7 @@ import {
   residenceUnchanged,
 } from "@/lib/employees/residence-geocode-policy";
 import { employeeRegionFields, resolveRegionByIds } from "@/lib/employees/region-resolver";
+import { quotePostgrestValue } from "@/lib/supabase/search-filter";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { logError } from "@/lib/observability/log";
@@ -2174,8 +2175,17 @@ async function ensureCrmUsernameIsUnique(crmUsername: string | null, employeeHrI
     return;
   }
 
+  // The value is QUOTED, then percent-encoded. `encodeURIComponent` is not a filter guard: it
+  // leaves `*`, `(`, `)` and `'` untouched and round-trips `%` back to `%`, so the typed username
+  // reaches PostgREST's filter grammar intact. Quoting makes `,` `(` `)` `"` and `\` literal
+  // wherever that grammar treats them as structure. Audit finding B04-03.
+  //
+  // `%`, `*` and `_` are deliberately left as wildcards. They can only WIDEN this read, and the
+  // exact comparison below is what decides a conflict — whereas blanking them would narrow the
+  // query and could let a duplicate username through, which is the one outcome this function
+  // exists to prevent.
   const matches = await supabaseRest<Array<{ crm_username: string | null; hr_id: string }>>(
-    `employees?crm_username=ilike.${encodeURIComponent(crmUsername)}&select=hr_id,crm_username`,
+    `employees?crm_username=ilike.${encodeURIComponent(quotePostgrestValue(crmUsername))}&select=hr_id,crm_username`,
   );
   const normalizedUsername = crmUsername.trim().toLowerCase();
   const conflict = matches.find(
@@ -2935,8 +2945,11 @@ export async function setEmployeeWorkEmail(input: { hrId: string; workEmail: str
   }
 
   // ilike treats `_` as a wildcard, so it can over-match; the exact comparison below narrows it.
+  // The value is quoted for the reason given in ensureCrmUsernameIsUnique (B04-03): an email is
+  // free text until it is stored, `encodeURIComponent` escapes none of PostgREST's structural
+  // characters, and over-matching here is safe while under-matching would admit a duplicate.
   const holders = await supabaseRest<Array<{ full_name: string | null; hr_id: string; work_email: string | null }>>(
-    `employees?work_email=ilike.${encodeURIComponent(workEmail)}&select=hr_id,full_name,work_email`,
+    `employees?work_email=ilike.${encodeURIComponent(quotePostgrestValue(workEmail))}&select=hr_id,full_name,work_email`,
   );
   const conflict = holders.find(
     (row) => (row.work_email ?? "").trim().toLowerCase() === workEmail && normalizeHrId(row.hr_id) !== hrId,

@@ -63,3 +63,21 @@ export function ilikeContainsValue(term: string): string | null {
   const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
   return cleaned ? quotePostgrestValue(`%${cleaned}%`) : null;
 }
+
+/** The same CONTAINS pattern for supabase-js's own `.ilike(column, pattern)` method, which is NOT
+ * the same transport and so must NOT be quoted.
+ *
+ * `.or("col.ilike.VALUE")` hands PostgREST one expression to parse, where `,` and `()` are
+ * structural and double quotes are the escape hatch. `.ilike(col, pattern)` sends the pattern as
+ * its own URL-encoded query parameter — nothing in it is structural, and the double quotes
+ * `quotePostgrestValue` adds would be matched as two literal characters of the pharmacy's name,
+ * finding nothing. The two functions therefore differ ONLY in the quoting their transport demands,
+ * and sharing one wildcard rule between them is the whole point of this module: three call sites
+ * STRIPPED `,` and `()` from a client-method pattern, where they were never dangerous, and so
+ * could not find the 787 customers whose name holds a parenthesis (audit finding B04-C3).
+ *
+ * Null when nothing searchable is left, which callers treat as "no match", never as "no filter". */
+export function ilikeContainsPattern(term: string): string | null {
+  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  return cleaned ? `%${cleaned}%` : null;
+}

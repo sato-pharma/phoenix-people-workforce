@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { ilikeAnyFilter, ilikeContainsValue, quotePostgrestValue } from "../src/lib/supabase/search-filter.ts";
+import { isPayslipRowVisibleToAudience, payslipAudienceOrFilter } from "../src/lib/payroll/payslip-center.ts";
+import {
+  ilikeAnyFilter,
+  ilikeContainsPattern,
+  ilikeContainsValue,
+  quotePostgrestValue,
+} from "../src/lib/supabase/search-filter.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // Regression guard for PostgREST `or(...)` filter injection via a free-text search box.
@@ -57,9 +63,40 @@ import { stripComments } from "./support/comment-strip.ts";
 //     escaping where `""` IS the grammar (RFC 4180); scoped to PostgREST files it matched exactly
 //     the one defect and now matches nothing.
 //
-// This does NOT prove the whole class is covered. The 20 other sites that build a LIKE pattern by
-// hand are unproven by anything here; whether each one's input can carry a comma is a question
-// about data provenance that no regex answers. B04-03, B04-04 and B04-C3 remain open by name.
+// WHAT THE 2026-10-23 REMAINDER CLOSED (B04-03, B04-04, B04-C3), AND THE DISTINCTION IT TURNS ON.
+// The three findings the sweep left open are fixed and pinned below. They are not all the same bug,
+// and the reason matters more than the fix: PostgREST has TWO transports for an `ilike`, and the
+// correct treatment is opposite in each.
+//
+//   `.or("col.ilike.VALUE")` — one expression PostgREST parses. `,` and `()` are structural, so the
+//   value must be DOUBLE-QUOTED. Stripping them is the silent-no-rows failure measured above.
+//     B04-04  src/lib/payroll/payslip-center.ts — the payslip AUDIENCE filter spliced job titles in
+//             raw, on a comment asserting that no value holds a comma. The retired HR Business
+//             Partner seat's titles did not; the promise was about data, not code.
+//     B04-C3  src/lib/recruitment/candidates.ts — stripped `,()` from the pool search, so
+//             `Ahmed Ali (Pharmacist)` and a phone typed `(010) 1234` were unfindable.
+//
+//   `.ilike(col, pattern)` — the client's own method. The pattern is one URL-encoded query
+//   parameter; nothing in it is structural and quoting it would match two literal `"`. Only the
+//   wildcards may be touched.
+//     B04-C3  src/lib/crm/reads.ts and src/lib/direct-orders/service.ts — both stripped characters
+//             that were never dangerous on this transport, losing the 787 parenthesised customer
+//             names and rewriting `CNS_Cairo` to `CNSCairo`.
+//
+//   And one that is neither: `employees?col=ilike.VALUE` built by hand.
+//     B04-03  src/lib/employees/employee-directory.ts — `encodeURIComponent` was doing duty as a
+//             filter guard, which it is not: it leaves `*`, `(`, `)` and `'` untouched and
+//             round-trips `%` to `%`. Both uniqueness checks now quote the value first. Their
+//             wildcards are deliberately NOT blanked — see the comment at each site: over-matching
+//             is corrected by the exact comparison that follows, under-matching would admit the
+//             duplicate the function exists to refuse.
+//
+// This still does NOT prove the whole class is covered. The 20 other sites that build a LIKE
+// pattern by hand are unproven by anything here; whether each one's input can carry a comma is a
+// question about data provenance that no regex answers. Two are known and deliberately untouched:
+// `src/lib/crm/master.ts` strips `,()` from the master search (the same unfindable-rows loss, on
+// the or-transport) and `src/lib/whatsapp-inbox/store.ts` splices a raw `*term*` into an or-string.
+// Neither was authorized in this change.
 export function runPostgrestSearchFilterTests() {
   // ── Point 1 · structural characters survive, quoted, instead of being stripped ───────────────
   // The headline assertion. If ilikeAnyFilter ever goes back to stripping or to raw interpolation,
@@ -236,6 +273,122 @@ export function runPostgrestSearchFilterTests() {
     "and on a backslash, which the shipped form left unescaped",
   );
 
+  // ── B04-C3 · the CLIENT-METHOD pattern, which must NOT be quoted ─────────────────────────────
+  // The headline assertion for the two client-method sites: a parenthesised name survives WHOLE,
+  // and it carries no quotes. Either half wrong is a defect — stripping loses the row, quoting
+  // makes PostgREST look for a name that literally begins with a double quote.
+  assert.equal(
+    ilikeContainsPattern("ابن القيم(حسام حسن)"),
+    "%ابن القيم(حسام حسن)%",
+    "a client-method pattern keeps the parentheses and carries no quotes",
+  );
+  assert.equal(ilikeContainsPattern("El Salam, Nasr City"), "%El Salam, Nasr City%", "and the comma");
+  assert.equal(ilikeContainsPattern("CNS_Cairo"), "%CNS_Cairo%", "and the underscore the old strip deleted");
+  assert.ok(!ilikeContainsPattern("anything")?.includes('"'), "a quoted value would be matched literally");
+
+  // The wildcard rule is the SAME rule — one implementation, two transports.
+  assert.equal(ilikeContainsPattern("B*12"), "%B 12%", "`*` becomes a space, as PostgREST reads it as `%`");
+  assert.equal(ilikeContainsPattern("50%"), "%50%", "the user's `%` is blanked; the two here are the helper's");
+  assert.equal(ilikeContainsPattern("%"), null, "a wildcard-only term has nothing searchable left");
+  assert.equal(ilikeContainsPattern("   "), null, "and an empty one applies no filter at all");
+  // The two functions must differ in EXACTLY one way: the quoting their transport demands.
+  const term = 'El Salam, Nasr City(2)"x"';
+  assert.equal(
+    ilikeContainsValue(term),
+    quotePostgrestValue(ilikeContainsPattern(term) ?? ""),
+    "the or-transport value is the client pattern, quoted — nothing else may differ between them",
+  );
+  // What the three sites did before: strip the structural characters out of a pattern where they
+  // were never structural. Embedded so this test is demonstrably sensitive to the defect.
+  const originalStrippedPattern = (value: string) => `%${value.replace(/[%_,()]/g, " ").trim()}%`;
+  assert.notEqual(
+    originalStrippedPattern("ابن القيم(حسام حسن)"),
+    ilikeContainsPattern("ابن القيم(حسام حسن)"),
+    "the shipped strip must be seen to produce a different pattern — it matched 0 of 787 such names",
+  );
+
+  // ── B04-04 · the payslip AUDIENCE filter — an access boundary, not a search box ───────────────
+  // This filter decides what a restricted viewer FETCHES. A truncated or-string here does not read
+  // as a missing row, it reads as the Payslips Center being broken (400) or as a filter nobody
+  // wrote. Today's only audience is company-wide, so these assertions guard the shape for the next
+  // narrower seat rather than a live leak.
+  assert.equal(payslipAudienceOrFilter({ kind: "company" }), null, "company scope filters nothing");
+  assert.equal(
+    payslipAudienceOrFilter({ jobTitles: [], kind: "job-titles", selfHrId: null }),
+    null,
+    "an empty audience must return null, never the empty string — `.or(\"\")` is an HTTP 400",
+  );
+  assert.equal(
+    payslipAudienceOrFilter({ jobTitles: ["Medical Representative"], kind: "job-titles", selfHrId: "B-10" }),
+    'job_title.ilike."Medical Representative",hr_id.ilike."B-10"',
+    "both halves of the audience, each value quoted",
+  );
+
+  // The property, on the shape that breaks it: a title holding a comma or parentheses. The count is
+  // what the defect changed — three conditions asked for, four seen, one of them with no operator
+  // in it at all.
+  const hostileAudience = {
+    jobTitles: ["Medical Rep, Pedia", "Supervisor (Delta)"],
+    kind: "job-titles",
+    selfHrId: "B-10",
+  } as const;
+  const audienceFilter = payslipAudienceOrFilter(hostileAudience);
+  assert.ok(audienceFilter, "the audience must still produce a filter");
+  const audienceConditions = conditionsOf(audienceFilter);
+  assert.equal(audienceConditions.length, 3, "two titles plus the viewer's own row — exactly three conditions");
+  audienceConditions.forEach((condition) =>
+    assert.ok(wellFormed(condition), `every audience condition must stay well formed — got ${condition}`),
+  );
+  // And the audience must not have WIDENED while being quoted: the columns are exactly these two.
+  assert.deepEqual(
+    audienceConditions.map((condition) => condition.split(".")[0]),
+    ["job_title", "job_title", "hr_id"],
+    "no column may be added to the audience filter",
+  );
+
+  // The original implementation, embedded: raw splice, no quoting.
+  const originalAudienceOrFilter = (titles: readonly string[], selfHrId: string | null) => {
+    const terms = titles.map((title) => `job_title.ilike.${title}`);
+    if (selfHrId) terms.push(`hr_id.ilike.${selfHrId}`);
+    return terms.join(",");
+  };
+  const brokenAudience = conditionsOf(originalAudienceOrFilter(hostileAudience.jobTitles, hostileAudience.selfHrId));
+  assert.equal(
+    brokenAudience.length,
+    4,
+    "the shipped construction must be seen to turn 3 conditions into 4 for the same audience",
+  );
+  // The parenthesised title does NOT split — it survives as one fragment whose `(Delta)` PostgREST
+  // reads as a nested logic group, which is the other half of the 400. Named so that a future
+  // reader does not take the count alone as the whole defect.
+  assert.ok(
+    brokenAudience.includes("job_title.ilike.Supervisor (Delta)"),
+    "and the parenthesised title must still be seen to reach PostgREST as an unbalanced group",
+  );
+  assert.ok(
+    brokenAudience.some((condition) => !wellFormed(condition)),
+    "and at least one fragment must carry no operator at all — that is the 400",
+  );
+  // The wildcard decision is deliberate and asserted, because the obvious "neutralise everything"
+  // fix is the wrong one HERE: blanking a `%` narrows the SQL, and THE BOUNDARY in payslip-center
+  // only ever filters further. A title that genuinely holds a `%` must still fetch its rows.
+  assert.equal(
+    payslipAudienceOrFilter({ jobTitles: ["Rep 50%"], kind: "job-titles", selfHrId: null }),
+    'job_title.ilike."Rep 50%"',
+    "a wildcard in a title is left alone: widening is caught by the JS boundary, narrowing is not",
+  );
+  // The boundary itself must still refuse the row the SQL widening could let through.
+  assert.equal(
+    isPayslipRowVisibleToAudience(hostileAudience, { hrId: "A-99", jobTitle: "Finance Manager" }),
+    false,
+    "the JavaScript boundary is what actually enforces the audience — it must still say no",
+  );
+  assert.equal(
+    isPayslipRowVisibleToAudience(hostileAudience, { hrId: "A-99", jobTitle: "medical rep, pedia" }),
+    true,
+    "and yes, case-insensitively, to a title that is in it",
+  );
+
   // ── the source assertions ───────────────────────────────────────────────────────────────────
   // `git ls-files` rather than a directory walk: this checkout carries ~1.9M gitignored path
   // entries (AGENTS.md §5).
@@ -295,6 +448,101 @@ export function runPostgrestSearchFilterTests() {
     /function quoteInList\([\s\S]{0,200}?quotePostgrestValue\(String\(value\)\)/,
     "quoteInList must delegate to quotePostgrestValue, not re-implement the escape",
   );
+
+  // ── the remainder's five sites · each routed by the rule ITS transport demands ───────────────
+  // Source assertions on purpose: two of the five sit in non-exported functions behind a Supabase
+  // client, so the wiring is what is checkable here. The BEHAVIOUR of every helper they call is
+  // pinned above, and stripComments means the explanation written at each site cannot satisfy the
+  // check on the code's behalf.
+  const requireSource = (file: string) => {
+    const raw = readTracked(file);
+    assert.ok(raw, `${file} must be readable`);
+    return stripComments(raw as string);
+  };
+
+  // B04-C3 (a) · CRM unstamped accounts — client method, unquoted pattern, `_` preserved.
+  const crmReads = requireSource("src/lib/crm/reads.ts");
+  assert.match(
+    crmReads,
+    /ilikeContainsPattern\(options\.labelContains\)/,
+    "getUnstampedAgentAccounts must build its pattern with ilikeContainsPattern",
+  );
+  assert.doesNotMatch(
+    crmReads,
+    /labelContains\.replace\(/,
+    "and must not strip characters out of the label — that is what lost `CNS_Cairo`",
+  );
+
+  // B04-C3 (b) · the Direct Orders customer picker — same transport, same rule.
+  assert.match(
+    directOrders,
+    /ilikeContainsPattern\(search\)/,
+    "the customer picker must build its pattern with ilikeContainsPattern",
+  );
+  assert.doesNotMatch(
+    directOrders,
+    /replace\(\/\[%_,\(\)\]\/g/,
+    "and must not strip `,()` from a client-method pattern, where they were never structural",
+  );
+
+  // B04-C3 (c) · the candidate pool — the OTHER transport, so the value is quoted, not stripped.
+  const candidates = requireSource("src/lib/recruitment/candidates.ts");
+  assert.match(
+    candidates,
+    /ilikeAnyFilter\(\["full_name", "email", "phone", "national_id"\], q\)/,
+    "searchCandidates must build its or(...) through ilikeAnyFilter",
+  );
+  assert.match(
+    candidates,
+    /if \(filter\) query = query\.or\(filter\)/,
+    "and must not hand `.or(\"\")` an empty filter — that is an HTTP 400",
+  );
+
+  // B04-04 · the payslip audience. The access boundary, so both halves are named explicitly.
+  const payslipCenter = requireSource("src/lib/payroll/payslip-center.ts");
+  assert.match(
+    payslipCenter,
+    /job_title\.ilike\.\$\{quotePostgrestValue\(title\)\}/,
+    "every job title in the audience filter must be quoted",
+  );
+  assert.match(
+    payslipCenter,
+    /hr_id\.ilike\.\$\{quotePostgrestValue\(audience\.selfHrId\)\}/,
+    "and so must the viewer's own HR id",
+  );
+  assert.match(
+    payslipCenter,
+    /terms\.length > 0 \? terms\.join\(","\) : null/,
+    "an audience with nothing in it must return null rather than the empty string",
+  );
+
+  // B04-03 · a hand-built `col=ilike.VALUE` path. Repo-wide, because the shape is unambiguous and
+  // measured: `encodeURIComponent` escapes none of PostgREST's structural characters, so the value
+  // inside it must be quoted first. Two matches in the tree on 2026-10-23, both in the employee
+  // directory's uniqueness checks, both now quoted.
+  const unquotedIlikePath: string[] = [];
+  let quotedIlikePaths = 0;
+  for (const file of listed) {
+    const raw = readTracked(file);
+    if (!raw) continue;
+    stripComments(raw)
+      .split("\n")
+      .forEach((line, i) => {
+        if (!/=ilike\.\$\{encodeURIComponent\(/.test(line)) return;
+        if (/=ilike\.\$\{encodeURIComponent\(quotePostgrestValue\(/.test(line)) {
+          quotedIlikePaths += 1;
+          return;
+        }
+        unquotedIlikePath.push(`${file}:${i + 1}`);
+      });
+  }
+  assert.deepEqual(
+    unquotedIlikePath,
+    [],
+    `an ilike value percent-encoded but not quoted — encodeURIComponent leaves *, (, ) and ' ` +
+      `untouched and round-trips %; wrap it in quotePostgrestValue():\n  ${unquotedIlikePath.join("\n  ")}`,
+  );
+  assert.equal(quotedIlikePaths, 2, "both employee-directory uniqueness checks must still make this read");
 
   // Point 4 · the authorization boundary is independent of the search clause. The search was
   // rewritten; the permission check, the scope predicate and the overflow refusal must all still
