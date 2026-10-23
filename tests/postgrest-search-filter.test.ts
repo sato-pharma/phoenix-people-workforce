@@ -902,9 +902,14 @@ export function runPostgrestSearchFilterTests() {
   // its exemption must be WRITTEN DOWN here with the reason it is safe.
   //
   // Deliberately NOT a broader regex. Widening the pattern until it matched everything would have
-  // caught the same 28 lines and also every `.gte.`, `.in.` and `.is.` in the tree, where the
-  // grammar is different and the answer is not "quote it" — and the exemptions would then be a
-  // list nobody could read. The scope is what makes the rule enforceable.
+  // caught the same 28 lines and also every `.gte.` and `.is.` in the tree, where the grammar is
+  // different and the answer is not "quote it" — and the exemptions would then be a list nobody
+  // could read. The scope is what makes the rule enforceable.
+  //
+  // `.in.(…)` is the one other grammar where the answer IS quoting, and it is a SECOND sweep below
+  // rather than another operator in this one: the value there is a whole list, so the member
+  // separator `,` is structural too and the rule is "quoted PER MEMBER, through quotedInList()",
+  // not "quoted". Its own exemptions are almost all numeric id lists, which this sweep has none of.
   const QUOTING_PRODUCER =
     /\b(?:quotePostgrestValue|ilikeExactValue|ilikeContainsValue|ilikeContainsPattern|ilikeAnyFilter|quotedInList|quotedOrClause|personSearchPattern|searchableTerm)\s*\(/;
   const BARE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -1029,4 +1034,163 @@ export function runPostgrestSearchFilterTests() {
   // than this count. The count then catches the opposite drift — an exemption kept for code that no
   // longer needs it.
   assert.equal(splicesExempt, 8, "the written-down exemptions must all still be reached, and no more of them");
+
+  // ── MR-B04 · the second sweep · every `in.(${…})` list in the tree ──────────────────────────
+  //
+  // The sweep above deliberately left this grammar out, and the census that followed found two
+  // live copies of B04-02 inside it: `textInFilter` in `employees/employee-directory.ts` and
+  // `reports/vacancies.ts`, each `value.replace(/"/g, '\\"')` — a member carrying a BACKSLASH
+  // loses it, and a member ENDING in one escapes the closing quote and swallows the rest of the
+  // list. Both fed a raw REST `hr_id=in.(…)` URL with hr ids in it. Two more hand-rolled the list
+  // instead of the escaping: `rep-ranks/server/compute.ts` wrapped each key in bare quotes with no
+  // escaping at all, and `security/login-security.ts` mapped the right primitive over the array
+  // rather than calling the one builder for the list.
+  //
+  // Why `in.(…)` needs its OWN rule rather than another operator in the regex above: the value is
+  // a whole list, so `,` separates members as well as conditions. Quoting one member is not the
+  // answer — EVERY member is quoted, which is what quotedInList() is for.
+  //
+  // The second shape here, `.not(col, "in", `(…)`)`, is the typed builder handed a RAW list. The
+  // method call quotes nothing: supabase-js passes the string through, so `(a,b)` is the same
+  // transport as the filter-string form and breaks the same way.
+  const IN_LIST_PRODUCER = /\b(?:quotedInList|quoteInList|sharedQuotedInList)\s*\(/;
+
+  /** The expression inside each `${…}` that sits immediately after `in.(` or `"in", \`(`. */
+  const inListValues = (line: string): string[] => {
+    const found: string[] = [];
+    const marker = /(?:\bin\.\(|"in",\s*`\()\$\{/g;
+    let hit: RegExpExecArray | null;
+    while ((hit = marker.exec(line)) !== null) {
+      const start = hit.index + hit[0].length;
+      let depth = 1;
+      let i = start;
+      for (; i < line.length && depth > 0; i += 1) {
+        if (line[i] === "{") depth += 1;
+        else if (line[i] === "}") depth -= 1;
+      }
+      if (depth === 0) found.push(line.slice(start, i - 1).trim());
+    }
+    return found;
+  };
+
+  // Exemptions, each one measured on 2026-10-23 and keyed by the exact line, same as above. Almost
+  // all of them are NUMERIC id lists, which have no grammar to break; the rest are a module's own
+  // vocabulary of snake_case literals, or a list of uuids this code read back out of the database.
+  const IN_LIST_EXEMPT: Record<string, Record<string, string>> = {
+    "app/api/admin/deductions/employees/route.ts": {
+      "`employment_status.in.(${Array.from(ACTIVE_EMPLOYMENT_STATUSES).join(\",\")}),` +":
+        'ACTIVE_EMPLOYMENT_STATUSES is the module\'s own Set(["active", "on_leave"]) — two literals, no input',
+    },
+    "src/lib/approvals/orphaned-requests.ts": {
+      '.not("status", "in", `(${NO_ACTOR_EXPECTED.marketing.join(",")})`);':
+        "NO_ACTOR_EXPECTED holds this file's own status vocabulary, written out as literals above",
+      '.not("status", "in", `(${NO_ACTOR_EXPECTED["direct-order"].join(",")})`);':
+        "the same vocabulary, the direct-order half",
+      '.not("status", "in", `(${NO_ACTOR_EXPECTED.vacation.join(",")})`);':
+        "the same vocabulary, the vacation half",
+    },
+    "src/lib/crm/reads.ts": {
+      "return `agent_crm_id.in.(${list}),double_crm_id.in.(${list}),double2_crm_id.in.(${list})`;":
+        "`list` is the numeric CRM ids, through `ids.map(Number).filter(Number.isFinite)` two lines " +
+        "above — a non-finite id is dropped, so nothing but digits reaches the list (3 splices, one line)",
+      "if (crmIds.length > 0) parts.push(`agent_crm_id.in.(${crmIds.join(\",\")})`);":
+        "the same numeric filter for the check-in read; the hr half on the line below IS quoted",
+    },
+    "src/lib/direct-orders/service.ts": {
+      "? `created_by_hr_id.in.(${quoteInList(myHrIdKeys)}),id.in.(${Array.from(fromApprovedOrders).join(\",\")})`":
+        "the hr half is quoted; `fromApprovedOrders` is venue uuids this code read back out of " +
+        "`String(row.pharmacy_id)` with the blanks filtered out — the same reason the `id.eq.${q}` " +
+        "arm is exempt above",
+      "...(statusGroup.statuses.length ? [`status.in.(${statusGroup.statuses.join(\",\")})`] : []),":
+        "resolveDirectOrderStatusGroupFilter's own status vocabulary — the `.eq.` arms two lines " +
+        "below are exempt for the same reason",
+    },
+    "src/lib/employees/employee-directory.ts": {
+      "return `in.(${values.join(\",\")})`;":
+        "idInFilter, whose parameter is typed `number[]` — textInFilter beside it is the one that " +
+        "now goes through quotedInList",
+    },
+    "src/lib/phoenix-crm/server/manager-old-crm-weeks.ts": {
+      ".or(`own_contact_crm_id.in.(${list}),reference_contact_crm_id.in.(${list})`),":
+        "`list` is a chunk of `contactIds: ReadonlyArray<number>` (2 splices, one line)",
+    },
+    "src/lib/phoenix-crm/server/signboard-sweep.ts": {
+      ".or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reread}))`)":
+        "SIGNBOARD_REREAD_REASONS joined — the module's own reason vocabulary, snake_case literals",
+      ": query.or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reasons}))`);":
+        "SIGNBOARD_BACKLOG_REASONS, the same vocabulary for the backlog page",
+    },
+    "src/lib/recruitment/workspace/completeness.ts": {
+      "query = query.or(`declared_role_family.is.null,declared_role_family.in.(${codes.join(\",\")})`);":
+        "`codes` is filtered by /^[a-z0-9_]+$/ on the line above, so a comma or a parenthesis cannot " +
+        "survive into the list",
+    },
+    "src/lib/reports/vacancies.ts": {
+      "return `in.(${idsToLoad.join(\",\")})`;":
+        "inFilter, whose parameter is typed `number[]`; textInFilter beside it now goes through quotedInList",
+    },
+  };
+
+  const unquotedInList: string[] = [];
+  let inListsInspected = 0;
+  let inListsExempt = 0;
+  for (const file of listed) {
+    const raw = readTracked(file);
+    if (!raw) continue;
+    const lines = stripComments(raw).split("\n");
+    lines.forEach((line, i) => {
+      const values = inListValues(line);
+      if (values.length === 0) return;
+      const trimmed = line.trim();
+      const exemption = IN_LIST_EXEMPT[file]?.[trimmed];
+      for (const value of values) {
+        inListsInspected += 1;
+        // `quoteInList` and `sharedQuotedInList` are the two local ALIASES of the shared builder,
+        // and the assertions earlier in this file pin them as aliases — a `function quoteInList(`
+        // or a second implementation is already red — so accepting the name here cannot accept a
+        // reimplementation of it.
+        if (IN_LIST_PRODUCER.test(value)) continue;
+        // Resolved one hop back, the same rule the sweep above uses: a bare identifier whose
+        // NEAREST PRECEDING declaration produces a quoted list. `crm/reads.ts` holds both an
+        // unquoted numeric `const list` and a quoted `const list = quotedInList(values)` in
+        // neighbouring functions, so nearest-preceding is what keeps the two apart.
+        if (BARE_IDENTIFIER.test(value)) {
+          const declaration = new RegExp(`\\bconst\\s+${value}\\b\\s*=`);
+          let resolved = false;
+          for (let j = i; j >= 0; j -= 1) {
+            if (!declaration.test(lines[j] as string)) continue;
+            const window = lines.slice(j, j + 3).join("\n");
+            const afterEquals = window.slice(window.indexOf("=") + 1);
+            const semicolon = afterEquals.indexOf(";");
+            resolved = IN_LIST_PRODUCER.test(semicolon >= 0 ? afterEquals.slice(0, semicolon) : afterEquals);
+            break;
+          }
+          if (resolved) continue;
+        }
+        if (exemption) {
+          inListsExempt += 1;
+          continue;
+        }
+        unquotedInList.push(`${file}:${i + 1}  \${${value}}`);
+      }
+    });
+  }
+  assert.ok(
+    inListsInspected >= 25,
+    `the in-list sweep must actually be reading the tree — it inspected only ${inListsInspected} lists`,
+  );
+  assert.deepEqual(
+    unquotedInList,
+    [],
+    "a list is spliced into a PostgREST `in.(…)` without going through quotedInList(). In that " +
+      "grammar `,` separates the members and `(` `)` close the list, so one member carrying either " +
+      "silently changes which rows match — and a member ending in a backslash escapes the closing " +
+      "quote and swallows the rest of the list. Build it with quotedInList(), or add the line to " +
+      `IN_LIST_EXEMPT above with the reason it is safe:\n  ${unquotedInList.join("\n  ")}`,
+  );
+  assert.equal(
+    inListsExempt,
+    17,
+    "the written-down in-list exemptions must all still be reached, and no more of them",
+  );
 }
