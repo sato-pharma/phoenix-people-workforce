@@ -56,7 +56,7 @@ export const SERVICES = Object.freeze({
 /** Where a service lives when it is healthy: the repository's `main`. `restore` reconnects exactly this. */
 export const GIT_SOURCE = Object.freeze({ repo: REPO, branch: "main" });
 export const REHEARSAL_PREFIX = "fallback-rehearsal-";
-/** Pull + start + the container's own 15-minute readiness window (railway.toml healthcheckTimeout = 900). */
+/** Pull + start + the container's own 15-minute readiness window (.railway/railway.ts healthcheckTimeout: 900). */
 export const DEPLOY_WAIT_MINUTES = 25;
 /** How long to wait for Railway to start a deployment by itself before asking for one. */
 export const START_GRACE_SECONDS = 90;

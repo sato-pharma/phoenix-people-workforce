@@ -123,7 +123,7 @@ connection has been performed. No merge is authorized.
 Created in `infra/phoenix-mcp/`:
 
 - `.gitignore`, `package.json`, `package-lock.json`, `tsconfig.json`, `build.mjs`
-- `Dockerfile`, `Dockerfile.dockerignore`, `railway.toml`
+- `Dockerfile`, `Dockerfile.dockerignore` (its Railway settings are in `RUNBOOK.md`; the `railway.toml` was retired on 2026-10-23)
 - `src/config.mts`, `src/contracts.mts`, `src/database.mts`, `src/main.mts`
 - `src/oauth.mts`, `src/phoenix-policy.mjs`, `src/phoenix-policy.d.mts`, `src/policy.mts`
 - `src/server.mts`, `src/state.mts`, `src/tools.mts`

@@ -157,8 +157,8 @@ on 2026-09-28 once the move was verified, so `postgres.railway.internal` no long
    `phoenix-headwind`.
 3. On that service, **Settings → Build**:
    - **Root Directory** = `infra/headwind-phoenix-actions`
-   - **Builder** = Dockerfile *(it should pick this up from
-     [`railway.toml`](../../infra/headwind-phoenix-actions/railway.toml); confirm rather than assume)*
+   - **Builder** = Dockerfile *(the `phoenix-headwind` block of
+     [`.railway/railway.ts`](../../.railway/railway.ts) holds it since `railway.toml` was retired on 2026-10-23; confirm rather than assume)*
 4. 🔴 **Settings → Build → Watch Paths = `infra/headwind-phoenix-actions/**`.** Without it, **every
    merge to `main` rebuilds and restarts the MDM server** — a hundred tablets lose their check-in
    channel for the length of a build, forty-six times a day, for changes that have nothing to do
@@ -1683,7 +1683,7 @@ relay:**
 | Routes (Super Admin only, `company_devices:approve`) | `app/api/devices/headwind/` — `actions/`, `configurations/`, `enrollment/`, `upload/`, `users/`, `wipe/` |
 | The four cards on Rep Tablets | `src/components/devices/headwind-enrollment.tsx`, `headwind-fleet.tsx`, `headwind-tablet-panel.tsx`, `headwind-server-settings.tsx` |
 | The one `useRead` every panel shares, and `CannotDo` | `src/components/devices/headwind-panel-kit.tsx` |
-| **The server as it actually runs** — the Railway service's build settings | `infra/headwind-phoenix-actions/railway.toml` |
+| **The server as it actually runs** — the Railway service's build settings | the `phoenix-headwind` block of `.railway/railway.ts` (the retired `railway.toml` until 2026-10-23) |
 | The optional self-hosted box, kept for the day the company wants its own relay (§4.5) | `docker-compose.headwind.yml`, `.env.headwind.example` |
 | 🔴 The add-on that carries lock, lost mode, factory reset and password reset — **Java, outside the six CI checks**, built by Railway from the Dockerfile | `infra/headwind-phoenix-actions/` |
 | The alarm and on-screen message on the tablet itself | `mobile/plugins/with-phoenix-device-actions.js` |
