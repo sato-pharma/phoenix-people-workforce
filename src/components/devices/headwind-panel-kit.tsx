@@ -45,12 +45,12 @@ export const PANEL_ARMED =
 export const ARM_WINDOW_MS = 8_000;
 
 /**
- * Disarm after `ARM_WINDOW_MS`. `armed` is whatever the panel keeps armed — a package name, an action
+ * Disarm after `ARM_WINDOW_MS`. `armed` is whatever the panel keeps armed — a package name, a console login's id, an action
  * id, or a plain flag; `null` and `false` mean nothing is armed. The timer restarts when a different
  * thing is armed, and is dropped when the panel moves to another tablet (its derived state disarms).
  * The disarm runs from a timer, never synchronously inside the effect.
  */
-export function useDisarmAfterWindow(armed: string | boolean | null, disarm: () => void): void {
+export function useDisarmAfterWindow(armed: string | number | boolean | null, disarm: () => void): void {
   const disarmRef = useRef(disarm);
   useEffect(() => {
     disarmRef.current = disarm;

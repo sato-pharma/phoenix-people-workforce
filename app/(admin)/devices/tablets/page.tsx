@@ -50,10 +50,11 @@ export default async function RepTabletsPage() {
   }
 
   // 🔴 THE HEADWIND SECTIONS SHIP DARK — all three of them. They render ONLY once the company's own
-  // Headwind server exists and its three settings are on Railway; until then this page is byte-for-byte
-  // what it is today, so the whole bridge can be merged to production before the server is built. The
-  // enrollment card is gated with the rest even though it reads Phoenix's own table rather than the
-  // Headwind box: a code for a server that does not exist is a code that enrolls a tablet into nothing.
+  // Headwind server's three settings are present in this environment. The enrollment card is gated with
+  // the rest even though it reads Phoenix's own table rather than the Headwind box: a code for a server
+  // that does not exist is a code that enrolls a tablet into nothing. With ManageEngine off the page
+  // (2026-10-22) nothing else renders here, so a missing setting says so rather than leaving the page
+  // blank under its hero.
   const headwindReady = isHeadwindConfigured();
 
   return (
@@ -68,6 +69,13 @@ export default async function RepTabletsPage() {
       {headwindReady ? <HeadwindEnrollment /> : null}
       {headwindReady ? <HeadwindFleet /> : null}
       {headwindReady ? <HeadwindServerSettings /> : null}
+      {headwindReady ? null : (
+        <section className="border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
+          The company&rsquo;s tablet server is not connected in this environment, so there are no tablets to show.
+          Its address, sign-in name and password have to be set here before the fleet, enrollment and tablet rules
+          appear.
+        </section>
+      )}
     </div>
   );
 }

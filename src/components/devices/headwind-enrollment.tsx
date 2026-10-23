@@ -218,7 +218,12 @@ export function HeadwindEnrollment() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Code">{summary.templateName ?? "No name given"}</Fact>
             <Fact label="Agent it installs">
-              {summary.agentPackage ? (AGENT_NAMES[summary.agentPackage] ?? summary.agentPackage) : "Not readable"}
+              {summary.agentPackage
+                ? // Own keys only: a pasted package such as "__proto__" must not read through to Object.prototype.
+                  (Object.hasOwn(AGENT_NAMES, summary.agentPackage)
+                    ? AGENT_NAMES[summary.agentPackage]
+                    : summary.agentPackage)
+                : "Not readable"}
             </Fact>
             <Fact label="Reports to">{summary.serverHost ?? "Not readable"}</Fact>
             <Fact label="Saved">

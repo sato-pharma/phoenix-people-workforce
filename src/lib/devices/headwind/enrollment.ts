@@ -243,6 +243,9 @@ export async function saveHeadwindEnrollmentTemplate(
 ): Promise<HeadwindEnrollmentSummary> {
   const { payload, facts } = parseHeadwindEnrollmentTemplate(input.raw);
   const templateName = input.templateName?.trim() || null;
+  // The saver's name depends only on `actor`, so it is read beside the save rather than after it; it
+  // never rejects (`deviceActorNames` swallows a failed lookup).
+  const namer = deviceActorNames([actor]);
   const previous = await readRow();
   const updatedAt = new Date().toISOString();
 
@@ -272,7 +275,7 @@ export async function saveHeadwindEnrollmentTemplate(
       : `Saved the Headwind enrollment code${templateName ? ` (${templateName})` : ""}`,
   });
 
-  return { ...facts, saved: true, templateName, updatedAt, updatedBy: (await deviceActorNames([actor]))(actor) };
+  return { ...facts, saved: true, templateName, updatedAt, updatedBy: (await namer)(actor) };
 }
 
 /** Someone asked to see the code. The looking is itself worth a row. */

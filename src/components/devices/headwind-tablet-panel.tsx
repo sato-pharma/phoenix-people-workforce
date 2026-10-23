@@ -43,7 +43,7 @@ import {
 import { TabletFleetMap } from "@/components/devices/tablet-fleet-map";
 import { fixesToPoints } from "@/lib/devices/headwind/dashboard";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
-import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
+import { DEVICE_STATUS_LABEL, type AssignableEmployee, type DeviceStatus } from "@/lib/devices/types";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -904,7 +904,10 @@ function AppsPanel({ deviceNumber }: { deviceNumber: string }) {
                     title={
                       app.isRemoteScreenApp
                         ? "Removing this ends screen sharing on this tablet until it is installed again."
-                        : `Removes ${app.name} from the tablet. Nothing is shown to the rep.`
+                        : app.name === app.packageName
+                          ? `Removes ${app.name} from the tablet. Nothing is shown to the rep.`
+                          : // Two apps can share a label; the package is what tells them apart at the second press.
+                            `Removes ${app.name} (${app.packageName}) from the tablet. Nothing is shown to the rep.`
                     }
                     type="button"
                   >
@@ -1028,6 +1031,11 @@ type CustodyProps = {
   deviceNumber: string;
   /** The matched register device id — null while the register has not placed this tablet yet. */
   registerDeviceId: string | null;
+  /**
+   * The register could not be read this time, so a missing `registerDeviceId` means "not known", not
+   * "not in it" — the row offers no Add to custody then, and this panel must not point at one.
+   */
+  registerUnreadable?: boolean;
   registerStatus: DeviceStatus | null;
   /** The live custody record — the holder's, or the reservation's. */
   assignmentId: string | null;
@@ -1042,17 +1050,9 @@ type CustodyProps = {
 
 /**
  * The register's status as the Device custody page says it — never the stored code. "marked repair"
- * and "marked in_stock" are what a raw status reads as on this panel.
+ * and "marked in_stock" are what a raw status reads as on this panel. The page's own list, shared.
  */
-const REGISTER_STATUS_WORDS: Record<DeviceStatus, string> = {
-  assigned: "With staff",
-  in_stock: "In stock",
-  lost: "Lost",
-  repair: "In repair",
-  reserved: "Reserved",
-  retired: "Retired",
-  stolen: "Stolen",
-};
+const REGISTER_STATUS_WORDS = DEVICE_STATUS_LABEL;
 
 type CustodyMode = null | "assign" | "reserve" | "reconcile" | "reassign";
 
@@ -1094,13 +1094,15 @@ function CustodyPanel(props: CustodyProps) {
   useDisarmAfterWindow(own.armedRevoke, () => setState((current) => ({ ...current, armedRevoke: false })));
 
   async function send(body: Record<string, unknown>, fallback: string) {
-    setState({ ...own, busy: true, failure: null, notice: null });
+    // The armed Revoke is spent by this press: cleared here and on failure, as every other panel does, so
+    // a failed request can never hand back a button that one press re-sends.
+    setState({ ...own, armedRevoke: false, busy: true, failure: null, notice: null });
     try {
       await postJson<unknown>("/api/devices", body);
       setState({ deviceNumber, ...NO_CUSTODY_PENDING, notice: "Done." });
       props.onChanged?.();
     } catch (caught: unknown) {
-      setState({ ...own, busy: false, failure: failureText(caught, fallback) });
+      setState({ ...own, armedRevoke: false, busy: false, failure: failureText(caught, fallback) });
     }
   }
 
@@ -1108,8 +1110,9 @@ function CustodyPanel(props: CustodyProps) {
     return (
       <Panel title="Custody">
         <p className="text-[11px] font-semibold text-slate-500">
-          This tablet is not in the custody register yet. A person adds it: once the tablet has reported its
-          serial number, press Add to custody on its row above. Then it can be assigned or reserved from here.
+          {props.registerUnreadable
+            ? "The custody register could not be read just now, so who holds this tablet is not known and nothing can be assigned from here. Open it again once the register reads."
+            : "This tablet is not in the custody register yet. A person adds it: once the tablet has reported its serial number or IMEI, press Add to custody on its row above. Then it can be assigned or reserved from here."}
         </p>
       </Panel>
     );

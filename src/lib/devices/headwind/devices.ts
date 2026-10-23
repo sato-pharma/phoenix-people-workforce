@@ -236,7 +236,7 @@ export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
 function unreadableSearch(): HeadwindRequestError {
   return new HeadwindRequestError(
     502,
-    "The company tablet server answered the device list in a shape Phoenix cannot read, so the tablets are not shown rather than shown as none. Nothing was changed on any tablet.",
+    "The company tablet server answered the device list in a shape Phoenix cannot read, so Phoenix stopped rather than reading it as no tablets at all. Try again in a minute; if it keeps happening, the server was probably upgraded.",
   );
 }
 

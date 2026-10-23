@@ -103,6 +103,18 @@ export type HeadwindIconSize = (typeof HEADWIND_ICON_SIZES)[number];
 export const HEADWIND_DESKTOP_HEADERS = ["NO_HEADER", "DEVICE_ID", "DESCRIPTION", "TEMPLATE"] as const;
 export type HeadwindDesktopHeader = (typeof HEADWIND_DESKTOP_HEADERS)[number];
 
+/**
+ * Every value the enum can HOLD — what the server accepts back. The `CUSTOM` kinds are not offered,
+ * but a set of rules may already carry one from the Headwind console, and the branding form sends its
+ * whole shape: refusing them would refuse every save of those rules over a title nobody changed.
+ */
+export const HEADWIND_DESKTOP_HEADER_VALUES: readonly string[] = [
+  ...HEADWIND_DESKTOP_HEADERS,
+  "CUSTOM1",
+  "CUSTOM2",
+  "CUSTOM3",
+];
+
 function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -339,7 +351,7 @@ export async function setHeadwindBranding(
       throw new HeadwindConfigurationError(`${label} has to be a six-digit hex colour like #0A527D.`);
     }
   }
-  if (input.desktopHeader && !HEADWIND_DESKTOP_HEADERS.includes(input.desktopHeader as HeadwindDesktopHeader)) {
+  if (input.desktopHeader && !HEADWIND_DESKTOP_HEADER_VALUES.includes(input.desktopHeader)) {
     throw new HeadwindConfigurationError(
       "Choose what the title shows: no title, the tablet's number, its description, or the title typed beside it.",
     );

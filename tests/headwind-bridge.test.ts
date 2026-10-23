@@ -43,6 +43,7 @@ import {
   linkHeadwindApp,
   moveHeadwindDeviceToConfiguration,
   setHeadwindBranding,
+  HEADWIND_DESKTOP_HEADER_VALUES,
   HEADWIND_DESKTOP_HEADERS,
   HEADWIND_ICON_SIZES,
   HeadwindConfigurationError,
@@ -61,6 +62,7 @@ import {
   HeadwindEnrollmentError,
 } from "../src/lib/devices/headwind/enrollment.ts";
 import {
+  getHeadwindLocationHistory,
   locationFixesFromPlugin,
   locateHeadwindDevice,
   HeadwindLocationError,
@@ -613,6 +615,42 @@ async function runDeviceTests() {
     ENV,
   );
   assert.deepEqual(noFix, { address: null, latitude: null, locatedAt: null, longitude: null });
+
+  // 🔴 An unreadable device list must not throw away a movement trail the plugin already answered with —
+  // and the refusal it raises no longer claims "nothing was changed", since it can follow a write.
+  resetHeadwindTokenCache();
+  const trail = await getHeadwindLocationHistory(
+    "D",
+    makeFetch({
+      api: [
+        { body: { data: { sendData: true }, status: "OK" }, status: 200 },
+        {
+          body: { data: { items: [{ gpsLat: 30.05, gpsLon: 31.24, latestUpdateTime: 1_760_000_000_000 }] }, status: "OK" },
+          status: 200,
+        },
+        { body: { data: { someFutureShape: true }, status: "OK" }, status: 200 },
+      ],
+    }).fetch,
+    ENV,
+  );
+  assert.equal(trail.fixes.length, 1, "the plugin's fix survives an unreadable device list");
+  assert.equal(trail.fixes[0].source, "plugin");
+  resetHeadwindTokenCache();
+  await assert.rejects(
+    getHeadwindLocationHistory(
+      "D",
+      makeFetch({
+        api: [
+          { body: { data: { sendData: true }, status: "OK" }, status: 200 },
+          { body: { data: { items: [] }, status: "OK" }, status: 200 },
+          { body: { data: { someFutureShape: true }, status: "OK" }, status: 200 },
+        ],
+      }).fetch,
+      ENV,
+    ),
+    (error: Error) => /cannot read/.test(error.message) && !/Nothing was changed/.test(error.message),
+    "with no trail at all, the unreadable list is still reported, without claiming nothing changed",
+  );
   resetHeadwindTokenCache();
 }
 
@@ -1116,6 +1154,15 @@ async function runConfigurationTests() {
     assert.ok(settingsUi.includes(`value: "${kind}"`), `the console offers ${kind} as a choice`);
   }
   assert.doesNotMatch(settingsUi, /placeholder="TOP"/, "and the title is no longer a free-text position");
+  // 🔴 A CUSTOM KIND SET IN THE HEADWIND CONSOLE IS SHOWN AND ACCEPTED BACK. The form sends its whole
+  // shape, so refusing CUSTOM1..3 refused every save of those rules over a title nobody touched.
+  for (const custom of ["CUSTOM1", "CUSTOM2", "CUSTOM3"]) {
+    assert.ok(HEADWIND_DESKTOP_HEADER_VALUES.includes(custom), `${custom} is a value the server accepts back`);
+  }
+  assert.match(configs, /!HEADWIND_DESKTOP_HEADER_VALUES\.includes\(input\.desktopHeader\)/, "the branding check reads every value the enum can hold");
+  assert.match(settingsUi, /titleKindLabel\(form\.desktopHeader\)/, "and the dropdown shows a current value it does not offer, rather than a blank");
+  // A blank select CLEARS the setting (the route reads "" as null), so it never says it leaves it alone.
+  assert.doesNotMatch(settingsUi, /Leave it as the tablet has it/, "a clearing option is not labelled as leaving it");
   assert.deepEqual([...HEADWIND_ICON_SIZES], ["SMALL", "MEDIUM", "LARGE"]);
   assert.match(configs, /kioskMode/, "the key is kioskMode — `kiosk` is the plausible-looking name the server ignores");
 }
@@ -1761,6 +1808,40 @@ async function runDeviceActorNameTests() {
   assert.match(fleetModule, /unregistered: !registerError && entry === null,/, "with the register unread, no tablet is called unregistered");
   const fleetUi = stripComments(source("src/components/devices/headwind-fleet.tsx"));
   assert.match(fleetUi, /Custody not readable/, "and the row says the register could not be read");
+  // …and so does the opened tablet's custody panel, which used to point at an Add button the row no
+  // longer offers.
+  assert.equal(
+    (fleetUi.match(/registerUnreadable: !row\.unregistered && !row\.registerDeviceId,/g) ?? []).length,
+    2,
+    "both layouts tell the custody panel the register was not read",
+  );
+  const custodyUi = stripComments(source("src/components/devices/headwind-tablet-panel.tsx"));
+  assert.match(custodyUi, /props\.registerUnreadable\s*\?\s*"The custody register could not be read just now/, "the panel says so instead of pointing at Add to custody");
+  // The JS layout query equals the CSS's own `md` — this project pins it in tailwind.config.ts, so a
+  // change to either side without the other opens a tablet's panel in the hidden layout.
+  const mdScreen = /md:\s*"(\d+px)"/.exec(source("tailwind.config.ts"))?.[1];
+  assert.ok(mdScreen, "tailwind.config.ts still pins md");
+  assert.ok(fleetUi.includes(`const TABLE_QUERY = "(min-width: ${mdScreen})";`), `the layout query is md's own ${mdScreen}`);
+  // The fleet row's Factory reset disarms through the kit's hook, so an earlier arm's timer cannot cut a
+  // re-arm short (a raw setTimeout was never cleared).
+  assert.match(fleetUi, /useDisarmAfterWindow\(confirmKey,/, "the row's press-again button uses the shared disarm");
+  assert.doesNotMatch(fleetUi, /window\.setTimeout\(\(\) => setConfirmKey/, "and no fire-and-forget timer is left");
+  // A failed revoke never hands back an armed button.
+  assert.match(custodyUi, /setState\(\{ \.\.\.own, armedRevoke: false, busy: true,/, "sending a revoke spends the armed press");
+  assert.match(custodyUi, /setState\(\{ \.\.\.own, armedRevoke: false, busy: false, failure:/, "and a failure does not re-arm it");
+  // Removing a console sign-in disarms the same way as every tablet control.
+  const settingsPanel = stripComments(source("src/components/devices/headwind-server-settings.tsx"));
+  assert.match(settingsPanel, /useDisarmAfterWindow\(state\.armed,/, "the console-login Remove disarms after the window");
+  // One status-word list for the Device custody page and the tablet panel.
+  assert.match(custodyUi, /REGISTER_STATUS_WORDS = DEVICE_STATUS_LABEL;/, "the panel reads the shared status words");
+  assert.match(
+    stripComments(source("src/components/devices/device-register-workspace.tsx")),
+    /STATUS_LABEL = DEVICE_STATUS_LABEL;/,
+    "and so does the Device custody page",
+  );
+  // With the tablet server unset, the page says so instead of a blank page under its hero.
+  const tabletsPage = stripComments(source("app/(admin)/devices/tablets/page.tsx"));
+  assert.match(tabletsPage, /\{headwindReady \? null : \(/, "an unconnected server is said on the page");
   assert.match(fleetUi, /setLoadError\(null\);/, "a read that worked clears the last one's failure");
   assert.match(fleetUi, /Last known position/, "the locate button says what it shows");
   assert.doesNotMatch(fleetUi, /Where is it/, "not a question it cannot answer live");
