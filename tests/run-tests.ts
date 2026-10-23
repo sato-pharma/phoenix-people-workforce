@@ -2738,6 +2738,7 @@ import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirro
 import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
 import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
 import { createShardDeal } from "./shard-deal.ts";
+import { runLoginBridgeRepairLogsOnlyWhenItFailsTests } from "./login-bridge-repair-logs-only-when-it-fails.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10832,6 +10833,10 @@ await runTest(
 await runTest(
   "the fallback notification event key carries the ACTOR, so two senders raising the same templated notice for one recipient get two rows instead of the second overwriting the first on onConflict: event_key",
   runNotificationEventKeyIncludesTheActorTests,
+);
+await runTest(
+  "the login route CLASSIFIES a failed Supabase sign-in with { report: false } and reports only where recovery fails, so a login the bridge repair then rescues leaves no 'Failed to create Supabase auth session' row — seven such rows on 23 Oct, every login successful",
+  runLoginBridgeRepairLogsOnlyWhenItFailsTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
