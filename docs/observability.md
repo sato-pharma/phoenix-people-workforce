@@ -97,6 +97,45 @@ Two tools, two jobs. **Account setup is `scripts/sentry-setup.mjs`** (Sentry's R
     the quick tell on an unfiltered row is `release`, which is `sha-XXXXXXXX` for real
     production traffic and `unknown` for local dev.
 
+### A structured ERROR's labels reach the row (2026-10-23)
+
+`logStructured("ERROR", …, { labels })` also persists, through `persistErrorEvent` in
+`src/lib/observability/log.ts`. Until 2026-10-23 that bridge carried exactly two things —
+`labels.route ?? labels.job ?? labels.event` onto `route`, and an `Error`'s `.stack` — and dropped
+every other label silently. Read off production (`ozucdzovmcqvepbozvqf`) that day, of **2,446**
+`route_type='structured-log'` rows **0 carried an `hr_id`**, **0 carried a `role`**, and **1,677 had
+no `stack` either**: the row was the event name and nothing else.
+
+What that cost. `src/lib/needs-you/service.ts` logs a Needs You source timeout with
+`{ event, source, hrId, role, scope }`. The stored row said `route='needs_you_source_timeout'` and
+never **which** source timed out, for whom, in what scope — so the failing adapters had to be
+reconstructed out of the delivered Telegram digests in `notification_events.metadata`, a table that
+happens to keep the payload rather than one designed as the error record. Found while fixing
+[#6301](https://github.com/Gawish-1997/phoenix-people-workforce/pull/6301).
+
+How it is carried now, with no migration:
+
+- `hrId`/`hr_id`, `role`, `loginId`/`login_id` and `digest` go onto their own columns. Both
+  spellings are read because both are in use — measured across the call sites, `hrId` 89 times and
+  `hr_id` 14, `loginId` 9 and `login_id` 1 — so accepting only camelCase would drop a seventh.
+- Everything else goes into `stack` as `key=value` lines under the `— Log labels —` separator
+  (`LOG_LABELS_SEPARATOR`, exported from `service.ts`), joining the component-stack and
+  client-context blocks that already live there.
+- **The block LEADS**, like the client context and for the same reason plus one more: `stack` is
+  truncated to 4,000 **from the end**, and most of these rows have no real stack at all, so on them
+  the block *is* the diagnostic.
+- **The block is capped at 1,000** of the column's 4,000, so a call site that labels generously
+  cannot evict a real stack trace — trading one lost diagnostic for another.
+- **Every value goes through `redactSecretsFromRoute`**, which is documented to run over free text:
+  a label carries a share-link token as readily as a path does, and the row is written while the
+  token still works.
+- `event` stays in the block **as well as** becoming `route`, because the column cannot say which of
+  route/job/event it came from and a reader needs to know it is an event name, not a path.
+
+`logAppError`'s best-effort "never throws" contract is unchanged — the formatting is pure and runs
+inside its existing `try`. Pinned by `tests/structured-log-labels-reach-the-row.test.ts`, whose five
+sections were each confirmed by breaking the fix and watching that section's own assertion fire.
+
 ## Whose code threw it — attribution on a client row
 
 A minified client message says nothing about where the throw came from, and the Error Monitor

@@ -2669,6 +2669,7 @@ import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-onc
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
+import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10597,6 +10598,10 @@ await runTest(
 await runTest(
   "the Regular · No Check-in tabs of CRM Master cannot fail on a missing column: crm_visits_checkin_flags, as its last migration defines it, carries every column CRM Master's visit select asks for (the second manager and the Phoenix visit detail included), and keeps security_invoker and its locked-out browser roles",
   runCrmCheckinFlagsCarriesMasterSelectTests,
+);
+await runTest(
+  "a structured ERROR's labels reach the stored app_error_events row: hrId/role/loginId/digest onto their own columns under both spellings, every remaining label into the stack's leading, redacted, capped label block, and a row with no labels byte-identical to before",
+  runStructuredLogLabelsReachTheRowTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

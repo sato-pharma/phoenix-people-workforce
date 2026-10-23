@@ -104,23 +104,79 @@ export function logStructured(severity: LogSeverity, message: string, options: L
  */
 let persistingErrorEvent = false;
 
+/**
+ * Labels that must NOT be repeated in the stored stack's label block.
+ *
+ * Four of them have a real column and are mapped onto it below — that is strictly better than text,
+ * because /admin/error-monitor filters on `hr_id` and renders `role`. `service` is the constant
+ * `cleanLabels` stamps on every entry ("phoenix-hr"), so it is noise in every row.
+ *
+ * Both spellings of each are accepted because both are in use: measured across the call sites,
+ * `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1.
+ *
+ * `event`, `route` and `job` are deliberately NOT in this set even though one of them becomes
+ * `route`. The column cannot say WHICH it was, and a reader who sees `route=needs_you_source_timeout`
+ * needs to know it was the event name rather than a real path.
+ */
+const LABELS_NOT_REPEATED_IN_THE_BLOCK = new Set(["service", "hrId", "hr_id", "role", "loginId", "login_id", "digest"]);
+
+/** First non-empty label under any of the given spellings. */
+function labelValue(labels: Record<string, string> | undefined, ...keys: readonly string[]): string | null {
+  if (!labels) return null;
+  for (const key of keys) {
+    const value = labels[key];
+    if (value !== undefined && value !== "") return value;
+  }
+  return null;
+}
+
+/** Everything that has no column of its own, for the stack's label block. */
+function labelsWithoutAColumn(labels: Record<string, string> | undefined): Record<string, string> | null {
+  if (!labels) return null;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(labels)) {
+    if (LABELS_NOT_REPEATED_IN_THE_BLOCK.has(key)) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * The whole label → row mapping, pure and exported so a test can read it without Supabase.
+ *
+ * Nothing else decides what a structured ERROR leaves behind in `app_error_events`.
+ */
+export function structuredLogErrorInput(
+  message: string,
+  labels: Record<string, string> | undefined,
+  error: unknown,
+) {
+  return {
+    source: "server" as const,
+    message,
+    // The most specific identifier the call site gave us, in the order a reader would want it.
+    // `event` is always there by convention, so this is rarely null.
+    route: labels?.route ?? labels?.job ?? labels?.event ?? null,
+    routeType: "structured-log",
+    stack: error instanceof Error ? (error.stack ?? null) : null,
+    // Everything else the call site labelled. Until this existed only the line above survived, so
+    // the row said that SOMETHING timed out and never which source, for whom, in what scope — see
+    // LOG_LABELS_SEPARATOR in error-monitor/service.ts for the measurement.
+    hrId: labelValue(labels, "hrId", "hr_id"),
+    role: labelValue(labels, "role"),
+    loginId: labelValue(labels, "loginId", "login_id"),
+    digest: labelValue(labels, "digest"),
+    logLabels: labelsWithoutAColumn(labels),
+  };
+}
+
 function persistErrorEvent(message: string, labels: Record<string, string> | undefined, error: unknown) {
   // While one persist is in flight, every ERROR it logs about itself stays on stderr only. That is
   // the right trade: the line is never lost, and the alternative is an unbounded loop.
   if (persistingErrorEvent) return;
   persistingErrorEvent = true;
   void import("@/lib/error-monitor/service")
-    .then(({ logAppError }) =>
-      logAppError({
-        source: "server",
-        message,
-        // The most specific identifier the call site gave us, in the order a reader would want it.
-        // `event` is always there by convention, so this is rarely null.
-        route: labels?.route ?? labels?.job ?? labels?.event ?? null,
-        routeType: "structured-log",
-        stack: error instanceof Error ? (error.stack ?? null) : null,
-      }),
-    )
+    .then(({ logAppError }) => logAppError(structuredLogErrorInput(message, labels, error)))
     .catch(() => {
       // Only an import failure can land here; logAppError itself never rejects.
     })

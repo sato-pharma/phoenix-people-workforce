@@ -101,11 +101,60 @@ export type LogAppErrorInput = {
   // report-client-error.ts. PREPENDED to `stack` under its own separator — see
   // combineStack for why it leads rather than trails.
   clientContext?: string | null;
+  // The structured-log labels that have no column of their own, from log.ts's
+  // persistErrorEvent. PREPENDED to `stack` under its own separator — see
+  // LOG_LABELS_SEPARATOR for why the table was undiagnosable without them.
+  logLabels?: Record<string, string> | null;
 };
 
 /** Kept identical to the separator in message-decode.ts's extractTopComponent. */
 const COMPONENT_STACK_SEPARATOR = "— Component stack —";
 const CLIENT_CONTEXT_SEPARATOR = "— Client context —";
+
+/**
+ * Where a structured ERROR's remaining labels are stored, because they had nowhere else to go.
+ *
+ * `logStructured("ERROR", …, { labels })` persists through log.ts's persistErrorEvent, and until
+ * this existed that bridge mapped exactly two things: `labels.route ?? labels.job ?? labels.event`
+ * onto `route`, and an Error's `.stack`. Every other label was dropped on the floor. Measured in
+ * production on 2026-10-23: of 2,446 `route_type='structured-log'` rows, ZERO carried an `hr_id`
+ * and ZERO carried a `role`, and 1,677 had no `stack` either — so the row was the event name and
+ * nothing else.
+ *
+ * What that costs, concretely. `src/lib/needs-you/service.ts` logs a source timeout with
+ * `{ event, source, hrId, role, scope }`. The stored row said `route='needs_you_source_timeout'`
+ * and never WHICH source timed out, so the failing adapters had to be reconstructed out of the
+ * delivered Telegram digests in `notification_events.metadata` — a table that happens to keep the
+ * payload, not one anybody designed as the error record.
+ *
+ * `hrId`, `role`, `loginId` and `digest` have real columns and are mapped there (log.ts). The rest
+ * land here as `key=value` lines, one per line, so a reader and a `like` query can both get at
+ * them with no migration. Values go through `redactSecretsFromRoute`, which is documented to run
+ * over free text, because a label is as able to carry a share-link token as a path is.
+ */
+export const LOG_LABELS_SEPARATOR = "— Log labels —";
+
+/**
+ * The labels block gets its own cap, well under MAX_TEXT_LENGTH.
+ *
+ * `stack` is truncated from the END, and the block LEADS, so without a cap of its own a call site
+ * that labels generously could push a real stack trace out of the row entirely — trading one lost
+ * diagnostic for another. 1,000 characters holds far more labels than any call site passes and
+ * still leaves a stack 3,000 to sit in.
+ */
+const MAX_LOG_LABELS_LENGTH = 1000;
+
+/** `key=value` lines, redacted. Returns null when there is nothing worth a separator. */
+export function formatLogLabels(labels: Record<string, string> | null | undefined): string | null {
+  if (!labels) return null;
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(labels)) {
+    if (value === null || value === undefined || value === "") continue;
+    lines.push(`${key}=${redactSecretsFromRoute(value) ?? value}`);
+  }
+  if (lines.length === 0) return null;
+  return truncate(lines.join("\n"), MAX_LOG_LABELS_LENGTH);
+}
 
 /**
  * The client context leads deliberately. `stack` is truncated to MAX_TEXT_LENGTH from the
@@ -114,16 +163,27 @@ const CLIENT_CONTEXT_SEPARATOR = "— Client context —";
  * extractTopComponent correct, since it seeks COMPONENT_STACK_SEPARATOR by index rather
  * than assuming an offset.
  */
-function combineStack(
+export function combineStack(
   stack: string | null | undefined,
   componentStack: string | null | undefined,
   clientContext?: string | null,
+  logLabels?: string | null,
 ): string | null {
   const base = stack ? `${stack}\n\n` : "";
   const withComponent = componentStack ? `${base}${COMPONENT_STACK_SEPARATOR}\n${componentStack}` : (stack ?? null);
-  if (!clientContext) return withComponent;
-  const contextBlock = `${CLIENT_CONTEXT_SEPARATOR}\n${clientContext}`;
-  return withComponent ? `${contextBlock}\n\n${withComponent}` : contextBlock;
+  let out = withComponent;
+  if (clientContext) {
+    const contextBlock = `${CLIENT_CONTEXT_SEPARATOR}\n${clientContext}`;
+    out = out ? `${contextBlock}\n\n${out}` : contextBlock;
+  }
+  // Labels lead for the same reason the client context does, and for one more: most structured-log
+  // rows have no `stack` at all (1,677 of 2,446 in production), so on those rows this block IS the
+  // diagnostic. A client row and a structured-log row never carry both.
+  if (logLabels) {
+    const labelBlock = `${LOG_LABELS_SEPARATOR}\n${logLabels}`;
+    out = out ? `${labelBlock}\n\n${out}` : labelBlock;
+  }
+  return out;
 }
 
 /**
@@ -166,7 +226,10 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       route: redactSecretsFromRoute(input.route),
       route_type: input.routeType ?? null,
       source: input.source,
-      stack: truncate(combineStack(input.stack, input.componentStack, input.clientContext), MAX_TEXT_LENGTH),
+      stack: truncate(
+        combineStack(input.stack, input.componentStack, input.clientContext, formatLogLabels(input.logLabels)),
+        MAX_TEXT_LENGTH,
+      ),
       user_agent: truncate(input.userAgent, MAX_USER_AGENT_LENGTH),
     });
 
