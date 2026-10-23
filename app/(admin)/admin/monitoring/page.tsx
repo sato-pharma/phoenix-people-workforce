@@ -6,6 +6,6 @@ import { redirect } from "next/navigation";
 // sign-in half lives on in the System Audit's login-security section; the route stays as a forward.
 export const dynamic = "force-dynamic";
 
-export default function AdminMonitoringPage() {
+export default async function AdminMonitoringPage() {
   redirect("/admin/system-audit");
 }

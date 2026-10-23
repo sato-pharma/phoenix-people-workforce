@@ -5,6 +5,6 @@ import { redirect } from "next/navigation";
 // on the page that replaced both.
 export const dynamic = "force-dynamic";
 
-export default function ErrorMonitorPage() {
+export default async function ErrorMonitorPage() {
   redirect("/admin/system-audit");
 }

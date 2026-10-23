@@ -6,6 +6,6 @@ import { redirect } from "next/navigation";
 // buttons already sitting in people's Telegram land on the new page.
 export const dynamic = "force-dynamic";
 
-export default function SystemIssuesPage() {
+export default async function SystemIssuesPage() {
   redirect("/admin/system-audit");
 }

@@ -314,10 +314,10 @@ export async function runSystemAuditVisitLifecycleTests() {
       partnered_double_feed: 1,
     };
     for (const [reason, count] of Object.entries(expected)) {
-      // The KPI month re-judges the day, so a rule the day pass counted is counted again there.
-      assert.ok((counts[reason] ?? 0) >= count, `the ${reason} exclusion is counted on the run (got ${counts[reason] ?? 0})`);
+      // The KPI month re-judges the days but reports only its own call-rate exclusions, so a visit a
+      // business rule left out is counted once on the run, never once per pass.
+      assert.equal(counts[reason] ?? 0, count, `the ${reason} exclusion is counted once on the run`);
     }
-    assert.equal(counts.not_quiet, 2, "a not-quiet visit is counted once per judging pass (day, then month), never judged");
     assert.equal(counts.kpi_unvalidated_customer, 1, "the unvalidated customer is counted as optional on the call rate");
     assert.equal(counts.kpi_catch_all_contact, 1, "the catch-all contact is counted as optional on the call rate");
   }

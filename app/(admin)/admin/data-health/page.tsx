@@ -6,6 +6,6 @@ import { redirect } from "next/navigation";
 // System Audit intact; the linkage checks became nightly System Audit findings. Kept as a forward.
 export const dynamic = "force-dynamic";
 
-export default function DataHealthPage() {
+export default async function DataHealthPage() {
   redirect("/admin/system-audit");
 }
