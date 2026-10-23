@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { diagnoseWorkbook } from "@/lib/sales/diagnostics";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const validation = validateSpreadsheetFile(file, {
       ...xlsxSpreadsheetValidation,
       emptyError: "invalid_sales_file", emptyMessage: "The sheet is empty.",
-      tooLargeError: "sales_file_too_large", tooLargeMessage: "The sheet exceeds the 10MB upload limit.",
+      tooLargeError: "sales_file_too_large", tooLargeMessage: spreadsheetTooLargeMessage("The sheet"),
       unsupportedError: "unsupported_sales_file_type", unsupportedMessage: "Upload an .xlsx file.",
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });

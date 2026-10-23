@@ -6,7 +6,7 @@ import { runSalesImportWorkflow } from "@/lib/sales/import-workflow";
 import { replaceSalesBatch } from "@/lib/sales/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { salesSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_sales_file",
       emptyMessage: "Sales workbook is empty.",
       tooLargeError: "sales_file_too_large",
-      tooLargeMessage: "Sales workbook exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Sales workbook"),
       unsupportedError: "unsupported_sales_file_type",
       unsupportedMessage: "Upload a monthly closing sheet in .xls or .xlsx format.",
     });

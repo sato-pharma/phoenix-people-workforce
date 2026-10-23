@@ -263,8 +263,10 @@ export function runClosingChannelRollupEquivalenceTests() {
   // The RPC refreshes are fire-and-forget-ordered in TypeScript; the channel call must follow the
   // trio (it reads the fact + directory rollups the trio produces).
   const TS_SITES = [
+    // normalizer/mapping.ts no longer hand-copies the chain: since the 23 Oct audit (P4-05) its
+    // backfill runs `refreshBatchRollups` from customer-map.ts, pinned by
+    // tests/sales-imports-audit-fixes.test.ts. customer-map.ts is checked here and carries the chain.
     "src/lib/sales/normalizer/customer-map.ts",
-    "src/lib/sales/normalizer/mapping.ts",
     "src/lib/sales/normalizer/service.ts",
     "src/lib/sales/monthly-distributor-import.ts",
   ];

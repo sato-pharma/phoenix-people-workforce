@@ -2,7 +2,7 @@ import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
-import { logWarning } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { writeMappingAudit, writeMappingAuditBatch, type MappingAuditEntry } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -12,7 +12,7 @@ import type { CustomerBrickCorrection } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // The customer -> brick crosswalk (code / name / address -> brick), for the read-only "Database
@@ -488,7 +488,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
     emptyError: "invalid_customer_map_file",
     emptyMessage: "The customer map file is empty.",
     tooLargeError: "customer_map_file_too_large",
-    tooLargeMessage: "The customer map file exceeds the 10MB upload limit.",
+    tooLargeMessage: spreadsheetTooLargeMessage("The customer map file"),
     unsupportedError: "unsupported_customer_map_file_type",
     unsupportedMessage: "Upload the customer map in .xlsx format.",
   });
@@ -598,7 +598,7 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   if (input.backfill === true && applied && !backfillSkipped) {
     backfilled = await backfillCustomerRows(
       supabase,
-      upserts.map((u) => ({ customer_code: u.payload.customer_code, distributor_code: u.payload.distributor_code })),
+      upserts.map((u) => ({ brick_id: u.payload.brick_id, customer_code: u.payload.customer_code, distributor_code: u.payload.distributor_code })),
     );
   }
 
@@ -676,7 +676,7 @@ export async function addCustomerMapRow(input: {
   let backfilled = 0;
   if (input.backfill === true) {
     backfilled = await backfillCustomerRows(supabase, [
-      { customer_code: result.payload.customer_code, distributor_code: result.payload.distributor_code },
+      { brick_id: result.payload.brick_id, customer_code: result.payload.customer_code, distributor_code: result.payload.distributor_code },
     ]);
   }
   return { backfilled };
@@ -804,7 +804,13 @@ export async function healAddressCorrectionHistory(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   corrections: CustomerBrickCorrection[],
 ): Promise<{ files: number; pairs: number; rows: number }> {
-  const queue = new Map<string, { batch_id: string; moved_rows: number; old_brick_id: string }>();
+  // 🔴 EACH CORRECTION'S FILES ARE QUEUED THE MOMENT IT LANDS (audit P4-06, 2026-10-23). The queue
+  // used to be written once, after the whole loop — up to 2,000 sequential re-points — so a crash,
+  // a deploy or one failed call part-way left every re-pointed row already moved and NOT ONE file
+  // queued: the totals kept crediting the old bricks and nothing ever rebuilt them, with no alarm.
+  // Now a correction's re-point and its queue entries are written back to back, so whatever has
+  // moved is always already queued, and a queue write that fails stops the loop loudly.
+  const queued = new Map<string, { batch_id: string; moved_rows: number; old_brick_id: string }>();
   let rows = 0;
   for (const c of corrections) {
     const { data, error } = await supabase.rpc("sos_reconcile_import_rows_from_customer_map", {
@@ -817,27 +823,36 @@ export async function healAddressCorrectionHistory(
     rows += moved;
     // The queue is keyed by a brick that must exist: the one the pharmacy left, else the one it joined.
     const oldBrickId = normalizeCodeKey(c.previousBrickId ?? "") || normalizeCodeKey(c.brickId);
+    const touched: { batch_id: string; moved_rows: number; old_brick_id: string }[] = [];
     for (const id of Array.isArray(record?.affected_batch_ids) ? record.affected_batch_ids : []) {
       const batchId = String(id ?? "").trim();
       if (!batchId) continue;
       const key = `${oldBrickId} ${batchId}`;
-      const entry = queue.get(key) ?? { batch_id: batchId, moved_rows: 0, old_brick_id: oldBrickId };
+      const entry = queued.get(key) ?? { batch_id: batchId, moved_rows: 0, old_brick_id: oldBrickId };
       // The RPC reports files, not rows per file; one per pharmacy is a lower bound and only labels the queue.
       entry.moved_rows += 1;
-      queue.set(key, entry);
+      queued.set(key, entry);
+      touched.push(entry);
     }
-  }
-  if (queue.size > 0) {
-    const stamp = new Date().toISOString();
-    const { error } = await supabase
+    if (touched.length === 0) continue;
+    // A fresh `moved_at` on every write: the drain finishes an entry only when the stamp it read is
+    // still the stamp on the row, so a file re-touched while it was being rebuilt is rebuilt again.
+    const { error: queueError } = await supabase
       .from("source_of_sales_brick_move_files")
       .upsert(
-        [...queue.values()].map((q) => ({ ...q, moved_at: stamp, refresh_started_at: null, refreshed_at: null })),
+        touched.map((q) => ({ ...q, moved_at: new Date().toISOString(), refresh_started_at: null, refreshed_at: null })),
         { onConflict: "old_brick_id,batch_id" },
       );
-    if (error) throw error;
+    if (queueError) {
+      logError("An address correction moved earlier sales but its files could not be queued for a rebuild.", {
+        context: { batchIds: touched.map((q) => q.batch_id), customerCode: String(c.customerCode ?? ""), distributorCode: normalizeCodeKey(c.distributorCode) },
+        error: queueError,
+        labels: { event: "sos_address_correction_queue_failed" },
+      });
+      throw queueError;
+    }
   }
-  return { files: new Set([...queue.values()].map((q) => q.batch_id)).size, pairs: corrections.length, rows };
+  return { files: new Set([...queued.values()].map((q) => q.batch_id)).size, pairs: corrections.length, rows };
 }
 
 // Decide which self-heal corrections actually get written. Pure, so the guard below is testable

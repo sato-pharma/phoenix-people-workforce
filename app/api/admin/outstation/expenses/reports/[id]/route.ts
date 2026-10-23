@@ -12,7 +12,7 @@ import {
 import { isWorkflowExpenseReportProtected } from "@/lib/outstation/workflow-expense-report-guard";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -102,7 +102,7 @@ export async function PUT(request: Request, { params }: Params) {
       emptyError: "invalid_expenses_file",
       emptyMessage: "Replacement expenses file is empty.",
       tooLargeError: "expenses_file_too_large",
-      tooLargeMessage: "Replacement expenses file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Replacement expenses file"),
       unsupportedError: "unsupported_expenses_file_type",
       unsupportedMessage: "Upload an Excel expenses file in .xlsx format.",
     });

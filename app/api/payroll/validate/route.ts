@@ -9,7 +9,7 @@ import { validateSalaryWorkbook } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { findSalaryBatchForPeriod, payrollPeriodConflictForBatch } from "@/lib/payroll/service";
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
-import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_salary_file",
       emptyMessage: "Salary file is empty.",
       tooLargeError: "salary_file_too_large",
-      tooLargeMessage: "Salary file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Salary file"),
       unsupportedError: "unsupported_salary_file_type",
       unsupportedMessage: "Upload an Excel salary file in .xls or .xlsx format.",
     });

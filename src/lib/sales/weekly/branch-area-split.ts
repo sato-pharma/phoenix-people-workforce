@@ -34,6 +34,7 @@
 // in Others simply is not among them. An EXPLICIT governorate scope keeps every area the line maps,
 // including one parked in Others — that is a real destination and the organogram says so.
 
+import { todayInCairo } from "@/lib/date-only";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { AREAS_EXCLUDED_FROM_GOVERNORATES, GOVERNORATES_BY_AREA, normalizeArabic } from "@/lib/sales/weekly/governorates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -195,7 +196,8 @@ export async function loadWeeklyAreaSplitIndex(): Promise<WeeklyAreaSplitIndex> 
   return buildWeeklyAreaSplitIndex(
     mapResult.error ? [] : ((mapResult.data ?? []) as WeeklyAreaSplitMapRow[]),
     areaResult.error ? [] : ((areaResult.data ?? []) as WeeklyAreaSplitAreaRow[]),
-    new Date().toISOString().slice(0, 10),
+    // Cairo's today, not UTC's — see the same line in manager-attribution.ts.
+    todayInCairo(),
     brickResult.error ? [] : ((brickResult.data ?? []) as WeeklyAreaSplitBrickRow[]),
   );
 }

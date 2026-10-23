@@ -642,6 +642,7 @@ import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-a
 import { runSourceOfHireTests } from "./source-of-hire.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
+import { runStructuredLogPersistsTheCauseTests } from "./structured-log-persists-the-cause.test.ts";
 import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runWeeklyPlanAutoHrAcknowledgeTests } from "./weekly-plan-auto-hr-acknowledge.test.ts";
@@ -738,6 +739,19 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import {
+  runAddressCorrectionQueueTests,
+  runFinalizeRecoveryTests,
+  runMappingBackfillRebuildTests,
+  runOldSalesUploadNumberTests,
+  runPeriodLockReadTests,
+  runPublishSplitGateTests,
+  runUploadLimitTests,
+  runWeeklyCairoDayTests,
+  runWeeklyDateCellTests,
+  runWeeklyNumberCellTests,
+} from "./sales-imports-audit-fixes.test.ts";
+import { runCrmCheckinReconcileGuardTests, runCrmPlanPruneArchiveTests } from "./crm-reconcile-overlap-guard.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
 import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts";
@@ -2709,6 +2723,8 @@ import {
   runSatoEmailFinalSanitizeTests,
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
+import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
+import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4106,6 +4122,7 @@ await runTest("hiring analytics layout (desktop table, phone cards, square edges
 await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
+await runTest("an ERROR row carries the cause, not just the headline: a Supabase rejection is not an Error, so `error.stack` was undefined and every database failure reached app_error_events with an empty stack - the 06:36 Cairo drift timeout on 2026-10-23 landed as a headline with route null and nothing about the 57014 behind it, and the Postgres log that did know keeps days where this table keeps months; the cause now comes through describeThrown whatever shape it was thrown in, the call site's labels lead it because they name WHICH line, period or job and `stack` is truncated from the end, `service` and `event` are dropped as noise and already-the-route, and nothing to say stays null rather than becoming an empty string that reads as a blank cause", runStructuredLogPersistsTheCauseTests);
 await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
 await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
@@ -4312,6 +4329,18 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
+await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
+await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);
+await runTest("weekly sales takes today from Cairo, not UTC (no manager gap 00:00-03:00 on a change day)", runWeeklyCairoDayTests);
+await runTest("monthly import period lock (an unreadable lock refuses with a 503)", runPeriodLockReadTests);
+await runTest("spreadsheet upload limits (the message is the limit enforced; a stored workbook gets the bucket's 20 MB)", runUploadLimitTests);
+await runTest("mapping save rebuilds through refreshBatchRollups and queues a file it could not rebuild", runMappingBackfillRebuildTests);
+await runTest("address corrections queue their files as each one lands", runAddressCorrectionQueueTests);
+await runTest("sales import finalize recovery (a finalize that committed after an error is treated as landed)", runFinalizeRecoveryTests);
+await runTest("closing publish refuses a stale city split and rebuilds it", runPublishSplitGateTests);
+await runTest("crm check-in reconcile guard (a check-in an overlapping sync wrote is never deleted)", runCrmCheckinReconcileGuardTests);
+await runTest("crm plan prune (guarded against an overlapping sync, every row recorded before delete)", runCrmPlanPruneArchiveTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
 await runTest("sos crosswalk pagination (keyset, never unordered offset)", runSosCrosswalkPaginationTests);
 await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-stable)", runSosCustomerMapKeysetTests);
@@ -10721,6 +10750,14 @@ await runTest(
 await runTest(
   "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
   runCsvFormulaNeutraliserTests,
+);
+await runTest(
+  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  runNeedsYouDigestRunsOutsideTheFanoutTests,
+);
+await runTest(
+  "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
+  runCrmParityMirrorExcludesPhoenixVisitsTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

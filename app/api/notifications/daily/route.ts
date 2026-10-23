@@ -76,6 +76,33 @@ async function runDailyNotifications(request: Request) {
     };
   }
 
+  // 🔴 THE NEEDS YOU BOARD RUNS ON ITS OWN, BEFORE THE FAN-OUT, AND THAT IS THE WHOLE POINT OF
+  // THIS BLOCK. The board is not one query — it is 22 sources behind its own two-lane
+  // scheduler (heavy ONE at a time, light four, each source racing an 8-second budget). Those
+  // lanes stop the sources starving EACH OTHER; they cannot stop the other 30 sub-jobs below
+  // starving them. Run as a passenger in the fan-out it lost sources every single morning:
+  // measured on production, 06:36 Cairo, 15 consecutive days from 2026-10-09, 1-5 sources ambered
+  // per run, with "Other approvals inbox" and "Published closings that have moved" — both `heavy`
+  // — failing on every one of them. That is the SAME defect the lanes were built to remove, one
+  // level up: the budget was being spent queueing rather than querying.
+  //
+  // 🔴 SO DO NOT MOVE THIS BACK INTO THE Promise.all, AND DO NOT "FIX" A RETURNING AMBER ROW BY
+  // WIDENING A LANE OR RAISING THE 8-SECOND BUDGET — that trades the board's honesty for a green
+  // digest, which is the one thing this module refuses to do. Make a heavy source cheaper instead,
+  // which changes what it measures and is the owner's call.
+  //
+  // The result is handed to the fan-out at its OWN position (26) as an already-settled promise, so
+  // every position below keeps its meaning. The positional destructure under this comment has been
+  // silently broken twice by an insert; it is not worth a third time to save one line.
+  const needsYouDailyResult = await runNeedsYouDailyDigest().catch(
+    onJobFailure("needs-you-daily-digest", (message) => ({
+      delivered: 0,
+      notProven: 0,
+      reason: message,
+      skipped: true,
+    })),
+  );
+
   const [
     birthdayResponse,
     contractRenewalResponse,
@@ -272,17 +299,13 @@ async function runDailyNotifications(request: Request) {
     // against the 100-per-DAY REST cap, and the heartbeat-parity contract that pages every Super
     // Admin every 15 minutes when a declared job stops reporting.
     //
-    // 🔴 The fallback below reports `skipped: true` with the reason, and NEVER a zero that reads as
+    // 🔴 The fallback reports `skipped: true` with the reason, and NEVER a zero that reads as
     // "nothing was waiting". A board that under-reports is worse than no board, and that rule has to
-    // survive the job failing, not just the sources failing.
-    runNeedsYouDailyDigest().catch(
-      onJobFailure("needs-you-daily-digest", (message) => ({
-        delivered: 0,
-        notProven: 0,
-        reason: message,
-        skipped: true,
-      })),
-    ),
+    // survive the job failing, not just the sources failing. It now sits on the awaited call ABOVE
+    // this fan-out — this entry is the settled result taking its own position, NOT a second run.
+    // `onJobFailure` has already pushed any failure onto `failures`, so the run summary, the
+    // dead man's switch and `totalJobs` all still count this job exactly once.
+    Promise.resolve(needsYouDailyResult),
     // The WHOLE board by email, Sundays. It self-gates to the weekday and returns
     // `skipped: "not the weekly email day"` on the other six — so it costs one cheap call a day and
     // no schedule of its own.

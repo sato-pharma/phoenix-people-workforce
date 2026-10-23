@@ -14,6 +14,7 @@ import {
   listMonthlyClosingPeriods,
 } from "@/lib/sales/monthly-distributor-import";
 import { notifyClosingPublished } from "@/lib/sales/closing-publish-notification";
+import { assertStoreSplitCurrentBeforePublish } from "@/lib/sales/closing-publish-split-gate";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -374,6 +375,12 @@ export async function publishClosing(input: {
   // Publishing notifies every sales/product manager and arms the CEO's SoS report, and a sent
   // mail cannot be recalled by unpublishing. See src/lib/sales/closing-period-gate.ts.
   assertClosingPeriodComplete(period);
+
+  // THE CITY SPLIT IS CURRENT BEFORE IT IS FROZEN (audit P4-07, 2026-10-23). Publishing freezes the
+  // period's stored split net; a net that had fallen behind today's rows would be frozen as it stood,
+  // and the published month would differ from the one the screen showed. A drift refuses the publish
+  // and rebuilds the net, so the next press publishes the month as shown. See closing-publish-split-gate.ts.
+  await assertStoreSplitCurrentBeforePublish({ line, period });
 
   // THE SNAPSHOT IS TAKEN BY THE DATABASE, NOT HERE — and this payload must stay four columns.
   //

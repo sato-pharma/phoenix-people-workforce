@@ -14,7 +14,7 @@ import {
 } from "@/lib/devices/import-attempt-log";
 import { deviceErrorMessage } from "@/lib/devices/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       emptyError: "empty_file",
       emptyMessage: "That file is empty.",
       tooLargeError: "device_import_file_too_large",
-      tooLargeMessage: "The device import file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("The device import file"),
       unsupportedError: "unsupported_format",
       unsupportedMessage: "Upload the device import template in .xlsx format.",
     });

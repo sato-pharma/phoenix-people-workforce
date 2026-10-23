@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { previewCoachingImport } from "@/lib/coaching/import";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import {
   CoachingApiError,
   jsonError,
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_coaching_file",
       emptyMessage: "The coaching workbook is empty.",
       tooLargeError: "coaching_file_too_large",
-      tooLargeMessage: "The coaching workbook exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("The coaching workbook"),
       unsupportedError: "unsupported_coaching_file_type",
       unsupportedMessage: "Upload the coaching report in .xlsx format.",
     });
