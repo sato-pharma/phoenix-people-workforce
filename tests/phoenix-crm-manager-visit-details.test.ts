@@ -247,8 +247,10 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
       "the day list and the timeline both draw the plan-against-actual table",
     );
     // The polish pass on the screen itself (owner, 2026-10-20: "premium polish, full polish").
-    assert.match(calendarScreen, /<ManagerVisitChipRows visits=\{visitRows\} \/>/, "a month cell draws a manager's visits one structured block each, never one flat line that a browser reorders around an Arabic name");
-    assert.match(calendarScreen, /<bdi className="mt-0\.5 block font-black text-slate-900">\{visit\.customerName\}<\/bdi>/, "a customer's name is isolated from the dots around it");
+    // Owner, 2026-10-23: the month cell is a SUMMARY — counts and tags, no customer — and a visit is read in full in the table
+    // under the grid. (It used to draw a block per visit, `ManagerVisitChipRows`; see private-calendar-day-tile.test.ts.)
+    assert.doesNotMatch(calendarScreen, /ManagerVisitChipRows/, "a month cell no longer lists a manager's visits one by one");
+    assert.match(calendarScreen, /<VisitDayTile item=\{item\} key=\{item\.id\} tile=\{tile\} viewMode=\{viewMode\} \/>/, "a visit entry is drawn as a tile of counts and tags");
     assert.match(calendarScreen, /item\.managerVisits && item\.managerVisits\.length > 0 \? "lg:col-span-full" : ""/, "a day that carries a table takes the whole row of the timeline");
     assert.match(calendarScreen, /shownWeeks = useMemo\(\(\) => weeks\.filter\(\(week\) => week\.some\(\(day\) => day\.inMonth\)\)/, "a week with no day of the month is not drawn");
     assert.match(calendarScreen, /\{shownWeeks\.flatMap\(\(week\) => week\)/, "the grid draws the shown weeks");

@@ -132,12 +132,15 @@ function employeeMetadataByHrId(employees: EmployeeDirectoryRow[]) {
 
 function decorateItemsWithEmployeeMetadata(items: PrivateCalendarItem[], employees: EmployeeDirectoryRow[]) {
   const byHrId = employeeMetadataByHrId(employees);
+  // The area the day tile falls back to when an entry names none of its own (field-visit and own-visit entries carry no area).
+  const areaByHrId = new Map(employees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee.areaName]));
   return items.map((item) => {
     if (!item.employeeHrId) return item;
     const employee = byHrId.get(privateCalendarHrIdKey(item.employeeHrId));
     if (!employee) return item;
     return {
       ...item,
+      employeeAreaName: areaByHrId.get(privateCalendarHrIdKey(item.employeeHrId)) ?? null,
       employeeDepartmentName: employee.departmentName,
       employeeJobTitle: employee.jobTitle,
       employeeLineName: employee.lineName,

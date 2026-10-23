@@ -623,9 +623,15 @@ manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
   because the private calendar's day sits in a narrow column on a wide desktop), cards below that. Square edges,
   nothing truncated, an Arabic name keeps its own direction.
 - **The address is the DETAILS', never the calendar's** (owner, 2026-10-20: *"do not show address in the private
-  calendar itself, show area/brick, and in details show address"*). The private calendar's own chip lines
-  (`managerVisitChipLine`) print the brick and the area (`managerVisitAreaLines`); the table, the cards and the
-  detail text (`managerVisitWhereLines`, `managerVisitLine`) print the street address first.
+  calendar itself, show area/brick, and in details show address"*). **Since 2026-10-23 the month cell goes further and
+  lists no visit at all** (*"in the calendar tile itself show the count of the AM and the count of PM and the count of
+  pharmacies, and if double or single … the area … don't mention names … when I press on the day, the details appear
+  down"*): a visit entry is a tile (`VisitDayTile`, built by the pure `privateCalendarDayTile` in
+  `src/lib/private-calendar/day-tile.ts`) of Single / Double / Chain, Regular / Campaign, Planned / Unplanned (only where
+  a Phoenix visit says it), the AM · PM · Pharmacies figures apart (the pharmacy violet), who it was made with, the brick
+  and the area — read from structured fields (`tileWith`, `tileAreas`, `employeeAreaName`, `managerVisits`), never parsed
+  from `chipLines`, and never a customer or a pharmacy name. The table, the cards and the detail text
+  (`managerVisitWhereLines`, `managerVisitLine`) print every visit, street address first.
 - **The day slot shows the RECORD, of every type, and never the plan** (owner, 2026-10-20: *"on the day slot itself
   never show plan, show actual only … not only visits, show actual record of any type"*). The month cell and the
   phone markers draw every entry but an approved plan (`isRecordedEntry` in `private-calendar.tsx`: attendance,
@@ -636,7 +642,7 @@ manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
   touches for all the managers at once. The company-wide pass the Daily Deductions connector adjudicates stays a
   count and reads neither.
 
-Pinned by `tests/phoenix-crm-manager-visit-details.test.ts`.
+Pinned by `tests/phoenix-crm-manager-visit-details.test.ts` and, for the day tile, `tests/private-calendar-day-tile.test.ts`.
 
 ## Writing up a logged single visit, afterwards (2026-10-23)
 
