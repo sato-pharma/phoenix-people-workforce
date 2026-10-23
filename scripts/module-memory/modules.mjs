@@ -555,7 +555,7 @@ export const MODULES = [
       "supabase/migrations/*entry_days*",
       "supabase/migrations/*agent_crm_ids*",
       "tests/phoenix-crm-{countable-visits,rep-entry-days-cache,vendor-leftovers,visits-everywhere}*",
-      "tests/crm-agent-crm-ids-cache.test.ts",
+      "tests/crm-agent-crm-ids-{cache,reconcile-heartbeat}.test.ts",
     ],
     keywords: ["crm_visits_unified", "crm_checkins_unified", "countable visits", "entry days", "phoenix wins the day", "unified door", "union view", "departed agent exclusion", "partner slot", "day-at-a-time scan"],
     tables: ["phoenix_crm_rep_entry_days_cache", "crm_agent_crm_ids_cache"],

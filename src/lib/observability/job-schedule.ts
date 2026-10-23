@@ -3,7 +3,7 @@
  * silence means something.
  *
  * WHY THIS IS DUPLICATED FROM THE DOC TABLE, AND WHY THAT IS SAFE.
- * `docs/observability.md` holds the same 46 rows and is the source of truth for
+ * `docs/observability.md` holds the same 47 rows and is the source of truth for
  * `scripts/healthchecks-sync.mjs`, which pushes schedules to Healthchecks.io. That table cannot be
  * the runtime source as well: this module runs inside the deployed Next.js server, and a Next
  * standalone build traces imported FILES — it does not copy `docs/`. Reading the markdown at
@@ -247,6 +247,13 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 30 * MINUTE, vendorSync: true },
   { slug: "phoenix-ireports360-sync", kind: "cron", schedule: "0 6-21/3 * * *", graceSeconds: 2 * HOUR, vendorSync: true },
   { slug: "phoenix-reconcile-visits", kind: "cron", schedule: "0 4 * * 0", graceSeconds: 12 * HOUR, vendorSync: true },
+  // 🔴 PINGED FROM INSIDE THE DATABASE, NOT BY CRON-JOB.ORG. The pg_cron job
+  // `crm-agent-crm-ids-reconcile` is the only thing keeping the departed-agent CRM id cache current,
+  // and the door never falls back to the live read, so a stopped job froze the cache silently.
+  // `crm_agent_crm_ids_reconcile_run()` records success after each run
+  // (20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql). pg_cron fires in UTC; Cairo's whole-hour
+  // offset leaves `*/15` the same instants. NO watchingSince: a new declaration.
+  { slug: "phoenix-crm-agent-crm-ids-reconcile", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
   // The sweeper itself. Declared like any other job so it holds a row and verifies itself on every
   // run. It cannot report its OWN silence — see the migration header and docs/observability.md.
   { slug: "phoenix-job-heartbeat-sweep", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 30 * MINUTE },

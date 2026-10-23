@@ -47,7 +47,9 @@ before it can discard duplicates.
   copy of the rule. Its `delete … where true` is load-bearing, not decoration: see below.
 * **`crm_agent_crm_ids_reconcile()`** compares the cache with `_calc()` with `except` both ways,
   rebuilds on any difference and raises a warning. Scheduled `*/15 * * * *` as
-  `crm-agent-crm-ids-reconcile`.
+  `crm-agent-crm-ids-reconcile`, which since 2026-10-23 runs it through
+  `crm_agent_crm_ids_reconcile_run()` so every run reports to the heartbeat register — see
+  "Who watches the reconcile" below.
 * **The door keeps its name, signature, `returns table(agent_crm_id bigint)`, `stable`,
   `security definer`, `search_path`, `statement_timeout` and both grants**, and now reads the
   cache. `src/lib/crm/reads.ts` is not touched by this change, and its PGRST202 page-walk fallback
@@ -106,6 +108,34 @@ therefore not in the question being asked.
 
 **Re-check that argument before reusing this cache for anything else.**
 
+## Who watches the reconcile
+
+Owner's instruction, 2026-10-23: **"fix the departed-agent CRM cache that freezes silently if its
+cron stops"**. Until then nothing did: the pg_cron job wrote no heartbeat, was not in
+`JOB_SCHEDULES`, and — because the door never falls back — a stopped job would have left the cache
+frozen with every read still answering, quickly and wrongly.
+
+`20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql` adds two functions and re-points the job:
+
+* **`phx_record_job_heartbeat(slug, outcome, detail)`** is the SQL twin of `recordJobHeartbeat` in
+  `src/lib/observability/job-heartbeat.ts`: an upsert into `public.job_heartbeats` that moves only
+  the timestamp for its own outcome and, if the write itself fails, raises a warning rather than
+  failing the job.
+* **`crm_agent_crm_ids_reconcile_run()`** runs the unchanged reconcile, then records `success`
+  with what it found (`in step: 0 differences against _calc()` or `rebuilt: N row(s)…`).
+* The slug **`phoenix-crm-agent-crm-ids-reconcile`** is declared in `JOB_SCHEDULES` on the same
+  `*/15 * * * *` with a one-hour grace, and in `docs/observability.md` as **in-house only** —
+  nothing pings Healthchecks for it. The 15-minute sweep judges it like every other job and pages
+  in-app, Telegram and push when it stops.
+
+🔴 **The wrapper does not catch a failed run, on purpose.** pg_cron runs the command in one
+transaction, so a `fail` row written there cannot survive a re-raise, and catching the error to
+write one would leave `cron.job_run_details` reading `succeeded` for a run that failed. Uncaught, a
+failing run is **FAILED** in `cron.job_run_details` (with its message) and **stranded** in the
+register once the grace passes — both true. Proven on staging and production on 2026-10-23; pinned
+by `tests/crm-agent-crm-ids-reconcile-heartbeat.test.ts`, which also refuses a later migration that
+points the job back at the bare reconcile.
+
 ## 🔴 Two things that must not be "improved"
 
 **The door does not fall back to `_calc()` on an empty cache.** The one failure mode that matters is
@@ -122,5 +152,8 @@ killed a candidate's joining form at 13:11:46 Cairo on 2026-10-23 and every empl
 ## Rolling back
 
 Restore the door's body from `20260914000000_crm_unify_vendor_reads.sql`, then
-`select cron.unschedule('crm-agent-crm-ids-reconcile')` and drop the table and the three functions.
+`select cron.unschedule('crm-agent-crm-ids-reconcile')` and drop the table, the three functions and
+`crm_agent_crm_ids_reconcile_run()`, and take `phoenix-crm-agent-crm-ids-reconcile` out of
+`JOB_SCHEDULES` and both tables in `docs/observability.md` in the same change — a declaration with
+no job behind it pages every Super Admin for ever. `phx_record_job_heartbeat()` is generic; leave it.
 Nothing else reads any of them, and `src/lib/crm/reads.ts` needs no change either way.

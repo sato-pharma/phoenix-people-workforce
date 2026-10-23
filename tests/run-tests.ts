@@ -2021,6 +2021,7 @@ import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-day
 import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
 import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
+import { runCrmAgentCrmIdsReconcileHeartbeatTests } from "./crm-agent-crm-ids-reconcile-heartbeat.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7680,6 +7681,11 @@ await runTest(
 await runTest(
   "The departed-agent CRM exclusion reads a 254-row cache, and ONLY the cache (phx_crm_agent_crm_ids_for_hr_ids ran `select distinct agent_crm_id from crm_visits_unified` on every cold exclusion cache — 220 ms and 57,005 buffers on production with the live-shaped 108-person input, scanning ~136,000 visit rows and quicksorting 140,616 of them to return 76 integers; dropping the duplicate index the day before moved the plan and not the time, 189 ms against 220, which is what proved the shape rather than the index is the cost): crm_agent_crm_ids_calc holds the one body and is the only thing in the migration that reads crm_visits_unified, the rebuild refills THROUGH it and its DELETE carries `where true` because safeupdate refuses an unqualified one over PostgREST and that is how the joining form died on 2026-10-23, the reconcile compares the VALUES both ways and repairs, the door keeps its exact signature, volatility, security, search_path, statement_timeout and grants so src/lib/crm/reads.ts and its PGRST202 page-walk fallback are untouched, it does NOT fall back to _calc() because an empty cache must surface rather than hide behind the slow path, the cache is revoked from every browser role and granted to service_role alone, the migration refuses to commit on a disagreement OR on 0 rows, and the 15-minute reconcile is the staleness bound rather than a safety net because the view's ~10 inputs leave no one table to trigger on",
   runCrmAgentCrmIdsCacheTests,
+);
+
+await runTest(
+  "The departed-agent CRM id cache can no longer freeze in silence (its pg_cron job is the only thing keeping it current and the door never falls back to the live read): the job runs crm_agent_crm_ids_reconcile_run(), which records success in job_heartbeats AFTER the unchanged reconcile and never catches a failed run, because a caught failure would read `succeeded` in cron.job_run_details; no later migration may point the job back at the bare reconcile; the register write moves only its own outcome's timestamp and only warns when it fails; and the slug is declared on the same */15 cadence and marked in-house only",
+  runCrmAgentCrmIdsReconcileHeartbeatTests,
 );
 
 await runTest(
