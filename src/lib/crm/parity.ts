@@ -33,7 +33,6 @@
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
 import { iReports360GetVisits, iReports360Login } from "@/lib/crm/client";
 import { addDaysIso } from "@/lib/crm/dates";
-import { queryVisits } from "@/lib/crm/reads";
 import { syncIReports360Visits } from "@/lib/crm/sync";
 import { CRM_PARITY_WINDOWS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
@@ -323,6 +322,62 @@ async function loadEarliestVisitDate(): Promise<string> {
 }
 
 /**
+ * The window's visit ids as the MIRROR holds them — read straight off `ireports360_visits`.
+ *
+ * NOT through `queryVisits`, and that distinction is the whole correctness of this sweep.
+ * `queryVisits` scans `crm_visits_unified`, which carries Phoenix-born visits alongside the
+ * mirrored ones — visits logged in Phoenix CRM that iReports360 has never held and never will.
+ * Comparing the vendor's answer against that view counts every Phoenix visit as a row the vendor
+ * "lost", which is the one shape {@link decideParityAction} is built to refuse. Measured on
+ * production: the first Phoenix visit landed 2026-10-03, the current window was refused on 14 Oct
+ * at 2,013 extra rows and again on 23 Oct at 4,779 of 12,116, growing by roughly 300 a day — so
+ * the newest window could never again be verified, and the 8 genuinely late-saved rows it should
+ * have pulled in on 23 Oct were not pulled in. The mirror this sweep is about is the iReports360
+ * mirror table, and nothing else belongs in the comparison.
+ *
+ * Reading the table also drops the resigned-agent question entirely. `queryVisits` needed
+ * `includeResignedAgents: true` here, because its default exclusion hides every visit whose
+ * resolved agent has left and would have reported a mismatch of exactly that size on every window.
+ * The raw mirror applies no exclusion at all, so there is nothing left to opt out of.
+ *
+ * Keyset by `crm_visit_id`, matching the sync's own reconcile scan: a page is capped, and
+ * `.range()` with no ORDER BY gives no stable row order, so pages repeat ids and skip others — and
+ * a skipped id here reads as a row the vendor deleted.
+ */
+async function loadMirrorVisitIds(window: ParityWindow): Promise<number[] | null> {
+  const supabase = getSupabaseAdmin();
+  const pageSize = 5000;
+  const ids: number[] = [];
+  let cursor: number | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("crm_visit_id")
+      .gte("visit_date", window.from)
+      .lte("visit_date", window.to)
+      .order("crm_visit_id", { ascending: true })
+      .limit(pageSize);
+    if (cursor !== null) query = query.gt("crm_visit_id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return null;
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ crm_visit_id: number }>;
+    if (page.length === 0) break;
+    for (const row of page) {
+      const id = Number(row.crm_visit_id);
+      if (Number.isFinite(id)) ids.push(id);
+    }
+    if (page.length < pageSize) break;
+    const last = Number(page[page.length - 1]?.crm_visit_id);
+    if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
+    cursor = last;
+  }
+  return ids;
+}
+
+/**
  * Verify one window of history against the CRM and repair it if it differs.
  *
  * Never throws for a parity difference — a difference is the normal finding this exists to report.
@@ -382,16 +437,7 @@ export async function runIReports360ParitySweep(now: Date = new Date()): Promise
     .map((visit) => Number(visit.id))
     .filter((id) => Number.isFinite(id));
 
-  // includeResignedAgents is NOT optional here. The default exclusion hides every visit whose
-  // resolved agent has left, so counting with it on would report a mismatch of exactly that size on
-  // every window — a fabricated difference the sweep would then "repair" forever.
-  const mirrorRows = await queryVisits<{ crm_visit_id: number }>({
-    columns: "crm_visit_id",
-    dateFrom: window.from,
-    dateTo: window.to,
-    includeResignedAgents: true,
-  });
-  const mirrorIds = mirrorRows.map((row) => Number(row.crm_visit_id)).filter((id) => Number.isFinite(id));
+  const mirrorIds = (await loadMirrorVisitIds(window)) ?? [];
 
   const diff = compareVisitIdSets(crmIds, mirrorIds);
   const { action, reason } = decideParityAction(diff);
