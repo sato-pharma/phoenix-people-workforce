@@ -86,6 +86,11 @@ None of them spilled to disk at `work_mem = 32MB`. The function pins
 `plan_cache_mode = force_custom_plan`: every filter is a plpgsql variable, and a cached generic plan
 could neither drop the unused filters nor use the partial indexes' `not is_test`.
 
+Columns 10 and 11 from this function equal the TypeScript copy the historical run uses
+(`src/lib/system-audit/period-counts.ts`): 1,237 rows compared on the same 100,000-row set, across
+eight filter shapes (whole period, one person, two people, system rows, shared, unique, a 20-day
+Cairo window, a window with one person), 0 mismatches. The synthetic rows were deleted afterwards.
+
 ## Export
 
 CSV (UTF-8 with BOM) and XLSX of **every filtered row**, never the visible page. Every text cell goes
