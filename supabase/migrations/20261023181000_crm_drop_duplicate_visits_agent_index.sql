@@ -1,0 +1,34 @@
+-- crm_drop_duplicate_visits_agent_index
+--
+-- WHAT:     Drops public.ireports360_visits_agent_idx. Nothing else changes: no view, no function, no
+--           column, no row. No query can return a different answer afterwards.
+-- WHY:      The old-CRM visits table carries that index AND
+--           perf_ireports360_visits_agent_hr_id_visit_date_crm, and the second one contains the first.
+--           Read from pg_index on production ozucdzovmcqvepbozvqf on 2026-10-23 before writing this:
+--             · identical key columns in identical order — attnums "6 3" (agent_hr_id, visit_date) on both;
+--             · identical operator classes "3126 3122" and collations "100 0";
+--             · both non-unique, non-primary, non-exclusion, not a replica identity, both valid;
+--             · neither is partial (indpred null), neither backs a constraint, neither has a hard
+--               dependency.
+--           The perf index differs in one way only: indnatts 3 against indnkeyatts 2 — it carries
+--           agent_crm_id as an INCLUDE payload. So it can serve every search and every ordering the
+--           dropped index served, and some reads WITHOUT touching the table at all.
+--           Keeping both costs twice: 2.8 MB of index to maintain on every sync write, and — because the
+--           planner prefers the smaller one — reads that could have been answered from the index alone go
+--           to the heap instead.
+-- SPEED:    phx_crm_agent_crm_ids_for_hr_ids is the read that showed it. It resolves which CRM accounts
+--           belong to the people who have left, runs about once every ten minutes behind its five-minute
+--           cache, and averaged 1.57 s a call over the 25.5 h to 2026-10-23 14:55 Cairo (157 calls, 247 s
+--           of database time). Measured on production with a realistic list of 106 departed people: it
+--           returns 74 account numbers after reading 53,541 visit rows and sorting all of them, through
+--           ireports360_visits_agent_idx — 50,262 buffers, 149 ms in that node. The same scan on the perf
+--           index alone is an Index Only Scan: 9,881 buffers, 54 ms. The whole table holds 143,713 rows
+--           and only 254 distinct person-to-account pairings, so the answer was never more than a
+--           handful of numbers.
+--           A VACUUM (ANALYZE) of the table was run first to rule out stale visibility bookkeeping; it did
+--           not move the planner, because the cheaper-looking index still existed.
+-- ROLLBACK: create index ireports360_visits_agent_idx
+--             on public.ireports360_visits using btree (agent_hr_id, visit_date);
+--           (the exact definition read from pg_indexes before the drop).
+
+drop index if exists public.ireports360_visits_agent_idx;
