@@ -143,6 +143,20 @@ export function runCiBuildRiskTests(): void {
     /\n {8}if: github\.event_name != 'pull_request' \|\| steps\.buildrisk\.outputs\.build == 'true'\n/,
     "the Build's condition must stay `<not a PR> || <build risk>` — `main` always builds, a PR builds on risk",
   );
+  // 🔴 THE BUILD STAYS TWO PROCESSES (23 Oct 2026). One `next build` ran the 7.9 GB runner out of
+  // memory at "Collecting page data" (exit 137, the kernel's kill, read only as "The operation was
+  // canceled"); compile-then-generate hands the compiler's ~6.5 GB back before page data starts.
+  const build = step(yml, "Build");
+  assert.match(
+    build,
+    /pnpm exec next build --experimental-build-mode compile\n {10}pnpm exec next build --experimental-build-mode generate\n/,
+    "the CI build must compile and generate in two processes, compile first — one process OOMs the runner",
+  );
+  assert.doesNotMatch(build, /pnpm run build/, "a one-process `pnpm run build` here brings the out-of-memory kill back");
+  assert.ok(
+    build.indexOf("swapon") > -1 && build.indexOf("swapon") < build.indexOf("--experimental-build-mode compile"),
+    "the extra swap must be switched on before the compile, the half that still peaks near the runner's RAM",
+  );
   for (const name of [
     "Verify @napi-rs/canvas is reachable inside .next/standalone",
     "Assemble the standalone runtime (mirrors the Dockerfile)",
