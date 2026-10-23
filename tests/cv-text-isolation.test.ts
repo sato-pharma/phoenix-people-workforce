@@ -134,10 +134,18 @@ export async function runCvTextIsolationTests() {
     );
     const config = readFileSync("next.config.ts", "utf8");
     const externals = /serverExternalPackages:\s*\[([^\]]*)/.exec(config)?.[1] ?? "";
+    // The traced-include list: a file under a package's top-level path makes Next link node_modules/<name> in the
+    // standalone image, which is the only place a bare require() from the thread can find it (production, 23 Oct
+    // 2026: node_modules/mammoth and node_modules/word-extractor were linked, node_modules/pdf-parse was NOT).
+    const includes = /outputFileTracingIncludes:\s*\{([\s\S]*?)\n  \},/.exec(config)?.[1] ?? "";
     for (const name of new Set(threadLibs)) {
       assert.ok(
         externals.includes(`"${name}"`),
         `next.config.ts serverExternalPackages must list "${name}" — the isolated CV thread require()s it, and a bundled package is read in-process without limits`,
+      );
+      assert.ok(
+        includes.includes(`"./node_modules/${name}/**"`),
+        `next.config.ts outputFileTracingIncludes must list "./node_modules/${name}/**" — without it the production image has no node_modules/${name} for the thread to require() and the file is read in-process without limits`,
       );
     }
   }
