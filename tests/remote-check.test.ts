@@ -152,8 +152,9 @@ export async function runRemoteCheckTests(): Promise<void> {
         `stage ${stage} reads step "${proof.step}" in \`${fileName}\`, which ci.yml no longer has — every ${stage} verdict would be NO VERDICT`,
       );
       if (proof.job instanceof RegExp) {
-        assert.match(body, /matrix:\s*\n\s*part: \[1, 2, 3\]/, "a regexp proof means a matrix job; ci.yml's `unit` must still have one");
-        assert.ok(proof.job.test("unit (1)") && proof.job.test("unit (3)") && !proof.job.test("unit"), "the matrix pattern must match `unit (N)` and nothing else");
+        // Any part count: how many is tests/ci-suite-placement.test.ts's to pin, not this file's.
+        assert.match(body, /matrix:\s*\n\s*part: \[1(, \d+)+\]/, "a regexp proof means a matrix job; ci.yml's `unit` must still have one");
+        assert.ok(proof.job.test("unit (1)") && proof.job.test("unit (2)") && !proof.job.test("unit"), "the matrix pattern must match `unit (N)` and nothing else");
       }
     }
   }

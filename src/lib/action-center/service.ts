@@ -1,7 +1,7 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, ActionHubModule, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeNameRoster, type EmployeeNameRosterRow } from "@/lib/employees/employee-directory";
 import { logStructured } from "@/lib/observability/log";
 // The same pager the Approvals Hub uses (#4273). One implementation, not a second copy: both
 // surfaces answer the same question — "every request this person decided" — and a cap on either
@@ -259,7 +259,7 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
 function liveEmployeeName(
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
   hrId: string | null | undefined,
   rawName: string,
 ): string {
@@ -275,7 +275,7 @@ function liveEmployeeName(
 
 function mapResignationItem(
   record: ResignationRecord,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
 ): ActionHubItem {
   return {
     id: record.id,
@@ -301,7 +301,7 @@ function mapResignationItem(
 
 function mapExcuseItem(
   request: EmployeeExcuseRequest,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
   readOnlyReason?: string | null,
 ): ActionHubItem {
   return {
@@ -328,7 +328,7 @@ function mapExcuseItem(
 
 function mapOutstationItem(
   request: OutstationExpenseRequest,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
 ): ActionHubItem {
   return {
     id: String(request.id),
@@ -358,7 +358,7 @@ function mapOutstationItem(
 
 function mapContractRenewalItem(
   row: ContractRow,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
 ): ActionHubItem | null {
   if (!row.workflow || !ACTIVE_CONTRACT_STATUSES.has(row.workflow.status)) return null;
   const w = row.workflow;
@@ -421,7 +421,7 @@ export const ACTION_SOURCE_LABELS = [
   "Resignations",
   "Outstation requests",
   "Contract renewals",
-  "The employee directory",
+  "Employee names",
 ] as const;
 
 /**
@@ -473,7 +473,7 @@ export async function getAwaitingMyActionItemsWithHealth(
     getResignationsDashboardData(access),
     includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
     getContractRenewalDashboardData(access),
-    getEmployeeDirectory(),
+    getEmployeeNameRoster(),
   ]);
 
   const unavailable: ActionSourceFailure[] = [];
@@ -499,7 +499,7 @@ export async function getAwaitingMyActionItemsWithHealth(
   });
 
   const [resignations, outstation, contract, directoryResult] = settled;
-  const employees = directoryResult.status === "fulfilled" && directoryResult.value ? directoryResult.value.employees : [];
+  const employees = directoryResult.status === "fulfilled" && directoryResult.value ? directoryResult.value : [];
   const items: ActionHubItem[] = [];
 
   items.push(
@@ -557,7 +557,7 @@ function residualActionItems(input: {
   resignations: Awaited<ReturnType<typeof getResignationsDashboardData>> | null;
   outstation: Awaited<ReturnType<typeof listOutstationRequests>> | null;
   contract: Awaited<ReturnType<typeof getContractRenewalDashboardData>> | null;
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"];
+  employees: EmployeeNameRosterRow[];
 }): ActionHubItem[] {
   const items: ActionHubItem[] = [];
   for (const record of input.resignations?.records ?? []) {
@@ -939,10 +939,10 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
           .in("event_type", ["approve", "reject", "return"])
           .order("created_at", { ascending: false })
           .order("id", { ascending: false })),
-      getEmployeeDirectory(),
+      getEmployeeNameRoster(),
     ]);
 
-  const employees = directoryResult.status === "fulfilled" ? directoryResult.value.employees : [];
+  const employees = directoryResult.status === "fulfilled" ? directoryResult.value : [];
 
   if (leaves.status === "fulfilled" && !leaves.value.error) {
     for (const row of leaves.value.data ?? []) {
@@ -1184,7 +1184,7 @@ async function buildLeaveDeepLinkItem(
   access: AccessContext,
   id: string,
   hrId: string,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
 ): Promise<ActionHubItem | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -1248,7 +1248,7 @@ async function buildPlanDeepLinkItem(
   access: AccessContext,
   id: string,
   hrId: string,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  employees: EmployeeNameRosterRow[],
 ): Promise<ActionHubItem | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -1326,7 +1326,7 @@ export async function getActionCenterDeepLinkItem(
 ): Promise<ActionHubItem | null> {
   if (!id) return null;
   const hrId = (access.hrId ?? "").trim().toUpperCase();
-  const employees = await getEmployeeDirectory().then((d) => d.employees).catch(() => []);
+  const employees = await getEmployeeNameRoster().catch(() => []);
 
   if (module === "excuse") {
     const result = await getExcuseRequestForActionCenterDeepLink(access, id);

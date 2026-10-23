@@ -32,6 +32,9 @@ import { stripComments } from "./support/comment-strip.ts";
  *     script and watch its gate without ever running its body — `backup-source-of-sales.mjs`
  *     treats `argv[2]` as a file it writes, so "spawn it with a bogus flag and see" is only safe
  *     when a failed gate cannot reach the body. Entry detection failing exits 3 instead of returning.
+ *     `PHX_FLAG_GATE_PROBE_BOTH=1` (2026-10-23) has the gate also answer, in the same process, what an
+ *     unknown flag would get, so each real script is spawned ONCE; the real exit-2 refusal is run end to
+ *     end on the fixture, and a pinned script may not hand the gate an argv of its own.
  *  4. 🔴 THE CALLER RATCHET — the one that earns this file. `.github/workflows/ci.yml` runs
  *     `node scripts/ci-tree-reuse.mjs --dry-run`, and `--dry-run` is not a literal anywhere in that
  *     script's code (it is the documented DEFAULT mode, accepted by being ignored). A vocabulary
@@ -97,6 +100,7 @@ const PINNED = [
   "scripts/correct-excuse-days-orgwide.ts",
   "scripts/cronjob-sync.mjs",
   "scripts/customer-pharmacy-pending-questions.ts",
+  "scripts/cloud-mirror/refresh.mjs",
   "scripts/customer-territory-questions.ts",
   "scripts/cv-area-questions.mjs",
   "scripts/cv-rule-extraction-report.ts",
@@ -309,6 +313,27 @@ export async function runUnknownFlagGatesTests() {
       assert.equal(bad.status, 2, "a probe still refuses an unknown flag");
       assert.equal(ran(), false);
 
+      // The one-process probe answers both questions, through the same rule, and still runs no body.
+      fresh();
+      const both = run(standalone, [], { PHX_FLAG_GATE_PROBE: "1", PHX_FLAG_GATE_PROBE_BOTH: "1" });
+      assert.equal(both.status, 0, `the both-answers probe must exit 0: ${both.stderr}`);
+      assert.match(both.stdout, /GATE-OK fixture/, "the both-answers probe must report the bare gate");
+      assert.match(both.stdout, /GATE-REFUSES fixture --zzz-not-a-flag/, "the both-answers probe must report the unknown flag refused");
+      assert.equal(ran(), false, "the both-answers probe must NEVER run the body");
+      // ...and the answer is computed, not printed: a vocabulary that knows the made-up flag is reported as accepting it.
+      const knowsIt = join(dir, "knows-it.mjs");
+      writeFileSync(
+        knowsIt,
+        `import { refuseUnknownFlags } from ${JSON.stringify(helperUrl)};\n` +
+          `refuseUnknownFlags({ name: "knows-it", entry: import.meta.url, known: ["--zzz-not-a-flag"] });\n` +
+          body,
+      );
+      fresh();
+      const accepts = run(knowsIt, [], { PHX_FLAG_GATE_PROBE: "1", PHX_FLAG_GATE_PROBE_BOTH: "1" });
+      assert.match(accepts.stdout, /GATE-ACCEPTS knows-it --zzz-not-a-flag/, "a gate that would accept the flag must say so, not claim a refusal");
+      assert.doesNotMatch(accepts.stdout, /GATE-REFUSES/);
+      assert.equal(ran(), false);
+
       fresh();
       const lost = run(parent, [], { PHX_FLAG_GATE_PROBE: "1" });
       assert.equal(lost.status, 3, "a module that is NOT the entry point must exit 3 under the probe, not return into its body");
@@ -361,6 +386,14 @@ export async function runUnknownFlagGatesTests() {
     knownByScript.set(file, knownOf(source));
 
     const call = source.indexOf("refuseUnknownFlags({");
+    // The one-process probe below asks the gate about a flag that is not on the command line, so it is only
+    // the same answer as a real run while the gate reads the real command line: no pinned script may hand
+    // it an argument list of its own.
+    assert.doesNotMatch(
+      source.slice(call, source.indexOf("})", call)),
+      /\bargv\s*:/,
+      `${file}: must not pass its own argv to refuseUnknownFlags — the gate must judge the real command line`,
+    );
     const effect = source.search(SIDE_EFFECT);
     if (effect >= 0) {
       assert.ok(call < effect, `${file}: refuseUnknownFlags must be called BEFORE the first side effect`);
@@ -369,8 +402,10 @@ export async function runUnknownFlagGatesTests() {
     probeFiles.push(file);
   }
 
-  // The probes run in parallel batches: 105 scripts × 2 spawns is minutes if serial, and each one only loads
-  // its imports and answers at the gate. The environment is MINIMAL on purpose — CI has no .env.local and no
+  // The probes run in parallel batches, ONE spawn per script (two until 2026-10-23, which made this the
+  // slowest test in the suite at ~115 s): PHX_FLAG_GATE_PROBE_BOTH has the gate answer the bare call and an
+  // unknown flag in the same process, so each script's imports load once. Each one only loads its imports
+  // and answers at the gate. The environment is MINIMAL on purpose — CI has no .env.local and no
   // production credentials, so a script that cannot even be imported without them must fail HERE, on the
   // laptop, and not first on the runner.
   const probeEnv: Record<string, string> = { PHX_FLAG_GATE_PROBE: "1" };
@@ -380,7 +415,7 @@ export async function runUnknownFlagGatesTests() {
   }
   const spawnAsync = (args: string[], target: string) =>
     new Promise<{ status: number; stdout: string; stderr: string }>((done) => {
-      execFile(process.execPath, args, { encoding: "utf8", env: { ...probeEnv, PHX_FLAG_GATE_PROBE: resolve(target) } as unknown as NodeJS.ProcessEnv, timeout: 120_000, maxBuffer: 1 << 24 }, (error: Error | null, stdout: string, stderr: string) => {
+      execFile(process.execPath, args, { encoding: "utf8", env: { ...probeEnv, PHX_FLAG_GATE_PROBE: resolve(target), PHX_FLAG_GATE_PROBE_BOTH: "1" } as unknown as NodeJS.ProcessEnv, timeout: 120_000, maxBuffer: 1 << 24 }, (error: Error | null, stdout: string, stderr: string) => {
         const code = error ? (error as NodeJS.ErrnoException & { code?: unknown }).code : 0;
         done({ status: typeof code === "number" ? code : 1, stdout, stderr });
       });
@@ -390,15 +425,13 @@ export async function runUnknownFlagGatesTests() {
     const results = await Promise.all(
       batch.map(async (file) => ({
         file,
-        bare: await spawnAsync([...LOADER, file], file),
-        bogus: await spawnAsync([...LOADER, file, "--zzz-not-a-flag"], file),
+        probe: await spawnAsync([...LOADER, file], file),
       })),
     );
-    for (const { file, bare, bogus } of results) {
-      assert.equal(bare.status, 0, `${file}: a bare probe must pass its own gate, got ${bare.status}: ${bare.stderr.split("\n").slice(0, 3).join(" | ")}`);
-      assert.match(bare.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
-      assert.equal(bogus.status, 2, `${file}: an unknown flag must be refused with exit 2, got ${bogus.status}`);
-      assert.match(bogus.stderr, /REFUSED/, `${file}: the refusal must say so`);
+    for (const { file, probe } of results) {
+      assert.equal(probe.status, 0, `${file}: a bare probe must pass its own gate, got ${probe.status}: ${probe.stderr.split("\n").slice(0, 3).join(" | ")}`);
+      assert.match(probe.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
+      assert.match(probe.stdout, /GATE-REFUSES \S+ --zzz-not-a-flag/, `${file}: an unknown flag must be refused, got: ${probe.stdout.trim()}`);
     }
   }
 

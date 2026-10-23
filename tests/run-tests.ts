@@ -597,6 +597,7 @@ import { runMyVisitsFieldSplitTests } from "./my-visits-field-split.test.ts";
 import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
 import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
+import { runCrmMasterExportKeysetTests } from "./crm-master-export-keyset.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
@@ -2396,6 +2397,7 @@ import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.t
 import { runModuleMemoryTests } from "./module-memory.test.ts";
 import { runMemoryFoldRetryTests, runMemoryFoldTaskTests } from "./memory-fold-task.test.ts";
 import { runDepsRefreshTests } from "./deps-refresh.test.ts";
+import { runCloudMirrorRefreshTests } from "./cloud-mirror-refresh.test.ts";
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
 
@@ -2518,6 +2520,7 @@ import { runWaitPrTests } from "./wait-pr.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
+import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -2694,6 +2697,7 @@ import { runWeeklyReviewReadonlyPinTests } from "./weekly-review-readonly-pin.te
 import { runSecretDrift404MatcherTests } from "./secret-drift-404-matcher.test.ts";
 import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.test.ts";
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
+import { runMcpBundleIoGuardTests } from "./mcp-bundle-io-guard.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 import { runRecruitmentManagerRecallStatusTests } from "./recruitment-manager-recall-status.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
@@ -2732,10 +2736,14 @@ import {
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
+import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
+import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
+import { createShardDeal } from "./shard-deal.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
- * SHARDING — `PHX_TEST_SHARD=<i>/<n>` runs only every nth `runTest` call, starting at the ith.
+ * SHARDING — `PHX_TEST_SHARD=<i>/<n>` runs only the `runTest` calls the deal in `tests/shard-deal.ts`
+ * hands shard i of n.
  *
  * Unset — which is every local run, every `node tests/run-tests.ts` by hand, and
  * `scripts/remote-check.mjs test` on the box — changes NOTHING: the condition below is skipped
@@ -2750,9 +2758,11 @@ const testDurationsMs: { name: string; durationMs: number }[] = [];
  * serial run's; what differs is only which `execute()` bodies are awaited. It costs ~8s of import
  * per shard, which is why the shard count is the CPU count and not something larger.
  *
- * ROUND-ROBIN, NOT CONTIGUOUS BLOCKS: adjacent tests in this file are adjacent by subject, so a
- * contiguous split puts every slow hook-pin test (each spawns one node process per case — the
- * slowest is 15s) in one shard and leaves the others idle. Interleaving spreads them.
+ * BALANCED BY ESTIMATED TIME, NOT CONTIGUOUS BLOCKS: adjacent tests in this file are adjacent by
+ * subject, so a contiguous split puts every slow hook-pin test (each spawns one node process per
+ * case) in one shard and leaves the others idle. Since 2026-10-23 the deal is no longer plain
+ * round-robin either: the known slow tests are placed first and the rest fill the least-loaded shard
+ * (`tests/shard-deal.ts`), so the ~109 s unknown-flag test no longer makes its shard the long pole.
  *
  * 🔴 THE COUNTS BELOW ARE WHAT MAKES A SHARD SAFE. `seen` is every call this file makes and is
  * therefore identical in every shard; `ran` is this shard's share. A dropped test — a bad divisor, a
@@ -2780,8 +2790,11 @@ process.on("exit", () => {
   console.log(`PHX_SHARD_RESULT shard=${shardIndex}/${shardTotal} seen=${seenCount} ran=${ranCount}`);
 });
 
+const dealShard = createShardDeal(shardTotal);
+
 async function runTest(name: string, execute: () => void | Promise<void>) {
-  const mine = seenCount++ % shardTotal === shardIndex - 1;
+  seenCount += 1;
+  const mine = dealShard(execute.name) === shardIndex - 1;
   if (!mine) return;
   ranCount += 1;
   const startedAt = performance.now();
@@ -4045,6 +4058,10 @@ await runTest(
   runCrmLivePollerTests,
 );
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
+await runTest(
+  "crm master export paging (keyset not OFFSET, calendar days newest first, every row exactly once across a tie)",
+  runCrmMasterExportKeysetTests,
+);
 await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
 await runTest("crm coverage filters (region/line/area/rep cascade offers no dead end, hides no vacancy, leaks no code)", runCrmCoverageFilterTests);
@@ -9042,6 +9059,10 @@ await runTest(
   runDepsRefreshTests,
 );
 await runTest(
+  "the nightly cloud-mirror refresh keeps a cloud session's only memory current without ever handing the owner a second PR: it stages the mirror, assignments.json and the rebuilt module blocks together (the orphan that reds validate and withheld three production deploys on 2026-10-02), proves module memory healthy and scans the staged text for key material before it pushes — bash-guard C12 never sees a push from node — pushes onto the refresh PR already open instead of opening another, commits nothing on a quiet night, and never merges; the mirror it ships is itself scanned note by note; its launcher runs origin/main's own refresh.mjs from a throwaway worktree on builtins only, takes no flags, retries a lost ref lock and logs every failure; and the 04:07 Cairo daily task runs node directly with wake, catch-up and no overlap",
+  runCloudMirrorRefreshTests,
+);
+await runTest(
   "the memory fold retries a transient NETWORK failure on its push and its PR create (three attempts, 5 s / 15 s / 45 s) and nothing else, and a branch it pushed that got no PR is deleted unless the PR was in fact made — one connection reset on 2026-10-08 cost a whole run",
   runMemoryFoldRetryTests,
 );
@@ -9785,6 +9806,11 @@ await runTest(
 await runTest(
   "the deploy drift check compares a SETTLED commit by ancestry, so it can never fail about a deploy that is still legitimately in flight and thereby withhold it (2026-09-27, cd9e0be03: a green ci.yml withheld because this workflow own scheduled run went red on the same sha)",
   runDeployDriftSettledRefTests,
+);
+
+await runTest(
+  "the production deploy failure alert fires on a failed or errored production deployment once, never turns the deployment commit red, and delivers through the existing Telegram channel",
+  runDeployFailureAlertTests,
 );
 
 await runTest(
@@ -10598,6 +10624,11 @@ await runTest(
 );
 
 await runTest(
+  "the MCP reader's bundle carries no administrative Phoenix IO, and the assertion that proves it is gated on every pull request: nothing constructs the production recipient-assurance reader at MODULE level (a top-level call is a side effect esbuild cannot drop, and it retained the employee directory's PRIVATE supabaseRest - the service-role key and the PostgREST URL - in dist/main.mjs, which is how `origin/main` sat red on infra/phoenix-mcp/build.mjs's own security assertion for days in Oct 2026), the guard it protects still fails closed with its 24-hour last-good window, `node build.mjs` runs in ci.yml's `static` job, which carries no paths filter and which the required `checks` status needs - because phoenix-mcp.yml's nine trigger paths are NOT the bundle's import graph and `mcp-security` is not a required check - and build.mjs still looks for all four administrative spellings",
+  runMcpBundleIoGuardTests,
+);
+
+await runTest(
   "a CV never stays in a manager's account more than 45 days (owner, 2026-10-06): the window is one number and one `>=` comparison that fails CLOSED on an unreadable date, every route a CV reaches a manager by applies it (the pushed list and its gate, the single-manager stamp, the team picker's count and gate, the district folders and the gate behind them) while the whole-company report path and the engagement report deliberately do not, and the daily return takes a CV back as `shortlisted` under an `ops:` actor only when EVERY manager holding it is past 45 days, before the stale-send check reads the status",
   runRecruitmentManagerHoldWindowTests,
 );
@@ -10798,6 +10829,14 @@ await runTest(
 await runTest(
   "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
   runCrmParityMirrorExcludesPhoenixVisitsTests,
+);
+await runTest(
+  "the published-closing snapshot resolves each product's period price ONCE from a distinct-product CTE, never once per rollup row — 18,558 SECURITY DEFINER invocations the planner cannot inline cost 1,645 ms and 38,963 buffers per line, and timed the Needs You drift source out on 12 of 15 mornings",
+  runClosingSnapshotPricesOnceTests,
+);
+await runTest(
+  "the fallback notification event key carries the ACTOR, so two senders raising the same templated notice for one recipient get two rows instead of the second overwriting the first on onConflict: event_key",
+  runNotificationEventKeyIncludesTheActorTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

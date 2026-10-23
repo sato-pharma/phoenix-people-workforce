@@ -26,3 +26,15 @@ event is a stale read and do nothing. Note also that `mergeStateStatus: BLOCKED`
 The same stale-sha behaviour is noted in passing by
 [[a-push-that-prints-new-branch-means-the-pr-already-merged]]; this note is the full treatment of the
 conflict-event case.
+
+**It is not only conflict events.** On the same day, a third event for #6310 reported "2 CI checks
+failed: `checks`, `unit (2)`" — arriving **after** the PR had merged. Read live: #6310 was `MERGED`
+at 07:37 UTC as `9e4e75ce7`, with `checks`, `static`, `unit (1)`, `unit (2)`, `unit (3)` and
+`validate` all `pass` (the last of them completing 07:35:50). The event described the state before
+the fix commit `97b7d5c21`, which is exactly what Auto-fix's standing "fix, commit, push" permission
+would have been spent on: a push to a deleted branch of a merged PR.
+
+So the check applies to **every** Auto-fix event, not just conflicts: read `state` and `mergedAt`
+first (`gh pr view <n> --json state,mergedAt`) and the check buckets second
+(`gh pr checks <n> --json name,bucket`). A merged PR, or a green bucket for the check the event
+names, means the event is a stale read and the authorization has nothing to act on.

@@ -122,7 +122,7 @@ const ABSENT = 'absent';
  * row of its own, bucket `absent`, instead of silently not being there.
  *
  * 🔴 THE HOLE THIS CLOSES (20 Oct 2026, #6194, head e580286fe): the required `checks` job only starts
- * after `static` and the three `unit` jobs finish, so for most of a run `gh pr checks` lists NO row for
+ * after `static` and the `unit` jobs finish, so for most of a run `gh pr checks` lists NO row for
  * it. Filtering the listing down to the names that exist made "nothing pending among the rows that
  * exist" true, and the script printed GREEN on a head whose `static` was still running while
  * mergeStateStatus was BLOCKED. A name that is not in the listing is an unfinished check, not an

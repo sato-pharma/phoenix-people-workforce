@@ -1,0 +1,197 @@
+name: Production Deploy Failure Alert
+
+# WHY THIS EXISTS (added 2026-10-23). Four production deployments failed on the morning of 23 Oct
+# and the only way to learn it was to read Railway's dashboard or `gh api …/deployments`. Nothing
+# told the owner. The failures were not our code (the build never produced an image), and each
+# commit still shipped inside a later deployment — but a failed deploy is also exactly what a red
+# or unfinished release gate looks like from the outside (AGENTS.md §2: the old version keeps serving,
+# the new deploy is marked failed after its window, and NOTHING turns red).
+#
+# WHY NOT THE EXISTING deploy-drift-check.yml. That one is a CLOCK: it asks every 30 minutes whether
+# production contains a commit that is already 15 minutes old. It answers a different question
+# (is production behind?) and it is slow by design — GitHub starts a half-hourly cron hours late and
+# skips most of it (docs/environment.md), and it stays quiet while production is merely one deploy
+# behind a commit that has not yet had its 15 minutes. It was green through the whole morning.
+# This workflow is PUSH-driven instead: Railway reports every deployment to GitHub as a
+# `deployment_status` event, so the failure arrives the moment Railway records it, and the alert says
+# whether production is actually behind because of it.
+#
+# WHAT IT DOES. On a `failure` or `error` status for a deployment in a `production` environment it
+# sends ONE Telegram message to the owner's existing alert channel (the same TELEGRAM_BOT_TOKEN /
+# TELEGRAM_ALERT_CHAT_ID secrets as deploy-drift-check.yml — never a new recipient) that states:
+#   - which change failed to ship (the commit subject, not just an id);
+#   - whether it had gone live before failing (a crash after going live is worse than a build that
+#     never produced an image);
+#   - what production is serving RIGHT NOW and whether that already contains the failed change, so a
+#     failure that a later deploy has already covered reads as "no action" instead of an emergency;
+#   - the three CI results on that commit (validate, checks, release-gate), because a red or
+#     unfinished gate is the usual reason a deploy is withheld.
+#
+# ONE ALERT PER DEPLOYMENT. Railway sends several `failure` statuses for one deployment (measured
+# 23 Oct: two failures seconds apart on the same deployment). Only the OLDEST failure status of a
+# deployment alerts; later ones find it in the status list and stay quiet. If the list cannot be
+# read, or does not yet show the current status, the alert is sent — a duplicate is cheaper than a
+# silent failure.
+#
+# 🔴 IT NEVER FAILS RED, FOR THE SAME REASON AS THE SCHEDULED ALARMS (tests/scheduled-alarms-never-withhold.test.ts).
+# A `deployment_status` run attaches its check suite to the DEPLOYMENT'S COMMIT, and a red suite on a
+# commit is the thing that makes a gate refuse it. Both working steps are `continue-on-error: true`, each
+# with its own `timeout-minutes`, and the job ceiling sits above their sum so the job cannot conclude
+# `cancelled`. A delivery failure is therefore a failed STEP on the run page, never a red commit.
+#
+# COST. No checkout, no Node, no install: curl, jq and the preinstalled gh. Every other status Railway
+# reports (in progress, success, inactive) starts a run whose job is skipped by the `if:` below, which
+# bills nothing.
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  deployments: read # the deployment's own status history, to alert once per deployment
+
+# One run at a time per deployment, queued rather than cancelled: cancelling a run would leave a
+# `cancelled` suite on the deployment's commit, and the second failure status needs to see the first.
+concurrency:
+  group: deploy-failure-alert-${{ github.event.deployment.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    # `secrets` cannot appear in an `if:` (tests/github-workflow-validity.test.ts), so the secret check
+    # lives in the step. The environment is named "<Railway project> / production"; the staging app is
+    # stopped, and a name that merely CONTAINS `production` is the only shape that has ever been seen.
+    if: ${{ github.event_name == 'workflow_dispatch' || ((github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error') && contains(github.event.deployment.environment, 'production')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read what failed and where production stands
+        id: facts
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          IS_TEST: ${{ inputs.test_alert }}
+          DEPLOY_ID: ${{ github.event.deployment.id }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          STATUS_ID: ${{ github.event.deployment_status.id }}
+          STATUS_STATE: ${{ github.event.deployment_status.state }}
+          LOG_URL: ${{ github.event.deployment_status.log_url || github.event.deployment_status.target_url }}
+        run: |
+          set -uo pipefail
+
+          emit() {
+            # Multiline-safe delimiter form: a bare `K=V` breaks the file if the value gains a newline.
+            {
+              echo "$1<<FACTS_EOF"
+              printf '%s\n' "$2"
+              echo "FACTS_EOF"
+            } >> "$GITHUB_ENV"
+          }
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            emit SEND "yes"
+            emit TEXT "ALERT SELF-TEST (not an incident)
+
+          Someone ran the production deploy failure alert with the test flag to confirm this channel still works.
+
+          If you are reading this, a real failed production deployment would also reach you."
+            exit 0
+          fi
+
+          # ── ONE ALERT PER DEPLOYMENT ─────────────────────────────────────────────────────────────
+          # The status list is newest-first, so the OLDEST failure/error is the last match. Alert only
+          # when this event IS that status. Unreadable, or not showing this status yet: alert anyway.
+          STATUSES=$(gh api "repos/${REPO}/deployments/${DEPLOY_ID}/statuses?per_page=100" 2>/dev/null || true)
+          FIRST_FAIL=$(printf '%s' "$STATUSES" | jq -r '[.[]? | select(.state=="failure" or .state=="error")] | last | .id // empty' 2>/dev/null || true)
+          if [ -n "$FIRST_FAIL" ] && [ "$FIRST_FAIL" != "$STATUS_ID" ]; then
+            echo "Deployment ${DEPLOY_ID} already alerted on status ${FIRST_FAIL}; this is a repeat (${STATUS_ID}). Staying quiet."
+            emit SEND "no"
+            exit 0
+          fi
+          emit SEND "yes"
+
+          # ── DID IT GO LIVE BEFORE IT FAILED? ─────────────────────────────────────────────────────
+          WENT_LIVE=$(printf '%s' "$STATUSES" | jq -r '[.[]? | select(.state=="success")] | length' 2>/dev/null || echo 0)
+          if [ "${WENT_LIVE:-0}" -gt 0 ] 2>/dev/null; then
+            LIVE_LINE="IT HAD GONE LIVE BEFORE IT FAILED. Check production health now: this is a crash or a failed health check, not a build that never started."
+          else
+            LIVE_LINE="It never went live. Production keeps serving the previous version, so nothing is down."
+          fi
+
+          # ── WHICH CHANGE ─────────────────────────────────────────────────────────────────────────
+          SUBJECT=$(gh api "repos/${REPO}/commits/${DEPLOY_SHA}" --jq '.commit.message | split("\n")[0]' 2>/dev/null || true)
+          [ -z "$SUBJECT" ] && SUBJECT="(commit subject unreadable)"
+
+          # ── WHERE PRODUCTION STANDS NOW ──────────────────────────────────────────────────────────
+          LIVE_SHA=$(curl -fsS --max-time 10 https://phoenix-hr.satopharma.com/api/healthz 2>/dev/null | jq -r '.revision // empty' 2>/dev/null || true)
+          if [ -z "$LIVE_SHA" ]; then
+            STAND_LINE="Production is not answering /api/healthz, so what it is serving could not be read. Look at it first."
+          else
+            CMP=$(gh api "repos/${REPO}/compare/${DEPLOY_SHA}...${LIVE_SHA}" --jq '.status' 2>/dev/null || true)
+            case "$CMP" in
+              identical | ahead)
+                STAND_LINE="Production now serves ${LIVE_SHA:0:9}, which already contains this change. No action: a later deployment covered it." ;;
+              behind | diverged)
+                STAND_LINE="Production serves ${LIVE_SHA:0:9}, which does NOT contain this change. It is not live." ;;
+              *)
+                STAND_LINE="Production serves ${LIVE_SHA:0:9}; whether that contains this change could not be read." ;;
+            esac
+          fi
+
+          # ── CI ON THAT COMMIT, since a red or unfinished gate is the usual reason a deploy is withheld
+          CI_LINE=$(gh api "repos/${REPO}/commits/${DEPLOY_SHA}/check-runs?per_page=100" 2>/dev/null \
+            | jq -r '[.check_runs[]? | select(.name=="validate" or .name=="checks" or .name=="release-gate") | "\(.name)=\(.conclusion // .status)"] | unique | join(", ")' 2>/dev/null || true)
+          [ -z "$CI_LINE" ] && CI_LINE="no validate, checks or release-gate result found on this commit"
+
+          emit TEXT "PRODUCTION DEPLOY FAILED
+
+          ${SUBJECT}
+          Commit ${DEPLOY_SHA:0:9}, status: ${STATUS_STATE}
+
+          ${LIVE_LINE}
+
+          ${STAND_LINE}
+
+          CI on this commit: ${CI_LINE}
+
+          Railway: ${LOG_URL:-no link in the event}"
+
+      - name: Notify Telegram
+        # Sent unless the facts step positively decided this is a repeat. If that step itself broke, SEND
+        # is unset and a bare alert goes out: an alarm must never be worth less than nothing.
+        if: ${{ always() && env.SEND != 'no' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          LOG_URL: ${{ github.event.deployment_status.log_url || github.event.deployment_status.target_url }}
+        run: |
+          if [ -z "${TEXT:-}" ]; then
+            TEXT=$(printf 'PRODUCTION DEPLOY FAILED\n\nCommit %s. The details could not be read, so look at Railway first.\n\nRailway: %s' "${DEPLOY_SHA:0:9}" "${LOG_URL:-no link in the event}")
+          fi
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. A failed production deployment went UNDETECTED-BY-A-HUMAN, which is the condition this workflow exists to end."
+            exit 0
+          fi
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). A failed production deployment reached nobody. Response: $(head -c 500 /tmp/tg-response.json 2>/dev/null)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."

@@ -1,7 +1,7 @@
 // The shard runner's coverage refusal — the guard that makes sharding safe at all.
 //
 // WHY THIS EXISTS. `pnpm run test:sharded` splits the unit suite across N processes, and it is the
-// step ci.yml's `unit` job runs (three parts of two shards, 2026-10-19) — the job the required `checks`
+// step ci.yml's `unit` job runs (two parts of two shards since 2026-10-23) — the job the required `checks`
 // status stands for. Splitting a
 // suite has one catastrophic failure mode and it is silent: if the split drops tests — a bad
 // divisor, two shards handed the same index, a shard that dies between its last test and its exit
@@ -32,6 +32,7 @@ import {
   ranTotal,
   shardCount,
 } from "../scripts/run-tests-sharded-plan.mjs";
+import { DEFAULT_TEST_MS, KNOWN_SLOW_TESTS_MS, createShardDeal } from "./shard-deal.ts";
 
 /** A shard that exited cleanly having seen `seen` tests and run `ran` of them. */
 function shard(index: number, total: number, seen: number, ran: number) {
@@ -278,6 +279,87 @@ export function runRunTestsShardedTests() {
       assert.equal(run("--bogus").status, 2, "an unknown flag must be refused (exit 2), never ignored");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ── 13. THE DEAL — which shard runs each test (tests/shard-deal.ts, 2026-10-23) ────────────────
+  // Every shard process builds its own dealer, so the property that matters is that independent
+  // dealers agree: each call is claimed by exactly one shard. Then that the deal balances TIME, which
+  // is the reason it is not round-robin any more.
+  {
+    const slowName = "runUnknownFlagGatesTests";
+    // A synthetic suite with the slowest test LAST — the worst case for a deal made in one pass.
+    const suite = [...Array.from({ length: 2_500 }, (_, i) => `runSynthetic${i}Tests`), ...Object.keys(KNOWN_SLOW_TESTS_MS)];
+    suite.splice(suite.indexOf(slowName), 1);
+    suite.push(slowName, "runSynthetic7Tests" /* a function registered twice */, "");
+
+    for (const total of [1, 2, 3, 4, 6]) {
+      const dealers = Array.from({ length: total }, () => createShardDeal(total));
+      const claims = new Array<number>(suite.length).fill(0);
+      suite.forEach((name, call) => {
+        const answers = dealers.map((deal) => deal(name));
+        assert.equal(new Set(answers).size, 1, `independent dealers disagree on call ${call} (${name}) at ${total} shards`);
+        assert.ok(answers[0] >= 0 && answers[0] < total, `call ${call} was dealt to shard ${answers[0]} of ${total}`);
+        claims[call] += 1;
+      });
+      assert.ok(claims.every((n) => n === 1), `at ${total} shards some call was claimed by no shard or by two`);
+    }
+
+    // An empty table is exactly the old round-robin, so the change is only ever the table.
+    const plain = createShardDeal(4, {});
+    suite.forEach((name, call) => assert.equal(plain(name), call % 4, `with no table, call ${call} must go to shard ${call % 4}`));
+
+    // The table's key order cannot move a test: the placement sorts it.
+    const reversed = Object.fromEntries(Object.entries(KNOWN_SLOW_TESTS_MS).reverse());
+    const a = createShardDeal(4);
+    const b = createShardDeal(4, reversed);
+    suite.forEach((name, call) => assert.equal(a(name), b(name), `the table's key order moved call ${call}`));
+
+    // Balance: estimated load per shard within 5% of the mean at two parts × two shards — where
+    // round-robin leaves the slow test's shard far behind the others. Checked twice: with a synthetic
+    // 120 s test registered LAST (so the property does not hang on today's numbers), and with the real table.
+    const balance = (table: Readonly<Record<string, number>>, calls: string[]) => {
+      const estimate = (name: string) => table[name] ?? DEFAULT_TEST_MS;
+      const loads = (dealt: (name: string, call: number) => number) => {
+        const load = [0, 0, 0, 0];
+        calls.forEach((name, call) => (load[dealt(name, call)] += estimate(name)));
+        return load;
+      };
+      const deal = createShardDeal(4, table);
+      const balanced = loads((name) => deal(name));
+      const mean = balanced.reduce((s, x) => s + x, 0) / 4;
+      return { balanced, mean, roundRobin: loads((_, call) => call % 4) };
+    };
+    const heavy = { ...KNOWN_SLOW_TESTS_MS, runSyntheticHeavyTests: 120_000 };
+    for (const [label, table, calls] of [
+      ["a synthetic 120 s test registered last", heavy, [...suite, "runSyntheticHeavyTests"]],
+      ["the real table", KNOWN_SLOW_TESTS_MS, suite],
+    ] as const) {
+      const { balanced, mean, roundRobin } = balance(table, [...calls]);
+      assert.ok(
+        Math.max(...balanced) <= mean * 1.05,
+        `with ${label}, the deal left a shard at ${Math.max(...balanced)} ms against a mean of ${mean.toFixed(0)} ms — a slow test is stacking onto a full share again`,
+      );
+      if (table === heavy) {
+        assert.ok(Math.max(...roundRobin) > mean * 1.5, "the synthetic suite must be one round-robin cannot balance, or the check above proves nothing");
+      }
+    }
+  }
+
+  // ── 14. The runner USES the deal, and every table entry is a test the runner registers ─────────
+  {
+    const runner = readFileSync(resolve("tests/run-tests.ts"), "utf8");
+    assert.match(runner, /const dealShard = createShardDeal\(shardTotal\);/, "run-tests.ts must build its dealer from the global shard total");
+    assert.match(runner, /const mine = dealShard\(execute\.name\) === shardIndex - 1;/, "runTest must ask the dealer which shard runs the call");
+    assert.match(runner, /seenCount \+= 1;/, "every call must still count toward `seen`, mine or not — it is the coverage proof");
+    assert.doesNotMatch(runner, /seenCount\+\+ % shardTotal/, "the round-robin deal is back beside the balanced one");
+    const registered = runner.slice(runner.indexOf("async function runTest("));
+    for (const name of Object.keys(KNOWN_SLOW_TESTS_MS)) {
+      assert.match(
+        registered,
+        new RegExp(`\\b${name}\\b`),
+        `${name} is in KNOWN_SLOW_TESTS_MS but run-tests.ts no longer registers it: its estimate weighs down a shard for a test that is not there`,
+      );
     }
   }
 }
