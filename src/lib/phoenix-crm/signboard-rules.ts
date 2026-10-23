@@ -1032,6 +1032,20 @@ export function firstInListToAnswer<R, T>(
   });
 }
 
+/**
+ * How long the four quarter reads get once a whole-photo answer ran out of room: what the PLACE has left,
+ * capped like any one call — never what the whole read's own cap left over.
+ *
+ * 🔴 ON THE LEFTOVER, A FULL BOARD WAS NEVER READ IN THE HELD RE-READ (20 Oct 2026). Sonnet filled its
+ * answer in 13.7–15.7 s of the 20 s per-call cap, the quarters got the 4.3–6.3 s left and timed out —
+ * each pair summed to exactly 20,000 ms, with 25 s of the place's 45 s still unspent — and after three
+ * such lost reads the place went to the Super Admin unread. The place's own deadline already bounds what
+ * a place costs; the per-call cap only stops one hung call from eating the fallback's time.
+ */
+export function signboardPartsTimeoutMs(placeLeftMs: number, callCapMs: number): number {
+  return Math.max(0, Math.min(placeLeftMs, callCapMs));
+}
+
 /** Did the reader fail because its answer did not fit — the one failure that reading in parts cures? */
 export function readerRanOutOfRoom(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
