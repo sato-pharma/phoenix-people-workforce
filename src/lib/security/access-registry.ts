@@ -1959,59 +1959,13 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // ManageEngine bridge. GET reads the fleet, and with ?deviceId= one tablet — its position, or with
-  // &view= everything ManageEngine holds about it, the apps on it, or its command history. POST issues
-  // one remote command — lock, restart, reset the screen lock, report in, ring, shut down, view or
-  // control the screen, kiosk mode, lost mode, or a wipe — each of which reaches a real tablet and
-  // carries its own REQUIRED audit row (manageengine_device_command).
-  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // Putting an app on a rep's tablet or taking one off reaches that tablet just as a command does, so
-  // it carries the same gate and its own REQUIRED audit row (manageengine_device_app). Refreshing the
-  // app list is a read wearing a POST — the service writes no row for it.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // GET is the company app repository — every app ManageEngine holds, which is every app a tablet can
-  // be sent. A read, so no audit row.
-  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" } }),
-  // Adding an APK to that repository. It reaches NO tablet — an app in the repository is one that CAN
-  // be sent, and sending it is the route above — but it is still a write into the company's fleet
-  // configuration, so it carries the same gate and its own REQUIRED audit row
-  // (manageengine_app_repository). Its body is multipart, which is why it is a route of its own.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps/upload", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // The ManageEngine enrollment template — the QR a factory-fresh tablet scans. GET returns everything
-  // ABOUT the template and never the template itself; POST either saves a new one (REQUIRED audit,
-  // manageengine_enrollment_template) or, with `show`, hands the saved payload to the page for the one
-  // moment it draws the QR. 🔴 That payload is a credential — anyone who scans it enrolls a tablet into
-  // the company fleet — so both verbs sit behind company_devices:approve, Super Admin only.
-  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // Copying the IMEI a ManageEngine-managed tablet reports into its custody-register entry, where the
-  // entry holds none (2026-09-25 — the ManageEngine twin of /api/devices/tablets/imei). It reads NO
-  // body: which entries are written, and with which IMEI, is decided on the server from the live fleet
-  // and the register, so the browser can ask for the copy but never say what it copies. Each IMEI
-  // written carries its own REQUIRED audit row (company_device).
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // The rules a rep tablet carries — ManageEngine's profiles, the vendor's half of what the Android
-  // Management policy did. GET reads the company's Android profiles, or with ?deviceId= what one tablet
-  // carries. POST puts a rule set on a tablet or takes it off, which changes what that tablet is
-  // ALLOWED to do in a rep's hands — same gate as a remote command, and its own REQUIRED audit row
-  // (manageengine_device_profile).
-  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // BUILDING the company's rep tablet profile — the rules themselves, not who follows them. GET says
-  // whether ManageEngine already holds it and lists every field Phoenix would write, plus the three
-  // rules a profile cannot carry. POST creates it, proves its payloads attached and publishes it, so
-  // it is a REQUIRED audit row (manageengine_profile) on the same Super Admin gate; it reads no body
-  // and puts the profile on no tablet.
-  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Headwind bridge (2026-09-25) — the company's OWN MDM server, which has no device cap and no trial.
   // GET reads the fleet, and with ?deviceNumber= one tablet: its position, or with &view= everything
   // Headwind holds about it, the apps on it, what Phoenix has done to it, or where a remote screen
   // session would connect. 🔴 The screen view hands back a TARGET, never a credential — no session
   // password and no private key ever leaves the server. POST issues one remote action, each of which
-  // reaches a real tablet and carries its own REQUIRED audit row (headwind_device_command). Same Super
-  // Admin gate as the ManageEngine bridge beside it: the two consoles differ, the custody rules do not.
+  // reaches a real tablet and carries its own REQUIRED audit row (headwind_device_command). Super Admin
+  // gate, the same as the custody register the bridge writes into.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Copying the IMEI a Headwind-managed tablet reports into its custody-register entry, where the entry
@@ -2065,7 +2019,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/configurations", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Sending an APK or a file up to the Headwind server and attaching it to a configuration, which is
   // how an app installs on a tablet — there is no "install" push in Headwind at all. Multipart, so it
-  // gets its own route and its own 300-second budget, the shape the ManageEngine upload already sets.
+  // gets its own route and its own 300-second budget.
   // REQUIRED audit row (headwind_configuration); Super Admin only.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/upload", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // The custody actions a tablet can be told to take that are NOT ordinary pushes — lock, lost mode on
@@ -2076,7 +2030,7 @@ export const accessRegistry = [
   // REQUIRED audit row (headwind_device_command); Super Admin only.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/actions", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/actions", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // The tablet enrolment code — the Headwind twin of the ManageEngine enrolment card. Phoenix STORES
+  // The tablet enrolment code. Phoenix STORES
   // and redraws the QR payload the owner pastes in; it never mints one, because the code's checksum
   // depends on the APK the box itself serves. 🔴 GET never returns the code: it returns whether one is
   // held and the facts about it. Revealing it is an explicit POST { show: true }, and the audit row

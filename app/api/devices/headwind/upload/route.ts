@@ -13,7 +13,6 @@ export const dynamic = "force-dynamic";
  * 🔴 FIVE MINUTES, NOT THE DEFAULT. An APK is tens of megabytes and crosses the network twice — into
  * Phoenix and out to the Headwind box. On the platform default this times out mid-transfer and leaves
  * a part-written file in the server's staging area, which reads to the next person as a corrupt app.
- * The same budget the ManageEngine upload already carries.
  */
 export const maxDuration = 300;
 

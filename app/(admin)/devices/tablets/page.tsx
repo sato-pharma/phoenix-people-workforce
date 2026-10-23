@@ -39,9 +39,9 @@ export const dynamic = "force-dynamic";
  * as the tablets move across … when the last tablet has moved, the four ManageEngine lines come off")
  * is met: every rep tablet (PHX-TAB-0002, 0007, 0008) is enrolled in Headwind as device owner, and a
  * tablet can have only one. Its nine actions had answered "Insufficient Data for Processing Request"
- * since 2026-09-26, so the four cards were buttons that did nothing. As with Google's console, NOTHING
- * was deleted: the four `ManageEngine*` components and every `app/api/devices/manageengine/*` route
- * stay in the repo untouched, and re-adding their four lines brings them back exactly as written.
+ * since 2026-09-26, so the four cards were buttons that did nothing. Unlike Google's console, the
+ * ManageEngine code was then DELETED, on the owner's word on 2026-10-23: the bridge, its routes and
+ * its cards are gone from the repo (the last copy is commit 78a9f90ba).
  */
 export default async function RepTabletsPage() {
   const access = await resolveAccessContextFromPage();

@@ -388,7 +388,7 @@ export const config = {
   // staging 2026-10-04: an 11 MB POST logged "Request body exceeded 10MB for
   // /api/devices/headwind/upload. Only the first 10MB will be available".
   //
-  // The list is the two device APK uploads (Headwind, ManageEngine) and the six other multipart routes
+  // The list is the device APK upload (Headwind) and the six other multipart routes
   // whose OWN limit is above 10 MB (audit, 2026-10-04): hiring documents (15 MB), custom hiring-pack
   // templates (15 MB a page), personal-mailbox send (15 MB of attachments), the WhatsApp inbox (25 MB),
   // an employee's CV and its staging draft (15 MB). Routes capped at 10 MB or less stay behind the
@@ -401,6 +401,6 @@ export const config = {
   // the exact path. Next reads this object statically, so the matcher must stay a literal. Pinned by
   // tests/proxy-upload-body-limit.test.ts.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/manageengine/apps/upload$|api/hiring-documents/files$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/hiring-documents/files$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
   ],
 };

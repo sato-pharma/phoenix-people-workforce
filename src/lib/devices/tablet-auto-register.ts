@@ -9,12 +9,9 @@
  *      maker and model Google reports for it.
  *   2. USB. Plugged into the Super Admin's computer, the tablet's USB descriptor carries its serial
  *      number; the page reads it through WebUSB (no Developer mode, no cable driver) and adds it.
- *   3. MANAGEENGINE. A tablet that scans the ManageEngine template code is added the next time the
- *      Rep Tablets page asks ManageEngine for the fleet — the same door as (1), through the vendor
- *      the company actually enrolls on while Google's device-owner quota is still nil (owner,
- *      2026-09-25: "do everything Google was going to do").
- *   4. HEADWIND. The same door again, through the company's OWN Headwind MDM server — the one with
- *      no device cap, which is where the fleet moves as it outgrows ManageEngine's free 25.
+ *   3. HEADWIND. The company's OWN Headwind MDM server, where every rep tablet is enrolled. Since
+ *      2026-10-22 a person confirms each one from the Rep Tablets page; nothing auto-registers.
+ *      (A ManageEngine door existed from 2026-09-25 until its code was deleted on 2026-10-23.)
  *
  * WHICH DOOR A TABLET CAME THROUGH ONLY CHANGES THE NOTE ON ITS ENTRY. The tag, the identity checks
  * and the `in_stock` landing are deliberately one code path: the same tablet must not be describable
@@ -123,12 +120,11 @@ const TAG_RACE_RETRIES = 5;
  * Add one tablet to the register under the next free tag, or return the entry that already has it.
  * `register` is the caller's current read; it is re-read only when another writer took the tag.
  */
-export type TabletRegistrationSource = "enrollment" | "usb" | "manageengine" | "headwind";
+export type TabletRegistrationSource = "enrollment" | "usb" | "headwind";
 
 const SOURCE_NOTES: Readonly<Record<TabletRegistrationSource, string>> = {
   enrollment: "Added automatically when the tablet enrolled on the rep tablet rules.",
   headwind: "Added to custody from the Rep Tablets page after it enrolled on the company's own Headwind server.",
-  manageengine: "Added automatically when the tablet enrolled in ManageEngine on the company's code.",
   usb: "Added automatically when the tablet was plugged into Phoenix by USB.",
 };
 

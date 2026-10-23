@@ -32,7 +32,6 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 const EXCLUDED = [
   { pattern: "api/devices/headwind/upload$", sample: "/api/devices/headwind/upload", file: "app/api/devices/headwind/upload/route.ts", auth: 'assertPermission(access, "company_devices", "approve")' },
-  { pattern: "api/devices/manageengine/apps/upload$", sample: "/api/devices/manageengine/apps/upload", file: "app/api/devices/manageengine/apps/upload/route.ts", auth: 'assertPermission(access, "company_devices", "approve")' },
   { pattern: "api/hiring-documents/files$", sample: "/api/hiring-documents/files", file: "app/api/hiring-documents/files/route.ts", auth: 'assertPermission(access, "employee_documents", "update")' },
   { pattern: "api/hiring-pack/custom-templates$", sample: "/api/hiring-pack/custom-templates", file: "app/api/hiring-pack/custom-templates/route.ts", auth: 'assertPermission(access, "employee_documents", "update")' },
   { pattern: "api/messages/mailbox/send$", sample: "/api/messages/mailbox/send", file: "app/api/messages/mailbox/send/route.ts", auth: "resolveMailboxOwner(access)" },
@@ -86,12 +85,10 @@ export function runProxyUploadBodyLimitTests() {
     "/api/devices",
     "/api/devices/headwind",
     "/api/devices/headwind/actions",
-    "/api/devices/manageengine/apps",
     "/api/devices/import/confirm",
     // an exclusion anchored with `$` must not swallow a longer path that merely starts the same way
     "/api/devices/headwind/uploads",
     "/api/devices/headwind/upload/extra",
-    "/api/devices/manageengine/apps/upload/extra",
     "/api/hiring-documents",
     "/api/hiring-documents/files/extra",
     "/api/messages/mailbox",

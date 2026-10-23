@@ -8,7 +8,12 @@ it is stood up, how a tablet moves onto it, and what is honestly not finished ye
 
 ## 1. Why this exists
 
-Rep Tablets runs on **ManageEngine MDM**. Its trial ends and the account falls back to the free
+> 🔴 **ManageEngine is gone (2026-10-23).** It came off the Rep Tablets page on 2026-10-22, once every
+> rep tablet was enrolled in Headwind as device owner, and its code — the bridge, its seven
+> `/api/devices/manageengine/*` routes and its four cards — was deleted from the repo on 2026-10-23 at
+> the owner's word. The last copy is commit `78a9f90ba`. What follows is the account as it stood.
+
+Rep Tablets ran on **ManageEngine MDM**. Its trial ends and the account falls back to the free
 edition, which allows **25 devices and one technician**, and **stops remote screen view and control**
 (the amber "Paid" chips on that page say so on screen). The owner expects the fleet to reach **about
 a hundred tablets** over time, so the free edition is a dead end and the paid one runs roughly
@@ -89,7 +94,8 @@ ManageEngine page it is today. That is what makes the whole bridge safe to merge
 
 During the changeover the page shows **two sections** — ManageEngine above, Headwind below. A tablet
 is in exactly one of them. When the last tablet has moved, ManageEngine comes off the page in a
-one-line change, exactly the way Google's console did: taken off the page, kept whole in the repo.
+one-line change. (It came off on 2026-10-22, and unlike Google's console its code was then deleted, on
+2026-10-23.)
 
 ---
 
@@ -1684,8 +1690,8 @@ relay:**
 | The enrollment template's table | `supabase/migrations/20260925193000_headwind_enrollment_template.sql` |
 | Tests | `tests/headwind-bridge.test.ts` |
 
-It is a **third sibling module set** beside `manageengine/` and Google's AMAPI stack, mirroring
-ManageEngine file for file. That duplication is the house style on this page and is deliberate — do
+It was built as a **sibling module set** beside the ManageEngine bridge (deleted 2026-10-23) and
+Google's AMAPI stack, mirroring ManageEngine file for file. That duplication is the house style on this page and is deliberate — do
 not refactor the three into a shared provider abstraction.
 
 Two seams are genuinely shared, because a tablet must not be describable two different ways depending
@@ -1952,8 +1958,8 @@ test.
 tablets (`getRepTabletsState` in `rep-tablets-service.ts`) had the same habit: every read added an
 unknown enrolled tablet to custody in the viewer's name. It now only counts them
 (`pendingRegistration`), and the page says to add each with "Connect a tablet by USB", the one door
-left on that page. Pinned by `tests/tablet-auto-register.test.ts`. The ManageEngine page still
-auto-registers — it is being retired, not changed.
+left on that page. Pinned by `tests/tablet-auto-register.test.ts`. The ManageEngine
+auto-register went with its code on 2026-10-23.
 
 ### 8.12 The owner's clicks (I cannot do these — reported, never done for him)
 

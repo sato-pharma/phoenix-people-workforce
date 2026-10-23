@@ -178,8 +178,8 @@ account, including how the server is built and how a tablet moves onto it:
 [docs/devices/headwind-rustdesk.md](devices/headwind-rustdesk.md).
 
 🔒 **THE WHOLE SECTION SHIPS DARK.** With `HEADWIND_MDM_*` unset, the Headwind card does not render
-at all and no route reaches out — `/devices/tablets` is byte-for-byte the ManageEngine page it is
-today. That is deliberate: the bridge merges to production before the server exists, and the owner
+at all and no route reaches out — `/devices/tablets` says the tablet server is not connected in this
+environment. That is deliberate: the bridge merges to production before the server exists, and the owner
 turns it on by setting these variables once the box is up.
 
 🔴 **It runs on RAILWAY, and no box is rented — corrected 2026-09-27; this paragraph used to say

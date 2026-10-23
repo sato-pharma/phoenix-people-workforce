@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Drawing an enrollment QR, shared by the two enrollment paths on the Rep Tablets page — Google's
- * Android Management token and ManageEngine's enrollment template.
+ * Drawing an enrollment QR, shared by the enrollment paths — Google's Android Management token
+ * and the Headwind enrolment code.
  *
- * ONE COPY, because the two paths draw the same thing and a second copy would drift. It moved here
- * from `rep-tablets-console.tsx` when ManageEngine enrollment arrived (2026-09-25); nothing about
- * how it draws changed.
+ * ONE COPY, because the paths draw the same thing and a second copy would drift. It moved here
+ * from `rep-tablets-console.tsx` on 2026-09-25, when a second enrollment path arrived; nothing
+ * about how it draws changed.
  *
  * 🔴 THE SYMBOL IS DRAWN BY REACT — one `<path>` from Phoenix's own encoder — not by a library
  * writing into a DOM node. On 2026-09-18 production's Managed Google Play page crashed because a
