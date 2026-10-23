@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
-import { lastDefinerSql, liveViewSql } from "./support/sql-definer.ts";
+import { lastDefinerSql, liveFunctionBody, liveViewSql } from "./support/sql-definer.ts";
 
 import {
   callRateExclusionOf,
@@ -743,11 +743,15 @@ function runNoDoubleCountTests(code: string): void {
   // counted kind on one — the team's OWN seat is left out, so a district manager keeps both systems. Their two
   // lower bounds (a visit from its start, an activity from the earlier of the start and day_activities_from)
   // are what make the doors' split at Phoenix CRM's first day safe: loosen either and that bound must move too.
-  const entryDays = flat(
-    functionSql(lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days"), "phoenix_crm_rep_entry_days"),
-  );
+  //
+  // Since 20261023091035 the RULE lives in phoenix_crm_rep_entry_days_calc() and the function the doors call
+  // is a thin read of its cache table, so these clauses are pinned where the body actually is. Pinning the
+  // reader instead would assert nothing about the rule and stay green over an empty one.
+  // tests/phoenix-crm-rep-entry-days-cache.test.ts pins the cache, its triggers and its reconcile.
+  const entryDays = flat(liveFunctionBody("phoenix_crm_rep_entry_days_calc"));
   for (const clause of [
-    "returns table (hr_key text, agent_crm_id bigint, entry_day date) language sql stable security definer set search_path to 'public'",
+    "p_hr_key text default null, p_day date default null",
+    "returns table(hr_key text, agent_crm_id bigint, entry_day date) language sql stable security definer rows 400 set search_path to 'public'",
     "select lower(btrim(p.rep_hr_id)) as hr_key, p.visit_date as entry_day from public.phoenix_crm_countable_visits p join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on) where not p.is_test and nullif(btrim(p.rep_hr_id), '') is not null",
     "join public.phoenix_crm_started_team_seats() team on team.seat_id = a.seat_id",
     "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on))",
@@ -758,6 +762,17 @@ function runNoDoubleCountTests(code: string): void {
   }
   assert.doesNotMatch(entryDays, /phoenix_crm_team_starts s\b|union all|team_seat_id, s\.team_seat_id/, "the team's own (district manager's) seat is no entry day");
   assert.doesNotMatch(entryDays, /lower\(btrim\(emp\.hr_id\)\)/, "the employee lookup uses the indexed upper(btrim()) expression, never lower()");
+  // And what the doors actually call is nothing but a read of that rule's cache — never a second copy of it.
+  const entryDaysReader = flat(liveFunctionBody("phoenix_crm_rep_entry_days"));
+  assert.ok(
+    entryDaysReader.includes("select c.hr_key, c.agent_crm_id, c.entry_day from public.phoenix_crm_rep_entry_days_cache c"),
+    "the doors' entry-days function reads the cache of the rule and nothing else",
+  );
+  assert.doesNotMatch(
+    entryDaysReader,
+    /phoenix_crm_countable_visits|phoenix_crm_day_activities/,
+    "the reader never re-implements the rule — one body, in _calc",
+  );
   const entryDaysSql = lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days");
   assert.match(entryDaysSql, /revoke execute on function public\.phoenix_crm_rep_entry_days\(\) from public, anon, authenticated;/);
   assert.match(entryDaysSql, /grant execute on function public\.phoenix_crm_rep_entry_days\(\) to service_role;/);
