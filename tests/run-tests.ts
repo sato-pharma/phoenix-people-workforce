@@ -2615,6 +2615,7 @@ import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywh
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runManagerOwnVisitsEverywhereTests } from "./manager-own-visits-everywhere.test.ts";
+import { runPrivateCalendarDayTileTests } from "./private-calendar-day-tile.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -10317,6 +10318,10 @@ await runTest(
 await runTest(
   "A district manager's work appears everywhere it is shown (owner, 2026-10-23: \"any record submitted by himself or a double visit with him, it must appear\"): Employee 360 counts his own Phoenix CRM single visits through the one door out of their table, a failed read printing a dash and never a zero, and splits the double visits he conducted AM · PM · Pharmacies by the golden rule's helper, a campaign in no figure; and the portal Team Calendar hangs his own visits on his day cells through the same door",
   runManagerOwnVisitsEverywhereTests,
+);
+await runTest(
+  "The private calendar's day tile is a summary (owner, 2026-10-23): a visit entry shows its kind (single, double, chain), regular or campaign, planned or unplanned where a Phoenix visit says it, the AM, PM and Pharmacies figures apart (the pharmacy in violet), who the visit was made with, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",
+  runPrivateCalendarDayTileTests,
 );
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",

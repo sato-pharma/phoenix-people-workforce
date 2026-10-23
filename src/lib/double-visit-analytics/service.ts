@@ -2416,6 +2416,8 @@ function privateCalendarItem(input: {
   id: string;
   status: string;
   time: string;
+  tileAreas: string[];
+  tileWith: string[];
   title: string;
   visitCounts: PrivateCalendarItem["visitCounts"];
   visitRecords: PrivateCalendarItem["visitRecords"];
@@ -2445,6 +2447,8 @@ function privateCalendarItem(input: {
     sourceTable: CRM_VISITS_UNIFIED_VIEW,
     startDate: input.date,
     status: input.status,
+    tileAreas: input.tileAreas,
+    tileWith: input.tileWith,
     time: input.time,
     title: input.title,
     visitCounts: input.visitCounts,
@@ -2479,7 +2483,8 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   const split = emptyVisitCountSplit();
   for (const entry of group) addBucketToSplit(split, entry.bucket, 1, entry.row.from_phoenix === true);
   const total = visitCountSplitTotal(split);
-  const withNames = joinedDistinct(group.flatMap((entry) => doubleVisitCompanions(entry, side)), "Unmapped or vacant");
+  const companions = group.flatMap((entry) => doubleVisitCompanions(entry, side));
+  const withNames = joinedDistinct(companions, "Unmapped or vacant");
   const areaLabel = joinedDistinct(group.map((entry) => entry.row.area_name), "Unmapped");
   const lineLabel = joinedDistinct(group.map((entry) => entry.row.line_name), "Unmapped");
   // Resolved to a resigned employee -> dbRowFromMirrorVisit already substituted the raw
@@ -2513,6 +2518,9 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
     employeeName: side === "performed" ? first.row.double_visitor_name : first.row.visited_employee_name,
     id: calendarItemId(`double-visit-${side}-${kind}`, ownerHrId, first.row.activity_date),
     status: side,
+    // The day tile's own lists (private-calendar/day-tile.ts): real names and areas only, never the "Unmapped" words.
+    tileAreas: group.map((entry) => nullableText(entry.row.area_name)).filter((value): value is string => Boolean(value)),
+    tileWith: companions.map(nullableText).filter((value): value is string => Boolean(value)),
     time: counts,
     title: `${kindLabel}: ${total} visit${total === 1 ? "" : "s"} with ${withNames} - ${areaLabel}`,
     visitCounts: split,
