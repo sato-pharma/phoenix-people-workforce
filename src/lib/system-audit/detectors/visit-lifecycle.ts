@@ -1181,12 +1181,15 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
 
       // Facts kept beside the visit: an approval moving, a recording claimed, reviewed or deleted, an edit.
       const byVisit: Array<{ visit_id: string | null; at: string }> = [];
-      // `tiebreak` is each table's own key, so the page order is total.
+      // `tiebreak` is each table's own key, so the page order is total. 🔴 It must be a column that
+      // EXISTS: an absent one is a 42703 that fails the whole read, not one row. Neither
+      // `phoenix_crm_unplanned_visits` nor `phoenix_crm_visit_recordings` has an `id` — they are keyed
+      // on `visit_id` and `path`. `phoenix_crm_visit_edits` does.
       const besides: Array<{ table: string; column: string; tiebreak: string }> = [
         { table: "phoenix_crm_unplanned_visits", column: "updated_at", tiebreak: "visit_id" },
-        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "id" },
+        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_edits", column: "edited_at", tiebreak: "id" },
       ];
       for (const { table, column, tiebreak } of besides) {
@@ -1263,14 +1266,15 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
             supabase.from("phoenix_crm_unplanned_visits").select("visit_id,status,updated_at").in("visit_id", chunk).order("visit_id").range(from, to),
           ),
           // Every recording, deleted ones included: the countable view's NOT EXISTS reads them all.
+          // The table has no `id` — its key is `path`, so that is what the page orders on.
           readPaged<{ visit_id: string; review_status: string | null; claimed_at: string | null; reviewed_at: string | null; deleted_at: string | null }>(
             "phoenix_crm_visit_recordings",
             (from, to) =>
               supabase
                 .from("phoenix_crm_visit_recordings")
-                .select("id,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
+                .select("path,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
                 .in("visit_id", chunk)
-                .order("id")
+                .order("path")
                 .range(from, to),
           ),
           readPaged<{ visit_id: string; removed_at: string }>("phoenix_crm_removed_visits", (from, to) =>

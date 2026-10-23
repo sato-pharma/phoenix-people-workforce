@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import {
   createVisitLifecycleDetector,
   VISIT_LIFECYCLE_DETECTOR_ID,
@@ -499,6 +501,45 @@ export async function runSystemAuditVisitLifecycleTests() {
     );
     assert.deepEqual(cursor.kpiQueue, ["b-200|2026-11"], "the judged rep-day's month waits in the queue for the next run");
     assert.deepEqual(result.watermarkTo, { touchedAfter: cursor.touchedAfter, kpiQueued: 1 }, "the run reports the watermark it wrote");
+  }
+
+  // ── Regression, 2026-10-23. Every live read this detector makes must order on a column the table
+  // ACTUALLY HAS. `phoenix_crm_visit_recordings` has no `id` — its key is `path` — and PostgREST
+  // answers an absent column with a 42703 that fails the WHOLE read, not one row. The detector's
+  // first production sweep died on exactly that at 10:56 Cairo: "column
+  // phoenix_crm_visit_recordings.id does not exist", one `System audit detector failed:
+  // visit_lifecycle` row and no findings at all. Nothing above could catch it, because every test
+  // above drives the detector through mocked ports and never sees a column name — so this one reads
+  // the source. The same table took every visit day down the same way on 2026-10-16
+  // (src/lib/phoenix-crm/server/db.ts, `selectByIds`), which is why it is pinned rather than fixed
+  // and forgotten.
+  {
+    const source = stripComments(readFileSync("src/lib/system-audit/detectors/visit-lifecycle.ts", "utf8"));
+
+    // Each table's own key, read from production on 2026-10-23 (pg_attribute):
+    // phoenix_crm_visit_recordings → path · phoenix_crm_unplanned_visits → visit_id (neither has an
+    // `id`) · phoenix_crm_visit_edits → id.
+    const KEYS: Record<string, string> = {
+      phoenix_crm_visit_recordings: "path",
+      phoenix_crm_unplanned_visits: "visit_id",
+      phoenix_crm_visit_edits: "id",
+    };
+
+    for (const [table, key] of Object.entries(KEYS)) {
+      const seen = [...source.matchAll(new RegExp(`table:\\s*"${table}"\\s*,[^}]*?tiebreak:\\s*"([a-z_]+)"`, "g"))].map((match) => match[1]);
+      assert.ok(seen.length > 0, `the paged-read table list still names ${table} with a tiebreak`);
+      for (const tiebreak of seen) {
+        assert.equal(tiebreak, key, `${table}'s page tiebreak must be its own key \`${key}\`, not \`${tiebreak}\` — an absent column 42703s the whole read`);
+      }
+    }
+
+    const reads = [...source.matchAll(/\.from\("phoenix_crm_visit_recordings"\)/g)].map((match) => match.index ?? 0);
+    assert.ok(reads.length > 0, "the detector still reads phoenix_crm_visit_recordings");
+    for (const at of reads) {
+      const chain = source.slice(at, at + 420);
+      assert.ok(!/\.order\(\s*"id"/.test(chain), "a phoenix_crm_visit_recordings read must not order on `id` — the table has none, so the read 42703s");
+      assert.ok(!/\.select\(\s*"id[,"]/.test(chain), "a phoenix_crm_visit_recordings read must not select `id` — the table has none, so the read 42703s");
+    }
   }
 
   console.log("system-audit-visit-lifecycle: PASS");
