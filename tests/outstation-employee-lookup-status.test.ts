@@ -15,7 +15,7 @@ export function runOutstationEmployeeLookupStatusTests() {
   // while keeping the existing raw status field as-is.
   assert.match(
     route,
-    /import \{ isTerminalEmploymentStatus \} from "@\/lib\/auth\/session-lifecycle";/,
+    /import \{[^}]*\bisTerminalEmploymentStatus\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
     "employee-lookup route must import isTerminalEmploymentStatus",
   );
   assert.match(

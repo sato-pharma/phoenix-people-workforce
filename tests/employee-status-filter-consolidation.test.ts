@@ -38,10 +38,15 @@ export function runEmployeeStatusFilterConsolidationTests() {
 
   // (2) Each of the four hand-rolled supabase-js/raw-query files must import the shared
   // constant from the canonical session-lifecycle module.
+  //
+  // The constant may share its import statement with other names from that same module — what is
+  // pinned here is WHERE the constant comes from, never that the file imports nothing else beside
+  // it. Spelled as one exact line, this went red on 2026-10-23 for `employee-directory.ts` adding
+  // `hasDepartedEmployment` (the notice-period fix) to the very same import.
   for (const [name, source] of Object.entries(supabaseBuilderFiles)) {
     assert.match(
       source,
-      /import \{ ACTIVE_EMPLOYMENT_STATUSES_IN_LIST \} from "@\/lib\/auth\/session-lifecycle";/,
+      /import \{[^}]*\bACTIVE_EMPLOYMENT_STATUSES_IN_LIST\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
       `${name} must import ACTIVE_EMPLOYMENT_STATUSES_IN_LIST from the canonical session-lifecycle module`,
     );
   }
@@ -77,21 +82,22 @@ export function runEmployeeStatusFilterConsolidationTests() {
   // employee-directory.ts: the raw PostgREST query-string variant must be converted to an
   // `or=(...)` fragment while preserving the leading `&` and the manager_hr_id scoping filter
   // that came before it in the original string.
+  // The local the hr id is read from may be called anything — the filter's SHAPE is what is pinned.
   assert.match(
     employeeDirectorySource,
-    /`employees\?manager_hr_id=eq\.\$\{previous\}&or=\(employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}\)`/,
+    /`employees\?manager_hr_id=eq\.\$\{[A-Za-z_$][\w$]*\}&or=\(employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}\)`/,
     "employee-directory.ts manager-reassignment PATCH filter must preserve manager_hr_id scoping and use the canonical or= null-safe filter",
   );
 
   // (3) roster.ts must delegate to the canonical predicate and drop its own local Set/helper.
   assert.match(
     rosterSource,
-    /import \{ isTerminalEmploymentStatus \} from "@\/lib\/auth\/session-lifecycle";/,
+    /import \{[^}]*\bisTerminalEmploymentStatus\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
     "roster.ts must import isTerminalEmploymentStatus from the canonical session-lifecycle module",
   );
   assert.match(
     rosterSource,
-    /const isTerminal = isTerminalEmploymentStatus\(employee\.employment_status\);/,
+    /isTerminalEmploymentStatus\(employee\.employment_status\)/,
     "roster.ts must call the canonical isTerminalEmploymentStatus predicate at its one call site",
   );
   assert.doesNotMatch(
