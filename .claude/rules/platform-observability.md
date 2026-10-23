@@ -8,8 +8,8 @@ paths:
   - "app/api/errors/client/route.ts"
   - "app/**/{error-monitor,logs,monitoring}/**"
   - "instrumentation.ts"
-  - "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire}*"
-  - "supabase/migrations/*{app_error,audit_log}*"
+  - "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire,heartbeat}*"
+  - "supabase/migrations/*{app_error,audit_log,heartbeat}*"
 ---
 
 # Module memory — Platform — structured logging, Sentry and the audit trail's own persistence
@@ -51,6 +51,10 @@ had, so a file under `src/lib/observability/` or `src/lib/error-monitor/` loads 
 - 🔴 **A WRITE THAT MUST NOT BE LOST GOES THROUGH `src/lib/platform/write-outbox.ts` — RETRY, THEN A QUEUE, NEVER A BARE LOG LINE** (owner, 23 Oct 2026: *"both, plus never lose a row"*, then *"protect the notification writes with the same outbox"*). One mechanism, two tables: `audit_log_outbox` and `notification_write_outbox`, each drained opportunistically off its own domain's successful traffic (5 rows, once per 30s per process) because no cron-job.org or Healthchecks slot is free — **never add a cron for it**. 🔴 **Every retry probes `alreadyLanded` FIRST — a 3s abort is the CLIENT giving up, not Postgres rolling back**, so a blind retry writes the row twice. The first attempt stays at 3s because it runs on somebody's request. 109 audit rows were genuinely lost in the 21 days before this. Account: `docs/observability.md`, "The audit trail stopped losing rows" and "Protecting the notification writes".
 
 - 🔴 **`persistErrorEvent` BLOCKS THE ERROR MONITOR'S TWO SELF-REPORTS BY NAME, NEVER WITH A MODULE-WIDE FLAG** (2026-10-23). `app_error_insert_failed` and `log_app_error_threw` are the only events `logAppError` raises about itself and the only ones that can recurse. The boolean they replaced was set for the whole of one in-flight insert, so every error logged while ANY other error's insert was in the air never reached `app_error_events`: all 109 `audit_persistence_failed` failures logged two lines and left exactly one row, 109 times out of 109, making that table's counts a FLOOR rather than a count. 🔴 **A second `logError` for one failure is therefore now a second ROW** — do not re-add the duplicate pairs removed from `audit.ts`. Account: `docs/observability.md`, "The flag that was eating everyone else's errors".
+
+### The database's own scheduled jobs
+
+- 🔴 **EVERY pg_cron JOB RUNS A `_run()` WRAPPER THAT CALLS ITS UNCHANGED FUNCTION AND THEN `phx_record_job_heartbeat()`, IS DECLARED IN `JOB_SCHEDULES` AND BOTH `docs/observability.md` TABLES (in-house only), AND THE WRAPPER NEVER CATCHES** (owner, 2026-10-23: "fix … freezes silently", then "Watch all six"). One pg_cron transaction cannot keep a `fail` row through a re-raise, so a catch reads `succeeded` in `cron.job_run_details`; uncaught it is FAILED there and stranded in the register. The one `fail` writer is the recovery snapshot's, because `take_snapshots()` catches per table and returns `error`. Re-point with `cron.alter_job`, never `cron.schedule`, which CREATES a missing job — staging has no data retention by his decision. A daily UTC job is declared at its EARLIER Cairo reading (`40 3 * * *` for 01:40 UTC). A new `cron.schedule` naming an unwatched job fails `tests/pg-cron-heartbeats.test.ts`. Account: `docs/observability.md`, "The in-house register".
 
 <!-- module-memory:rules:end -->
 

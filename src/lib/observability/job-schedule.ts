@@ -3,7 +3,7 @@
  * silence means something.
  *
  * WHY THIS IS DUPLICATED FROM THE DOC TABLE, AND WHY THAT IS SAFE.
- * `docs/observability.md` holds the same 47 rows and is the source of truth for
+ * `docs/observability.md` holds the same 53 rows and is the source of truth for
  * `scripts/healthchecks-sync.mjs`, which pushes schedules to Healthchecks.io. That table cannot be
  * the runtime source as well: this module runs inside the deployed Next.js server, and a Next
  * standalone build traces imported FILES — it does not copy `docs/`. Reading the markdown at
@@ -254,6 +254,21 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // (20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql). pg_cron fires in UTC; Cairo's whole-hour
   // offset leaves `*/15` the same instants. NO watchingSince: a new declaration.
   { slug: "phoenix-crm-agent-crm-ids-reconcile", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
+  // The other six pg_cron jobs, wired the same way by 20261023223000_pg_cron_jobs_report_heartbeats.sql
+  // (owner's "Watch all six", 2026-10-23). Each `_run()` wrapper records success after the unchanged
+  // function; the recovery snapshot's records FAIL when take_snapshots() reports a table it could not
+  // capture, because that function catches per table and pg_cron reads `succeeded` regardless.
+  // 🔴 `phoenix-data-retention` fires at 01:40 UTC — 03:40 Cairo in winter, 04:40 in summer — so it
+  // is declared at the EARLIER time: the summer run then lands an hour inside the 2h grace, where the
+  // later time would read every winter run as an hour too early and the job as stranded.
+  // The rep entry-days reconcile fires every five minutes; 30 minutes is about six missed fires.
+  // NO watchingSince on any: all new declarations.
+  { slug: "phoenix-crm-person-by-hr-key-reconcile", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-crm-contact-truth-reconcile", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-crm-rep-entry-days-reconcile", kind: "cron", schedule: "*/5 * * * *", graceSeconds: 30 * MINUTE },
+  { slug: "phoenix-data-retention", kind: "cron", schedule: "40 3 * * *", graceSeconds: 2 * HOUR },
+  { slug: "phoenix-marketing-roi-refresh", kind: "cron", schedule: "20 * * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-recovery-snapshot", kind: "cron", schedule: "5 * * * *", graceSeconds: 1 * HOUR },
   // The sweeper itself. Declared like any other job so it holds a row and verifies itself on every
   // run. It cannot report its OWN silence — see the migration header and docs/observability.md.
   { slug: "phoenix-job-heartbeat-sweep", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 30 * MINUTE },
