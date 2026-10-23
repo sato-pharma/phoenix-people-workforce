@@ -1249,6 +1249,7 @@ import { runAttendanceExceptionNotesTests } from "./attendance-exception-notes.t
 import { runHiredTilePeriodTests } from "./hired-tile-period.test.ts";
 import { runAttendanceExceptionRowCapTests } from "./attendance-exception-row-cap.test.ts";
 import { runApprovalsHubRowCapTests } from "./approvals-hub-row-cap.test.ts";
+import { runApprovalsBadgeEmptySeatTests } from "./approvals-badge-empty-seat.test.ts";
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
 import { runApprovePlansPageSpeedTests } from "./approve-plans-page-speed.test.ts";
@@ -5330,6 +5331,7 @@ await runTest("attendance exception notes (approving must not erase the requeste
 await runTest("the Hired tile counts a period, not every hire ever", runHiredTilePeriodTests);
 await runTest("attendance exceptions are never row-capped (a dropped approval becomes an absence)", runAttendanceExceptionRowCapTests);
 await runTest("approvals hub feeds are paged, never capped (a hidden request is a decision nobody makes)", runApprovalsHubRowCapTests);
+await runTest("Approvals Hub badge: an empty seat is nobody to count for, never an error; a timeout still is (APP-FEAFFD50)", runApprovalsBadgeEmptySeatTests);
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
 await runTest("the approve-plans page reads only the plan module, own plan headers and one role batch (6-13 s on production)", runApprovePlansPageSpeedTests);

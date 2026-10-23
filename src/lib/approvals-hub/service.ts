@@ -15,6 +15,7 @@ import {
   isAllVacationVisibility,
   listStrandedVacationRequests,
   type StrandedVacationRow,
+  VacationViewerHasNoEmployeeProfileError,
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -125,13 +126,25 @@ function isForbiddenLoadError(error: unknown): boolean {
   return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
 }
 
+/**
+ * What a failed approvals read is. Only "error" is logged as an ERROR (and so reaches the System Audit
+ * board); a refusal is the viewer's role, and "no_employee_profile" is nobody behind the viewer — an
+ * empty seat in View as Seat — so there is nothing to count, and the badge shows none either way
+ * (System Audit APP-FEAFFD50: three false errors, 20 Oct 2026).
+ */
+export function classifyApprovalsLoadFailure(error: unknown): "forbidden" | "no_employee_profile" | "error" {
+  if (isForbiddenLoadError(error)) return "forbidden";
+  if (error instanceof VacationViewerHasNoEmployeeProfileError) return "no_employee_profile";
+  return "error";
+}
+
 function logLoadFailure(
   message: string,
   options: { labels: Record<string, string | number | boolean | null | undefined>; error: unknown },
 ) {
-  const forbidden = isForbiddenLoadError(options.error);
-  logStructured(forbidden ? "DEBUG" : "ERROR", message, {
-    labels: { ...options.labels, classification: forbidden ? "forbidden" : "error" },
+  const classification = classifyApprovalsLoadFailure(options.error);
+  logStructured(classification === "error" ? "ERROR" : "DEBUG", message, {
+    labels: { ...options.labels, classification },
     error: options.error,
   });
 }

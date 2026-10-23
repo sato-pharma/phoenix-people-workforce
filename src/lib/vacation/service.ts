@@ -575,18 +575,31 @@ function buildVisibleHrIdSet(employees: EmployeeDirectoryRow[]): Set<string> {
   return new Set(ids);
 }
 
+/**
+ * No employee stands behind this viewer — an empty office seat opened through View as Seat, or a login
+ * with no directory row. Same message as before, so every page that prints it reads the same; the class
+ * only lets a caller that merely COUNTS (the Approvals Hub badge) tell "nobody to count for" apart from a
+ * read that failed (System Audit APP-FEAFFD50: three false errors from empty seats, 20 Oct 2026).
+ */
+export class VacationViewerHasNoEmployeeProfileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VacationViewerHasNoEmployeeProfileError";
+  }
+}
+
 async function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = getVacationVisibilityScope(access);
   if (scope === "COMPANY") return employees;
 
   const currentEmployee = findCurrentEmployeeRow(employees, access);
   if (!currentEmployee) {
-    throw new Error("Your employee profile is not available in the employee directory. Please contact HR.");
+    throw new VacationViewerHasNoEmployeeProfileError("Your employee profile is not available in the employee directory. Please contact HR.");
   }
 
   const viewerHrId = canonicalHrId(currentEmployee.hrId);
   if (!viewerHrId) {
-    throw new Error("Your employee profile is not linked yet. Please contact HR.");
+    throw new VacationViewerHasNoEmployeeProfileError("Your employee profile is not linked yet. Please contact HR.");
   }
 
   const employeeByHrId = new Map(
