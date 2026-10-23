@@ -16,8 +16,9 @@
 // It WARNS, it never blocks: the tool already ran. Fails open, silent, on any error.
 // Owner instruction: "fix the error reason", 2026-10-22.
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 const MISSING_COLUMN = /column\s+"?(?:(\w+)\.)?(\w+)"?\s+(?:of relation\s+"?(\w+)"?\s+)?does not exist/i;
 const PG_HINT = /HINT:\s*([^\n"\\]+)/;
@@ -113,23 +114,62 @@ function readEnv(dir) {
   return env;
 }
 
+// The schema read is ONE request that costs far more than it looks. Measured against production on
+// 2026-10-23: PostgREST builds its whole OpenAPI spec per call — 567 tables and views, 8,131
+// columns, 4,773 KB decoded (gzipped on the wire, so the bytes are not the cost) — and the build
+// took anywhere from 1,072 ms to 8,671 ms across repeated calls. Uncached, that was paid on EVERY
+// missing-column failure: 36 runs that day, p50 2,398 ms, p90 6,378 ms, max 11,194 ms. The p90 is
+// the old 6,000 ms abort firing, which left the session the information_schema fallback after
+// spending six seconds — the hook was slowest exactly when it gave nothing back. So: cache the map
+// per project, and give the fetch room to finish (10 s, inside the hook's own 15 s registration).
+const SCHEMA_TTL_MS = 10 * 60 * 1000;
+const cacheFile = (projectId) =>
+  join(
+    process.env.PHX_SQL_HINT_CACHE_DIR || join(tmpdir(), 'phx-sql-column-hint'),
+    `${String(projectId).replace(/[^\w-]/g, '')}.json`,
+  );
+
+/** The cached map, with its age, when one was written inside the TTL. */
+function cachedColumns(projectId) {
+  try {
+    const held = JSON.parse(readFileSync(cacheFile(projectId), 'utf8'));
+    const ageMs = Date.now() - Number(held?.readAt);
+    if (!held?.tables || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > SCHEMA_TTL_MS) return null;
+    return { tables: held.tables, ageMs };
+  } catch {
+    return null;
+  }
+}
+
 /** table → columns for the project, from PostgREST's own schema. null when it cannot be read. */
-async function liveColumns(projectId, dir) {
-  if (process.env.PHX_SQL_HINT_COLUMNS_JSON) return JSON.parse(process.env.PHX_SQL_HINT_COLUMNS_JSON);
+async function liveColumns(projectId, dir, needed = []) {
+  if (process.env.PHX_SQL_HINT_COLUMNS_JSON) {
+    return { tables: JSON.parse(process.env.PHX_SQL_HINT_COLUMNS_JSON), ageMs: 0 };
+  }
   if (process.env.PHX_SQL_HINT_OFFLINE === '1') return null;
+  // Reuse the cache only when it can actually answer: a table this query names but the cache has
+  // never seen is a table created since it was written, so re-read rather than report it unknown.
+  const held = cachedColumns(projectId);
+  if (held && needed.every((t) => Array.isArray(held.tables?.[t]))) return held;
   const env = { ...readEnv(dir), ...process.env };
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key || !projectId || !url.includes(projectId)) return null;
+  if (!url || !key || !projectId || !url.includes(projectId)) return held;
   const res = await fetch(`${url.replace(/\/$/, '')}/rest/v1/`, {
     headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/openapi+json' },
-    signal: AbortSignal.timeout(6000),
+    signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) return null;
+  if (!res.ok) return held;
   const spec = await res.json();
   const out = {};
   for (const [name, def] of Object.entries(spec?.definitions ?? {})) out[name] = Object.keys(def?.properties ?? {});
-  return out;
+  try {
+    mkdirSync(dirname(cacheFile(projectId)), { recursive: true });
+    writeFileSync(cacheFile(projectId), JSON.stringify({ readAt: Date.now(), tables: out }));
+  } catch {
+    // A cache that cannot be written is not an error: the hint is already in hand.
+  }
+  return { tables: out, ageMs: 0 };
 }
 
 export async function buildHint(payload, dir) {
@@ -147,13 +187,13 @@ export async function buildHint(payload, dir) {
   }
   let schema = null;
   try {
-    schema = tables.length ? await liveColumns(payload?.tool_input?.project_id, dir) : null;
+    schema = tables.length ? await liveColumns(payload?.tool_input?.project_id, dir, tables) : null;
   } catch {
     schema = null;
   }
   let listed = false;
   for (const t of tables) {
-    const cols = schema?.[t];
+    const cols = schema?.tables?.[t];
     if (!cols?.length) continue;
     listed = true;
     const near = nearestColumns(missing.column, cols);
@@ -161,6 +201,11 @@ export async function buildHint(payload, dir) {
       `${t}'s real columns${near.length ? ` — nearest to \`${missing.column}\`: ${near.map((c) => `\`${c}\``).join(', ')}` : ''}. ` +
         `All ${cols.length}: ${cols.join(', ')}.`,
     );
+  }
+  if (listed && schema.ageMs > 60_000) {
+    // Say the age rather than hide it: this repo applies migrations constantly, and a list read
+    // minutes ago cannot show a column added since. Never let a cached read pass as a live one.
+    lines.push(`That list was read ${Math.round(schema.ageMs / 60_000)} min ago — a column added since will not be in it.`);
   }
   if (!listed && tables.length) {
     lines.push(

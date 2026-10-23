@@ -25,6 +25,7 @@ import {
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
 } from "@/lib/auth/session";
+import { shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
 import {
   createSupabaseAuthSession,
   persistSupabaseAuthIdentityLink,
@@ -355,17 +356,19 @@ export async function POST(request: Request) {
     if (!skipBridge) try {
       supabaseSession = await createSupabaseAuthSession(user.loginId, password);
     } catch (error) {
-      // `{ report: false }`: this call CLASSIFIES the failure, it does not surrender to it. Left
-      // reporting, it wrote an `api_error_redacted` row before the repair below had even been
-      // attempted — so a login that then succeeded still left `Failed to create Supabase auth
-      // session` in `app_error_events`. Seven such rows on 23 Oct 2026, six real people, every
-      // login landing 68–242 ms later. The reporting call now sits on the branches that genuinely
-      // end in a warning: this one when no repair is attempted, and the two failure paths below.
-      const message = clientSafeErrorMessage(error, "Failed to create Supabase auth session.", { report: false });
-      const shouldRepairBridge =
-        !user.authUserId ||
-        !user.authEmail ||
-        /checking email|email|user not found|invalid login credentials/i.test(message);
+      // Classification lives in `shouldRepairSupabaseAuthBridge`, which reads the RAW message.
+      // It used to read `clientSafeErrorMessage(…, { report: false })`'s — and that helper redacts
+      // every Supabase error, so the text tested was the fallback sentence and the message pattern
+      // could never match it. Repair was therefore skipped for every user who already had an
+      // identity, which is precisely who it is for. The `{ report: false }` change earlier the same
+      // day closed one door onto the `api_error_redacted` rows; the warning path below was the
+      // other, and it stayed open. Reporting now happens only where a login really does end in a
+      // warning: this branch, and the two failure paths after it.
+      const shouldRepairBridge = shouldRepairSupabaseAuthBridge({
+        authEmail: user.authEmail,
+        authUserId: user.authUserId,
+        error,
+      });
 
       if (!shouldRepairBridge) {
         supabaseBridgeWarning = clientSafeErrorMessage(error, "Failed to create Supabase auth session.");
