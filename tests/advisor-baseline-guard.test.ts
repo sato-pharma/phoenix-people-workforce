@@ -79,12 +79,16 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // reading only 6 tables grant `anon`/`authenticated` anything and all 6 are Supabase-managed
   // `storage.*`, which the advisor's set excludes. 210 came from the 2026-10-09 triage, which
   // absorbed the 2026-09-30 "knowingly red at 177" pre-image table.
-  { category: "rls_enabled_no_policy", current_count: 212 },
+  // 260, RAISED from 212 on 2026-10-23 — 48 joined, all triaged in the baseline document: 42 in
+  // the dated schema phx_backup_20261017, 3 in au (bak_20261015*), and 3 new server-only public
+  // tables. None grants anon or authenticated anything (0 of all 260, read live that day).
+  { category: "rls_enabled_no_policy", current_count: 260 },
   { category: "function_search_path_mutable", current_count: 0 },
   { category: "extension_in_public", current_count: 1 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
-  // 722 = the highest daily reading 1-9 October (576 to 722); raised from 615 the same day.
-  { category: "unused_index", current_count: 722 },
+  // 842 = the highest daily reading to 2026-10-23 (the drift run that day; 833 an hour later);
+  // raised from 722, which was itself the highest reading 1-9 October.
+  { category: "unused_index", current_count: 842 },
   { category: "stats_age_hours", current_count: -1 },
 ];
 
@@ -115,13 +119,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 213 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 261 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /213/);
+  assert.match(exceeded!.message, /261/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
 
   // ── a fall is NOT an error ───────────────────────────────────────────────
