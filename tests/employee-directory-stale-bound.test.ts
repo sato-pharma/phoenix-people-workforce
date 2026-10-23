@@ -102,8 +102,8 @@ export async function runEmployeeDirectoryStaleBoundTests() {
   const staleServings = [...code.matchAll(/serveStaleOnFailure\(/g)].length;
   assert.equal(
     staleServings,
-    2,
-    `RED both failure paths must serve stale data through the ONE bounded helper — a direct \`cache.data\` return is the unbounded read this closes (found ${staleServings} call sites)`,
+    3,
+    `RED every failure path must serve stale data through the ONE bounded helper — the directory, its rows and the lean name roster — a direct \`cache.data\` return is the unbounded read this closes (found ${staleServings} call sites)`,
   );
   assert.doesNotMatch(
     code,
@@ -145,7 +145,11 @@ export async function runEmployeeDirectoryStaleBoundTests() {
   // A write drops the copy AND stops a load already running from putting its older answer back.
   assert.match(code, /directoryGeneration \+= 1;\s*directoryCache = null;/, "RED invalidation must bump the generation before it drops the cache");
   const stampGuards = [...code.matchAll(/if \(generation === directoryGeneration\)/g)].length;
-  assert.equal(stampGuards, 2, `RED both caches must refuse to stamp a load that began before an invalidation (found ${stampGuards})`);
+  assert.equal(
+    stampGuards,
+    3,
+    `RED all three caches — the directory, its rows and the lean name roster — must refuse to stamp a load that began before an invalidation (found ${stampGuards})`,
+  );
   // A pass at probation makes the person payroll-eligible, and payroll reads eligibility from the directory.
   const probationDecision = stripComments(readFileSync(new URL("../src/lib/probation/intelligence/decision.ts", import.meta.url), "utf8"));
   assert.match(
@@ -157,5 +161,82 @@ export async function runEmployeeDirectoryStaleBoundTests() {
     [...code.matchAll(/loadDirectoryShared\(\)\.catch\(\(\) => undefined\)|loadShared\(\)\.catch\(\(\) => undefined\)/g)].length,
     2,
     "RED a reload run behind a served copy must swallow its own failure — nobody awaits it and an unhandled rejection kills the process",
+  );
+
+  // ── THE LEAN NAME ROSTER (2026-10-23) ──────────────────────────────────────────────────────────
+  // Three callers in src/lib/action-center/service.ts were loading the WHOLE directory to turn an
+  // HR id into a name — twelve reads and a 511 KB payload, one of them to name a SINGLE deep-linked
+  // item. Measured against production the day it changed: 1,800 ms cold against 164 ms, 511.6 KB
+  // against 65.9 KB, and 112 of 112 people resolving to the identical name in both directions.
+  //
+  // The saving is only safe while two things hold, and each has a silent failure mode:
+  //   (1) the roster decides membership with the directory's OWN filter. A resigned employee is
+  //       absent from the directory on purpose, so a resignation item falls back to the name stored
+  //       on the request — a roster that quietly included leavers would RENAME people on the one
+  //       screen where they are leaving.
+  //   (2) the select carries every column that filter reads. A column it cannot see does not throw;
+  //       it admits somebody the directory withholds, and nothing on screen says so.
+  assert.match(
+    code,
+    /export function isActiveDirectoryEmployee\(employee: DirectoryMembershipFields\)/,
+    "RED directory membership must be decided through DirectoryMembershipFields — the Pick is what stops the lean roster's select drifting from the real filter",
+  );
+
+  const rosterSelectStart = code.indexOf("const NAME_ROSTER_SELECT");
+  assert.ok(rosterSelectStart > 0, "RED NAME_ROSTER_SELECT not found — the lean name roster read is gone");
+  const rosterSelect = code.slice(rosterSelectStart, code.indexOf("].join", rosterSelectStart));
+  for (const column of [
+    "hr_id",
+    "full_name",
+    "nickname",
+    "job_title",
+    "employment_status",
+    "payroll_eligible",
+    "organogram_visible",
+    "position_id",
+    "line_id",
+  ]) {
+    assert.ok(
+      rosterSelect.includes(column),
+      `RED the name roster select must read ${column} — isActiveDirectoryEmployee decides on it, and a column the select omits silently admits somebody the directory withholds`,
+    );
+  }
+  for (const embed of ["positions!employees_position_id_fkey(title)", "lines!employees_line_id_fkey(name)"]) {
+    assert.ok(
+      rosterSelect.includes(embed),
+      `RED the name roster select must embed ${embed} — classifyEmployeeNode reads the position title and the line name, so without them a vacancy or placeholder node classifies as a live employee`,
+    );
+  }
+
+  const rosterFetchStart = code.indexOf("async function fetchEmployeeNameRoster");
+  assert.ok(rosterFetchStart > 0, "RED fetchEmployeeNameRoster not found");
+  const rosterFetch = code.slice(rosterFetchStart, code.indexOf("export async function getEmployeeNameRoster", rosterFetchStart));
+  assert.match(
+    rosterFetch,
+    /if \(!isActiveDirectoryEmployee\(candidate\)\) continue;/,
+    "RED every roster row must pass the directory's own membership filter, never a second copy of it",
+  );
+  assert.match(
+    rosterFetch,
+    /return directoryNameRoster\(await getEmployeeDirectory\(\)\);/,
+    "RED a failed roster select must fall back to the FULL directory, never to a laxer filter — a wrong name is worse than a slow one",
+  );
+  assert.match(
+    code,
+    /directoryCacheDisposition\(Date\.now\(\) - directoryCache\.timestamp\) === "fresh"/,
+    "RED the roster must reuse a directory already in cache — otherwise a page that holds one pays a second read for names it already has",
+  );
+
+  // The three callers this was built for must not walk back to the full directory.
+  const actionCenter = stripComments(readFileSync(new URL("../src/lib/action-center/service.ts", import.meta.url), "utf8"));
+  assert.doesNotMatch(
+    actionCenter,
+    /getEmployeeDirectory\(/,
+    "RED the action inbox must resolve names through getEmployeeNameRoster — the full directory is twelve reads and 511 KB for a display name, paid inside this board's 8-second per-source budget",
+  );
+  assert.equal(
+    [...actionCenter.matchAll(/getEmployeeNameRoster\(/g)].length,
+    3,
+    "RED all three name lookups in the action centre — the awaiting-action fan-out, the decided-history feed and the deep-link builder — must read the roster",
   );
 }
