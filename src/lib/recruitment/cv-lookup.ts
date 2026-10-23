@@ -76,6 +76,7 @@ import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 /**
  * The shortest query that runs at all.
@@ -188,16 +189,6 @@ function text(value: unknown): string {
 }
 
 /**
- * PostgREST's `or=` takes a comma-separated list, and a comma or a parenthesis inside a value ends
- * the clause early — so a query containing one would silently search for something else. Escaped by
- * quoting the value and backslash-escaping the quote, which is the form PostgREST documents.
- */
-function ilikeClause(column: string, needle: string): string {
-  const escaped = needle.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `${column}.ilike."%${escaped}%"`;
-}
-
-/**
  * Candidates whose CV or whose application mentions the query.
  *
  * `cv_lookup: read`, asserted HERE as well as at the route. Two assertions on purpose, the same
@@ -215,14 +206,19 @@ export async function searchCvLookup(access: AccessContext, query: string): Prom
 
   const supabase = recruitmentDb();
 
+  // The application half's filter, built by the shared helper: each value double-quoted, so a name
+  // holding a comma or a parenthesis is searched for instead of ending the clause, and the `%`/`*`
+  // wildcards neutralised. This file used to carry its own copy of the quoting, which was correct
+  // as far as it went and missed the wildcards entirely — a query of `%` matched EVERY candidate.
+  // Empty means nothing searchable was typed; `.or("")` is a 400, so the half is skipped.
+  const applicationFilter = ilikeAnyFilter(APPLICATION_SEARCH_COLUMNS, cleaned);
+  if (!applicationFilter) return { hits: [], query: cleaned, truncated: false };
+
   // BOTH HALVES IN PARALLEL. They touch different tables and neither needs the other's answer, so
   // the search costs the slower of the two (~135 ms) rather than their sum.
   const [cvHalf, applicationHalf] = await Promise.all([
     supabase.rpc("ats_search_candidate_cvs", { p_limit: CV_HALF_LIMIT, p_query: cleaned }),
-    supabase
-      .from("ats_candidates")
-      .select(DISPLAY_COLUMNS)
-      .or(APPLICATION_SEARCH_COLUMNS.map((column) => ilikeClause(column, cleaned)).join(",")),
+    supabase.from("ats_candidates").select(DISPLAY_COLUMNS).or(applicationFilter),
   ]);
 
   if (cvHalf.error) throw cvHalf.error;

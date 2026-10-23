@@ -27,6 +27,7 @@ import {
   getPlanApprovalsForResponder,
   getVacationApprovalsForResponder,
 } from "@/lib/approvals-hub/service";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
@@ -538,7 +539,14 @@ export async function listInAppNotificationsForViewer(
           .select("notification_event_id,user_id,hr_id,read_at,archived_at")
           .in("notification_event_id", rowIds);
         stateQuery = identity.userId
-          ? stateQuery.or(`user_id.eq.${identity.userId},hr_id.eq.${employeeHrId}`)
+          ? stateQuery.or(
+              // The HR id is quoted: it is normalised, never validated, and a `,` in it would end
+              // its arm and silently widen whose read/archive state this row picks up (MR-B04).
+              [
+                quotedOrClause("user_id", "eq", identity.userId),
+                quotedOrClause("hr_id", "eq", employeeHrId),
+              ].join(","),
+            )
           : stateQuery.eq("hr_id", employeeHrId);
         const { data: stateRows, error: stateError } = await stateQuery;
         if (stateError) throw stateError;

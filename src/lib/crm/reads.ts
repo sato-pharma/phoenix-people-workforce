@@ -32,7 +32,7 @@ import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
 import { CRM_CHECKIN_WINDOWS, CRM_VISIT_WINDOWS } from "@/lib/crm/shared-windows";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
-import { ilikeAnyFilter, ilikeContainsPattern } from "@/lib/supabase/search-filter";
+import { ilikeAnyFilter, ilikeContainsPattern, quotedInList as sharedQuotedInList } from "@/lib/supabase/search-filter";
 import type {
   VisitsReportData,
   VisitsReportExportResult,
@@ -753,10 +753,8 @@ export function buildParticipantCrmIdOrFilter(ids: readonly number[]): string | 
 }
 
 /** A PostgREST `in` list of text values, double-quoted so an hr id carrying a comma, a dot or a
- * parenthesis can never be read as list syntax. */
-function quotedInList(values: readonly string[]): string {
-  return values.map((value) => `"${value.replace(/(["\\])/g, "\\$1")}"`).join(",");
-}
+ * parenthesis can never be read as list syntax — the shared builder, not a copy of it. */
+const quotedInList = sharedQuotedInList;
 
 /** Every casing/alias variant of the non-blank ids — {@link expandHrIdFilterValues}, blanks dropped. */
 function usableHrIdFilterValues(ids: readonly string[]): string[] {

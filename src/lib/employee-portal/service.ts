@@ -79,6 +79,7 @@ import {
   normalizePayrollPaymentMode,
   resolveFixedSalaryAmounts,
 } from "@/lib/payroll/policy";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   PayrollExpenseApproval,
@@ -990,7 +991,13 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
     const { data } = await supabase
       .from("notification_events")
       .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
-      .or(`employee_hr_id.eq.${canonicalHrId},recipients.cs.{${canonicalHrId}}`)
+      // The first arm is the ordinary `or=` filter grammar, so its value is QUOTED —
+      // `canonicalHrIdForDisplay` maps and upper-cases an id, it does not restrict its characters,
+      // and a `,` in one would end the arm early and leave the second one reading as a condition of
+      // its own (AGENTS.md MR-B04). The second arm is NOT that grammar: `cs.{…}` is a PostgreSQL
+      // array literal, whose own escaping this repo has not measured against production, so it is
+      // deliberately left exactly as it was.
+      .or(`${quotedOrClause("employee_hr_id", "eq", canonicalHrId)},recipients.cs.{${canonicalHrId}}`)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 

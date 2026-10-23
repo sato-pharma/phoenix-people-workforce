@@ -39,12 +39,22 @@ export function quotePostgrestValue(value: string): string {
   return `"${escaped}"`;
 }
 
+/** What is left of a typed term once the wildcards are neutralised — null when nothing is.
+ *
+ * THE ONE PLACE THAT RULE IS APPLIED. Every builder below goes through it, so a call site cannot
+ * acquire its own private idea of what a searchable term is; a caller that needs a minimum length
+ * measures the value this returns rather than re-implementing the cleaning to measure it. */
+export function searchableTerm(term: string | null | undefined): string | null {
+  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  return cleaned || null;
+}
+
 /** Build the argument for `.or(...)`: `term` matched case-insensitively against every column.
  *
  * Returns an empty string when the term has no searchable content left, which callers must treat as
  * "apply no filter" — passing `""` to `.or()` is a 400. */
 export function ilikeAnyFilter(columns: readonly string[], term: string): string {
-  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  const cleaned = searchableTerm(term);
   if (!cleaned || columns.length === 0) return "";
   const value = quotePostgrestValue(`%${cleaned}%`);
   return columns.map((column) => `${column}.ilike.${value}`).join(",");
@@ -54,14 +64,38 @@ export function ilikeAnyFilter(columns: readonly string[], term: string): string
  * identifier column — an HR id, a login id, an email. Null when nothing searchable is left, which
  * callers treat as "no match", never as "no filter". */
 export function ilikeExactValue(term: string): string | null {
-  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  const cleaned = searchableTerm(term);
   return cleaned ? quotePostgrestValue(cleaned) : null;
 }
 
 /** A quoted `ilike` value that matches rows CONTAINING `term`. Null when nothing searchable is left. */
 export function ilikeContainsValue(term: string): string | null {
-  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  const cleaned = searchableTerm(term);
   return cleaned ? quotePostgrestValue(`%${cleaned}%`) : null;
+}
+
+/** One arm of an `.or(...)` expression — `column.operator."value"` — with the value quoted.
+ *
+ * For a value that is NOT free text: an HR id, a login id, a uuid, a national id, a mobile number.
+ * Those reach the filter already normalised, so they need no wildcard rule — but normalising is not
+ * validating. `canonicalHrIdKey` in `src/lib/hr-id.ts`, which every HR id passes through, trims,
+ * lower-cases and maps aliases; it guarantees NO character set, so a comma or a parenthesis stored
+ * in or typed into one of these columns would otherwise end the clause early and silently hand
+ * PostgREST a filter nobody wrote. Quoting is the whole fix, and it is the same quoting as above.
+ *
+ * `%` is left intact deliberately: the caller supplies it (see the `contains` identity filters in
+ * payroll), and these filters only ever NARROW a set the viewer may already see. */
+export function quotedOrClause(column: string, operator: "eq" | "ilike", value: string): string {
+  return `${column}.${operator}.${quotePostgrestValue(value)}`;
+}
+
+/** The body of a PostgREST `in.(…)` list of TEXT values, each one quoted.
+ *
+ * Numbers must NOT come through here — a quoted numeric is still matched, but three copies of this
+ * list builder existed before this helper (CRM reads, Direct Orders, the hiring-manager notify) and
+ * a fourth was hand-rolled inline with no escaping at all. One copy, one rule. */
+export function quotedInList(values: readonly string[]): string {
+  return values.map((value) => quotePostgrestValue(String(value))).join(",");
 }
 
 /** The same CONTAINS pattern for supabase-js's own `.ilike(column, pattern)` method, which is NOT
@@ -78,6 +112,6 @@ export function ilikeContainsValue(term: string): string | null {
  *
  * Null when nothing searchable is left, which callers treat as "no match", never as "no filter". */
 export function ilikeContainsPattern(term: string): string | null {
-  const cleaned = String(term ?? "").replace(WILDCARD_CHARS, " ").trim();
+  const cleaned = searchableTerm(term);
   return cleaned ? `%${cleaned}%` : null;
 }

@@ -54,6 +54,7 @@ import {
   statusAfterResubmit,
 } from "@/lib/market-awareness/workflow";
 import { logError } from "@/lib/observability/log";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 /**
@@ -459,10 +460,10 @@ export async function listActivities(
     .limit(500);
 
   if (visibility.kind === "own") {
-    // Both casings, because HR ids are stored mixed-case and a single `.eq` under-returns.
-    query = query.or(
-      `requester_hr_id.eq.${visibility.hrId},requester_hr_id.eq.${visibility.hrId.toUpperCase()},requester_hr_id.eq.${visibility.hrId.toLowerCase()}`,
-    );
+    // Through the shared builder, which holds the casing rule AND the quoting in one place — this
+    // site carried a verbatim copy of the clause before (AGENTS.md MR-B04).
+    const ownFilter = ownActivityFilter(visibility);
+    if (ownFilter) query = query.or(ownFilter);
   }
   if (options.status) query = query.eq("status", options.status);
 
@@ -532,7 +533,12 @@ const HISTORY_STATUSES: MarketAwarenessStatus[] = [
  */
 function ownActivityFilter(visibility: ActivityVisibility): string | null {
   if (visibility.kind !== "own") return null;
-  return `requester_hr_id.eq.${visibility.hrId},requester_hr_id.eq.${visibility.hrId.toUpperCase()},requester_hr_id.eq.${visibility.hrId.toLowerCase()}`;
+  // Each arm's value is QUOTED: the HR id reaches here normalised, which is not the same as
+  // validated — `canonicalHrIdKey` guarantees no character set — and a `,` or `)` in it would end
+  // its arm early, leaving the whole `own` narrowing something nobody wrote (AGENTS.md MR-B04).
+  return [visibility.hrId, visibility.hrId.toUpperCase(), visibility.hrId.toLowerCase()]
+    .map((value) => quotedOrClause("requester_hr_id", "eq", value))
+    .join(",");
 }
 
 /**

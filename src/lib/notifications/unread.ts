@@ -14,6 +14,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { NOTIFICATION_STATE_CONFLICT_TARGET, testNoticeVisibleToViewer, viewerIdentity } from "@/lib/notifications/in-app";
 import { canViewerSeeNotification } from "@/lib/notifications/recipients";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type UnreadModuleNotice = {
@@ -55,6 +56,9 @@ export async function listUnreadModuleNotices(
 ): Promise<UnreadModuleNotice[]> {
   const identity = viewerIdentity(access);
   if (!identity.hrId) return [];
+  // Held in a const: the guard above narrows the property, but that narrowing is discarded inside the
+  // chunk callback below, where the quoted arm needs a plain string.
+  const viewerHrId = identity.hrId;
   const supabase = getSupabaseAdmin();
   const since = new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -89,7 +93,16 @@ export async function listUnreadModuleNotices(
   const stateReads = await Promise.all(
     chunks.map(async (chunk) => {
       let stateQuery = supabase.from("notification_user_states").select("notification_event_id,read_at,archived_at").in("notification_event_id", chunk);
-      stateQuery = identity.userId ? stateQuery.or(`user_id.eq.${identity.userId},hr_id.eq.${identity.hrId}`) : stateQuery.eq("hr_id", identity.hrId);
+      // Quoted values: the HR id is normalised, not validated, and a `,` in it would end its arm
+      // and leave the badge counting someone else's read state (AGENTS.md MR-B04).
+      stateQuery = identity.userId
+        ? stateQuery.or(
+            [
+              quotedOrClause("user_id", "eq", identity.userId),
+              quotedOrClause("hr_id", "eq", viewerHrId),
+            ].join(","),
+          )
+        : stateQuery.eq("hr_id", identity.hrId);
       const { data: states, error: stateError } = await stateQuery;
       if (stateError) throw stateError;
       return (states ?? []) as StateRow[];

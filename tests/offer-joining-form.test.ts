@@ -258,7 +258,7 @@ async function run() {
 
   // 10. 🔴 A JOINER HR ALREADY HIRED IS NOT HIRED TWICE — Add Employee never stamps the offer, so the
   //     check is the national ID or mobile on any record, or the name on a record made since sending.
-  assert.match(flatService, /\.or\(`national_id\.eq\.\$\{answers\.nationalId\},mobile_number\.eq\.\$\{answers\.mobileNumber\}`\)/, "ID or mobile on file");
+  assert.match(flatService, /\.or\( \[ quotedOrClause\("national_id", "eq", answers\.nationalId\), quotedOrClause\("mobile_number", "eq", answers\.mobileNumber\), \]\.join\(","\), \)/, "ID or mobile on file");
   assert.match(flatService, /\.gte\("created_at", since\)/, "records made since the offer went out");
   assert.match(flatService, /if \(existing\.kind === "unknown"\) \{ return \{ message: "We could not complete/, "a failed read blocks, never passes");
   assert.ok(flatService.indexOf("findExistingHire(offer, value)") < flatService.indexOf("claimOfferForJoiningForm(offer.id)"), "checked before the claim");
