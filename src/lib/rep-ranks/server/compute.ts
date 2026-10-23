@@ -38,6 +38,7 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
 import { PHOENIX_CRM_DEFAULT_SETTINGS } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import { rankCountedFlags, type RankFieldSave, type RankPlaceCase } from "@/lib/rep-ranks/field-quality";
@@ -692,7 +693,7 @@ async function writeWindow(window: RankWindow, standings: readonly RankStanding[
   // A rep who is no longer on the roster leaves the window too; an empty roster empties it.
   let remove = db().from("rep_rank_standings").delete().eq("window_kind", window.kind).eq("window_key", window.key);
   const keep = standings.map((standing) => standing.hrIdKey);
-  if (keep.length > 0) remove = remove.not("hr_id_key", "in", `(${keep.map((key) => `"${key}"`).join(",")})`);
+  if (keep.length > 0) remove = remove.not("hr_id_key", "in", `(${quotedInList(keep)})`);
   const { error } = await remove;
   if (error) throw error;
   return standings.filter((standing) => standing.ranked).length;

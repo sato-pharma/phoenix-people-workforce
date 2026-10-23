@@ -11,7 +11,7 @@ import { getLoginSecuritySignals, type LoginSecuritySignals } from "@/lib/error-
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { fetchAllRows } from "@/lib/supabase/paginated";
-import { ilikeAnyFilter, quotePostgrestValue } from "@/lib/supabase/search-filter";
+import { ilikeAnyFilter, quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The audit_logs entity types that ARE sign-in and account activity. */
@@ -167,7 +167,7 @@ export async function loadLoginSecurityOverview(options: LoginSecurityOverviewOp
       // Bounded: a one-letter search can match most accounts, and the filter travels in the URL.
       const matchedLoginIds = matchLoginIdsBySearch(accounts, search).slice(0, 300);
       if (matchedLoginIds.length > 0) {
-        clauses.push(`actor_login_id.in.(${matchedLoginIds.map(quotePostgrestValue).join(",")})`);
+        clauses.push(`actor_login_id.in.(${quotedInList(matchedLoginIds)})`);
       }
     }
     let query = supabase
