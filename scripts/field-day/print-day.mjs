@@ -553,7 +553,9 @@ export function assertPapersFit(out, papers, { day = "0000-00-00", limit = MAX_P
 /** How long a paper may take to land after Chrome's launcher has already exited 0. */
 const PAPER_LANDING_MS = 30_000;
 const PAPER_POLL_MS = 500;
-const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const sleepMs = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
 
 /**
  * Wait for Chrome's late write to finish before the paper is judged. Returns true once the file
