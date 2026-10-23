@@ -1135,3 +1135,56 @@ Container-level failures (crash, OOM kill, cold-start failure) still never reach
 so they are not on the page — use `railway logs` for those, and Sentry's trace explorer for
 availability and latency. The job-heartbeat sweep writes a WARNING line, not an
 `app_error_events` row; a stranded job is read from `job_heartbeats`.
+
+## The crash screenshot — what the employee saw
+
+Owner, 23 October 2026: *"the most important thing, I need a screenshot of the error appear to the
+employee."* Asked what the capture may contain on a payslip page, he chose **capture everything,
+mask nothing**. Both decisions are recorded as rules in `.claude/rules/platform.md`.
+
+**A web page cannot photograph itself.** There is no browser API that hands a page its own pixels,
+and the one that comes close (`getDisplayMedia`) puts a permission prompt in front of somebody whose
+screen has just broken. So `src/lib/error-monitor/capture-screenshot.ts` RASTERISES the live DOM
+through `html-to-image` and encodes it as WebP. Three things it cannot reproduce, by construction,
+and none of them is a defect to chase: cross-origin images and fonts the page never got permission
+to read back, the inside of an `<iframe>`, and a `<canvas>` another origin's pixels have tainted.
+
+**It fires after the paint, not at the throw.** Two animation frames plus a short settle, so the
+picture is the error boundary's fallback card — the screen the employee is actually sitting in front
+of — rather than the half-torn tree behind it. At most two captures per page load, because one
+orphaned streamed tree fires 16–23 errors at once and they are all one picture.
+
+### Why the image has its own door
+
+`/api/errors/client` is capped at 64 KB with every stored field truncated (the 23 Oct 2026 audit,
+P5-03). **Those caps are not widened to carry a picture.** The image travels on
+`/api/errors/client/screenshot` instead, under bounds of its own:
+
+| Bound | Value |
+| --- | --- |
+| Body | 2 MB, checked on the `Content-Length` and again on the read |
+| Rate | 10 a minute per address — a third of the text report's 30 |
+| Format | WebP, sniffed from the container's own `RIFF`/`WEBP` magic bytes, never from the caller's header |
+| Admission | A two-minute HMAC ticket (`screenshot-ticket.ts`), minted only in the response to a report that really wrote a row, naming that one row |
+| Object | `YYYY/MM/DD/<app_error_events id>.webp`, partitioned by Cairo day, upserted so a retry replaces |
+
+That door reads no cookie and resolves no identity — the employee whose page broke is often on the
+login screen — so it is registered with `tokenApi` (`authMode: "public-token"`), **never**
+`sessionApi`, whose coverage gate rightly demands a `resolveAccessContext` this route must not have.
+The ticket is domain-separated from the session and share-card signers, so it cannot be replayed as
+one of theirs, and with no `PHOENIX_AUTH_SECRET` nothing mints and nothing verifies: it fails closed.
+
+### Reading one back
+
+Nothing is masked, so the `error-screenshots` bucket is **private and stays private** (2 MB,
+`image/webp` only; migration `20261023180801`). The System Audit drawer's "What the employee saw"
+section asks `/api/admin/system-audit/screenshot/<eventId>` for a **five-minute signed URL**, minted
+per view against the viewer's own Super Admin session and only when someone clicks to look. The
+object path is read from the row rather than taken from the caller, so a URL can only ever be issued
+for an object `app_error_events` really points at. No durable URL is rendered into the page.
+
+An occurrence shows the captures of its own `source_refs` (the `app_error_events` ids `collapse.ts`
+collected, capped at 50), newest first, and the read is best-effort: a drawer that cannot show a
+picture must still show the error.
+
+Pinned by `tests/error-screenshot-intake.test.ts`.

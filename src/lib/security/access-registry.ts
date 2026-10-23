@@ -313,6 +313,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/issues/:id/status", permission: null, guard: "domain-helper", csrfRequired: true }),
   // GET is the row drawer's evidence; POST marks that one occurrence as no defect or unknown.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/system-audit/occurrences/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // A five-minute signed URL for one error's screenshot. Super Admin only, same guard as the drawer
+  // it opens from; the object path is read from the row, never taken from the caller.
+  sessionApi({ methods: ["GET"], pattern: "/api/admin/system-audit/screenshot/:eventId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/security", permission: null, guard: "domain-helper" }),
   // Blocking or unblocking a login IP changes who can authenticate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/block-ip", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -2489,6 +2492,11 @@ export const accessRegistry = [
   // (e.g. a crash on the login page before any session exists) — identity is
   // read from the session cookie when present, never trusted from the body.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
+  // The picture of the screen the crash report above was filed from. A TOKEN route, not a session
+  // one: it reads no cookie and resolves no identity, because the ticket is the whole authorisation
+  // — and a session guard here would be theatre, since the employee whose page broke is often not
+  // signed in at all.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/errors/client/screenshot", reason: "Fire-and-forget crash screenshot, open to guests too. Admitted only by a two-minute HMAC ticket that /api/errors/client mints for the row it just wrote, so a caller must already have filed a real error and can only ever write that one row's object; the body is capped at 2 MB, must sniff as WebP from its own magic bytes, and nothing is read back out." }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/pending-count", permission: { resource: "leave", action: "read" } }),
   // Batched replacement for the pending-count polls below plus
   // /api/marketing-requests/pending-count (covered by the /api/marketing-requests/** entry, whose

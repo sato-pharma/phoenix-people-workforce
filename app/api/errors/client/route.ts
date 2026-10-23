@@ -9,6 +9,7 @@ import {
   clientErrorBodyTooLarge,
   sanitizeClientErrorReport,
 } from "@/lib/error-monitor/client-error-intake";
+import { issueErrorScreenshotTicket } from "@/lib/error-monitor/screenshot-ticket";
 import { logAppError } from "@/lib/error-monitor/service";
 import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
@@ -53,6 +54,11 @@ export async function POST(request: Request) {
     console.error("Error-report rate limit unavailable:", error);
   }
 
+  // Handed back ONLY when a row was really written, and it names that row and nothing else — never
+  // the message, the stack or an environment name (the public answer here stays bare on purpose).
+  let screenshotTicket: string | null = null;
+  let eventId: string | null = null;
+
   try {
     const raw = await request.text();
     // A body with no (or a false) Content-Length is capped on the read as well.
@@ -71,7 +77,7 @@ export async function POST(request: Request) {
       const access = await resolveAccessContext(request);
       const activityModule = resolveActivityModule(report.route);
 
-      await logAppError({
+      eventId = await logAppError({
         clientContext: report.clientContext,
         componentStack: report.componentStack,
         digest: report.digest,
@@ -89,10 +95,18 @@ export async function POST(request: Request) {
         stack: report.stack,
         userAgent: request.headers.get("user-agent"),
       });
+
+      // Only a browser gets the offer. instrumentation.ts forwards server-side request errors
+      // through this same route, and there is no screen behind one of those to photograph.
+      if (eventId && report.source === "client") {
+        screenshotTicket = issueErrorScreenshotTicket(eventId);
+      }
     }
   } catch (error) {
     console.error("Failed to ingest error report:", error);
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(
+    screenshotTicket && eventId ? { ok: true, eventId, screenshotTicket } : { ok: true },
+  );
 }
