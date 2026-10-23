@@ -307,6 +307,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("manager-plans/customers", "read"),
   get("manager-plans/customers/area"),
   get("manager-plans/customers/bricks"),
+  // The marks on each doctor of the rep or area he plans with (owner, 2026-10-23).
+  get("manager-plans/customers/insight"),
   { route: "manager-plans/customers/match", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   { route: "manager-plans/customers/locate", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   post("manager-plans/customers/removal", "read"),
