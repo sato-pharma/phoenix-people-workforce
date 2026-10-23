@@ -32,7 +32,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // stop either defect walking back in.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_TTL_MS = 30_000; // the module's CACHE_TTL, restated so a change to it fails here
+const CACHE_TTL_MS = 60_000; // the module's CACHE_TTL, restated so a change to it fails here
 
 const MODULE_URL = new URL("../src/lib/employees/employee-directory.ts", import.meta.url);
 

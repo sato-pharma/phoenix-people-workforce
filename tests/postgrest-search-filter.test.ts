@@ -1115,11 +1115,6 @@ export function runPostgrestSearchFilterTests() {
         "resolveDirectOrderStatusGroupFilter's own status vocabulary — the `.eq.` arms two lines " +
         "below are exempt for the same reason",
     },
-    "src/lib/employees/employee-directory.ts": {
-      "return `in.(${values.join(\",\")})`;":
-        "idInFilter, whose parameter is typed `number[]` — textInFilter beside it is the one that " +
-        "now goes through quotedInList",
-    },
     "src/lib/phoenix-crm/server/manager-old-crm-weeks.ts": {
       ".or(`own_contact_crm_id.in.(${list}),reference_contact_crm_id.in.(${list})`),":
         "`list` is a chunk of `contactIds: ReadonlyArray<number>` (2 splices, one line)",
@@ -1200,7 +1195,7 @@ export function runPostgrestSearchFilterTests() {
   );
   assert.equal(
     inListsExempt,
-    17,
+    16,
     "the written-down in-list exemptions must all still be reached, and no more of them",
   );
 

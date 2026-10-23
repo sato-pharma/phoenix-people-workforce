@@ -405,17 +405,20 @@ let directoryCache: {
 // full directory query, collapsing the N+1 reference fan-out into one load.
 let inFlightDirectory: Promise<EmployeeDirectoryData> | null = null;
 
-const CACHE_TTL = 30000; // 30 seconds
+// 60 s fresh + 30 s refresh-behind (2026-10-23, performance phase 1). The sidebar polls every 30 s, so a 30 s TTL
+// reloaded the whole directory — seven reads — on every second poll, around the clock (~4,200 loads a day in the
+// edge logs, a floor of ~100 an hour at night). The worst age a caller can see is unchanged at 90 s.
+const CACHE_TTL = 60000; // 60 seconds
 
 /**
  * After CACHE_TTL a copy is not thrown away at once: for this much longer it is still handed to the caller while a
  * fresh load runs behind it. The total age any caller can see is therefore CACHE_TTL + this (90 s) — a roster that is
- * a minute and a half old at worst, against 30 s before, and never the multi-second wait of a cold load on a poll.
+ * a minute and a half old at worst, and never the multi-second wait of a cold load on a poll.
  * A write in this process (`invalidateEmployeeDirectoryCache`) still drops the copy, so every writer that changes a
  * field payroll or an approval chain reads must call it (a pass at probation does). A caller that joins a load already
  * running when the write lands can still be handed its older answer once; it is just never saved into the cache.
  */
-export const DIRECTORY_REFRESH_BEHIND_MS = 60000;
+export const DIRECTORY_REFRESH_BEHIND_MS = 30000;
 
 export type DirectoryCacheDisposition = "fresh" | "refresh-behind" | "reload";
 
@@ -505,6 +508,7 @@ export function invalidateEmployeeDirectoryCache() {
   directoryGeneration += 1;
   directoryCache = null;
   directoryRowsCache.clear();
+  invalidateReferenceLists();
 }
 
 function normalizeHrId(value: string | null | undefined) {
@@ -896,10 +900,6 @@ function textInFilter(values: string[]) {
   return `in.(${quotedInList(values)})`;
 }
 
-function idInFilter(values: number[]) {
-  return `in.(${values.join(",")})`;
-}
-
 async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -1005,26 +1005,80 @@ function uniqueTextValues(rows: EmployeeDbRow[], key: keyof EmployeeDbRow) {
   );
 }
 
+/**
+ * The reference lists — departments, lines, areas, positions, teams — read once per REFERENCE_LIST_TTL_MS per
+ * process and shared by every directory load (performance phase 1, 2026-10-23). They are org-wide labels with no
+ * per-viewer visibility, so one copy serves everyone; the edge logs had them re-read thousands of times a day.
+ * `invalidateEmployeeDirectoryCache()` drops them with the directory, and a load a write overtook is never kept.
+ */
+export const REFERENCE_LIST_TTL_MS = 60_000;
+
+const referenceListCache = new Map<string, { value: unknown; storedAt: number }>();
+const referenceListInFlight = new Map<string, Promise<unknown>>();
+let referenceListGeneration = 0;
+
+async function cachedReferenceList<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const cached = referenceListCache.get(key);
+  if (cached && Date.now() - cached.storedAt < REFERENCE_LIST_TTL_MS) return cached.value as T;
+
+  let pending = referenceListInFlight.get(key) as Promise<T> | undefined;
+  if (!pending) {
+    const startedGeneration = referenceListGeneration;
+    pending = load().then((value) => {
+      if (startedGeneration === referenceListGeneration) {
+        referenceListCache.set(key, { value, storedAt: Date.now() });
+      }
+      return value;
+    });
+    referenceListInFlight.set(key, pending);
+    pending.then(
+      () => referenceListInFlight.delete(key),
+      () => referenceListInFlight.delete(key),
+    );
+  }
+  return pending;
+}
+
+function invalidateReferenceLists() {
+  referenceListGeneration += 1;
+  referenceListCache.clear();
+}
+
+/** Every row of one reference table as id → label, shared through the reference-list cache. */
+function loadReferenceNameMap(table: string, label: string) {
+  return cachedReferenceList(`names:${table}:${label}`, async () => {
+    const rows = await supabaseRest<LookupRow[]>(`${table}?${new URLSearchParams({ select: `id,${label}` })}`);
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        String(label === "title" ? row.title ?? "" : row.name ?? ""),
+      ]),
+    );
+  });
+}
+
 async function loadLookup(table: string, ids: number[], label = "name") {
   if (ids.length === 0) {
     return new Map<number, string>();
   }
 
-  const params = new URLSearchParams({
-    select: `id,${label}`,
-    id: idInFilter(ids),
-  });
-  const rows = await supabaseRest<LookupRow[]>(`${table}?${params}`);
-
-  return new Map(
-    rows.map((row) => [
-      row.id,
-      String(label === "title" ? row.title ?? "" : row.name ?? ""),
-    ]),
-  );
+  // The same answer the old `id=in.(...)` read gave — the asked ids that exist — cut from the shared full list.
+  const all = await loadReferenceNameMap(table, label);
+  const names = new Map<number, string>();
+  for (const id of ids) {
+    const name = all.get(id);
+    if (name !== undefined) names.set(id, name);
+  }
+  return names;
 }
 
 async function loadAllOptions(table: string, label = "name") {
+  const options = await cachedReferenceList(`options:${table}:${label}`, () => fetchAllOptions(table, label));
+  // Fresh option objects per load: a directory caller may decorate its lookups without reaching the shared copy.
+  return options.map((option) => ({ ...option }));
+}
+
+async function fetchAllOptions(table: string, label = "name") {
   if (table === "departments") {
     const params = new URLSearchParams({
       select: `id,${label},is_active`,
@@ -1096,6 +1150,34 @@ async function loadAllOptions(table: string, label = "name") {
     }));
 }
 
+/**
+ * Manager display names, built from the employee rows the directory load ALREADY holds (performance phase 1,
+ * 2026-10-23). The directory selects every employee, so every manager is in `rows`; the separate
+ * `employees?hr_id=in.(...)` re-read this replaced cost ~4,200 calls a day at ~374 ms for names already in hand.
+ * Keys match the old lookup: the raw hr_id, its normalized form and every `hrIdLookupKeys` variant.
+ */
+export function managerNamesFromEmployeeRows(
+  rows: ReadonlyArray<{ hr_id: string; full_name?: string | null; nickname?: string | null; employment_status?: string | null }>,
+) {
+  const names = new Map<string, string>();
+  rows.forEach((row) => {
+    // A leaver's name is never surfaced as a live manager label (owner, 2026-09-29: a resigned/
+    // terminated employee shows only in the Resignations module). The row still nests by manager_hr_id
+    // — only the NAME is withheld — so an active report of a departed manager renders no manager name
+    // until the seat is reassigned (pendingManagerReplacementForHrId already flags that gap).
+    if (!isActiveLifecycleStatus(row.employment_status)) return;
+    const hrId = String(row.hr_id);
+    const name = resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname, hrId);
+    names.set(hrId, name);
+    const normalizedHrId = normalizeHrId(hrId);
+    if (normalizedHrId) names.set(normalizedHrId, name);
+    hrIdLookupKeys(hrId).forEach((key) => names.set(key, name));
+  });
+
+  return names;
+}
+
+/** One write path's manager lookup (a new hire's vacancy close): a fresh read, never the directory cache. */
 async function loadManagerNames(hrIds: string[]) {
   const lookupHrIds = Array.from(
     new Set(
@@ -1122,24 +1204,10 @@ async function loadManagerNames(hrIds: string[]) {
     select: "hr_id,full_name,nickname,employment_status",
     hr_id: textInFilter(lookupHrIds),
   });
-  const rows = await supabaseRest<LookupRow[]>(`employees?${params}`);
-
-  const names = new Map<string, string>();
-  rows.forEach((row) => {
-    // A leaver's name is never surfaced as a live manager label (owner, 2026-09-29: a resigned/
-    // terminated employee shows only in the Resignations module). The row still nests by manager_hr_id
-    // — only the NAME is withheld — so an active report of a departed manager renders no manager name
-    // until the seat is reassigned (pendingManagerReplacementForHrId already flags that gap).
-    if (!isActiveLifecycleStatus(row.employment_status)) return;
-    const hrId = String(row.hr_id);
-    const name = resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname, hrId);
-    names.set(hrId, name);
-    const normalizedHrId = normalizeHrId(hrId);
-    if (normalizedHrId) names.set(normalizedHrId, name);
-    hrIdLookupKeys(hrId).forEach((key) => names.set(key, name));
-  });
-
-  return names;
+  const rows = await supabaseRest<Array<{ hr_id: string; full_name?: string | null; nickname?: string | null; employment_status?: string | null }>>(
+    `employees?${params}`,
+  );
+  return managerNamesFromEmployeeRows(rows);
 }
 
 function managerNameFromLookup(managerNames: Map<string, string>, managerHrId: string | null | undefined) {
@@ -1217,6 +1285,35 @@ export async function readStoredPayFlags(hrId: string): Promise<StoredPayFlags |
 
   const compensation = (await loadCompensationByHrId([storedHrId])).get(storedHrId);
   return storedPayFlagsFromRow(rows[0], compensation?.payment_mode);
+}
+
+const PENDING_REPLACEMENT_COLUMN = "pending_manager_replacement_for_hr_id";
+
+/**
+ * The main employee select, asked WITH the seat-continuity column first (performance phase 1, 2026-10-23): the
+ * separate `hr_id=in.(every employee)` read it replaced cost ~4,200 calls a day at ~388 ms. Only a genuinely
+ * absent column (`isMissingColumnError`) re-asks without it; the caller then falls back to the defensive
+ * loader below, so an environment without the column still degrades to an empty map exactly as before.
+ */
+async function selectEmployeesWithPendingReplacement<T>(
+  path: (withPendingReplacement: boolean) => string,
+): Promise<{ rows: T[]; pendingReplacementInRows: boolean }> {
+  try {
+    return { rows: await supabaseRest<T[]>(path(true)), pendingReplacementInRows: true };
+  } catch (error) {
+    if (!isMissingColumnError(error, PENDING_REPLACEMENT_COLUMN)) throw error;
+    return { rows: await supabaseRest<T[]>(path(false)), pendingReplacementInRows: false };
+  }
+}
+
+/** The seat-continuity map, read off rows that already carry the column. Keyed by raw `hr_id`, like the loader. */
+function pendingReplacementFromRows(rows: ReadonlyArray<{ hr_id: string }>) {
+  return new Map(
+    rows.map((row) => [
+      row.hr_id,
+      (row as { pending_manager_replacement_for_hr_id?: string | null }).pending_manager_replacement_for_hr_id ?? null,
+    ]),
+  );
 }
 
 /**
@@ -1352,15 +1449,18 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     "teams!employees_team_id_fkey(name)",
   ].join(",");
 
-  const employeeParams = new URLSearchParams({
-    select: joinedSelect,
-    order: "full_name.asc",
-  });
-
   let employeeRows: JoinedEmployeeDbRow[];
+  let pendingReplacementInRows = false;
 
   try {
-    employeeRows = await supabaseRest<JoinedEmployeeDbRow[]>(`employees?${employeeParams}`);
+    const selected = await selectEmployeesWithPendingReplacement<JoinedEmployeeDbRow>((withPendingReplacement) =>
+      `employees?${new URLSearchParams({
+        select: withPendingReplacement ? `${joinedSelect},${PENDING_REPLACEMENT_COLUMN}` : joinedSelect,
+        order: "full_name.asc",
+      })}`,
+    );
+    employeeRows = selected.rows;
+    pendingReplacementInRows = selected.pendingReplacementInRows;
   } catch (error) {
     console.log("Employee directory joined select failed, using fallback (schema cache / PostgREST)", {
       level: "warning",
@@ -1402,7 +1502,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
   const [residenceByHrId, pendingReplacementByHrId, photoMap, cvHrIds] = await Promise.all([
     loadResidenceByHrId(employeeHrIds),
-    loadPendingManagerReplacementByHrId(employeeHrIds),
+    pendingReplacementInRows
+      ? Promise.resolve(pendingReplacementFromRows(employeeRows))
+      : loadPendingManagerReplacementByHrId(employeeHrIds),
     getEmployeePhotoMap(),
     getEmployeeCvHrIdSet(),
   ]);
@@ -1445,7 +1547,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
     // Still need these for the filter dropdowns, but these are small tables usually
     const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, teamsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
-      loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+      Promise.resolve(managerNamesFromEmployeeRows(employeeRows)),
       loadAllOptions("departments"),
       loadAllOptions("lines"),
       loadAllOptions("areas"),
@@ -1616,7 +1718,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
       loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
       loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
-      loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+      Promise.resolve(managerNamesFromEmployeeRows(employeeRows)),
       loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
       loadAllOptions("departments"),
       loadAllOptions("lines"),
@@ -1933,9 +2035,18 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
     order: "full_name.asc,hr_id.asc",
   });
   let employeeRows: EmployeeDbRow[];
+  let pendingReplacementInRows = false;
 
   try {
-    employeeRows = await fetchAllEmployeeRows(employeeParams);
+    const withPendingReplacement = new URLSearchParams(employeeParams);
+    withPendingReplacement.set("select", `${employeeParams.get("select")},${PENDING_REPLACEMENT_COLUMN}`);
+    try {
+      employeeRows = await fetchAllEmployeeRows(withPendingReplacement);
+      pendingReplacementInRows = true;
+    } catch (pendingError) {
+      if (!isMissingColumnError(pendingError, PENDING_REPLACEMENT_COLUMN)) throw pendingError;
+      employeeRows = await fetchAllEmployeeRows(employeeParams);
+    }
   } catch (error) {
     if (!isMissingRelationMessage(error)) {
       throw error;
@@ -1970,10 +2081,12 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
     loadLookup("areas", uniqueNumberValues(employeeRows, "area_id")),
     loadLookup("positions", uniqueNumberValues(employeeRows, "position_id"), "title"),
     loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
-    loadManagerNames(uniqueTextValues(employeeRows, "manager_hr_id")),
+    Promise.resolve(managerNamesFromEmployeeRows(employeeRows)),
     loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
     loadResidenceByHrId(uniqueTextValues(employeeRows, "hr_id")),
-    loadPendingManagerReplacementByHrId(uniqueTextValues(employeeRows, "hr_id")),
+    pendingReplacementInRows
+      ? Promise.resolve(pendingReplacementFromRows(employeeRows))
+      : loadPendingManagerReplacementByHrId(uniqueTextValues(employeeRows, "hr_id")),
     getEmployeePhotoMap(),
     getEmployeeCvHrIdSet(),
   ]);

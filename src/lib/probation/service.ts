@@ -904,6 +904,7 @@ async function ensureProbationReminderEvents(
   employee: EmployeeScopeRow,
   directory: EmployeeScopeRow[],
   lookups?: ProbationRecipientLookups,
+  storedKeys?: ReadonlySet<string>,
 ) {
   const schedule = getProbationReminderSchedule(employee.hireDate);
   if (schedule.length === 0) return;
@@ -968,9 +969,14 @@ async function ensureProbationReminderEvents(
     };
   });
 
+  // ignoreDuplicates never touches a stored row, so leaving out the keys already stored writes exactly
+  // what the upsert would have written — without a round trip per employee on every run.
+  const missingRows = storedKeys ? rows.filter((row) => !storedKeys.has(row.event_key)) : rows;
+  if (missingRows.length === 0) return;
+
   const { error } = await getSupabaseAdmin()
     .from("notification_events")
-    .upsert(rows, { onConflict: "event_key", ignoreDuplicates: true });
+    .upsert(missingRows, { onConflict: "event_key", ignoreDuplicates: true });
   // The OUTBOX, not a probation table: a missing COLUMN here must never be swallowed, or every
   // "feedback is due" reminder stops being created with nothing red. See isNotificationOutboxMissing.
   if (error && !isNotificationOutboxMissing(error)) throw error;
@@ -1035,6 +1041,7 @@ async function ensureOverdueProbationReminderEvents(
   row: Pick<ProbationRow, "workflow" | "probation_end_date">,
   directory: EmployeeScopeRow[],
   lookups?: ProbationRecipientLookups,
+  storedKeys?: ReadonlySet<string>,
 ) {
   const probationEndDate = row.probation_end_date ?? canonicalProbationEndDate(employee.hireDate);
   const plan = planOverdueProbationReminder({
@@ -1043,6 +1050,8 @@ async function ensureOverdueProbationReminderEvents(
     today: todayDateOnly(),
   });
   if (!plan.create || !probationEndDate) return;
+  // This week's nudge is already stored: the ignoreDuplicates upsert below would write nothing.
+  if (storedKeys?.has(overdueProbationReminderEventKey(employee.hrId, probationEndDate, plan.weekBucket))) return;
 
   const hrApproverHrIds = await (lookups ? lookups.hrApproverHrIds() : resolveActiveHrApproverHrIds());
   const { nsmHrIds } = await resolveFeedbackExtraRecipients(employee, directory, lookups);
@@ -1098,6 +1107,35 @@ async function ensureOverdueProbationReminderEvents(
   // The OUTBOX, not a probation table: a missing COLUMN here must never be swallowed, or every
   // "decision overdue" reminder stops being created with nothing red. See isNotificationOutboxMissing.
   if (error && !isNotificationOutboxMissing(error)) throw error;
+}
+
+/** Rows per page of the stored-key read — PostgREST's own ceiling, so a short page means the end. */
+const STORED_PROBATION_KEY_PAGE = 1000;
+
+/**
+ * The probation outbox keys already stored for these employees, read once per reminder run. Every
+ * ensure call writes with ignoreDuplicates, so a stored key is a guaranteed no-op write; knowing them
+ * up front lets the run skip those writes (about 370 an hour on production, 23 Oct 2026, all no-ops).
+ * A failed read returns null and the run writes every row exactly as before — it fails toward the old
+ * behaviour, never toward a missed reminder.
+ */
+async function loadStoredProbationEventKeys(employeeHrIds: string[]): Promise<Set<string> | null> {
+  const hrIds = Array.from(new Set(employeeHrIds.filter(Boolean)));
+  const keys = new Set<string>();
+  if (hrIds.length === 0) return keys;
+  for (let from = 0; ; from += STORED_PROBATION_KEY_PAGE) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("notification_events")
+      .select("event_key")
+      .eq("category", "probation")
+      .in("employee_hr_id", hrIds)
+      .order("event_key", { ascending: true })
+      .range(from, from + STORED_PROBATION_KEY_PAGE - 1);
+    if (error) return null;
+    const page = (data ?? []) as Array<{ event_key: string | null }>;
+    for (const entry of page) if (entry.event_key) keys.add(entry.event_key);
+    if (page.length < STORED_PROBATION_KEY_PAGE) return keys;
+  }
 }
 
 async function ensureSystemProbationReview(employee: EmployeeScopeRow, probationEndDate: string) {
@@ -1168,15 +1206,19 @@ export async function processDueProbationReminderEvents(limit = 25) {
   const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
   // One read of the role lists for the whole run, not two to four per employee on probation.
   const lookups = createProbationRecipientLookups(hrApproverHrIds);
+  const probationEmployees = rows.flatMap((row) => {
+    const employee = employeesByHrId.get(normalizeHrId(row.hr_id));
+    return employee ? [{ employee, row }] : [];
+  });
+  // One read of the keys already queued, instead of one no-op write per employee on every run.
+  const storedKeys = (await loadStoredProbationEventKeys(probationEmployees.map(({ employee }) => employee.hrId))) ?? undefined;
 
   await Promise.all(
-    rows.map(async (row) => {
-      const employee = employeesByHrId.get(normalizeHrId(row.hr_id));
-      if (!employee) return;
+    probationEmployees.map(async ({ employee, row }) => {
       // The three scheduled reminders (pre-deadline) …
-      await ensureProbationReminderEvents(employee, employees, lookups);
+      await ensureProbationReminderEvents(employee, employees, lookups, storedKeys);
       // … plus the weekly overdue escalation once the 90 days lapse with no decision recorded.
-      await ensureOverdueProbationReminderEvents(employee, row, employees, lookups);
+      await ensureOverdueProbationReminderEvents(employee, row, employees, lookups, storedKeys);
     }),
   );
 

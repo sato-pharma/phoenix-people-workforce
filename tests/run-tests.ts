@@ -1693,6 +1693,7 @@ import { runCrmPortalCoveragePopulationsTests } from "./crm-portal-coverage-popu
 import { runExportFollowsScreenFiltersTests } from "./export-follows-screen-filters.test.ts";
 import { runNotificationDeliveryIntegrityTests } from "./notification-delivery-integrity.test.ts";
 import { runNotificationStoredNoticeTests } from "./notification-stored-notice.test.ts";
+import { runPerformancePhase1Tests } from "./performance-phase-1.test.ts";
 import { runSystemAuditRootCauseFixesTests } from "./system-audit-root-cause-fixes.test.ts";
 import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expense-approval-state-metrics.test.ts";
 
@@ -6031,6 +6032,7 @@ await runTest("exports answer the same question as the screen that launched them
 
 await runTest("one human receives one notification (person-level recipient dedup), in_app is only claimed for categories the bell renders", runNotificationDeliveryIntegrityTests);
 await runTest("a stored notice is never rewritten once it reached somebody, for every sender", runNotificationStoredNoticeTests);
+await runTest("performance phase 1: the directory, rep visits and probation reminder reads are cut, and each cut is pinned", runPerformancePhase1Tests);
 await runTest("the confirmed defects the System Audit root-cause report found stay fixed", runSystemAuditRootCauseFixesTests);
 
 await runTest("outstation metrics use the canonical 3-state approval detector (rejected is never pending; Approved means the payable everywhere)", runOutstationExpenseApprovalStateMetricsTests);
