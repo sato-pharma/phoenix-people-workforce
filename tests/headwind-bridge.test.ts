@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 import {
   getHeadwindToken,
@@ -1863,37 +1863,14 @@ function runShipsDarkTests() {
   // code for a server that does not exist is a code that enrolls a tablet into nothing.
   assert.match(page, /\{headwindReady \? <HeadwindEnrollment \/> : null\}/, "the enrollment card ships dark with the rest");
   assert.match(page, /\{headwindReady \? <HeadwindServerSettings \/> : null\}/, "and so do the fleet-wide settings");
-  // 🔴 MANAGEENGINE IS OFF THE PAGE SINCE 2026-10-22 — the step the owner set out on 2026-09-26. Until
-  // then this asserted Headwind ABOVE ManageEngine (flipped that day, when ManageEngine's actions stopped
-  // working and he chose not to repair a system the company was leaving), with the note that "when the
-  // last tablet has moved, those four lines come off and this assertion goes with them". Every rep
-  // tablet is now enrolled in Headwind as device owner, so the four lines came off. The components and
-  // their routes stay in the repo; only the render is gone, and the doc comment says how to bring it back.
+  // 🔴 MANAGEENGINE IS GONE — off the page 2026-10-22, when every rep tablet was enrolled in Headwind as
+  // device owner, and its code deleted from the repo on 2026-10-23 at the owner's word (the last copy is
+  // commit 78a9f90ba). Nothing on the tablets page may reach for it again.
   for (const component of ["ManageEngineEnrollment", "ManageEngineRepTabletRules", "ManageEngineAppRepository", "ManageEngineFleet"]) {
     assert.doesNotMatch(page, new RegExp(`<${component}\\b`), `${component} no longer renders on the tablets page`);
   }
   assert.doesNotMatch(page, /isManageEngineConfigured/, "and the page no longer asks whether ManageEngine is set up");
-
-  // 🔴 AND THE PAGE SAYS THE MANAGEENGINE ACTIONS DO NOT WORK, rather than letting him find out by
-  // pressing them. He pressed all nine on 2026-09-26 and got nothing but a red line, which is an hour
-  // this sentence exists to save. It also names where the fleet IS still drivable until it moves -
-  // ManageEngine's own console - so the notice is not merely an apology.
-  const meFleet = stripComments(source("src/components/devices/manageengine-fleet.tsx"));
-  assert.match(
-    meFleet,
-    /Insufficient Data for Processing Request/,
-    "the ManageEngine card names the refusal every one of its buttons gets, in ManageEngine's own words",
-  );
-  assert.match(
-    meFleet,
-    /Being retired - these actions do not work from here/,
-    "and says plainly that it is being retired rather than repaired",
-  );
-  assert.match(
-    meFleet,
-    /ManageEngine&rsquo;s own console/,
-    "and names where a tablet is still drivable until it has moved",
-  );
+  assert.ok(!existsSync(new URL("../src/lib/devices/manageengine", import.meta.url)),"and the ManageEngine bridge is deleted, not merely unrendered");
 
   // The two free buttons carry no paid mark — that contrast with the section above is the payoff.
   const fleet = source("src/components/devices/headwind-fleet.tsx");

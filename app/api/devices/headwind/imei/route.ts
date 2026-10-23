@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Copy the IMEI each Headwind-managed tablet reports into its custody-register entry, where the entry
- * holds none — the Headwind twin of `/api/devices/tablets/imei` and `/api/devices/manageengine/imei`.
+ * holds none — the Headwind twin of `/api/devices/tablets/imei`.
  *
  * 🔴 IT READS NO BODY. Which entries are written, and with which IMEI, is decided again here from
  * Headwind's live list and the register as they are now: the browser can ask for the copy, never say

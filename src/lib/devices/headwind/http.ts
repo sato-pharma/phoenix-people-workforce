@@ -16,7 +16,7 @@ import { RustDeskNotConfiguredError } from "@/lib/devices/rustdesk/config";
 
 /**
  * One error mapping for the Headwind bridge routes, so the page reads the same status for the same
- * cause whichever button was pressed — the shape `manageengine/http.ts` already sets.
+ * cause whichever button was pressed — the shape the retired ManageEngine bridge set.
  *
  * No credential yet is a SETUP state — 400 with `setupRequired`, which the page turns into "connect
  * the bridge" instructions rather than an error. A mistake in what was sent is 400 with a sentence

@@ -64,7 +64,9 @@ A runner (`scripts/headwind-migrate.mjs`, run with `railway run --service phoeni
 it gets the real credentials) that, for a list of tablet numbers:
 
 1. **Pre-creates the Headwind device row** on configuration 3, named, if it does not exist.
-2. **Wipes the tablet from ManageEngine** — 🔴 this is the piece that must be worked out first. Every
+2. **Wipes the tablet from ManageEngine** — ⚠️ moot since 2026-10-23: every tablet had moved and the
+   ManageEngine bridge was deleted from the repo; a tablet still on ManageEngine is wiped in its own
+   console (`docs/devices/headwind-rustdesk.md`, "Wiping it off ManageEngine first"). As first written: 🔴 this is the piece that must be worked out first. Every
    ManageEngine action answers *"Insufficient Data for Processing Request"*, which is its own error for
    a missing required field; Phoenix posts an empty body to
    `POST /api/v1/mdm/devices/{id}/actions/{action}`. The probe to finish is in the session transcript of

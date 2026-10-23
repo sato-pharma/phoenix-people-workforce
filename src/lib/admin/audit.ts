@@ -86,7 +86,9 @@ export type AuditEntityType =
   // stores the credential it audits hands it to every reader of the log.
   | "android_device_policy"
   | "android_enrollment_token"
-  // Rep Tablets remote actions (2026-09-24). One row per remote command Phoenix issues to a tablet
+  // 🔴 THE SIX manageengine_* TYPES BELOW ARE NO LONGER WRITTEN — the ManageEngine bridge was deleted on
+  // 2026-10-23. They stay so the rows already in audit_logs keep a known type; never write one again.
+  // Rep Tablets remote actions (2026-09-24). One row per remote command Phoenix issued to a tablet
   // through the ManageEngine MDM API — lock, restart, reset the screen lock, lost mode on or off,
   // and the two wipes. REQUIRED audit, written after ManageEngine has accepted the command: each one
   // reaches a real tablet in a rep's hands, and the two wipes erase it, so a command that leaves no

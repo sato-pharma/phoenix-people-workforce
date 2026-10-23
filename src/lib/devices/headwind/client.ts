@@ -5,8 +5,8 @@
  * base address, the JSON handling and the error shape are decided once. A 401 clears the cached JWT
  * and retries a single time — a token can expire between minting and use, and a silent one-shot
  * re-mint is friendlier than surfacing an auth error the next token would have fixed. This is the
- * same shape `manageengine/client.ts` has, deliberately: the two bridges are siblings, not a shared
- * abstraction, and the duplication is the house style on this page.
+ * same shape the retired ManageEngine client had, deliberately: the two bridges were siblings,
+ * not a shared abstraction, and the duplication is the house style on this page.
  *
  * 🔴 HEADWIND CAN SAY NO WITH HTTP 200. Its REST replies are wrapped as `{ status, message, data }`,
  * and a refusal arrives as `status: "ERROR"` with an explanatory `message` inside an otherwise
