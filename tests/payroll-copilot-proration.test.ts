@@ -166,6 +166,11 @@ export function runPayrollCopilotProrationTests() {
   const belowBasic = applyResignationPartsSplit({ totalPayable: 15000, basicSalary: 21000 });
   assert.deepEqual(belowBasic, { firstPart: 15000, secondPart: 0 });
 
+  // total below zero (the leaver owes money) -> nothing is paid in either part; never a negative
+  // First Part (audit 2026-10-23, S-PAY-01: this returned { firstPart: -800, secondPart: 0 }).
+  const owesMoney = applyResignationPartsSplit({ totalPayable: -800, basicSalary: 21000 });
+  assert.deepEqual(owesMoney, { firstPart: 0, secondPart: 0 });
+
   // --- joiner: EVERY component prorates by the same day share (owner
   // instruction 2026-08-29 — "you divide the net salary"). The hire date itself
   // still counts as a paid day. ------------------------------------------------

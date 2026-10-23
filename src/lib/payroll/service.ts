@@ -1280,29 +1280,18 @@ function normalizePersistedValue(column: string, value: unknown) {
   return String(value);
 }
 
-async function verifySalaryRecordPayloads(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  batchId: string,
-  recordPayloads: SalaryRecordPayload[],
-) {
-  if (recordPayloads.length === 0) {
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("salary_records")
-    .select("*")
-    .eq("batch_id", batchId);
-
-  if (error) {
-    throw error;
-  }
-
+/**
+ * Every difference between the records a batch should hold and the ones it does hold: a person
+ * missing, a column that disagrees (numbers compared at 2 dp), and — with `reportExtras` — a saved
+ * person nobody expected. Pure, so the comparison itself is tested without a database.
+ */
+export function diffSalaryRecordPayloads(
+  recordPayloads: ReadonlyArray<Record<string, unknown> & { hr_id: string }>,
+  savedRows: ReadonlyArray<Record<string, unknown>>,
+  options: { reportExtras?: boolean; columns?: ReadonlySet<string> } = {},
+): string[] {
   const savedByHrId = new Map(
-    ((data ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.hr_id ?? "").trim().toLowerCase(),
-      row,
-    ]),
+    savedRows.map((row) => [String(row.hr_id ?? "").trim().toLowerCase(), row]),
   );
   const mismatches: string[] = [];
 
@@ -1317,6 +1306,7 @@ async function verifySalaryRecordPayloads(
 
     for (const [column, expectedValue] of Object.entries(payload)) {
       if (column === "batch_id") continue;
+      if (options.columns && !options.columns.has(column)) continue;
       const expected = normalizePersistedValue(column, expectedValue);
       const actual = normalizePersistedValue(column, saved[column]);
 
@@ -1325,6 +1315,71 @@ async function verifySalaryRecordPayloads(
       }
     }
   }
+
+  if (options.reportExtras) {
+    const expectedIds = new Set(recordPayloads.map((payload) => payload.hr_id.trim().toLowerCase()));
+    for (const [hrId, row] of savedByHrId) {
+      if (!expectedIds.has(hrId)) mismatches.push(`${String(row.hr_id ?? hrId).trim()}: saved but not expected`);
+    }
+  }
+
+  return mismatches;
+}
+
+async function readSalaryRecordsForBatch(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  batchId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const { data, error } = await supabase
+    .from("salary_records")
+    .select("*")
+    .eq("batch_id", batchId);
+
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+/**
+ * Whether an existing batch holds exactly these rows — every person, every column, and nobody else.
+ * Returns the differences (empty when it does). Automated Payroll calls it before finalising a batch
+ * an earlier publish left behind (audit 2026-10-23, S-PAY-09). A failed read throws: "could not
+ * compare" is never "matched".
+ */
+export async function compareSalaryBatchRecords(
+  batchId: string,
+  records: SalaryValidationRow[],
+): Promise<{ all: string[]; money: string[] }> {
+  const supabase = getSupabaseAdmin();
+  const payloads = records.map((row) => salaryRecordPayload(batchId, row));
+  const saved = await readSalaryRecordsForBatch(supabase, batchId);
+  return {
+    all: diffSalaryRecordPayloads(payloads, saved, { reportExtras: true }),
+    money: diffSalaryRecordPayloads(payloads, saved, { reportExtras: true, columns: SALARY_RECORD_MONEY_COLUMNS }),
+  };
+}
+
+/**
+ * The columns that decide what a person is paid and where it goes: every money figure plus the payment
+ * mode. Name, title, area, line, hire date and the comment are read live from the directory and can
+ * move between two publish attempts without anybody's pay moving.
+ */
+export const SALARY_RECORD_MONEY_COLUMNS: ReadonlySet<string> = new Set([
+  ...[...salaryRecordNumericColumns].filter((column) => column !== "working_days" && column !== "calendar_days"),
+  "payment_mode",
+]);
+
+async function verifySalaryRecordPayloads(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  batchId: string,
+  recordPayloads: SalaryRecordPayload[],
+) {
+  if (recordPayloads.length === 0) {
+    return;
+  }
+
+  const mismatches = diffSalaryRecordPayloads(recordPayloads, await readSalaryRecordsForBatch(supabase, batchId));
 
   if (mismatches.length > 0) {
     throw new Error(

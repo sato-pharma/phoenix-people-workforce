@@ -11,6 +11,8 @@ import {
   upsertStepState,
 } from "./draft-store.ts";
 import { isSettledInPart1, loadStepContext } from "./recommend.ts";
+import { holdRun } from "./run-hold.ts";
+import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import type { PayrollPeriod, StepKey } from "./types.ts";
@@ -188,6 +190,8 @@ export type ResyncDeps = {
   clearDraftColumns: typeof clearDraftColumns;
   upsertStepState: typeof upsertStepState;
   listLatestCellWrites: typeof listLatestCellWrites;
+  /** Takes the run's hold for the clears (run-hold.ts). A test passes one that just runs the work. */
+  holdRun: typeof holdRun;
 };
 
 const defaultResyncDeps: ResyncDeps = {
@@ -198,6 +202,7 @@ const defaultResyncDeps: ResyncDeps = {
   clearDraftColumns,
   upsertStepState,
   listLatestCellWrites,
+  holdRun,
 };
 
 /**
@@ -249,79 +254,113 @@ export async function resyncPayrollDeductionSteps(
       return { action: "skip", monthKey, reason };
     }
 
-    const states = await deps.listStepStates(run.id);
-    const confirmed = new Set(
-      states.filter((state) => state.status === "confirmed").map((state) => state.stepKey),
-    );
-
-    // step -> the compact ids to clear on it, and the columns to clear.
-    const byStep = new Map<StepKey, { columns: Set<string>; compacts: Set<string> }>();
-    const settledByCompact = await loadSettledInPart1(
-      deps,
-      period,
-      run.id,
-      target.employees.map((e) => e.hrIdCompact),
-    );
-
-    for (const employee of target.employees) {
-      const settled = settledByCompact.get(employee.hrIdCompact) ?? false;
-      for (const category of employee.categories) {
-        for (const destination of payrollStepsForCategory(category, settled)) {
-          const entry = byStep.get(destination.stepKey) ?? { columns: new Set(), compacts: new Set() };
-          for (const column of destination.columns) entry.columns.add(column);
-          entry.compacts.add(employee.hrIdCompact);
-          byStep.set(destination.stepKey, entry);
-        }
-      }
-    }
-
-    const clearedHrIds = new Set<string>();
-    const keptSavedHrIds = new Set<string>();
-    const reopenedSteps: StepKey[] = [];
-    for (const [stepKey, entry] of byStep) {
-      const compacts = Array.from(entry.compacts);
-      const columns = Array.from(entry.columns);
-      if (!confirmed.has(stepKey)) {
-        // An UNconfirmed step is NOT necessarily live: Save without Confirm writes every row's shown
-        // figure onto the draft, and recommend.ts prefers a saved draft value over the module. A save
-        // made before the decision changed (September 2026: two bulk saves of p2_manual_deductions on
-        // 6 Oct held 0.00 over 8,405.17 EGP of approved "other" lines) would keep charging the old
-        // figure. Clear it — unless the cell history shows a PERSON saved it, which is kept and
-        // reported. No step_state is written: the step was never confirmed.
-        const latest = await deps.listLatestCellWrites(run.id, compacts, columns);
-        const personSaved = (compact: string) =>
-          columns.some((column) => {
-            const write = latest.get(`${compact}|${column}`);
-            return write ? isTypedByHand(write) : false;
-          });
-        const clearable = compacts.filter((compact) => !personSaved(compact));
-        for (const compact of compacts) if (personSaved(compact)) keptSavedHrIds.add(compact);
-        if (clearable.length > 0) {
-          for (const hrId of await deps.clearDraftColumns(run.id, clearable, columns)) clearedHrIds.add(hrId);
-        }
-        continue;
-      }
-      const cleared = await deps.clearDraftColumns(run.id, compacts, columns);
-      for (const hrId of cleared) clearedHrIds.add(hrId);
-      await deps.upsertStepState({
+    // THE CLEARS RUN UNDER THE RUN'S HOLD (audit 2026-10-23, S-PAY-06). Checked above against a run read
+    // a moment ago; a Part 2 confirm landing in between used to have these clears arrive after its
+    // stamp. The hold re-checks the phase as it is taken, so a run that reached `ready` meanwhile is
+    // refused here and reported below as the same skip as one that was already confirmed.
+    return await deps.holdRun(
+      {
         runId: run.id,
-        stepKey,
-        status: "pending",
-        confirmedAt: null,
-        confirmedBy: null,
-      });
-      reopenedSteps.push(stepKey);
-    }
+        expected: ["part1", "part2"],
+        action: RUN_HOLD_ACTIONS.deductionResync,
+        // A decision that has been saved must still reach payroll: wait briefly, then go ahead.
+        waitMs: 5_000,
+        whenWaitRunsOut: "proceed",
+      },
+      async (): Promise<DeductionResyncOutcome> => {
+        const states = await deps.listStepStates(run.id);
+        const confirmed = new Set(
+          states.filter((state) => state.status === "confirmed").map((state) => state.stepKey),
+        );
 
-    return {
-      action: "resync",
-      monthKey,
-      runId: run.id,
-      clearedHrIds: Array.from(clearedHrIds),
-      reopenedSteps,
-      keptSavedHrIds: Array.from(keptSavedHrIds),
-    };
+        // step -> the compact ids to clear on it, and the columns to clear.
+        const byStep = new Map<StepKey, { columns: Set<string>; compacts: Set<string> }>();
+        const settledByCompact = await loadSettledInPart1(
+          deps,
+          period,
+          run.id,
+          target.employees.map((e) => e.hrIdCompact),
+        );
+
+        for (const employee of target.employees) {
+          const settled = settledByCompact.get(employee.hrIdCompact) ?? false;
+          for (const category of employee.categories) {
+            for (const destination of payrollStepsForCategory(category, settled)) {
+              const entry = byStep.get(destination.stepKey) ?? { columns: new Set(), compacts: new Set() };
+              for (const column of destination.columns) entry.columns.add(column);
+              entry.compacts.add(employee.hrIdCompact);
+              byStep.set(destination.stepKey, entry);
+            }
+          }
+        }
+
+        const clearedHrIds = new Set<string>();
+        const keptSavedHrIds = new Set<string>();
+        const reopenedSteps: StepKey[] = [];
+        for (const [stepKey, entry] of byStep) {
+          const compacts = Array.from(entry.compacts);
+          const columns = Array.from(entry.columns);
+          if (!confirmed.has(stepKey)) {
+            // An UNconfirmed step is NOT necessarily live: Save without Confirm writes every row's shown
+            // figure onto the draft, and recommend.ts prefers a saved draft value over the module. A save
+            // made before the decision changed (September 2026: two bulk saves of p2_manual_deductions on
+            // 6 Oct held 0.00 over 8,405.17 EGP of approved "other" lines) would keep charging the old
+            // figure. Clear it — unless the cell history shows a PERSON saved it, which is kept and
+            // reported. No step_state is written: the step was never confirmed.
+            const latest = await deps.listLatestCellWrites(run.id, compacts, columns);
+            const personSaved = (compact: string) =>
+              columns.some((column) => {
+                const write = latest.get(`${compact}|${column}`);
+                return write ? isTypedByHand(write) : false;
+              });
+            const clearable = compacts.filter((compact) => !personSaved(compact));
+            for (const compact of compacts) if (personSaved(compact)) keptSavedHrIds.add(compact);
+            if (clearable.length > 0) {
+              for (const hrId of await deps.clearDraftColumns(run.id, clearable, columns)) clearedHrIds.add(hrId);
+            }
+            continue;
+          }
+          const cleared = await deps.clearDraftColumns(run.id, compacts, columns);
+          for (const hrId of cleared) clearedHrIds.add(hrId);
+          await deps.upsertStepState({
+            runId: run.id,
+            stepKey,
+            status: "pending",
+            confirmedAt: null,
+            confirmedBy: null,
+          });
+          reopenedSteps.push(stepKey);
+        }
+
+        return {
+          action: "resync",
+          monthKey,
+          runId: run.id,
+          clearedHrIds: Array.from(clearedHrIds),
+          reopenedSteps,
+          keptSavedHrIds: Array.from(keptSavedHrIds),
+        };
+      },
+    );
   } catch (error) {
+    // A hold refused because Part 2 was confirmed in the meantime is the same skip as above, said the
+    // same way, not a failure.
+    const after = await deps.findActiveRun(period.month, period.year).catch(() => null);
+    if (after?.part2ConfirmedAt) {
+      logError(
+        "Automated payroll: a deduction decision changed after Part 2 was confirmed and did not reach payroll",
+        {
+          labels: {
+            event: "automated_payroll_deduction_resync_skipped_part2_confirmed",
+            runId: after.id,
+            monthKey,
+            employees: target.employees.length,
+            hrIds: target.employees.map((employee) => employee.hrIdCompact).join(","),
+          },
+        },
+      );
+      return { action: "skip", monthKey, reason: "part2_already_confirmed" };
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     logError("Automated payroll: deduction step resync failed", {
       labels: { event: "automated_payroll_deduction_resync_failed", monthKey },

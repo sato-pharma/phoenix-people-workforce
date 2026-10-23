@@ -4,15 +4,19 @@ import { runRetentionRiskPrePayrollNotice } from "@/lib/retention-risk/notify";
 import { roundCurrency } from "@/lib/payroll/money";
 import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration";
 import {
+  compareSalaryBatchRecords,
   createSalaryBatch,
   findSalaryBatchForPeriod,
+  isReplaceableSalaryBatch,
+  replaceSalaryBatch,
 } from "@/lib/payroll/service";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
-import { writeAutomatedPayrollAudit } from "./audit.ts";
+import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import { holdRun } from "./run-hold.ts";
 import { recordPaidExpenseStamp } from "./expense-stamp.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
 import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "./exports/cib-sheet.ts";
@@ -28,7 +32,14 @@ import {
 import { assertHoldReasonsPresent, holdCandidatesFromStepRows } from "./hold-reason.ts";
 import { buildHoldReview, type HoldReview } from "./hold-review.ts";
 import { exclusionRefusal } from "./exclusion-guard.ts";
-import { assertNoTransitionInProgress, describeTransitionRefusal, TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
+import {
+  assertNoTransitionInProgress,
+  describeTransitionRefusal,
+  isRunHoldAction,
+  RUN_HOLD_ACTIONS,
+  TRANSITION_CLAIM_LOST,
+  transitionInProgress,
+} from "./transition-claim.ts";
 import { assertNoNegativeStepValues } from "./negative-values.ts";
 import {
   describePayrollDayCollisions,
@@ -38,8 +49,10 @@ import {
 import { loadConfirmedDeductions } from "./deductions-source.ts";
 import { notifyPayslipAvailable } from "@/lib/payroll/notify-payslip-available";
 import {
+  assertMatchesPart2Confirm,
+  assertPart2FileMatchesStamp,
   compareConfirmedTotals,
-  describeTotalsDrift,
+  confirmedBeforeStampExisted,
   PART2_TOTALS_KEY,
   part2Totals,
   readConfirmedTotals,
@@ -411,9 +424,25 @@ function assertActiveRun(run: MonthlySalaryRun): void {
  * holds the run, and a phase that moved underneath them is caught by the claim itself.
  */
 async function claimTransition(runId: string, expected: RunPhase[], action: string): Promise<string> {
-  const token = await claimRunTransition(runId, expected, action);
-  if (token) return token;
-  throw new Error(describeTransitionRefusal(await getRunById(runId), expected));
+  // A short hold (a save, a resync — run-hold.ts) is waited out rather than refused: it lets go within
+  // a second or two, and refusing a confirm over it would only make HR click again.
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const token = await claimRunTransition(runId, expected, action);
+    if (token) return token;
+    const current = await getRunById(runId);
+    // Worth another try: a short hold, or a holder that let go between the claim and this read (the
+    // refusal would otherwise read "this run is now in Part 2, not in Part 2").
+    const worthRetrying = Boolean(
+      current &&
+        expected.includes(current.phase) &&
+        (isRunHoldAction(current.transitionAction) || !transitionInProgress(current)),
+    );
+    if (!worthRetrying || Date.now() >= deadline) {
+      throw new Error(describeTransitionRefusal(current, expected));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
 }
 
 /** Run a transition's writes under its claim, letting the claim go if they fail part-way. */
@@ -735,6 +764,14 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
   assertNoTransitionInProgress(run);
 }
 
+/**
+ * Every phase a write to this step may land in — the same answer assertStepPhaseAllowed gives, handed
+ * to the run hold so the phase is checked again at the moment of the write, not only when it was read.
+ */
+function stepWritablePhases(stepKey: StepKey): RunPhase[] {
+  return stepPhase(stepKey) === "part2" ? ["part2"] : ["part1", "part2"];
+}
+
 /** Save inline/xlsx edits for a step (marks the step edited, not confirmed). */
 export async function saveStep(
   access: AccessContext,
@@ -849,8 +886,12 @@ export async function saveStep(
     patch.writeStepKey = stepKey;
     return patch;
   });
-  await upsertDraftRows(runId, patches);
-  await upsertStepState({ runId, stepKey, status: "pending", inputMode });
+  // Written under the run's hold (audit 2026-10-23, F-08a): a confirm that started after the checks
+  // above cannot be overtaken by this save, and a run that moved on is refused rather than written.
+  await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.saveStep }, async () => {
+    await upsertDraftRows(runId, patches);
+    await upsertStepState({ runId, stepKey, status: "pending", inputMode });
+  });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
@@ -927,8 +968,6 @@ export async function confirmStep(
       patch.writeStepKey = stepKey;
       return patch;
     });
-  await upsertDraftRows(runId, patches);
-
   const summary = summarizeStep(stepKey, rows);
   // WHAT THE MODULE WAS PROPOSING AT THIS MOMENT, for the steps it feeds.
   //
@@ -959,13 +998,18 @@ export async function confirmStep(
   // The read is therefore gone from here rather than left in: with nothing downstream consuming
   // it, an unreachable holiday calendar would have refused a payroll confirm for no benefit at all.
   // The step's own figure comes from the Deductions module via recommendVacation, untouched.
-  const state = await upsertStepState({
-    runId,
-    stepKey,
-    status: "confirmed",
-    summary,
-    confirmedAt: nowIso(),
-    confirmedBy: actorId(access),
+  // The rows and the step's confirmed state are written together under the run's hold (F-08a), so a
+  // Part confirm running at the same moment either sees both or neither.
+  const state = await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.confirmStep }, async () => {
+    await upsertDraftRows(runId, patches);
+    return upsertStepState({
+      runId,
+      stepKey,
+      status: "confirmed",
+      summary,
+      confirmedAt: nowIso(),
+      confirmedBy: actorId(access),
+    });
   });
 
   await writeAutomatedPayrollAudit({
@@ -1209,6 +1253,24 @@ export async function confirmPart1(
   // The freeze and the phase write happen under one claim (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part1"], "Confirming Part 1");
   const updated = await whileClaimed(runId, transition, async () => {
+    // WHAT IS FROZEN IS WHAT THE RUN SAYS NOW (audit 2026-10-23, F-08a). Everything above read the run
+    // before the claim, and a save or a resync that finished in between would be frozen over. Under
+    // the claim nothing else can write, so recomputing here and refusing on any difference means the
+    // freeze is never built from figures the run no longer holds.
+    const fresh = await loadRunContext(period, runId);
+    const refrozen = computeFrozenFirstParts({
+      members: fresh.members,
+      sources: fresh.sources,
+      draftRows: fresh.draftRows,
+      period,
+    });
+    const movedWhileConfirming = frozenFirstPartsDiffer(frozen, refrozen, members, fresh.members);
+    if (movedWhileConfirming) {
+      throw new Error(
+        "Conflict: this run changed while Part 1 was being confirmed (a step was saved or a deduction " +
+          `decision reached it — ${movedWhileConfirming}). Nothing was confirmed; confirm Part 1 again.`,
+      );
+    }
     await upsertDraftRows(runId, patches);
     return updateRun(
       runId,
@@ -1239,6 +1301,31 @@ export async function confirmPart1(
     });
   });
   return updated;
+}
+
+/**
+ * The first difference between two freezes of the same run, in words, or null when they agree. Who is
+ * in the population counts as much as the figure: a person added or dropped changes what is frozen.
+ */
+function frozenFirstPartsDiffer(
+  before: Map<string, number>,
+  after: Map<string, number>,
+  membersBefore: PopulationMember[],
+  membersAfter: PopulationMember[],
+): string | null {
+  const keysBefore = new Set(membersBefore.map((member) => member.compact));
+  const keysAfter = new Set(membersAfter.map((member) => member.compact));
+  if (keysBefore.size !== keysAfter.size || [...keysBefore].some((key) => !keysAfter.has(key))) {
+    return "the people on the run changed";
+  }
+  for (const member of membersAfter) {
+    const was = roundCurrency(before.get(member.compact) ?? 0);
+    const now = roundCurrency(after.get(member.compact) ?? 0);
+    if (Math.abs(was - now) > 0.005) {
+      return `${member.employee.fullName}'s first instalment moved from ${was.toLocaleString()} to ${now.toLocaleString()}`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1366,20 +1453,25 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
   return updated;
 }
 
+/** The audit action of the stamp row a Part 2 confirm writes inside its claim. */
+const PART2_TOTALS_STAMP_ACTION = "part2_totals_stamped";
+
 /**
  * The money totals stamped by the most recent Part 2 confirm on this run.
  *
  * FAILS CLOSED. A read error here is not "nothing to compare against" — it is not knowing whether
  * the month moved, and carrying on would silently disable the one check that catches it. A run
- * with no stamp at all is a different thing and is allowed through: it predates the stamp, and the
- * publish audit row records that the comparison could not be made.
+ * with no stamp returns null, and since 2026-10-23 every caller REFUSES on null rather than letting
+ * it through (assertMatchesPart2Confirm): re-confirming Part 2 writes the stamp.
  */
 async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals | null> {
+  // The stamp row written inside the confirm's claim, and the older `part2_confirmed` row that
+  // carried it before 2026-10-23. Both hold the same totals for the same confirm; the newest wins.
   const { data, error } = await getSupabaseAdmin()
     .from("automated_payroll_audit")
     .select("detail,created_at")
     .eq("run_id", runId)
-    .eq("action", "part2_confirmed")
+    .in("action", [PART2_TOTALS_STAMP_ACTION, "part2_confirmed"])
     .order("created_at", { ascending: false })
     .limit(1);
   if (error) {
@@ -1575,7 +1667,34 @@ export async function confirmPart2(
   ).length;
   // Recorded and confirmed under one claim (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Confirming Part 2");
+  const confirmedTotals = part2Totals(rows.length, totals);
   const { carryForwardRecorded, updated } = await whileClaimed(runId, transition, async () => {
+    // THE STAMP IS THE SHEET THE RUN HOLDS NOW (audit 2026-10-23, F-08a). The gates above read the run
+    // before the claim; a step save or a Deductions resync that finished in between would leave the
+    // stamp describing a month the run no longer holds. Under the claim nothing else can write, so one
+    // more assembly settles it: a difference refuses, and nothing has been written yet.
+    const { rows: rowsUnderClaim } = await assembleForRun(run);
+    const movedWhileConfirming = compareConfirmedTotals(
+      confirmedTotals,
+      part2Totals(rowsUnderClaim.length, reconcile(rowsUnderClaim)),
+    );
+    if (movedWhileConfirming.length > 0) {
+      throw new Error(
+        "Conflict: this run changed while Part 2 was being confirmed (a step was saved or a deduction or " +
+          "expense decision reached it). Nothing was confirmed; confirm Part 2 again.",
+      );
+    }
+    // THE STAMP IS WRITTEN FIRST, AND IT MUST LAND (audit 2026-10-23, S-PAY-08). It used to ride on the
+    // best-effort audit row written after the claim, so a lost insert left a `ready` run with no stamp —
+    // and publish then skipped the comparison. Publish and every Part 2 bank file now refuse without it,
+    // so it is required here, inside the claim, and before the ledger: a stamp that cannot be written
+    // leaves no overpayment recorded as a debt for another run to collect.
+    await writeRequiredAutomatedPayrollAudit({
+      runId,
+      actorHrId: actorId(access),
+      action: PART2_TOTALS_STAMP_ACTION,
+      detail: { [PART2_TOTALS_KEY]: confirmedTotals },
+    });
     const recorded = await recordOverpaidCarryForward({ runId, rows, actorHrId: actorId(access) });
     const confirmed = await updateRun(
       runId,
@@ -1600,7 +1719,7 @@ export async function confirmPart2(
       // THE SHEET FINANCE IS ABOUT TO EXECUTE, recorded so publish can prove it is writing the
       // same month. Publish re-assembles from CURRENT data rather than from anything stored, so
       // without a stamp there is nothing for it to disagree with. See publishToPayslips.
-      [PART2_TOTALS_KEY]: part2Totals(rows.length, totals),
+      [PART2_TOTALS_KEY]: confirmedTotals,
     },
   });
   await notifyPart2Ready(updated);
@@ -1871,15 +1990,17 @@ export async function excludeEmployeeFromRun(
     if (refusal) throw new Error(refusal);
   }
 
-  await upsertDraftRows(runId, [
-    {
-      employeeHrId: hrId,
-      excluded: true,
-      excludedReason: trimmedReason,
-      editedBy: actorId(access),
-      writeReason: "employee_excluded",
-    },
-  ]);
+  await holdRun({ runId, expected: [run.phase], action: RUN_HOLD_ACTIONS.exclude }, () =>
+    upsertDraftRows(runId, [
+      {
+        employeeHrId: hrId,
+        excluded: true,
+        excludedReason: trimmedReason,
+        editedBy: actorId(access),
+        writeReason: "employee_excluded",
+      },
+    ]),
+  );
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
@@ -1898,15 +2019,17 @@ export async function includeEmployeeInRun(access: AccessContext, runId: string,
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
 
-  await upsertDraftRows(runId, [
-    {
-      employeeHrId: hrId,
-      excluded: false,
-      excludedReason: null,
-      editedBy: actorId(access),
-      writeReason: "employee_included",
-    },
-  ]);
+  await holdRun({ runId, expected: [run.phase], action: RUN_HOLD_ACTIONS.include }, () =>
+    upsertDraftRows(runId, [
+      {
+        employeeHrId: hrId,
+        excluded: false,
+        excludedReason: null,
+        editedBy: actorId(access),
+        writeReason: "employee_included",
+      },
+    ]),
+  );
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
@@ -2022,12 +2145,13 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     );
   }
 
-  const confirmedTotals = await readPart2ConfirmedTotals(runId);
-  const totalsDrift = confirmedTotals
-    ? compareConfirmedTotals(confirmedTotals, part2Totals(rows.length, publishTotals))
-    : [];
-  if (totalsDrift.length > 0) {
-    throw new Error(`Conflict: ${describeTotalsDrift(totalsDrift)}`);
+  // Refuses when the month moved since Part 2 confirm AND when there is no stamp at all (audit
+  // 2026-10-23, S-PAY-08): "could not compare" used to publish, recording only that it had not checked.
+  // The one exception is a run confirmed before the stamp existed (2026-09-11), which never had one.
+  const confirmedStamp = await readPart2ConfirmedTotals(runId);
+  const predatesStamp = !confirmedStamp && confirmedBeforeStampExisted(run.part2ConfirmedAt);
+  if (!predatesStamp) {
+    assertMatchesPart2Confirm(confirmedStamp, part2Totals(rows.length, publishTotals), "publish");
   }
 
   // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
@@ -2087,40 +2211,113 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // the one transition that writes REAL MONEY before its phase write: by the time the run is marked, the
   // salary records exist, the batch is approved and the carry-forward ledger is settled.
   let batchAlreadyWritten: string | null = null;
+  // What happened to the batch on the way, for the publish audit row: a leftover batch replaced because
+  // its records were not this run's, or a create whose own follow-up threw after the batch was written.
+  const batchNotes: Record<string, unknown> = {};
   const published = await whileClaimed(runId, transition, async () => {
     const ownFileName = `automated-payroll:${runId}`;
-    const existing = await findSalaryBatchForPeriod(run.month, run.year);
-    let batchId: string;
+    let existing = await findSalaryBatchForPeriod(run.month, run.year);
 
-    if (existing) {
-      if (existing.fileName !== ownFileName) {
+    if (!existing) {
+      // A CREATE THAT THROWS MAY STILL HAVE WRITTEN THE BATCH (audit 2026-10-23, F-18). The batch and
+      // its records are committed by one database call; the record check and the required audit row
+      // come after it and can throw. Reporting that as "publish failed" left a batch behind and sent
+      // the next click down the leftover-batch path below. So look: if our batch exists, carry on and
+      // prove its records the same way a retry does; if it does not, the create really failed.
+      try {
+        await createSalaryBatch({
+          records: publishRows,
+          month: run.month,
+          year: run.year,
+          fileName: ownFileName,
+          uploadedBy: actorId(access),
+          validationWarnings: [],
+        });
+      } catch (createError) {
+        const written = await findSalaryBatchForPeriod(run.month, run.year);
+        if (!written || written.fileName !== ownFileName) throw createError;
+        batchNotes.createFollowUpError = createError instanceof Error ? createError.message : String(createError);
+        logError("Automated payroll: the salary batch was written but its create reported an error", {
+          labels: { event: "automated_payroll_batch_create_follow_up_failed", runId, batchId: written.id },
+          error: createError,
+        });
+      }
+      existing = await findSalaryBatchForPeriod(run.month, run.year);
+      if (!existing) {
+        throw new Error("Conflict: the salary batch could not be read back after it was created. Nothing was published.");
+      }
+    }
+
+    if (existing.fileName !== ownFileName) {
+      throw new Error(
+        `Conflict: a payroll batch already exists for ${run.month}/${run.year} ("${existing.fileName}"). Resolve it in the existing payroll tools before publishing here.`,
+      );
+    }
+    const batchId = existing.id;
+    batchAlreadyWritten = batchId;
+
+    // OUR OWN BATCH IS FINALISED ONLY WHEN ITS RECORDS ARE THIS RUN'S (audit 2026-10-23, S-PAY-09).
+    // A batch left by an earlier, interrupted publish was approved as it stood, so a partial batch, or
+    // one written before the month moved, became the month's payslips. Every record is compared with
+    // the rows this publish would write: every column, every person, and nobody extra.
+    const { all: mismatches, money: moneyMismatches } = await compareSalaryBatchRecords(batchId, publishRows);
+    const alreadyLive = existing.status === "approved" || existing.status === "locked";
+    if (alreadyLive && moneyMismatches.length > 0) {
+      throw new Error(
+        `Conflict: salary batch ${batchId} for this run is already "${existing.status}" (its payslips are live) and ` +
+          `what it pays differs from the confirmed month (${moneyMismatches.slice(0, 5).join("; ")}). Nothing was ` +
+          "published. Do not publish this run again: the batch has to be reconciled by hand first.",
+      );
+    }
+    if (alreadyLive && mismatches.length > 0) {
+      // Payslips already live and every figure and person matches; only a name, title, area, line, hire
+      // date or comment moved in the directory between the two attempts. Not a reason to strand the month
+      // half-published — finish it, and write down what differs.
+      batchNotes.liveBatchDescriptiveDifferences = { differences: mismatches.length, sample: mismatches.slice(0, 10) };
+    } else if (mismatches.length > 0) {
+      if (!isReplaceableSalaryBatch(existing)) {
         throw new Error(
-          `Conflict: a payroll batch already exists for ${run.month}/${run.year} ("${existing.fileName}"). Resolve it in the existing payroll tools before publishing here.`,
+          `Conflict: salary batch ${batchId} for this run is "${existing.status}" and its records differ ` +
+            `from the confirmed month (${mismatches.slice(0, 5).join("; ")}). Nothing was published. Do not ` +
+            "publish this run again: the batch has to be reconciled by hand first.",
         );
       }
-      // Our own batch from a previous partial publish — finalize it.
-      batchId = existing.id;
-      // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is
-      // checked. Skipping this for every other status is what let a run be marked published over a
-      // batch nobody could see.
-      const status =
-        existing.status === "approved" || existing.status === "locked"
-          ? existing.status
-          : await finalizeApproved(batchId, actorId(access));
-      assertBatchApproved(status, batchId);
-    } else {
-      const created = await createSalaryBatch({
-        records: publishRows,
-        month: run.month,
-        year: run.year,
-        fileName: ownFileName,
-        uploadedBy: actorId(access),
-        validationWarnings: [],
-      });
-      batchId = created.batch.id;
-      assertBatchApproved(await finalizeApproved(batchId, actorId(access)), batchId);
+      // Still editable: rewrite it with this run's rows, then prove the rewrite before finalising it.
+      try {
+        await replaceSalaryBatch(batchId, {
+          records: publishRows,
+          fileName: ownFileName,
+          uploadedBy: actorId(access),
+          validationWarnings: [],
+        });
+      } catch (replaceError) {
+        // Same shape as the create: the rewrite commits first and checks after, so the comparison below
+        // is the answer, not this error.
+        batchNotes.replaceFollowUpError = replaceError instanceof Error ? replaceError.message : String(replaceError);
+      }
+      const { all: stillDifferent } = await compareSalaryBatchRecords(batchId, publishRows);
+      if (stillDifferent.length > 0) {
+        throw new Error(
+          `Conflict: salary batch ${batchId} could not be brought in line with this run ` +
+            `(${stillDifferent.slice(0, 5).join("; ")}). Nothing was published.`,
+        );
+      }
+      batchNotes.replacedLeftoverBatch = {
+        batchId,
+        status: existing.status,
+        differences: mismatches.length,
+        sample: mismatches.slice(0, 10),
+      };
     }
-    batchAlreadyWritten = batchId;
+
+    // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is checked.
+    // Skipping this for every other status is what let a run be marked published over a batch nobody
+    // could see.
+    const status =
+      existing.status === "approved" || existing.status === "locked"
+        ? existing.status
+        : await finalizeApproved(batchId, actorId(access));
+    assertBatchApproved(status, batchId);
 
     // SETTLE THE CARRY-FORWARD LEDGER HERE, from the rows that were actually published. Held rows
     // are excluded because no salary record was written for them, so their debt was collected from
@@ -2194,10 +2391,10 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       carryForwardRecovered,
       // Which outstation trips this month paid, or why marking them failed.
       expenseStamp,
-      // Whether publish could prove it wrote the month Part 2 confirmed. False means the run
-      // predates the stamp, not that the check failed — a failed READ throws instead, because
-      // "could not compare" must never read as "compared and matched".
-      totalsComparedToConfirm: confirmedTotals != null,
+      // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
+      totalsComparedToConfirm: !predatesStamp,
+      // A leftover batch replaced, or a create or rewrite that wrote the batch and then threw (S-PAY-09, F-18).
+      ...batchNotes,
       // The permanent answer to "who was held this month, for how much, and why".
       held: heldRecord,
       heldFirstPartTotal,
@@ -2548,6 +2745,24 @@ export async function importStepUpload(
 
 // ---- Finance download (finance actor) ---------------------------------------
 
+/**
+ * A FILE THAT PAYS PART 2 CARRIES THE MONTH PART 2 CONFIRMED (audit 2026-10-23, F-08b).
+ *
+ * The finance sheet and both bank files are rebuilt from live data at the moment of download. Only
+ * publish compared that against the totals Part 2 confirm stamped, so anything that moved between
+ * the confirm and the click — a corrected salary, a deduction decision, an expense approved that
+ * morning — went to the bank in a file nobody had confirmed. The same check publish runs, here.
+ *
+ * Part 1 files are not checked against it: the first instalment is frozen at Part 1 confirm, and the
+ * stamp does not exist until Part 2.
+ */
+async function assertFileMatchesPart2Confirm(run: MonthlySalaryRun, rows: AssembledRow[]): Promise<void> {
+  // The rule is assertPart2FileMatchesStamp's; the phase test here only saves a read for a month that
+  // is not held to the stamp.
+  if (run.phase !== "ready") return;
+  assertPart2FileMatchesStamp(run, await readPart2ConfirmedTotals(run.id), part2Totals(rows.length, reconcile(rows)));
+}
+
 /** Finance locked sheet for a period (CEO / Financial Advisor / Finance Manager / Super Admin). */
 export async function buildFinanceSheet(
   access: AccessContext,
@@ -2568,6 +2783,7 @@ export async function buildFinanceSheet(
   // ONE assembly path — see buildFabSheet. The finance sheet is the document the month is executed
   // from, and it used to re-assemble without the carry-forward ledger.
   const { rows } = await assembleForRun(run);
+  if (scope === "full") await assertFileMatchesPart2Confirm(run, rows);
   const buffer = await buildFinanceSheetWorkbook({
     run,
     rows,
@@ -2651,6 +2867,7 @@ export async function buildFabSheet(
   // ONE assembly path — the same call publish makes. This used to re-assemble by hand WITHOUT the
   // carry-forward ledger, so a recovery that the payslip carried reached neither bank file.
   const { rows } = await assembleForRun(run);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
@@ -2700,6 +2917,7 @@ export async function buildCibSheet(
 
   // ONE assembly path — see buildFabSheet. Carry-forward recoveries reached neither bank file.
   const { rows } = await assembleForRun(run);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
   // source that cibRowsForScope never sees on its own.

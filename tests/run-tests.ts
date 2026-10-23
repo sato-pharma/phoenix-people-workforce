@@ -1516,6 +1516,7 @@ import { runPayrollPayslipNoticeTests } from "./payroll-payslip-notice.test.ts";
 import { runPayrollSameMonthJoinerLeaverTests } from "./payroll-same-month-joiner-leaver.test.ts";
 import { runPayrollAuditTrailAppendOnlyTests } from "./payroll-audit-trail-append-only.test.ts";
 import { runAutomatedPayrollRunIntegrityTests } from "./automated-payroll-run-integrity.test.ts";
+import { runAutomatedPayrollMoneyIntegrityTests } from "./automated-payroll-money-integrity.test.ts";
 import { runAutomatedPayrollTemplateHeadingTests } from "./automated-payroll-template-headings.test.ts";
 import { runAutomatedPayrollPartSplitStampTests } from "./automated-payroll-part-split-stamp.test.ts";
 import { runAutomatedPayrollAdditionsRecordTests } from "./automated-payroll-additions-record.test.ts";
@@ -3073,6 +3074,10 @@ await runTest(
 await runTest(
   "automated payroll: a confirmed run stops moving, and reopening one re-derives it",
   runAutomatedPayrollRunIntegrityTests,
+);
+await runTest(
+  "automated payroll: the bank files and payslips carry the month Part 2 confirmed, and no write lands inside a confirm",
+  runAutomatedPayrollMoneyIntegrityTests,
 );
 await runTest(
   "automated payroll: no two step-template columns read as the same heading",

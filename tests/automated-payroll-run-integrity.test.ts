@@ -52,7 +52,7 @@ function bounded(source: string, start: string): string {
   assert.ok(at >= 0, `could not find ${start}`);
   const end = source.indexOf("\nexport ", at + start.length);
   const body = source.slice(at, end > 0 ? end : undefined);
-  assert.ok(body.length > 200 && body.length < 14000, `${start} slice must stay bounded (${body.length})`);
+  assert.ok(body.length > 200 && body.length < 20000, `${start} slice must stay bounded (${body.length})`);
   return body;
 }
 
@@ -110,16 +110,16 @@ export async function runAutomatedPayrollRunIntegrityTests() {
   );
   assert.match(
     publish,
-    /compareConfirmedTotals\(confirmedTotals, part2Totals\(rows\.length, publishTotals\)\)/,
-    "and it must compare the sheet it is writing against the one Part 2 confirmed",
+    /assertMatchesPart2Confirm\(confirmedStamp, part2Totals\(rows\.length, publishTotals\), "publish"\)/,
+    "and it must compare the sheet it is writing against the one Part 2 confirmed — a difference, or no " +
+      "stamp, REFUSES (the refusal itself is pinned in automated-payroll-money-integrity.test.ts)",
   );
-  assert.match(publish, /throw new Error\(`Conflict: \$\{describeTotalsDrift/, "a difference REFUSES");
 
   // The stamp has to be written, or there is nothing to compare against.
   const confirm = bounded(runService, "export async function confirmPart2");
   assert.match(
     confirm,
-    /\[PART2_TOTALS_KEY\]: part2Totals\(rows\.length, totals\)/,
+    /const confirmedTotals = part2Totals\(rows\.length, totals\)[\s\S]*\[PART2_TOTALS_KEY\]: confirmedTotals/,
     "Part 2 confirm must stamp the totals of the sheet it confirmed",
   );
 

@@ -133,6 +133,8 @@ export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   /^\/api\/admin\/activity\/timeline(\/|$)/,
   // Mints a lasting calendar-feed link for the viewer — refused to a test account for the same reason.
   /^\/api\/recruitment\/interview-calendar\/my-calendar-feed(\/|$)/,
+  // The month's bank transfer file: every account number and amount, and an audit row naming who took it.
+  /^\/api\/payroll\/[^/]+\/bank-file(\/|$)/,
 ];
 
 /** Whether a request with this method and path may run during a seat view. */
