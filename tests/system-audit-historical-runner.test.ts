@@ -18,7 +18,7 @@ import {
 
 const NOW = new Date("2026-10-23T01:00:00.000Z"); // 04:00 Cairo
 
-function refuses(argv: string[], pattern: RegExp, why: string) {
+function refuses(argv: string[], pattern: RegExp, why?: string) {
   assert.throws(() => parseHistoricalArgs(argv, NOW), pattern, why);
 }
 

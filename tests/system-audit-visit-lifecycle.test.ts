@@ -343,8 +343,8 @@ export async function runSystemAuditVisitLifecycleTests() {
     });
     assert.equal(result.status, "ok", `the historical run is ok (${result.error ?? ""})`);
     assert.deepEqual(occurrences, [], "neither measured group is a finding");
-    assert.equal(result.excludedCounts.offplan_pending_manager, 38, "19 off-plan visits waiting for the manager, counted by the day and again by its month");
-    assert.equal(result.excludedCounts.team_not_started, 36, "18 visits saved before the team started, counted by the day and again by its month");
+    assert.equal(result.excludedCounts.offplan_pending_manager, 19, "19 off-plan visits waiting for the manager, each counted once (the month pass never re-counts a day's exclusion)");
+    assert.equal(result.excludedCounts.team_not_started, 18, "18 visits saved before the team started, each counted once (the month pass never re-counts a day's exclusion)");
     assert.equal(result.excludedCounts.kpi_old_rules_mid_period, 2, "both teams went live inside October, so its call rate keeps the old rules");
     assert.ok(writes.every((batch) => batch.cursor === null), "a historical run never moves the cron watermark");
   }

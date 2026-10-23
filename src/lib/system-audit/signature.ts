@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isCrossOriginMaskedMessage } from "@/lib/error-monitor/cross-origin-masked";
 import { extractTopComponent } from "@/lib/error-monitor/message-decode";
 import { describeThirdPartyStack } from "@/lib/error-monitor/third-party-stack";
+import { isUuid } from "@/lib/http/uuid";
 import { hrNamespaceRemainder, isHrRewritablePath } from "@/lib/navigation/shell-headers";
 import { isStaleDeployChunkError } from "@/lib/utils/stale-deploy-recovery";
 
@@ -284,7 +285,7 @@ function isIdentifierSegment(segment: string): boolean {
   }
   if (decoded.startsWith("[") && decoded.endsWith("]")) return false;
   if (/^\d+$/.test(decoded)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded)) return true;
+  if (isUuid(decoded)) return true;
   if (/^[a-z]{1,4}-\d+$/i.test(decoded)) return true;
   if (/^\d{4}-\d{2}(?:-\d{2})?$/.test(decoded)) return true;
   if (decoded.includes(":") || decoded.includes("@")) return true;

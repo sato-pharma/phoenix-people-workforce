@@ -18,6 +18,7 @@ import { getEffectiveExcludedAgentCrmIds } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   UnmappedCrmIdentityRow,
@@ -535,6 +536,26 @@ export async function getLatestSuccessfulSyncRunFor(dateIso: string): Promise<st
   }
   const rows = (data ?? []) as unknown as Array<{ completed_at?: string | null }>;
   return rows[0]?.completed_at ?? null;
+}
+
+/**
+ * Every sync-run row that started in [`fromIso`, `beforeIso`), oldest first, paged past PostgREST's
+ * 1,000-row cap — the System Audit's sync-runs detector reads the whole window, successes included,
+ * because a later success is what verifies an earlier failure. Unlike the board reads above, a
+ * missing table THROWS: an audit that cannot read its source must say so, never answer "no runs".
+ */
+export async function listVisitsSyncRunsInWindow<T>(input: {
+  columns: string;
+  fromIso: string;
+  beforeIso: string | null;
+  client?: ReturnType<typeof getSupabaseAdmin>;
+}): Promise<T[]> {
+  const supabase = input.client ?? getSupabaseAdmin({ requestTimeoutMs: 20_000 });
+  return fetchAllRows<T>(() => {
+    let query = supabase.from(syncRunsTable).select(input.columns).gte("started_at", input.fromIso);
+    if (input.beforeIso) query = query.lt("started_at", input.beforeIso);
+    return query.order("started_at", { ascending: true });
+  }, "id");
 }
 
 export async function getLatestVisitsSyncRuns(limit = 10): Promise<VisitsSyncRun[]> {

@@ -215,6 +215,10 @@ export async function runMalformedUuidIdGuardsTests() {
     // (error-monitor/ai-redact.ts, a global uuid scanner, was listed here until it was deleted with
     // the System Issues page's AI triage on 23 Oct 2026.)
     "src/lib/communication/metrics.ts",
+    //   system-audit/signature.ts — an UNANCHORED, global scanner that masks every uuid inside an
+    // error message to "<uuid>" so retries of one error share a signature; it never guards a
+    // lookup. Its one anchored check (is this path segment an id?) imports isUuid.
+    "src/lib/system-audit/signature.ts",
   ]);
 
   const uuidPattern = /\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/;

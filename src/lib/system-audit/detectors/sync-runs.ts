@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 
 import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 import { readCrmCutoverSetting } from "@/lib/crm/cutover";
+import { listVisitsSyncRunsInWindow } from "@/lib/crm/admin";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
-import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveSidebarLabel } from "@/lib/system-audit/sidebar-label";
 import { messageTemplate } from "@/lib/system-audit/signature";
@@ -228,15 +228,15 @@ export type SyncRunsDetectorDeps = {
 export function createSyncRunsDetector(deps: SyncRunsDetectorDeps = {}): AuditDetector {
   const readRuns =
     deps.readRuns ??
-    (async ({ fromIso, toIso }) => {
-      const supabase = deps.client ?? getSupabaseAdmin({ requestTimeoutMs: 20_000 });
-      return fetchAllRows<SyncRunRow>(() => {
-        // Coverage needs the successes too, so the read is every row in the window, narrow columns.
-        let query = supabase.from(CRM_SYNC_RUNS_TABLE).select(COLUMNS).gte("started_at", fromIso);
-        if (toIso) query = query.lt("started_at", new Date(Date.parse(toIso) + COVERAGE_WINDOW_MS).toISOString());
-        return query.order("started_at", { ascending: true });
-      }, "id");
-    });
+    // Coverage needs the successes too, so the read is every row in the window, narrow columns,
+    // through the CRM module's own door (tests/crm-single-source.test.ts).
+    (({ fromIso, toIso }) =>
+      listVisitsSyncRunsInWindow<SyncRunRow>({
+        columns: COLUMNS,
+        fromIso,
+        beforeIso: toIso ? new Date(Date.parse(toIso) + COVERAGE_WINDOW_MS).toISOString() : null,
+        client: deps.client,
+      }));
   const readRetiredAt = deps.readRetiredAt ?? (async () => (await readCrmCutoverSetting()).vendorSyncRetiredAt);
 
   return {

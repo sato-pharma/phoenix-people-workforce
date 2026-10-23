@@ -13,6 +13,7 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import {
   ROOT_CAUSE_LEVELS,
   SYSTEM_AUDIT_FAMILIES,
@@ -287,7 +288,6 @@ export function describeSystemAuditFilters(filters: SystemAuditFilters): string 
 
 export const SYSTEM_AUDIT_REASON_MAX = 2000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
-const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The statuses a person may set by hand. FIXED — VERIFIED belongs to the verifier alone. */
 const HUMAN_STATUSES = ["investigating", "not_fixed", "fix_implemented", "no_defect", "unknown"] as const;
@@ -337,7 +337,7 @@ export function parseStatusChange(body: unknown): StatusChangeInput {
     );
   }
   const occurrenceRaw = optionalText(record.occurrenceId, "The occurrence");
-  if (occurrenceRaw && !UUID_SHAPE.test(occurrenceRaw)) throw new SystemAuditQueryError("The occurrence id is not valid.");
+  if (occurrenceRaw && !isUuid(occurrenceRaw)) throw new SystemAuditQueryError("The occurrence id is not valid.");
   return { to: to as HumanStatus, reason, fixSha, occurrenceId: occurrenceRaw };
 }
 
@@ -362,7 +362,7 @@ export function parseTriage(body: unknown): TriageInput {
 
 /** True for a well-formed occurrence or issue id. */
 export function isAuditId(value: string | null | undefined): value is string {
-  return typeof value === "string" && UUID_SHAPE.test(value);
+  return isUuid(value);
 }
 
 /**

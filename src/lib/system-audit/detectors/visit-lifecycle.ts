@@ -210,7 +210,7 @@ export const VISIT_LIFECYCLE_FINDINGS: Record<FindingKind, FindingSpec> = {
     title: "An employed rep's visits hidden as a departed agent's",
     consumer: "phoenix_crm",
     rootCauseLevel: "probable",
-    rootCause: "The rep's CRM account is on the departed-agent exclusion while he is still employed.",
+    rootCause: "The rep's CRM account is on the departed-agent exclusion while the rep is still employed.",
   },
   "s3-merged": {
     signature: "visit:s3:reader:merged",
@@ -226,7 +226,7 @@ export const VISIT_LIFECYCLE_FINDINGS: Record<FindingKind, FindingSpec> = {
     title: "iReports360 visits served beside the rep's Phoenix CRM day",
     consumer: "phoenix_crm",
     rootCauseLevel: "probable",
-    rootCause: "The read door served the rep's iReports360 rows on a day he logged in Phoenix CRM, so the day counts twice.",
+    rootCause: "The read door served the rep's iReports360 rows on a day the rep logged in Phoenix CRM, so the day counts twice.",
   },
   "s4-linked": {
     signature: "visit:s4:private_calendar",

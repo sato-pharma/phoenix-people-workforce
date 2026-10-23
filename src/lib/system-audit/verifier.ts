@@ -417,7 +417,8 @@ export function createDatabaseVerifierStore(override?: Client): VerifierStore {
         .limit(60);
       if (error) throw readFailure("the detector's runs", error);
       const nights = new Set<string>();
-      for (const row of (data ?? []) as Array<{ started_at: string; checks?: Record<string, string> | null }>) {
+      // The JSON-path alias (report->ledger->checks) is beyond the client's select-string type parser.
+      for (const row of (data ?? []) as unknown as Array<{ started_at: string; checks?: Record<string, string> | null }>) {
         if (checkId && row.checks?.[checkId] !== "holds") continue;
         nights.add(cairoNight(row.started_at));
       }

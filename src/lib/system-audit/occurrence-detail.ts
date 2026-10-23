@@ -11,6 +11,7 @@
  */
 
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   SYSTEM_AUDIT_STATUS_LABELS,
@@ -26,12 +27,6 @@ type Client = ReturnType<typeof getSupabaseAdmin>;
 
 function client(override?: Client): Client {
   return override ?? getSupabaseAdmin({ requestTimeoutMs: 15_000 });
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string | null | undefined): value is string {
-  return typeof value === "string" && UUID.test(value);
 }
 
 export type OccurrenceDetailOccurrence = {
