@@ -4,12 +4,14 @@ import { WeeklyAttendanceReview } from "@/components/attendance/weekly-attendanc
 import { canManageWeeklyReview, canReviewDisputes, getDigestSettings, listReviewWeeks, loadReviewWeek } from "@/lib/attendance/digest-service.ts";
 import { pickDefaultReviewWeek } from "@/lib/attendance/digest-rules.ts";
 import { canAccess } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function WeeklyAttendanceReviewPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/weekly-review");
   if (!(await canAccess(access, "attendance", "read"))) {
     redirect("/employee-portals");
   }

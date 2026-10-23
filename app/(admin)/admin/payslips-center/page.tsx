@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { canAccess } from "@/lib/auth/permissions";
 import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getPayslipCenterEmployeeOptions, resolvePayslipCenterAudience, searchPayslipCenter } from "@/lib/payroll/payslip-center";
 import { formatEmployeeDisplayName } from "@/lib/utils";
@@ -41,6 +42,7 @@ export default async function AdminPayslipsCenterPage(
   props: AdminPayslipsCenterPageProps,
 ) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/payslips-center");
   // The audience, not a scope literal. Company-scope payroll roles resolve to "company" exactly as
   // before; the HR Business Partner resolves to the two job titles the owner named on 2026-09-01
   // (District Sales Managers, Medical Representatives) plus her own record. A viewer with neither

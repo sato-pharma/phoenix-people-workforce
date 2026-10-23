@@ -3,12 +3,14 @@ import { redirect } from "next/navigation";
 import { DisputeReviewInbox } from "@/components/attendance/dispute-review-inbox";
 import { canReviewDisputes, listPendingDisputes } from "@/lib/attendance/digest-service.ts";
 import { canAccess } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AttendanceDisputesPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/disputes");
   if (!(await canAccess(access, "attendance", "read"))) {
     redirect("/employee-portals");
   }

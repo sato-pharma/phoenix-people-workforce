@@ -5,12 +5,14 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { PlanApprovalsBody } from "@/components/approvals-hub/plan-approvals-body";
 import { getPlanWorkspaceData } from "@/lib/approvals-hub/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPlanApprovalsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/approvals/plan");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/approvals/plan");
   const data = await getPlanWorkspaceData(access);
   return (

@@ -5,6 +5,7 @@ import type { JoiningFormUploadField } from "@/lib/offers/joining-form";
 import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-form-service";
 import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
+import { clientAddress } from "@/lib/security/client-address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
 
   try {
     const result = await submitJoiningForm(token, answers, photos, {
-      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null,
+      ip: clientAddress(request),
       userAgent: request.headers.get("user-agent"),
     });
     if (result.ok) {

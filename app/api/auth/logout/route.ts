@@ -24,6 +24,16 @@ export async function POST(request: Request) {
   const sessionToken = cookieStore.get(phoenixSessionCookieName)?.value ?? null;
   const session = verifySessionToken(sessionToken);
 
+  // THIS BROWSER IS SIGNED OUT FIRST, WHATEVER ELSE HAPPENS (technical audit, 2026-10-23, P7-03). A
+  // rate-limited request used to return before the cookies were cleared, while the page still went
+  // to /login — on a shared PC the next person found the last one still signed in. The limit now
+  // guards only the database work below (the session revoke and the audit row).
+  cookieStore.delete(phoenixSupabaseAccessTokenCookieName);
+  cookieStore.delete(phoenixSupabaseRefreshTokenCookieName);
+  cookieStore.delete(phoenixDevPreviewCookieName);
+  cookieStore.delete(phoenixSeatViewCookieName);
+  cookieStore.delete(phoenixSessionCookieName);
+
   try {
     await assertApiRateLimit({
       identifier: rateLimitIdentity({ actor: session?.loginId ?? null, request, token: sessionToken }),
@@ -32,15 +42,12 @@ export async function POST(request: Request) {
       windowMs: 60 * 1000,
     });
   } catch (error) {
-    if (!isApiRateLimitError(error)) throw error;
-    return NextResponse.json(
-      {
-        error: "rate_limited",
-        message: "Too many logout requests.",
-        retryAfterSeconds: error.retryAfterSeconds,
-      },
-      { status: 429 },
-    );
+    // Signed out in this browser all the same; only the server-side revoke was skipped. A limiter that
+    // could not be asked is logged, never a 500 — a failed response may not carry the cleared cookies.
+    if (!isApiRateLimitError(error)) {
+      console.error("[auth/logout] rate limit check failed; signed out without the revoke", error);
+    }
+    return NextResponse.json({ sessionRevoked: false, success: true });
   }
   
   if (session) {
@@ -48,12 +55,6 @@ export async function POST(request: Request) {
       console.error("[auth/logout] failed to revoke app session", error);
     });
   }
-  
-  cookieStore.delete(phoenixSupabaseAccessTokenCookieName);
-  cookieStore.delete(phoenixSupabaseRefreshTokenCookieName);
-  cookieStore.delete(phoenixDevPreviewCookieName);
-  cookieStore.delete(phoenixSeatViewCookieName);
-  cookieStore.delete(phoenixSessionCookieName);
 
   if (session) {
     await writeAuthAudit({

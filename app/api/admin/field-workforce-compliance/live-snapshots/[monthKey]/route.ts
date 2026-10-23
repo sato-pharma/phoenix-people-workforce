@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import {
@@ -27,6 +28,8 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "hr_calendar", "read");
+    // Fenced off the Talent Acquisition seat with its page (seat-page-fences.ts, audit P7-01).
+    assertPageOpenForRole(access.role, "/admin/field-workforce-compliance");
 
     const { monthKey } = await context.params;
     if (!monthKeyPattern.test(monthKey)) {

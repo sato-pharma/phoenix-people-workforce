@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientAddress } from "@/lib/security/client-address";
 
 const fallbackBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -22,9 +23,9 @@ function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+/** The address Railway's edge saw — never the caller-written left of X-Forwarded-For (client-address.ts). */
 function requestIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwardedFor || request.headers.get("x-real-ip")?.trim() || "unknown-ip";
+  return clientAddress(request) || "unknown-ip";
 }
 
 export function rateLimitIdentity(input: {

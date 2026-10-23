@@ -1,4 +1,5 @@
 import { VacationRequestForm } from "@/components/vacation/vacation-request-form";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getVacationRequestPageData,
@@ -20,6 +21,7 @@ function vacationRequestPageError(error: unknown) {
 
 export default async function VacationRequestPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/leave-management/vacation-request");
   let initialData: Awaited<ReturnType<typeof getVacationRequestPageData>> | null = null;
   let initialError: string | null = null;
 

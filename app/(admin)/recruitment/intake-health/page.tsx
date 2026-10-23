@@ -5,6 +5,7 @@ import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { IntakeHealthView } from "@/components/recruitment/intake-health-view";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { canViewInboundIntakeHealth } from "@/lib/recruitment/access";
@@ -25,6 +26,7 @@ export const dynamic = "force-dynamic";
 // it were removed.
 export default async function IntakeHealthPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/recruitment/intake-health");
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }

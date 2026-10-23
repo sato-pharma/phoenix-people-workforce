@@ -13,12 +13,11 @@ import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu
 import { MobileSidebar } from "@/components/layout/sidebar";
 import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { systemAssets, systemUiText } from "@/config/system-settings";
-import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
+import { signOutAndLeave } from "@/lib/auth/sign-out-client";
 import { scopeForRole, type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
-import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import { personalWorkspaceEntryHref } from "@/lib/workspace/personal-workspace-nav";
 
@@ -68,17 +67,9 @@ export function Topbar({
           permissionLookup,
         )
       : null;
+  // Leaves only once the server has signed this browser out; says so otherwise (sign-out-client.ts).
   const handleLogout = async () => {
-    // Unbind this browser from the signed-out user's OneSignal identity first — best
-    // effort, never blocks sign-out — so a shared device doesn't keep receiving their
-    // pushes after someone else signs in.
-    logoutOneSignal();
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      hardNavigate("/login");
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
+    await signOutAndLeave();
   };
 
   return (

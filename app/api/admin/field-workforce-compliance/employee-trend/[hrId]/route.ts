@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getFieldWorkforceComplianceEmployeeTrend } from "@/lib/field-workforce-compliance/live-snapshots";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -18,6 +19,8 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "hr_calendar", "read");
+    // Fenced off the Talent Acquisition seat with its page (seat-page-fences.ts, audit P7-01).
+    assertPageOpenForRole(access.role, "/admin/field-workforce-compliance");
 
     const { hrId } = await context.params;
     if (!hrId.trim()) {

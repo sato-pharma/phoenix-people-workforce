@@ -4,6 +4,7 @@ import { normalizeHrId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { ilikeContainsValue, ilikeExactValue } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -25,8 +26,12 @@ export async function GET(request: Request) {
       }
 
       const supabase = getSupabaseAdmin();
-      const normalized = normalizeHrId(query) || query;
-      const pattern = `%${query}%`;
+      // Quoted, never spliced into the filter (technical audit, 2026-10-23, F-02).
+      const normalized = ilikeExactValue(normalizeHrId(query) || query);
+      const pattern = ilikeContainsValue(query);
+      if (!normalized || !pattern) {
+        return NextResponse.json({ matches: [] });
+      }
       const { data, error } = await supabase
         .from("employees")
         .select("hr_id, full_name, nickname, job_title, employment_status")

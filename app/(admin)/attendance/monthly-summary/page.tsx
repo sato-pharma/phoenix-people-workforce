@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MonthlyAttendanceSummary } from "@/components/attendance/monthly-attendance-summary";
 import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendance/monthly-summary";
 import { canAccess, canAccessAttendanceMonthlySummary } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ type PageProps = {
 
 export default async function AttendanceMonthlySummaryPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/monthly-summary");
   if (!await canAccess(access, "employees", "read")) {
     redirect("/employee-portals");
   }

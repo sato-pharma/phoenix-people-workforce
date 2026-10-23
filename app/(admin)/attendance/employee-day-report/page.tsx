@@ -8,6 +8,7 @@ import {
   type EmployeeDayDecisionInfo,
 } from "@/lib/attendance/employee-day-report";
 import { canAccess } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ type PageProps = {
 
 export default async function EmployeeDayReportPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance/employee-day-report");
   if (!(await canAccess(access, "attendance", "read"))) {
     redirect("/employee-portals");
   }

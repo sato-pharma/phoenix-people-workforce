@@ -10,6 +10,7 @@ import {
   getPermissionMatrix,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { navigationItemVisible } from "@/lib/navigation/active-path";
 
@@ -19,6 +20,7 @@ const FINGERPRINT_REPORT_HREF = "/attendance/fingerprint-report";
 
 export default async function AttendanceManagementPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/attendance");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
 
   const matrix = await getPermissionMatrix();

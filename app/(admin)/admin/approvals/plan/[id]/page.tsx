@@ -4,6 +4,7 @@ import { ManagerPlanRequestDetail } from "@/components/approvals-hub/manager-pla
 import { PlanRequestDetail } from "@/components/approvals-hub/plan-request-detail";
 import { getPlanApprovalDetail } from "@/lib/approvals-hub/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadManagerPlanHubDetail } from "@/lib/phoenix-crm/server/manager-plan-hub";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPlanApprovalDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/approvals/plan/[id]");
   const { id } = await params;
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect(`/employee-portals/approvals/plan/${encodeURIComponent(id)}`);

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import { Card } from "@/components/ui/card";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
@@ -33,6 +34,7 @@ export default async function Employee360DetailPage({
   const sp = await searchParams;
   const period = resolvePeriod(sp);
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/employee-360/[hrId]");
 
   const rows = await getEmployeeDirectoryRows({ includeInactive: true });
   const target = rows.find((row) => hrIdsMatch(row.hrId, hrId));

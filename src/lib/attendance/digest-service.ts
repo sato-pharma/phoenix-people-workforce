@@ -37,6 +37,7 @@
 // week's row lock, so a tick, a release and an update never interleave.
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
@@ -797,9 +798,14 @@ export async function resolveDisputeReviewerHrIds(employeeHrId: string): Promise
  *
  * An empty list is a working configuration: everything lands on the Super Admin. Never falls back
  * to "anyone with attendance access", which would let a manager rule on their own team's pay.
+ *
+ * A salary-blind seat (isSalaryBlindRole — the HR Operations Specialist) is never a reviewer, even
+ * if somebody adds her HR id to the list: the queue and the weekly review show every day priced in
+ * EGP, and she never sees pay (technical audit, 2026-10-23, P7-07).
  */
 export async function canReviewDisputes(access: { role?: string | null; hrId?: string | null }): Promise<boolean> {
   if (access.role === "Super Admin") return true;
+  if (isSalaryBlindRole(access.role)) return false;
   if (!access.hrId) return false;
   const settings = await getDigestSettings();
   return settings.disputeReviewerHrIds.some((reviewer) => hrIdsMatch(reviewer, access.hrId));

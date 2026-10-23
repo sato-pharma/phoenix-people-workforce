@@ -6,16 +6,13 @@ import {
   isApiRateLimitError,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
+import { clientAddress } from "@/lib/security/client-address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function requestIp(request: Request): string | null {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip")?.trim() ||
-    null
-  );
+  return clientAddress(request);
 }
 
 // One generic failure for EVERY reason a code does not verify — unknown account, wrong code,

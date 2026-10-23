@@ -6,6 +6,7 @@ import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/a
 import { ContactReviewView } from "@/components/recruitment/contact-review-view";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canReviewCandidateContacts } from "@/lib/recruitment/access";
 import { listContactReviewQueue } from "@/lib/recruitment/contact-review-service";
@@ -20,6 +21,7 @@ export const dynamic = "force-dynamic";
 // email unattended — it decides de-duplication — so this is the attended path for the same data.
 export default async function ContactReviewPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/recruitment/contact-review");
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/contact-review");
   }

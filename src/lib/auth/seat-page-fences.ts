@@ -98,6 +98,17 @@ export function isPageFencedForRole(role: PhoenixRole | null | undefined, path: 
 }
 
 /**
+ * Where a page sends a seat it is fenced from: the seat's own landing page, or the employee portal
+ * when that landing page is fenced too — never back into a fence, so it cannot loop. Null when the
+ * page is open to the seat. guardSeatPage (seat-page-guard.ts) redirects on it; it lives here, apart
+ * from Next, so the unit tests can call it.
+ */
+export function fencedPageRedirect(role: PhoenixRole | null | undefined, route: string, landing: string): string | null {
+  if (!isPageFencedForRole(role, route)) return null;
+  return isPageFencedForRole(role, landing) ? "/employee-portals" : landing;
+}
+
+/**
  * For an API route that belongs to ONE page: refuse the caller whose seat is fenced off that page.
  * Throws the `Forbidden:` error every route here already maps to a 403.
  */
