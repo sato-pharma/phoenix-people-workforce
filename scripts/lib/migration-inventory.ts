@@ -1383,6 +1383,34 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 13 columns, 3 indexes, anon SELECT false, and 0 ledger rows matching `20261022170%` or
   // name `%screen_recording%`.
   "20261022170000_tablet_screen_recordings.sql",
+
+  // (4) THE SYSTEM AUDIT LEDGER PAIR — applied to production by the session that built PR #6302
+  // (merged 2026-10-23 10:41 Cairo as 37a4b4c82) through `scripts/apply-sql-file.mjs`, the standing
+  // route of AGENTS.md §8, which writes NO ledger row. Hence these two entries, never a ledger
+  // write. Both files are additive: `create table if not exists`, `create index if not exists`,
+  // `create or replace function`, and two `drop trigger if exists` guards that immediately recreate
+  // the same triggers — nothing existing is altered or dropped.
+  //
+  // VERIFIED BY DIGEST, NOT BY OBJECT PRESENCE, on 2026-10-23 ~10:50 Cairo. Presence proves nothing
+  // here: every statement in both files is `if not exists` or `create or replace`, so an older
+  // generation would satisfy a presence probe just as well. The comparison used is production
+  // against STAGING (cifwmndunmlxjhyjugxa), where supabase_migrations.schema_migrations holds exact
+  // rows for BOTH versions 20261023051847 and 20261023051848 — so staging's generation IS this
+  // file's, and production matching staging byte for byte puts this file's generation on production:
+  //   - all 9 functions identical md5(prosrc) AND identical length on both projects, among them
+  //     system_audit_page ececec5a027b6a880a6567771453c94f / 10,267 bytes,
+  //     system_audit_upsert_occurrences 806fd2a4f56255d8f2f819e126eef67e / 6,655 bytes,
+  //     system_audit_transition_status 7723f66b6064e97508d4b2e14cdfa687 / 3,976 bytes;
+  //   - all 6 tables identical shape digest — md5 over `attname:format_type:attnotnull` ordered by
+  //     attnum — at 16, 11, 39, 9, 17 and 5 columns for system_audit_issues, _issue_fixes,
+  //     _occurrences, _status_history, _detector_runs and _watermarks respectively, the same counts
+  //     the two files declare;
+  //   - RLS on all 6 with exactly 1 service_role policy each, and the two no-update/no-truncate
+  //     triggers present on system_audit_status_history.
+  // Production's ledger holds 0 rows for either version, which is the expected consequence of that
+  // route and the whole reason these entries exist.
+  "20261023051847_system_audit_ledger.sql",
+  "20261023051848_system_audit_functions.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
