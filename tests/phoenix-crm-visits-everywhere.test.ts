@@ -1468,7 +1468,7 @@ function runPlanDoorTests(plans: string): void {
   assert.ok(vendor.includes("where r.hr_key = lower(btrim(pe.agent_hr_id)) and pe.plan_date >= r.counted_from and (r.counted_until is null or pe.plan_date < r.counted_until)"), "the started team's people leave the vendor plan copy for the same days");
   assert.ok(vendor.includes("where nullif(btrim(pe.agent_hr_id), '') is null and r.agent_crm_id = pe.agent_crm_id and pe.plan_date >= r.counted_from"), "by CRM id on a row with no hr id");
 
-  const phoenixItems = itemsOf(phoenixBranch, "from public.phoenix_crm_plan_items i");
+  const phoenixItems = itemsOf(phoenixBranch, "from public.phoenix_crm_plans pl");
   const names = vendorItems.map(outputName);
   assert.equal(phoenixItems.length, names.length);
   const item = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
@@ -1491,7 +1491,8 @@ function runPlanDoorTests(plans: string): void {
     ampm: "i.list_type",
     start_am: "null::text",
     start_pm: "null::text",
-    plan_status: "(case when public.phoenix_crm_plan_day_status(pl.id, i.plan_date, now()) = 'approved' then 1 else 0 end)::smallint",
+    // Read from the once-per-plan-day subquery below, not called per item (23 Oct 2026).
+    plan_status: "(case when pd.status_now = 'approved' then 1 else 0 end)::smallint",
     raw_payload: "null::jsonb",
     synced_at: "greatest(pl.updated_at, i.updated_at)",
     created_at: "i.created_at",
@@ -1502,9 +1503,22 @@ function runPlanDoorTests(plans: string): void {
     assert.equal(item.get(column), expression, `a Phoenix plan day's ${column} is ${expression}`);
   }
   const phoenix = flat(phoenixBranch);
-  assert.ok(phoenix.includes("join public.phoenix_crm_started_team_reps() r on r.seat_id = pl.seat_id and i.plan_date >= r.counted_from and (r.counted_until is null or i.plan_date < r.counted_until)"), "carried for the rep who sat on that territory that day, within the start");
+  assert.ok(phoenix.includes("join reps r on r.seat_id = pl.seat_id and i.plan_date >= r.counted_from and (r.counted_until is null or i.plan_date < r.counted_until)"), "carried for the rep who sat on that territory that day, within the start");
+  // The started-team set is read ONCE per read, into a materialised CTE both branches share.
   assert.ok(
-    phoenix.endsWith("where not pl.is_test and public.phoenix_crm_plan_day_status( pl.id, i.plan_date, least(now(), (i.plan_date + 1)::timestamp at time zone 'Africa/Cairo') ) is not null;"),
+    flat(view).includes("with reps as materialized ( select * from public.phoenix_crm_started_team_reps() ) select"),
+    "the started team's people are read once for the whole view",
+  );
+  assert.equal(flat(view).split("phoenix_crm_started_team_reps()").length - 1, 1, "and the function is named exactly once in it");
+  // The plan day's status is asked of the plan's event log once per (plan, day), not once per item: a day
+  // carries about a dozen items. It takes the day through min() so the planner keeps it on the group.
+  assert.ok(
+    phoenix.includes("join ( select x.plan_id, x.plan_date, public.phoenix_crm_plan_day_status( x.plan_id, min(x.plan_date), least(now(), (min(x.plan_date) + 1)::timestamp at time zone 'Africa/Cairo') ) as status_that_day, public.phoenix_crm_plan_day_status(x.plan_id, min(x.plan_date), now()) as status_now from public.phoenix_crm_plan_items x group by x.plan_id, x.plan_date ) pd on pd.plan_id = pl.id join public.phoenix_crm_plan_items i on i.plan_id = pd.plan_id and i.plan_date = pd.plan_date"),
+    "the status is read once per plan-day: as of the end of that day, and as of now",
+  );
+  assert.equal(phoenix.split("phoenix_crm_plan_day_status(").length - 1, 2, "and the function is named exactly twice in the branch, both inside that subquery");
+  assert.ok(
+    phoenix.endsWith("where not pl.is_test and pd.status_that_day is not null;"),
     "real plans only, and a day only when its week was sent as of that day",
   );
   assert.equal(servedAsOf("2026-10-05", "2026-10-09T10:00"), "2026-10-06T00:00", "a past day is judged at the end of its own day");
@@ -2090,7 +2104,7 @@ function runPortalKeepsNoneOfTheFieldSetTests(): void {
 function runContactIdAcrossDoorsTests(): void {
   const expressions = [
     { door: "crm_visits_unified", sql: VISITS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
-    { door: "crm_plan_entries_unified", sql: PLANS_DOOR, from: "from public.phoenix_crm_plan_items i" },
+    { door: "crm_plan_entries_unified", sql: PLANS_DOOR, from: "from public.phoenix_crm_plans pl" },
     { door: "crm_checkins_unified", sql: CHECKINS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
   ].map(({ door, sql, from }) => {
     const branches = viewSql(sql, door).split("\nunion all\n");

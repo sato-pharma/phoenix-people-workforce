@@ -67,7 +67,7 @@ export function runPhoenixCrmDoctorOnceTests(): void {
   // 4. The LIVE definition (2026-10-16 performance audit) keeps the same match and the same pick, set at a
   //    time: one DISTINCT ON per (seat, id) over the lateral's own four ordering keys, joined on the
   //    entry's contact id — and the pending drop as two joined key sets, never an EXISTS per entry.
-  const JOINS_ONCE = "supabase/migrations/20261016180200_phoenix_crm_seat_reference_joins_once.sql";
+  const JOINS_ONCE = "supabase/migrations/20261024003000_phoenix_crm_seat_reference_joins_customers_on_one_key.sql";
   const live = functionBody(stripSqlComments(readFileSync(JOINS_ONCE, "utf8").replace(/\r\n/g, "\n")), "phoenix_crm_seat_reference");
   assert.match(
     live,
@@ -79,7 +79,19 @@ export function runPhoenixCrmDoctorOnceTests(): void {
     /\(c\.status <> 'dropped'\) desc,\s+\(c\.status = 'active'\) desc,\s+c\.created_at asc,\s+c\.id asc\s+\)/,
     "a pair still resolves to the live row, then the active one, then the earliest",
   );
-  assert.match(live, /customer\.contact_crm_id = a\.contact_crm_id/, "each entry joins its one customer on its contact id");
+  // 23 Oct 2026: the join is ONE key. Joined on seat_id plus contact id the planner merge-joined on seat_id alone
+  // and threw away 1.78 million pairs by join filter; one concatenated key sorts and merges on that key.
+  assert.match(
+    live,
+    /c\.seat_id \|\| '\|' \|\| coalesce\(c\.reference_contact_crm_id, c\.own_contact_crm_id\)::text as seat_key/,
+    "the customer set carries its one join key",
+  );
+  assert.match(
+    live,
+    /customer\.seat_key = ch\.seat_id \|\| '\|' \|\| a\.contact_crm_id::text/,
+    "each entry joins its one customer on that one key",
+  );
+  assert.doesNotMatch(live, /customer\.contact_crm_id = a\.contact_crm_id/, "never back to the two-column join the planner could not merge");
   assert.match(live, /drop_by_customer\.customer_id = customer\.id/, "a pending drop naming the customer still reads drop_pending");
   assert.match(live, /drop_by_contact\.reference_contact_crm_id = a\.contact_crm_id/, "and so does one naming only the contact of an entry never minted");
   assert.doesNotMatch(live, /left join lateral/, "no per-entry lookup of the seat's customers");
