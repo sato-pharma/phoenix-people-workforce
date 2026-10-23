@@ -342,6 +342,7 @@ export function runInstantFormatTimezoneRatchetTests() {
     ["src/lib/field-workforce-compliance/ireports360-source.ts", "clockStringToMinutes — parses an HH:MM this module formatted itself"],
     ["src/lib/outstation/expense-fraud-checks.ts", "vendorClockMinutes — the vendor half of the pair whose other half, cairoClockMinutes, converts a real instant"],
     ["src/lib/sales/offline-lookup-workbook.ts", "the workbook's build stamp, whose own text says UTC"],
+    ["src/lib/system-audit/sinks/file-sink.ts", "cairoDateAndTime — the instant goes through cairoWallClock FIRST, so the slice reads the Cairo date and clock of an audit finding"],
   ]);
 
   /** A clock read out of a timestamp by hand, with no formatter and therefore no zone to state. */
