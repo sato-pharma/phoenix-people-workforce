@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { useRouter } from "next/navigation";
 import {
   Bar,
@@ -192,8 +193,11 @@ function formatMoney(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+// Numbers are written "en-US" (1,234), never in the reader's own style: a phone set to Arabic wrote
+// "١٬٢٣٤" where the server wrote "1,234", and this text is re-drawn in the browser (System Audit
+// APP-CDB55BF6). Every count on this dashboard follows the same rule.
 function formatKm(value: number) {
-  return `${Math.max(0, Number.isFinite(value) ? value : 0).toLocaleString()} km`;
+  return `${Math.max(0, Number.isFinite(value) ? value : 0).toLocaleString("en-US")} km`;
 }
 
 function formatDate(value: string) {
@@ -1008,7 +1012,7 @@ export function PersonalExpenseWorkloadDashboard({
   const totalKm = filteredTrips.reduce((total, item) => total + item.km, 0);
   const averageCostPerTrip = totalTrips > 0 ? totalExpenses / totalTrips : 0;
   const scopeEmployeeCount = new Set(filteredTrips.map((trip) => trip.hrId || trip.ownerName).filter(Boolean)).size;
-  const scopeEmployeeLabel = `${scopeEmployeeCount.toLocaleString()} visible employee${scopeEmployeeCount === 1 ? "" : "s"}`;
+  const scopeEmployeeLabel = `${scopeEmployeeCount.toLocaleString("en-US")} visible employee${scopeEmployeeCount === 1 ? "" : "s"}`;
 
   const now = new Date();
   const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -1024,7 +1028,11 @@ export function PersonalExpenseWorkloadDashboard({
     (latest, trip) => (trip.approvedAt && trip.approvedAt > latest ? trip.approvedAt : latest),
     "",
   );
-  const lastDecisionLabel = lastDecisionAt ? relativeDaysFrom(lastDecisionAt) : "";
+  // "today / yesterday / 5 days ago" is worked out from the CLOCK, and the server's clock and the
+  // phone's are read at different moments — so it is drawn only once the page has come alive, never
+  // in the server HTML the phone must match (System Audit APP-CDB55BF6).
+  const hydrated = useHydrated();
+  const lastDecisionLabel = hydrated && lastDecisionAt ? relativeDaysFrom(lastDecisionAt) : "";
 
   // Personal dot map — aggregate the filtered trips by destination region centroid so reps see
   // where they've travelled. Pure client-side: the curated `resolveRegionCentroid` lookup is
@@ -1442,7 +1450,7 @@ export function PersonalExpenseWorkloadDashboard({
             accent="border-l-sky-400"
             helper={pendingCount > 0 ? `${pendingCount} pending - ${scopeEmployeeLabel}` : scopeEmployeeLabel}
             label="Visible Trips"
-            value={totalTrips.toLocaleString()}
+            value={totalTrips.toLocaleString("en-US")}
           />
           <StatCard
             accent="border-l-orange-400"
@@ -1461,7 +1469,7 @@ export function PersonalExpenseWorkloadDashboard({
             delta={tripsDeltaPercent ?? undefined}
             helper={`${tripsThisMonth} this month vs ${tripsLastMonth} last month`}
             label="Month over Month"
-            value={tripsThisMonth.toLocaleString()}
+            value={tripsThisMonth.toLocaleString("en-US")}
           />
         </div>
       </Card>
@@ -1653,7 +1661,7 @@ export function PersonalExpenseWorkloadDashboard({
                     contentStyle={chartTooltipStyle()}
                     formatter={(value, name) => {
                       if (name === "expense") return [formatMoney(Number(value)), "Spend"];
-                      if (name === "trips") return [Number(value).toLocaleString(), "Trips"];
+                      if (name === "trips") return [Number(value).toLocaleString("en-US"), "Trips"];
                       return [String(value), String(name)];
                     }}
                     labelFormatter={(label) => `${label}`}
@@ -1867,7 +1875,7 @@ export function PersonalExpenseWorkloadDashboard({
                     formatter={(value, name) =>
                       name === "total"
                         ? [formatMoney(Number(value)), "Spend"]
-                        : [Number(value).toLocaleString(), "Trips"]
+                        : [Number(value).toLocaleString("en-US"), "Trips"]
                     }
                   />
                   <Bar dataKey="trips" radius={[0, 0, 0, 0]}>
@@ -1893,20 +1901,20 @@ export function PersonalExpenseWorkloadDashboard({
                 <div className="px-3 py-3">
                   <p className={labelClass}>AM visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
-                    {Math.round(totalAmWorkload).toLocaleString()}
+                    {Math.round(totalAmWorkload).toLocaleString("en-US")}
                   </p>
                 </div>
                 <div className="px-3 py-3">
                   <p className={labelClass}>PM visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
-                    {Math.round(totalPmWorkload).toLocaleString()}
+                    {Math.round(totalPmWorkload).toLocaleString("en-US")}
                   </p>
                 </div>
                 <div className="px-3 py-3">
                   <p className={labelClass}>Pharmacies</p>
                   {pharmacyCounted ? (
                     <p className="mt-1 text-base font-bold text-slate-800">
-                      {Math.round(totalPharmacyWorkload).toLocaleString()}
+                      {Math.round(totalPharmacyWorkload).toLocaleString("en-US")}
                     </p>
                   ) : (
                     <p className="mt-1 text-sm font-semibold text-slate-500">Not counted separately</p>
@@ -1915,7 +1923,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <div className="px-3 py-3">
                   <p className={labelClass}>Total visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
-                    {totalTripWorkload.toLocaleString()}
+                    {totalTripWorkload.toLocaleString("en-US")}
                   </p>
                 </div>
                 <div className="px-3 py-3">
@@ -1927,7 +1935,7 @@ export function PersonalExpenseWorkloadDashboard({
               </div>
               {pharmacyUncountedTrips > 0 && (
                 <p className="text-xs leading-relaxed text-slate-500">
-                  {pharmacyUncountedTrips.toLocaleString()} earlier{" "}
+                  {pharmacyUncountedTrips.toLocaleString("en-US")} earlier{" "}
                   {pharmacyUncountedTrips === 1 ? "trip carries its" : "trips carry their"} pharmacy visits inside AM
                   and PM — Pharmacies has been counted separately since 21 Sep 2026.
                 </p>
@@ -1952,10 +1960,10 @@ export function PersonalExpenseWorkloadDashboard({
                 return (
                   <p className="border-b border-slate-200 pb-3 text-phx-xs text-slate-500">
                     <span className="font-bold uppercase tracking-[0.12em] text-slate-400">Visit mix</span>{" "}
-                    Doctor {split.doctor.toLocaleString()} · Pharmacy {split.pharmacy.toLocaleString()} · Institution{" "}
-                    {split.institution.toLocaleString()}{" "}
+                    Doctor {split.doctor.toLocaleString("en-US")} · Pharmacy {split.pharmacy.toLocaleString("en-US")} · Institution{" "}
+                    {split.institution.toLocaleString("en-US")}{" "}
                     <span className="text-slate-400">
-                      — {split.recorded.toLocaleString()} live request{split.recorded === 1 ? "" : "s"} with a recorded
+                      — {split.recorded.toLocaleString("en-US")} live request{split.recorded === 1 ? "" : "s"} with a recorded
                       split only
                     </span>
                   </p>
@@ -1969,7 +1977,7 @@ export function PersonalExpenseWorkloadDashboard({
                     <YAxis stroke="#94a3b8" style={{ fontSize: 11 }} width={40} />
                     <Tooltip
                       contentStyle={chartTooltipStyle()}
-                      formatter={(value) => Number(value).toLocaleString()}
+                      formatter={(value) => Number(value).toLocaleString("en-US")}
                     />
                     <Bar dataKey="value" radius={[0, 0, 0, 0]}>
                       {workloadChartData.map((row) => (
