@@ -42,13 +42,24 @@ export function SectionWaiting({ error, label, onRetry }: { error: string | null
   return <div className="border-t border-slate-100">{error ? <CrmLoadError message={error} onRetry={onRetry} /> : <CrmLoading label={label} />}</div>;
 }
 
-/** Figures still on screen after a refresh that failed: they stay, with the reason above them. */
-export function RefreshFailed({ error }: { error: string | null }) {
+/**
+ * Figures still on screen after a refresh that failed: they stay, with the reason above them.
+ *
+ * `onRetry` is REQUIRED, not optional: a read can always be asked again, and every caller already
+ * holds the `reload` that does it. Before this the reason stood alone, so a rep on a dropped
+ * connection was left looking at figures he could see were stale with nothing to press.
+ */
+export function RefreshFailed({ error, onRetry }: { error: string | null; onRetry: () => void }) {
   if (!error) return null;
   return (
     <div className="px-4 pt-4 sm:px-5">
       <CrmNote title="These figures could not be refreshed" tone="warn">
-        {error}
+        <span className="block">{error}</span>
+        <span className="mt-2 block">
+          <CrmButton onClick={onRetry} size="sm">
+            Try again
+          </CrmButton>
+        </span>
       </CrmNote>
     </div>
   );

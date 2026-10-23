@@ -16,6 +16,7 @@ import {
   CrmLoading,
   CrmNote,
   CrmPill,
+  CrmSaveError,
   CrmSearchField,
   CrmShowMore,
   crmInputClassName,
@@ -219,10 +220,17 @@ function MissedVisitForm({
       comment,
       reason: planned === "unplanned" ? reason : null,
     };
-    const saved = await action.run("visit", () => crmPost<EnteredMissedVisit>("/api/phoenix-crm/missed-records", body, "saved"));
-    if (saved === undefined) return;
-    idRef.current = null;
-    onSaved({ customerName: saved.customerName, kind: "visit", planned: saved.planned });
+    // `body` carries `idRef.current`, so a Try again after a dropped connection re-sends the SAME
+    // client id and the server recognises the visit it may already have filed. Clearing the id is
+    // part of the completion for that reason — never before the save is through.
+    await action.run(
+      "visit",
+      () => crmPost<EnteredMissedVisit>("/api/phoenix-crm/missed-records", body, "saved"),
+      (saved) => {
+        idRef.current = null;
+        onSaved({ customerName: saved.customerName, kind: "visit", planned: saved.planned });
+      },
+    );
   }
 
   if (form.blockedReason) {
@@ -333,11 +341,7 @@ function MissedVisitForm({
         </>
       ) : null}
 
-      {action.error ? (
-        <CrmNote title="Not saved" tone="bad">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} title="Not saved" /> : null}
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton busy={busy} disabled={!ready} onClick={() => void save()} variant="primary">
           Save the visit
@@ -388,16 +392,20 @@ function MissedActivityForm({
   async function save() {
     if (activity === null) return;
     const body = { record: "activity", seatId, test: isTest, activityDate: form.date, activityType: activity, halfDay, note: note.trim() || null };
-    const saved = await action.run("activity", () => crmPost<ActivitySaved>("/api/phoenix-crm/missed-records", body, "saved"));
-    if (saved === undefined) return;
-    onSaved({ kind: "activity", label: saved.activity?.activityLabel ?? null });
+    await action.run(
+      "activity",
+      () => crmPost<ActivitySaved>("/api/phoenix-crm/missed-records", body, "saved"),
+      (saved) => onSaved({ kind: "activity", label: saved.activity?.activityLabel ?? null }),
+    );
   }
 
   async function clear() {
     const body = { record: "activity", seatId, test: isTest, activityDate: form.date, clear: true };
-    const saved = await action.run("clear", () => crmPost<ActivitySaved>("/api/phoenix-crm/missed-records", body, "saved"));
-    if (saved === undefined) return;
-    onSaved({ kind: "cleared" });
+    await action.run(
+      "clear",
+      () => crmPost<ActivitySaved>("/api/phoenix-crm/missed-records", body, "saved"),
+      () => onSaved({ kind: "cleared" }),
+    );
   }
 
   return (
@@ -427,11 +435,7 @@ function MissedActivityForm({
         />
       </CrmField>
       <p className="text-xs font-semibold text-slate-500">A record of the day only. It changes no figure, exactly as when the rep records it.</p>
-      {action.error ? (
-        <CrmNote title="Not saved" tone="bad">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} title="Not saved" /> : null}
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton busy={action.busy === "activity"} disabled={activity === null || busy} onClick={() => void save()} variant="primary">
           Save the day&apos;s activity
@@ -552,13 +556,15 @@ export function RemoveEnteredVisit({
   const busy = action.busy !== null;
 
   async function remove() {
-    const done = await action.run("remove", () =>
-      crmPost<{ removed: boolean }>("/api/phoenix-crm/missed-records", { record: "remove-visit", seatId, test: isTest, visitId }, "removed"),
+    await action.run(
+      "remove",
+      () => crmPost<{ removed: boolean }>("/api/phoenix-crm/missed-records", { record: "remove-visit", seatId, test: isTest, visitId }, "removed"),
+      () => {
+        setRemoved(true);
+        // The day above is the server's page: re-read it so the visit leaves the list.
+        router.refresh();
+      },
     );
-    if (done === undefined) return;
-    setRemoved(true);
-    // The day above is the server's page: re-read it so the visit leaves the list.
-    router.refresh();
   }
 
   if (removed) return <CrmNote tone="good">Removed. A copy of it is kept.</CrmNote>;
@@ -576,11 +582,7 @@ export function RemoveEnteredVisit({
       <CrmNote title="Remove the visit you entered?" tone="warn">
         The visit to <bdi>{customerName}</bdi> leaves the rep&apos;s record and every figure. A copy of it is kept.
       </CrmNote>
-      {action.error ? (
-        <CrmNote title="Not removed" tone="bad">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} title="Not removed" /> : null}
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton busy={busy} onClick={() => void remove()} size="sm" variant="danger">
           Yes, remove it

@@ -341,7 +341,7 @@ function VisitsSection({
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       {report.includeTest ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title="Your test entries are counted" tone="info">
@@ -575,7 +575,7 @@ function PlanSection({
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       {report.runningDay ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title="Today is still running" tone="info">
@@ -728,7 +728,7 @@ function CoverageSection({
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       {report.month.inProgress ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title={`${monthLabel(report.month.month)} is still running`} tone="info">
@@ -863,7 +863,7 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
   if (report.rows.length === 0) {
     return (
       <>
-        <RefreshFailed error={resource.error} />
+        <RefreshFailed error={resource.error} onRetry={resource.reload} />
         <div className="border-t border-slate-100">
           <CrmEmpty message="The managers above the territories you chose show here." title="No managers to show" />
         </div>
@@ -889,7 +889,7 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock>
         <CrmStatGrid>
           <CrmStat label="Double visits" note={report.own ? "You out with a rep" : "A manager out with a rep"} value={countText(doubleVisits)} />
@@ -1018,7 +1018,7 @@ function LocationsSection({
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock className="border-t border-slate-100" title="These days">
         <CrmStatGrid>
           <CrmStat label="Visits" note="Every visit saved in the days chosen" value={countText(summary.visits)} />
@@ -1167,7 +1167,7 @@ function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource:
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock className="border-t border-slate-100" title="Right now">
         <CrmStatGrid>
           <CrmStat label="Territories" note="Everything in your scope" value={countText(summary.territories)} />
@@ -1306,7 +1306,7 @@ function BricksSection({ idPrefix, resource }: { idPrefix: string; resource: Crm
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock className="border-t border-slate-100" title="Across the bricks you reach">
         <CrmStatGrid>
           <CrmStat label="Bricks" note="On either side" value={countText(summary.bricks)} />
@@ -1424,7 +1424,7 @@ function AdoptionSection({ idPrefix, resource }: { idPrefix: string; resource: C
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock className="border-t border-slate-100" title="How far the rollout has got">
         <CrmStatGrid>
           <CrmStat label="Territories" note="Everything in your scope" value={countText(summary.territories)} />
@@ -1533,7 +1533,7 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
   if (report.needsOneTerritory) {
     return (
       <>
-        <RefreshFailed error={resource.error} />
+        <RefreshFailed error={resource.error} onRetry={resource.reload} />
         <CrmEmpty
           message="This one counts every customer on a list, so it reads one territory at a time. Choose a territory above."
           title="Choose a territory"
@@ -1556,7 +1556,7 @@ function FrequencySection({ idPrefix, resource }: { idPrefix: string; resource: 
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       {report.leaveUnread ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title="Leave could not be read" tone="warn">
@@ -1654,7 +1654,7 @@ function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: C
   if (report.needsOneTerritory) {
     return (
       <>
-        <RefreshFailed error={resource.error} />
+        <RefreshFailed error={resource.error} onRetry={resource.reload} />
         <CrmEmpty
           message="This one lays out every customer on a list against every day, so it reads one territory at a time. Choose a territory above."
           title="Choose a territory"
@@ -1669,7 +1669,7 @@ function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: C
 
   return (
     <>
-      <RefreshFailed error={resource.error} />
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
       <CrmBlock title={`${monthLabel(report.month.month)} · ${report.rows.length} on the list`}>
         <p className="break-words text-xs font-semibold leading-5 text-slate-600">
           A mark is a day a countable visit landed. Two visits to one customer on one day mark that day once.

@@ -11,6 +11,7 @@ import {
   CrmLoadError,
   CrmLoading,
   CrmNote,
+  CrmSaveError,
   crmInputClassName,
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
@@ -157,27 +158,28 @@ function DetailForm({
   }
 
   async function save() {
-    const saved = await action.run("save", () =>
-      crmPost<SavedVisitDetail>(
-        "/api/phoenix-crm/visit-detail",
-        {
-          seatId,
-          test: isTest,
-          visitId: form.visitId,
-          detailComment,
-          objection,
-          objectionNote: objection && objection !== "none" ? objectionNote.trim() || null : null,
-          nextStep,
-          nextStepOn: nextStep && nextStep !== "none" ? nextStepOn || null : null,
-          samplesGiven: samples,
-          productAvailability: availability,
-          pharmacyName: form.pharmacyAddable ? pharmacyName.trim() || null : null,
-        },
-        "saved",
-      ),
+    await action.run(
+      "save",
+      () =>
+        crmPost<SavedVisitDetail>(
+          "/api/phoenix-crm/visit-detail",
+          {
+            seatId,
+            test: isTest,
+            visitId: form.visitId,
+            detailComment,
+            objection,
+            objectionNote: objection && objection !== "none" ? objectionNote.trim() || null : null,
+            nextStep,
+            nextStepOn: nextStep && nextStep !== "none" ? nextStepOn || null : null,
+            samplesGiven: samples,
+            productAvailability: availability,
+            pharmacyName: form.pharmacyAddable ? pharmacyName.trim() || null : null,
+          },
+          "saved",
+        ),
+      (saved) => onSaved(saved),
     );
-    if (saved === undefined) return;
-    onSaved(saved);
   }
 
   return (
@@ -344,11 +346,7 @@ function DetailForm({
         </div>
       </div>
 
-      {action.error ? (
-        <CrmNote title="Not saved" tone="bad">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} /> : null}
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <CrmButton busy={busy} disabled={tooLong} onClick={() => void save()} variant="primary">
           Save the detail

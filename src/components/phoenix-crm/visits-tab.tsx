@@ -45,6 +45,7 @@ import {
   CrmNote,
   CrmPanel,
   CrmPill,
+  CrmSaveError,
   CrmSelect,
   CrmStat,
   CrmStatGrid,
@@ -573,8 +574,7 @@ function DayActivityBlock({ onChanged, view }: { onChanged: () => void; view: Vi
   async function choose(next: string) {
     if (next !== "" && !isDayActivity(next)) return;
     const choice = isDayActivity(next) ? { activityType: next, halfDay: false, note: null } : null;
-    const ok = await action.run("day-activity", () => saveDayActivity(view.territory.seatId, view.isTest, choice));
-    if (ok !== undefined) onChanged();
+    await action.run("day-activity", () => saveDayActivity(view.territory.seatId, view.isTest, choice), () => onChanged());
   }
 
   const details = current ? (
@@ -616,11 +616,7 @@ function DayActivityBlock({ onChanged, view }: { onChanged: () => void; view: Vi
       </CrmSelect>
       {details}
       <p className="mt-2 text-xs font-semibold text-slate-500">Recorded so your manager can see the day. It changes none of your figures.</p>
-      {action.error ? (
-        <CrmNote title="Not saved" tone="warn">
-          {action.error}
-        </CrmNote>
-      ) : null}
+      {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} tone="warn" /> : null}
     </CrmBlock>
   );
 }
