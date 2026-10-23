@@ -58,6 +58,7 @@
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { Check, ChevronRight, LoaderCircle } from "lucide-react";
 
@@ -1166,6 +1167,17 @@ export function PlanBoard({
         <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
           {repBoard ? "These count what is saved. Your latest ticks join them once they save." : "These count what is saved. Save to see your latest ticks in them."}
         </p>
+      ) : null}
+      {view.adminDeletes && view.plan ? (
+        <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
+          <AdminDelete
+            id={view.plan.monthlyPlanId}
+            isTest={view.isTest}
+            kind="monthly_plan"
+            onDeleted={resource.reload}
+            subject={`The ${view.monthLabel} plan and its ${plural(view.weeks.filter((week) => !week.leading && week.plan).length, "weekly plan", "weekly plans")}`}
+          />
+        </div>
       ) : null}
     </CrmBlock>
   );

@@ -1636,6 +1636,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // rolled back on purpose: one copy row each, the missing-id case answered phoenix_crm:visit_not_found,
   // and the copy table read 0 rows afterwards.
   "20261023223001_phoenix_crm_admin_delete_anything.sql",
+  // 2026-10-23, the same tool taught two more kinds (a month's plan with its weeks, a district manager's own
+  // single visit), applied BEFORE its PR merged and safe with the code then serving, which never passes either
+  // kind. Both projects through the standing route (`node scripts/apply-sql-file.mjs <file> staging`, then
+  // production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), each printing
+  // {"applied":true,"count":0} and writing no ledger row. It REPLACES the function and widens one CHECK, so the
+  // proof is the new body, not the name: md5(prosrc) of public.phoenix_crm_admin_delete is
+  // 40ad26edf53e3f341aa845afdc093e64 on BOTH staging and production; prosecdef true; EXECUTE for service_role
+  // only (anon and authenticated false); phoenix_crm_admin_deletions_kind_check lists all six kinds; 0 copy rows.
+  // On staging a month (its week, header and event) and a manager visit were deleted inside a transaction rolled
+  // back on purpose: one copy row each for the month, its week and the visit, and nothing left behind.
+  "20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql",
 
   // Applied 2026-10-23 through scripts/apply-sql-file.mjs (the supabase-staging MCP declined the call), to
   // staging cifwmndunmlxjhyjugxa and then production ozucdzovmcqvepbozvqf (PHOENIX_POOLER_HOST=aws-1), so

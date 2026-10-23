@@ -1,7 +1,9 @@
-import { dayLabelLong } from "@/components/phoenix-crm/format";
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
+import { cairoStamp, dayLabelLong } from "@/components/phoenix-crm/format";
 import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { adminDeleteTargetOfManagerDayVisit } from "@/lib/phoenix-crm/admin-delete-rules";
 import { buildPlanVsActual } from "@/lib/phoenix-crm/manager-day-plan";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 // Through `view-types`, never `server/manager-day-detail`: a component may not import server code.
@@ -72,6 +74,29 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
             <ManagerPlanActualTable plan={view.plan} planUnread={view.planUnread} rows={rows} summary={summary} />
           )}
         </CrmBlock>
+
+        {view.adminDeletes && visits.length > 0 ? (
+          <CrmBlock title="Delete a visit">
+            <p className="mb-2 break-words text-xs font-semibold leading-5 text-slate-500">
+              Only you see this. A deleted visit leaves the day and every figure as if it never happened; a copy is kept.
+            </p>
+            <ul className="grid min-w-0 gap-3">
+              {visits.map((visit) => {
+                const target = adminDeleteTargetOfManagerDayVisit(visit.id);
+                if (!target) return null;
+                return (
+                  <li className="grid min-w-0 gap-2 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0" key={visit.id}>
+                    <p className="break-words text-sm font-semibold leading-6 text-slate-800">
+                      <bdi>{visit.customerName}</bdi> · {visit.kindLabel}
+                      {visit.loggedAt ? ` · ${cairoStamp(visit.loggedAt)}` : ""}
+                    </p>
+                    <AdminDelete id={target.id} isTest={view.isTest} kind={target.kind} subject={`The visit to ${visit.customerName}`} />
+                  </li>
+                );
+              })}
+            </ul>
+          </CrmBlock>
+        ) : null}
       </CrmPanel>
     </div>
   );

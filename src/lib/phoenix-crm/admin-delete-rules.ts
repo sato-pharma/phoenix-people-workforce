@@ -15,7 +15,7 @@
 
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 
-export const ADMIN_DELETE_KINDS = ["rep_plan", "manager_plan", "visit", "day_activity"] as const;
+export const ADMIN_DELETE_KINDS = ["rep_plan", "manager_plan", "visit", "day_activity", "monthly_plan", "manager_visit"] as const;
 export type AdminDeleteKind = (typeof ADMIN_DELETE_KINDS)[number];
 
 export function isAdminDeleteKind(value: unknown): value is AdminDeleteKind {
@@ -44,7 +44,31 @@ export const ADMIN_DELETE_WORDS: Record<AdminDeleteKind, { button: string; thing
     thing: "this day record",
     takes: "It leaves the day and every screen that shows it.",
   },
+  monthly_plan: {
+    button: "Delete this month's plan",
+    thing: "this monthly plan",
+    takes:
+      "The month's header and history go with it, and so does every weekly plan whose Saturday falls in the month — each with its days, customers, activities, review history and requests to edit. Any notice about them is withdrawn. The first days the month opens with belong to the previous month's last week and stay.",
+  },
+  manager_visit: {
+    button: "Delete this visit",
+    thing: "this single visit of the manager's",
+    takes: "It leaves the manager's day and the manager's own report, and nothing else is touched.",
+  },
 };
+
+/**
+ * What a visit card on a MANAGER'S day deletes. The card's id says where the visit came from: `own:<id>` is the
+ * manager's own single visit (his own table), `rep:<id>` and `ride:<id>:<person>` are a rep's visit — the same
+ * record the rep's own day deletes. Anything else is not a thing this tool can name, so it draws no button.
+ */
+export function adminDeleteTargetOfManagerDayVisit(cardId: string): { kind: AdminDeleteKind; id: string } | null {
+  const [source, id] = cardId.split(":");
+  if (!isUuid(id)) return null;
+  if (source === "own") return { kind: "manager_visit", id: id.toLowerCase() };
+  if (source === "rep" || source === "ride") return { kind: "visit", id: id.toLowerCase() };
+  return null;
+}
 
 export type AdminDeleteInput = { kind: AdminDeleteKind; id: string };
 export type AdminDeleteParse = { ok: true; value: AdminDeleteInput } | { ok: false; error: string };
