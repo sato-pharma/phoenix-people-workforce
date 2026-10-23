@@ -5,7 +5,7 @@ paths:
   - "tests/run-tests.ts"
   - "package.json"
   - "Dockerfile"
-  - "railway.toml"
+  - ".railway/**"
   - "next.config.ts"
   - "infra/**"
 ---

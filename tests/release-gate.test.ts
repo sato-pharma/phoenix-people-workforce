@@ -220,13 +220,10 @@ export async function runReleaseGateTests(): Promise<void> {
   assert.doesNotMatch(sql, /\bdelete\b|\btruncate\b|\bdrop table\b/, "a gate row is never pruned: a restart weeks later asks again");
 
   // ── 5. The window ────────────────────────────────────────────────────────────────────────────────
-  const toml = readFileSync("railway.toml", "utf8");
-  const tomlWindow = Number(/^healthcheckTimeout\s*=\s*(\d+)\s*$/m.exec(toml)?.[1]);
-  assert.ok(tomlWindow >= 600, `🔴 railway.toml healthcheckTimeout is ${tomlWindow}s — the release gate needs the window to outlast a slow day of CI`);
   const iac = readFileSync(".railway/railway.ts", "utf8");
   const iacWindows = [...iac.matchAll(/healthcheckTimeout:\s*(\d+)/g)].map((match) => Number(match[1]));
   assert.equal(iacWindows.length, 2, "the authoring file carries the window for the app and the worker");
   for (const seconds of iacWindows) {
-    assert.ok(seconds >= 600, `🔴 .railway/railway.ts healthcheckTimeout is ${seconds}s — keep it in step with railway.toml`);
+    assert.ok(seconds >= 600, `🔴 .railway/railway.ts healthcheckTimeout is ${seconds}s — the release gate needs the window to outlast a slow day of CI`);
   }
 }

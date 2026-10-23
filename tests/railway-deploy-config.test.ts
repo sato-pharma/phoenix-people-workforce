@@ -13,99 +13,65 @@
 //      deploy-drift-check.yml: production's source pointed at a stale branch and five merged, green
 //      pull requests were stranded for hours with nothing red anywhere.
 //
-// So this file asserts the two things that would quietly undo the fix: the healthcheck pointing at a
-// probe that can actually FAIL, and the record of which settings this file cannot express.
+// So this file asserts the things that would quietly undo the fix: the healthcheck pointing at a
+// probe that can actually FAIL, and the settings that keep production in Europe on one replica.
+//
+// 🔴 SINCE 2026-10-23 THE AUTHORING FILE `.railway/railway.ts` IS THE ONLY DEPLOY CONFIG. Railway
+// deprecated `railway.json` / `railway.toml` (existing files stop working on 2026-12-01), and the
+// owner ordered the move ("migrate railway.json to Railway's new infrastructure-as-code before
+// December"). Both toml files were deleted once an apply had stored the app's 900 s window on the
+// service; Railway already stored the ON_FAILURE / 10 restart policy, which a pull renders as absent
+// only because it is Railway's own default. docs/deployment.md, "The cutover, 2026-10-23".
 //
 // Each invariant is asserted SEPARATELY with its own message. A single combined regex would make
 // every clause after the first unreachable — the defect that hid a dead assertion in
 // tests/next-build-cpu-cap.test.ts on 2026-09-27.
 
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
 
-const CONFIG = resolve("railway.toml");
 const IAC = resolve(".railway/railway.ts");
 
+/** One service's block out of the comment-stripped authoring file, from its declaration to the next. */
+function serviceBlock(iac: string, name: string): string {
+  const at = iac.indexOf(`service("${name}"`);
+  assert.notEqual(at, -1, `🔴 .railway/railway.ts no longer declares the ${name} service.`);
+  const next = iac.indexOf('service("', at + 1);
+  return iac.slice(at, next === -1 ? undefined : next);
+}
+
 export function runRailwayDeployConfigTests() {
-  const source = readFileSync(CONFIG, "utf8");
-
-  // 1. The healthcheck must point at /api/readyz, NOT /api/healthz. This is the whole point of the
-  //    file. `healthz` returns the literal string "ok" with no branch in the code, so as a deploy
-  //    gate it proves only that a Node process is listening — it is blind to a wrong service-role
-  //    key, an unreachable Supabase and a missing environment variable, which are the failures that
-  //    have actually happened here. `readyz` answers 503 for all three.
-  assert.match(
-    source,
-    /^healthcheckPath\s*=\s*"\/api\/readyz"\s*$/m,
-    "🔴 railway.toml no longer health-gates deploys on /api/readyz. If this was changed to " +
-      "/api/healthz, the gate is now cosmetic: healthz cannot return anything but ok, so a deploy " +
-      "with a broken database or a wrong key would again take full production traffic.",
-  );
-
-  // 2. A healthcheck with no timeout, or a tight one, fails GOOD deploys: this app preloads 1,148
-  //    route entries at start in production, so a cold container is slow to first response for
-  //    reasons unrelated to health. The probe's own dependency calls are bounded far below this.
-  const timeout = /^healthcheckTimeout\s*=\s*(\d+)\s*$/m.exec(source);
-  assert.notEqual(
-    timeout,
-    null,
-    "🔴 railway.toml lost `healthcheckTimeout`. Without a generous window a cold start — this app " +
-      "preloads 1,148 route entries in production — reads as an unhealthy deploy.",
-  );
-  assert.ok(
-    Number(timeout?.[1]) >= 120,
-    `🔴 healthcheckTimeout is ${timeout?.[1]}s, which is too tight for this app's cold start. ` +
-      "A deploy that is actually fine would be failed and rolled back.",
-  );
-
-  // 3. One replica. Recorded here because the way to break it is a single command:
-  //    `railway service scale <region>=1` ADDS a replica rather than moving the existing one, and it
-  //    has already produced two live copies of a server writing one database.
-  assert.match(
-    source,
-    /^numReplicas\s*=\s*1\s*$/m,
-    "🔴 railway.toml no longer pins numReplicas = 1. Two replicas of this app is not a scale-up — " +
-      "check whether a `railway service scale` command ADDED a region instead of moving one.",
-  );
-
-  // 4. ON_FAILURE, not ALWAYS. ALWAYS hides a genuine configuration failure behind an endless
-  //    restart loop, which is the reasoning already written down for the Headwind service.
-  assert.match(
-    source,
-    /^restartPolicyType\s*=\s*"ON_FAILURE"\s*$/m,
-    "🔴 railway.toml's restart policy is no longer ON_FAILURE. ALWAYS would restart a container " +
-      "forever through a real configuration failure, hiding the one log line that says what broke.",
-  );
-
-  // 5. The settings this file CANNOT express have each cost something, and the only thing stopping
-  //    the next session assuming they are covered is that they are named here. The region line is
-  //    the load-bearing one: the workspace's own preferred region is `sfo`, so a new service is born
-  //    on the wrong continent unless someone sets it.
-  for (const [needle, why] of [
-    ["europe-west4-drams3a", "the region, which must stay in Europe and is not settable from this file"],
-    ["Source branch", "the source branch, which has silently drifted before and stranded five green PRs"],
-    ["watchPatterns", "the deliberate absence of watch patterns, so it reads as a decision not an oversight"],
-  ] as const) {
+  // 1-5. 🔴 THE DEPRECATED FILES STAY GONE. Until 2026-12-01 Railway still reads a `railway.toml` at
+  //    deploy time and it OVERRIDES the stored service settings, so one restored from history would
+  //    silently take the healthcheck, the restart policy and the builder back from the authoring file
+  //    — and then stop being read on 1 December with nothing red. What it held is asserted against
+  //    `.railway/railway.ts` in rules 9-15 below.
+  for (const path of [
+    "railway.toml",
+    "railway.json",
+    "infra/headwind-phoenix-actions/railway.toml",
+    "infra/headwind-phoenix-actions/railway.json",
+  ]) {
     assert.ok(
-      source.includes(needle),
-      `🔴 railway.toml no longer records ${why}. That note is the only thing telling the next ` +
-        "reader which deploy settings are still dashboard-only, and a setting nobody knows is " +
-        "unmanaged is exactly how 2026-08-13 happened.",
+      !existsSync(resolve(path)),
+      `🔴 ${path} is back. Railway deprecated Config as Code, and the deploy settings moved to ` +
+        ".railway/railway.ts on 2026-10-23. A restored file overrides what the authoring file stored " +
+        "until 2026-12-01 and is then ignored — put the setting in .railway/railway.ts and apply it.",
     );
   }
 
   // 6. The probe this file depends on must still be able to answer not-ready. If readyz stops
-  //    returning 503, the healthcheck above silently becomes as toothless as healthz — the same
+  //    returning 503, the healthcheck in rule 9 silently becomes as toothless as healthz — the same
   //    outcome as changing the path, reached from the other end.
   const readyz = readFileSync(resolve("app/api/readyz/route.ts"), "utf8");
   assert.match(
     readyz,
     /503/,
     "🔴 /api/readyz no longer returns 503. Railway's healthcheck reads a status code, so a probe " +
-      "that always answers 200 gates nothing — and railway.toml would be asserting a protection " +
+      "that always answers 200 gates nothing — and .railway/railway.ts would be asserting a protection " +
       "that no longer exists.",
   );
 
@@ -166,7 +132,7 @@ export function runRailwayDeployConfigTests() {
   //    and prints so in every build log; existing files keep working until 2026-12-01, and the
   //    authoring file was applied 2026-10-10, app then headwind (owner lifted the 2026-10-01 hold — see
   //    docs/deployment.md, "Config as Code is deprecated" and "The first apply"). The hazard is not the deadline, it is
-  //    that the three decisions below live in `railway.toml` today and a cutover can drop all three
+  //    that the three decisions below lived in `railway.toml` until 2026-10-23 and a cutover can drop all three
   //    WITHOUT FAILING ANYTHING:
   //
   //      - the healthcheck is applied at DEPLOY time and is not stored as a service setting, so
@@ -182,7 +148,7 @@ export function runRailwayDeployConfigTests() {
   //    `tests/support/comment-strip.ts` exists because the one-line block-comment regex every such
   //    test used to carry deletes real code from 39 files in this repo.
   //
-  //    When the cutover finally happens, rules 1-5 above go with `railway.toml` and THESE are what
+  //    The cutover happened on 2026-10-23: the toml rules went with `railway.toml`, and THESE are what
   //    is left holding the line. They are deliberately not a mirror of the toml: they pin the three
   //    things the owner named as having to survive, and the region, which is the one setting that
   //    puts production on the wrong continent if it is lost.
@@ -192,7 +158,7 @@ export function runRailwayDeployConfigTests() {
     appAt,
     -1,
     "🔴 .railway/railway.ts no longer declares a `phoenix-people-workforce` service. That file is " +
-      "the prepared cutover away from railway.toml — if the service is gone from it, the cutover " +
+      "the only deploy config since railway.toml was retired — if the service is gone from it, an apply " +
       "would delete the service that serves every employee.",
   );
   const nextAt = iac.indexOf('service("', appAt + 1);
@@ -204,7 +170,7 @@ export function runRailwayDeployConfigTests() {
       "would pass for the wrong reason. Check the service-declaration order before trusting this.",
   );
 
-  // 9. The readiness gate. This is the one behaviour railway.toml exists for, and the one thing a
+  // 9. The readiness gate. This is the one behaviour railway.toml existed for, and the one thing a
   //    `railway config pull` provably cannot see.
   assert.match(
     appBlock,
@@ -266,5 +232,44 @@ export function runRailwayDeployConfigTests() {
     "🔴 .railway/railway.ts no longer places phoenix-people-workforce as one replica in " +
       "europe-west4-drams3a. Production must stay in Europe, colocated with the Frankfurt Supabase " +
       "project, and two replicas of this app writing one database is not a scale-up.",
+  );
+  // 13-15. THE TABLET SERVER. `infra/headwind-phoenix-actions/railway.toml` held its builder and restart
+  //     policy until 2026-10-23; the authoring file holds them now, together with the files disk added
+  //     on 2026-10-22 — the one resource whose absence a plan treats as "detach", read live 23 Oct 2026.
+  const headwind = serviceBlock(iac, "phoenix-headwind");
+  // 13. DOCKERFILE, the owner's 2026-10-01 decision: that Dockerfile is what extends the pinned image
+  //     with lock, lost mode, factory reset and screen-lock reset, which refuse on the stock image.
+  assert.match(
+    headwind,
+    /builder:\s*"DOCKERFILE"/,
+    "🔴 .railway/railway.ts no longer builds phoenix-headwind from its Dockerfile. The stock image " +
+      "refuses lock, lost mode, factory reset and screen-lock reset on every rep tablet.",
+  );
+  // 14. The watch pattern IS load-bearing here: without it every merge rebuilds the MDM server and
+  //     every tablet loses its check-in channel for the restart.
+  assert.match(
+    headwind,
+    /watchPatterns:\s*\[\s*"infra\/headwind-phoenix-actions\/\*\*"\s*\]/,
+    "🔴 phoenix-headwind lost its watch pattern, so every merge to main would restart the tablet server.",
+  );
+  assert.match(
+    headwind,
+    /restartPolicyType:\s*"ON_FAILURE"/,
+    "🔴 phoenix-headwind's restart policy is no longer ON_FAILURE. ALWAYS restarts a genuine " +
+      "configuration failure for ever and hides the one log line that says what broke.",
+  );
+  // 15. 🔴 THE FILES DISK. A plan from a file without it detaches the disk from the tablet server, and
+  //     every download a tablet makes from mdm.satopharma.com/files/ answers 404 until the entrypoint
+  //     re-fetches — WhatsApp it never can, because whatsapp.com refuses Railway's addresses.
+  assert.match(
+    iac,
+    /volume\(\s*"phoenix-headwind-volume"/,
+    "🔴 .railway/railway.ts no longer declares phoenix-headwind-volume, the tablet server's files disk.",
+  );
+  assert.match(
+    headwind,
+    /volumeMounts:\s*\{\s*"\/usr\/local\/tomcat\/work\/files":\s*phoenixHeadwindVolume\s*\}/,
+    "🔴 phoenix-headwind no longer mounts its files disk at /usr/local/tomcat/work/files. An apply " +
+      "would detach it and every tablet app download would answer 404.",
   );
 }

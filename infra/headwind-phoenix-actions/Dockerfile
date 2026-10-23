@@ -7,7 +7,7 @@
 #
 # TWO THINGS BUILD THIS, AND ONLY ONE OF THEM PASSES A BUILD ARG.
 #
-#  1. Railway — the way it actually runs (see railway.toml beside this file). Railway builds a
+#  1. Railway — the way it actually runs (its settings are the `phoenix-headwind` block of .railway/railway.ts). Railway builds a
 #     Dockerfile from the repository and does NOT pass docker-compose's build args, which is why the
 #     ARG below carries a DEFAULT. Without one the FROM line resolves to `headwindmdm/hmdm:` and the
 #     build dies on a line that looks like a typo.
@@ -256,14 +256,14 @@ RUN chmod +x /phoenix-entrypoint.sh
 # internal layout can change under an upstream tag bump, and the only way to know it still boots is an
 # actual container run — which this task has no safe way to rehearse (no local Docker daemon here, and
 # a merge to this Dockerfile ships straight to the live MDM console on the next Railway deploy; see
-# railway.toml). An unverified guess risks a device-management server that will not start, which is a
+# the watch pattern in .railway/railway.ts). An unverified guess risks a device-management server that will not start, which is a
 # worse outcome for the fleet than this finding.
 #
 # What actually bounds the blast radius here: PROTOCOL=http on Railway means TLS terminates at
 # Railway's edge and no certificate or private key material ever reaches this container (§4.2 of
 # docs/devices/headwind-rustdesk.md); the connectors it binds (8080/8443, this image's server.xml) are
 # all unprivileged ports, so root buys no capability a non-root user would have lacked; and
-# railway.toml pins `numReplicas = 1` with `restartPolicyType = "ON_FAILURE"` to limit what a
+# .railway/railway.ts pins one replica with `restartPolicyType: "ON_FAILURE"` to limit what a
 # compromised process could do before it is noticed. Revisit this if h-mdm/hmdm-docker ever ships its
 # own non-root support upstream.
 # nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
