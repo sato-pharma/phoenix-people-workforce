@@ -1253,3 +1253,84 @@ the second one, a duplicate **row** the moment it did not.
 Pinned by `tests/audit-outbox.test.ts`, confirmed by breaking the fix twice and watching that
 section's own assertion fire: restoring the module-wide flag, and moving the landing probe to after
 the retry.
+
+## What was actually failing: four database restarts (22 October 2026)
+
+The audit outbox above was built from the symptom. The cause turned out not to be the audit
+trail's own load at all.
+
+`database_restarted` records the postmaster start time whenever it moves. On **22 October** it
+moved four times:
+
+| Cairo | Postmaster start (UTC) |
+| --- | --- |
+| 11:30 | 08:30:33 |
+| 11:51 | 08:51:25 |
+| 12:33 | 09:33:48 |
+| 14:25 | 11:25:32 |
+
+Before that, restarts were one a day (18th, 19th, 20th) and none on the 21st. Around each one sit
+Cloudflare **520** and **521** responses at the edge, `AbortError: Supabase request timed out`
+across `/api/auth/heartbeat`, Phoenix CRM, the portals and the session bundle, plus
+`session_verification_unavailable`, a failed probation cron step, the employee-directory fallback
+and WhatsApp message buffering. **The database was down, not slow.** All 40 of that day's audit
+losses sit inside that window, which is 37% of the 109 in 21 days.
+
+Production has been stable since: `pg_postmaster_start_time()` read **22 Oct 14:25 Cairo**, 27
+hours' uptime and counting when this was written.
+
+The lesson for anything written through a short client timeout: the failure mode to design for is
+not a slow query, it is **the database being absent for minutes at a time**, several times in an
+afternoon, with no warning and nothing to retry against until it returns.
+
+## Protecting the notification writes (23 October 2026)
+
+Owner's instruction once the restarts were understood: *"protect the notification writes with the
+same outbox."*
+
+So the mechanism moved to `src/lib/platform/write-outbox.ts` and the domains supply the three
+things that differ — which table queues the work, how a payload is written for real, and whether it
+had already landed. `src/lib/admin/audit-outbox.ts` and
+`src/lib/notifications/notification-outbox.ts` are those halves.
+
+### Why the delivery row is the dangerous one
+
+A lost audit row is a missing record. A lost `notification_deliveries` row is **a second real email
+or Telegram message to a real person**:
+
+- `claimDelivery` writes a `pending` row before a send.
+- `upsertDelivery` writes the outcome (`sent` / `failed`) afterwards — and it swallowed its own
+  failure with a log line.
+- The retry drain re-sends any delivery row still sitting open.
+
+So an outage during the status write did not merely lose bookkeeping: it left the row open and
+**armed a duplicate send for the next drain**. Both writes the queue carries are upserts on a
+unique key (`event_key`, `idempotency_key`), so replaying one is harmless while losing one is not.
+
+### The one write that is retried but NOT queued
+
+`createNotificationEvent` gets the patient retry and no queue, deliberately. Its id is what the
+delivery claim anchors to, so a caller that gets no id does not send. Parking it would write a
+`status: 'sent'` notification row hours later asserting a send that never happened — the opposite
+of what the outbox is for. The queue protects the write that records the **outcome**, where a
+replay is harmless.
+
+### Two tables, one mechanism
+
+`audit_log_outbox` and `notification_write_outbox` are separate tables rather than one with a
+`kind` column. Merging them would have meant dropping the audit queue — live in production an hour
+earlier — while the serving build still wrote to it, which is a window with exactly the behaviour
+these tables exist to remove.
+
+### One predicate worth knowing about
+
+`notificationTableMissing` is deliberately narrower than `schemaMissing` in `system.ts`, which also
+returns true for **any** error text containing the table's own name — and a PostgREST error about a
+table usually does. That is tolerable where it only decides whether to log. Here it decides whether
+to **keep** the write, and a real outage error naming the table would otherwise be discarded as
+"schema missing".
+
+Pinned by `tests/audit-outbox.test.ts` (the mechanism, including a stub queue that proves the
+landing probe stops the second write) and `tests/notification-outbox.test.ts` (the payload guards,
+the predicate, and the write that must not be queued). Both sections were confirmed by breaking the
+fix and watching that section's own headline assertion fire.

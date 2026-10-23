@@ -17,8 +17,29 @@ function functionBlock(fileSource: string, functionName: string) {
 
 export function runTransactionWorkflowAuditTests() {
   const auditSource = source("src/lib/admin/audit.ts");
-  assert.match(auditSource, /const \{ error \} = await supabase\.from\("audit_logs"\)\.insert/);
-  assert.match(auditSource, /if \(error\) \{\s*throw error;\s*\}/);
+
+  // THE INSERT MOVED, THE PROOF DID NOT. On 23 Oct 2026 the outbox mechanism was extracted to
+  // `src/lib/platform/write-outbox.ts` so the notification writes could share it, and the
+  // `audit_logs` insert went with the audit half of it. What this test exists to catch is
+  // unchanged, so it is asserted in both halves: `audit.ts` must still REACH a real insert, and
+  // that insert must still refuse to swallow its own error. Asserting only the wiring would pass
+  // on a queue that writes nowhere; asserting only the insert would pass on an audit trail no
+  // longer connected to it.
+  assert.match(
+    auditSource,
+    /persistAuditLogThroughOutbox/,
+    "audit.ts must persist through the outbox — the audit entity types below are worth nothing if " +
+      "nothing writes a row.",
+  );
+
+  const auditOutboxSource = source("src/lib/admin/audit-outbox.ts");
+  assert.match(auditOutboxSource, /const \{ error \} = await supabase\.from\("audit_logs"\)\.insert/);
+  assert.match(
+    auditOutboxSource,
+    /if \(error\)\s*(\{\s*)?throw error;/,
+    "a failed audit insert must throw: the caller retries it and then queues it, and an insert that " +
+      "returned quietly would report a row that was never written.",
+  );
   assert.match(auditSource, /"sales_import_batch"/);
   assert.match(auditSource, /"payroll_batch"/);
   assert.match(auditSource, /"vacation_request"/);

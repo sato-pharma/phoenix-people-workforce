@@ -17,6 +17,8 @@ import {
   type NotificationRecipient,
   type NotificationRecipientGovernanceWarning,
 } from "@/lib/notifications/policy";
+import { persistNotificationWrite } from "@/lib/notifications/notification-outbox";
+import { OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS, OUTBOX_RETRY_TIMEOUT_MS } from "@/lib/platform/write-outbox";
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
@@ -951,14 +953,29 @@ async function createNotificationEvent(input: CreateSystemNotificationInput, eve
     updated_at: now,
   };
 
-  try {
-    const { data, error } = await getSupabaseAdmin()
+  // 🔴 RETRIED, BUT DELIBERATELY NOT QUEUED. This row is a PRECONDITION of the send: its id is
+  // what the delivery claim anchors to, so a caller that gets no id does not send. Parking it for
+  // a later drain would write a `status: 'sent'` notification row hours afterwards asserting a
+  // send that never happened — the opposite of what the outbox is for. One patient retry is the
+  // right amount of resilience here; the outbox protects the write that records the OUTCOME
+  // (`upsertDelivery`), where a replay is harmless and a loss costs a duplicate message.
+  const writeEvent = async (timeoutMs: number) => {
+    const { data, error } = await getSupabaseAdmin({ requestTimeoutMs: timeoutMs })
       .from("notification_events")
       .upsert(row, { onConflict: "event_key" })
       .select("id")
       .single();
     if (error) throw error;
     return String((data as { id?: string | number } | null)?.id ?? "");
+  };
+
+  try {
+    try {
+      return await writeEvent(OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS);
+    } catch (firstError) {
+      if (schemaMissing(firstError, "notification_events")) throw firstError;
+      return await writeEvent(OUTBOX_RETRY_TIMEOUT_MS);
+    }
   } catch (error) {
     if (!schemaMissing(error, "notification_events")) throw error;
 
@@ -997,33 +1014,39 @@ async function upsertDelivery(input: {
   status: SystemNotificationDeliveryResult["status"];
 }) {
   if (!input.eventId) return;
-  try {
-    const now = new Date().toISOString();
-    await getSupabaseAdmin()
-      .from("notification_deliveries")
-      .upsert({
-        channel: input.channel,
-        idempotency_key: input.idempotencyKey,
-        last_error: input.lastError ?? null,
-        metadata: input.metadata ?? {},
-        next_attempt_at: input.nextAttemptAt ?? null,
-        notification_event_id: input.eventId,
-        provider: input.provider ?? input.channel,
-        provider_message_id: input.providerMessageId ?? null,
-        recipient_address: input.recipientAddress ?? null,
-        recipient_hr_id: input.recipient.hrId,
-        recipient_user_id: input.recipient.userId,
-        sent_at: input.status === "sent" ? now : null,
-        status: input.status,
-        updated_at: now,
-      }, { onConflict: "idempotency_key" });
-  } catch (error) {
-    if (!schemaMissing(error, "notification_deliveries")) {
-      logError("Notification delivery audit failed", {
-        labels: { event: "notification_delivery_audit_failed", channel: input.channel, hr_id: input.recipient.hrId },
-        error,
-      });
-    }
+  const now = new Date().toISOString();
+  // 🔴 THIS WRITE IS WHY THE NOTIFICATION OUTBOX EXISTS, AND LOSING IT IS WORSE THAN LOSING AN
+  // AUDIT ROW. It is the record that a send happened. Until 23 Oct 2026 a failure here was a log
+  // line and nothing else — so when production Postgres restarted four times on 22 October, the
+  // row stayed open at whatever `claimDelivery` had left it, and the retry drain's job is to send
+  // open rows again. A lost status write did not just lose bookkeeping; it armed a SECOND real
+  // email or Telegram message to a real person. The upsert is keyed on `idempotency_key`, so
+  // replaying it from the queue is harmless.
+  const error = await persistNotificationWrite({
+    idempotencyKey: input.idempotencyKey,
+    kind: "notification_delivery",
+    row: {
+      channel: input.channel,
+      idempotency_key: input.idempotencyKey,
+      last_error: input.lastError ?? null,
+      metadata: input.metadata ?? {},
+      next_attempt_at: input.nextAttemptAt ?? null,
+      notification_event_id: input.eventId,
+      provider: input.provider ?? input.channel,
+      provider_message_id: input.providerMessageId ?? null,
+      recipient_address: input.recipientAddress ?? null,
+      recipient_hr_id: input.recipient.hrId,
+      recipient_user_id: input.recipient.userId,
+      sent_at: input.status === "sent" ? now : null,
+      status: input.status,
+      updated_at: now,
+    },
+  });
+  if (error && !schemaMissing(error, "notification_deliveries")) {
+    logError("Notification delivery audit failed", {
+      labels: { event: "notification_delivery_audit_failed", channel: input.channel, hr_id: input.recipient.hrId },
+      error,
+    });
   }
 }
 
