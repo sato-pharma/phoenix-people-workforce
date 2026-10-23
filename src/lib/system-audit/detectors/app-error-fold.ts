@@ -509,7 +509,8 @@ export function createAppErrorFoldDetector(deps: AppErrorFoldDependencies): Audi
             }
             keptRows += kept.length;
 
-            const folded = foldOccurrences(kept, open);
+            // Annotated: `open` is reassigned from `folded` in this loop, which TypeScript cannot infer.
+            const folded: FoldedOccurrence<PreparedEvent>[] = foldOccurrences(kept, open);
             open = stillOpen(open, folded);
 
             const representatives = folded.map((occurrence) => occurrence.events[0]);

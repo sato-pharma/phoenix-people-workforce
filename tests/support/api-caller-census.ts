@@ -23,7 +23,7 @@ import path from "node:path";
  * red build at a time.
  *
  * 1. **The access registry names every route by contract.** Counting it as a caller makes the whole
- *    census vacuous — the first run answered "0 orphans" for exactly this reason. Four files declare
+ *    census vacuous — the first run answered "0 orphans" for exactly this reason. Five files declare
  *    routes rather than call them and are excluded by name (DECLARATION_ONLY).
  * 2. **An interpolation can sit GLUED to literal text.** `fetch(`/api/production-planning${path}`)`
  *    is not a free wildcard: the literal head still constrains which routes it can reach. Treating
@@ -95,6 +95,9 @@ export const DECLARATION_ONLY: readonly string[] = [
   "src/lib/cron-control/job-registry.ts",
   "src/lib/error-monitor/redact-route.ts",
   "src/lib/navigation/shell-headers.ts",
+  // The System Audit's API→page map names every /api prefix so an API error can be shown under
+  // the sidebar page that calls it; it calls none of them.
+  "src/lib/system-audit/api-page-map.ts",
 ];
 
 /**
