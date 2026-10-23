@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { roundCurrency } from "@/lib/payroll/money";
 
 /**
@@ -182,10 +184,97 @@ export function assertPart2FileMatchesStamp(
   run: { phase: string; part2ConfirmedAt?: string | null },
   stamp: ConfirmedTotals | null,
   current: ConfirmedTotals,
+  bank?: {
+    confirmed: BankDetailsStamp | null;
+    current: BankDetailsStamp;
+    nameOf: (compact: string) => string;
+  },
 ): void {
   if (run.phase !== "ready") return;
   if (!stamp && confirmedBeforeStampExisted(run.part2ConfirmedAt)) return;
   assertMatchesPart2Confirm(stamp, current, "bank_file");
+  if (bank) assertBankDetailsMatchPart2Confirm(bank.confirmed, bank.current, bank.nameOf);
+}
+
+/**
+ * WHERE EACH PERSON'S MONEY GOES, STAMPED BESIDE HOW MUCH (owner, 2026-10-23 — "block it").
+ *
+ * The totals catch every change to an amount, but not to a destination: a bank or an account number
+ * edited on the employee record after Part 2 confirm moves no total, and the FAB and CIB files read
+ * both straight from the live row. So the confirmed month also records, per person, a fingerprint of
+ * the bank and account the files would send to; a Part 2 file refuses when any of them moved.
+ *
+ * A FINGERPRINT, NEVER THE ACCOUNT. The stamp lives in the audit trail, which is append-only and kept
+ * for ever, so it holds a one-way hash keyed to the run and the person — never an account number.
+ *
+ * A stamp written before this existed carries no fingerprints, and is compared on totals alone.
+ */
+export const PART2_BANK_DETAILS_KEY = "confirmedBankDetails";
+
+/** Person (compact HR id) → fingerprint of the bank and account a Part 2 file pays them into. */
+export type BankDetailsStamp = Record<string, string>;
+
+type BankDetailsSource = { compact: string; bankName: string | null; bankAccount: string | null };
+
+/** The same reading the files make: the bank name decides the route, the trimmed account is the destination. */
+function bankFingerprint(runId: string, entry: BankDetailsSource): string {
+  const bankName = (entry.bankName ?? "").trim().toUpperCase();
+  const bankAccount = (entry.bankAccount ?? "").trim();
+  return createHash("sha256")
+    .update(`${runId}\n${entry.compact}\n${bankName}\n${bankAccount}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+/** The bank fingerprints stamped at Part 2 confirm, one per person on the sheet. */
+export function part2BankDetails(runId: string, rows: readonly BankDetailsSource[]): BankDetailsStamp {
+  const stamp: BankDetailsStamp = {};
+  for (const entry of rows) stamp[entry.compact] = bankFingerprint(runId, entry);
+  return stamp;
+}
+
+/** Read the fingerprints back out of an audit row's `detail`, or null when the stamp predates them. */
+export function readConfirmedBankDetails(detail: unknown): BankDetailsStamp | null {
+  if (!detail || typeof detail !== "object") return null;
+  const raw = (detail as Record<string, unknown>)[PART2_BANK_DETAILS_KEY];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const stamp: BankDetailsStamp = {};
+  for (const [compact, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string") return null;
+    stamp[compact] = value;
+  }
+  return stamp;
+}
+
+/** Who is paid somewhere other than where Part 2 confirmed — anyone added or dropped counts too. */
+export function compareBankDetails(confirmed: BankDetailsStamp, current: BankDetailsStamp): string[] {
+  const people = new Set([...Object.keys(confirmed), ...Object.keys(current)]);
+  return [...people].filter((compact) => confirmed[compact] !== current[compact]).sort();
+}
+
+/** What the person downloading reads. Names the people, because the fix is to look at their records. */
+export function describeBankDetailsDrift(names: readonly string[]): string {
+  const who = names.length === 1 ? `${names[0]}'s bank details have` : `The bank details of ${names.length} people have`;
+  const listed = names.length === 1 ? "" : ` (${names.join(", ")})`;
+  return (
+    `${who} changed since Part 2 was confirmed${listed}. This bank file is rebuilt from today's data, so ` +
+    "downloading it now would send money to an account nobody confirmed. No file was produced. Check the " +
+    "change on the employee record, then reopen Part 2 and confirm again."
+  );
+}
+
+/**
+ * The bank half of the Part 2 file check. Quiet when the stamp predates fingerprints (null) — that
+ * month is still held to its totals — and when nobody's destination moved.
+ */
+export function assertBankDetailsMatchPart2Confirm(
+  confirmed: BankDetailsStamp | null,
+  current: BankDetailsStamp,
+  nameOf: (compact: string) => string,
+): void {
+  if (!confirmed) return;
+  const moved = compareBankDetails(confirmed, current);
+  if (moved.length > 0) throw new Error(`Conflict: ${describeBankDetailsDrift(moved.map(nameOf))}`);
 }
 
 /**
