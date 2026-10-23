@@ -3,7 +3,12 @@ import { type ManagerAreaFinding, describeManagerAreaDrift } from "@/lib/org/man
 import { findManagerAreaDrift } from "@/lib/org/manager-area-region-check";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { computeSyncPeriods, syncTerritoryData, TERRITORY_SYNC_DEFAULT_MONTHS } from "./sync";
+import {
+  computeSyncPeriods,
+  syncTerritoryData,
+  TERRITORY_SYNC_DEFAULT_MONTHS,
+  TERRITORY_SYNC_SCHEDULED_BUDGET_MS,
+} from "./sync";
 
 /**
  * The scheduled half of the Territory Sync.
@@ -213,6 +218,9 @@ export async function runScheduledTerritorySync(
   const report = await syncTerritoryData({
     periods: syncedPeriods,
     actorLoginId: SCHEDULED_TERRITORY_SYNC_ACTOR,
+    // The nightly route may run 300 s; the button's 80 s budget would leave a slow night's
+    // retry no room (`restampPeriodsOneByOne`).
+    budgetMs: TERRITORY_SYNC_SCHEDULED_BUDGET_MS,
     onWorkCommitted: options.onWorkCommitted,
   });
 

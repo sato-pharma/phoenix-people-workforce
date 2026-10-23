@@ -38,8 +38,9 @@ const JOB_SLUG = "phoenix-territory-restamp";
  * the slicing `/api/cron/crm-contact-lists` uses, because the run is idempotent and cheap at rest:
  * it writes only rows whose brick actually moved and refreshes rollups only for batches it moved,
  * so a steady-state night is one indexed scan (the read-only reconciliation over a full 12-month
- * window measured 1.19s). A rare heavy night can outrun the client cut; the work still completes
- * server-side in its single transaction, and the next night's run is a no-op confirming it.
+ * window measured 1.19s). The re-stamp runs ONE PERIOD PER CALL, each its own transaction, so a slow
+ * period never rolls back the others, and a period the database gateway cuts (it cuts at about two
+ * minutes — the 4 Oct 2026 night) is tried once more while the run has time (`restampPeriodsOneByOne`).
  *
  * WHY THE PING IS EXPLICIT, AND WHY IT FIRES AT THE COMMIT RATHER THAN AT THE END.
  * `withDeadMansSwitch` reports at the very END of the run, which put roughly 25 seconds of
