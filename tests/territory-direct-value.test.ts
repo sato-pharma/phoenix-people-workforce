@@ -44,7 +44,13 @@ export function runTerritoryDirectValueTests() {
   // same master price. What this pins is the SPLIT, not the source — a direct order takes
   // `direct_value`, and only a non-direct row is priced at all — so both spellings satisfy it and
   // the negative below rejects both.
-  const PRICE = String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\)`;
+  // And once more on 2026-10-23, for SPEED: phx_factory_price is SECURITY DEFINER and carries a SET,
+  // so Postgres cannot inline it and every row-level mention was a real call with two correlated
+  // subqueries. It is now resolved once per distinct (product_code, period) in a `period_price` CTE
+  // and left-joined, so the body may also read `<alias>.period_price`. Same number for the same row,
+  // proven on production over all 262,293 directory rows; the SPLIT this pins is untouched, and the
+  // negative below rejects this spelling too.
+  const PRICE = String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)|[a-z_]+\.period_price), 0\)`;
 
   // The UNIT column moved on 2026-10-02, for the same reason the price source moved before it. The
   // function read `effective_units` on the belief that it is the credited-to-area basis produced by

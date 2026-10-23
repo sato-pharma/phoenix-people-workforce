@@ -1,25 +1,37 @@
 ---
 name: the-mcp-bundle-guard-only-runs-on-nine-paths
-description: "phoenix-mcp.yml's \"no administrative Phoenix IO survived bundling\" assertion triggers on only 9 paths while the bundle's import graph reaches email, notifications and sales — so a breach sits green on main until someone touches one of the nine; reproduce it in 7 s locally and grep dist/main.mjs, which is written before the throw."
+description: "FIXED 23 Oct 2026 — the MCP bundle's \"no administrative Phoenix IO survived bundling\" assertion is now a step in ci.yml's `static` job, so it gates every PR and every push to main; phoenix-mcp.yml's 9 paths are still NOT the bundle's import graph, and mcp-security is still not a required check, so never read that workflow's silence as coverage. The cause pattern: a MODULE-LEVEL call retains its own default argument's chain down to a PRIVATE supabaseRest the deny plugin cannot stub. Reproduce in 7 s and grep dist/main.mjs, written before the throw."
 metadata:
   node_type: memory
   type: project
   originSessionId: f1479c36-700b-425f-a493-804d277da62c
-  modified: 2026-10-23T09:06:41.677Z
+  modified: 2026-10-23T09:20:02.056Z
 ---
 
-`.github/workflows/phoenix-mcp.yml` runs the MCP bundle's security assertion — *"Administrative
-Phoenix IO survived bundling"*, `infra/phoenix-mcp/build.mjs:39` — on a **pull_request touching one
-of nine paths**: `infra/phoenix-mcp/**`, `src/lib/mcp-source/**`, `app/api/mcp-source/**`, the
-workflow, `permissions.ts`, `session-lifecycle.ts`, `employees/employee-directory.ts`,
-`reports/organogram.ts`, `sales/monthly-closing-portal.ts`. **It does not run on push to `main`.**
+🔴 **FIXED on 2026-10-23 (branch `codex/mcp-bundle-lazy-assurance`): the assertion is now gated
+repo-wide.** `ci.yml`'s `static` job runs `node build.mjs` in `infra/phoenix-mcp` (~15 s, its own
+lockfile and `node_modules`), `static` carries no `paths:` filter, and the required `checks` status
+`needs` it — so a PR that retains an administrative loader in the bundle now goes red and cannot
+merge. Pinned by `tests/mcp-bundle-io-guard.test.ts`, which also forbids a module-level
+`createAssuranceDirectoryReader()`. **Do not delete that step on the grounds that phoenix-mcp.yml
+already covers it.**
+
+**What is still true, and is the transferable half.**
+`.github/workflows/phoenix-mcp.yml` runs the MCP's deeper pass — the cold typecheck, the isolated
+PostgreSQL fixture, the dependency audit — on a **pull_request touching one of nine paths**:
+`infra/phoenix-mcp/**`, `src/lib/mcp-source/**`, `app/api/mcp-source/**`, the workflow,
+`permissions.ts`, `session-lifecycle.ts`, `employees/employee-directory.ts`,
+`reports/organogram.ts`, `sales/monthly-closing-portal.ts`. **It does not run on push to `main`, and
+`mcp-security` is not one of `main`'s required checks** (those are `validate` and `checks`).
 
 🔴 **The bundle's real import graph is far wider than those nine paths** — it reaches
-`src/lib/email/*`, `src/lib/notifications/*` and more. So a change *outside* the filter can break
-the assertion, nothing turns red, and the breach sits on `main` until the next PR that happens to
-touch one of the nine — which then looks like that PR's fault. It happened on 2026-10-23: #6336
-(the action-inbox name roster) went red on `mcp-security`, and swapping `origin/main`'s own versions
-of both changed files in reproduced the same red, proving it pre-existing.
+`src/lib/email/*`, `src/lib/notifications/*` and more. **The paths a workflow watches are a cost
+decision; what its assertion covers is the import graph, and the two are never the same list.** So
+before the `static` step existed, a change *outside* the filter broke the assertion, nothing turned
+red, and the breach sat on `main` until the next PR that happened to touch one of the nine — which
+then looked like that PR's fault. That is exactly how it was found: #6336 (the action-inbox name
+roster) went red on `mcp-security`, and swapping `origin/main`'s own versions of both changed files
+in reproduced the same red, proving it pre-existing.
 
 **Reproduce it locally in about 7 seconds** — no CI, no guessing:
 
@@ -44,12 +56,13 @@ Then work backwards: find which bundled symbol still references the surviving fu
 in `src/lib/` each carry a copy), so no stub can reach it. Only **tree-shaking** keeps it out of the
 bundle, which means any new reference chain to it is a live hazard.
 
-**The 2026-10-23 cause, for the pattern:** `src/lib/email/recipient-assurance.ts:238` runs
+🔴 **THE CAUSE PATTERN, WHICH IS THE THING TO CARRY:** `src/lib/email/recipient-assurance.ts` ran
 `const productionAssuranceDirectoryReader = createAssuranceDirectoryReader();` at **module level**.
-That top-level call retains the default parameter `loadAssuranceDirectoryFresh` →
-`getEmployeeDirectoryRows` → the directory's private `supabaseRest`, which holds both `/rest/v1/`
-and `getRequiredEnv("SUPABASE")`. It arrived with #6297, which touched none of the nine paths.
-**A top-level call in a module the MCP can reach is the shape to look for.**
-
-`mcp-security` is **not** one of `main`'s required checks (those are `validate` and `checks`), so it
-never blocks a merge — which is exactly why a red one can be ignored into permanence.
+A top-level **call** is a side effect esbuild may not drop, so the statement was retained — and with
+it its **default parameter** `loadAssuranceDirectoryFresh` → `getEmployeeDirectoryRows` → the
+directory's private `supabaseRest`, which spells both `/rest/v1/` and `getRequiredEnv("SUPABASE")`.
+It arrived with #6297, which touched none of the nine paths. The fix was to build the reader on
+first use (`reader ??= createAssuranceDirectoryReader()` inside `resolveAssuranceDirectory`), which
+is behaviour-identical — construction does no I/O and `??=` resolves before any await, so it is
+still one per-process singleton with one last-good copy. **A module-level call in any module the MCP
+can reach is the shape to look for.** See [[the-recipient-assurance-guard-fails-closed]].

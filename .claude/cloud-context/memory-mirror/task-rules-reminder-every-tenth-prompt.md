@@ -28,7 +28,7 @@ Measured over 467 Phoenix sessions in the 3 days to 8 Oct:
 
 **Why:** the reminder never enforced anything; it only reminded.
 - The same rules load on every request from `~/.claude/CLAUDE.md`.
-- `next-step-capture.mjs`, a Stop hook, still blocks every reply whose Next step line is missing or wrong.
+- `next-step-capture.mjs`, a Stop hook, still WARNS on every reply whose Next step line is missing or wrong - it has NEVER blocked since 2026-10-15, and must not be made to again: a blocked Stop hook makes the app auto-continue, and the suggestion gate skips an auto_continuation turn, so the block eats the very suggestion it exists to fill.
 
 **How to apply:**
 - To change the rules' wording, edit `task-rules.txt`.
