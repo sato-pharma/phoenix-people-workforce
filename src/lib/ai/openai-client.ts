@@ -6,7 +6,7 @@ import {
   hasAnthropicApiKey,
   resolveAnthropicModel,
 } from "@/lib/ai/anthropic-fallback";
-import { recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
+import { aiProviderLabel, recordAiCall, type AiCallComponent, type AiCallRecord } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 
 type OpenAiEnv = Record<string, string | undefined>;
@@ -211,7 +211,29 @@ function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : "unknown OpenAI error";
 }
 
-function logOpenAiError(context: string, error: unknown) {
+/**
+ * Whether this failure is handed to another account, which is what decides how it is REPORTED.
+ *
+ * 🔴 A LEG THE NEXT PROVIDER IS ASKED FOR IS NOT AN AI FAILURE. Before 23 Oct 2026 every leg reported
+ * `error`, so a dead OpenAI account wrote 520 `openai_request_failed` rows in seven days — the deliberate
+ * hourly re-test — and 21 "account out of credit" rows against CV extraction while Claude answered all 58
+ * reads. Both read as an outage. `failedOverTo` is set only when there IS a next provider AND the code is
+ * one that moves to it.
+ */
+function rescuedBy(code: PhoenixOpenAiErrorCode, failoverTo: AiProviderName | undefined) {
+  return failoverTo && shouldFailOverToNextProvider(code) ? failoverTo : undefined;
+}
+
+/** The outcome fields `recordAiCall` takes for a failed leg: a rescued one is `failed_over`, never `error`. */
+function legOutcome(
+  code: PhoenixOpenAiErrorCode,
+  failoverTo: AiProviderName | undefined,
+): Pick<AiCallRecord, "failedOverTo" | "status"> {
+  const failedOverTo = rescuedBy(code, failoverTo);
+  return failedOverTo ? { failedOverTo, status: "failed_over" } : { status: "error" };
+}
+
+function logOpenAiError(context: string, error: unknown, failedOverTo?: AiProviderName) {
   const requestId = requestIdFrom(error);
   const status = statusFrom(error);
   const detail = sanitizeOpenAiLogMessage(messageFrom(error));
@@ -220,26 +242,53 @@ function logOpenAiError(context: string, error: unknown) {
   // re-leaking the API key that `detail` above just redacted. A request/timeout/rate-limit
   // error never has a useful stack anyway (it's a network/HTTP failure, not a code defect) —
   // requestId/status/code in labels plus the sanitized message is the full diagnostic value.
-  logError(`OpenAI request failed: ${detail}`, {
-    labels: { event: "openai_request_failed", context, status: status ?? null, requestId: requestId ?? null },
-  });
+  logError(
+    failedOverTo
+      ? `OpenAI request failed over to ${aiProviderLabel(failedOverTo)}: ${detail}`
+      : `OpenAI request failed: ${detail}`,
+    {
+      labels: {
+        // Its own event, so the error board can tell the hourly by-design failover from an outage without
+        // reading the message — and so a search for openai_request_failed means what it used to mean.
+        event: failedOverTo ? "openai_failed_over" : "openai_request_failed",
+        context,
+        status: status ?? null,
+        requestId: requestId ?? null,
+      },
+    },
+  );
 }
 
-export function normalizeOpenAiError(error: unknown, context = "request") {
+/**
+ * One PhoenixOpenAiError out of whatever the SDK threw, and ONE log line for it.
+ *
+ * `failoverTo` is the account this call would ask next: when the classified code is one that moves to it,
+ * the line says so instead of reading as a plain failure. Classification happens first and logging once,
+ * at the end, precisely because the wording depends on the code — each branch used to log for itself.
+ */
+export function normalizeOpenAiError(error: unknown, context = "request", failoverTo?: AiProviderName) {
   if (error instanceof PhoenixOpenAiError) return error;
 
   const requestId = requestIdFrom(error);
   const status = statusFrom(error);
   const code = codeFrom(error);
   const outOfCredit = isOpenAiOutOfCredit(code, typeFrom(error));
+  const failure = classifyOpenAiError(error, { outOfCredit, requestId, status });
+  logOpenAiError(context, error, rescuedBy(failure.code, failoverTo));
+  return failure;
+}
+
+function classifyOpenAiError(
+  error: unknown,
+  facts: { outOfCredit: boolean; requestId?: string; status?: number },
+): PhoenixOpenAiError {
+  const { outOfCredit, requestId, status } = facts;
 
   if (error instanceof OpenAI.APIConnectionTimeoutError) {
-    logOpenAiError(context, error);
     return new PhoenixOpenAiError("timeout", "The OpenAI request timed out.", { requestId, status });
   }
 
   if (error instanceof OpenAI.RateLimitError) {
-    logOpenAiError(context, error);
     return new PhoenixOpenAiError(
       outOfCredit ? "quota_exceeded" : "rate_limited",
       messageFrom(error),
@@ -248,12 +297,10 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
   }
 
   if (error instanceof OpenAI.AuthenticationError || error instanceof OpenAI.PermissionDeniedError) {
-    logOpenAiError(context, error);
     return new PhoenixOpenAiError("auth_failed", messageFrom(error), { requestId, status });
   }
 
   if (error instanceof OpenAI.APIError) {
-    logOpenAiError(context, error);
     if (status === 401 || status === 403) {
       return new PhoenixOpenAiError("auth_failed", messageFrom(error), { requestId, status });
     }
@@ -267,7 +314,6 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
     return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
   }
 
-  logOpenAiError(context, error);
   return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
 }
 
@@ -366,9 +412,12 @@ export async function createOpenAiResponseText(params: CreateResponseTextParams)
       legParams = { ...params, timeoutMs: leftMs };
     }
     try {
+      // The account this leg would hand a dead-account failure to, so the leg reports a rescued failure as
+      // `failed_over` rather than as an AI failure. Undefined on the last leg: nothing follows it.
+      const failoverTo = plan[index + 1];
       const reply = provider === "anthropic"
-        ? await runAnthropicResponse(legParams, requestedModel)
-        : await runOpenAiResponse(legParams, requestedModel);
+        ? await runAnthropicResponse(legParams, requestedModel, failoverTo)
+        : await runOpenAiResponse(legParams, requestedModel, failoverTo);
       if (provider === "openai") noteOpenAiAvailable();
       return reply;
     } catch (error) {
@@ -400,7 +449,11 @@ export function failoverLegTimeoutMs(budgetMs: number, elapsedMs: number) {
   return leftMs >= AI_FAILOVER_MIN_LEG_MS ? leftMs : null;
 }
 
-async function runAnthropicResponse(params: CreateResponseTextParams, requestedModel: string) {
+async function runAnthropicResponse(
+  params: CreateResponseTextParams,
+  requestedModel: string,
+  failoverTo?: AiProviderName,
+) {
   const component = params.component ?? "openai_client";
   const model = resolveAnthropicModel(params.anthropicModel?.trim() || requestedModel);
   const startedAt = Date.now();
@@ -436,7 +489,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
     return { model: reply.model, outputText: reply.outputText, requestId: reply.requestId };
   } catch (error) {
     if (params.signal?.aborted) throw cancelledByCaller();
-    const normalized = normalizeAnthropicError(error, params.purpose);
+    const normalized = normalizeAnthropicError(error, params.purpose, failoverTo);
     recordAiCall({
       component,
       errorCode: normalized.code,
@@ -444,7 +497,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
       model,
       provider: "anthropic",
       purpose: params.purpose,
-      status: "error",
+      ...legOutcome(normalized.code, failoverTo),
     });
     throw normalized;
   }
@@ -452,25 +505,29 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
 
 // The Anthropic twin of `normalizeOpenAiError`: one PhoenixOpenAiError out, the key redacted from what
 // is logged, and nothing but status / request id / code in the labels.
-function normalizeAnthropicError(error: unknown, context: string) {
+function normalizeAnthropicError(error: unknown, context: string, failoverTo?: AiProviderName) {
   if (error instanceof PhoenixOpenAiError) return error;
   const failure = error instanceof AnthropicRequestError ? error : null;
   const detail = sanitizeOpenAiLogMessage(messageFrom(error));
-  logError(`Anthropic request failed: ${detail}`, {
-    labels: {
-      event: "anthropic_request_failed",
-      context,
-      status: failure?.status ?? null,
-      requestId: failure?.requestId ?? null,
+  const rescued = rescuedBy(failure?.code ?? "failed", failoverTo);
+  logError(
+    rescued ? `Anthropic request failed over to ${aiProviderLabel(rescued)}: ${detail}` : `Anthropic request failed: ${detail}`,
+    {
+      labels: {
+        event: rescued ? "anthropic_failed_over" : "anthropic_request_failed",
+        context,
+        status: failure?.status ?? null,
+        requestId: failure?.requestId ?? null,
+      },
     },
-  });
+  );
   return new PhoenixOpenAiError(failure?.code ?? "failed", detail, {
     requestId: failure?.requestId,
     status: failure?.status,
   });
 }
 
-async function runOpenAiResponse(params: CreateResponseTextParams, model: string) {
+async function runOpenAiResponse(params: CreateResponseTextParams, model: string, failoverTo?: AiProviderName) {
   const component = params.component ?? "openai_client";
   const startedAt = Date.now();
 
@@ -504,7 +561,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
     };
   } catch (error) {
     if (params.signal?.aborted) throw cancelledByCaller();
-    const normalized = normalizeOpenAiError(error, params.purpose);
+    const normalized = normalizeOpenAiError(error, params.purpose, failoverTo);
     recordAiCall({
       component,
       errorCode: normalized.code,
@@ -512,7 +569,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       model,
       provider: "openai",
       purpose: params.purpose,
-      status: "error",
+      ...legOutcome(normalized.code, failoverTo),
     });
     throw normalized;
   }
