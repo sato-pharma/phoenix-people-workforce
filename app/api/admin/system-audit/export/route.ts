@@ -108,7 +108,8 @@ export async function GET(request: NextRequest) {
         await recordExport({ rows, error: null });
       } catch (error) {
         await recordExport({ rows: progress.rows, error }).catch(() => undefined);
-        pass.destroy(error instanceof Error ? error : new Error(String(error)));
+        // The real error is already in the audit row above; the stream only needs to fail.
+        pass.destroy(error instanceof Error ? error : new Error("The System Audit export failed."));
       }
     })();
 
