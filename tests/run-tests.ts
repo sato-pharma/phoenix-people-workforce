@@ -2703,6 +2703,7 @@ import {
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
+import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -10712,6 +10713,10 @@ await runTest(
 await runTest(
   "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
   runNeedsYouDigestRunsOutsideTheFanoutTests,
+);
+await runTest(
+  "a structured ERROR's labels reach the stored app_error_events row: hrId/role/loginId/digest onto their own columns under both spellings, every remaining label into the stack's leading, redacted, capped label block, and a row with no labels byte-identical to before",
+  runStructuredLogLabelsReachTheRowTests,
 );
 await runTest(
   "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",

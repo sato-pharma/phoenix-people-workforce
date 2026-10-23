@@ -12,6 +12,8 @@
 // future log drain would key on. Never pass secrets/PII in message or labels.
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+// Pure, and imports nothing itself, so it adds no dependency to this edge-safe module.
+import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { clientAddress } from "@/lib/security/client-address";
 
@@ -105,7 +107,8 @@ export function logStructured(severity: LogSeverity, message: string, options: L
 let persistingErrorEvent = false;
 
 /**
- * What goes in the row's `stack` column — the CAUSE, whatever shape it was thrown in.
+ * What goes in the row's `stack` column — the CAUSE, whatever shape it was thrown in, with the
+ * call site's remaining labels in front of it.
  *
  * 🔴 A SUPABASE REJECTION IS NOT AN `Error`. PostgREST rethrows a plain
  * `{ message, details, hint, code }`, so `error instanceof Error` is false, `error.stack` is
@@ -116,14 +119,37 @@ let persistingErrorEvent = false;
  * this table keeps months. `describeThrown` is the same reader `serializeError` already uses for
  * stderr, so the two halves of one ERROR no longer disagree about what happened.
  *
- * The call site's own labels lead, minus the two every line carries (`service`, and `event`, which
- * is already the row's `route`). A label is non-sensitive by this module's contract, and it is
- * usually the thing that says WHICH line, period or job — the part a headline cannot carry.
+ * The labels LEAD, because `stack` is truncated from the END: the short, always-present part goes
+ * first and the long cause takes the loss. A headline cannot carry WHICH line, period, job or
+ * source, and that is usually the whole question.
+ *
+ * Three kinds of label are left out. `service` is on every single line ("phoenix-hr"). `event` is
+ * already the row's `route`, so repeating it costs characters truncation would take off the cause.
+ * And the four that now have a real COLUMN (see `structuredLogErrorInput`) are better there than
+ * in free text, since /admin/error-monitor filters on `hr_id` and renders `role`.
  */
+const LABELS_WITH_THEIR_OWN_COLUMN = ["hrId", "hr_id", "role", "loginId", "login_id", "digest"];
+const LABELS_LEFT_OUT_OF_THE_STACK = new Set(["service", "event", ...LABELS_WITH_THEIR_OWN_COLUMN]);
+
+/**
+ * The label part gets its own ceiling, well under the column's 4,000.
+ *
+ * The labels lead and `stack` is cut from the end, so without a cap a call site that labels
+ * generously would push the cause it was captured for out of the row — trading one lost diagnostic
+ * for another. 1,000 is far more than any call site passes.
+ */
+const MAX_STACK_LABELS_LENGTH = 1000;
+
 export function persistedStack(labels: Record<string, string> | undefined, error: unknown): string | null {
   const parts: string[] = [];
-  const extra = labels ? Object.entries(labels).filter(([key]) => key !== "service" && key !== "event") : [];
-  if (extra.length > 0) parts.push(extra.map(([key, value]) => `${key}=${value}`).join(" "));
+  const extra = labels ? Object.entries(labels).filter(([key]) => !LABELS_LEFT_OUT_OF_THE_STACK.has(key)) : [];
+  if (extra.length > 0) {
+    // Redacted on the way in. A label carries a share-link token exactly as readily as a path does,
+    // and this row is written the moment the error happens — while that token still works.
+    // `redactSecretsFromRoute` is documented to run over free text for precisely this reason.
+    const rendered = extra.map(([key, value]) => `${key}=${redactSecretsFromRoute(value) ?? value}`).join(" ");
+    parts.push(rendered.length > MAX_STACK_LABELS_LENGTH ? `${rendered.slice(0, MAX_STACK_LABELS_LENGTH - 1)}…` : rendered);
+  }
   if (error instanceof Error) {
     parts.push(error.stack ?? error.message);
   } else if (error != null) {
@@ -133,23 +159,56 @@ export function persistedStack(labels: Record<string, string> | undefined, error
   return joined === "" ? null : joined;
 }
 
+/** First non-empty label under any of the given spellings. */
+function labelValue(labels: Record<string, string> | undefined, ...keys: readonly string[]): string | null {
+  if (!labels) return null;
+  for (const key of keys) {
+    const value = labels[key];
+    if (value !== undefined && value !== "") return value;
+  }
+  return null;
+}
+
+/**
+ * The whole label → row mapping, pure and exported so a test can read it without Supabase.
+ *
+ * Nothing else decides what a structured ERROR leaves behind in `app_error_events`. Before the
+ * four column mappings below, `hr_id` and `role` were NEVER written by this path: measured on
+ * production 2026-10-23, of 2,446 `route_type='structured-log'` rows, ZERO carried either. So a
+ * Needs You source timeout recorded that A source had timed out and never which one, for whom, or
+ * in what scope — the adapters had to be reconstructed out of the delivered Telegram digests in
+ * `notification_events.metadata`.
+ *
+ * Both spellings of each are accepted because both are in use: measured across the call sites,
+ * `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1.
+ */
+export function structuredLogErrorInput(
+  message: string,
+  labels: Record<string, string> | undefined,
+  error: unknown,
+) {
+  return {
+    source: "server" as const,
+    message,
+    // The most specific identifier the call site gave us, in the order a reader would want it.
+    // `event` is always there by convention, so this is rarely null.
+    route: labels?.route ?? labels?.job ?? labels?.event ?? null,
+    routeType: "structured-log",
+    stack: persistedStack(labels, error),
+    hrId: labelValue(labels, "hrId", "hr_id"),
+    role: labelValue(labels, "role"),
+    loginId: labelValue(labels, "loginId", "login_id"),
+    digest: labelValue(labels, "digest"),
+  };
+}
+
 function persistErrorEvent(message: string, labels: Record<string, string> | undefined, error: unknown) {
   // While one persist is in flight, every ERROR it logs about itself stays on stderr only. That is
   // the right trade: the line is never lost, and the alternative is an unbounded loop.
   if (persistingErrorEvent) return;
   persistingErrorEvent = true;
   void import("@/lib/error-monitor/service")
-    .then(({ logAppError }) =>
-      logAppError({
-        source: "server",
-        message,
-        // The most specific identifier the call site gave us, in the order a reader would want it.
-        // `event` is always there by convention, so this is rarely null.
-        route: labels?.route ?? labels?.job ?? labels?.event ?? null,
-        routeType: "structured-log",
-        stack: persistedStack(labels, error),
-      }),
-    )
+    .then(({ logAppError }) => logAppError(structuredLogErrorInput(message, labels, error)))
     .catch(() => {
       // Only an import failure can land here; logAppError itself never rejects.
     })
