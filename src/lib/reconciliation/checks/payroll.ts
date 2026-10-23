@@ -91,9 +91,8 @@ const dashboardMatchesOwnRecords: ReconciliationCheck = {
   title: "A batch's dashboard headcount and net total equal the sum of that batch's own salary_records rows",
   domain: "payroll",
   severity: "critical",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: all 6 approved/locked batches under-report. Jun-2026 shows 103 people / 2,267,000.00 EGP against 123 rows / 2,667,500.00 EGP actually in the batch; across 2026-01..06 the dashboard is short by exactly 165 rows and 3,087,000.00 EGP. Root cause is 46 people the roster no longer counts as active (30 resigned, 1 terminated, 15 carrying employment_status='historical_payroll_record').",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: a batch's membership is fixed when it is built and only the viewer's access scope may drop a row (payroll/service.ts, PayrollAccessFilter); the roster-status filter this check measured is gone.
   async run(): Promise<ReconciliationOutcome> {
     const batches = await immutableBatches();
     const problems: string[] = [];
@@ -160,9 +159,8 @@ const bankFilePaysWholeBatch: ReconciliationCheck = {
   title: "The bank transfer file pays every row in the batch, for exactly the batch's payable total",
   domain: "payroll",
   severity: "critical",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: all 6 approved/locked batches. Jun-2026's file transfers 2,274,848.03 EGP for 103 people against 123 rows / 2,618,258.70 EGP payable — 343,410.67 EGP never requested. Across 2026-01..06, 2,922,919.19 EGP of approved payroll is absent from the transfer files. Same root cause as the dashboard check: the export path shares resolvePayrollAccessFilter.",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: the export path now shares the same access-only filter as the dashboard, so the transfer file pays the whole batch.
   async run(): Promise<ReconciliationOutcome> {
     const batches = await immutableBatches();
     const directory = await getEmployeeDirectory();
@@ -256,9 +254,8 @@ const commandCenterCardMatchesDashboard: ReconciliationCheck = {
   title: "The Command Center payroll card and the Payroll dashboard report the same month, headcount and net",
   domain: "payroll",
   severity: "high",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: both resolve to Jun-2026, but the card shows 123 people / 2,667,500.00 EGP net while the Payroll dashboard shows 103 / 2,267,000.00 — the same person, the same month, two screens, 20 people and 400,500.00 EGP apart. Which figure a viewer sees depends only on their role.",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: both screens now read a batch's own membership, so the card and the dashboard agree for every role.
   async run(): Promise<ReconciliationOutcome> {
     // A payroll upload landing between the two reads would look exactly like a mismatch. Reading
     // both again and only reporting a period disagreement that SURVIVES the re-read removes that
