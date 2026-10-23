@@ -1560,9 +1560,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // the cost is the ~136,000-row scan the `distinct` forces, not the index it uses. What the drop did
   // buy is real and small: 2.8 MB back and one less index written on every insert.
   //
-  // 🔴 STAGING STILL CARRIES THE INDEX. Only production was applied — the staging run of the same
-  // command is the owner's to make, and until it does the two projects differ by this one index. Do
-  // not read this entry as parity.
+  // STAGING NEVER HAD IT — and the earlier wording of this entry, which said staging still carried
+  // the index and the two projects therefore differed, was an ASSUMPTION written without reading
+  // staging. Read back on 2026-10-23 after 20261023190000 merged: public.ireports360_visits on
+  // STAGING lists 12 indexes, exactly as production does after the drop, and none of them is named
+  // ireports360_visits_agent_idx. Staging also RECORDS this migration (schema_migrations carries
+  // 20261023181000) because .github/workflows/staging-migrate.yml applies every merged migration
+  // there on the push to main — staging is automatic, production is the deliberate hand step. No
+  // staging run is owed, and this file's absence from PRODUCTION's ledger is the whole exception.
   "20261023181000_crm_drop_duplicate_visits_agent_index.sql",
   // 2026-10-23. The admin "Reset module data" button, which had never deleted a row. The file is one
   // `begin; ... commit;` opening with

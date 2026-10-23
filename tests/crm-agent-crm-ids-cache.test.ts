@@ -4,15 +4,18 @@ import { readFileSync } from "node:fs";
 import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
- * The departed-agent CRM exclusion reads a 254-row table now, and the table is the ONLY thing it
+ * The departed-agent CRM exclusion reads a 172-row table now, and the table is the ONLY thing it
  * reads.
  *
  * `phx_crm_agent_crm_ids_for_hr_ids` answered "which CRM ids did these people visit under" by
  * running `select distinct v.agent_crm_id from public.crm_visits_unified v` on every cold exclusion
  * cache. Measured on production on 2026-10-23 with the live-shaped input (the 108 non-active
  * employees the live tier actually passes): 220 ms and 57,005 shared buffers, scanning ~136,000
- * visit rows and quicksorting 140,616 of them, to return 76 integers. The whole answer is 254
- * distinct (agent_hr_id, agent_crm_id) pairs.
+ * visit rows and quicksorting 140,616 of them, to return 76 integers. The whole answer is 172
+ * distinct (agent_hr_id, agent_crm_id) pairs with a non-null key - the 254 quoted when this was
+ * written counted 83 NULL-keyed pairs no caller can match (20261023200000 corrects the stated
+ * size in the comments; nothing about the answer changed, the same 76 integers come back in
+ * 2.3 ms instead of 220).
  *
  * Dropping the duplicate index the day before (20261023181000) is what proved the shape, not the
  * index, is the cost: the plan moved to the surviving index and the time did not — 189 ms before,
