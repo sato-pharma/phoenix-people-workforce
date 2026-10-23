@@ -2360,6 +2360,7 @@ import { runPayrollHoldConfirmStepReasonTests } from "./payroll-hold-confirm-ste
 
 import { runCairoZoneOffsetTests } from "./cairo-zone-offset.test.ts";
 import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-text.test.ts";
+import { runCrmMasterCellFormatStableTests } from "./crm-master-cell-format-stable.test.ts";
 import { runExpenseDashboardHydrationTests } from "./expense-dashboard-hydration.test.ts";
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
@@ -8942,6 +8943,7 @@ await runTest(
 );
 
 await runTest("hydration-safe Cairo text: engine-independent month names and a server-formatted password-setup expiry (React #418)", runReact418HydrationSafeTextTests);
+await runTest("CRM table cells: the same bytes on every engine, so iPhones match the server (APP-69B45673)", runCrmMasterCellFormatStableTests);
 await runTest("Expense dashboard: numbers written en-US and the days-ago label drawn after hydration, so phones match the server (APP-CDB55BF6)", runExpenseDashboardHydrationTests);
 await runTest("Cairo zone data ships with the code: Egypt DST, and money that does not depend on the browser build (React #418)", runCairoZoneOffsetTests);
 

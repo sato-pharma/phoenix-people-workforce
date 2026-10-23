@@ -3,10 +3,12 @@
 // Split out of the "use client" CrmMasterTable so the SAME rendering runs on the server-side
 // streaming export (see master-export-workbook.ts) — the export used to re-render every cell in the
 // browser and POST it back; it now renders server-side, and both surfaces MUST agree character for
-// character. Only `Intl` + a type-only CrmMasterColumn import are used, so this stays safe to import
+// character. Only the client-safe format helpers + a type-only CrmMasterColumn import are used, so this stays safe to import
 // from both the browser bundle and the Node export route (no Supabase/admin chain reaches either).
 
 import type { CrmMasterColumn } from "@/lib/crm/master";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { cairoWallClock } from "@/lib/format/cairo-zone";
 
 // Hoisted, reused Intl.DateTimeFormat instances — constructing one is expensive (locale data
 // lookup/compilation), and these functions run per CELL. A large streaming export (the 2026-07-29
@@ -15,10 +17,27 @@ import type { CrmMasterColumn } from "@/lib/crm/master";
 // dominant cost, well past the DB-query-latency fixes made alongside it. A formatter is stateless
 // across calls (`.format(date)` takes the instant as an argument), so reusing one is behavior-
 // identical, pure performance.
-const DATE_ONLY_UTC = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" });
-const DATE_CAIRO = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
-const TIME_CAIRO = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo" });
-const TIME_UTC = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" });
+//
+// 🔴 AND THE SAME BYTES ON EVERY ENGINE (System Audit APP-69B45673, 23 Oct 2026). CrmMasterTable is a
+// "use client" component, so the phone re-draws every cell and React compares it with the server's
+// HTML. Asking the platform for these strings made an iPhone disagree on every row with a time:
+//   - "6:13 PM": Node 24 puts a plain space before PM; Safari's WebKit — every iPhone browser —
+//     puts U+202F (narrow no-break space).
+//   - "Sept": en-GB September is "Sept" since CLDR 42 and "Sep" on an older engine.
+//   - Cairo's hour, on a phone whose zone data predates Egypt's 2023 return to daylight saving.
+// 11 hydration errors (#418, text), 6 people, all on iPhones, 16 Sep – 18 Oct 2026. So the dates go
+// through stableEnGbFormatter (the shipped month table and Cairo offset table) and the times are built
+// from digits. The output is byte-identical to what Node 24 printed before, so the screen and the
+// export are unchanged (tests/crm-master-cell-format-stable.test.ts).
+const DATE_ONLY_UTC = stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" });
+const DATE_CAIRO = stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+/** "6:13 PM" from a Date whose UTC fields hold the wall clock. */
+function clock12(wall: Date): string {
+  const hour = wall.getUTCHours();
+  return `${hour % 12 === 0 ? 12 : hour % 12}:${String(wall.getUTCMinutes()).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
+}
+const TIME_CAIRO = { format: (date: Date) => clock12(cairoWallClock(date)) };
+const TIME_UTC = { format: (date: Date) => clock12(date) };
 
 /** Date only, e.g. "11 Jul 2026" (UTC — a plain calendar date has no time-of-day). */
 export function formatDateOnly(value: unknown): string {

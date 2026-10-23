@@ -1107,9 +1107,9 @@ export function CrmMasterTable({
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <p className={portal ? "flex min-w-0 flex-wrap items-center gap-2" : "flex items-center gap-2"}>
           <span>
-            <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span> records
+            <span className="font-bold text-slate-900">{data.totalCount.toLocaleString("en-US")}</span> records
             {data.totalCount > 0 ? (
-              <span className="text-slate-400"> · showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
+              <span className="text-slate-400"> · showing {rangeStart.toLocaleString("en-US")}–{rangeEnd.toLocaleString("en-US")}</span>
             ) : null}
           </span>
           {data.truncated ? (
@@ -1169,7 +1169,7 @@ export function CrmMasterTable({
               Prev
             </button>
             <span className="tabular-nums text-slate-500">
-              Page {data.page.toLocaleString()} / {totalPages.toLocaleString()}
+              Page {data.page.toLocaleString("en-US")} / {totalPages.toLocaleString("en-US")}
             </span>
             <button
               className="inline-flex items-center gap-1 border border-slate-200 px-2 py-1 font-semibold text-slate-600 transition enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
