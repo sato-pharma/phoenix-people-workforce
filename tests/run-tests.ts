@@ -597,6 +597,7 @@ import { runMyVisitsFieldSplitTests } from "./my-visits-field-split.test.ts";
 import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
 import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
+import { runCrmMasterExportKeysetTests } from "./crm-master-export-keyset.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
@@ -4044,6 +4045,10 @@ await runTest(
   runCrmLivePollerTests,
 );
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
+await runTest(
+  "crm master export paging (keyset not OFFSET, calendar days newest first, every row exactly once across a tie)",
+  runCrmMasterExportKeysetTests,
+);
 await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
 await runTest("crm coverage filters (region/line/area/rep cascade offers no dead end, hides no vacancy, leaks no code)", runCrmCoverageFilterTests);
