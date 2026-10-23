@@ -2663,6 +2663,7 @@ import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-ad
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runManagerOwnVisitsEverywhereTests } from "./manager-own-visits-everywhere.test.ts";
 import { runPrivateCalendarDayTileTests } from "./private-calendar-day-tile.test.ts";
+import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-period.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -10479,6 +10480,10 @@ await runTest(
 await runTest(
   "A district manager's work appears everywhere it is shown (owner, 2026-10-23: \"any record submitted by himself or a double visit with him, it must appear\"): Employee 360 counts his own Phoenix CRM single visits through the one door out of their table, a failed read printing a dash and never a zero, and splits the double visits he conducted AM · PM · Pharmacies by the golden rule's helper, a campaign in no figure; and the portal Team Calendar hangs his own visits on his day cells through the same door",
   runManagerOwnVisitsEverywhereTests,
+);
+await runTest(
+  "A notice period is still work (owner, 2026-10-23: \"drop after his resignation date not submission date\"): the Private Calendar reads a departed employee until the day AFTER the later of his last working and resignation dates — employment_status flips to resigned the moment a resignation is SUBMITTED, which took a rep off the calendar on 18 October for a last working day of 31 October while she logged 10 and 12 visits — a departed row with neither date is never kept, the day-evidence door writes NO entry for an employee its loaders never read instead of a confident empty day, and the no-activity engine behind Deductions stays active-only on purpose",
+  runPrivateCalendarNoticePeriodTests,
 );
 await runTest(
   "The private calendar's day tile is a summary (owner, 2026-10-23): a visit entry shows its kind (single, double, chain), regular or campaign, planned or unplanned where a Phoenix visit says it, the AM, PM and Pharmacies figures apart (the pharmacy in violet), who the visit was made with, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",

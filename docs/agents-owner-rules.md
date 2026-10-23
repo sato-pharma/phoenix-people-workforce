@@ -8819,3 +8819,66 @@ design. **The fleet artifact is `eas.json`'s `mdm` profile** (arm64 APK, `produc
 dispatch choice on the Mobile build workflow since #4652. Never read a green store build as fleet
 cover, and never re-propose the Play upload as the way to ship to reps.
 `managed-play-cannot-reach-the-rep-tablets`
+## The Private Calendar keeps a leaver until his exit day — owner, 2026-10-23
+
+**His words**, asked which way to fix a rep who had vanished from the calendar while still working:
+*"drop after his resignation attion date not sub mission date"* — the resignation date, not the
+submission date.
+
+**What he was shown.** The System Audit's visit-lifecycle detector ran for the first time on
+23 October 2026 (first successful pass 11:37 Cairo: 83 rep-days judged, 678 visits checked) and
+raised `VISIT-S4-MISSING` — "the Private Calendar shows 0 of the 12 Phoenix CRM visits that should be
+on 2026-10-21; 12 visits lost at the calendar itself" — with 3 occurrences:
+
+| Rep | Day | Visits the door holds | On the calendar |
+| --- | --- | --- | --- |
+| Georgette Hany Awad Aiad (B-182) | 2026-10-12 | 4 (6 rows, 2 of them partnered and the Double Visit feed's) | 0 |
+| Hana Abdelaziz Samir Abdelaziz (B-110) | 2026-10-21 | 12 | 0 |
+| Hana Abdelaziz Samir Abdelaziz (B-110) | 2026-10-22 | 10 | 0 |
+
+**The first two readings were both wrong, and are recorded so nobody repeats them.** The visits are
+not missing from `crm_visits_unified` (it holds all 12 and all 10, `source = 'phoenix'`), and the
+`visitCounts: null` on the Phoenix-work-evidence item is not the cause either — the same run read 80
+other rep-days correctly through the same three builders.
+
+**The cause.** `getPrivateCalendarDayEvidence` resolves the employees it was asked about against
+`getEmployeeDirectoryRows()`, whose default is `includeInactive: false` →
+`isActiveDirectoryEmployee`, which needs an active lifecycle status **and**
+`organogram_visible !== false`. `employees.employment_status` flips to `resigned` and
+`organogram_visible` to false the moment a resignation row is **submitted**:
+
+- B-110 — resignation submitted **18 October 15:47 Cairo**, status still `submitted` (never approved,
+  never completed), last working day **31 October**, eight days in the future. She went on working:
+  10 and 12 customer visits on the 21st and the 22nd.
+- B-182 — submitted **17 October 23:56 Cairo** for a last working day of 17 October. The flagged day
+  is 12 October, five days before she left.
+
+So neither was in `hrIds`, none of the nine loaders ever read their day — and the loop over the
+asked days wrote an entry for them anyway, with `items: []` and nothing in `unreadableSources`. A
+**confident blank**: readable, and nothing happened. The detector believed it, as any reader would.
+
+**The one-to-one proof** that the discriminator is employment status and not the data: of the Phoenix
+visit rep-days over 21–23 October, 98 belong to 59 `active` reps and all read correctly; exactly one
+rep is `resigned` with `organogram_visible = false` — B-110 — with exactly 2 rep-days, and both are
+flagged.
+
+**What the fix does.** `privateCalendarEmployees` reads `{ includeInactive: true }` and keeps anyone
+`isWithinNoticePeriod` covers: the day asked about on or before the **later** of `last_working_date`
+and `resignation_date` (the later one, because when the two differ that is the last day the person
+could still have worked), dropping them the day after. A departed row carrying **neither** date is
+not kept — there is no day to compare, and an open-ended answer would restore the whole inactive
+roster. `isWithinEmploymentWindow` still decides each individual day, so a person included this way
+contributes nothing outside their own employment. And the day-evidence door now writes **no entry**
+for an employee its loaders never read: every caller already reads a missing entry correctly — the
+dispute reviewer's day facts say "the calendar record for this day could not be read", and the
+detector reports it as unreadable rather than as lost visits.
+
+**What was deliberately NOT changed.** `getCompanyNoActivityDays` keeps the active-only roster. It is
+the engine behind the Deductions No Records Activity connector and the weekly gap notice, so widening
+it would start raising deduction candidates against people working out their notice — money, and his
+call in the Deductions module, never a side effect of a calendar fix.
+
+**The sibling ruling.** The Field Absence calendar already carries the same rule on the same facts
+(owner, 2026-10-18): a resigned rep is judged up to his last working day and his own visits count,
+read back with `includeResignedAgents` — without it a rep serving notice read "not seen" on 31 of 31
+visit days. `.claude/rules/time-off.md`; pinned by `tests/private-calendar-notice-period.test.ts`.
