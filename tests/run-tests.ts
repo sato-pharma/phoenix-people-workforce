@@ -2740,6 +2740,7 @@ import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-onc
 import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
 import { createShardDeal } from "./shard-deal.ts";
 import { runLoginBridgeRepairLogsOnlyWhenItFailsTests } from "./login-bridge-repair-logs-only-when-it-fails.test.ts";
+import { runFunctionBodiesNeedAWhereClauseTests } from "./function-bodies-need-a-where-clause.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10842,6 +10843,10 @@ await runTest(
 await runTest(
   "the login route CLASSIFIES a failed Supabase sign-in with { report: false } and reports only where recovery fails, so a login the bridge repair then rescues leaves no 'Failed to create Supabase auth session' row — seven such rows on 23 Oct, every login successful",
   runLoginBridgeRepairLogsOnlyWhenItFailsTests,
+);
+await runTest(
+  "no function's LATEST migration body opens with an unqualified DELETE or UPDATE — safeupdate is preloaded on PostgREST's `authenticator` role, so such a statement works by hand and 400s the moment the app reaches it; it took every employee write down on 23 Oct and the expense-claims refresh on 29 Aug",
+  runFunctionBodiesNeedAWhereClauseTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
