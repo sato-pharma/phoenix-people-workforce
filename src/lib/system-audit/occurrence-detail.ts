@@ -13,6 +13,7 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { loadUserScreenSummaries } from "@/lib/system-audit/user-screens";
 import {
   SYSTEM_AUDIT_STATUS_LABELS,
   type ModuleLabelSource,
@@ -111,6 +112,26 @@ export type ReproTrail =
   | { status: "not_applicable"; reason: string }
   | { status: "unavailable"; reason: string };
 
+export type OccurrenceScreen = {
+  id: string;
+  capturedAt: string;
+  kind: string;
+  httpStatus: number | null;
+  width: number | null;
+  height: number | null;
+  /** The Super-Admin-only route that serves the picture itself. */
+  src: string;
+};
+
+/**
+ * The screenshots of what the person saw (owner, 23 Oct 2026). `pruned` counts the pictures the
+ * occurrence names that the 90-day retention has already removed — never read as "there were none".
+ */
+export type OccurrenceScreens =
+  | { status: "ok"; screens: OccurrenceScreen[]; pruned: number }
+  | { status: "not_applicable"; reason: string }
+  | { status: "unavailable"; reason: string };
+
 /**
  * A picture of the screen one of this occurrence's own error events was reported from.
  *
@@ -130,8 +151,34 @@ export type OccurrenceDetail = {
   history: OccurrenceHistoryEntry[];
   fixes: OccurrenceFix[];
   reproTrail: ReproTrail;
+  screens: OccurrenceScreens;
   screenshots: OccurrenceScreenshot[];
 };
+
+/** The screen ids an occurrence names, from its evidence (the detector's list), as valid ids only. */
+export function occurrenceScreenIds(occurrence: Pick<OccurrenceDetailOccurrence, "family" | "evidence" | "sourceRefs">): string[] {
+  if (occurrence.family !== "user_screen") return [];
+  const listed = Array.isArray(occurrence.evidence.screenIds) ? occurrence.evidence.screenIds : occurrence.sourceRefs;
+  return Array.from(new Set(listed.filter((value): value is string => typeof value === "string" && isUuid(value)))).slice(0, 50);
+}
+
+async function loadScreens(occurrence: OccurrenceDetailOccurrence, supabase: Client): Promise<OccurrenceScreens> {
+  if (occurrence.family !== "user_screen") {
+    return { status: "not_applicable", reason: "Only an error or block captured on a person's screen has a screenshot." };
+  }
+  const ids = occurrenceScreenIds(occurrence);
+  if (ids.length === 0) return { status: "ok", screens: [], pruned: 0 };
+  try {
+    const found = await loadUserScreenSummaries(ids, supabase);
+    return {
+      status: "ok",
+      screens: found.map((screen) => ({ ...screen, src: `/api/admin/system-audit/screens/${screen.id}` })),
+      pruned: ids.length - found.length,
+    };
+  } catch (error) {
+    return { status: "unavailable", reason: `The screenshots could not be read: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
 
 type Row = Record<string, unknown>;
 
@@ -302,7 +349,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
   if (!occurrenceRow) return null;
   const occurrence = mapOccurrence(occurrenceRow as Row);
 
-  const [issueResult, historyResult, fixesResult, reproTrail, screenshots] = await Promise.all([
+  const [issueResult, historyResult, fixesResult, reproTrail, screens, screenshots] = await Promise.all([
     supabase
       .from("system_audit_issues")
       .select("id, title, family, error_code, status, root_cause_level, root_cause, root_cause_evidence, first_seen_at, last_seen_at")
@@ -320,6 +367,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
       .eq("issue_id", occurrence.issueId)
       .order("generation", { ascending: true }),
     loadReproTrail(occurrence, supabase),
+    loadScreens(occurrence, supabase),
     loadScreenshots(occurrence, supabase),
   ]);
   if (issueResult.error) throw new Error(`The issue could not be read: ${issueResult.error.message}`);
@@ -379,6 +427,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
       };
     }),
     reproTrail,
+    screens,
     screenshots,
   };
 }

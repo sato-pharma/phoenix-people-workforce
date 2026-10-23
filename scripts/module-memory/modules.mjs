@@ -1037,6 +1037,30 @@ export const MODULES = [
     keywords: ["login", "access control", "permission", "permissions", "role sweep", "cron", "cron job", "error monitor", "system audit", "share link", "dev-auth"],
     tables: ["auth.", "app_auth", "app_error", "system_audit_", "cron."],
   },
+  // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 33
+  // rules and its injected pointer measured 4,136 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the crash screenshot (#6358) and the block
+  // screenshot (#6359) landed together. The System Audit board, its daily message, and the two
+  // screenshots of what a person saw are one family — what went wrong for a person and how the Super
+  // Admin sees it — so their rules moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so a System Audit
+  // or error-monitor file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "platform-system-audit",
+    title: "Platform — the System Audit board, its daily message and the error screenshots",
+    scope: "The Super-Admin System Audit board and its ledger, the nightly sweep and its one daily message, where the board starts, and the two pictures of what a person saw — the crash screenshot and the block screenshot — who may see them and how long they are kept.",
+    globs: [
+      "src/lib/system-audit/**",
+      "src/lib/error-monitor/{screen-capture,screen-capture-rules,screen-intake,user-error-screens,capture-screenshot,screenshot-intake,screenshot-ticket}.ts",
+      "src/components/admin/system-audit/**",
+      "app/**/system-audit/**",
+      "app/api/errors/{screen,client/screenshot}/**",
+      "scripts/system-audit-*",
+      "tests/*{system-audit,user-error-screens,error-screenshot}*",
+      "supabase/migrations/*{system_audit,user_error_screens,app_error_events_screenshot}*",
+    ],
+    keywords: ["system audit", "system-audit", "daily message", "error screenshot", "crash screenshot", "what the person saw", "what the employee saw", "blocked"],
+    tables: ["system_audit_", "user_error_screens"],
+  },
   // 🔴 SPLIT 2026-10-18, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 29
   // rules and its injected pointer measured 4,141 bytes against the 4,000-byte margin
   // `tests/module-memory.test.ts` holds, the moment the AI-providers rule landed. The cut is the

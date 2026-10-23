@@ -140,7 +140,9 @@ async function measureExposure(
   fix: FixUnderReview,
   detectorIdByFamily: Partial<Record<SystemAuditFamily, string>>,
 ): Promise<Exposure> {
-  if (fix.family === "app_error") {
+  // A screenshot is an error a person saw on a page too, so its exposure is the same: did the people
+  // it hit open that page again since the fix went live.
+  if (fix.family === "app_error" || fix.family === "user_screen") {
     const routes = await store.pageRoutes(fix.issueId);
     if (routes.length === 0) {
       return { exposed: false, measure: "it happened on no page address that can be watched (an API call only)" };

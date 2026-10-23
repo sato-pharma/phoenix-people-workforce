@@ -6,6 +6,7 @@ import {
   buildSystemAuditDailyMessage,
   cairoDayKey,
   sendSystemAuditDailyMessage,
+  systemAuditDailyKey,
   type SystemAuditDailyMessageDeps,
 } from "../src/lib/system-audit/daily-message.ts";
 import type { SystemNotificationResult } from "../src/lib/notifications/system.ts";
@@ -57,6 +58,7 @@ function harness(overrides: Partial<SystemAuditDailyMessageDeps> = {}) {
     },
     audienceEnabled: async () => true,
     recipients: async () => ({ recipients: [{ hrId: "B-10", userId: "user-10" }], warnings: [] }),
+    alreadyToldToday: async () => false,
     notify: async (input) => {
       notified.push(input);
       return delivered("sent");
@@ -145,8 +147,57 @@ async function testSendsNothing() {
   assert.equal(failed.reason, "ledger unreachable");
 }
 
+/**
+ * 23 Oct 2026: the 10:56 message listed 365 issues; an 11:53 re-run the same Cairo day was refused
+ * delivery by the idempotency key, but the refused call still rewrote the stored notice — the in-app
+ * bell then read "3 issues" with an 11:53 time. A person already told today is never asked again.
+ */
+async function testAlreadyToldToday() {
+  const asked: Array<[string, string]> = [];
+  const told = harness({
+    alreadyToldToday: async (day, hrId) => {
+      asked.push([day, hrId]);
+      return true;
+    },
+  });
+  const result = await sendSystemAuditDailyMessage(told.deps);
+  assert.equal(told.notified.length, 0, "Already told today: the notification service is NOT called, so the stored notice is not rewritten");
+  assert.equal(result.sent, false);
+  assert.equal(result.reason, "already sent today");
+  assert.equal(told.marked.length, 0, "…and nothing is marked: today's later findings ride tomorrow's message");
+  assert.deepEqual(asked, [["2026-10-23", "B-10"]], "The check is per person, on the Cairo day");
+  assert.equal(told.audits.length, 1, "The skipped run still leaves an audit row");
+  assert.equal(systemAuditDailyKey("2026-10-23", "B-10"), "system-audit-daily:2026-10-23:B-10", "The key the check reads is the key the send writes");
+
+  const unreadable = harness({ alreadyToldToday: async () => null });
+  assert.equal((await sendSystemAuditDailyMessage(unreadable.deps)).sent, true, "A check that cannot read sends as before");
+  assert.equal(unreadable.notified.length, 1);
+
+  const throwing = harness({
+    alreadyToldToday: async () => {
+      throw new Error("network");
+    },
+  });
+  assert.equal((await sendSystemAuditDailyMessage(throwing.deps)).sent, true, "A check that throws sends as before");
+
+  const two = harness({
+    recipients: async () => ({
+      recipients: [
+        { hrId: "B-10", userId: "user-10" },
+        { hrId: "B-20", userId: "user-20" },
+      ],
+      warnings: [],
+    }),
+    alreadyToldToday: async (_day, hrId) => hrId === "B-10",
+  });
+  await sendSystemAuditDailyMessage(two.deps);
+  assert.deepEqual(two.notified.map((input) => input.recipientHrId), ["B-20"], "Only the person not yet told today is sent to");
+  assert.equal(two.notified[0]?.metadata?.idempotencyKey, "system-audit-daily:2026-10-23:B-20");
+}
+
 export async function runSystemAuditDailyMessageTests() {
   testMessageText();
   await testSends();
   await testSendsNothing();
+  await testAlreadyToldToday();
 }

@@ -113,8 +113,68 @@ they scanned and what they excluded as noise, per class. A source that cannot be
 | `sync_runs` | Failed iReports360 sync runs, and runs stuck "running" for over 2 hours. A failure verifies itself once a later successful run covers its dates |
 | `job_failures` | Failed background jobs (tied to the person who asked) and missed scheduled-job heartbeats. Heartbeats keep only the LAST outcome, and the coverage note says so |
 | `data_linkage` | A login with no access profile, a missing attendance device map, a vacancy whose holder disagrees — one finding per person (moved here from the retired Data Health page) |
-| `visit_lifecycle` | A saved Phoenix CRM visit that did not reach every module that should count it: saved → countable → served by the visits door → after the duplicate and departed-agent rules → Private Calendar → KPIs. The first failing stage is the root row; later modules add linked rows on one correlation id, so one lost visit counts once. Every business-rule exclusion (team not started or stopped, off-plan pending or refused, recording not approved, unvalidated customer, departed agent, repeat save, partnered visit, test rows, today) produces NO row and is counted |
+| `visit_lifecycle` | A saved Phoenix CRM visit that did not reach every module that should count it: saved → countable → served by the visits door → after the duplicate and departed-agent rules → Private Calendar → KPIs. The first failing stage is the root row; later modules add linked rows on one correlation id, so one lost visit counts once. Every business-rule exclusion (team not started or stopped, off-plan pending or refused, recording not approved, unvalidated customer, departed agent, repeat save, partnered visit, test rows, today) produces NO row and is counted. Four more checks, each its own row: the KPIs call rate counting MORE than the rules allow (`VISIT-S5-EXTRA`; a visit still in motion, or one an earlier stage already reported, is tolerated, never counted against it); a seat that moved teams, where the view judges by today's team (`au.seats.parent_seat_id`) and the team in the dated seat history (`au_v_seat_occupancy_all`) on the visit day decides the other way (`VISIT-S2-TEAMMOVED`, PROBABLE — a move both teams agree on is counted); a manager's own visit reaching `crm_visits_unified` — a legacy no-rep row credited to someone other than the manager (`VISIT-MGR-LEGACY`; credited to the manager it stays, as ruled), or a single visit from `phoenix_crm_manager_visits` served at all (`VISIT-MGR-PLAN`), read over the last 7 days on a cron run; and the view itself is probed once a run (`probeCrmVisitsUnifiedView`), because the read door answers `[]` for a missing view — when it does not answer, every door read is UNKNOWN, never "nobody visited" |
+| `user_screens` | The screenshots of every error or block a person met (below), folded into one row per operation, family `user_screen` |
 | `verifier` | Sets FIXED — VERIFIED and reopens as NOT FIXED, by the rules above |
+
+## What the person saw — the error screenshot
+
+**The owner's decision, 23 Oct 2026:** *every single type of error or block* a person meets leaves a
+SCREENSHOT of exactly what they saw. It is shown **as-is (never blurred), to the Super Admin only**, on
+this page, and **kept 90 days**. A *block* is the person trying to do something and being refused (a
+visit save refused, a validation refused); an *error* is a request that failed or an error screen that
+was shown. The in-progress "checking…" state is never photographed — only the outcome.
+
+**What is captured.** `src/lib/error-monitor/screen-capture.ts` wraps `window.fetch` once (installed by
+`GlobalErrorReporter`, production builds only — a local `next dev` writes production, so it never
+installs there). A same-origin `/api/` request that answers **4xx** is a *refused request*; **5xx**, or
+no answer at all (a network failure), is a *failed request*. About 900 ms later, once the page has drawn
+the refusal, the visible viewport at its scroll position is drawn with `html-to-image` (JPEG, quality
+0.6, at most 1.5× pixel ratio; one smaller redraw if it is over 1.2 MB) and posted to
+`/api/errors/screen` with the words the response carried (JSON `message`, else `error`, else `detail`,
+≤ 500 characters, read from a clone). An *error screen* (a crash) is NOT photographed here: the crash screenshot
+(#6358, `/api/errors/client/screenshot`, docs/observability.md) already takes it on the error row itself,
+guests included, and the incident drawer shows it under "What the employee saw". This door covers what
+that one cannot see — a person refused or failed without a crash. The wrapper returns the caller's own promise untouched, never
+retries, never delays it and never throws.
+
+**Never captured.** A hidden tab; a request the page cancelled itself; the browser offline; a GET or
+HEAD answered 404 (that is a page asking "is there one?", not a block); anything past the per-tab
+throttle (the same kind + masked path + status once in 2 minutes, 12 pictures a tab an hour); and the
+skip list `SCREEN_CAPTURE_SKIP_LIST` in `src/lib/error-monitor/screen-capture-rules.ts` — the error
+reporters themselves (`/api/errors/*`, this endpoint included), sign-in and the heartbeat
+(`/api/auth/*`), page-view tracking (`/api/activity/*`), the live activity poll, the notification
+bell's poll, the sidebar layout and badge counts (`…/pending-count`, `…/needs-action-count`,
+`…/unbooked-count`, `/api/approvals/badge-counts`), the CRM touch-trail beacon, and the health checks.
+**Not captured either:** a server action or route that answers **200 with an error in its payload** —
+nothing in the HTTP answer says it was a refusal, so only a status of 400 or more is one; and a refusal
+shown by the page without any request at all (a form's own validation). An inner scrolled panel is drawn
+from its top: `html-to-image` copies the page, not a panel's scroll position.
+
+**Stored.** `/api/errors/screen` takes a signed-in caller only (a guest gets 401 and nothing is kept),
+same-origin, a body of at most 1.7 MB, a real JPEG or WebP of at most 1.2 MB decoded, every string
+capped (`src/lib/error-monitor/screen-intake.ts`), and at most 40 pictures a person an hour, counted from
+the table. The file goes to the private bucket `user-error-screens` at
+`<Cairo yyyy-mm-dd>/<HR ID or login>/<id>.jpg` and the row to `public.user_error_screens` (migration
+`20261023203000_user_error_screens.sql`: RLS on, service role only). A test account's picture is filed
+under its own login with `is_test` set, never under the employee it mirrors. The picture is never
+logged.
+
+**Shown.** The nightly `user_screens` detector folds the rows into the ledger: the signature is the kind,
+the API route with record ids masked (the page, for an error screen), the status and the message's
+template; one person's screens of one signature within 10 minutes are one operation. Column 6 is the
+exact words captured — "Error screen shown — <message>" for an error screen, and a sentence saying the
+answer carried no words when it carried none. The module is the sidebar row of the page the person was
+on. The row drawer shows the pictures ("What the person saw"), streamed by
+`/api/admin/system-audit/screens/[id]` behind `assertSystemAdministratorWorkspaceAccess`, never cached.
+**An error screen and the `app_error_fold` row for the same crash may both appear** — one is the
+picture, the other the error the browser reported; that is expected.
+
+**Kept 90 days.** The nightly sweep — not a cron of its own — removes at most 1,000 pictures a night older
+than 90 days, never one past the detector's watermark (so each is in the ledger before it goes): the
+file through the Storage API first, its row after; a file that will not go keeps its row for the next
+night. The counts are in the `user_screens` run's report (`retention`). The ledger rows stay; the drawer
+says how many of an occurrence's pictures have passed their 90 days.
 
 ## The nightly sweep and the one daily message
 
@@ -130,14 +190,25 @@ breach. Its button opens `/admin/system-audit`. The separate nightly breach aler
 digest are retired; the urgent alarms on the same audience (outbox drain, stranded job, database
 restart, AI credit) stay separate and now link here.
 
+A person already told today is **not asked again**: the sweep reads the day's notice (its event key is
+`system-audit-daily:<Cairo day>:<HR ID>`) and its deliveries first. The idempotency key alone stops a
+second delivery but still lets the refused call rewrite the stored notice — title, body and sent time,
+which the in-app bell shows — with text that was never delivered: on 23 Oct 2026 the 10:56 message
+listing 365 issues was overwritten by an 11:53 re-run reading "3 issues". If that read fails, the sweep
+sends as before. Pinned by `tests/system-audit-daily-message.test.ts`.
+
 ## The historical run
 
 `scripts/system-audit-historical.ts` runs the same detectors through the file sink, reading app errors
 from a CSV snapshot so rows pruned since are not lost. It prints the database host, refuses 09:00–17:00
 Cairo (heavy production reads wait for the evening), and refuses an unknown flag. A dry run writes
 `MASTER_ERROR_AUDIT.csv`, `excluded-noise.csv` and `coverage.json`; `--apply` writes the ledger, applies
-the reviewed triage seed (`src/lib/system-audit/triage-seed.ts`), marks what the first daily message
-must not repeat, and sets the watermarks so the nightly sweep continues from there.
+the reviewed triage seed (`src/lib/system-audit/triage-seed.ts`), marks as told **only the issues the
+run itself made waiting** — an issue already waiting for the daily message before the run is a live
+finding nobody has been told about, and stays for the next message — and moves each watermark forward
+only (`merge: "max"`), so the nightly sweep continues from wherever is further on. Occurrences merge on
+their dedupe key (`<signature>:<person>:<first event id>`), so history the live sweep already folded is
+merged, not doubled. Pinned by `tests/system-audit-historical-runner.test.ts`.
 
 ## What it replaced, and why
 

@@ -1,5 +1,6 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import type { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   calendarVerdict,
@@ -12,14 +13,18 @@ import {
   kpiExpectation,
   lifecycleCorrelationId,
   monthOf,
+  teamMoveVerdicts,
   type DoorRow,
   type KpiExpectation,
   type KpiMonth,
   type PersonFacts,
   type RepDayVerdict,
   type SavedVisit,
+  type SeatHistoryRow,
   type StageFailure,
   type StartedSeatWindow,
+  type TeamMove,
+  type TeamStartWindow,
 } from "@/lib/system-audit/detectors/visit-lifecycle-expected";
 import { resolveSidebarLabel } from "@/lib/system-audit/sidebar-label";
 import {
@@ -56,6 +61,15 @@ import {
  * 🔴 READ-ONLY. It never writes a visit, an approval, a KPI or a calendar row, and never asks a door
  * to behave differently: a rule here that disagrees with the database is a finding for a person.
  *
+ * THREE MORE QUESTIONS, each its own row, none of them part of a lost visit:
+ *   · the call rate counting MORE than the rules allow (`s5-extra`);
+ *   · lead R1 — a seat that moved teams, judged by today's team where the team it sat under on the
+ *     visit day decides the other way (`s2-team-moved`, PROBABLE, from `au_v_seat_occupancy_all`);
+ *   · a manager's own visit reaching the unified view — a legacy no-rep row credited to someone else,
+ *     or a single visit from the manager's own table served at all (`mgr-legacy-leak`, `mgr-plan-leak`).
+ * And lead R6: the read door answers `[]` for a view it cannot find, so the view is probed once a run
+ * and, when it does not answer, every door read is UNREAD — never "nobody visited".
+ *
  * THE WATERMARK. Cron runs read every visit fact touched since the cursor (saves, approvals,
  * recordings, removals, edits), judge only the rep-days quiet for two hours, and write the cursor
  * with each batch's rows. The call rate is judged per rep-month, from a queue the cursor carries.
@@ -77,12 +91,16 @@ const KPI_QUEUE_CAP = 600;
 const EVIDENCE_IDS = 20;
 const EVIDENCE_BYTES = 4_000;
 /**
- * The read door answers `[]` for a view it cannot find (lead R6). A whole batch where both reads came
- * back empty while at least this many visits should have been there is reported as unread, not lost.
+ * The read door answers `[]` for a view it cannot find (lead R6). The run probes the view first
+ * (`probeDoor`); this is the backstop behind the probe — a whole batch where both reads came back
+ * empty while at least this many visits should have been there is reported as unread, not lost.
  */
 const EMPTY_DOOR_FLOOR = 5;
 const EMPTY_DOOR_SOURCE = "crm_visits_unified (answered no row for the whole batch)";
 const RELATED_TABLE = "phoenix_crm_visits";
+/** Days a cron run reads back for managers' own visits; a historical run reads its window. */
+const MANAGER_LOOKBACK_DAYS = 7;
+const DOOR_DOWN_SOURCE = "crm_visits_unified (the view itself did not answer)";
 const REP_ROLE = "Medical Rep";
 
 // ── The ports: every read the detector makes, so the tests can hand in a world ─────────────────────
@@ -93,6 +111,9 @@ export type RepDayTouch = { hrKey: string; hrIds: string[]; date: string; lastTo
 export type DoorReadInput = { hrIds: string[]; crmIds: number[]; dateFrom: string; dateTo: string; visitDates: string[] };
 
 export type CalendarDayReading = { readable: true; phoenix: number } | { readable: false; sources: string[] };
+
+/** One of a manager's own visits: a legacy no-rep row of `phoenix_crm_visits`, or a `phoenix_crm_manager_visits` row. */
+export type ManagerOwnVisit = { id: string; managerHrId: string | null; date: string; savedAt: string | null };
 
 export interface VisitLifecyclePorts {
   /** Cron: rep-days with a visit fact changed in (after, until]. */
@@ -116,6 +137,18 @@ export interface VisitLifecyclePorts {
   /** S5 — what the KPIs board counts for one rep-month, every call-rate lane added up. */
   readKpiTotal(input: { person: PersonFacts; month: KpiMonth; callRateTo: string; today: string }): Promise<{ total: number; holidaysComplete: boolean }>;
   readHolidays(month: KpiMonth): Promise<{ complete: boolean; dates: ReadonlySet<string> }>;
+  /** R6 — whether `crm_visits_unified` answers at all: null when it does, else its error. Asked once a run. */
+  probeDoor(): Promise<string | null>;
+  /** R1 — the dated seat history (`au_v_seat_occupancy_all`), every row. */
+  readSeatHistory(): Promise<SeatHistoryRow[]>;
+  /** R1 — every team start (`phoenix_crm_team_starts`). */
+  readTeamStarts(): Promise<TeamStartWindow[]>;
+  /** A manager's own visits saved in `phoenix_crm_visits` with no rep (before 16 Oct 2026), visit day in the Cairo window. */
+  readLegacyManagerVisits(window: { from: string; to: string }): Promise<ManagerOwnVisit[]>;
+  /** A manager's own single visits (`phoenix_crm_manager_visits`), read through the module's own door. */
+  readManagerPlanVisits(window: { from: string; to: string }): Promise<ManagerOwnVisit[]>;
+  /** Which of these ids `crm_visits_unified` holds, and whom each row credits — no exclusion, no collapse. */
+  readUnifiedAgentsByIds(ids: string[]): Promise<Map<string, string | null>>;
 }
 
 // ── What each finding is called ────────────────────────────────────────────────────────────────────
@@ -143,6 +176,10 @@ export type FindingKind =
   | "s4-extra"
   | "s5-linked"
   | "s5-month"
+  | "s5-extra"
+  | "s2-team-moved"
+  | "mgr-legacy-leak"
+  | "mgr-plan-leak"
   | "s1-unreadable"
   | "s2-unreadable"
   | "s3-unreadable"
@@ -265,6 +302,39 @@ export const VISIT_LIFECYCLE_FINDINGS: Record<FindingKind, FindingSpec> = {
     errorCode: "VISIT-S5-MISSING",
     title: "Visits missing from the KPIs call rate",
     consumer: "kpis",
+    rootCauseLevel: "unknown",
+    rootCause: null,
+  },
+  "s5-extra": {
+    signature: "visit:s5:kpis:extra",
+    errorCode: "VISIT-S5-EXTRA",
+    title: "KPIs call rate counts more visits than the rules allow",
+    consumer: "kpis",
+    rootCauseLevel: "unknown",
+    rootCause: null,
+  },
+  "s2-team-moved": {
+    signature: "visit:s2:unified:team_moved",
+    errorCode: "VISIT-S2-TEAMMOVED",
+    title: "Visit judged by the seat's team today, not the team it sat under on the visit day",
+    consumer: "phoenix_crm",
+    rootCauseLevel: "probable",
+    rootCause:
+      "crm_visits_unified decides a visit by the seat's team today (phoenix_crm_started_team_seats() reads au.seats.parent_seat_id, which carries no date). The seat history puts the seat under another team on the visit day, and that team's start decides the visit the other way.",
+  },
+  "mgr-legacy-leak": {
+    signature: "visit:manager_own:legacy_leak",
+    errorCode: "VISIT-MGR-LEGACY",
+    title: "A manager's own visit credited to another person in the CRM visits view",
+    consumer: "phoenix_crm",
+    rootCauseLevel: "unknown",
+    rootCause: null,
+  },
+  "mgr-plan-leak": {
+    signature: "visit:manager_own:plan_leak",
+    errorCode: "VISIT-MGR-PLAN",
+    title: "A manager's own single visit served by the CRM visits view",
+    consumer: "phoenix_crm",
     rootCauseLevel: "unknown",
     rootCause: null,
   },
@@ -512,8 +582,13 @@ export function repDayFindings(day: RepDayVerdict, calendar: CalendarDayReading 
 /**
  * The call rate's rows for one rep-month. A shortfall is first explained by the visits lost upstream
  * — one linked row per day, on that day's correlation id — and only what is left is the call rate's
- * own root. Counting MORE than the rules allow is not judged: an iReports360 row the panel attributes
- * by CRM id alone would read as a false extra.
+ * own root.
+ *
+ * Counting MORE than the rules allow is its own root (`s5-extra`), judged against `max` — which
+ * already holds every visit a rule may or may not count, an iReports360 row attributed by CRM id
+ * alone included — plus `tolerance`: the visits this run could not judge but the board may count
+ * (still in motion), and the ones an earlier stage already reported as counted too early. An excess
+ * inside that is never a finding.
  */
 export function kpiMonthFindings(input: {
   hrKey: string;
@@ -522,11 +597,28 @@ export function kpiMonthFindings(input: {
   expectation: KpiExpectation;
   found: number;
   days: readonly RepDayVerdict[];
+  tolerance?: number;
 }): LifecycleFinding[] {
   const { hrKey, month, callRateTo, expectation, found } = input;
+  const monthLabel = month.start.slice(0, 7);
+  const tolerance = Math.max(0, input.tolerance ?? 0);
+  const excess = found - expectation.max - tolerance;
+  if (excess > 0) {
+    return [
+      {
+        kind: "s5-extra",
+        hrKey,
+        date: month.start,
+        correlationId: lifecycleCorrelationId(hrKey, month.start, [], "kpi-month-extra"),
+        isRoot: true,
+        ids: [],
+        technicalMessage: `The ${monthLabel} call rate counts ${found} visits through ${callRateTo}; the rules allow at most ${expectation.max}${tolerance > 0 ? ` (${tolerance} more not judged yet or already reported)` : ""} — ${plural(excess, "visit")} counted with no visit behind ${excess === 1 ? "it" : "them"}.`,
+        evidence: { stage: 5, month: monthLabel, callRateTo, expected: { min: expectation.min, max: expectation.max }, found, tolerance, excess, excluded: expectation.excluded },
+      },
+    ];
+  }
   const shortfall = expectation.min - found;
   if (shortfall <= 0) return [];
-  const monthLabel = month.start.slice(0, 7);
   const base = { stage: 5, month: monthLabel, callRateTo, expected: { min: expectation.min, max: expectation.max }, found, shortfall };
   const findings: LifecycleFinding[] = [];
   const dayByDate = new Map(input.days.map((day) => [day.date, day]));
@@ -561,6 +653,102 @@ export function kpiMonthFindings(input: {
     });
   }
   return findings;
+}
+
+/**
+ * Lead R1's row for one rep-day: the visits whose team on the visit day and team today disagree about
+ * counting them. PROBABLE, never linked: it is a disagreement about which team's start decides, not a
+ * visit the lifecycle lost.
+ */
+export function teamMoveFinding(hrKey: string, date: string, moves: readonly TeamMove[]): LifecycleFinding | null {
+  if (moves.length === 0) return null;
+  const ids = moves.map((move) => move.id).sort();
+  const first = moves[0];
+  return {
+    kind: "s2-team-moved",
+    hrKey,
+    date,
+    correlationId: lifecycleCorrelationId(hrKey, date, ids, "s2-team-moved"),
+    isRoot: true,
+    ids,
+    technicalMessage: `${plural(ids.length, "visit")} of ${date}: the seat's team today (${first.teamNow ?? "none"}) ${first.countedNow ? "counts" : "does not count"} ${ids.length === 1 ? "it" : "them"}; the team the seat sat under that day (${first.teamThen}) ${first.countedThen ? "had started and would" : "had not started and would not"}.`,
+    evidence: {
+      stage: 2,
+      lead: "R1",
+      moves: moves.map((move) => ({ id: move.id, seat: move.seatId, teamThen: move.teamThen, teamNow: move.teamNow, countedThen: move.countedThen, countedNow: move.countedNow })),
+    },
+  };
+}
+
+/**
+ * A manager's own visit counts in the manager's own report and nowhere else (`phoenix_crm_manager_visits`
+ * exists so that no KPI, coverage or call-rate reader can pick one up). Two ways one could still
+ * reach a count: a LEGACY one — saved in `phoenix_crm_visits` with no rep before 16 Oct 2026 — served
+ * by the unified view credited to someone other than the manager (credited to the manager it stays,
+ * as ruled); and a single visit from the manager's own table served by the view at all. Everything
+ * else is counted, never a finding.
+ */
+export function managerOwnVisitFindings(input: {
+  legacy: readonly ManagerOwnVisit[];
+  plan: readonly ManagerOwnVisit[];
+  unified: ReadonlyMap<string, string | null>;
+}): { findings: LifecycleFinding[]; notes: Record<string, number> } {
+  const notes: Record<string, number> = {};
+  const note = (reason: string) => {
+    notes[reason] = (notes[reason] ?? 0) + 1;
+  };
+  type LeakKind = "mgr-legacy-leak" | "mgr-plan-leak";
+  const leaks = new Map<string, { kind: LeakKind; hrKey: string; date: string; visits: Array<{ visit: ManagerOwnVisit; creditedTo: string | null }> }>();
+  const leak = (kind: LeakKind, hrKey: string, visit: ManagerOwnVisit, creditedTo: string | null) => {
+    const key = `${kind}|${hrKey}|${visit.date}`;
+    const entry = leaks.get(key) ?? { kind, hrKey, date: visit.date, visits: [] };
+    entry.visits.push({ visit, creditedTo });
+    leaks.set(key, entry);
+  };
+  for (const visit of input.legacy) {
+    const hrKey = canonicalHrIdKey(visit.managerHrId);
+    if (!hrKey) {
+      note("manager_own_visit_legacy_no_manager");
+      continue;
+    }
+    const creditedTo = input.unified.get(visit.id) ?? null;
+    if (input.unified.has(visit.id) && canonicalHrIdKey(creditedTo) !== hrKey) leak("mgr-legacy-leak", hrKey, visit, creditedTo);
+    else note("manager_own_visit_legacy");
+  }
+  for (const visit of input.plan) {
+    const hrKey = canonicalHrIdKey(visit.managerHrId);
+    if (!hrKey) {
+      note("manager_own_visit_plan_no_manager");
+      continue;
+    }
+    if (input.unified.has(visit.id)) leak("mgr-plan-leak", hrKey, visit, input.unified.get(visit.id) ?? null);
+    else note("manager_own_visit_plan");
+  }
+  const findings: LifecycleFinding[] = [];
+  for (const entry of leaks.values()) {
+    const ids = entry.visits.map(({ visit }) => visit.id).sort();
+    const creditedTo = unique(entry.visits.map(({ creditedTo: who }) => (who ? canonicalHrIdForDisplay(who) : "nobody")));
+    const savedAt = entry.visits
+      .map(({ visit }) => visit.savedAt)
+      .filter((at): at is string => Boolean(at))
+      .sort((left, right) => Date.parse(left) - Date.parse(right));
+    const count = ids.length;
+    findings.push({
+      kind: entry.kind,
+      hrKey: entry.hrKey,
+      date: entry.date,
+      correlationId: lifecycleCorrelationId(entry.hrKey, entry.date, ids, entry.kind),
+      isRoot: true,
+      ids,
+      technicalMessage:
+        entry.kind === "mgr-legacy-leak"
+          ? `${plural(count, "own visit")} the manager saved on ${entry.date} with no rep (before own visits had their own table) ${count === 1 ? "is" : "are"} served by crm_visits_unified credited to another person, whose figures can count ${count === 1 ? "it" : "them"}.`
+          : `${plural(count, "own single visit")} the manager logged on ${entry.date} (phoenix_crm_manager_visits) ${count === 1 ? "is" : "are"} served by crm_visits_unified; an own visit counts in the manager's own report only.`,
+      evidence: { source: entry.kind === "mgr-legacy-leak" ? "phoenix_crm_visits (no rep)" : "phoenix_crm_manager_visits", creditedTo },
+      firstEventAt: savedAt[0] ?? null,
+    });
+  }
+  return { findings, notes };
 }
 
 function kpiUnreadableFinding(hrKey: string, month: KpiMonth, sources: string[]): LifecycleFinding {
@@ -670,6 +858,8 @@ type Shared = {
   people: Map<string, PersonFacts> | null;
   windows: StartedSeatWindow[] | null;
   excluded: Set<number> | null;
+  /** R6: set when the unified view itself did not answer — its reads are then unread, never empty. */
+  doorDown: string | null;
 };
 
 type RepDayRef = { hrKey: string; hrIds: string[]; date: string };
@@ -717,19 +907,26 @@ async function judgeRepDays(ports: VisitLifecyclePorts, shared: Shared, wanted: 
       countableIds = null;
       unreadable.add("phoenix_crm_countable_visits");
     }
-    try {
-      unifiedRows = await ports.readUnifiedRows({ ...door, ids: candidates });
-    } catch {
+    // A view that did not answer the probe would answer these reads `[]` (lead R6): unread, never empty.
+    if (shared.doorDown !== null) {
       unifiedRows = null;
-      unreadable.add("crm_visits_unified");
+    } else {
+      try {
+        unifiedRows = await ports.readUnifiedRows({ ...door, ids: candidates });
+      } catch {
+        unifiedRows = null;
+        unreadable.add("crm_visits_unified");
+      }
     }
   }
-  let doorRows: DoorRow[] | null;
-  try {
-    doorRows = await ports.readDoorVisits(door);
-  } catch {
-    doorRows = null;
-    unreadable.add("crm_visits_unified via queryVisits");
+  let doorRows: DoorRow[] | null = null;
+  if (shared.doorDown === null) {
+    try {
+      doorRows = await ports.readDoorVisits(door);
+    } catch {
+      doorRows = null;
+      unreadable.add("crm_visits_unified via queryVisits");
+    }
   }
 
   const evaluate = (unified: DoorRow[] | null, served: DoorRow[] | null) =>
@@ -830,6 +1027,11 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
         linkedRows: 0,
         kpiMonthsChecked: 0,
         kpiQueued: 0,
+        /** R1: visits whose team on the visit day decides differently from the seat's team today. */
+        teamMovesFound: 0,
+        /** Managers' own visits checked against the unified view, and the window they were read for. */
+        managerOwnChecked: { legacy: 0, plan: 0, window: null as { from: string; to: string } | null },
+        doorProbe: "not asked" as string,
       };
       // Which step was running, so a failure names the source — and a failed WRITE is never
       // reported as an unreadable source.
@@ -902,7 +1104,29 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
         } catch {
           unreadable.add("departed-agent exclusion");
         }
-        const shared: Shared = { today, quietCutoff, people, windows, excluded };
+        // R6 — asked once, before any door read: a view that is gone is unread, never "no visits".
+        let doorDown: string | null = null;
+        try {
+          doorDown = await ports.probeDoor();
+        } catch (error) {
+          doorDown = error instanceof Error ? error.message : String(error);
+        }
+        report.doorProbe = doorDown === null ? "answered" : `did not answer: ${doorDown.slice(0, 300)}`;
+        if (doorDown !== null) unreadable.add(DOOR_DOWN_SOURCE);
+        // R1 — the dated seat history and the team starts. Unread, the lead is not measured and the run says so.
+        let history: SeatHistoryRow[] | null = null;
+        let teamStarts: TeamStartWindow[] | null = null;
+        try {
+          history = await ports.readSeatHistory();
+        } catch {
+          unreadable.add("seat history (au_v_seat_occupancy_all)");
+        }
+        try {
+          teamStarts = await ports.readTeamStarts();
+        } catch {
+          unreadable.add("phoenix_crm_team_starts");
+        }
+        const shared: Shared = { today, quietCutoff, people, windows, excluded, doorDown };
 
         let index = 0;
         let lastDone: RepDayTouch | null = null;
@@ -945,6 +1169,25 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
             report.visitsChecked += verdict.checked;
             if (verdict.checked > 0) queueKpi(ref.hrKey, ref.date);
           }
+          // R1 — once per rep-day, here and never in the month pass, so a move is counted once.
+          if (windows !== null && history !== null && teamStarts !== null) {
+            const { moved, notes } = teamMoveVerdicts({ visits: judged.saved, quietCutoff, windows, history, teamStarts });
+            bumpAll(result.excludedCounts, notes);
+            const savedById = new Map(judged.saved.map((visit) => [visit.id, visit]));
+            const byDay = new Map<string, TeamMove[]>();
+            for (const move of moved) {
+              const saved = savedById.get(move.id);
+              const hrKey = canonicalHrIdKey(saved?.repHrId);
+              if (!saved || !hrKey) continue;
+              byDay.set(`${hrKey}|${saved.visitDate}`, [...(byDay.get(`${hrKey}|${saved.visitDate}`) ?? []), move]);
+            }
+            for (const [key, moves] of byDay) {
+              const split = key.lastIndexOf("|");
+              const finding = teamMoveFinding(key.slice(0, split), key.slice(split + 1), moves);
+              if (finding) findings.push(finding);
+              report.teamMovesFound += moves.length;
+            }
+          }
           result.scanned += batch.length;
           report.repDaysJudged += batch.length;
           index += batch.length;
@@ -970,6 +1213,42 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
             touchedAfter = quietLine;
             await write([], people);
             result.watermarkTo = { touchedAfter, kpiQueued: kpiQueue.length };
+          }
+        }
+
+        // A manager's own visits: read for the window, asked of the unified view by id. Its reads failing
+        // is unread for the run (no person to put an UNKNOWN row on), never a pass.
+        if (result.status !== "budget_exhausted") {
+          const managerWindow = historical && ctx.window ? ctx.window : { from: addDaysIso(today, -MANAGER_LOOKBACK_DAYS), to: addDaysIso(today, -1) };
+          report.managerOwnChecked.window = managerWindow;
+          let legacy: ManagerOwnVisit[] | null = null;
+          let plan: ManagerOwnVisit[] | null = null;
+          try {
+            legacy = await ports.readLegacyManagerVisits(managerWindow);
+          } catch {
+            unreadable.add("phoenix_crm_visits (a manager's own, no rep)");
+          }
+          try {
+            plan = await ports.readManagerPlanVisits(managerWindow);
+          } catch {
+            unreadable.add("phoenix_crm_manager_visits");
+          }
+          const asked = [...(legacy ?? []), ...(plan ?? [])].map((visit) => visit.id).filter(isUuid);
+          if (asked.length > 0 && doorDown === null) {
+            let unified: Map<string, string | null> | null = null;
+            try {
+              unified = await ports.readUnifiedAgentsByIds(unique(asked));
+            } catch {
+              unreadable.add("crm_visits_unified (by id)");
+            }
+            if (unified !== null) {
+              const usable = (visits: ManagerOwnVisit[] | null) => (visits ?? []).filter((visit) => isUuid(visit.id));
+              const own = managerOwnVisitFindings({ legacy: usable(legacy), plan: usable(plan), unified });
+              bumpAll(result.excludedCounts, own.notes);
+              report.managerOwnChecked.legacy = usable(legacy).length;
+              report.managerOwnChecked.plan = usable(plan).length;
+              await write(own.findings, people);
+            }
           }
         }
 
@@ -1034,7 +1313,13 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           if (!kpi.holidaysComplete) return [kpiUnreadableFinding(hrKey, month, ["KPIs board holiday calendar"])];
           report.kpiMonthsChecked += 1;
           bumpAll(result.excludedCounts, expectation.excluded);
-          return kpiMonthFindings({ hrKey, month, callRateTo, expectation, found: kpi.total, days: verdicts });
+          // What the board may count that this run could not judge (still in motion), or that S1 already
+          // reported as counted too early — never an over-count of its own.
+          const tolerance = verdicts.reduce(
+            (sum, verdict) => sum + (verdict.excluded.not_quiet ?? 0) + verdict.extras.filter((extra) => extra.stage === 1).reduce((ids, extra) => ids + extra.ids.length, 0),
+            0,
+          );
+          return kpiMonthFindings({ hrKey, month, callRateTo, expectation, found: kpi.total, days: verdicts, tolerance });
         };
 
         // The call rate, one rep-month at a time, oldest queued first. The entry leaves the queue in
@@ -1464,6 +1749,73 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       const { loadCallRateHolidays } = await import("@/lib/crm/call-rate-holidays");
       const lookup = await loadCallRateHolidays(month.start, month.end);
       return { complete: lookup.complete, dates: lookup.dates };
+    },
+
+    async probeDoor() {
+      const { probeCrmVisitsUnifiedView } = await import("@/lib/crm/schema");
+      return probeCrmVisitsUnifiedView();
+    },
+
+    async readSeatHistory() {
+      const rows = await readPaged<{ seat_id: string; manager_seat_id: string | null; effective_from: string; effective_to: string | null }>(
+        "au_v_seat_occupancy_all",
+        (from, to) =>
+          supabase
+            .from("au_v_seat_occupancy_all")
+            .select("seat_id,manager_seat_id,effective_from,effective_to,occupant_hr_id")
+            .order("seat_id", { ascending: true })
+            .order("effective_from", { ascending: true })
+            .order("occupant_hr_id", { ascending: true, nullsFirst: true })
+            .order("manager_seat_id", { ascending: true, nullsFirst: true })
+            .range(from, to),
+      );
+      return rows.map((row) => ({
+        seatId: row.seat_id,
+        managerSeatId: row.manager_seat_id,
+        effectiveFrom: String(row.effective_from).slice(0, 10),
+        effectiveTo: row.effective_to ? String(row.effective_to).slice(0, 10) : null,
+      }));
+    },
+
+    async readTeamStarts() {
+      const rows = await readPaged<{ team_seat_id: string; starts_on: string; stops_on: string | null }>("phoenix_crm_team_starts", (from, to) =>
+        supabase.from("phoenix_crm_team_starts").select("id,team_seat_id,starts_on,stops_on").order("id", { ascending: true }).range(from, to),
+      );
+      return rows.map((row) => ({
+        teamSeatId: row.team_seat_id,
+        startsOn: String(row.starts_on).slice(0, 10),
+        stopsOn: row.stops_on ? String(row.stops_on).slice(0, 10) : null,
+      }));
+    },
+
+    async readLegacyManagerVisits({ from: fromDate, to: toDate }) {
+      const rows = await readPaged<{ id: string; manager_hr_id: string | null; visit_date: string; created_at: string | null }>("phoenix_crm_visits", (from, to) =>
+        supabase
+          .from("phoenix_crm_visits")
+          .select("id,manager_hr_id,visit_date,created_at")
+          .eq("is_test", false)
+          .is("rep_hr_id", null)
+          .gte("visit_date", fromDate)
+          .lte("visit_date", toDate)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      return rows.map((row) => ({ id: String(row.id), managerHrId: row.manager_hr_id, date: String(row.visit_date).slice(0, 10), savedAt: row.created_at }));
+    },
+
+    async readManagerPlanVisits({ from, to }) {
+      // Through the module's own door: who logged any, then their rows (each id is `own:<visit id>`).
+      const { loadManagerOwnVisitDays, loadManagerOwnVisitRows } = await import("@/lib/phoenix-crm/server/manager-plan-readers");
+      const days = await loadManagerOwnVisitDays({ start: from, end: to });
+      const managers = unique(days.map((day) => day.hrId));
+      if (managers.length === 0) return [];
+      const rows = await loadManagerOwnVisitRows({ managerHrIds: managers, start: from, end: to });
+      return rows.map((row) => ({ id: row.id.replace(/^own:/, ""), managerHrId: row.managerHrId, date: row.date, savedAt: row.loggedAt }));
+    },
+
+    async readUnifiedAgentsByIds(ids) {
+      const { readUnifiedVisitAgentsByIds } = await import("@/lib/crm/reads");
+      return readUnifiedVisitAgentsByIds(ids);
     },
   };
 }

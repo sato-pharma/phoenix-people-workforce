@@ -19,6 +19,7 @@ const OWNED_ROUTES = [
   "app/api/admin/system-audit/export/route.ts",
   "app/api/admin/system-audit/issues/[id]/status/route.ts",
   "app/api/admin/system-audit/occurrences/[id]/route.ts",
+  "app/api/admin/system-audit/screens/[id]/route.ts",
 ] as const;
 
 /** Every call that reads or writes data, or spends a rate-limit token. None may run before the guard. */
@@ -30,6 +31,7 @@ const DATA_CALLS = [
   "lookupAuditPeople",
   "loadIntegrityOverview",
   "loadOccurrenceDetail",
+  "loadUserScreenImage",
   "triageOccurrence",
   "transitionIssueStatus",
   "writeAuditLog",

@@ -283,6 +283,56 @@ function TriageForm({ detail, onDone }: { detail: OccurrenceDetail; onDone: () =
   );
 }
 
+const SCREEN_KIND_LABELS: Record<string, string> = {
+  error_screen: "Error screen shown",
+  refused_request: "Request refused",
+  failed_request: "Request failed",
+};
+
+/**
+ * The screenshots of exactly what the person saw (owner, 23 Oct 2026: as-is, Super Admin only, kept
+ * 90 days). Each picture is served by the Super-Admin-only screens route; it never runs wider than
+ * the drawer, and a tap opens it full size in a new tab.
+ */
+function ScreenshotList({ screens }: { screens: OccurrenceDetail["screens"] }) {
+  if (screens.status === "unavailable") {
+    return <p className="break-words text-xs font-semibold text-rose-700">Unavailable — {screens.reason}</p>;
+  }
+  if (screens.status === "not_applicable") return <p className="text-xs text-slate-500">{screens.reason}</p>;
+  return (
+    <div className="space-y-3">
+      {screens.screens.length === 0 && screens.pruned === 0 ? (
+        <p className="text-xs text-slate-500">No screenshot was recorded for this occurrence.</p>
+      ) : null}
+      {screens.screens.map((screen) => (
+        <figure className="space-y-1" key={screen.id}>
+          <a className="block border border-slate-300" href={screen.src} rel="noreferrer" target="_blank">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a private, Super-Admin-only stream; next/image would cache it */}
+            <img
+              alt={`Screenshot taken ${cairoDateTime(screen.capturedAt)} Cairo`}
+              className="block h-auto w-full max-w-full"
+              height={screen.height ?? undefined}
+              loading="lazy"
+              src={screen.src}
+              width={screen.width ?? undefined}
+            />
+          </a>
+          <figcaption className="break-words text-phx-2xs text-slate-500">
+            {SCREEN_KIND_LABELS[screen.kind] ?? screen.kind}
+            {screen.httpStatus ? ` · HTTP ${screen.httpStatus}` : ""} · {cairoDateTime(screen.capturedAt)} Cairo
+          </figcaption>
+        </figure>
+      ))}
+      {screens.pruned > 0 ? (
+        <p className="text-xs text-slate-500">
+          {screens.pruned === 1 ? "One screenshot has" : `${screens.pruned.toLocaleString("en-US")} screenshots have`} passed the
+          90 days they are kept and been removed.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged: () => void }) {
   const { occurrence, issue, history, fixes, reproTrail, screenshots } = detail;
   const pageRow = {
@@ -340,6 +390,12 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
           {incidentMessage(pageRow)}
         </p>
       </Section>
+
+      {detail.screens.status !== "not_applicable" ? (
+        <Section title="What the person saw when blocked">
+          <ScreenshotList screens={detail.screens} />
+        </Section>
+      ) : null}
 
       <Section title="System message">
         {occurrence.technicalMessage ? (

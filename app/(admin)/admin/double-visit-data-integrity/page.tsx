@@ -14,7 +14,7 @@ export default async function DoubleVisitDataIntegrityPage() {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   // Company-wide and unscoped by design (a data-quality audit, not a personal/team view) — gated
-  // to Super Admin, the one role with full authority over this data in the permission matrix.
+  // to the admin CRM workspace (Super Admin + SFE Manager), the same door the service checks.
   if (!canUseAdminCrmWorkspace(access)) {
     redirect(resolveLandingPathForRole(access.role));
   }

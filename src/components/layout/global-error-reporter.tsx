@@ -7,6 +7,7 @@ import {
   isCrossOriginMaskedErrorEvent,
 } from "@/lib/error-monitor/cross-origin-masked";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
+import { installScreenCapture } from "@/lib/error-monitor/screen-capture";
 import { startSentryBrowser } from "@/lib/observability/sentry-client";
 import { isStaleDeployChunkError, isTransientRouterMountError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
@@ -67,6 +68,10 @@ export function GlobalErrorReporter() {
     window.addEventListener("error", handleError);
     window.addEventListener("unhandledrejection", handleRejection);
     startSentryBrowser();
+    // The error screenshot (owner, 23 Oct 2026): a refused or failed /api/ request leaves a picture of
+    // what the person saw for the System Audit. Installs once, never unwrapped on unmount — a second
+    // mount finds it already there.
+    installScreenCapture();
 
     return () => {
       window.removeEventListener("error", handleError);

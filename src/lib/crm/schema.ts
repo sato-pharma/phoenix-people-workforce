@@ -7,7 +7,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 
 /** True when an error is really "the iReports360 mirror tables don't exist yet". */
 export function isCrmSchemaMissingError(error: unknown): boolean {
@@ -44,4 +44,21 @@ export async function isCrmCheckinsSchemaReady(): Promise<boolean> {
     .select("id", { head: true })
     .limit(1);
   return !isCrmSchemaMissingError(error);
+}
+
+/**
+ * Does the unified visits view answer at all? Null when it does, else the error it gave.
+ *
+ * Every visits read in reads.ts turns a missing view into `[]`, so "nobody visited" and "the view is
+ * gone" read the same — lead R6 of the System Audit. The visit-lifecycle detector asks this ONCE a
+ * run, before it reads the door, and reports the door as unread instead of every visit as lost. One
+ * HEAD row, no count, like the probes above.
+ */
+export async function probeCrmVisitsUnifiedView(): Promise<string | null> {
+  const { error } = await getSupabaseAdmin()
+    .from(CRM_VISITS_UNIFIED_VIEW)
+    .select("id", { head: true })
+    .limit(1);
+  if (!error) return null;
+  return error.message || error.code || "the view gave an error with no message";
 }
