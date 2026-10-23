@@ -13,7 +13,9 @@ import { calculateIncentive2026 } from "../src/lib/incentives/scheme-2026.ts";
 import { createRequestSequence, planForSelection } from "../src/lib/production-planning/request-sequence.ts";
 import { prepareSatoEmailBody } from "../src/lib/sato-email/render.ts";
 import {
+  DECISION_FAILED,
   REJECTION_REASON_REQUIRED,
+  vacationDecisionErrorToShow,
   vacationDecisionFailureMessage,
   vacationDecisionFormProblem,
   vacationDecisionRetryPath,
@@ -114,11 +116,37 @@ export function runVacationDecisionFormTests() {
     vacationDecisionFailureMessage(new Error("Forbidden: not this step's approver.")),
     "You are not authorized to decide this vacation request.",
   );
+  // The suite always signs (run-tests sets PHOENIX_AUTH_SECRET at import); keep it set for this runner.
+  process.env.PHOENIX_AUTH_SECRET ??= "test-phoenix-auth-secret";
+  const retry = new URL(vacationDecisionRetryPath("abc-1", "reject", REJECTION_REASON_REQUIRED), "https://x.test");
+  assert.equal(retry.pathname, "/leave-management/vacation-decision/abc-1", "a refusal comes back to the same page");
+  assert.equal(retry.searchParams.get("decision"), "reject", "on the same decision");
+  assert.equal(retry.searchParams.get("decisionError"), REJECTION_REASON_REQUIRED, "carrying the sentence");
+  const sig = retry.searchParams.get("decisionErrorSig") ?? undefined;
+  assert.ok(sig, "and the server's signature over it");
   assert.equal(
-    vacationDecisionRetryPath("abc-1", "reject", REJECTION_REASON_REQUIRED),
-    "/leave-management/vacation-decision/abc-1?decision=reject&decisionError=A+rejection+reason+is+required.",
-    "a refusal comes back to the same page, on the same decision",
+    vacationDecisionErrorToShow("abc-1", "reject", REJECTION_REASON_REQUIRED, sig),
+    REJECTION_REASON_REQUIRED,
+    "a sentence the server signed is shown in its own words",
   );
+  assert.equal(
+    vacationDecisionErrorToShow("abc-1", "reject", "Call 0100 000 0000 to confirm your decision.", sig),
+    DECISION_FAILED,
+    "🔴 a crafted link cannot put its own words on the approval page — the signature does not match, so the fixed sentence shows",
+  );
+  assert.equal(vacationDecisionErrorToShow("abc-1", "reject", REJECTION_REASON_REQUIRED, undefined), DECISION_FAILED, "no signature, no text");
+  assert.equal(vacationDecisionErrorToShow("abc-2", "reject", REJECTION_REASON_REQUIRED, sig), DECISION_FAILED, "a signature is bound to its request");
+  assert.equal(vacationDecisionErrorToShow("abc-1", "approve", REJECTION_REASON_REQUIRED, sig), DECISION_FAILED, "and to its decision");
+  assert.equal(vacationDecisionErrorToShow("abc-1", "reject", undefined, undefined), null, "no refusal, no alert");
+  const long = new URL(vacationDecisionRetryPath("abc-1", "approve", `  ${"x".repeat(400)}  `), "https://x.test");
+  assert.equal(long.searchParams.get("decisionError")?.length, 300, "the message is capped before it is signed");
+  assert.equal(
+    vacationDecisionErrorToShow("abc-1", "approve", long.searchParams.get("decisionError") ?? undefined, long.searchParams.get("decisionErrorSig") ?? undefined),
+    "x".repeat(300),
+    "so the capped text still verifies",
+  );
+  assert.doesNotMatch(DECISION_FAILED, /nothing was changed/i, "🔴 a part-way failure never claims nothing was saved");
+  assert.match(DECISION_FAILED, /check the request's status/, "it sends the approver to the request's status first");
 
   const page = read("app/(admin)/leave-management/vacation-decision/[id]/page.tsx");
   assert.match(page, /required=\{reasonRequired\}/, "the reason box is required on a reject, matching the server");
@@ -128,6 +156,12 @@ export function runVacationDecisionFormTests() {
     "the Server Action catches the service's refusal",
   );
   assert.doesNotMatch(page, /recommended/i, "the screen no longer calls a required reason 'recommended'");
+  assert.match(
+    page,
+    /vacationDecisionErrorToShow\(\s*id,\s*decision,\s*firstParam\(query\.decisionError\),\s*firstParam\(query\.decisionErrorSig\),?\s*\)/,
+    "the page shows the address's message only through the signature check",
+  );
+  assert.doesNotMatch(page, /const decisionError = firstParam\(query\.decisionError\)/, "never the raw query text");
 }
 
 // ── F-19 ────────────────────────────────────────────────────────────────────────────────────────
@@ -201,6 +235,31 @@ export function runApiErrorWrappedDatabaseTextTests() {
     assert.equal(clientSafeErrorMessage(new Error(text), FALLBACK), text, `kept: ${text}`);
   }
   assert.equal(toApiError(new Error("That vacation request was not found."), FALLBACK).status, 404);
+
+  // 🔴 A hidden error still reaches the log — redaction used to be the only thing that happened to it.
+  const logged: string[] = [];
+  const realConsoleError = console.error;
+  console.error = (line: unknown) => {
+    logged.push(String(line));
+  };
+  try {
+    clientSafeErrorMessage(wrapped, FALLBACK);
+    toApiError(new Error('relation "public.salary_records" does not exist'), FALLBACK);
+    clientSafeErrorMessage(new Error("That vacation request was not found."), FALLBACK);
+    toApiError(new Error("A rejection reason is required."), FALLBACK);
+  } finally {
+    console.error = realConsoleError;
+  }
+  const redactions = logged.map((line) => JSON.parse(line) as { event?: string; context?: { detail?: string } });
+  assert.equal(
+    redactions.filter((entry) => entry.event === "api_error_redacted").length,
+    2,
+    "🔴 each redacted database error is logged once, as api_error_redacted — and our own prose is not logged at all",
+  );
+  assert.ok(
+    redactions[0].context?.detail?.includes("employees_crm_username_unique_idx"),
+    "the log keeps the real database sentence the caller never sees",
+  );
 
   const sites = rawRouteErrorSites();
   assert.ok(
