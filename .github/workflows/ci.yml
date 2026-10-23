@@ -871,8 +871,12 @@ jobs:
   # merge carries the change. No `continue-on-error`, unlike the dashboard saves elsewhere in this repo,
   # because those are reporting gaps and this is a gate.
   #
-  # The secret is the one migration-drift-check.yml and synthetic-journeys.yml already use for production
-  # reads and writes — no new credential. The URL is written out for the same reason those two write it out.
+  # LEAST PRIVILEGE (technical audit P6-02, owner's choice 2026-10-23). It connects as the database login
+  # `release_gate_writer` (secret RELEASE_GATE_DATABASE_URL, the session pooler), which may read and add rows
+  # in public.release_gates and nothing else — it cannot update or delete one, and every other table refuses it
+  # (supabase/migrations/20261023093100_release_gate_writer_login.sql). It used to hold the full production
+  # service-role key to write this one row. psql ships on GitHub's ubuntu image; the install line only runs if
+  # an image ever drops it. The sha and run id are validated before use and passed as psql variables.
   release-gate:
     needs: [validate, checks]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -882,37 +886,36 @@ jobs:
     steps:
       - name: Record that every required check passed on this commit
         env:
-          PRODUCTION_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          RELEASE_GATE_DATABASE_URL: ${{ secrets.RELEASE_GATE_DATABASE_URL }}
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_RUN_ID: ${{ github.run_id }}
         run: |
           set -u
-          if [ -z "${SUPABASE_SERVICE_ROLE_KEY}" ]; then
-            echo "::error::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set, so the release gate cannot be written and this commit will not go live."
+          if [ -z "${RELEASE_GATE_DATABASE_URL}" ]; then
+            echo "::error::RELEASE_GATE_DATABASE_URL is not set, so the release gate cannot be written and this commit will not go live."
             exit 1
           fi
           if ! printf '%s' "${RELEASE_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "::error::the commit is not a full 40-character sha: ${RELEASE_SHA}"
             exit 1
           fi
+          if ! printf '%s' "${RELEASE_RUN_ID}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::the run id is not a number: ${RELEASE_RUN_ID}"
+            exit 1
+          fi
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
 
-          body="{\"sha\":\"${RELEASE_SHA}\",\"workflow_run_id\":\"${RELEASE_RUN_ID}\"}"
           written=0
           for attempt in 1 2 3; do
-            code="$(curl -sS -o gate-write.txt -w '%{http_code}' --max-time 20 \
-              -X POST "${PRODUCTION_SUPABASE_URL}/rest/v1/release_gates?on_conflict=sha" \
-              -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-              -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-              -H "Content-Type: application/json" \
-              -H "Prefer: resolution=ignore-duplicates,return=minimal" \
-              -d "${body}" || true)"
-            case "${code}" in
-              2??) written=1; break ;;
-            esac
-            echo "write attempt ${attempt}: HTTP ${code}"
-            cat gate-write.txt 2>/dev/null || true
-            echo
+            if psql "${RELEASE_GATE_DATABASE_URL}" -X -q -v ON_ERROR_STOP=1 -v sha="${RELEASE_SHA}" -v run_id="${RELEASE_RUN_ID}" <<'SQL'
+          set statement_timeout = '20s';
+          insert into public.release_gates (sha, workflow_run_id)
+          values (:'sha', :'run_id')
+          on conflict (sha) do nothing;
+          SQL
+            then written=1; break
+            fi
+            echo "write attempt ${attempt} failed"
             sleep $((attempt * 3))
           done
           if [ "${written}" != "1" ]; then
@@ -921,10 +924,10 @@ jobs:
           fi
 
           # The write is not the proof; the row reading back is.
-          seen="$(curl -sS --max-time 20 \
-            "${PRODUCTION_SUPABASE_URL}/rest/v1/release_gates?sha=eq.${RELEASE_SHA}&select=sha" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" || true)"
+          seen="$(psql "${RELEASE_GATE_DATABASE_URL}" -X -q -At -v ON_ERROR_STOP=1 -v sha="${RELEASE_SHA}" <<'SQL' || true
+          select sha from public.release_gates where sha = :'sha';
+          SQL
+          )"
           case "${seen}" in
             *"${RELEASE_SHA}"*) echo "release gate recorded for ${RELEASE_SHA}" ;;
             *)

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 03486b16-34ba-44b4-af4e-c44a32696de1
-  modified: 2026-10-23T01:36:38.503Z
+  modified: 2026-10-23T05:59:49.918Z
 ---
 
 ✅ **ENDED 23 Oct 2026 Cairo — the worker is back on Railway and `phoenix-worker-standby` no longer exists.**
@@ -20,7 +20,7 @@ On 22 Oct 2026 the Railway worker was stuck on its 20 Oct deployment (ed7797a85)
 
 What runs now:
 - **Fly app `phoenix-worker-standby`** (fra, shared-cpu-2x, 2 GB, about US$12 a month). It runs the website's own image, `registry.fly.io/phoenix-hr-standby:<sha>`, deployed by hand with `flyctl deploy -a phoenix-worker-standby -c infra/fly-standby/fly-worker.toml --image registry.fly.io/phoenix-hr-standby:<sha> --strategy rolling` after every go-live. Its config is `infra/fly-standby/fly-worker.toml` on main (PR 6247, carried by roll-up PR 6249, merged 22 Oct 05:16 Cairo as a2c6a1752; pinned by `tests/emergency-host.test.ts` block "1b. The Fly worker"). On 22 Oct 04:58 Cairo the worker took 09077e12a this way, and at 05:44 a2c6a1752 (right after that commit's 05:43 go-live; role worker, all three loops started, one health check failed mid-boot then passing).
-- The toml's `[env]` sets `PHOENIX_PROCESS_ROLE=worker`, `PHOENIX_LIVE_CRM_POLL=true`, `PHOENIX_HOST=fly-worker` and **`RAILWAY_ENVIRONMENT_NAME=production`**. The last one is deliberate: it is the CRM poller's host pin (resolveInProcessHostRefusal). With no RAILWAY_GIT_COMMIT_SHA the release gate reads "no_commit" and stays open.
+- The toml's `[env]` sets `PHOENIX_PROCESS_ROLE=worker`, `PHOENIX_LIVE_CRM_POLL=true`, `PHOENIX_HOST=fly-worker` and **`RAILWAY_ENVIRONMENT_NAME=production`**. The last one is deliberate: it is the CRM poller's host pin (resolveInProcessHostRefusal). CORRECTED 2026-10-23 (audit P6-03, the platform-fix PR): a production container with no RAILWAY_GIT_COMMIT_SHA is now HELD — the release gate answers `no_commit`, required and not passed — so a Fly worker MUST run the fallback image, which stamps the commit (fallback-image.yml), and the commit must have its release_gates row; only the urgent route's marker or PHOENIX_RELEASE_GATE=off lets a commitless container through.
 - Its secrets were copied from the Railway worker through `filterVariables` in scripts/emergency-host.mjs (121 variables).
 - **Railway's worker:** its running deployment (2c725ad1) was stopped with deploymentStop, and its `PHOENIX_PROCESS_ROLE` was set to **`web`**, so a Railway redeploy can never run the jobs twice.
 - The 4 cron-job.org jobs that called Railway's worker address now call `phoenix-worker-standby.fly.dev` on the new CRON_SECRET: crm-contact-lists, process-notifications, recruitment-email-intake and inbound-intake.

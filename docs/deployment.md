@@ -772,6 +772,7 @@ of them. What changes is that the build is no longer idle while they run.
 | Container | Gate |
 |---|---|
 | Production on Railway, git commit known | **Held** until its row exists. An unreadable table is NOT ready (fail closed). |
+| Production on Railway, **no commit at all** and no urgent marker (a hand `railway up`, an image with no `RAILWAY_GIT_COMMIT_SHA`) | **Held, and never passes** — `required: true`, reason `no_commit`. Nothing CI records can ever match it. Until 23 Oct 2026 this was "never held", so such a container took traffic with no checks (audit P6-03 / D-03); it now fails closed. |
 | Urgent `railway up` upload (`public/urgent-deploy.json` present) | Never held — it skips the checks by the owner's own words. |
 | `PHOENIX_RELEASE_GATE=off` | Never held. The emergency switch; only the exact word `off` counts. |
 | Anything that is not production on Railway (laptop, CI, staging) | Never held — nothing writes a row for it. |
@@ -821,7 +822,15 @@ turn Wait for CI back on in the same breath as setting it. The urgent route need
   Railway redeploy of that deployment would pass once the row exists, but that has not been tried, and
   `railway redeploy` is otherwise forbidden here.
 - **The row cannot be written** (secret rotated, Supabase down). `release-gate` is red and loud; nothing goes
-  live. Fix the secret or wait; this is the closed answer on purpose.
+  live. Fix the secret or wait; this is the closed answer on purpose. 🔴 **Since 23 Oct 2026 the job holds no
+  service-role key** (technical audit P6-02, the owner's choice "Narrow login"): it connects with `psql` as the
+  database login `release_gate_writer` through the session pooler, secret `RELEASE_GATE_DATABASE_URL`, and that
+  login may read and add `release_gates` rows and nothing else — updating or deleting a row, or reading any other
+  table, is refused (`supabase/migrations/20261023093100_release_gate_writer_login.sql`). To rotate it: compute a
+  SCRAM-SHA-256 verifier on the laptop, `alter role release_gate_writer with login password '<verifier>'` on
+  production, and pipe the new URL (`postgresql://release_gate_writer.ozucdzovmcqvepbozvqf:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`)
+  straight into `gh secret set RELEASE_GATE_DATABASE_URL` — never print it, and never put the password in a
+  migration. Staging has the role with no login.
 - **Two merges close together.** Each container waits for its own row; the newer one that passes becomes the
   active deploy and the older is superseded, as with any queue here.
 - **A revert or hotfix** takes exactly the same path. For minutes, the urgent route is the one that skips it.
@@ -926,9 +935,10 @@ script or the `Dockerfile` builds and boots the image (nothing pushed), which al
    `ci.yml` push run — the same row Railway's readiness probe waits for. Only a commit that reached
    `main` and passed `validate` + `checks` can be built for production.
 2. **The image carries `RAILWAY_GIT_COMMIT_SHA`.** Railway injects it only into a build it ran itself.
-   An image deploy would carry none, and `release-gate.ts` reads "no commit" as "nothing to wait for" —
-   the gate would silently open. The workflow adds one `ENV` layer, so `/api/readyz` still answers 503
-   until the row exists and `/api/healthz` `revision` names the commit.
+   An image deploy would carry none, and `release-gate.ts` holds a commit-less production container at
+   `no_commit` (fail closed since 23 Oct 2026; before that it silently opened) — it would never go live.
+   The workflow adds one `ENV` layer, so `/api/readyz` answers 503 until the row exists, then 200, and
+   `/api/healthz` `revision` names the commit.
 3. **It is booted before it is pushed**, and `/api/healthz` must report the commit.
 4. **The build values are Railway's own.** `NEXT_PUBLIC_*` are inlined into the client bundle at build
    time, so the image needs the same values Railway's build used. `build-values` reads them from
@@ -1030,8 +1040,10 @@ build from production), and Vercel is a retired platform here.
 - Then Actions → Emergency host → `setup`, then `rehearse`. Optional repository variables: `FLY_APP` (default
   `phoenix-hr-standby`, if that name is taken on Fly) and `FLY_ORG` (default `personal`).
 
-**What is NOT covered.** A migration (apply it first, as on every route). The worker: the workflow never deploys
-it — since 2026-10-22 it runs on Fly too, deployed by hand (next section). A Supabase outage. **Not proven until `setup` and `rehearse` have run with the owner's tokens:** the Fly app,
+**What is NOT covered.** A migration (apply it first, as on every route). The worker: since #6260 (22 Oct)
+the workflow's gated `deploy` job moves the Fly worker to the same released commit ("Move the background worker to
+the same commit"), with a hand deploy only as the fallback when that step fails; the Fly worker app itself was
+removed on 23 Oct and the jobs run on Railway's worker again (next section). A Supabase outage. **Not proven until `setup` and `rehearse` have run with the owner's tokens:** the Fly app,
 the variable copy, the certificate, and the image booting on Fly. Pinned by `tests/emergency-host.test.ts`.
 
 ### The worker on Fly

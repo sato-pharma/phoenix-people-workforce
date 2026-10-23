@@ -12,7 +12,15 @@
 # on 2026-10-09: Docker Hub, mirror.gcr.io and public.ecr.aws all answered
 # sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 for 24-alpine.
 # Pinned by tests/railway-deploy-config.test.ts in the required `validate` job.
-FROM public.ecr.aws/docker/library/node:24-alpine AS base
+#
+# 🔴 AND IT IS PINNED BY DIGEST, NOT BY TAG ALONE (audit F-22 / S-INT-16, 2026-10-23). `24-alpine` is a
+# moving tag: the image behind it changes whenever Node or Alpine ships a patch, so two builds of the same
+# commit could run different bases with nothing in the repository saying so. The tag stays for the reader;
+# the digest is what is pulled. Read 2026-10-23 from public.ecr.aws, Docker Hub and mirror.gcr.io — all three
+# answered the same multi-arch index digest below. To move it on purpose, read the tag's current digest
+#   docker buildx imagetools inspect public.ecr.aws/docker/library/node:24-alpine
+# and replace the digest here. Pinned by tests/dockerfile-reproducible.test.ts.
+FROM public.ecr.aws/docker/library/node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -149,41 +157,43 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # The Next standalone trace omits puppeteer-core (it is loaded via a turbopackIgnore dynamic
-# import so it never enters a client bundle), so install it — JS only — into the runtime
+# import so it never enters a client bundle), so it is installed — JS only — into the runtime
 # node_modules for server-side offer-letter PDF generation. Chromium itself is the system
-# package installed above; PUPPETEER_SKIP_DOWNLOAD prevents a browser download. Installed in a
-# temp dir and merged in so the existing traced node_modules is not pruned. Keep the version in
-# sync with package.json — `tests/offer-pdf-runtime.test.ts` now enforces that, because it had
-# already drifted two majors (23.11.1 here against ^25.3.0 there) by the time anything actually
-# called puppeteer, so production would have run a driver nobody ever tested this code against.
-# DELIBERATELY still npm (repo package manager is pnpm): this is an isolated throwaway
-# install of ONE pinned package into /tmp with its own generated package.json — no repo
-# lockfile or workspace settings are involved, npm ships inside node:24-alpine anyway,
-# and pnpm here would need corepack + a store for zero benefit in this final image layer.
-RUN cd /tmp && npm init -y >/dev/null 2>&1 \
- && npm install --omit=dev puppeteer-core@25.13.0 >/dev/null 2>&1 \
- && cp -R /tmp/node_modules/. /app/node_modules/ \
- && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
-
-# sharp, for the same reason and by the same method — but it failed differently, so read this
-# before changing it. The standalone trace DID copy sharp's JS and its `@img/sharp-linuxmusl-x64`
-# binding; what it left behind was `@img/sharp-libvips-linuxmusl-x64`, which ships the
-# `libvips-cpp.so` that the binding links against. A JS tracer follows imports, and a DT_NEEDED
-# entry inside a compiled .so is not an import — so the trace looked complete and the module threw
-# ERR_DLOPEN_FAILED at runtime instead. That took down the whole Hiring Documents page on
-# 2026-08-22, because a top-level `import sharp` sat on its render path (now loaded on demand,
-# see src/lib/hiring-documents/document-scan.ts).
+# package installed above; PUPPETEER_SKIP_DOWNLOAD prevents a browser download. It had once
+# drifted two majors (23.11.1 here against ^25.3.0 in package.json) by the time anything called
+# puppeteer, so production would have run a driver nobody ever tested this code against.
 #
-# Two live features need this: direct-order invoice extraction and hiring-document scanning.
-# Removing the traced copies first matters — copying over a pnpm symlink writes THROUGH it into
-# the store instead of replacing it, and leaves the broken resolution in place.
+# sharp is installed by the same step — but it failed differently, so read this before changing
+# it. The standalone trace DID copy sharp's JS and its `@img/sharp-linuxmusl-x64` binding; what it
+# left behind was `@img/sharp-libvips-linuxmusl-x64`, which ships the `libvips-cpp.so` that the
+# binding links against. A JS tracer follows imports, and a DT_NEEDED entry inside a compiled .so
+# is not an import — so the trace looked complete and the module threw ERR_DLOPEN_FAILED at
+# runtime instead. That took down the whole Hiring Documents page on 2026-08-22, because a
+# top-level `import sharp` sat on its render path (now loaded on demand, see
+# src/lib/hiring-documents/document-scan.ts). Two live features need it: direct-order invoice
+# extraction and hiring-document scanning. Removing the traced copies first matters — copying over
+# a pnpm symlink writes THROUGH it into the store instead of replacing it, and leaves the broken
+# resolution in place.
 #
-# Keep the version in sync with pnpm-lock.yaml (sharp@0.35.3).
-RUN cd /tmp && npm init -y >/dev/null 2>&1 \
- && npm install --omit=dev sharp@0.35.3 >/dev/null 2>&1 \
+# 🔴 REPRODUCIBLE, FROM A COMMITTED LOCKFILE (audit F-22 / S-INT-16, 2026-10-23). This used to be
+# two `npm install <package>@<hand-typed version>` lines with no lockfile, so every transitive
+# package floated to whatever npm served on the day of the build, and the comment here claimed
+# "in sync with pnpm-lock.yaml" while the lockfile had already moved sharp two patch releases and
+# puppeteer-core two minor releases past the hand-typed pins (no version is written in this file
+# any more — the test refuses one). Now `npm ci` installs exactly infra/runtime-extras/package-lock.json —
+# every package, transitive ones included, pinned by version and integrity hash. The two direct
+# versions MUST equal the ones pnpm-lock.yaml resolves (what every test and the dev server run
+# against): tests/dockerfile-reproducible.test.ts fails the required checks the moment they differ,
+# and `node scripts/sync-runtime-extras.mjs` rewrites both files from pnpm-lock.yaml.
+# DELIBERATELY npm (the repo package manager is pnpm): an isolated install of two packages into
+# /tmp, npm ships inside node:24-alpine, and pnpm here would need corepack + a store for zero
+# benefit in this final image layer.
+COPY infra/runtime-extras/package.json infra/runtime-extras/package-lock.json /tmp/runtime-extras/
+RUN cd /tmp/runtime-extras \
+ && npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error \
  && rm -rf /app/node_modules/sharp /app/node_modules/@img \
- && cp -R /tmp/node_modules/. /app/node_modules/ \
- && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
+ && cp -R /tmp/runtime-extras/node_modules/. /app/node_modules/ \
+ && rm -rf /tmp/runtime-extras
 
 # Fail the BUILD if sharp still cannot load, rather than discovering it as a 500 in production —
 # which is exactly how the 2026-08-22 outage was found. This is the check that would have caught it.

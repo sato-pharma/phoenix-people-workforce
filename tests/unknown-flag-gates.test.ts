@@ -174,6 +174,7 @@ const PINNED = [
   "scripts/staging-safe-rebuild.ts",
   "scripts/sync-marketing-venues-to-direct-orders.ts",
   "scripts/sync-railway-production-secrets.mjs",
+  "scripts/sync-runtime-extras.mjs",
   "scripts/sync-worktree-env.mjs",
   "scripts/synthetic-save-report.ts",
   "scripts/vacation-retention-purge.ts",
