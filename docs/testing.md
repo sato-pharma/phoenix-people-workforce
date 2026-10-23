@@ -185,6 +185,33 @@ stopping at the first. The eleven it runs, with the failing CI jobs each caused 
 owner ruled *"keep the pre-push test as a rule, no guard"* on 2026-10-04 — and the PR's own
 `validate` + `checks` remain the verdict.
 
+**Four more joined on 23 Oct 2026, from a second reading of the reds.** The failing-test lines of
+126 red PR runs between 8 and 23 Oct (all of 19-23 Oct, every third of 8-18 Oct) showed:
+
+- **27 (21%)** were red only on checks this script already ran.
+- **20 (16%)** were red only on ten tests that kept turning unrelated PRs red but were not in the table.
+
+The owner chose to add the ones that fit the offline rule, and four of the ten do:
+
+| Gate | PRs it turned red in that sample |
+| --- | --- |
+| `recruitment and the ATS carry the owner's premium polish` | 3 |
+| `the employee portal carries the owner's premium polish` | 2 |
+| `heredoc backslash damage sweep` | 2 |
+| `hr ids are stored in canonical casing everywhere` | 2 |
+
+The other six stay with the PR's own CI:
+
+- `every script that PARSES arguments refuses the one it has never heard of` (6 PRs) spawns every
+  argument-parsing script and ran past five minutes on the laptop.
+- `HR function governance` (5), `sidebar labels never clip` (3), `Phoenix CRM edges` (3) and the
+  `malformed uuid id guards` (2) reach `@/lib/supabase/server`, so they are not offline.
+- The `crm integrity board` signboard case (3) is a feature test, not a repo-wide one.
+
+**There is no hook that runs this script before a push, deliberately.** A pre-push hook's warning
+reaches the session only after the push has run, so it cannot stop the red run it warns about. Only
+a refusal could stop it, and the 2026-10-04 ruling rules out a refusal.
+
 #### The lint and migration reds, the typecheck it cannot reach
 
 `validate/Test` was 94 of the 106 failed runs, but it was not all of them, so the check reaches the
