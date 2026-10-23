@@ -20,7 +20,7 @@ It was last reviewed **2026-07-19**. Re-measured against production on **2026-09
 | `rls_enabled_no_policy` | INFO x23 | **176** |
 | `unused_index` | INFO x326 | **615** |
 | `function_search_path_mutable` | REMEDIATED | **10 functions** |
-| `extension_in_public` | *absent from this page* | 1 (`pg_trgm`) |
+| `extension_in_public` | *absent from this page* | 1 (`pg_trgm`) - **fixed 2026-10-23, now 0** |
 | `authenticated_security_definer_function_executable` | WARN x14 | **11** as of 2026-10-08 - correctly accepted, baseline lowered |
 
 The third row is the one that matters. This page states below, in its own words, that if
@@ -269,7 +269,30 @@ closed and wasn't.)*
 *(`pg_trgm` contributes 31 more unpinned functions. Those are the extension's, are excluded from
 the count, and are not this project's to fix - see below.)*
 
-### OPEN - `extension_in_public` (1) - and why moving it was REFUSED on 2026-09-30
+### FIXED - `extension_in_public` (0 since 2026-10-23, held at a floor of zero)
+
+**Moved on 2026-10-23**, by starting from the function as the paragraphs below asked:
+`20261023043536_move_pg_trgm_to_extensions_and_pin_scratch_search_path.sql` moves `pg_trgm` to
+`extensions` and rewrites `public.phx_suggest_direct_order_pharmacies` from `public.similarity` to
+`extensions.similarity` **in the same transaction**, then refuses to commit if either half did not
+take. Before writing it, every function body and view on production was scanned for a pg_trgm
+function or operator: the suggester was the only one.
+
+Proved on production after applying, not from the migration's success: both trigram indexes on
+`source_of_sales_customer_map` read `indisvalid`; the suggester returned **byte-identical** results
+(md5 of every row) for two probes measured before the move, one returning 20 rows and one returning 1;
+`phx_search_direct_order_customers`, which leans on the code index, still answers; and
+`phx_ci_advisor_counts()` reads `extension_in_public` 0. Staging was moved first and checked the
+same way.
+
+The same migration pinned `zz_search_proof.run_phase`, a scratch function from a search-speed
+proof that the advisor counted as `function_search_path_mutable` (our own count excludes that
+schema, which is why the baseline above still read 0). Its body is fully schema-qualified, so the
+pin changes nothing it resolves.
+
+*What follows is the 2026-09-30 refusal, kept because it is why the fix took this shape.*
+
+#### Why moving it was REFUSED on 2026-09-30
 
 `pg_trgm` is installed in `public`. Absent from this page before 2026-09-29; never triaged
 either way.
