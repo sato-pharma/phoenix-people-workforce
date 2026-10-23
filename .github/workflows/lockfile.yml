@@ -26,6 +26,17 @@ name: Lockfile
 
 on:
   workflow_dispatch:
+    inputs:
+      # `regenerate` (the default, what `remote-check.mjs lockfile` dispatches) brings the lockfile in line
+      # with manifests a branch CHANGED and moves nothing else. `refresh` is the weekly dependency refresh
+      # (scripts/deps-refresh/refresh.mjs, owner 2026-10-23): it re-resolves EVERY package, transitive ones
+      # included, to the newest version its declared range allows — the scheduled `pnpm update` the fast-uri
+      # note in pnpm-workspace.yaml called due after the fifth allow-but-resolve-below advisory.
+      mode:
+        description: "regenerate (match changed manifests) or refresh (re-resolve everything inside its range)"
+        type: choice
+        options: [regenerate, refresh]
+        default: regenerate
 
 permissions:
   contents: read
@@ -61,7 +72,16 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
 
       - name: Regenerate the lockfile
+        if: inputs.mode != 'refresh'
         run: pnpm install --lockfile-only --no-frozen-lockfile
+
+      # 🔴 `--no-save` KEEPS EVERY RANGE IN package.json AS WRITTEN, so a refresh can never widen what a person
+      # pinned: the exact pins (next, react) stay put and only caret/tilde ranges and transitive packages move.
+      # `--depth Infinity` is what reaches the transitive ones — a plain `pnpm update` touches direct
+      # dependencies only. The release-age quarantine still applies, so nothing younger than it is adopted.
+      - name: Refresh every dependency inside its declared range
+        if: inputs.mode == 'refresh'
+        run: pnpm update --depth Infinity --no-save
 
       - name: Upload the regenerated files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
