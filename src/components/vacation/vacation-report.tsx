@@ -51,6 +51,7 @@ import type {
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
+import { cairoDateTime12h } from "@/lib/format/cairo-datetime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   phxButtonApproveDenseClassName,
@@ -143,17 +144,11 @@ function formatDate(value: string | null | undefined) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+// An INSTANT, shown in Cairo. Built from digits (cairoDateTime12h), never by asking the browser:
+// an iPhone puts a narrow no-break space before "PM" where the server puts a plain one, and the page
+// re-renders this text in the browser, so the two disagreed (System Audit APP-C3275308).
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: true,
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date(value));
+  return cairoDateTime12h(value);
 }
 
 function statusBadgeVariant(status: VacationRequestStatus) {

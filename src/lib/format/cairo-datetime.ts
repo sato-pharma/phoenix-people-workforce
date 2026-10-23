@@ -229,3 +229,33 @@ export function stableEnGbFormatter(options: Intl.DateTimeFormatOptions): { form
 export function formatStableEnGb(value: Date, options: Intl.DateTimeFormatOptions): string {
   return stableEnGbFormatter(options).format(value);
 }
+
+
+/**
+ * "Oct 20, 2026, 02:04 PM" — the 12-hour Cairo form, built from digits so every engine prints the same bytes.
+ *
+ * `new Intl.DateTimeFormat("en", { hour12: true, timeZone: "Africa/Cairo", … })` printed this on the
+ * server, and an iPhone printed something else in two ways (System Audit APP-C3275308, the Vacation
+ * Report, 7 hydration mismatches for 4 people, 4 Sep – 20 Oct 2026):
+ *
+ *   - The space before AM/PM. Node 24 (ICU 78, the Railway server) emits a plain space; Safari's
+ *     WebKit — the engine every iPhone browser runs, Chrome and Edge included — emits U+202F, the
+ *     narrow no-break space CLDR 42 introduced. One invisible character, still a text node: #418.
+ *   - The hour itself on an older iPhone, whose timezone data predates Egypt's 2023 return to
+ *     daylight saving — an hour early for half the year.
+ *
+ * So no Intl call is made at all: `cairoWallClock` moves the instant with the shipped offset table
+ * and the parts are read off with getUTC*. The output is byte-for-byte what Node 24 printed before,
+ * so nothing on screen changes for anyone whose phone already agreed.
+ */
+export function cairoDateTime12h(iso: string | null | undefined): string {
+  const value = parseIsoInstant(iso);
+  if (!value) return "-";
+  const wall = cairoWallClock(value);
+  const hour24 = wall.getUTCHours();
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // en-US says "Sep" where CAIRO_MONTHS says "Sept"; every other name is already three letters, and
+  // one month table is the rule (tests/react-418-hydration-safe-text.test.ts).
+  return `${CAIRO_MONTHS[wall.getUTCMonth()].slice(0, 3)} ${pad(wall.getUTCDate())}, ${wall.getUTCFullYear()}, ${pad(hour12)}:${pad(wall.getUTCMinutes())} ${hour24 < 12 ? "AM" : "PM"}`;
+}

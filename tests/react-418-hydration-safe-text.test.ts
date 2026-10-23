@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
@@ -436,4 +436,53 @@ export function runReact418HydrationSafeTextTests() {
   // own regression test — tests/employee-portal-header-clock-hydration.test.ts. Deliberately not
   // re-pinned here: two tests guarding one line disagree the moment either is edited, and the one
   // that lives beside the fix is the one that will be kept honest.
+
+  // ── 4. The Vacation Report's 12-hour time (System Audit APP-C3275308) ───────────────────────
+  //
+  // "Oct 20, 2026, 02:04 PM" came from `Intl.DateTimeFormat("en", { hour12: true, timeZone:
+  // "Africa/Cairo" })` inside a "use client" component. The server (Node 24) puts a plain space
+  // before PM; every iPhone browser runs Safari's engine, which puts U+202F there — and an older
+  // iPhone also gets Cairo's hour wrong for half the year. 7 hydration mismatches, 4 people,
+  // 4 Sep – 20 Oct 2026. cairoDateTime12h builds the text from digits instead.
+  //
+  // (a) Nothing on screen changes: the output is exactly what the server printed before, across both
+  // daylight-saving seasons, midnight and noon.
+  const serverBefore = new Intl.DateTimeFormat("en", {
+    day: "2-digit", hour: "2-digit", hour12: true, minute: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric",
+  });
+  for (const iso of [
+    "2026-01-15T08:05:00Z", "2026-04-24T21:59:00Z", "2026-07-01T09:30:00Z", "2026-09-30T22:00:00Z",
+    "2026-10-20T11:04:21Z", "2026-10-29T21:00:00Z", "2026-12-31T22:00:00Z", "2026-06-15T10:00:00Z",
+  ]) {
+    assert.equal(cairoDateTime12h(iso), serverBefore.format(new Date(iso)).replace(/[\u202f\u00a0]/g, " "), `${iso}: the 12-hour Cairo text must read exactly as the server printed it before`);
+  }
+  assert.equal(cairoDateTime12h(null), "-", "an empty instant keeps the report's own dash");
+  assert.equal(cairoDateTime12h("not a date"), "-", "an unreadable instant is a dash, never 'Invalid Date'");
+
+  // (b) It asks the engine for nothing. Stand in for an iPhone: an Intl that answers with U+202F and
+  // with the hour one off. The text must not move.
+  const iphoneProbe = "2026-10-20T11:04:21Z";
+  const truth = cairoDateTime12h(iphoneProbe);
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+  try {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = function SafariLike(locale?: string, options?: Intl.DateTimeFormatOptions) {
+      const inner = new RealDateTimeFormat(locale, { ...options, timeZone: "UTC" });
+      const swap = (text: string) => text.replace(/ (AM|PM|am|pm)/g, "\u202f$1");
+      return {
+        format: (d: Date) => swap(inner.format(d)),
+        formatToParts: (d: Date) => inner.formatToParts(d).map((part) => ({ ...part, value: swap(part.value) })),
+        resolvedOptions: () => inner.resolvedOptions(),
+      };
+    } as unknown as typeof Intl.DateTimeFormat;
+    assert.equal(cairoDateTime12h(iphoneProbe), truth, "an engine that spaces PM with U+202F and has stale Cairo rules must still get the server's exact text");
+  } finally {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = RealDateTimeFormat;
+  }
+  assert.ok(!truth.includes("\u202f") && /^[\x20-\x7e]+$/.test(truth), `the 12-hour text is plain ASCII (got ${JSON.stringify(truth)})`);
+
+  // (c) The report uses it, and no longer asks the browser for a 12-hour Cairo time itself.
+  const vacationReport = codeOnly(read("src/components/vacation/vacation-report.tsx"));
+  assert.match(vacationReport, /function formatDateTime\([^)]*\)\s*\{\s*return cairoDateTime12h\(value\);/, "the Vacation Report formats its instants through cairoDateTime12h");
+  assert.doesNotMatch(vacationReport, /hour12\s*:\s*true/, "the Vacation Report must not ask the browser for a 12-hour time — that is the AM/PM space an iPhone draws differently");
+
 }
