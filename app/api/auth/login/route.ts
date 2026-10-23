@@ -503,11 +503,17 @@ export async function POST(request: Request) {
       sessionVersion: user.sessionVersion,
     });
 
-    // The bookkeeping of a sign-in that has already succeeded — the success row, the lockout reset
-    // and the audit line — runs AFTER the reply (src/lib/http/after-response.ts). Nothing in the
-    // reply depends on it and both calls already swallowed their failures; awaited here it was four
-    // more database round trips between the press and the page. The session row above is NOT
-    // deferred: the very next request reads it.
+    // The bookkeeping of a sign-in that has already succeeded. The success row and the lockout reset
+    // run AFTER the reply (src/lib/http/after-response.ts): nothing in the reply depends on them, they
+    // already swallowed their failures, and awaited here they were three more database round trips
+    // between the press and the page. The session row above is NOT deferred: the very next request
+    // reads it.
+    //
+    // 🔴 THE AUDIT ROW IS WRITTEN BEFORE THE REPLY, NEVER DEFERRED (owner, 23 Oct 2026: "write the
+    // successful-login audit row before the sign-in reply"). Deferred, it is lost whenever the
+    // process stops between the reply and the task — a deploy swaps the container exactly then — so
+    // someone could be signed in with no "Login succeeded" row saying so. Awaited, it costs one insert,
+    // and writeAuditLog never loses it: a slow write goes to the outbox, and it never throws.
     if (!ciSmokeMode) {
       // Read now, while the values are narrowed — the tasks run once this function has returned.
       const succeededLoginId = user.loginId;
@@ -528,10 +534,10 @@ export async function POST(request: Request) {
         },
         summary: "Login succeeded",
       };
+      await writeAuthAudit(successAudit);
       await afterResponse("auth.login.clear_failed_state", () =>
         clearFailedLoginState({ ip, loginId: succeededLoginId }),
       );
-      await afterResponse("auth.login.audit_success", () => writeAuthAudit(successAudit));
     }
 
     // The native app has no cookie jar we control, so it needs the token itself. Returned ONLY to a
