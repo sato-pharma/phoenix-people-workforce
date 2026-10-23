@@ -23,13 +23,45 @@ This executes `tests/run-tests.ts`, which imports and runs all registered test f
 `test:sharded` (`scripts/run-tests-sharded.mjs`) runs that same runner once per CPU with
 `PHX_TEST_SHARD=<i>/<n>`, which makes `runTest` execute only the calls `tests/shard-deal.ts` deals to
 shard i — the known slow tests placed first, the rest on the least-loaded shard (plain round-robin
-until 2026-10-23, which left the ~115 s unknown-flag test's shard ~80 s behind the others). Measured 2026-10-06 on 2
+until 2026-10-23, which left the then ~115 s unknown-flag test's shard ~80 s behind the others;
+that test is ~12 s since the same day — below). Measured 2026-10-06 on 2
 vCPU: serial 213s, two shards 129s. 🔴 **Its point is the REFUSAL, not the speed** — each shard
 prints `PHX_SHARD_RESULT shard=i/n seen=S ran=R` from an exit handler, and the parent fails unless
 every shard reported, all saw the same S, and the R's sum to it. Without that, a bad divisor or a
 shard that died quietly turns into a smaller suite reporting success, which is worse than no
 sharding. Every shard still IMPORTS every test file (three set `PHOENIX_AUTH_SECRET` at import
 time), so more shards than CPUs costs more than it buys.
+
+### The suite's slowest test, and the harness that cut it
+
+`tests/unknown-flag-gates.test.ts` probes **every** script that parses argv — 118 of them — with a
+bogus `--zzz-not-a-flag` through `PHX_FLAG_GATE_PROBE`, and until 2026-10-23 it did that by spawning
+one `node --experimental-strip-types` process per script. **The start-up cost, not the gates, was the
+test:** 75,909 ms on CI (run 39997087765, shard 3) and 110.5 s on the owner's laptop, against 16.2 s
+for the next slowest test in the whole suite — so one test was ~15% of a shard's wall clock.
+
+`tests/support/flag-gate-probe-driver.mjs` answers the probes in **shared** processes instead: a few
+groups, each importing its share of the pinned scripts in one process, rewriting `process.argv[1]` so
+every gate still judges a bare command line as its own, and the gate still exits inside the script so
+no script body ever runs. A script the groups cannot answer for — ESM caches a module once, so a
+second question to the same file would be answered from cache — falls back to its own spawn, and the
+test fails rather than skips if any pinned gate goes unanswered. Measured after: **12,047 ms** on CI
+(run 39998004516, shard 1) and 33.0 s on the laptop.
+
+🔴 **The driver may not know what a passing probe looks like.** The test asserts that the driver file,
+comments stripped, contains no `GATE-` literal at all — otherwise a driver that printed the expected
+lines itself would make every gate "pass" without running one. Two break proofs cover the two paths:
+widening a script's own `known` list to accept the bogus flag turns the test red naming that file,
+both for a script answered in process (`scripts/check-schema-shape.ts`) and for one answered through
+the spawn fallback (`scripts/validate-railway-production-secrets.mjs`).
+
+**Group width is read from free memory** — `min(4, availableParallelism, freemem / 900 MB)` — because
+four groups once took this laptop's free RAM from 2,065 MB to 273 MB, and `mem-watchdog.ps1` reaps a
+node job under 500 MB: a reaped probe reports nothing, which is indistinguishable from a lost gate.
+Grouping is contiguous blocks of a kind-then-path sort (25.1 / 25.8 / 26.2 s over three runs),
+measured against a round robin (29.3 / 40.6 s) and a weight-balanced split (39.3 s, rejected).
+`NODE_COMPILE_CACHE` was measured and made it worse; dropping the strip-types loader per probe is
+worth ~50 ms and is not the lever.
 
 ### Adding a Test
 
