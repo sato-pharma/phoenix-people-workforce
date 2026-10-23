@@ -1308,6 +1308,7 @@ import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
 import { runSosImportSummariesRefreshTests } from "./sos-import-summaries-refresh.test.ts";
 import { runSosBackupCoversEveryTableTests } from "./sos-backup-covers-every-table.test.ts";
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
+import { runSosMappingBackfillRollupErrorsTests } from "./sos-mapping-backfill-rollup-errors.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runCaptureTrustReadoutTests } from "./capture-trust-readout.test.ts";
@@ -5485,6 +5486,7 @@ await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes
 await runTest("SoS import summaries refresh (the dashboard's own aggregate is never frozen)", runSosImportSummariesRefreshTests);
 await runTest("SoS backup covers every table, and a restore rebuilds the rollups", runSosBackupCoversEveryTableTests);
 await runTest("SoS backfill matches the empty-string brick sentinel, not just NULL", runSosBackfillEmptyBrickSentinelTests);
+await runTest("a mapping save reports a failed totals rebuild and stops the chain, never leaving a batch silently stale", runSosMappingBackfillRollupErrorsTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
