@@ -113,7 +113,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "11", crmUsername: "Sys.Eleven", employmentStatus: "system_placeholder", fullName: "System Eleven", displayName: "System Eleven", hireDate: "2024-01-01", hrId: "A-11", jobTitle: "National Sales Manager", positionTitle: null },
   ];
 
-  const { matrix, ownRegularCountByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+  const { matrix, ownRegularCountByHrKeyAndDate, ownSplitByHrKeyAndDate, rideAlongSplitByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     employees,
     month: 5,
     year: 2026,
@@ -161,6 +161,15 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     undefined,
     "the ride-along manager has ZERO own visits on the joint day (double-credit only) — the portal renders this as a DV coaching day, never a duplicated visit count",
   );
+
+  // The same split AM · PM · Pharmacies (owner, 2026-10-23: the square prints each figure apart, "same for district
+  // managers"). An unmarked period counts as PM, the golden rule's own reading. The joint visit is Rep One's own and the
+  // manager's RIDE-ALONG — never his own — so his row never adds the rep's visits on top of his.
+  const key = (hr: string, dateIso: string) => `${canonicalHrIdKey(hr)}|${dateIso}`;
+  assert.deepEqual(ownSplitByHrKeyAndDate.get(key("A-1", "2026-05-05")), { am: 0, pharmacies: 0, pm: 1 }, "the rep's own split");
+  assert.deepEqual(rideAlongSplitByHrKeyAndDate.get(key("A-6", "2026-05-05")), { am: 0, pharmacies: 0, pm: 1 }, "the manager's ride-along split");
+  assert.equal(ownSplitByHrKeyAndDate.get(key("A-6", "2026-05-05")), undefined, "and nothing in his own");
+  assert.equal(rideAlongSplitByHrKeyAndDate.get(key("A-1", "2026-05-05")), undefined, "the rep rode along with nobody");
 
   // --- Mirror-row parity: visitFromMirrorRow -> buildIReports360FieldWorkforceMatrix must
   // produce IDENTICAL classification to feeding the equivalent IReports360Visit objects

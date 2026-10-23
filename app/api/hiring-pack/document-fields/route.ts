@@ -22,6 +22,7 @@ import {
 } from "@/lib/hiring-pack/document-registry";
 import { HIRING_PACK_DOCUMENTS, isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ function apiError(error: unknown) {
       status: 409,
     };
   }
-  return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
+  return { message: clientSafeErrorMessage(error, "Something went wrong."), status: 500 };
 }
 
 /**

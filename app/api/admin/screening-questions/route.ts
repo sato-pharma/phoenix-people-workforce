@@ -12,6 +12,7 @@ import {
 import type { ScreeningQuestionKind, ScreeningQuestionOption } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 import { recomputeCompletenessForRoles } from "@/lib/recruitment/workspace/completeness";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ function failure(error: unknown, code: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = clientSafeErrorMessage(error, "The screening questions could not be updated.");
   return NextResponse.json({ error: code, message }, { status: 400 });
 }
 

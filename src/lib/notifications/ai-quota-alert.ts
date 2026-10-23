@@ -3,7 +3,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
-import type { AiCallProvider, AiCallRecord } from "@/lib/observability/ai-metrics";
+import { aiProviderLabel, type AiCallProvider, type AiCallRecord } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 
 /**
@@ -33,18 +33,13 @@ function cairoDayKey(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 }
 
-// The account's name as the alarm says it.
-const PROVIDER_LABELS: Record<AiCallProvider, string> = {
-  anthropic: "Anthropic",
-  generic: "The AI provider",
-  groq: "Groq",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-};
-
-/** The name the alarm gives the account that ran out — the provider the failing call was billed to. */
+/**
+ * The name the alarm gives the account that ran out — the provider the failing call was billed to.
+ * One copy of those names, in ai-metrics.ts, because the failed-over row on the board names an account too
+ * and two maps would drift.
+ */
 export function aiQuotaProviderLabel(provider: AiCallProvider): string {
-  return PROVIDER_LABELS[provider] ?? PROVIDER_LABELS.generic;
+  return aiProviderLabel(provider);
 }
 
 /**

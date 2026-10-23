@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -17,16 +17,17 @@ import {
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { managerVisitLine } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
-  managerVisitAreaLines,
-  managerVisitClock,
-  managerVisitCustomerType,
-  managerVisitHalfLabel,
-  managerVisitLine,
-  type ManagerDayVisit,
-} from "@/lib/phoenix-crm/manager-visit-detail";
+  PRIVATE_CALENDAR_CATEGORY_LABELS,
+  PRIVATE_CALENDAR_COMPANION_LABELS,
+  privateCalendarDayTile,
+  privateCalendarPlanText,
+  type PrivateCalendarDayTile,
+} from "@/lib/private-calendar/day-tile";
 import {
   privateCalendarActivityKindLabels,
+  isPrivateCalendarVisitKind,
   privateCalendarActivityKinds,
   privateCalendarItemKind,
   privateCalendarVisitKinds,
@@ -46,10 +47,18 @@ import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -100,6 +109,10 @@ function dayLabel(value: string) {
     timeZone: "UTC",
     weekday: "long",
   }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function shortMonthLabel(value: string) {
+  return new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
 function reportDateLabel(value: string) {
@@ -428,49 +441,77 @@ function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitl
 }
 
 /**
- * A district manager's visits inside a month cell, one block per visit, each field on its own line (owner, 2026-10-20:
- * "list them under each other, full details" — and "show area/brick on the calendar itself, the address in the details").
- * The old flat line ("8:17 PM · PM half · <Arabic name> · Neurology · Grade A · Brick …") let the browser's bidirectional
- * text rules shuffle an Arabic name against the Latin separators; here the clock + half, the name, the type and the
- * place are separate lines and every Arabic-capable value is isolated (`bdi`), so nothing reorders across a dot.
- * Fragment on purpose: each block is a direct child of the chip, so the chip's `divide-y` rules the visits too.
+ * A visit entry inside a month cell — a SUMMARY, never a list (owner, 2026-10-23: "in the calendar tile itself show the
+ * count of the AM and the count of PM and the count of pharmacies, and if it is double or single … the area … don't
+ * mention names … when I press on the day, the details appear down"). It prints the kind, the category, the plan state,
+ * the three figures apart (a pharmacy in the violet of the Phoenix CRM calendar, never inside PM), who the visits were
+ * made with, and the brick and the area. Every customer, address and per-visit card is the Daily Timeline's.
+ * Every name that may be Arabic sits in a `bdi`, so the browser's bidirectional rules never reorder it across a dot.
  */
-function ManagerVisitChipRows({ visits }: { visits: readonly ManagerDayVisit[] }) {
+function VisitDayTile({ item, tile, viewMode }: { item: PrivateCalendarItem; tile: PrivateCalendarDayTile; viewMode: PrivateCalendarViewMode }) {
+  const planText = privateCalendarPlanText(tile.plan);
+  const figures: Array<{ label: string; value: number; violet?: boolean }> = [
+    { label: "AM", value: tile.split.am },
+    { label: "PM", value: tile.split.pm },
+    { label: "Pharmacies", value: tile.split.pharmacies, violet: true },
+  ];
+  const tags = [PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion], PRIVATE_CALENDAR_CATEGORY_LABELS[tile.category], planText].filter(
+    (tag): tag is string => Boolean(tag),
+  );
   return (
-    <>
-      {visits.map((visit) => {
-        const type = managerVisitCustomerType(visit);
-        const place = managerVisitAreaLines(visit);
-        return (
-          <span className="block py-1 [overflow-wrap:anywhere]" key={visit.id}>
-            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              <span className="font-black tabular-nums text-slate-900">{managerVisitClock(visit.loggedAt)}</span>
-              <span className="bg-white/80 px-1 font-black uppercase tracking-[0.08em] text-slate-700 ring-1 ring-inset ring-black/10">
-                {managerVisitHalfLabel(visit)}
-              </span>
-              {/* A rep's day mixes single and double visits (owner, 2026-10-21), so anything but a single says who went. */}
-              {visit.kind !== "single" ? (
-                <span className="bg-white/80 px-1 font-black uppercase tracking-[0.08em] text-slate-700 ring-1 ring-inset ring-black/10">
-                  {visit.kindLabel}
-                </span>
-              ) : null}
-            </span>
-            <bdi className="mt-0.5 block font-black text-slate-900">{visit.customerName}</bdi>
-            {type ? <bdi className="block">{type}</bdi> : null}
-            {place.length > 0 ? (
-              <span className="block text-slate-500">
-                {place.map((part, index) => (
-                  <Fragment key={part}>
-                    {index > 0 ? " · " : ""}
-                    <bdi>{part}</bdi>
-                  </Fragment>
-                ))}
-              </span>
-            ) : null}
+    <span
+      className={[
+        "block px-1.5 py-1.5 text-phx-2xs font-semibold leading-tight text-slate-600 [overflow-wrap:anywhere]",
+        kindChipTone(privateCalendarItemKind(item)),
+        severityOutline(item.severity),
+      ].join(" ")}
+      title={chipTitle(item, viewMode)}
+    >
+      {viewMode === "team" && item.employeeName ? <bdi className="mb-1 block font-black text-slate-900">{item.employeeName}</bdi> : null}
+      <span className="flex flex-wrap gap-1">
+        {tags.map((tag) => (
+          <span className="bg-white/80 px-1 py-0.5 font-black uppercase tracking-[0.08em] text-slate-800 ring-1 ring-inset ring-black/10" key={tag}>
+            {tag}
           </span>
-        );
-      })}
-    </>
+        ))}
+      </span>
+      <span className="mt-1.5 block divide-y divide-black/10 bg-white/85 ring-1 ring-inset ring-black/10">
+        {figures.map((figure) => (
+          <span
+            className={[
+              "flex flex-wrap items-center justify-between gap-x-2 px-1.5 py-0.5",
+              figure.violet && figure.value > 0 ? "bg-violet-600 text-white" : figure.value === 0 ? "text-slate-400" : "text-slate-900",
+            ].join(" ")}
+            key={figure.label}
+          >
+            <span className="whitespace-nowrap font-black uppercase tracking-[0.08em]">{figure.label}</span>
+            <span className="text-xs font-black tabular-nums">{figure.value}</span>
+          </span>
+        ))}
+      </span>
+      {tile.withNames.length > 0 ? (
+        <span className="mt-1.5 block">
+          <span className="font-black uppercase tracking-[0.08em] text-slate-500">With </span>
+          <bdi className="font-black text-slate-900">{tile.withNames.join(", ")}</bdi>
+        </span>
+      ) : null}
+      {tile.bricks.length > 0 || tile.areas.length > 0 ? (
+        <span className="mt-1 block text-slate-600">
+          {tile.bricks.length > 0 ? (
+            <span className="block">
+              <span className="font-black uppercase tracking-[0.08em] text-slate-500">Brick </span>
+              <bdi>{tile.bricks.join(", ")}</bdi>
+            </span>
+          ) : null}
+          {tile.areas.length > 0 ? (
+            <span className="block">
+              <span className="font-black uppercase tracking-[0.08em] text-slate-500">Area </span>
+              <bdi>{tile.areas.join(", ")}</bdi>
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -565,21 +606,21 @@ export function PrivateCalendar({
   // to distinguish anymore, so this flag currently has no effect on what renders.
   const actualOnly = surface === "employee";
   // One flat, bordered panel on both surfaces. The employee surface used to add a gradient band
-  // and floating shadow-lg / ring panels directly under the portal's own navy page header — two
+  // and floating / ring panels directly under the portal's own navy page header — two
   // dark bands stacked, in a look no other portal page uses.
-  const panelClass = "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm";
-  const secondaryPanelClass = panelClass;
+  const panelClass = `overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`;
+  const secondaryPanelClass = `overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`;
   // Raw HR IDs and source tables/record IDs are for a desk, which resolves people and records by
   // ID. On the employee surface a person is their name — a rep never needs his own ID beside it.
   const deskDetail = showDeskDetail ?? isWorkspaceSurface;
   const showHrIds = deskDetail;
   const inputClass = isWorkspaceSurface
-    ? `h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${adminControlDepthClassName}`
-    : "h-9 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
+    ? `h-9 w-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${adminControlDepthClassName}`
+    : "h-9 w-full border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
   const searchInputClass = isWorkspaceSurface
-    ? `h-9 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 ${adminControlDepthClassName}`
-    : "h-9 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
-  const controlRadiusClass = "rounded-sm";
+    ? `h-9 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 ${adminControlDepthClassName}`
+    : "h-9 w-full border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
+  const controlRadiusClass = "";
 
   const employeeByHrId = useMemo(
     () => new Map(visibleEmployees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee])),
@@ -929,7 +970,7 @@ export function PrivateCalendar({
   return (
     <div className={isWorkspaceSurface ? "space-y-5" : "space-y-6"}>
       {!workspace.schemaReady ? (
-        <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+        <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           Some private calendar sources are temporarily unavailable.
         </div>
@@ -937,37 +978,37 @@ export function PrivateCalendar({
 
       {/* ── Header + Metrics ── */}
       <section className={panelClass}>
-        <div className="border-b border-slate-200 bg-slate-950 px-5 py-4">
+        <div className={[adminPanelHeaderClassName, "px-5 py-5"].join(" ")}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-center gap-2 empty:hidden">
                 {/* The portal page header above already names the page, so the employee surface
                     does not say "Private Calendar" a third time. */}
                 {isWorkspaceSurface ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                  <span className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
                     Private Calendar
                   </span>
                 ) : null}
                 {workspace.access.isGlobalViewer ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-info-bg ring-1 ring-phx-info-line/30">
+                  <span className="inline-flex items-center gap-1.5 bg-phx-info/20 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-info-bg ring-1 ring-phx-info-line/30">
                     Global view
                   </span>
                 ) : null}
                 {isTeamView ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
+                  <span className="inline-flex items-center gap-1.5 bg-indigo-500/20 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
                     Team mode
                   </span>
                 ) : null}
               </div>
-              <h2 className="text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-300">
+              <h2 className="text-3xl font-black leading-none tracking-tight text-white">{monthLabel(year, month)}</h2>
+              <p className="mt-2 text-sm font-semibold text-slate-300">
                 {isTeamView
                   ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
                   : selectedEmployee.fullName}{" "}
                 {!isTeamView && showHrIds ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-400">
-                {isPending ? "Syncing…" : lastSyncedAt ? `Synced at ${formatSyncedAt(lastSyncedAt)}` : null}
+                {isPending ? "Syncing" : lastSyncedAt ? `Synced at ${formatSyncedAt(lastSyncedAt)}` : null}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1023,7 +1064,7 @@ export function PrivateCalendar({
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
-                  className={["h-9 bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
+                  className={["h-9 bg-orange-500 px-4 text-sm font-black text-white transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
                   disabled={isPending}
                   onClick={goToday}
                   type="button"
@@ -1062,7 +1103,7 @@ export function PrivateCalendar({
       </section>
 
       {message ? (
-        <div className="flex items-center gap-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm">
+        <div className="flex items-center gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {message}
         </div>
@@ -1104,7 +1145,7 @@ export function PrivateCalendar({
                     <input
                       className={searchInputClass}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search calendar…"
+                      placeholder="Search calendar"
                       value={query}
                     />
                   </span>
@@ -1413,7 +1454,7 @@ export function PrivateCalendar({
                       : isFriday
                         ? "bg-slate-50 text-slate-900 hover:bg-orange-50/60"
                         : "bg-white text-slate-900 hover:bg-orange-50/60",
-                    selected ? "ring-2 ring-inset ring-orange-500" : "",
+                    selected ? "bg-orange-50/50 ring-2 ring-inset ring-orange-500" : "",
                   ].join(" ")}
                   disabled={!date}
                   key={`${date ?? "blank"}-${index}`}
@@ -1470,18 +1511,19 @@ export function PrivateCalendar({
                       </span>
                     ))}
                     {dayItems.slice(0, visibleItemCount).map((item) => {
+                      const tile = privateCalendarDayTile(item);
+                      if (tile) return <VisitDayTile item={item} key={item.id} tile={tile} viewMode={viewMode} />;
+                      // Every other entry keeps its short chip. A visit entry that cannot make a tile still never lists customers
+                      // here: its first two lines are the kind and the counts, the rest is the Daily Timeline's.
+                      const isVisit = isPrivateCalendarVisitKind(privateCalendarItemKind(item));
                       const baseLines = item.chipLines ?? [item.title];
-                      // A manager's own visits arrive as the LAST `managerVisits.length` lines of `chipLines` (one flat line
-                      // per visit, for the text surfaces); the cell draws them structured instead (ManagerVisitChipRows).
-                      const visitRows = item.managerVisits ?? [];
-                      const structured = visitRows.length > 0 && baseLines.length >= visitRows.length;
-                      const headLines = structured ? baseLines.slice(0, baseLines.length - visitRows.length) : baseLines;
+                      const headLines = isVisit ? baseLines.slice(0, 2) : baseLines;
                       const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...headLines] : headLines;
                       return (
                         <span
                           className={[
-                            // The first line names the entry (Office, the visit kind, the vacation type)
-                            // in strong ink; the lines under it are its detail in a softer one.
+                            // The first line names the entry (Office, the vacation type) in strong ink; the lines
+                            // under it are its detail in a softer one.
                             "block divide-y divide-black/15 px-1.5 py-0.5 text-phx-2xs font-semibold leading-tight text-slate-600 [&>span:first-child]:font-black [&>span:first-child]:text-slate-900",
                             kindChipTone(privateCalendarItemKind(item)),
                             severityOutline(item.severity),
@@ -1492,7 +1534,6 @@ export function PrivateCalendar({
                           {lines.map((line, lineIndex) => (
                             <span className="block py-1 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
                           ))}
-                          {structured ? <ManagerVisitChipRows visits={visitRows} /> : null}
                         </span>
                       );
                     })}
@@ -1506,16 +1547,25 @@ export function PrivateCalendar({
               );
             })}
           </div>
+          <p className="border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-phx-xs font-semibold text-slate-500">
+            Each day shows its counts and tags. Press a day to read its visits in full in the Daily Timeline below.
+          </p>
         </section>
 
         {/* ── Daily Timeline ── */}
         <section className={panelClass}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
-            <div>
-              <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
-                Daily Timeline
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center bg-slate-950 text-white">
+                <span className="text-xl font-black leading-none tabular-nums">{Number(selectedDate.slice(8, 10))}</span>
+                <span className="mt-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-white/70">{shortMonthLabel(selectedDate)}</span>
               </div>
-              <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+              <div>
+                <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
+                  Daily Timeline
+                </div>
+                <h3 className="mt-1 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
@@ -1523,7 +1573,7 @@ export function PrivateCalendar({
               </span>
               {canActOnOwnDay ? (
                 <button
-                  className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                  className="inline-flex h-8 items-center gap-1.5 border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
                   onClick={() => { setDisputeFormOpen((open) => !open); setDisputeMessage(null); }}
                   type="button"
                 >
@@ -1543,7 +1593,7 @@ export function PrivateCalendar({
               <textarea
                 className={`${phxTextareaClassName} mt-3`}
                 onChange={(event) => setDisputeClaimText(event.target.value)}
-                placeholder="What actually happened this day..."
+                placeholder="What actually happened this day"
                 rows={3}
                 value={disputeClaimText}
               />
@@ -1565,18 +1615,14 @@ export function PrivateCalendar({
               {disputeMessage ? <p className="mt-2 text-xs font-bold text-sky-900">{disputeMessage}</p> : null}
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  className="rounded-sm bg-sky-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-sky-700 disabled:opacity-50"
+                  className={phxButtonAccentClassName}
                   disabled={disputeSubmitting}
                   onClick={submitDayDispute}
                   type="button"
                 >
-                  {disputeSubmitting ? "Submitting…" : "Submit"}
+                  {disputeSubmitting ? "Submitting" : "Submit"}
                 </button>
-                <button
-                  className="rounded-sm border border-sky-300 px-4 py-1.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
-                  onClick={() => setDisputeFormOpen(false)}
-                  type="button"
-                >
+                <button className={phxButtonGhostClassName} onClick={() => setDisputeFormOpen(false)} type="button">
                   Cancel
                 </button>
               </div>
@@ -1616,7 +1662,7 @@ export function PrivateCalendar({
 
             <section className={selectedExceptions.length > 0 ? "min-w-0" : "min-w-0 xl:col-span-2"}>
               {timelineItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+                <div className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
                   <p className="text-sm font-semibold text-slate-400">No calendar items for this day.</p>
                 </div>
               ) : (
@@ -1648,7 +1694,7 @@ function PrivateCalendarAgenda({
 }) {
   if (agendaDays.length === 0) {
     return (
-      <div className="border border-slate-200 bg-white p-10 text-center shadow-sm">
+      <div className={`border border-slate-200 bg-white p-10 text-center ${adminSoftDepthClassName}`}>
         <p className="text-sm font-bold text-slate-500">No calendar items this month.</p>
       </div>
     );
@@ -1656,7 +1702,7 @@ function PrivateCalendarAgenda({
   return (
     <div className="space-y-3">
       {agendaDays.map(({ date, dayExceptions, dayItems }) => (
-        <div className="overflow-hidden border border-slate-200 bg-white shadow-sm" key={date}>
+        <div className={`overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={date}>
           <button
             className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
             onClick={() => onSelectDate(date)}
@@ -1887,7 +1933,7 @@ function KeyFigures({
 function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummary"] }) {
   const sortedRows = [...rows].sort((left, right) => right.exceptionCount - left.exceptionCount || left.fullName.localeCompare(right.fullName));
   return (
-    <section className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm">
+    <section className={`overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
           <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
@@ -1895,7 +1941,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
           </div>
           <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
         </div>
-        <span className="rounded-sm bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+        <span className="bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
           {rows.length} employee{rows.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -1961,7 +2007,7 @@ function VerificationSourceMultiSelect({
   return (
     <div className="relative mt-2">
       <button
-        className={["flex w-full items-center justify-between rounded-sm border bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none", borderClass, focusRingClass].join(" ")}
+        className={["flex w-full items-center justify-between border bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none", borderClass, focusRingClass].join(" ")}
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
@@ -1971,15 +2017,15 @@ function VerificationSourceMultiSelect({
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       </button>
       {open ? (
-        <div className="absolute z-10 mt-1 w-full rounded-sm border border-slate-200 bg-white p-1.5 shadow-lg">
+        <div className={`absolute z-10 mt-1 w-full border border-slate-200 bg-white p-1.5 ${adminPanelDepthClassName}`}>
           {verificationSourceOptions.map((option) => (
-            <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50" key={option}>
+            <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50" key={option}>
               <input checked={selected.includes(option)} onChange={() => toggle(option)} type="checkbox" />
               {option}
             </label>
           ))}
           <button
-            className="mt-1 w-full rounded-sm bg-slate-100 px-2 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-200"
+            className="mt-1 w-full bg-slate-100 px-2 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-200"
             onClick={() => setOpen(false)}
             type="button"
           >
@@ -1994,7 +2040,7 @@ function VerificationSourceMultiSelect({
 function ExceptionItem({ exception, showHrIds }: { exception: PrivateCalendarException; showHrIds: boolean }) {
   const tone = exceptionTone(exception.severity);
   return (
-    <article className={["border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
+    <article className={["border-l-4 p-4 ring-1", tone.border, tone.panelStrong].join(" ")}>
       <div className="min-w-0">
         <h4 className={["text-sm font-black", tone.title].join(" ")}>
           {exception.title}
@@ -2038,7 +2084,7 @@ function TimelineItem({
   return (
     <article
       className={[
-        "overflow-hidden border-l-4 bg-white shadow-sm ring-1",
+        "overflow-hidden border-l-4 bg-white ring-1",
         item.severity === "danger" ? "ring-red-300" : item.severity === "warning" ? "ring-orange-300" : "ring-slate-200/70",
         kindAccentColor(privateCalendarItemKind(item)),
         // A day that carries a table (a manager's plan against his visits) takes the whole row, so the table gets a
@@ -2085,7 +2131,7 @@ function TimelineItem({
 
         {plainDetailLines(item).length > 0 ? (
           <ul className="mt-3 space-y-1 text-xs font-semibold text-slate-600">
-            {plainDetailLines(item).map((line) => <li key={line} className="flex items-start gap-1.5"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" />{line}</li>)}
+            {plainDetailLines(item).map((line) => <li key={line} className="flex items-start gap-1.5"><span className="mt-1 h-1 w-1 shrink-0 bg-slate-400" />{line}</li>)}
           </ul>
         ) : null}
 
@@ -2102,7 +2148,7 @@ function TimelineItem({
         ) : null}
 
         {item.approvalImpact ? (
-          <div className="mt-3 rounded-sm bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
+          <div className="mt-3 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
             {item.approvalImpact}
           </div>
         ) : null}

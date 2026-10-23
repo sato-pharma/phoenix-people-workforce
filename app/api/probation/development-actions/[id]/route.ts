@@ -6,6 +6,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { canDecideProbation } from "@/lib/probation/intelligence/decision";
 import { updateDevelopmentAction } from "@/lib/probation/intelligence/dev-actions";
 import type { ProbationDevelopmentActionStatus } from "@/lib/probation/intelligence/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function PATCH(
     }, { hrId: access.hrId, loginId: access.loginId });
     return NextResponse.json({ action });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     const message = String((error as { message?: unknown })?.message ?? error);
     if (message.toLowerCase().includes("not found")) return NextResponse.json({ error: message }, { status: 404 });
     return NextResponse.json({ error: message }, { status: 500 });

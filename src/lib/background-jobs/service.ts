@@ -60,6 +60,86 @@ export async function claimNextBackgroundJob(jobTypes: string[]): Promise<Backgr
   return job;
 }
 
+/**
+ * How long a job may sit in `processing` without a write before it is treated as abandoned. The only
+ * producer today is the admin data backup, which builds in minutes, and the drain runs weekly — so a
+ * `processing` row an hour old belongs to a process that died (a crash, a redeploy) mid-job.
+ */
+export const STALE_BACKGROUND_JOB_MINUTES = 60;
+
+export const STALE_BACKGROUND_JOB_MESSAGE =
+  "The job was interrupted (a restart, a deploy or a crash) while it was running.";
+
+type StaleBackgroundJob = Pick<BackgroundJob, "attempts" | "id" | "max_attempts" | "updated_at">;
+
+/**
+ * What recovery writes for one abandoned `processing` job. Pure, so the attempt budget is tested
+ * without a database.
+ *
+ * F-05 (23 Oct 2026 audit): the claim takes only `queued` rows and nothing else ever looked at a
+ * `processing` one, so a job whose process died mid-run stayed `processing` for good and its
+ * `max_attempts` was never read. The claim already counts each attempt; this decides from that count
+ * whether the job gets another run (`queued`) or is finished as `failed`.
+ */
+export function planStaleBackgroundJobRecovery(job: StaleBackgroundJob, nowIso: string) {
+  const attempts = Number(job.attempts ?? 0);
+  const maxAttempts = Number(job.max_attempts ?? 3);
+  if (attempts >= maxAttempts) {
+    return {
+      error: `${STALE_BACKGROUND_JOB_MESSAGE} It used all ${maxAttempts} attempts.`,
+      finished_at: nowIso,
+      status: "failed" as const,
+      updated_at: nowIso,
+    };
+  }
+  return {
+    error: STALE_BACKGROUND_JOB_MESSAGE,
+    started_at: null,
+    status: "queued" as const,
+    updated_at: nowIso,
+  };
+}
+
+type BackgroundJobsClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
+
+/**
+ * Re-queues (or, out of attempts, fails) every job left `processing` past the stale window. Each write
+ * is conditional on the row still being `processing` with the SAME `updated_at` it was read with, so a
+ * job a live worker touched in between is never disturbed. `client` and `nowMs` are injectable for the
+ * tests.
+ */
+export async function recoverStaleBackgroundJobs(
+  client?: BackgroundJobsClient,
+  nowMs: number = Date.now(),
+): Promise<{ failed: number; requeued: number }> {
+  const supabase = client ?? getSupabaseAdmin();
+  const cutoff = new Date(nowMs - STALE_BACKGROUND_JOB_MINUTES * 60_000).toISOString();
+  const { data, error } = await supabase
+    .from("background_jobs")
+    .select("id,attempts,max_attempts,updated_at")
+    .eq("status", "processing")
+    .lt("updated_at", cutoff);
+  if (error) throw error;
+
+  let failed = 0;
+  let requeued = 0;
+  for (const job of (data ?? []) as StaleBackgroundJob[]) {
+    const plan = planStaleBackgroundJobRecovery(job, new Date(nowMs).toISOString());
+    const { data: written, error: writeError } = await supabase
+      .from("background_jobs")
+      .update(plan)
+      .eq("id", job.id)
+      .eq("status", "processing")
+      .eq("updated_at", job.updated_at)
+      .select("id");
+    if (writeError) throw writeError;
+    if ((written ?? []).length === 0) continue;
+    if (plan.status === "failed") failed += 1;
+    else requeued += 1;
+  }
+  return { failed, requeued };
+}
+
 export async function getBackgroundJob(id: string): Promise<BackgroundJob | null> {
   const { data, error } = await getSupabaseAdmin().from("background_jobs").select("*").eq("id", id).maybeSingle();
   if (error) throw error;

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { logAppError } from "@/lib/error-monitor/service";
-import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
   createMarketingRequestDraft,
   getMarketingRequestDraftWorkspace,
@@ -69,11 +69,7 @@ function marketingDraftApiError(error: unknown) {
     };
   }
 
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : String(error ?? "");
+  const message = errorMessageOf(error);
   const normalized = message.toLowerCase();
   // A real data/constraint error (e.g. a foreign-key violation on an approval step) is NOT a
   // missing schema — never mask it as "schema not applied", or the true cause stays hidden.

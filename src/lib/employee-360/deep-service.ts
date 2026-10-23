@@ -17,6 +17,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
+import { addBucketToSplit, emptyVisitCountSplit, mergeVisitCountSplits, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import {
   phoenixDetailViewer,
@@ -1060,6 +1062,14 @@ export type LeadershipActivity = {
   coachingRepsReached: number;
   avgScoreGiven: number | null;
   dvConducted: number;
+  /** The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23) — a campaign or admin row is in none. */
+  dvSplit: VisitCountSplit;
+  /**
+   * His OWN single visits logged in Phoenix CRM, which no visits door carries (owner, 2026-10-23: "the manager himself
+   * can submit a single visit … any record submitted by himself … must appear"). Null when that read failed — never
+   * a zero that was not measured.
+   */
+  ownSingle: { visits: number; split: VisitCountSplit } | null;
   dvRepsReached: number;
   distinctRepsReached: number;
   byRep: LeaderRepTouch[];
@@ -1083,6 +1093,9 @@ type DeliveredCoachingRow = {
 type ConductedDvRow = {
   agent_hr_id: string | null;
   agent_name: string | null;
+  ampm?: string | null;
+  speciality?: string | null;
+  source?: string | null;
   visit_date: string | null;
   visit_type: number | null;
   visit_type_description: string | null;
@@ -1175,6 +1188,40 @@ async function computeLeaderImpact(
   };
 }
 
+/**
+ * The AM · PM · Pharmacies bucket a conducted double visit counts in, or null for a campaign or admin row. Through
+ * `visitCountBucket`, the golden rule's one helper; a pharmacy is a pharmacy whatever its period.
+ */
+export function conductedVisitBucket(row: Pick<ConductedDvRow, "ampm" | "comment" | "source" | "speciality" | "visit_type" | "visit_type_description">) {
+  const bucket = visitCountBucket({
+    ampm: row.ampm ?? null,
+    comment: row.comment,
+    source: row.source ?? null,
+    speciality: row.speciality ?? null,
+    visit_type: row.visit_type,
+    visit_type_description: row.visit_type_description,
+  });
+  if (bucket === "Pharmacies") return bucket;
+  return classifyVisit(row.visit_type, row.comment, row.visit_type_description).bucket === "regular" ? bucket : null;
+}
+
+/** His own Phoenix CRM single visits in the window, through the only door out of that table. A failed read is null. */
+async function readOwnSingleVisits(hrId: string, window: Employee360Window): Promise<{ visits: number; split: VisitCountSplit } | null> {
+  try {
+    const days = await loadManagerOwnVisitDays({ end: window.to, managerHrIds: [hrId], start: window.from });
+    const split = emptyVisitCountSplit();
+    let visits = 0;
+    for (const day of days) {
+      visits += day.visits;
+      if (day.split) mergeVisitCountSplits(split, day.split);
+    }
+    return { split: { am: split.am, pharmacies: split.pharmacies, pm: split.pm }, visits };
+  } catch (error) {
+    console.error("[employee-360] the manager's own single visits could not be read", error);
+    return null;
+  }
+}
+
 async function getLeadershipActivity(
   hrId: string,
   window: Employee360Window,
@@ -1203,11 +1250,12 @@ async function getLeadershipActivity(
       // a partner on a Meeting/Training/Vacation row is not one. And collapse burst-duplicate
       // re-saves so the headline count matches the canonical double-visit definition.
       visitTypes: CRM_DOUBLE_VISIT_TYPE_CODES,
-      columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
+      columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source",
       limit: 8000,
       collapseDoubleVisits: true,
     }),
   ]);
+  const ownSingle = await readOwnSingleVisits(hrId, window);
   if (coachRes.error) throw new Error(`Employee 360 coaching delivered: ${coachRes.error.message}`);
 
   const coachRows = ((coachRes.data ?? []) as DeliveredCoachingRow[]).filter(
@@ -1246,8 +1294,11 @@ async function getLeadershipActivity(
 
   const dvByRepForImpact = new Map<string, { exactIds: Set<string>; dates: string[] }>();
   const recentDv: LeaderDvEvent[] = [];
+  const dvSplit = emptyVisitCountSplit();
   for (const r of dvRows) {
     if (!r.visit_date) continue;
+    const countBucket = conductedVisitBucket(r);
+    if (countBucket) addBucketToSplit(dvSplit, countBucket);
     const rawId = String(r.agent_hr_id ?? "").trim();
     const key = rawId.toLowerCase();
     if (!key) continue;
@@ -1288,12 +1339,15 @@ async function getLeadershipActivity(
   const truncated = impactTruncated || dvRows.length >= 8000 || (coachRes.data?.length ?? 0) >= 3000;
 
   const avgScoreGiven = scoreCountAll > 0 ? scoreSumAll / scoreCountAll : null;
-  const hasData = coachRows.length > 0 || dvRows.length > 0;
+  const ownVisits = ownSingle?.visits ?? 0;
+  const hasData = coachRows.length > 0 || dvRows.length > 0 || ownVisits > 0;
+  const ownSentence = ownVisits > 0 ? ` Made ${ownVisits} own single visit${ownVisits === 1 ? "" : "s"}.` : "";
   const baseSummaryText = !hasData
-    ? "No coaching reports authored or double-visits conducted in this period."
+    ? "No coaching reports authored, double-visits conducted or own visits logged in this period."
     : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvRows.length} double-visit${dvRows.length === 1 ? "" : "s"}, ` +
       `reaching ${distinctRepsReached} distinct rep${distinctRepsReached === 1 ? "" : "s"}` +
-      (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".");
+      (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".") +
+      ownSentence;
   const summaryText = truncated
     ? `${baseSummaryText} Some rows were capped for performance, so these figures may undercount.`
     : baseSummaryText;
@@ -1304,6 +1358,8 @@ async function getLeadershipActivity(
     coachingRepsReached,
     avgScoreGiven,
     dvConducted: dvRows.length,
+    dvSplit,
+    ownSingle,
     dvRepsReached,
     distinctRepsReached,
     byRep: byRepList.slice(0, 30),

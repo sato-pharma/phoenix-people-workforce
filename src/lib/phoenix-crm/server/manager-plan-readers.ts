@@ -22,6 +22,8 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { addBucketToSplit, emptyVisitCountSplit, type VisitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { cairoBusinessDay, fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
@@ -416,6 +418,15 @@ export type ManagerOwnVisitDay = {
    */
   am?: number;
   pm?: number;
+  /**
+   * 🔴 THE SAME VISITS AS AM · PM · PHARMACIES — BY THE CUSTOMER'S LIST, NEVER BY THE HALF (owner, 2026-10-23:
+   * "if a manager himself added a visit to a pharmacy, it should be count … separate … same for district
+   * managers, and same in everywhere"). `am`/`pm` above are HALVES of the day — the weekly cap and the plan
+   * count by them — and a pharmacy he called on in the morning sat inside them as an AM visit. This is the
+   * golden rule's split: a rep customer's own list decides (a pharmacy is Pharmacies, whatever the half);
+   * a customer of Manager's own list carries no list, so its half decides. `am + pm + pharmacies === visits`.
+   */
+  split?: VisitCountSplit;
 };
 
 /**
@@ -447,7 +458,7 @@ export async function loadManagerOwnVisitDays(input: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let query: any = getSupabaseAdmin()
           .from("phoenix_crm_manager_visits")
-          .select("id, manager_hr_id, visit_date, half, created_at")
+          .select("id, manager_hr_id, visit_date, half, created_at, customer_id")
           .gte("visit_date", input.start)
           .lte("visit_date", input.end)
           .eq("is_test", isTest);
@@ -465,6 +476,8 @@ export async function loadManagerOwnVisitDays(input: {
     rows.push(...(await read(null)));
   }
 
+  const listTypes = await readCustomerListTypes(rows.map((row) => textOrNull(row.customer_id)));
+
   const counts = new Map<string, ManagerOwnVisitDay>();
   for (const row of rows) {
     const hrId = personKey(textOrNull(row.manager_hr_id));
@@ -474,13 +487,43 @@ export async function loadManagerOwnVisitDays(input: {
     // An unplanned visit has no half of its own: the Cairo hour it was logged in decides, as it does for the cap.
     const created = textOrNull(row.created_at);
     const half: ManagerHalf = row.half === "AM" || row.half === "PM" ? row.half : singleVisitHalfOfHour(created ? cairoHourOf(created) : 0);
-    const current = counts.get(key) ?? { am: 0, date, hrId, pm: 0, visits: 0 };
+    const current = counts.get(key) ?? { am: 0, date, hrId, pm: 0, split: emptyVisitCountSplit(), visits: 0 };
     current.visits += 1;
     if (half === "AM") current.am = (current.am ?? 0) + 1;
     else current.pm = (current.pm ?? 0) + 1;
+    const customerId = textOrNull(row.customer_id);
+    const listType = customerId ? listTypes.get(customerId) : undefined;
+    addBucketToSplit(current.split ?? (current.split = emptyVisitCountSplit()), ownVisitBucket(listType ?? null, half), 1, true);
     counts.set(key, current);
   }
   return [...counts.values()].sort((left, right) => left.date.localeCompare(right.date) || left.hrId.localeCompare(right.hrId));
+}
+
+/**
+ * The bucket one of his own visits counts in: the rep customer's list when he visited one (a pharmacy is
+ * Pharmacies whatever the hour), else — a customer of Manager's own list, which has no list — the half.
+ * Pure, exported for its test.
+ */
+export function ownVisitBucket(customerListType: string | null, half: ManagerHalf): VisitCountBucket {
+  if (customerListType === "AM" || customerListType === "PM" || customerListType === "Pharmacy") {
+    return visitCountBucketForListType(customerListType);
+  }
+  return half;
+}
+
+/** The list each rep customer sits on, for the customers his own visits name. A failed read throws. */
+async function readCustomerListTypes(customerIds: ReadonlyArray<string | null>): Promise<Map<string, string>> {
+  const ids = dedupeIds(customerIds.filter((id): id is string => Boolean(id)));
+  const out = new Map<string, string>();
+  for (const part of chunk(ids, 100)) {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, list_type").in("id", part);
+    if (error) throw new Error(`Phoenix CRM manager visits: reading the customers' lists failed — ${error.message}`);
+    for (const row of (data ?? []) as Row[]) {
+      const listType = textOrNull(row.list_type);
+      if (listType) out.set(String(row.id), listType);
+    }
+  }
+  return out;
 }
 
 /**

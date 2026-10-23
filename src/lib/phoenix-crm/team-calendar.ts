@@ -20,14 +20,16 @@ import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
  *
  * 🔴 AND THE COUNT STAYS TWO FIGURES, NEVER ONE. His grid prints a single number, which on an
  * AM-only or a PM-only day is unambiguous — but on a both-halves day it is AM + PM added, and the
- * AM · PM · Pharmacies golden rule says every count of visits is reported apart. So a both-halves
- * cell carries the two figures, one above the other; a single-half cell carries the one figure the
- * colour already names. Nothing here ever adds them.
+ * AM · PM · Pharmacies golden rule says every count of visits is reported apart. So a cell carries
+ * EVERY figure the day has, one above the other — AM, then PM, then Pharmacies in violet (owner,
+ * 2026-10-23) — and never a figure the day does not have. Nothing here ever adds them.
  *
- * 🔴 PHARMACIES ARE IN THE DAY'S DETAIL AND NEVER IN THE CELL (owner, 2026-09-30, asked directly and
- * answered). A pharmacy is not a contact, so a day spent on pharmacies is not the same shape of day
- * as one spent on customers, and letting it colour the cell would make the two read alike at the
- * glance a calendar is for. `dayShape` ignores `counts.pharmacies` entirely.
+ * 🔴 PHARMACIES ARE IN THE CELL, AS A THIRD FIGURE IN THEIR OWN COLOUR (owner, 2026-10-23: "in team
+ * calendar … you will make the square … 2 for AM, 9 for PM, and 5 for pharmacies … same for district
+ * managers, and same in everywhere"). This replaces his 2026-09-30 ruling that kept them in the day's
+ * detail only. What survives of it is the half that mattered: a pharmacy is not a contact, so it never
+ * colours an AM, PM or AM + PM day — on a worked day it is a figure apart, in violet, and only a day of
+ * pharmacies ALONE takes the violet `pharmacy` shape, so it can never read as a doctor's half-day.
  *
  * Pure rules, no I/O. Leave comes from HR's own loader and is passed in — this module never decides
  * who was away, and Phoenix has no leave of its own (`day-activities.ts` says why).
@@ -41,7 +43,7 @@ import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
  * `activity` takes the place of his pink `CP` — Phoenix retired Campaign and replaced it with the
  * seven day activities, which are a RECORD of a working day that was not a call.
  */
-export type DayShape = "am" | "both" | "pm" | "activity" | "leave" | "rest" | "none";
+export type DayShape = "am" | "both" | "pm" | "pharmacy" | "activity" | "leave" | "rest" | "none";
 
 export type TeamCalendarDay = {
   /** `YYYY-MM-DD`, the Cairo calendar day — a report reads the calendar day, never the 02:00 visit
@@ -145,7 +147,8 @@ export function monthDays(month: string): string[] {
  * then a day activity — and each of those is a reason the day is blank, which is the whole point of
  * separating them from a plain missed day.
  *
- * Pharmacies are deliberately absent from every branch (his ruling, 2026-09-30).
+ * Pharmacies never change an AM, PM or AM + PM day — a pharmacy is not a contact. A day of pharmacies
+ * ALONE is still work (owner, 2026-10-23), so it is `pharmacy`, ahead of every reason a day is blank.
  */
 export function dayShape(input: {
   counts: VisitCountSplit;
@@ -153,10 +156,11 @@ export function dayShape(input: {
   activity: PhoenixCrmDayActivity | null;
   day: string;
 }): DayShape {
-  const { am, pm } = input.counts;
+  const { am, pm, pharmacies } = input.counts;
   if (am > 0 && pm > 0) return "both";
   if (am > 0) return "am";
   if (pm > 0) return "pm";
+  if (pharmacies > 0) return "pharmacy";
   if (isRestDay(input.day)) return "rest";
   if (input.onLeave) return "leave";
   if (input.activity) return "activity";
@@ -234,8 +238,8 @@ export function buildTeamCalendar(
  * The whole month's totals, still three figures apart.
  *
  * 🔴 REPS' ROWS ALONE. A manager's row repeats the visits he rode with a rep, which are already on that
- * rep's row, so adding it would count one visit twice — and his own single visits count in no figure
- * at all (`manager-visits.ts`).
+ * rep's row, so adding it would count one visit twice — and his own single visits are counted on HIS row
+ * (owner, 2026-10-23), never in the team's figures, which stay the reps' work (his 20 Oct "keep out of reps").
  */
 export function teamCalendarTotals(rows: readonly TeamCalendarRow[]): VisitCountSplit {
   const total = emptyVisitCountSplit();

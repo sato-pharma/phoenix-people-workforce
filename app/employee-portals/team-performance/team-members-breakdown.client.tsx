@@ -15,6 +15,7 @@ import {
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -90,7 +91,7 @@ function isSalesVsTargetChartDatum(value: unknown): value is SalesVsTargetChartD
 
 function achievementColor(pct: number, isTop = false): string {
   if (pct >= 100) return "#10b981"; // green - over-achieved
-  if (pct >= 90) return "#22c55e"; // lighter green - eligible
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "#22c55e"; // lighter green - eligible
   if (pct >= 70) return "#f97316"; // orange - within reach
   if (isTop) return "#f59e0b"; // amber - top but still low
   return "#ef4444"; // red - needs work
@@ -164,17 +165,17 @@ export function TeamAchievementChart({
             />
             <Tooltip content={<AchievementTooltip />} />
             <ReferenceLine
-              x={90}
+              x={INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}
               stroke="#94a3b8"
               strokeDasharray="4 4"
-              label={{ value: "90%", position: "top", fontSize: 10, fill: "#94a3b8" }}
+              label={{ value: `${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}%`, position: "top", fontSize: 10, fill: "#94a3b8" }}
             />
             {teamAchievementPercent > 0 && (
               <ReferenceLine
                 x={Math.round(teamAchievementPercent * 10) / 10}
                 stroke="#f97316"
                 strokeDasharray="4 4"
-                label={{ value: "Avg", position: "top", fontSize: 10, fill: "#f97316" }}
+                label={{ value: "Team", position: "top", fontSize: 10, fill: "#f97316" }}
               />
             )}
             <Bar
@@ -345,7 +346,7 @@ function ProductRow({ product }: { product: DsmTeamMemberProductData }) {
 function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) {
   const [expanded, setExpanded] = useState(false);
   const color = achievementColor(member.achievementPercent, rank === 1);
-  const isEligible = member.achievementPercent >= 90;
+  const isEligible = member.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT;
 
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm">
@@ -374,7 +375,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
                   color: isEligible ? "#15803d" : "#92400e",
                 }}
               >
-                {isEligible ? "Incentive Eligible" : `Needs ${pct(Math.max(0, 90 - member.achievementPercent))} more`}
+                {isEligible ? "Incentive Eligible" : `Needs ${pct(Math.max(0, INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT - member.achievementPercent))} more`}
               </span>
               <span className="text-phx-2xs text-slate-400">
                 {member.products.length} products
@@ -457,7 +458,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
       <div className="grid gap-2.5 sm:hidden">
         {pageMembers.map((member) => {
           const gap = Math.max(0, member.totalTarget - member.totalSales);
-          const isAchieved = member.achievementPercent >= 90;
+          const isAchieved = member.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT;
           const color = achievementColor(member.achievementPercent, member.position === 1);
           const progressWidth = Math.min(100, Math.max(0, member.achievementPercent));
           return (
@@ -554,7 +555,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
           <tbody>
             {pageMembers.map((member) => {
               const gap = Math.max(0, member.totalTarget - member.totalSales);
-              const isAchieved = member.achievementPercent >= 90;
+              const isAchieved = member.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT;
               const color = achievementColor(member.achievementPercent, member.position === 1);
               return (
                 <tr key={member.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">

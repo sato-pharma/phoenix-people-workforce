@@ -623,9 +623,15 @@ manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
   because the private calendar's day sits in a narrow column on a wide desktop), cards below that. Square edges,
   nothing truncated, an Arabic name keeps its own direction.
 - **The address is the DETAILS', never the calendar's** (owner, 2026-10-20: *"do not show address in the private
-  calendar itself, show area/brick, and in details show address"*). The private calendar's own chip lines
-  (`managerVisitChipLine`) print the brick and the area (`managerVisitAreaLines`); the table, the cards and the
-  detail text (`managerVisitWhereLines`, `managerVisitLine`) print the street address first.
+  calendar itself, show area/brick, and in details show address"*). **Since 2026-10-23 the month cell goes further and
+  lists no visit at all** (*"in the calendar tile itself show the count of the AM and the count of PM and the count of
+  pharmacies, and if double or single … the area … don't mention names … when I press on the day, the details appear
+  down"*): a visit entry is a tile (`VisitDayTile`, built by the pure `privateCalendarDayTile` in
+  `src/lib/private-calendar/day-tile.ts`) of Single / Double / Chain, Regular / Campaign, Planned / Unplanned (only where
+  a Phoenix visit says it), the AM · PM · Pharmacies figures apart (the pharmacy violet), who it was made with, the brick
+  and the area — read from structured fields (`tileWith`, `tileAreas`, `employeeAreaName`, `managerVisits`), never parsed
+  from `chipLines`, and never a customer or a pharmacy name. The table, the cards and the detail text
+  (`managerVisitWhereLines`, `managerVisitLine`) print every visit, street address first.
 - **The day slot shows the RECORD, of every type, and never the plan** (owner, 2026-10-20: *"on the day slot itself
   never show plan, show actual only … not only visits, show actual record of any type"*). The month cell and the
   phone markers draw every entry but an approved plan (`isRecordedEntry` in `private-calendar.tsx`: attendance,
@@ -636,7 +642,7 @@ manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
   touches for all the managers at once. The company-wide pass the Daily Deductions connector adjudicates stays a
   count and reads neither.
 
-Pinned by `tests/phoenix-crm-manager-visit-details.test.ts`.
+Pinned by `tests/phoenix-crm-manager-visit-details.test.ts` and, for the day tile, `tests/private-calendar-day-tile.test.ts`.
 
 ## Writing up a logged single visit, afterwards (2026-10-23)
 
@@ -695,3 +701,26 @@ no backfill, nothing dropped. Applied 23 Oct 2026 to staging `cifwmndunmlxjhyjug
 `ozucdzovmcqvepbozvqf`, each read back out of the catalog rather than the ledger.
 
 Pinned by `tests/phoenix-crm-manager-plan.test.ts`.
+
+## A manager's work, counted everywhere it is shown (owner, 2026-10-23)
+
+His words: *"any record submitted by himself or a double visit with him, it must appear … if a manager himself added a
+visit to a pharmacy, it should be count, but in a different color, and separate then the total visits … in team
+calendar … make the square … 2 for AM, 9 for PM, and 5 for pharmacies … same for district managers, and same in
+everywhere."*
+
+What changed, and why each half:
+
+- **His own single visit counts by its CUSTOMER'S list.** `loadManagerOwnVisitDays` now reads each visit's customer and
+  fills `split` through `ownVisitBucket`: a rep customer's AM, PM or Pharmacy list wins, so a pharmacy is a pharmacy
+  whatever the hour; only a customer of his own list, which carries no list, falls back to the half he logged it in.
+  Measured on production that day: 28 own visits from 5 managers, 25 to rep-list customers, 3 to own-list ones.
+- **The Phoenix CRM calendar's manager row** folds that split in, pharmacies as a violet figure, and also draws a
+  meeting, training or travel recorded on his own seat (8 such rows existed and were not drawn), as Other activity.
+- **The portal Team Calendar, the private calendar and Employee 360** carry the same split (see `portal.md` and the
+  "Own single visits" tile). His figures stay his: no rep row, team total or KPI reads them, which is his
+  2026-10-20 "Show, keep out of reps" unchanged.
+- **Off-plan double and chain visits whose reviewer was on the visit** go straight to the SFE. The app already did so
+  (43 since 13 Oct); three did not (two on 12 Oct, one on 18 Oct) and sat waiting on that manager, so the visits never
+  counted. A BEFORE INSERT trigger now holds the rule in the database as well, named to fire before the
+  administrator diversion.

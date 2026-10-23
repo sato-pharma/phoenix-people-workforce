@@ -14,6 +14,7 @@ import {
   getCompanyMedRepPerformance,
   normalizeTeamComparisonPeriods,
 } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
 
 import {
@@ -66,7 +67,7 @@ function periodsSummaryLabel(selectedPeriods: string[]) {
 
 function achievementColor(pct: number): string {
   if (pct >= 100) return "text-emerald-700";
-  if (pct >= 90) return "text-emerald-600";
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
 }
@@ -123,7 +124,7 @@ export default async function CompanyMedRepsPerformancePage({
     .flatMap((line) => line.performance.members)
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
     .map((m, i) => ({ ...m, position: i + 1 }));
-  const eligibleCount = allReps.filter((m) => m.achievementPercent >= 90).length;
+  const eligibleCount = allReps.filter((m) => m.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
 
   const stats = [
     { label: "Company Target", value: egp(data.companyTotalTarget) },
@@ -253,7 +254,7 @@ export default async function CompanyMedRepsPerformancePage({
                   <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
                     {egp(line.performance.teamTotalSales)} / {egp(line.performance.teamTotalTarget)}
                   </p>
-                  <p className={`text-xl font-black ${line.performance.teamAchievementPercent >= 90 ? "text-emerald-400" : line.performance.teamAchievementPercent >= 70 ? "text-amber-400" : "text-rose-400"}`}>
+                  <p className={`text-xl font-black ${line.performance.teamAchievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT ? "text-emerald-400" : line.performance.teamAchievementPercent >= 70 ? "text-amber-400" : "text-rose-400"}`}>
                     {line.performance.teamAchievementPercent.toFixed(1)}%
                   </p>
                 </div>

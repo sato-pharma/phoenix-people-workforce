@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { isEmployeeDirectorySchemaMissing, employeeDirectoryErrorMessage } from "@/lib/employees/employee-directory";
+import { isEmployeeDirectorySchemaMissing } from "@/lib/employees/employee-directory";
 import { isDevelopment } from "@/lib/env";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -12,12 +12,13 @@ import {
   resignationErrorMessage,
 } from "@/lib/resignations/service";
 import type { DeclineOfferInput } from "@/lib/resignations/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function apiError(error: unknown) {
-  const message = error instanceof Error ? error.message : employeeDirectoryErrorMessage(error);
+  const message = clientSafeErrorMessage(error, "The declined offer could not be recorded.");
   if (isForbiddenError(error)) {
     return { message: resignationErrorMessage(error), status: 403 };
   }

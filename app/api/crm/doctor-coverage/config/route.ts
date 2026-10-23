@@ -8,6 +8,7 @@ import {
   getDoctorCoverageConfig,
   updateDoctorCoverageNorms,
 } from "@/lib/crm/doctor-coverage-config";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,8 +31,8 @@ export async function GET(request: Request) {
     const config = await getDoctorCoverageConfig();
     return NextResponse.json({ config }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ error: clientSafeErrorMessage(error, "The doctor coverage settings could not be read.") }, { status: 500 });
   }
 }
 
@@ -56,7 +57,7 @@ export async function PATCH(request: Request) {
     if (error instanceof DoctorCoverageConfigValidationError) {
       return NextResponse.json({ error: error.message, issues: error.issues }, { status: 400 });
     }
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     return NextResponse.json({ error: String((error as { message?: unknown })?.message ?? error) }, { status: 500 });
   }
 }

@@ -4,9 +4,13 @@ import { buildFieldWorkforceCompliancePreview } from "../src/lib/field-workforce
 import { parseFieldWorkforceComplianceMatrix } from "../src/lib/field-workforce-compliance/parser.ts";
 import { buildDsmGroups } from "../src/lib/employee-portal/team-calendar.ts";
 import {
+  attachManagerOwnVisitSplits,
+  isManagerOwnVisitsOnlyDay,
   isPortalRideAlongCoachingDay,
+  portalDaySplit,
   portalOwnVisitCount,
 } from "../src/lib/employee-portal/team-calendar-cell.ts";
+import { splitBucketOf } from "../src/lib/field-workforce-compliance/ireports360-source.ts";
 
 /**
  * Regression coverage for a bug shipped and caught in production: the NSM Team Calendar
@@ -208,4 +212,50 @@ export async function runNsmTeamCalendarTests() {
   assert.equal(isPortalRideAlongCoachingDay(excelVisitsDay), false, "with no own-count signal (Excel path) it is not a DV day — behaviour unchanged");
   assert.equal(portalOwnVisitCount(excelVisitsDay), 4, "with no own-count signal the raw classified count is used, preserving prior behaviour");
   assert.equal(isPortalRideAlongCoachingDay(noActivityDay), false, "a non-VISITS day is never a DV day");
+
+  // --- The square's three figures (owner, 2026-10-23: "make the square … 2 for AM, 9 for PM, and 5 for pharmacies …
+  // same for district managers, and same in everywhere"). AM · PM · Pharmacies apart, never added. ---
+  const split = (am: number, pm: number, pharmacies: number) => ({ am, pharmacies, pm });
+  assert.deepEqual(portalDaySplit({ ...ownVisitsDay, ownVisitSplit: split(2, 9, 5) }), split(2, 9, 5), "a rep's day prints its own three figures");
+  assert.deepEqual(
+    portalDaySplit({ ...rideAlongDay, ownVisitSplit: split(0, 0, 0), rideAlongSplit: split(3, 4, 0) }),
+    split(3, 4, 0),
+    "a district manager's ride-along day prints the split of the visits he joined, not a bare DV",
+  );
+  assert.deepEqual(
+    portalDaySplit({ ...ownVisitsDay, ownVisitSplit: split(1, 0, 0), rideAlongSplit: split(5, 5, 0) }),
+    split(1, 0, 0),
+    "a day with his own calls prints HIS — the reps' visits are on the reps' rows, never added on top",
+  );
+  assert.deepEqual(
+    portalDaySplit({ ...noActivityDay, managerOwnSplit: split(1, 2, 1) }),
+    split(1, 2, 1),
+    "his own Phoenix CRM single visits print on a day the mirror reads as nothing",
+  );
+  assert.equal(isManagerOwnVisitsOnlyDay({ ...noActivityDay, managerOwnSplit: split(1, 0, 0) }), true, "and that day is worked, never No activity");
+  assert.equal(isManagerOwnVisitsOnlyDay({ ...ownVisitsDay, managerOwnSplit: split(1, 0, 0) }), false);
+  assert.equal(portalDaySplit(excelVisitsDay), null, "the Excel path keeps its one-word label");
+  assert.equal(portalDaySplit({ ...noActivityDay }), null);
+
+  // The engine's bucket: through the golden rule's helper, a pharmacy whatever its half, and a non-call in no figure.
+  const row = { ampm: "AM", comment: null, speciality: null, visitType: 0, visitTypeDescription: null };
+  assert.equal(splitBucketOf(row), "AM");
+  assert.equal(splitBucketOf({ ...row, ampm: "PM" }), "PM");
+  assert.equal(splitBucketOf({ ...row, ampm: "Pharmacy" }), "Pharmacies", "a Phoenix pharmacy call carries its list in the period column");
+  assert.equal(splitBucketOf({ ...row, speciality: "Pharmacy" }), "Pharmacies");
+  assert.equal(splitBucketOf({ ...row, visitType: 7 }), null, "a campaign, meeting or leave row counts in no figure");
+  assert.equal(splitBucketOf({ ...row, comment: "ص النور", visitType: -30 }), "Pharmacies", "the vendor's unlabelled pharmacy call is a pharmacy");
+  assert.equal(splitBucketOf({ ...row, ampm: "PM", visitType: -30 }), "PM", "and its unlabelled customer call a field visit");
+
+  // The manager's own visits hang on his cells by HR id and date, and a day off the timeline is never invented.
+  const employee = { hrId: "B-120", timeline: [{ dateIso: "2026-10-19", status: "N" }, { dateIso: "2026-10-20", status: "N" }] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [attached] = attachManagerOwnVisitSplits([employee as any], [
+    { date: "2026-10-19", hrId: "b-120", split: split(1, 0, 1) },
+    { date: "2026-10-19", hrId: "B-120", split: split(0, 1, 0) },
+    { date: "2026-11-02", hrId: "B-120", split: split(4, 0, 0) },
+  ]);
+  assert.deepEqual(attached.timeline[0].managerOwnSplit, split(1, 1, 1), "two reads of one day merge, matched case-blind");
+  assert.equal(attached.timeline[1].managerOwnSplit, undefined, "a day with nothing carries nothing");
+  assert.equal(attached.timeline.length, 2, "a day off the month is dropped");
 }

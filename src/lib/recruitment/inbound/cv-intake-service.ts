@@ -110,6 +110,10 @@ export type InboundCvIntakeInput = {
   // file and the daily digest are identical either way — only whether the arrival interrupts a
   // human immediately. Set by the worker, the only layer that knows the sender's role.
   bulkArrival?: boolean;
+  // A spend gate on the paid model read, asked only when the read would actually call the model. Set
+  // by the public careers form (public-apply-ai-budget.ts); absent everywhere else, which is today's
+  // behaviour exactly. A refusal reads the CV the free way (rules, then OCR) and never loses it.
+  aiBudget?: () => Promise<boolean>;
 };
 
 export type InboundCvIntakeOutcome =
@@ -405,6 +409,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         // What they WROTE when they sent it. The same call that reads the CV also reads the
         // covering note, so answering "which job did they apply for" costs no second AI call.
         coverMessage: input.coverMessage ?? null,
+        aiBudget: input.aiBudget,
         fileName: input.attachment.fileName,
         mimeType: input.attachment.mimeType,
         // For the free RULE pass.

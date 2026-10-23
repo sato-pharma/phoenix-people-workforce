@@ -14,6 +14,7 @@ import {
   saveCompanyDetail,
 } from "@/lib/hiring-pack/company-details-store";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ function apiError(error: unknown) {
   if (error instanceof CompanyDetailsLayerMissingError) {
     return { message: error.message, status: 409 };
   }
-  return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
+  return { message: clientSafeErrorMessage(error, "Something went wrong."), status: 500 };
 }
 
 /**

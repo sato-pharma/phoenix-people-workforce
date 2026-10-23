@@ -11,6 +11,7 @@ import { androidManagementTokenProvider } from "@/lib/devices/android-management
 import { AndroidManagementRequestError } from "@/lib/devices/android-web-app";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         message:
-          error instanceof Error ? error.message : "Could not start the Android Enterprise signup.",
+          clientSafeErrorMessage(error, "Could not start the Android Enterprise signup."),
       },
       { status: 500 },
     );

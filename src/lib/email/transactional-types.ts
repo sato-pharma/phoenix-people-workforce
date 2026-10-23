@@ -56,6 +56,36 @@ export function isOneTimeCodeTemplateKey(templateKey: string | null | undefined)
 }
 
 /**
+ * The two kinds of email that carry a live credential and are therefore NOT mirrored to the admin's
+ * Telegram (owner decision, 23 Oct 2026, by multiple choice: "Skip credential emails"; audit P5-01).
+ *
+ *  - `password_reset_code` — the self-service 6-digit reset code.
+ *  - `password_setup_link` — a one-time set-your-password link (the account-setup link, and the
+ *    admin-minted reset link, which is the same password-setup token).
+ *
+ * EXPLICIT, NEVER GUESSED. The send site that builds one of these emails stamps the kind on the send
+ * (`credentialEmail`), and only that stamp withholds the mirror. Nothing reads the subject, the body or
+ * the template to decide it, and no other email loses its mirror: every other automated email keeps
+ * its Telegram copy exactly as before. The standing BCC is a separate rule (NO_STANDING_COPY above).
+ */
+export const CREDENTIAL_EMAIL_KINDS = ["password_reset_code", "password_setup_link"] as const;
+export type CredentialEmailKind = (typeof CREDENTIAL_EMAIL_KINDS)[number];
+
+export function isCredentialEmailKind(value: unknown): value is CredentialEmailKind {
+  return typeof value === "string" && (CREDENTIAL_EMAIL_KINDS as readonly string[]).includes(value);
+}
+
+/** Does this just-sent email get its Telegram twin? Pure, so the decision is tested on its own. */
+export function shouldMirrorEmailToAdminTelegram(input: {
+  credentialEmail?: CredentialEmailKind | string | null;
+  testingRedirectActive: boolean;
+}): boolean {
+  if (input.testingRedirectActive) return false;
+  if (isCredentialEmailKind(input.credentialEmail)) return false;
+  return true;
+}
+
+/**
  * Suppression reasons that a recipient chose, as opposed to ones the mail system was told
  * about. Only these are overridden for transactional mail.
  */

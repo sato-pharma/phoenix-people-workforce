@@ -11,7 +11,7 @@ import { OUTSTATION_CLAIM_DECIDED_MESSAGE } from "@/lib/outstation/undecided-cla
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  */
 function missingTicketStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
-  const message = error instanceof Error ? error.message : "";
+  const message = errorMessageOf(error);
   if (
     message === OUTSTATION_CLAIM_DECIDED_MESSAGE ||
     message === MISSING_TICKET_ALREADY_ATTACHED_MESSAGE ||

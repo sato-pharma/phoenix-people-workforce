@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 
 import { logError } from "@/lib/observability/log";
 import { sendWebsiteApplyConfirmation } from "@/lib/recruitment/inbound/website-apply-confirmation-email";
+import { consumePublicApplyAiRead } from "@/lib/recruitment/inbound/public-apply-ai-budget";
 import { candidateRegionCodes, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -802,6 +803,9 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
       attachment: input.attachment,
       candidate: { email: input.email, fullName: input.fullName, phone: input.phone },
       channel: "website",
+      // The paid model read is capped per day for this public channel (P5-02); past the cap the CV is
+      // still captured and read the free way.
+      aiBudget: consumePublicApplyAiRead,
       // What the applicant applied for is known here, not guessed from the CV — but the covering
       // message still helps extraction answer the other fields, exactly as an email subject does.
       coverMessage: `Applied via the Sato Pharma careers website for: ${input.role.jobTitle}`,

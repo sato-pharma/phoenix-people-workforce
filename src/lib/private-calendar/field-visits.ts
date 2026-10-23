@@ -305,6 +305,7 @@ export async function loadFieldVisitPrivateCalendarItems(
         sourceTable: CRM_VISITS_UNIFIED_VIEW,
         startDate: group.date,
         status: "performed",
+        tileWith: [...group.partners],
         time: group.kind === "vacation" ? "Full day" : counts,
         title: group.kind === "vacation" ? headline : `${headline}: ${counts}`,
         visitCounts: isVisit ? group.split : null,

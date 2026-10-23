@@ -17,6 +17,7 @@ import {
   type ManagerDayVisit,
 } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
 import { buildPlanVsActual, planCustomerKey, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
+import { ownVisitBucket } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import { attachVisitDetails } from "../src/lib/private-calendar/visit-detail-items.ts";
@@ -152,9 +153,27 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     assert.equal(figures.chains, 1);
     assert.equal(managerDaySummaryLine(figures), "3 own single visits · 4 double visits · 1 chain visit");
     assert.equal(managerDaySummaryLine(managerDayFigures([visit()])), "1 own single visit");
+
+    // 🔴 HIS OWN VISIT COUNTS BY HIS CUSTOMER'S LIST, AND A PHARMACY IS COUNTED APART (owner, 2026-10-23: "if a manager
+    //    himself added a visit to a pharmacy, it should be count, but in a different color, and separate"). Only a
+    //    customer of Manager's own list — which carries no list — falls back to the half he logged it in.
+    const own = managerDayFigures([
+      visit({ bucket: "AM", id: "own:1", listType: "Pharmacy", pharmacyName: "El Ezaby" }),
+      visit({ bucket: "AM", id: "own:2", listType: "PM" }),
+      visit({ bucket: "PM", id: "own:3", listType: null }),
+    ]);
+    assert.equal(own.pharmacies, 1, "his own pharmacy visit is a pharmacy, whatever the hour");
+    assert.equal(own.am, 0, "never filed in the morning half it was logged in");
+    assert.equal(own.pm, 2, "a PM-list customer at 10 am is PM, and his own-list customer keeps his half");
+    assert.equal(own.ownSingle, 3, "and all three are still his own single visits");
+    assert.equal(ownVisitBucket("Pharmacy", "AM"), "Pharmacies");
+    assert.equal(ownVisitBucket("PM", "AM"), "PM", "a rep customer's list wins over the half");
+    assert.equal(ownVisitBucket("AM", "PM"), "AM");
+    assert.equal(ownVisitBucket(null, "PM"), "PM", "a customer of his own list falls back to the half");
+    assert.equal(ownVisitBucket("Other", "AM"), "AM", "an unknown list is never a pharmacy");
   }
 
-  // ── 3. The private calendar's entry carries the visits, and still counts nowhere ───────────────
+  // ── 3. The private calendar's entry carries the visits, and counts in his own figures ─────────
   {
     const day = { am: 1, date: "2026-10-19", hrId: "B-120", pm: 1, visits: 2 };
     const bare = managerOwnVisitItem(day);
@@ -163,7 +182,9 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     assert.equal(bare.managerVisits, undefined, "no details asked, none attached");
 
     const full = managerOwnVisitItem(day, [visit({ id: "own:1" }), visit({ bucket: "PM", id: "own:2", customerName: "Dr. Samir Fathy", loggedAt: "2026-10-19T13:05:00Z", loggedHalf: "PM" })]);
-    assert.equal(full.visitCounts, null, "his own visits count in no figure — the entry still carries no split");
+    assert.equal(full.visitCounts, null, "a day read with no split carries none");
+    const split = { am: 1, pharmacies: 1, pm: 0 };
+    assert.deepEqual(managerOwnVisitItem({ ...day, split }).visitCounts, split, "his own visits count in his own figures, pharmacies apart (owner, 2026-10-23)");
     assert.equal(full.managerVisits?.length, 2);
     assert.ok(full.chipLines?.some((entry) => entry.includes("Dr. Hala Mansour") && entry.includes("Brick Nasr City 3")), "the chip lists a visit with its name and its brick");
     assert.ok(full.chipLines?.some((entry) => entry.includes("Dr. Hala Mansour") && entry.includes("Area Cairo East")), "the chip names the brick AND the area");
@@ -226,8 +247,10 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
       "the day list and the timeline both draw the plan-against-actual table",
     );
     // The polish pass on the screen itself (owner, 2026-10-20: "premium polish, full polish").
-    assert.match(calendarScreen, /<ManagerVisitChipRows visits=\{visitRows\} \/>/, "a month cell draws a manager's visits one structured block each, never one flat line that a browser reorders around an Arabic name");
-    assert.match(calendarScreen, /<bdi className="mt-0\.5 block font-black text-slate-900">\{visit\.customerName\}<\/bdi>/, "a customer's name is isolated from the dots around it");
+    // Owner, 2026-10-23: the month cell is a SUMMARY — counts and tags, no customer — and a visit is read in full in the table
+    // under the grid. (It used to draw a block per visit, `ManagerVisitChipRows`; see private-calendar-day-tile.test.ts.)
+    assert.doesNotMatch(calendarScreen, /ManagerVisitChipRows/, "a month cell no longer lists a manager's visits one by one");
+    assert.match(calendarScreen, /<VisitDayTile item=\{item\} key=\{item\.id\} tile=\{tile\} viewMode=\{viewMode\} \/>/, "a visit entry is drawn as a tile of counts and tags");
     assert.match(calendarScreen, /item\.managerVisits && item\.managerVisits\.length > 0 \? "lg:col-span-full" : ""/, "a day that carries a table takes the whole row of the timeline");
     assert.match(calendarScreen, /shownWeeks = useMemo\(\(\) => weeks\.filter\(\(week\) => week\.some\(\(day\) => day\.inMonth\)\)/, "a week with no day of the month is not drawn");
     assert.match(calendarScreen, /\{shownWeeks\.flatMap\(\(week\) => week\)/, "the grid draws the shown weeks");

@@ -1220,6 +1220,66 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // copy (the two doctors above). After it, two production refreshes each reported listContactsChanged = 0
   // and wrote 0 crm_contacts rows, and both doctors kept their phones; staging's two runs also changed 0.
   "20261022163300_a_pending_copy_fills_the_vendor_blank_in_one_pass.sql",
+  // 2026-10-23, written by the session that applied it. The owner chose "Apply it now" in session; both MCP doors
+  // answered {"status":"declined"} (staging twice, production once — production read UNCHANGED right after), so it was
+  // applied by the standing route, `node scripts/apply-sql-file.mjs <file> staging|production` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), which writes NO ledger row: zero rows carry
+  // 20261023065727 or this file's name on production. Verified by digest, not presence: md5(pg_proc.prosrc) for
+  // public.phoenix_crm_unplanned_a_reviewer_on_the_visit_skips_himself reads e0b917a8cfdbc6fa695fcf8a6a8f320e on
+  // ozucdzovmcqvepbozvqf AND cifwmndunmlxjhyjugxa, md5-equal to this file's dollar-quoted body (as-is LF); the
+  // function is new, so there is no pre-image body. prosecdef true, proconfig {search_path=public}, proacl
+  // {postgres=X/postgres,service_role=X/postgres} on both, so the REVOKE landed; the trigger is enabled and sorts
+  // before phoenix_crm_unplanned_waits_for_the_administrator. The data half moved exactly 3 production rows
+  // ("applied":true,"count":3) — visits 6cdaac80…, 6955cded… and 722dfe84…, each manager_pending v1 before and
+  // sfe_pending v2 after — with 0 still stuck and the 17 correctly routed manager_pending rows untouched. Behaviour
+  // proved on staging in rolled-back blocks: a reviewer on the visit (typed ' probe-77 ' against PROBE-77) was born
+  // sfe_pending, a reviewer not on it stayed manager_pending.
+  "20261023065727_unplanned_reviewer_on_the_visit_goes_to_sfe.sql",
+  // ── 2026-10-23, written by the session that applied them: the three per-batch Closing rollup
+  // rebuilds take a transaction lock on (their own name, the batch) before their first delete
+  // (technical audit P4-04). Both pre-authorized doors refuse a `create or replace function` whose
+  // body contains `delete from`: `mcp__supabase-staging__apply_migration` answered {"status":"declined"}
+  // twice. So each file was applied with `node scripts/apply-sql-file.mjs <file> staging`, then
+  // `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs <file>
+  // production`, the standing route (.claude/rules/database.md), which writes NO ledger row: ZERO rows
+  // carry version 2026102307% on either project, read in the same query as the digests below.
+  // Verified by digest, not by presence, on BOTH ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa —
+  // md5(pg_proc.prosrc) equals md5 of each file's own dollar-quoted body (as-is LF), each file is the
+  // function's LAST definer, and the pre-image (read on both projects before the apply) equals md5 of
+  // that same body with the lock line removed, so the lock is the ONLY change:
+  //   phx_refresh_sos_fact_rollup                 b5fd564f39865cd41461ddbc59b4f96a, pre-image
+  //     ebb17ddca10f481d2bbd27f791990757 (production's prosrc carried CRLF: 070154c9587916e4652fb4e49f742323
+  //     as stored, ebb17ddc… with CR removed); rollback body 20260907190000.
+  //   phx_refresh_sos_channel_rollup              f6d6dcdc70364bd47244c714e954ec74, pre-image
+  //     f1f3a78f24933ed31ebef32f94e13ef4; rollback body 20260928190024.
+  //   phx_refresh_sos_distributor_product_rollup  b8721984073f1ec249abb23c387d6045, pre-image
+  //     6f6fdd0ec54b1a409673dd205d92f2a0, which is 20260815160000's body without its one in-body
+  //     comment line — the file drops that line too, so the body is the live one plus the lock.
+  // proconfig {search_path=public,statement_timeout=120s} and prosecdef true unchanged on all three;
+  // execute held by service_role only (anon and authenticated false). Effect proved on staging: with
+  // the lock held on one connection each function hit lock_timeout (55P03) on another, and two
+  // concurrent rebuilds of one batch ran one after the other and left its rows unchanged.
+  // Pinned by tests/sos-rollup-refresh-batch-lock.test.ts.
+  "20261023070000_phx_refresh_sos_fact_rollup_takes_a_batch_lock.sql",
+  "20261023070100_phx_refresh_sos_channel_rollup_takes_a_batch_lock.sql",
+  "20261023070200_phx_refresh_sos_distributor_product_rollup_takes_a_batch_lock.sql",
+  // ── 2026-10-23, written by the session that applied it: CI's narrow release-gate login (audit P6-02,
+  // owner's choice "Narrow login"). `mcp__supabase-staging__apply_migration` answered {"status":"declined"}
+  // (the file holds a `drop policy if exists`), so it went the standing route: `node scripts/apply-sql-file.mjs
+  // <file> staging`, then production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com. That
+  // route writes NO ledger row — zero rows named release_gate_writer_login on production, read in the same
+  // query as below. A NEW role has no older generation a probe could mistake for it, so it was read by shape
+  // on ozucdzovmcqvepbozvqf: role release_gate_writer exists, noinherit, not superuser, no createrole or
+  // createdb, no bypassrls, connection limit 5, member of no role; its ONLY table grants are INSERT and
+  // SELECT on public.release_gates (0 grants on any other table); policies on release_gates are
+  // phx_release_gates_service_role and phx_release_gates_writer. Its login and SCRAM verifier were then set on
+  // production only, never in git, and the URL went straight into the repository secret
+  // RELEASE_GATE_DATABASE_URL. Proved through the pooler as that login: current_user release_gate_writer, the
+  // newest gate row reads, a duplicate insert is a no-op, and reading employees or updating or deleting a gate
+  // row is refused 42501. On cifwmndunmlxjhyjugxa the role exists with NO login. Staging had been missing
+  // public.release_gates itself (20261019171347 is in this list for its production apply, and an entry here
+  // silences every project), so that file was applied to staging first, the same morning.
+  "20261023093100_release_gate_writer_login.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

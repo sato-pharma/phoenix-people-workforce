@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
 import { getMarketingRoiFilterOptions } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
@@ -22,11 +22,7 @@ function filterOptionsApiError(error: unknown) {
   // A DB statement timeout (SQLSTATE 57014) is transient + user-actionable, not an internal fault.
   if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
 
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : String(error ?? "");
+  const message = errorMessageOf(error);
   const normalized = message.toLowerCase();
   if (
     normalized.includes("marketing_request") ||

@@ -23,6 +23,7 @@ import {
   isApiRateLimitError,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
+import { describeUnexpectedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -199,7 +200,7 @@ export async function POST(request: Request) {
 
     // Log full error server-side; return a generic message to avoid leaking
     // internal DB/infra details (table names, connection errors, etc.).
-    console.error("[auth/change-password] failed", error instanceof Error ? error.message : error);
+    console.error("[auth/change-password] failed", describeUnexpectedError(error));
     return NextResponse.json(
       { error: "change_failed", message: "Password change failed. Please try again or contact support." },
       { status: 500 },

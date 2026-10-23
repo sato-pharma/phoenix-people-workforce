@@ -3,6 +3,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { confirmLinks, ruleNotTheSame, withdrawRuling, type DecisionSide, type LinkDecision } from "@/lib/customer-identity/server/decisions";
 import type { EvidenceBand, IdentityKind } from "@/lib/customer-identity/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Customer links are available to the system administrator only." }, { status: 403 });
     }
     return Response.json(
-      { error: error instanceof Error ? error.message : "The decision could not be recorded." },
+      { error: clientSafeErrorMessage(error, "The decision could not be recorded.") },
       { status: 500 },
     );
   }

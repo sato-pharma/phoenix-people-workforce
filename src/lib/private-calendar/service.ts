@@ -8,7 +8,7 @@ import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic
 import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
 import { loadFieldVisitPrivateCalendarItems } from "@/lib/private-calendar/field-visits";
 import { loadManagerOwnVisitPrivateCalendarItems } from "@/lib/private-calendar/manager-own-visit-items";
-import { loadPhoenixWorkEvidencePrivateCalendarItems } from "@/lib/private-calendar/phoenix-work-evidence-items";
+import { loadPhoenixWorkEvidencePrivateCalendarItems, withoutDoorCoveredPhoenixWork } from "@/lib/private-calendar/phoenix-work-evidence-items";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -132,12 +132,15 @@ function employeeMetadataByHrId(employees: EmployeeDirectoryRow[]) {
 
 function decorateItemsWithEmployeeMetadata(items: PrivateCalendarItem[], employees: EmployeeDirectoryRow[]) {
   const byHrId = employeeMetadataByHrId(employees);
+  // The area the day tile falls back to when an entry names none of its own (field-visit and own-visit entries carry no area).
+  const areaByHrId = new Map(employees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee.areaName]));
   return items.map((item) => {
     if (!item.employeeHrId) return item;
     const employee = byHrId.get(privateCalendarHrIdKey(item.employeeHrId));
     if (!employee) return item;
     return {
       ...item,
+      employeeAreaName: areaByHrId.get(privateCalendarHrIdKey(item.employeeHrId)) ?? null,
       employeeDepartmentName: employee.departmentName,
       employeeJobTitle: employee.jobTitle,
       employeeLineName: employee.lineName,
@@ -458,7 +461,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...holidays,
     ...doubleVisits.items,
     ...fieldVisits.items,
-    ...phoenixWork.items,
+    ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
     ...managerOwnVisits.items,
     ...plans.items,
   ], scopeEmployees), employees), visitDetails)
@@ -629,7 +632,7 @@ export async function getCompanyNoActivityDays(input: {
     ...holidaysByMonth.flat(),
     ...doubleVisits.items,
     ...fieldVisits.items,
-    ...phoenixWork.items,
+    ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
     ...managerOwnVisits.items,
     ...plans.items,
   ], employees), employees);
@@ -747,7 +750,7 @@ export async function getPrivateCalendarDayEvidence(
         ...excuses.items,
         ...doubleVisits.items,
         ...fieldVisits.items,
-        ...phoenixWork.items,
+        ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
         ...managerOwnVisits.items,
         ...plans.items,
       ],

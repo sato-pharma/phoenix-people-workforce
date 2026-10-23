@@ -66,6 +66,7 @@ export type PrivateCalendarItem = {
   chipLines?: string[];
   description: string | null;
   detailLines: string[];
+  employeeAreaName?: string | null;
   employeeDepartmentName: string | null;
   employeeHrId: string | null;
   employeeJobTitle: string | null;
@@ -92,6 +93,11 @@ export type PrivateCalendarItem = {
   sourceTable: string | null;
   startDate: string;
   status: string | null;
+  // The areas a visit entry covered and the people it was made with, as plain lists, for the month grid's day tile
+  // (owner, 2026-10-23: the tile shows counts and tags, never a customer). Set by the loaders that know them; the tile
+  // reads them through privateCalendarDayTile and falls back to the employee's own area. Never parsed back out of `chipLines`.
+  tileAreas?: string[];
+  tileWith?: string[];
   time: string | null;
   title: string;
   // A CRM visit item's visits, AM · PM · Pharmacies apart (never a pharmacy inside PM). Null on
@@ -101,7 +107,7 @@ export type PrivateCalendarItem = {
   // everyone on it, so a team view counts it once by these ids (summarizePrivateCalendarVisits).
   visitRecords?: PrivateCalendarVisitRecord[];
   // A district manager's OWN single visits behind a `manager-own-visit` item, in full — customer, address, brick,
-  // half, clock, who came along (owner, 2026-10-20). They count in no figure; the item still carries `visitCounts: null`.
+  // half, clock, who came along (owner, 2026-10-20). Since 2026-10-23 the item's `visitCounts` carries their split, in his figures alone.
   managerVisits?: ManagerDayVisit[];
   // The day's plan behind those visits, so a screen can set the two side by side (owner, 2026-10-20). Absent when the
   // plan was not asked for; `managerPlanUnread` says it was asked for and could not be read.

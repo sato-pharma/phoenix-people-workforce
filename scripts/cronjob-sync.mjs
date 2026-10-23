@@ -48,7 +48,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -94,6 +94,14 @@ const JOB_FILTER = (() => {
  * Only add a row here for a job you are about to create or correct. This is not an inventory of
  * the account — the account holds ~21 jobs and enumerating them here would invite exactly the bulk
  * sweep the header rules out.
+ *
+ * 🔴 `adopted` ROWS ARE READ, NEVER WRITTEN (23 Oct 2026 audit, S-INT-19). Five live jobs were made by
+ * hand and had no row here at all — among them the four that call the WORKER, so nothing in the
+ * repository said which address runs the heavy routes. They are declared below with `adopted`: the
+ * script reports each one (OK, DRIFT, MISSING) and NEVER creates or patches it, even with `--apply`,
+ * and `cron-autoarm.yml` arming a newly added row therefore writes nothing for them. `enabled: false`
+ * on an adopted row means "switched off on purpose" (inbound-intake), so a disabled job is not drift.
+ * To take over an adopted job, remove `adopted` in its own PR.
  *
  * `hours` / `minutes` are Africa/Cairo. `-1` means "every", which is cron-job.org's wildcard.
  */
@@ -433,7 +441,81 @@ const JOBS = {
     // EMAIL_NOTIFICATIONS_ENABLED are four independent switches and none of them is a default.
     requestTimeout: 300,
   },
+  // ── ADOPTED: live jobs made by hand, declared so the repository shows them. Report-only. ──────────
+  // Ids, paths and schedules from docs/deployment.md ("Which cron-job.org jobs call the worker") and
+  // docs/observability.md (the job table). `minutes` are written out the way the web UI stores a step.
+  "process-notifications": {
+    adopted: { jobId: 8200914 },
+    base: WORKER,
+    title: "Phoenix — notification outbox drain",
+    path: "/api/notifications/process?limit=50",
+    schedule: { hours: [-1], minutes: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "inbound-intake": {
+    adopted: { jobId: 8200920 },
+    base: WORKER,
+    // Switched OFF by hand and kept off since the 23 Oct move back to Railway (docs/deployment.md).
+    enabled: false,
+    title: "Phoenix — inbound CV intake",
+    path: "/api/cron/inbound-intake",
+    schedule: {
+      hours: [-1],
+      minutes: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58],
+      mdays: [-1],
+      months: [-1],
+      wdays: [-1],
+    },
+    requestTimeout: 300,
+  },
+  "recruitment-email-intake": {
+    adopted: { jobId: 8200919 },
+    base: WORKER,
+    title: "Phoenix — recruitment email intake",
+    path: "/api/cron/recruitment-email-intake",
+    schedule: { hours: [-1], minutes: [4, 14, 24, 34, 44, 54], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "crm-contact-lists": {
+    adopted: { jobId: 8344730 },
+    base: WORKER,
+    title: "Phoenix — CRM contact lists",
+    path: "/api/cron/crm-contact-lists",
+    schedule: { hours: [5], minutes: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "background-jobs": {
+    adopted: { jobId: 8200915 },
+    title: "Phoenix — background jobs drain",
+    path: "/api/cron/background-jobs",
+    // Fridays 03:00 Cairo (`0 3 * * 5`).
+    schedule: { hours: [3], minutes: [0], mdays: [-1], months: [-1], wdays: [5] },
+    requestTimeout: 300,
+  },
 };
+
+export { JOBS, PROD, WORKER };
+
+/**
+ * What the script will do about one declaration, given the live job on its URL (or none). Pure, so
+ * the adopted rule — never a write — is pinned without the API.
+ *
+ * @returns {{ status: "ok" | "missing" | "drift", drift: string[], write: "create" | "patch" | null }}
+ */
+export function planJobAction(spec, existing, { apply }) {
+  const adopted = Boolean(spec.adopted);
+  if (!existing) {
+    return { drift: [], status: "missing", write: apply && !adopted ? "create" : null };
+  }
+  const drift = [];
+  const wantEnabled = spec.enabled ?? true;
+  if (Boolean(existing.enabled) !== wantEnabled) drift.push(wantEnabled ? "disabled" : "enabled, want disabled");
+  if (!scheduleMatches(existing.schedule, spec.schedule)) {
+    drift.push(`schedule is ${describeSchedule(existing.schedule ?? {})}, want ${describeSchedule(spec.schedule)}`);
+  }
+  if (drift.length === 0) return { drift, status: "ok", write: null };
+  return { drift, status: "drift", write: apply && !adopted ? "patch" : null };
+}
 
 // ── credentials ───────────────────────────────────────────────────────────────────────────────
 
@@ -556,11 +638,14 @@ async function main() {
     // URL is what actually determines which route runs. Two jobs on one URL is the duplicate this
     // avoids creating.
     const existing = live.find((job) => String(job.url ?? "").trim() === url);
+    const plan = planJobAction(spec, existing, { apply: APPLY });
+    const adoptedNote = spec.adopted ? ` [adopted job ${spec.adopted.jobId} — reported, never written]` : "";
 
     if (!existing) {
-      console.log(`${name}: MISSING — no job on ${url}`);
+      console.log(`${name}: MISSING — no job on ${url}${adoptedNote}`);
+      if (spec.adopted) continue;
       console.log(`  would create: ${describeSchedule(spec.schedule)}`);
-      if (!APPLY) continue;
+      if (plan.write !== "create") continue;
       await assertBearerCurrent(key, authHeader);
       const created = await api(key, "/jobs", {
         body: JSON.stringify({
@@ -600,18 +685,13 @@ async function main() {
       continue;
     }
 
-    const drift = [];
-    if (!existing.enabled) drift.push("disabled");
-    if (!scheduleMatches(existing.schedule, spec.schedule)) {
-      drift.push(`schedule is ${describeSchedule(existing.schedule ?? {})}, want ${describeSchedule(spec.schedule)}`);
-    }
-    if (drift.length === 0) {
-      console.log(`${name}: OK — jobId=${existing.jobId} ${describeSchedule(existing.schedule ?? {})}`);
+    if (plan.status === "ok") {
+      console.log(`${name}: OK — jobId=${existing.jobId} ${describeSchedule(existing.schedule ?? {})}${adoptedNote}`);
       continue;
     }
 
-    console.log(`${name}: DRIFT — jobId=${existing.jobId}: ${drift.join("; ")}`);
-    if (!APPLY) continue;
+    console.log(`${name}: DRIFT — jobId=${existing.jobId}: ${plan.drift.join("; ")}${adoptedNote}`);
+    if (plan.write !== "patch") continue;
     await api(key, `/jobs/${existing.jobId}`, {
       body: JSON.stringify({
         job: { enabled: true, schedule: { ...spec.schedule, expiresAt: 0, timezone: TZ } },
@@ -624,7 +704,10 @@ async function main() {
   console.log(`\n${requestCount} API request(s) used of the 100/day account budget.`);
 }
 
-main().catch((error) => {
-  console.error(String(error?.message ?? error));
-  process.exitCode = 1;
-});
+// Runs only as a command, so the tests can import JOBS and planJobAction without calling the API.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(String(error?.message ?? error));
+    process.exitCode = 1;
+  });
+}

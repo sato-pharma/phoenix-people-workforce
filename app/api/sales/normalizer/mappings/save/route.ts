@@ -33,7 +33,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
-    const message = error instanceof Error ? error.message : typeof error === "string" ? error : (() => { try { return JSON.stringify(error); } catch { return ""; } })();
-    return NextResponse.json({ success: false, error: message || "Failed to save mappings." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to save mappings.") }, { status: 500 });
   }
 }

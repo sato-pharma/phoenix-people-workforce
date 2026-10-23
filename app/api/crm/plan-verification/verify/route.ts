@@ -9,6 +9,7 @@ import { IReports360ApiError } from "@/lib/crm/client";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { isPlanVerificationAction } from "@/lib/crm/plan-verification";
 import { setPlanVerification } from "@/lib/crm/plan-verification-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,7 +122,7 @@ export async function POST(request: Request) {
     if (error instanceof IReports360ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     return NextResponse.json({ error: String((error as { message?: unknown })?.message ?? error) }, { status: 500 });
   }
 }

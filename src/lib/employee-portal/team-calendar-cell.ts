@@ -13,9 +13,12 @@
  * helpers fall back to the raw classified count, preserving prior behaviour.
  */
 
-import type { FieldWorkforceDayCell } from "@/lib/field-workforce-compliance/types";
+import { emptyVisitCountSplit, mergeVisitCountSplits, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import type { FieldWorkforceDayCell, FieldWorkforceEmployeeSummary } from "@/lib/field-workforce-compliance/types";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 
 type PortalDayCell = Pick<FieldWorkforceDayCell, "status" | "ownVisitCount" | "visitCount">;
+type PortalSplitCell = PortalDayCell & Pick<FieldWorkforceDayCell, "managerOwnSplit" | "ownVisitSplit" | "rideAlongSplit">;
 
 /**
  * The visit number the portal shows for a day: the person's OWN (primary-agent) regular visits,
@@ -35,4 +38,66 @@ export function portalOwnVisitCount(cell: PortalDayCell): number {
  */
 export function isPortalRideAlongCoachingDay(cell: PortalDayCell): boolean {
   return cell.status === "VISITS" && cell.ownVisitCount === 0;
+}
+
+// ── The square's three figures (owner, 2026-10-23) ─────────────────────────────────────────────────────────────────
+//
+// *"In team calendar … you will make the square, for example, see 295, 2 for AM, 9 for PM, and 5 for pharmacies. Okay,
+// same for district managers, and same in everywhere."* A day prints its AM, PM and Pharmacies figures apart — never
+// added — and a manager's day carries every record that is his: his own visits in the mirror, his own Phoenix CRM single
+// visits (`managerOwnSplit`), and, on a day he only rode along, the split of the visits he joined.
+
+function hasAny(split: VisitCountSplit | undefined | null): split is VisitCountSplit {
+  return Boolean(split && split.am + split.pm + split.pharmacies > 0);
+}
+
+/**
+ * The AM · PM · Pharmacies figures the square prints, or null when the day has none to print (the Excel-upload path,
+ * a day with no call, a campaign or leave day) — the square then keeps its old one-word label.
+ */
+export function portalDaySplit(cell: PortalSplitCell): VisitCountSplit | null {
+  const own = emptyVisitCountSplit();
+  if (cell.status === "VISITS") {
+    // His own calls first; a pure ride-along day shows the calls he joined instead, so a manager's row never adds the
+    // reps' visits on top of his own (the "doubled" data the DV marker was made against).
+    if (hasAny(cell.ownVisitSplit)) mergeVisitCountSplits(own, cell.ownVisitSplit);
+    else if (isPortalRideAlongCoachingDay(cell) && hasAny(cell.rideAlongSplit)) mergeVisitCountSplits(own, cell.rideAlongSplit);
+  }
+  if (hasAny(cell.managerOwnSplit)) mergeVisitCountSplits(own, cell.managerOwnSplit);
+  return hasAny(own) ? { am: own.am, pharmacies: own.pharmacies, pm: own.pm } : null;
+}
+
+/** A day whose only work is the manager's own Phoenix CRM single visits — the mirror alone would read it as nothing. */
+export function isManagerOwnVisitsOnlyDay(cell: PortalSplitCell): boolean {
+  return cell.status !== "VISITS" && hasAny(cell.managerOwnSplit);
+}
+
+/**
+ * Hangs each manager's own Phoenix CRM single visits on his day cells. Pure: the days come from
+ * `loadManagerOwnVisitDays`, the only door out of that table. A day off the timeline is dropped, never invented.
+ */
+export function attachManagerOwnVisitSplits<T extends FieldWorkforceEmployeeSummary>(
+  employees: readonly T[],
+  days: ReadonlyArray<{ hrId: string; date: string; split?: VisitCountSplit }>,
+): T[] {
+  const byKey = new Map<string, VisitCountSplit>();
+  for (const day of days) {
+    const key = canonicalHrIdKey(day.hrId);
+    if (!key || !hasAny(day.split)) continue;
+    const at = `${key}|${day.date}`;
+    byKey.set(at, mergeVisitCountSplits(byKey.get(at) ?? emptyVisitCountSplit(), day.split));
+  }
+  if (byKey.size === 0) return [...employees];
+  return employees.map((employee) => {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (!key) return employee;
+    let touched = false;
+    const timeline = employee.timeline.map((cell) => {
+      const split = byKey.get(`${key}|${cell.dateIso}`);
+      if (!split) return cell;
+      touched = true;
+      return { ...cell, managerOwnSplit: split };
+    });
+    return touched ? { ...employee, timeline } : employee;
+  });
 }

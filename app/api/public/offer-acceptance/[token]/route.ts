@@ -6,6 +6,7 @@ import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-f
 import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { clientAddress } from "@/lib/security/client-address";
+import { errorMessageOf } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,7 +92,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     return json({ message: result.message, ok: false }, result.status);
   } catch (error) {
     logError("The joining form submit failed unexpectedly", {
-      error: error instanceof Error ? error : new Error(String(error)),
+      error: error instanceof Error ? error : new Error(errorMessageOf(error)),
       labels: { event: "offer_joining_form_unexpected" },
     });
     return json({ message: "We could not complete your joining form right now. Please try again shortly, or reply to the offer email.", ok: false }, 500);

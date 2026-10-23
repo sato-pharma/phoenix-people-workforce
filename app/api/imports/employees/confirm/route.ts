@@ -37,6 +37,7 @@ import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { generateVacancySeatCode } from "@/lib/workforce/vacancy-code";
 import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
+import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ function validationRejection(result: EmployeeImportValidationResult) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessageOf(error);
 }
 
 function isSupabaseEnvMissing(error: unknown) {
@@ -149,7 +150,7 @@ function confirmFailureResponse(error: unknown) {
   }
 
   return NextResponse.json(
-    { error: "employee_import_confirm_failed", message: errorMessage(error) },
+    { error: "employee_import_confirm_failed", message: clientSafeErrorMessage(error, "The employee import could not be confirmed.") },
     { status: 500 },
   );
 }

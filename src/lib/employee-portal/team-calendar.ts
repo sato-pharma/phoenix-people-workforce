@@ -28,7 +28,9 @@ import {
 } from "@/lib/employee-portal/sales-scope";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { attachManagerOwnVisitSplits } from "@/lib/employee-portal/team-calendar-cell";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
+import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import type { FieldWorkforceEmployeeSummary } from "@/lib/field-workforce-compliance/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -327,10 +329,14 @@ export async function getNsmTeamCalendar(
     // Drop the viewer's own row — a "team" calendar shows the NSM's DSMs and reps, not
     // the NSM themself (who would otherwise land in the trailing "Other" group).
     const selfKey = canonicalHrIdKey(access.hrId) ?? canonicalHrIdKey(access.loginId);
-    const employees = preview.employees.filter((employee) => {
+    const inLine = preview.employees.filter((employee) => {
       const key = canonicalHrIdKey(employee.hrId);
       return key != null && key !== selfKey && resolved.allowedKeys.has(key);
     });
+    // A manager's OWN Phoenix CRM single visits live in a table the visits mirror never carries, so the engine above
+    // reads his solo day as nothing (owner, 2026-10-23: "any record submitted by himself … must appear"). Hung on his
+    // cells for the square to print, AM · PM · Pharmacies apart; display only, never a status or a deduction.
+    const employees = attachManagerOwnVisitSplits(inLine, await loadOwnVisitDaysQuietly(inLine, year, month));
 
     return {
       employeeCount: employees.length,
@@ -358,6 +364,23 @@ export async function getNsmTeamCalendar(
       };
     }
     throw error;
+  }
+}
+
+/**
+ * The month's own-visit days for the people on the calendar. Best-effort, like every other source beside the mirror:
+ * a failed read leaves the squares as the mirror drew them — it can only ever hide a figure, never invent one.
+ */
+async function loadOwnVisitDaysQuietly(employees: readonly FieldWorkforceEmployeeSummary[], year: number, month: number) {
+  const hrIds = employees.map((employee) => employee.hrId).filter(Boolean);
+  if (hrIds.length === 0) return [];
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const end = `${year}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+  try {
+    return await loadManagerOwnVisitDays({ end, managerHrIds: hrIds, start });
+  } catch (error) {
+    console.error("[team-calendar] the managers' own visits could not be read", error);
+    return [];
   }
 }
 

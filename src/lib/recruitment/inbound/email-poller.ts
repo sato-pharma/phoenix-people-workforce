@@ -24,6 +24,7 @@
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 
+import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import type { InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
 import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
@@ -42,6 +43,36 @@ import {
 import { parseEmailImportSenders, parseInboundEmailMessages } from "@/lib/recruitment/inbound/email-message-parser";
 
 export { summarizePollFailures, type FolderPollSummary, type MailboxPollSummary } from "@/lib/recruitment/inbound/email-poll-planner";
+
+// DEADLINES ON EVERY IMAP CONNECTION (23 Oct 2026 audit, P5-01). Both clients here were built with
+// imapflow's defaults — five minutes of socket silence and 90 seconds to connect — and with no
+// 'error' listener, so a mail host that accepted the connection and then went silent held the careers
+// poll (and the intake worker) past the route's own two-minute maxDuration, and a socket error raised
+// an uncaught exception. Same shape as the mailbox monitor's client (src/lib/mailbox-monitor/imap-client.ts).
+export const RECRUITMENT_IMAP_CONNECTION_TIMEOUT_MS = 15_000;
+export const RECRUITMENT_IMAP_GREETING_TIMEOUT_MS = 10_000;
+export const RECRUITMENT_IMAP_SOCKET_TIMEOUT_MS = 30_000;
+
+/** An ImapFlow client with the deadlines above and an 'error' listener attached before connect(). */
+export function createRecruitmentImapClient(config: RecruitmentMailboxConfig): ImapFlow {
+  const client = new ImapFlow({
+    auth: { pass: config.password, user: config.user },
+    connectionTimeout: RECRUITMENT_IMAP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: RECRUITMENT_IMAP_GREETING_TIMEOUT_MS,
+    host: config.host,
+    logger: false,
+    port: config.port,
+    secure: config.secure,
+    socketTimeout: RECRUITMENT_IMAP_SOCKET_TIMEOUT_MS,
+  });
+  client.on("error", (error) => {
+    logError("Careers mailbox IMAP connection error", {
+      error,
+      labels: { event: "recruitment_imap_socket_error", mailbox: config.label },
+    });
+  });
+  return client;
+}
 
 type CursorRow = { imap_uidvalidity: string | number | null; last_processed_uid: string | number | null };
 
@@ -170,13 +201,7 @@ async function pollFolder(
 
 async function pollMailbox(config: RecruitmentMailboxConfig): Promise<MailboxPollSummary> {
   const summary: MailboxPollSummary = { folders: [], mailboxLabel: config.label };
-  const client = new ImapFlow({
-    auth: { pass: config.password, user: config.user },
-    host: config.host,
-    logger: false,
-    port: config.port,
-    secure: config.secure,
-  });
+  const client = createRecruitmentImapClient(config);
 
   try {
     await client.connect();
@@ -243,13 +268,7 @@ export async function fetchAndParseEmailMessagesByUid(
   if (!config) throw new EmailMailboxNotConfiguredError(mailboxLabel);
 
   const importSenders = parseEmailImportSenders(process.env.RECRUITMENT_EMAIL_IMPORT_SENDERS);
-  const client = new ImapFlow({
-    auth: { pass: config.password, user: config.user },
-    host: config.host,
-    logger: false,
-    port: config.port,
-    secure: config.secure,
-  });
+  const client = createRecruitmentImapClient(config);
 
   try {
     await client.connect();

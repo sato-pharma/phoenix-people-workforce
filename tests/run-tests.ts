@@ -900,6 +900,8 @@ import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-await
 import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
 import { runMarketingRoiRefreshPeriodSkipTests } from "./marketing-roi-refresh-period-skip.test.ts";
 import { runCrmContactMasterRefreshSpeedTests } from "./crm-contact-master-refresh-speed.test.ts";
+import { runSosRollupRefreshBatchLockTests } from "./sos-rollup-refresh-batch-lock.test.ts";
+import { runServiceRoleStatementTimeoutTests } from "./service-role-statement-timeout.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -1328,6 +1330,7 @@ import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
 import { runSosImportSummariesRefreshTests } from "./sos-import-summaries-refresh.test.ts";
 import { runSosBackupCoversEveryTableTests } from "./sos-backup-covers-every-table.test.ts";
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
+import { runSosMappingBackfillRollupErrorsTests } from "./sos-mapping-backfill-rollup-errors.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runCaptureTrustReadoutTests } from "./capture-trust-readout.test.ts";
@@ -1567,6 +1570,7 @@ import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
+import { runCiEslintCacheNodeRuntimeTests } from "./ci-eslint-cache-node-runtime.test.ts";
 import { runReleaseGateTests } from "./release-gate.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
@@ -2474,6 +2478,7 @@ import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
 import { runBackgroundCatGuardTests } from "./background-cat-guard.test.ts";
+import { runCloudMirrorPushGuardTests } from "./cloud-mirror-push-guard.test.ts";
 import { runPythonReplGuardTests } from "./python-repl-guard.test.ts";
 import { runBashGrepGuardTests } from "./bash-grep-guard.test.ts";
 import { runBatchNudgeTests } from "./batch-nudge.test.ts";
@@ -2609,6 +2614,7 @@ import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-pre
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
 import { runFallbackImageDeployTests } from "./fallback-image-deploy.test.ts";
+import { runDockerfileReproducibleTests } from "./dockerfile-reproducible.test.ts";
 import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
@@ -2633,6 +2639,8 @@ import { runClosingPublicationDriftTests } from "./closing-publication-drift.tes
 import { runPhoenixCrmVisitsEverywhereTests } from "./phoenix-crm-visits-everywhere.test.ts";
 import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-admin-reports.test.ts";
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
+import { runManagerOwnVisitsEverywhereTests } from "./manager-own-visits-everywhere.test.ts";
+import { runPrivateCalendarDayTileTests } from "./private-calendar-day-tile.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -2686,6 +2694,21 @@ import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-onc
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
+import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
+import { runJobLeaseTests } from "./job-lease.test.ts";
+import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
+import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
+import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
+import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
+import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
+import {
+  runApiErrorWrappedDatabaseTextTests,
+  runCsvFormulaNeutraliserTests,
+  runIncentiveThresholdConstantTests,
+  runProductionPlanningRequestSequenceTests,
+  runSatoEmailFinalSanitizeTests,
+  runVacationDecisionFormTests,
+} from "./app-layer-audit.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4447,6 +4470,14 @@ await runTest(
   "the CRM contact-master refresh reads its started reps once into arrays, runs the region-from-name scan only when a contact can use it, and offers its two contact upserts only rows that would change — same counts and rows, three times faster",
   runCrmContactMasterRefreshSpeedTests,
 );
+await runTest(
+  "each per-batch Closing rollup rebuild (fact, channel, distributor-product) takes a transaction lock on its own name and the batch before its first delete, so two rebuilds of one batch run one after the other and never count it twice",
+  runSosRollupRefreshBatchLockTests,
+);
+await runTest(
+  "service_role has the owner's 5-minute statement_timeout, and no function declares more time than that — a function's own SET cannot raise its caller's limit",
+  runServiceRoleStatementTimeoutTests,
+);
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
 await runTest(
@@ -5519,6 +5550,7 @@ await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes
 await runTest("SoS import summaries refresh (the dashboard's own aggregate is never frozen)", runSosImportSummariesRefreshTests);
 await runTest("SoS backup covers every table, and a restore rebuilds the rollups", runSosBackupCoversEveryTableTests);
 await runTest("SoS backfill matches the empty-string brick sentinel, not just NULL", runSosBackfillEmptyBrickSentinelTests);
+await runTest("a mapping save reports a failed totals rebuild and stops the chain, never leaving a batch silently stale", runSosMappingBackfillRollupErrorsTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
@@ -5734,7 +5766,11 @@ await runTest(
   runCiRunnerSwitchTests,
 );
 await runTest(
-  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
+  "the ESLint cache is keyed to the exact Node runtime (2026-10-23): ci.yml reads process.version into the key AND the restore prefix, a bad or empty read keys the cache to the run alone and never fails the job, no runtime can restore another runtime's cache, and the lint keeps --cache-strategy content",
+  runCiEslintCacheNodeRuntimeTests,
+);
+await runTest(
+  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
   runReleaseGateTests,
 );
 await runTest(
@@ -9616,6 +9652,11 @@ await runTest(
 );
 
 await runTest(
+  "bash-guard C20 refuses a push that touches .claude/ while the cloud mirror it would ship has drifted from the laptop's live memory — the mirror IS the Phoenix memory a cloud clone wakes up with, so it is only ever as fresh as its last merged refresh (2026-10-02: it told a cloud session an analytics.sos_fact price gap was OPEN 86 minutes after the fix shipped) — naming the drifted files rather than counting them, carrying `node scripts/sync-cloud-context.mjs` as the fix and PHX_MIRROR_OK=1 as the stand-down; it reads the mirror in HEAD, never origin/main or the SessionStart cache, so a refresh committed on the branch clears the refusal, and a push touching no .claude file, a --dry-run, both stand-down dialects and a machine with no memory directory at all (a cloud runner) every one passes",
+  runCloudMirrorPushGuardTests,
+);
+
+await runTest(
   "bash-guard C19 refuses a command that would land in Python's INTERACTIVE REPL — a bare python/python3/py with no script, no -c, no -m and nothing piped or redirected in, and a `python - <<DELIM` whose closing delimiter is missing or indented — because with no console attached 3.13/3.14 _pyrepl dies in windows_console getheightwidth (OSError WinError 123) and reprints that traceback for ever: 1,774,873 bytes in 3 seconds, and three background tasks left 12.5 GB, 5.4 GB and 2.4 GB in their task logs on 9, 10 and 15 Oct 2026, which filled C:; it quotes the python back, carries the measured rate, names -c and PYTHON_BASIC_REPL=1 as the ways out and hands back a stand-down in the dialect that asked, while python script.py, -c, -m, --version, a well-formed heredoc, <, <<<, a pipe, a quoted full path, a timeout-bounded run, mentions in quotes, commit messages, heredoc bodies, here-strings and both stand-downs all pass",
   runPythonReplGuardTests,
 );
@@ -10246,6 +10287,7 @@ await runTest("phoenix crm: no save bar takes two presses to discard", runPhoeni
 await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 await runTest("urgent deploy: runs only off main, the guard hands over only when every urgent PR is live, probes read the marker", runUrgentDeployTests);
 await runTest("fallback image: bakes the Dockerfile's NEXT_PUBLIC values, stamps the commit so the release gate stays shut, needs a green release-gate, refuses staging, never runs on a push to main", runFallbackImageDeployTests);
+await runTest("the production image is built from pinned inputs (audit F-22, 2026-10-23): the base image is pinned by digest, sharp and puppeteer-core come from npm ci against the committed infra/runtime-extras lockfile with an integrity hash on every package, no npm install or hand-typed version is left in the Dockerfile, the two versions equal the ones pnpm-lock.yaml resolves, and the fallback route can still build a digest-pinned base from a mirror", runDockerfileReproducibleTests);
 await runTest("emergency host: the Fly.io standby is web-only (no scheduler, no CRM poller, no Railway identity), flips the domain only from a known state to a host that answers with a certificate, needs a green release-gate, and is started by hand only", runEmergencyHostTests);
 
 await runTest("rollup build: a member merging mid-build is survived, not a crash", runRollupBuildVerdictTests);
@@ -10344,6 +10386,14 @@ await runTest(
 await runTest(
   "A chain visit is ONE visit for the rep and is in BOTH managers' records (owner, 2026-10-08): the rep receives it once on every rep-side figure, and the second manager is counted on every manager-side figure exactly as the first one is — Double Visit Analytics given totals, days and leaderboard, the report filters, the manager-rep pairs, the private calendar, Employee 360 and the coaching audit; a scope or allow-list that removes one manager removes only his credit, never the other's or the rep's visit",
   runChainVisitOneVisitBothManagersTests,
+);
+await runTest(
+  "A district manager's work appears everywhere it is shown (owner, 2026-10-23: \"any record submitted by himself or a double visit with him, it must appear\"): Employee 360 counts his own Phoenix CRM single visits through the one door out of their table, a failed read printing a dash and never a zero, and splits the double visits he conducted AM · PM · Pharmacies by the golden rule's helper, a campaign in no figure; and the portal Team Calendar hangs his own visits on his day cells through the same door",
+  runManagerOwnVisitsEverywhereTests,
+);
+await runTest(
+  "The private calendar's day tile is a summary (owner, 2026-10-23): a visit entry shows its kind (single, double, chain), regular or campaign, planned or unplanned where a Phoenix visit says it, the AM, PM and Pharmacies figures apart (the pharmacy in violet), who the visit was made with, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",
+  runPrivateCalendarDayTileTests,
 );
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
@@ -10619,6 +10669,58 @@ await runTest(
 await runTest(
   "the Regular · No Check-in tabs of CRM Master cannot fail on a missing column: crm_visits_checkin_flags, as its last migration defines it, carries every column CRM Master's visit select asks for (the second manager and the Phoenix visit detail included), and keeps security_invoker and its locked-out browser roles",
   runCrmCheckinFlagsCarriesMasterSelectTests,
+);
+await runTest(
+  "the background queues never loop and never send twice: an interrupted outbox send spends one attempt and the last one is terminal, each reap pinned to the lock it read; a background job left processing past an hour is re-queued, or failed once its attempts are spent, before new work is claimed; a Telegram or push retry is claimed by a compare-and-set on its attempt count BEFORE it is sent, so a second drain that read the same row sends nothing; and a failed outbox write is logged",
+  runBackgroundJobsRecoveryTests,
+);
+await runTest(
+  "one CRM poller across every process: each tick claims the crm-live-poll lease first and stands by while another live process holds it, a heartbeat renews it through a long run, a dead holder is replaced within three minutes, and a lease that cannot be read (the migration not yet applied, any error) never stops the poller",
+  runJobLeaseTests,
+);
+await runTest(
+  "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
+  runWorkerOnlyCronRoutesTests,
+);
+await runTest(
+  "every outside call in the background jobs has a deadline: the careers IMAP clients cut a silent host after 30 seconds and carry an error listener, a Headwind call that times out answers 504 saying it may have acted (never that it never reached a server), uploads get a longer deadline, and free OCR stops and terminates its worker at its whole-read deadline",
+  runIntegrationDeadlinesTests,
+);
+await runTest(
+  "the public doors are bounded: reCAPTCHA refuses when its secret is unset or Google is unreachable, the paid AI read of public CVs stops at a daily ceiling and falls back to the free read, /api/errors/client caps every field, the body and the rate, and /api/readyz answers booleans only",
+  runPublicIntakeLimitsTests,
+);
+await runTest(
+  "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
+  runCvTextIsolationTests,
+);
+await runTest(
+  "the reset-code and set-your-password-link emails are not mirrored to the admin Telegram, by the explicit credential stamp that rides the outbox payload, while every other email keeps its mirror; and the Recipient Assurance Guard fails closed — a day-old directory copy covers a short outage, past it the email is held back with a transient reason and retried",
+  runCredentialEmailMirrorTests,
+);
+await runTest(
+  "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",
+  runSatoEmailFinalSanitizeTests,
+);
+await runTest(
+  "the production planner drops a late answer for the product he left: every load takes a ticket and only the newest may write the screen, a plan in flight when the product changed is stale, and a plan is shown — and can be saved — only under its own product",
+  runProductionPlanningRequestSequenceTests,
+);
+await runTest(
+  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — signed by the server, so a crafted link shows the fixed sentence and never its own — never the outage screen, never a database sentence, and never a claim that nothing was saved",
+  runVacationDecisionFormTests,
+);
+await runTest(
+  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, every redacted error is still logged once as api_error_redacted with its real text, raw error text in route files can only go down, and no public or share route carries any",
+  runApiErrorWrappedDatabaseTextTests,
+);
+await runTest(
+  "the 90% incentive threshold is one exported constant, checked against the locked 2026 curve read-only, and the six performance screens import it instead of carrying their own copy",
+  runIncentiveThresholdConstantTests,
+);
+await runTest(
+  "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
+  runCsvFormulaNeutraliserTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

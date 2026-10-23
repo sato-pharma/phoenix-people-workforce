@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
   getMarketingRequestDirectTracking,
   setMarketingRequestTrackDirectSales,
@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
 function directTrackingApiError(error: unknown) {
   const apiError = toApiError(error, "Direct-sales tracking request failed.");
   const status = isForbiddenError(error) ? 403 : apiError.status;
-  const message = error instanceof Error ? error.message : apiError.message;
-  const notFound = message.toLowerCase().includes("marketing_request_not_found");
+  const message = clientSafeErrorMessage(error, apiError.message);
+  const notFound = errorMessageOf(error).toLowerCase().includes("marketing_request_not_found");
   return {
     code: status === 403 ? "forbidden" : notFound ? "not_found" : apiError.code,
     message: notFound ? "Marketing request was not found." : message,

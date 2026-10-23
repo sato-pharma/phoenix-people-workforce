@@ -15,7 +15,7 @@ import { stripComments, stripHashComments, stripSqlComments } from "./support/co
  * That is safe ONLY while a new production container cannot take traffic before CI has passed, and every
  * piece of that promise fails silently if it is lost:
  *
- *   1. The decision. A production container with no row for its commit is NOT ready; a container that is
+ *   1. The decision. A production container with no row for its commit, or with no commit at all, is NOT ready; a container that is
  *      not production Railway is never held; only the exact word `off` switches it off; an unreadable
  *      table is closed, never open; a released commit is remembered, a missing one is asked again.
  *   2. The probe. /api/readyz ANDs the gate into `ready`. A probe that computed the gate and then ignored
@@ -93,8 +93,32 @@ export async function runReleaseGateTests(): Promise<void> {
     { required: false, reason: "urgent_upload" },
     "the urgent `railway up` route carries no git sha and skips the checks by the owner's own words, so it is never held",
   );
-  assert.deepEqual(resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production" }, null), { required: false, reason: "no_commit" });
-  assert.deepEqual(resolveReleaseGateScope({ ...PRODUCTION, RAILWAY_GIT_COMMIT_SHA: "  " }, null), { required: false, reason: "no_commit" });
+  assert.deepEqual(
+    resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production", RAILWAY_GIT_COMMIT_SHA: undefined }, SHA),
+    { required: false, reason: "urgent_upload" },
+    "the urgent route is recognised by its marker BEFORE the missing commit is looked at — it never relied on no_commit",
+  );
+  // 🔴 FAIL CLOSED ON A MISSING COMMIT (audit P6-03 / D-03, 2026-10-23). Production with no commit and no urgent
+  // marker used to be `required: false` — a hand `railway up`, or an image that lost its ENV layer, took traffic
+  // with no checks at all. Nothing CI records can ever match it, so it is held.
+  assert.deepEqual(
+    resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production" }, null),
+    { required: true, sha: null, reason: "no_commit" },
+    "🔴 production with no commit must be REQUIRED — an open gate here ships unchecked code",
+  );
+  assert.deepEqual(
+    resolveReleaseGateScope({ ...PRODUCTION, RAILWAY_GIT_COMMIT_SHA: "  " }, null),
+    { required: true, sha: null, reason: "no_commit" },
+    "a blank commit is no commit",
+  );
+  clearReleaseGateCache();
+  const neverAsked = reader(true);
+  assert.deepEqual(
+    await evaluateReleaseGate({ env: { RAILWAY_ENVIRONMENT_NAME: "production" }, urgentRevision: null, hasRecord: neverAsked.hasRecord }),
+    { required: true, passed: false, reason: "no_commit", sha: null },
+    "🔴 /api/readyz must answer NOT ready, reason no_commit, for a production container with no commit",
+  );
+  assert.equal(neverAsked.calls, 0, "with no commit there is nothing to look up — the answer is closed without a read");
   assert.deepEqual(
     resolveReleaseGateScope({ ...PRODUCTION, RAILWAY_GIT_COMMIT_SHA: "abc1234" }, null),
     { required: true, sha: "abc1234", malformed: true },
@@ -159,11 +183,13 @@ export async function runReleaseGateTests(): Promise<void> {
     [PRODUCTION, SHA],
     [{ ...PRODUCTION, PHOENIX_RELEASE_GATE: "off" }, null],
     [{ ...PRODUCTION, RAILWAY_GIT_COMMIT_SHA: "short" }, null],
+    [{ RAILWAY_ENVIRONMENT_NAME: "production" }, null],
   ] as const) {
     const untouched = reader(true);
     const decision = await evaluateReleaseGate({ env, urgentRevision: urgent, hasRecord: untouched.hasRecord });
     assert.equal(untouched.calls, 0, `no read for ${JSON.stringify(decision.reason)}`);
-    assert.equal(decision.passed, decision.reason !== "malformed_commit", `${decision.reason}: passes unless the commit is malformed`);
+    const closed = decision.reason === "malformed_commit" || decision.reason === "no_commit";
+    assert.equal(decision.passed, !closed, `${decision.reason}: passes unless the commit is malformed or missing`);
   }
 
   // ── 2. The probe ANDs the gate into `ready` ──────────────────────────────────────────────────────
@@ -195,9 +221,17 @@ export async function runReleaseGateTests(): Promise<void> {
     "🔴 release-gate runs on a push to main ONLY — a dispatch or a PR must never mint a row",
   );
   assert.doesNotMatch(job, /continue-on-error/, "🔴 the gate fails loud: continue-on-error would let a commit with no row look green");
-  assert.match(job, /secrets\.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY/, "release-gate uses the production secret that already exists");
-  assert.match(job, /rest\/v1\/release_gates\?on_conflict=sha/, "release-gate writes to release_gates");
-  assert.match(job, /select=sha/, "release-gate must read the row back — the write is not the proof");
+  // Least privilege (audit P6-02, owner 2026-10-23): the row is written by the release_gate_writer login,
+  // which may read and add release_gates rows and nothing else — never the full service-role key.
+  assert.match(job, /secrets\.RELEASE_GATE_DATABASE_URL/, "release-gate connects with the narrow release_gate_writer login");
+  assert.doesNotMatch(job, /SERVICE_ROLE/, "🔴 release-gate must not hold the production service-role key — it can read and change every table");
+  assert.match(job, /insert into public\.release_gates \(sha, workflow_run_id\)[\s\S]*?on conflict \(sha\) do nothing/, "release-gate adds the row, and a re-run of the same commit is not an error");
+  assert.match(job, /values \(:'sha', :'run_id'\)/, "the sha and run id reach SQL as psql variables, never pasted into the statement");
+  assert.match(job, /-v ON_ERROR_STOP=1/, "a failed statement must make psql exit non-zero");
+  assert.match(job, /select sha from public\.release_gates where sha = :'sha'/, "release-gate must read the row back — the write is not the proof");
+  const writerMigration = readFileSync("supabase/migrations/20261023093100_release_gate_writer_login.sql", "utf8");
+  assert.match(writerMigration, /grant select, insert on public\.release_gates to release_gate_writer;/, "the login may read and add gate rows");
+  assert.doesNotMatch(stripSqlComments(writerMigration), /\bpassword\s+'|grant (update|delete|all)/i, "🔴 the login gets no password in git and no update or delete right");
   assert.match(job, /exit 1/, "release-gate must exit non-zero when it cannot record the row");
   for (const required of ["validate", "checks"]) {
     assert.match(workflow, new RegExp(`^  ${required}:\\s*$`, "m"), `ci.yml lost the required job \`${required}\` the gate depends on`);
