@@ -52,10 +52,15 @@ import {
   assertMatchesPart2Confirm,
   assertPart2FileMatchesStamp,
   compareConfirmedTotals,
+  compareBankDetails,
   confirmedBeforeStampExisted,
+  PART2_BANK_DETAILS_KEY,
   PART2_TOTALS_KEY,
+  part2BankDetails,
   part2Totals,
+  readConfirmedBankDetails,
   readConfirmedTotals,
+  type BankDetailsStamp,
   type ConfirmedTotals,
 } from "./publish-guard.ts";
 import {
@@ -1465,6 +1470,16 @@ const PART2_TOTALS_STAMP_ACTION = "part2_totals_stamped";
  * it through (assertMatchesPart2Confirm): re-confirming Part 2 writes the stamp.
  */
 async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals | null> {
+  return (await readPart2ConfirmedStamp(runId)).totals;
+}
+
+/**
+ * The whole stamp: the totals, and since 2026-10-23 each person's bank fingerprint (null on a stamp
+ * written before that — the month is then held to its totals alone). Fails closed like the totals.
+ */
+async function readPart2ConfirmedStamp(
+  runId: string,
+): Promise<{ totals: ConfirmedTotals | null; bankDetails: BankDetailsStamp | null }> {
   // The stamp row written inside the confirm's claim, and the older `part2_confirmed` row that
   // carried it before 2026-10-23. Both hold the same totals for the same confirm; the newest wins.
   const { data, error } = await getSupabaseAdmin()
@@ -1481,7 +1496,8 @@ async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals 
     );
   }
   const newest = (data ?? [])[0] as { detail?: unknown } | undefined;
-  return newest ? readConfirmedTotals(newest.detail) : null;
+  if (!newest) return { totals: null, bankDetails: null };
+  return { totals: readConfirmedTotals(newest.detail), bankDetails: readConfirmedBankDetails(newest.detail) };
 }
 
 /** Confirm Part 2: assemble the full sheet, run the pre-flight gate, notify. */
@@ -1668,6 +1684,7 @@ export async function confirmPart2(
   // Recorded and confirmed under one claim (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Confirming Part 2");
   const confirmedTotals = part2Totals(rows.length, totals);
+  const confirmedBankDetails = part2BankDetails(runId, rows);
   const { carryForwardRecorded, updated } = await whileClaimed(runId, transition, async () => {
     // THE STAMP IS THE SHEET THE RUN HOLDS NOW (audit 2026-10-23, F-08a). The gates above read the run
     // before the claim; a step save or a Deductions resync that finished in between would leave the
@@ -1678,7 +1695,11 @@ export async function confirmPart2(
       confirmedTotals,
       part2Totals(rowsUnderClaim.length, reconcile(rowsUnderClaim)),
     );
-    if (movedWhileConfirming.length > 0) {
+    const bankMovedWhileConfirming = compareBankDetails(
+      confirmedBankDetails,
+      part2BankDetails(runId, rowsUnderClaim),
+    );
+    if (movedWhileConfirming.length > 0 || bankMovedWhileConfirming.length > 0) {
       throw new Error(
         "Conflict: this run changed while Part 2 was being confirmed (a step was saved or a deduction or " +
           "expense decision reached it). Nothing was confirmed; confirm Part 2 again.",
@@ -1693,7 +1714,7 @@ export async function confirmPart2(
       runId,
       actorHrId: actorId(access),
       action: PART2_TOTALS_STAMP_ACTION,
-      detail: { [PART2_TOTALS_KEY]: confirmedTotals },
+      detail: { [PART2_TOTALS_KEY]: confirmedTotals, [PART2_BANK_DETAILS_KEY]: confirmedBankDetails },
     });
     const recorded = await recordOverpaidCarryForward({ runId, rows, actorHrId: actorId(access) });
     const confirmed = await updateRun(
@@ -1720,6 +1741,9 @@ export async function confirmPart2(
       // same month. Publish re-assembles from CURRENT data rather than from anything stored, so
       // without a stamp there is nothing for it to disagree with. See publishToPayslips.
       [PART2_TOTALS_KEY]: confirmedTotals,
+      // Carried here too: readPart2ConfirmedStamp takes the NEWEST of the two rows, and this one is
+      // written after the stamp row, so without the fingerprints it would switch the bank check off.
+      [PART2_BANK_DETAILS_KEY]: confirmedBankDetails,
     },
   });
   await notifyPart2Ready(updated);
@@ -2755,12 +2779,23 @@ export async function importStepUpload(
  *
  * Part 1 files are not checked against it: the first instalment is frozen at Part 1 confirm, and the
  * stamp does not exist until Part 2.
+ *
+ * Since 2026-10-23 the destination is held too, not only the amount: a bank or account changed on the
+ * employee record after the confirm refuses the file (owner, "block it"), naming whose changed.
  */
 async function assertFileMatchesPart2Confirm(run: MonthlySalaryRun, rows: AssembledRow[]): Promise<void> {
   // The rule is assertPart2FileMatchesStamp's; the phase test here only saves a read for a month that
   // is not held to the stamp.
   if (run.phase !== "ready") return;
-  assertPart2FileMatchesStamp(run, await readPart2ConfirmedTotals(run.id), part2Totals(rows.length, reconcile(rows)));
+  const stamp = await readPart2ConfirmedStamp(run.id);
+  const names = new Map(rows.map((entry) => [entry.compact, entry.row.fullName]));
+  assertPart2FileMatchesStamp(run, stamp.totals, part2Totals(rows.length, reconcile(rows)), {
+    confirmed: stamp.bankDetails,
+    current: part2BankDetails(run.id, rows),
+    // Someone on the confirmed sheet who has since left the population has no row today; the
+    // confirmed month still knew them, so the refusal says so rather than printing an id.
+    nameOf: (compact) => names.get(compact) ?? "a person no longer on this month's sheet",
+  });
 }
 
 /** Finance locked sheet for a period (CEO / Financial Advisor / Finance Manager / Super Admin). */
