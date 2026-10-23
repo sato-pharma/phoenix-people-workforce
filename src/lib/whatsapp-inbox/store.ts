@@ -30,6 +30,7 @@ import {
 } from "@/lib/whatsapp-inbox/position-filter";
 import { WHATSAPP_INBOX_CONVERSATIONS_TABLE, WHATSAPP_INBOX_MESSAGES_TABLE } from "@/lib/whatsapp-inbox/record";
 import { fenceApplies, inboxConversationsHiddenFrom } from "@/lib/recruitment/workspace/fence";
+import { ilikeContainsValue, ilikeExactValue } from "@/lib/supabase/search-filter";
 
 export const WHATSAPP_INBOX_MEDIA_BUCKET = "whatsapp-inbox-media";
 
@@ -334,10 +335,15 @@ function summarize(
   };
 }
 
-/** PostgREST `or()` treats commas and brackets as syntax; a search term must not carry them. */
+/** The typed text, whitespace collapsed and capped at 60 characters — nothing stripped.
+ *
+ * It used to blank `,` `(` `)` `\` `:` `"` `'` as well, because the searches below splice it into a
+ * PostgREST `or(...)` expression where those are structural. A WhatsApp contact saves himself as
+ * `Dr Ahmed (Tanta)` or `O'Brien`, and the strip meant the inbox could not find either. The values
+ * are double-quoted now, so the characters reach the database as text; `%` and `*` are still
+ * neutralised inside the shared helper, being wildcards rather than text. */
 export function sanitizeInboxSearch(value: string | null | undefined): string {
   return String(value ?? "")
-    .replace(/[,()*%\\:"']/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 60);
@@ -386,10 +392,15 @@ export async function listInboxConversations(input: {
   if (input.unreadOnly) query = query.gt("unread_count", 0);
   const search = sanitizeInboxSearch(input.search);
   if (search) {
+    const value = ilikeContainsValue(search);
     const digits = search.replace(/\D+/g, "");
-    const clauses = [`contact_name.ilike.*${search}*`, `contact_username.ilike.*${search}*`];
-    if (digits.length >= 4) clauses.push(`contact_wa_id.ilike.*${digits.replace(/^0+/, "")}*`);
-    query = query.or(clauses.join(","));
+    const clauses = value ? [`contact_name.ilike.${value}`, `contact_username.ilike.${value}`] : [];
+    if (digits.length >= 4) {
+      const digitsValue = ilikeContainsValue(digits.replace(/^0+/, ""));
+      if (digitsValue) clauses.push(`contact_wa_id.ilike.${digitsValue}`);
+    }
+    // A term that left nothing searchable applies NO filter rather than `.or("")`, which is a 400.
+    if (clauses.length > 0) query = query.or(clauses.join(","));
   }
   const { count, data, error } = await query;
   if (error) throw error;
@@ -632,10 +643,13 @@ export async function findInboxPeople(input: { conversationId?: string | null; s
   }
 
   const search = sanitizeInboxSearch(input.search);
-  if (search.length >= 2) {
+  const searchValue = ilikeContainsValue(search);
+  const searchExact = ilikeExactValue(search);
+  if (search.length >= 2 && searchValue && searchExact) {
     const digits = search.replace(/\D+/g, "");
-    const candidateClauses = [`full_name.ilike.*${search}*`, `email.ilike.*${search}*`];
-    if (digits.length >= 6) candidateClauses.push(`phone.ilike.*${digits.replace(/^0+/, "")}*`);
+    const digitsValue = digits.length >= 6 ? ilikeContainsValue(digits.replace(/^0+/, "")) : null;
+    const candidateClauses = [`full_name.ilike.${searchValue}`, `email.ilike.${searchValue}`];
+    if (digitsValue) candidateClauses.push(`phone.ilike.${digitsValue}`);
     const { data: candidates } = await supabase
       .from("ats_candidates")
       .select("id, full_name, phone, email")
@@ -645,8 +659,11 @@ export async function findInboxPeople(input: { conversationId?: string | null; s
     for (const candidate of (candidates ?? []) as Array<{ id: string; full_name: string | null; phone: string | null; email: string | null }>) {
       add({ detail: candidate.email ?? candidate.phone, id: candidate.id, kind: "candidate", name: candidate.full_name?.trim() || "Unnamed candidate", phoneMatch: false });
     }
-    const employeeClauses = [`full_name.ilike.*${search}*`, `name_ar.ilike.*${search}*`, `hr_id.ilike.${search}`];
-    if (digits.length >= 6) employeeClauses.push(`mobile_number.ilike.*${digits.replace(/^0+/, "")}*`);
+    // `hr_id` matches the term EXACTLY, not as a substring — the one arm here that is not a
+    // contains — and it was the only value in this file spliced in with no delimiters of its own
+    // at all, so a comma in it split the filter rather than failing to match.
+    const employeeClauses = [`full_name.ilike.${searchValue}`, `name_ar.ilike.${searchValue}`, `hr_id.ilike.${searchExact}`];
+    if (digitsValue) employeeClauses.push(`mobile_number.ilike.${digitsValue}`);
     const { data: employees } = await supabase
       .from("employees")
       .select("hr_id, full_name, job_title")

@@ -21,9 +21,9 @@ export async function runInternalMessagesTests() {
   const listEnd = source.indexOf("export async function", listStart + 1);
   const listBody = source.slice(listStart, listEnd > listStart ? listEnd : undefined);
   assert.ok(listStart >= 0, "listInternalMessagesForViewer must exist");
-  assert.match(listBody, /recipient_hr_id\.eq\.\$\{sender\.hrId\}/,
+  assert.match(listBody, /quotedOrClause\("recipient_hr_id", "eq", sender\.hrId\)/,
     "inbox must be scoped to the viewer's recipient_hr_id");
-  assert.match(listBody, /sender_hr_id\.eq\.\$\{sender\.hrId\}/,
+  assert.match(listBody, /quotedOrClause\("sender_hr_id", "eq", sender\.hrId\)/,
     "outbox must be scoped to the viewer's sender_hr_id");
   assert.match(listBody, /if \(filters\.length === 0\) return \{ messages: \[\], unreadCount: 0 \}/,
     "an unauthenticated viewer must get an empty list, never an unscoped query");
@@ -33,11 +33,11 @@ export async function runInternalMessagesTests() {
   const markEnd = source.indexOf("export async function", markStart + 1);
   const markBody = source.slice(markStart, markEnd > markStart ? markEnd : source.length);
   assert.ok(markStart >= 0, "markInternalMessageRead must exist");
-  assert.match(markBody, /recipient_hr_id\.eq\.\$\{sender\.hrId\}/,
+  assert.match(markBody, /quotedOrClause\("recipient_hr_id", "eq", sender\.hrId\)/,
     "read-state update must target the viewer as recipient");
-  assert.match(markBody, /recipient_login_id\.eq\.\$\{sender\.loginId\}/,
+  assert.match(markBody, /quotedOrClause\("recipient_login_id", "eq", sender\.loginId\)/,
     "read-state update must also match the viewer's login id");
-  assert.doesNotMatch(markBody, /sender_hr_id\.eq|sender_login_id\.eq/,
+  assert.doesNotMatch(markBody, /"sender_hr_id", "eq"|"sender_login_id", "eq"|sender_hr_id\.eq|sender_login_id\.eq/,
     "marking read must NOT match on sender — a sender cannot mark the recipient's copy read");
   assert.match(markBody, /if \(filters\.length === 0\) throw new Error\("Authentication is required\."\)/,
     "marking read without an identity must be rejected");

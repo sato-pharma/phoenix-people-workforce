@@ -8,6 +8,9 @@ import {
   ilikeContainsPattern,
   ilikeContainsValue,
   quotePostgrestValue,
+  quotedInList,
+  quotedOrClause,
+  searchableTerm,
 } from "../src/lib/supabase/search-filter.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -158,6 +161,7 @@ export function runPostgrestSearchFilterTests() {
   assert.equal(ilikeAnyFilter(["a"], ""), "");
   assert.equal(ilikeContainsValue("*"), null, "a wildcard-only term has nothing searchable left");
 
+
   // ── Points 1 + 5 · parse the filter the way PostgREST does ──────────────────────────────────
   // The defect is not a spelling, it is a COUNT: the expression asked for two conditions and
   // PostgREST saw four. So the assertion counts them, with the same rule PostgREST uses — a comma
@@ -239,6 +243,75 @@ export function runPostgrestSearchFilterTests() {
     conditionsOf(ilikeAnyFilter(["pharmacy_name", "phoenix_pharmacy_code"], "El Salam, Nasr City")).length,
     2,
     "while the corrected construction holds at 2 for the same term",
+  );
+
+  // ── MR-B04 · the three exports the identity sweep added ──────────────────────────────────────
+  // `searchableTerm` is the ONE place the wildcard rule is applied, and it is exported so that a
+  // caller needing a minimum length measures what it returns instead of re-implementing the
+  // cleaning in order to measure it. Four call sites did exactly that before.
+  assert.equal(searchableTerm("  Cairo, Egypt  "), "Cairo, Egypt", "whitespace trimmed, structure kept");
+  assert.equal(searchableTerm("50%"), "50", "the wildcard is blanked, the text survives");
+  assert.equal(searchableTerm("%"), null, "nothing searchable left");
+  assert.equal(searchableTerm("  "), null);
+  assert.equal(searchableTerm(null), null, "null and undefined are inputs here, not errors");
+  assert.equal(searchableTerm(undefined), null);
+  // Every builder in the module goes through it, so they cannot disagree about what a term is.
+  assert.equal(ilikeContainsValue("%"), null);
+  assert.equal(ilikeContainsPattern("%"), null);
+  assert.equal(ilikeAnyFilter(["a"], "%"), "");
+
+  // `quotedOrClause` is the arm builder for a value that is NOT free text — an HR id, a login id,
+  // a uuid, a national id, a mobile number. Those reach a filter normalised, which is not the same
+  // as validated: `canonicalHrIdKey` trims, case-folds and maps aliases and guarantees NO character
+  // set. So the quoting is the whole fix, and the wildcard rule must NOT be applied — these filters
+  // only ever narrow a set the viewer may already see, and blanking a `%` the caller put there
+  // would change what payroll's contains mode asks for.
+  assert.equal(quotedOrClause("hr_id", "eq", "B-10"), 'hr_id.eq."B-10"');
+  assert.equal(quotedOrClause("hr_id", "ilike", "%b-10%"), 'hr_id.ilike."%b-10%"', "the caller's wildcard survives");
+  assert.equal(
+    quotedOrClause("national_id", "eq", "298,7(x)"),
+    'national_id.eq."298,7(x)"',
+    "a hostile identity value is quoted whole, never stripped and never left to end the arm",
+  );
+  assert.equal(quotedOrClause("hr_id", "eq", 'a"b\\c'), 'hr_id.eq."a\\"b\\\\c"', "and escaped the way PostgREST escapes");
+  // THE PROPERTY, on the shape the defect turned on: two arms asked for, two arms seen, however
+  // hostile the ids. This is the assertion that fires if a site goes back to splicing an id raw.
+  const identityArms = [
+    quotedOrClause("recipient_hr_id", "eq", "B-10,ADMIN-HR"),
+    quotedOrClause("recipient_login_id", "eq", "omar(hr)"),
+  ].join(",");
+  assert.deepEqual(conditionsOf(identityArms), [
+    'recipient_hr_id.eq."B-10,ADMIN-HR"',
+    'recipient_login_id.eq."omar(hr)"',
+  ]);
+  conditionsOf(identityArms).forEach((condition) =>
+    assert.ok(wellFormed(condition), `every identity arm must stay well formed — got ${condition}`),
+  );
+  // The original construction, embedded: the same two arms, spliced raw. Three conditions out of
+  // two, and the third carries no operator — which is the HTTP 400, and the one before it is a
+  // filter on a column nobody named.
+  const originalIdentityArms = ["recipient_hr_id.eq.B-10,ADMIN-HR", "recipient_login_id.eq.omar(hr)"].join(",");
+  assert.equal(
+    conditionsOf(originalIdentityArms).length,
+    3,
+    "the shipped construction must be seen to turn 2 identity arms into 3 conditions",
+  );
+  assert.ok(
+    conditionsOf(originalIdentityArms).some((condition) => !wellFormed(condition)),
+    "and at least one of them must carry no operator at all",
+  );
+
+  // `quotedInList` is the `in.(…)` member list. FOUR implementations of this existed before the
+  // sweep — CRM reads, Direct Orders, the hiring-manager notify (which wrapped each id in `"` and
+  // escaped nothing inside it, then DROPPED every id that could carry one) and `cv-lookup`'s own
+  // private clause builder. One copy, one rule.
+  assert.equal(quotedInList(["B-10", "ADMIN-HR"]), '"B-10","ADMIN-HR"');
+  assert.equal(quotedInList(['a"b', "c\\d"]), '"a\\"b","c\\\\d"', "backslash escaping, not SQL doubling");
+  assert.equal(quotedInList([]), "", "an empty list must produce the empty string, for the caller to skip");
+  assert.equal(
+    quotedInList(["B-10"]),
+    [quotePostgrestValue("B-10")].join(","),
+    "it must be the shared value quoting, not a second implementation of it",
   );
 
   // ── Point 2 · `in.()` members ───────────────────────────────────────────────────────────────
@@ -443,10 +516,19 @@ export function runPostgrestSearchFilterTests() {
     /ilikeContainsValue\(q\)/,
     "the operational page's free-text search must resolve its pattern through ilikeContainsValue",
   );
+  // Direct Orders' own `quoteInList` was the FOURTH implementation of this list quoting. It was
+  // correct, which is exactly why it is the one to delete: the sweep leaves one implementation, so
+  // a future correction to the escaping reaches every caller. The local name survives as an alias
+  // because ~20 call sites in this file read it.
   assert.match(
     directOrders,
-    /function quoteInList\([\s\S]{0,200}?quotePostgrestValue\(String\(value\)\)/,
-    "quoteInList must delegate to quotePostgrestValue, not re-implement the escape",
+    /const quoteInList = quotedInList;/,
+    "quoteInList must be the shared quotedInList, not a fourth implementation of the escape",
+  );
+  assert.doesNotMatch(
+    directOrders,
+    /function quoteInList\(/,
+    "and must not be a local function again",
   );
 
   // ── the remainder's five sites · each routed by the rule ITS transport demands ───────────────
@@ -544,6 +626,194 @@ export function runPostgrestSearchFilterTests() {
   );
   assert.equal(quotedIlikePaths, 2, "both employee-directory uniqueness checks must still make this read");
 
+  // ── MR-B04 · the identity sites · one pin per site, naming the call that must be there ───────
+  //
+  // These are not search boxes. Each one splices an HR id, a login id, a user id, a national id or
+  // a mobile number into an `or(...)` filter that IS the read's access boundary or its narrowing,
+  // and the census (2026-10-23) read each value back to its producer: `canonicalHrIdKey`
+  // (`@/lib/hr-id`) and `sharedIdentityKeys` trim, case-fold and map aliases — they guarantee NO
+  // character set. So "an HR id never contains a comma" was a property of today's data, not of the
+  // code, and the failure it would cause is silent: a filter that still returns HTTP 200 and
+  // answers a question nobody asked. Every value is quoted now, through the one shared builder.
+  //
+  // Source pins on purpose: all but two of these sit in non-exported functions behind a Supabase
+  // client, so the wiring is what is checkable here — the BEHAVIOUR of `quotedOrClause`,
+  // `quotedInList`, `ilikeAnyFilter`, `ilikeContainsValue` and `searchableTerm` is pinned by the
+  // unit assertions above, and `stripComments` means the explanation written at each site cannot
+  // satisfy the check on the code's behalf.
+
+  // Payroll · the access filter itself, both halves.
+  const payrollService = requireSource("src/lib/payroll/service.ts");
+  assert.match(
+    payrollService,
+    /return quotedOrClause\("hr_id", "ilike", value\);/,
+    "buildPayrollIdentityOrClause must quote the id it filters on",
+  );
+  assert.match(
+    payrollService,
+    /targetHrIds\.map\(\(id\) => quotedOrClause\(column, "ilike", id\)\)/,
+    "and the batch collector's per-id arms must be quoted too",
+  );
+
+  // CRM plan board · the one site where the OLD guard dropped rows rather than mis-filtering them.
+  const planBoard = requireSource("src/lib/crm/plan-board.ts");
+  assert.match(
+    planBoard,
+    /part\.map\(\(id\) => quotedOrClause\("agent_hr_id", "ilike", id\)\)/,
+    "the week-plan read must quote each agent id",
+  );
+  assert.doesNotMatch(
+    planBoard,
+    /HR_ID_FILTER_SAFE/,
+    "and must not reinstate the shape allow-list — it made the filter safe by DROPPING ids, which " +
+      "silently removed a rep's whole week from his manager's board",
+  );
+
+  // Outstation expenses · three builders, two columns.
+  const outstation = requireSource("src/lib/outstation/expenses.ts");
+  assert.match(
+    outstation,
+    /quotedOrClause\("hr_id", "ilike", normalized\)/,
+    "the single-id expense filter must be quoted",
+  );
+  assert.match(
+    outstation,
+    /normalized\.map\(\(id\) => quotedOrClause\("hr_id", "ilike", id\)\)/,
+    "so must the multi-id one",
+  );
+  assert.match(
+    outstation,
+    /normalized\.map\(\(id\) => quotedOrClause\("employee_hr_id", "ilike", id\)\)/,
+    "and so must the employee_hr_id variant",
+  );
+
+  // Joining form · a national id and a mobile number, both typed by a candidate.
+  const joiningForm = requireSource("src/lib/offers/joining-form-service.ts");
+  assert.match(
+    joiningForm,
+    /quotedOrClause\("national_id", "eq", answers\.nationalId\)/,
+    "the duplicate check must quote the national id",
+  );
+  assert.match(
+    joiningForm,
+    /quotedOrClause\("mobile_number", "eq", answers\.mobileNumber\)/,
+    "and the mobile number",
+  );
+
+  // Market awareness · the `own` visibility narrowing, which existed TWICE verbatim.
+  const marketAwareness = requireSource("src/lib/market-awareness/service.ts");
+  assert.match(
+    marketAwareness,
+    /\.map\(\(value\) => quotedOrClause\("requester_hr_id", "eq", value\)\)/,
+    "ownActivityFilter must build its three casing arms through the shared builder",
+  );
+  assert.doesNotMatch(
+    marketAwareness,
+    /requester_hr_id\.eq\.\$\{/,
+    "and the copy of that clause inlined in listActivities must stay deleted — two copies of one " +
+      "rule is how the quoting got fixed in one of them and not the other",
+  );
+
+  // Notifications · the viewer's own user id and HR id, in both reads.
+  assert.match(
+    requireSource("src/lib/notifications/in-app.ts"),
+    /quotedOrClause\("user_id", "eq", identity\.userId\),\s*quotedOrClause\("hr_id", "eq", employeeHrId\)/,
+    "the in-app notification read must quote both identity arms",
+  );
+  assert.match(
+    requireSource("src/lib/notifications/unread.ts"),
+    /quotedOrClause\("user_id", "eq", identity\.userId\),\s*quotedOrClause\("hr_id", "eq", viewerHrId\)/,
+    "and so must the unread count",
+  );
+
+  // Action centre · eleven history reads share one clause builder.
+  assert.match(
+    requireSource("src/lib/action-center/service.ts"),
+    /actorHrIds\.map\(\(id\) => quotedOrClause\(column, "ilike", id\)\)/,
+    "decidedByAnyOfMine must quote each login id — it feeds every history read at once",
+  );
+
+  // Internal messages · the inbox's four arms and the read-receipt's two.
+  const internalMessages = requireSource("src/lib/internal-messages/service.ts");
+  for (const column of ["recipient_hr_id", "recipient_login_id", "sender_hr_id", "sender_login_id"]) {
+    assert.ok(
+      internalMessages.includes(`quotedOrClause("${column}", "eq", sender.`),
+      `the inbox filter's ${column} arm must be quoted`,
+    );
+  }
+  assert.doesNotMatch(
+    internalMessages,
+    /recipient_hr_id\.eq\.\$\{/,
+    "and no arm may be spliced raw again — this read is who may see a message",
+  );
+
+  // CRM reads · the second of the four list-quoting copies, now an alias.
+  assert.match(
+    crmReads,
+    /const quotedInList = sharedQuotedInList;/,
+    "crm/reads must alias the shared list quoting rather than hold its own",
+  );
+  assert.doesNotMatch(
+    crmReads,
+    /function quotedInList\(/,
+    "and must not define it locally again",
+  );
+
+  // Hiring manager notify · the third copy, which dropped the ids it could not quote.
+  const hiringManagerNotify = requireSource("src/lib/recruitment/hiring-manager-notify.ts");
+  assert.match(
+    hiringManagerNotify,
+    /hr_id\.in\.\(\$\{quotedInList\(seatHolderIds\)\}\)/,
+    "the seat-holder list must be quoted by the shared builder",
+  );
+  assert.doesNotMatch(
+    hiringManagerNotify,
+    /\[",\(\)\]/,
+    "and must not drop an id that carries a quote or a parenthesis — dropping a seat holder " +
+      "removes a manager from the notification this function exists to send",
+  );
+
+  // CV lookup · the fourth copy, correct on `,()` and blind to the wildcards.
+  const cvLookup = requireSource("src/lib/recruitment/cv-lookup.ts");
+  assert.match(
+    cvLookup,
+    /ilikeAnyFilter\(APPLICATION_SEARCH_COLUMNS, cleaned\)/,
+    "the application half must build its filter through ilikeAnyFilter",
+  );
+  assert.doesNotMatch(
+    cvLookup,
+    /function ilikeClause\(/,
+    "and must not keep its own clause builder — it quoted correctly but passed `%` straight " +
+      "through, so a query of `%` matched every candidate",
+  );
+
+  // System audit · a drop set that cost real rows, replaced by quoting.
+  const incidentsLookup = requireSource("src/lib/system-audit/incidents-lookup.ts");
+  assert.match(
+    incidentsLookup,
+    /return ilikeContainsValue\(searchable\);/,
+    "personSearchPattern must delegate to the shared contains value",
+  );
+  assert.ok(
+    !incidentsLookup.includes('[,().:"'),
+    "and must not strip `,().:` out of the typed text again — `Ahmed (Acting)` and `B.10` could " +
+      "not be found at all while it did",
+  );
+
+  // Employee portal · one arm quoted, one deliberately left alone.
+  const employeePortal = requireSource("src/lib/employee-portal/service.ts");
+  assert.match(
+    employeePortal,
+    /quotedOrClause\("employee_hr_id", "eq", canonicalHrId\)/,
+    "the announcement read's own-id arm must be quoted",
+  );
+  assert.match(
+    employeePortal,
+    /recipients\.cs\.\{\$\{canonicalHrId\}\}/,
+    "while the array-literal `cs.{…}` arm stays as it was — its escaping is a different grammar " +
+      "and has not been measured against production, so changing it here would be a guess",
+  );
+
   // Point 4 · the authorization boundary is independent of the search clause. The search was
   // rewritten; the permission check, the scope predicate and the overflow refusal must all still
   // be there, and the scope predicate must still be applied with a column method rather than
@@ -623,4 +893,140 @@ export function runPostgrestSearchFilterTests() {
     [],
     `a search term is interpolated raw into an ilike pattern — use ilikeAnyFilter():\n  ${rawInterpolation.join("\n  ")}`,
   );
+
+  // ── MR-B04 · the repo-wide sweep · every `.ilike.${…}` and `.eq.${…}` in the tree ───────────
+  //
+  // The census found its sites by reading 156 `.or(` calls one at a time. That is not repeatable,
+  // so the rule it produced is mechanical instead: wherever a value is spliced straight after
+  // `.ilike.` or `.eq.` inside a filter string, that value must come from the shared quoting, or
+  // its exemption must be WRITTEN DOWN here with the reason it is safe.
+  //
+  // Deliberately NOT a broader regex. Widening the pattern until it matched everything would have
+  // caught the same 28 lines and also every `.gte.`, `.in.` and `.is.` in the tree, where the
+  // grammar is different and the answer is not "quote it" — and the exemptions would then be a
+  // list nobody could read. The scope is what makes the rule enforceable.
+  const QUOTING_PRODUCER =
+    /\b(?:quotePostgrestValue|ilikeExactValue|ilikeContainsValue|ilikeContainsPattern|ilikeAnyFilter|quotedInList|quotedOrClause|personSearchPattern|searchableTerm)\s*\(/;
+  const BARE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+  /** The expression inside each `${…}` that sits immediately after `.ilike.` or `.eq.`. */
+  const splicedValues = (line: string): string[] => {
+    const found: string[] = [];
+    const marker = /\.(?:ilike|eq)\.\$\{/g;
+    let hit: RegExpExecArray | null;
+    while ((hit = marker.exec(line)) !== null) {
+      const start = hit.index + hit[0].length;
+      let depth = 1;
+      let i = start;
+      for (; i < line.length && depth > 0; i += 1) {
+        if (line[i] === "{") depth += 1;
+        else if (line[i] === "}") depth -= 1;
+      }
+      if (depth === 0) found.push(line.slice(start, i - 1).trim());
+    }
+    return found;
+  };
+
+  // Exemptions, each one measured on 2026-10-23 and keyed by the exact line rather than a line
+  // number, so moving the code keeps the exemption and CHANGING it loses it.
+  const SPLICE_EXEMPT: Record<string, Record<string, string>> = {
+    "src/lib/direct-orders/service.ts": {
+      "...statusGroup.unbookedStatuses.map((s) => `and(status.eq.${s},sales_month.is.null)`),":
+        "`s` is a member of the module's own status vocabulary (resolveDirectOrderStatusGroupFilter), never user text",
+      "...statusGroup.bookedStatuses.map((s) => `and(status.eq.${s},sales_month.not.is.null)`),":
+        "same vocabulary, the booked half",
+      "if (looksLikeDirectOrderId(q)) clauses.push(`id.eq.${q}`);":
+        "guarded by looksLikeDirectOrderId, which is isUuid() — the arm exists only when `q` is a uuid",
+    },
+    "src/lib/payroll/service.ts": {
+      ".or(`year.lt.${year},and(year.eq.${year},month.lt.${month})`)":
+        "`year` and `month` are typed `number`",
+    },
+    "src/lib/recruitment/inbound/whatsapp-classify-session.ts": {
+      ".or(`applied_at.is.null,applied_candidate_id.eq.${input.candidateId}`)":
+        "the candidate id is a uuid this code read back out of the database, not typed input",
+    },
+    "src/lib/recruitment/inbound/whatsapp-screening-questions-session.ts": {
+      ".or(`applied_at.is.null,applied_candidate_id.eq.${input.candidateId}`)":
+        "the same read in the screening-questions session",
+    },
+    "src/lib/whatsapp-inbox/store.ts": {
+      ".or(`phone_norm.eq.${waId},phone.ilike.*${tail},whatsapp.ilike.*${tail}`)":
+        "`waId` is normalizePhone()'s output — digits only, nothing else survives it",
+    },
+    "src/lib/employees/employee-cv-candidates.ts": {
+      ".map((value) => `full_name.ilike.${value}`);":
+        "the chained map two lines above produced every member with ilikeContainsValue(token), so " +
+        "this arrow's parameter IS a quoted value — the only site where the producer is on a " +
+        "different line of the same expression",
+    },
+  };
+  // `src/lib/crm/plan-board.ts` is deliberately NOT in that list: its two matched arms are
+  // `plan_month.eq.${Number(...)}` and `plan_year.eq.${Number(...)}`, which the numeric rule below
+  // resolves on its own.
+
+  const unquotedSplice: string[] = [];
+  let splicesInspected = 0;
+  let splicesExempt = 0;
+  for (const file of listed) {
+    const raw = readTracked(file);
+    if (!raw) continue;
+    const lines = stripComments(raw).split("\n");
+    lines.forEach((line, i) => {
+      const values = splicedValues(line);
+      if (values.length === 0) return;
+      const trimmed = line.trim();
+      const exemption = SPLICE_EXEMPT[file]?.[trimmed];
+      for (const value of values) {
+        splicesInspected += 1;
+        // Resolved in the value itself: a producer call, or a number, which has no grammar to break.
+        if (QUOTING_PRODUCER.test(value) || /^Number\(/.test(value)) continue;
+        // Resolved one hop back: a bare identifier whose NEAREST PRECEDING declaration produces a
+        // quoted value. Nearest preceding, not first in the file — `internal-messages/service.ts`
+        // holds an unquoted `const normalized = normalizeHrId(hrId)` above the quoted one that
+        // feeds the filter, and a first-match lookup would read the wrong line and pass.
+        if (BARE_IDENTIFIER.test(value)) {
+          const declaration = new RegExp(`\\bconst\\s+${value}\\b\\s*=`);
+          let resolved = false;
+          for (let j = i; j >= 0; j -= 1) {
+            if (!declaration.test(lines[j] as string)) continue;
+            // THAT declaration's initializer only — up to its `;`. A fixed window of lines would
+            // read the NEXT declaration too, and the outstation employee-lookup route is the proof:
+            // its `const normalized` is followed immediately by `const pattern =
+            // ilikeContainsValue(query)`, so a 3-line window called an unquoted `normalized`
+            // quoted, on the strength of the line below it. Measured 2026-10-23 by breaking it.
+            const window = lines.slice(j, j + 3).join("\n");
+            const afterEquals = window.slice(window.indexOf("=") + 1);
+            const semicolon = afterEquals.indexOf(";");
+            resolved = QUOTING_PRODUCER.test(semicolon >= 0 ? afterEquals.slice(0, semicolon) : afterEquals);
+            break;
+          }
+          if (resolved) continue;
+        }
+        if (exemption) {
+          splicesExempt += 1;
+          continue;
+        }
+        unquotedSplice.push(`${file}:${i + 1}  \${${value}}`);
+      }
+    });
+  }
+  assert.ok(
+    splicesInspected >= 40,
+    `the sweep must actually be reading the tree — it inspected only ${splicesInspected} spliced values`,
+  );
+  assert.deepEqual(
+    unquotedSplice,
+    [],
+    "a value is spliced straight after `.ilike.` or `.eq.` in a PostgREST filter string without " +
+      "going through the shared quoting. In that grammar `,` `(` `)` are structural, so such a " +
+      "value can end its own condition and the request still returns HTTP 200 answering a filter " +
+      "nobody wrote. Build it with quotedOrClause()/ilikeAnyFilter()/ilikeContainsValue(), or add " +
+      `the line to SPLICE_EXEMPT above with the reason it is safe:\n  ${unquotedSplice.join("\n  ")}`,
+  );
+  // Asserted AFTER the list, deliberately: an exemption is keyed to the exact line, so editing an
+  // exempt line loses its exemption, and the useful message in that case is the line itself rather
+  // than this count. The count then catches the opposite drift — an exemption kept for code that no
+  // longer needs it.
+  assert.equal(splicesExempt, 8, "the written-down exemptions must all still be reached, and no more of them");
 }

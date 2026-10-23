@@ -32,6 +32,7 @@ import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { dayScanSlices, readCompanyWindow } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
@@ -602,8 +603,11 @@ export type AgentWeekPlanEntry = {
   status: number | null;
 };
 
-/** `agent_hr_id` goes into a filter string, so only the shapes a real HR id has are let through. */
-const HR_ID_FILTER_SAFE = /^[A-Za-z0-9-]{1,32}$/;
+/** `agent_hr_id` goes into a filter string — the value is QUOTED (`quotedOrClause`) instead of being
+ * matched against a shape. The old allow-list `/^[A-Za-z0-9-]{1,32}$/` made the filter safe by
+ * DROPPING every id it did not recognise, which on this read means the rep's whole week vanishes
+ * from his manager's board with no error anywhere; quoting keeps the id and makes its characters
+ * literal (AGENTS.md MR-B04). */
 
 /**
  * Several reps' iReports360 weekly plans over one field week — the plan a district manager sees for a
@@ -630,7 +634,7 @@ export async function getAgentsWeekPlanEntries(
   start: string,
   end: string,
 ): Promise<AgentWeekPlanEntry[] | null> {
-  const ids = [...new Set(agentHrIds.map((id) => id.trim()).filter((id) => HR_ID_FILTER_SAFE.test(id)))];
+  const ids = [...new Set(agentHrIds.map((id) => id.trim()).filter((id) => id.length > 0))];
   const supabase = getSupabaseAdmin();
   const found: AgentWeekPlanEntry[] = [];
   for (let from = 0; from < ids.length; from += IN_CHUNK) {
@@ -643,7 +647,7 @@ export async function getAgentsWeekPlanEntries(
         .eq("plan_kind", "weekly")
         .gte("plan_date", start)
         .lte("plan_date", end)
-        .or(part.map((id) => `agent_hr_id.ilike.${id}`).join(","));
+        .or(part.map((id) => quotedOrClause("agent_hr_id", "ilike", id)).join(","));
       if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
       const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PAGE_SIZE);
       if (error) {

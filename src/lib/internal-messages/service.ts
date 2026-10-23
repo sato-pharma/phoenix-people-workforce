@@ -2,7 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
-import { ilikeContainsValue, ilikeExactValue } from "@/lib/supabase/search-filter";
+import { ilikeContainsValue, ilikeExactValue, quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type AuthUserRow = {
@@ -363,11 +363,14 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
 }
 
 export async function listInternalMessagesForViewer(access: AccessContext, limit = 20) {
+  // Each identity value is QUOTED: an HR id or a login id is normalised, never validated, and a `,`
+  // in one would end its arm early and leave this inbox reading rows that are not the viewer's
+  // (AGENTS.md MR-B04).
   const viewerFilters = (sender: { hrId: string | null; loginId: string | null }) => [
-    sender.hrId ? `recipient_hr_id.eq.${sender.hrId}` : null,
-    sender.loginId ? `recipient_login_id.eq.${sender.loginId}` : null,
-    sender.hrId ? `sender_hr_id.eq.${sender.hrId}` : null,
-    sender.loginId ? `sender_login_id.eq.${sender.loginId}` : null,
+    sender.hrId ? quotedOrClause("recipient_hr_id", "eq", sender.hrId) : null,
+    sender.loginId ? quotedOrClause("recipient_login_id", "eq", sender.loginId) : null,
+    sender.hrId ? quotedOrClause("sender_hr_id", "eq", sender.hrId) : null,
+    sender.loginId ? quotedOrClause("sender_login_id", "eq", sender.loginId) : null,
   ].filter((filter): filter is string => Boolean(filter));
   const readMessageRows = async (filters: string[]) => {
     const { data, error } = await getSupabaseAdmin()
@@ -547,9 +550,11 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
 
 export async function markInternalMessageRead(access: AccessContext, messageId: string) {
   const sender = await resolveSender(access);
+  // QUOTED, and here the filter guards an UPDATE: it is the only thing stopping "mark read" from
+  // settling a message addressed to somebody else (AGENTS.md MR-B04).
   const filters = [
-    sender.hrId ? `recipient_hr_id.eq.${sender.hrId}` : null,
-    sender.loginId ? `recipient_login_id.eq.${sender.loginId}` : null,
+    sender.hrId ? quotedOrClause("recipient_hr_id", "eq", sender.hrId) : null,
+    sender.loginId ? quotedOrClause("recipient_login_id", "eq", sender.loginId) : null,
   ].filter((filter): filter is string => Boolean(filter));
 
   if (filters.length === 0) throw new Error("Authentication is required.");

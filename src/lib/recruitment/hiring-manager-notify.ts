@@ -40,6 +40,7 @@ import { boardsForManager, type DistrictSeatRow } from "@/lib/recruitment/distri
 import { loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
 import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
 import { recordManagerSends } from "@/lib/recruitment/manager-sends";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
 /** The audit action written to ats_application_events when a manager is told about a candidate. */
@@ -288,11 +289,13 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
     // The ORIGINAL casing, never the lower-cased map key — see the note on `OrgSeat.hrId`. Querying
     // with the key matched zero rows and silently dropped the CEO.
     .map((seat) => seat.hrId)
-    // Anything that could close the filter's own parenthesis or quote is dropped rather than
-    // escaped: an HR_ID has never contained one, and a filter string that a value can break out of
-    // is not a thing to be clever about.
-    .filter((hrId) => hrId.length > 0 && !/[",()]/.test(hrId));
-  const seatHolderClause = seatHolderIds.length > 0 ? `,hr_id.in.(${seatHolderIds.map((hrId) => `"${hrId}"`).join(",")})` : "";
+    .filter((hrId) => hrId.length > 0);
+  // Quoted through the shared builder. This line used to wrap each id in `"` by hand and escape
+  // NOTHING inside them, which is only safe if no id can carry a quote — so the ids that could
+  // were dropped from the list a few lines up instead. Dropping a seat holder silently removes a
+  // manager from the notification this function exists to send; quoting keeps him and cannot
+  // break the filter.
+  const seatHolderClause = seatHolderIds.length > 0 ? `,hr_id.in.(${quotedInList(seatHolderIds)})` : "";
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")

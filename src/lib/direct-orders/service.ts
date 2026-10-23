@@ -45,7 +45,7 @@ import {
   ilikeAnyFilter,
   ilikeContainsPattern,
   ilikeContainsValue,
-  quotePostgrestValue,
+  quotedInList,
 } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -6735,9 +6735,7 @@ type SearchMatches = { values: string[]; overflowed: boolean };
  * one character early. Nothing was broken in practice only because every member here is a uuid or
  * an HR-id key, and those carry neither character: a divergence held latent by the shape of
  * today's data rather than by anything in the code. */
-function quoteInList(values: readonly string[]): string {
-  return values.map((value) => quotePostgrestValue(String(value))).join(",");
-}
+const quoteInList = quotedInList;
 
 /**
  * Pharmacies whose NAME or CUSTOMER CODE matches, as ids this table can be filtered by.

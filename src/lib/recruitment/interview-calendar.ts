@@ -114,6 +114,7 @@ import {
 import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
 import { findWhatsAppApplicationSessionId } from "@/lib/recruitment/whatsapp-applicants-loader";
+import { ilikeAnyFilter, ilikeContainsValue } from "@/lib/supabase/search-filter";
 import {
   createZoomMeeting,
   createZoomPoll,
@@ -2552,9 +2553,17 @@ export async function listInterviewCalendarShares(caller: InterviewCalendarCalle
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** Text safe inside a PostgREST filter: anything that could break out of one is dropped, not escaped. */
+/** The typed text, whitespace collapsed — NOTHING is stripped out of it.
+ *
+ * It used to blank `,` `(` `)` `"` `\` `:` because the two searches below splice it into a
+ * PostgREST `or(...)` expression, where those are structural. That made the filter safe and, at the
+ * same moment, unable to find anyone: a company whose name holds a parenthesis, or an Arabic name
+ * typed with a comma, lost the characters it would have matched on. The values are double-quoted
+ * now (`@/lib/supabase/search-filter`), which is what PostgREST documents for exactly this, so the
+ * characters reach the database as text. Wildcards are the one thing still neutralised, inside the
+ * shared helper — see `searchableTerm`. */
 function filterText(query: unknown): string {
-  return (typeof query === "string" ? query : "").replace(/[,()*%"\\:]/g, " ").replace(/\s+/g, " ").trim();
+  return (typeof query === "string" ? query : "").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -2597,11 +2606,15 @@ export async function searchInterviewCalendarPeople(
   else requireCalendarAccess(caller, "share", null);
   const text = filterText(query);
   if (text.length < 2) return [];
+  // Empty when the text was nothing but wildcards: `.or("")` is a 400, and a lone `%` would match
+  // every employee rather than narrowing to one.
+  const peopleFilter = ilikeAnyFilter(["full_name", "nickname", "job_title"], text);
+  if (!peopleFilter) return [];
   const { data, error } = await recruitmentDb()
     .from("employees")
     .select("hr_id,full_name,nickname,job_title")
     .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
-    .or(`full_name.ilike.*${text}*,nickname.ilike.*${text}*,job_title.ilike.*${text}*`)
+    .or(peopleFilter)
     .order("full_name", { ascending: true })
     // The interviewer picker drops everyone below District Manager after the read, so it reads wider
     // first — otherwise fifteen reps sharing a name would crowd out the manager being searched for.
@@ -2714,9 +2727,14 @@ export async function searchInterviewCandidates(caller: InterviewCalendarCaller,
   await assertMayUseRecruitmentFromCalendar(caller.access, "read");
   const text = filterText(query);
   if (text.length < 2) return [];
+  const value = ilikeContainsValue(text);
+  if (!value) return [];
   const digits = text.replace(/\D/g, "");
-  const clauses = [`full_name.ilike.*${text}*`, `email.ilike.*${text}*`];
-  if (digits.length >= 5) clauses.push(`phone.ilike.*${digits}*`, `whatsapp.ilike.*${digits}*`);
+  const clauses = [`full_name.ilike.${value}`, `email.ilike.${value}`];
+  if (digits.length >= 5) {
+    const digitsValue = ilikeContainsValue(digits);
+    if (digitsValue) clauses.push(`phone.ilike.${digitsValue}`, `whatsapp.ilike.${digitsValue}`);
+  }
   const { data, error } = await recruitmentDb()
     .from("ats_candidates")
     .select("id,full_name,applied_for_job_title")
