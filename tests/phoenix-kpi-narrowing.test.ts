@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { checkinAgentKey } from "../src/lib/crm/checkin-match.ts";
 import type { DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
 import { isAgentInScope } from "../src/lib/crm/doctor-coverage-roles.ts";
-import { KPI_NARROW_MAX_CRM_IDS, type KpiBoardAgents } from "../src/lib/crm/kpi-board-agents.ts";
+import { KPI_NARROW_MAX_CRM_IDS, resolveRepKeyAgents, type KpiBoardAgentReaders, type KpiBoardAgents } from "../src/lib/crm/kpi-board-agents.ts";
 import { narrowPhoenixKpiReads, phoenixHrKeyByCrmId, phoenixRowKey, type PhoenixKpiNarrowing } from "../src/lib/crm/phoenix-kpi-data.ts";
 import { expandHrIdFilterValues } from "../src/lib/crm/reads.ts";
 import { canonicalHrIdKey, hrIdAliasSources } from "../src/lib/hr-id.ts";
@@ -156,4 +156,24 @@ export async function runPhoenixKpiNarrowingTests() {
   assert.match(loader, /scanPlanEntries\(input\.month\.start, input\.month\.end, \{ agentCrmIds: narrowed\.crmIds, agentHrIds: narrowed\.hrIds \}\)\.then\(inPlanEntryOrder\)/);
   const board = readFileSync(new URL("../src/lib/crm/kpis-board.ts", import.meta.url), "utf8");
   assert.match(board, /narrowToScope: !input\.coverageDoctors,/, "the Coverage tab keeps the company-wide read");
+
+  // ── 4. One rep's call-rate page reads that rep's accounts only ───────────────────────────────
+  const asked: string[][] = [];
+  const readers: KpiBoardAgentReaders = {
+    visits: async (filter) => {
+      asked.push(filter.agentHrIds);
+      return [{ agent_crm_id: 909 }, { agent_crm_id: 101 }];
+    },
+    plans: async () => [{ agent_crm_id: 101 }],
+  };
+  assert.deepEqual(await resolveRepKeyAgents("crm:2103", window, readers), { crmIds: [2103], hrIds: [] }, "a CRM account is read by its id alone");
+  assert.equal(asked.length, 0, "a CRM account needs no discovery");
+  assert.deepEqual(await resolveRepKeyAgents("hr:b-10", window, readers), { crmIds: [101, 909], hrIds: ["b-10"] }, "a person is read with every account his rows carry");
+  assert.deepEqual(asked, [["b-10"]]);
+  for (const bad of ["", "crm:", "crm:abc", "hr:", "hr:   ", "B-10", "crm:99999999999999999999"]) {
+    assert.equal(await resolveRepKeyAgents(bad, window, readers), null, `"${bad}" reads the whole field force`);
+  }
+  const page = readFileSync(new URL("../src/components/crm/rep-visits-page.tsx", import.meta.url), "utf8");
+  assert.match(page, /resolveRepKeyAgents\(repKey, \{ from: range\.dateFrom, to: range\.dateTo \}\)\.catch\(\(\) => null\)/, "a failed discovery reads the whole field force");
+  assert.match(page, /loadCallRateReport\(\{ dateFrom: range\.dateFrom, dateTo: range\.dateTo, holidays, \.\.\.\(agents \? \{ agents \} : \{\}\) \}\)/);
 }
