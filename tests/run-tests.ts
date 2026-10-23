@@ -2109,6 +2109,7 @@ import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-change.test.ts";
 import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
+import { runTerritoryRestampPerPeriodTests } from "./territory-restamp-per-period.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
 import { runMedicalRepMarketingScopeTests } from "./medical-rep-marketing-scope.test.ts";
@@ -7959,6 +7960,10 @@ await runTest(
 await runTest(
   "territory re-stamp reports liveness at the COMMIT, not after the tail a deploy can cut (2026-09-04: committed 03:20:00 Cairo, container replaced 03:20:31, read as stranded for 14h)",
   runTerritoryRestampLivenessTests,
+);
+await runTest(
+  "territory re-stamp runs one period per call and retries a cut once (2026-10-04: the gateway cut the all-periods call at ~2 min and the whole night rolled back)",
+  runTerritoryRestampPerPeriodTests,
 );
 await runTest(
   "the brick-move drain is on a clock and reports at the first rebuilt file (2026-10-12: 71 queued files sat a full day because only an open Database Mapping tab drained them)",

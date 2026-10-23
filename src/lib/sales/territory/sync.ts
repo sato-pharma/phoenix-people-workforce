@@ -20,14 +20,121 @@ export const TERRITORY_SYNC_MAX_MONTHS = 24;
 // floating-point noise in the effective-units product (qty x factory price).
 const RECONCILE_EPSILON = 0.01;
 
-// The whole sync (re-stamp + every affected batch's rollup rebuild) runs server-side in ONE
+// Each period's re-stamp (its rows + every affected batch's rollup rebuild) runs server-side in ONE
 // transaction (phx_sync_sos_run), so it needs a request timeout far longer than the 15s default —
 // a large first backlog can take a minute. Because it is one transaction, a client abort rolls the
-// whole thing back rather than leaving import_rows re-stamped but rollups stale (the 2026-08-09
+// whole period back rather than leaving import_rows re-stamped but rollups stale (the 2026-08-09
 // half-applied-timeout incident).
 const SYNC_REQUEST_TIMEOUT_MS = 170_000;
 
+/**
+ * How long one sync may spend re-stamping, by caller. The nightly route may run 300 s and the
+ * Drilldown button's route 120 s; each keeps about a minute back for the reconciliation read and the
+ * audit row (the tail measured 24.3 s on 2026-09-03).
+ */
+export const TERRITORY_SYNC_SCHEDULED_BUDGET_MS = 240_000;
+export const TERRITORY_SYNC_BUTTON_BUDGET_MS = 80_000;
+
+/** A period is not started with less than this left: a no-op period answers in about a second. */
+const MIN_START_MS = 10_000;
+/** A cut period is tried once more only with this much left — a slow night ran about two minutes. */
+const MIN_RETRY_MS = 60_000;
+
 const AUDIT_ENTITY_TYPE = "territory_sync";
+
+/**
+ * Was the re-stamp call CUT — the database gateway, the statement timeout, the client's own abort or a
+ * dropped connection — rather than refused? A cut rolls its one period back whole, so trying it again
+ * is safe; a refusal (a locked closing's trigger, a missing function) would only be refused again.
+ */
+export function territorySyncCallWasCut(message: string): boolean {
+  return /upstream request timeout|statement timeout|canceling statement|timed out|timeout|aborted|fetch failed|ECONNRESET|socket hang up|\b50[234]\b/i.test(
+    message,
+  );
+}
+
+export type TerritoryPeriodFailure = { period: string; message: string; attempts: number };
+
+export type TerritoryRestampOutcome = {
+  restampedRows: number;
+  refreshedBatches: number;
+  /** Periods whose re-stamp committed, in the order they ran. */
+  committedPeriods: string[];
+  /** Periods that failed, after one more try when the failure was a cut and time allowed. */
+  failedPeriods: TerritoryPeriodFailure[];
+  /** Periods never started because the run's time was spent — the next run takes them. */
+  notReachedPeriods: string[];
+};
+
+/** The periods a run left for the next one, in words — empty when every period committed. Pure. */
+export function unfinishedSummary(
+  outcome: Pick<TerritoryRestampOutcome, "failedPeriods" | "notReachedPeriods" | "committedPeriods">,
+): string {
+  const parts: string[] = [];
+  for (const failure of outcome.failedPeriods) {
+    parts.push(`${failure.period} failed after ${failure.attempts} attempt(s): ${failure.message}`);
+  }
+  if (outcome.notReachedPeriods.length > 0) {
+    parts.push(`${outcome.notReachedPeriods.join(", ")} not started — the run's time was spent`);
+  }
+  if (parts.length === 0) return "";
+  return ` ${parts.join("; ")}. ${outcome.committedPeriods.length} other period(s) committed.`;
+}
+
+/**
+ * Re-stamp the periods ONE AT A TIME, newest first, each in its own transaction.
+ *
+ * 🔴 ONE CALL FOR EVERY PERIOD LOST THE WHOLE NIGHT TO ONE SLOW MINUTE (4 Oct 2026). The nightly run
+ * sent all open periods in one call; that night the database answered slowly, the gateway in front of
+ * it cut the call at about two minutes ("upstream request timeout", 03:20:02 → 03:22:06 Cairo) and the
+ * single transaction rolled every period back. The next night the same 2,375 rows re-stamped in 26 s.
+ * Now a slow period costs only itself: it is tried once more when the failure was a cut and there is
+ * time, and every other period still commits. Each period is still one transaction, so nothing is ever
+ * half-written — and per period is exactly as safe as all at once, because every rollup refresh in
+ * `phx_sync_sos_run` rebuilds a batch from that batch's own current rows.
+ *
+ * Newest first: when time runs out, it is the oldest open month that waits for the next night.
+ */
+export async function restampPeriodsOneByOne(input: {
+  periods: readonly string[];
+  restampPeriod: (period: string, timeoutMs: number) => Promise<{ restampedRows: number; refreshedBatches: number }>;
+  remainingMs: () => number;
+  /** Called once, after the FIRST period commits. */
+  onFirstCommit?: () => Promise<void>;
+}): Promise<TerritoryRestampOutcome> {
+  const outcome: TerritoryRestampOutcome = {
+    restampedRows: 0,
+    refreshedBatches: 0,
+    committedPeriods: [],
+    failedPeriods: [],
+    notReachedPeriods: [],
+  };
+  const newestFirst = [...input.periods].sort((a, b) => b.localeCompare(a));
+  for (const period of newestFirst) {
+    if (input.remainingMs() < MIN_START_MS) {
+      outcome.notReachedPeriods.push(period);
+      continue;
+    }
+    let attempts = 0;
+    for (;;) {
+      attempts += 1;
+      try {
+        const done = await input.restampPeriod(period, Math.min(SYNC_REQUEST_TIMEOUT_MS, input.remainingMs()));
+        outcome.restampedRows += done.restampedRows;
+        outcome.refreshedBatches += done.refreshedBatches;
+        outcome.committedPeriods.push(period);
+        if (outcome.committedPeriods.length === 1 && input.onFirstCommit) await input.onFirstCommit();
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempts === 1 && territorySyncCallWasCut(message) && input.remainingMs() >= MIN_RETRY_MS) continue;
+        outcome.failedPeriods.push({ period, message, attempts });
+        break;
+      }
+    }
+  }
+  return outcome;
+}
 
 function currentPeriod(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -134,29 +241,32 @@ export async function syncTerritoryData(input: {
    * scheduled run has a liveness register to answer to. See the call site for why it exists.
    */
   onWorkCommitted?: () => Promise<void> | void;
+  /** How long the re-stamp may run before the rest wait for the next run (`TERRITORY_SYNC_*_BUDGET_MS`). */
+  budgetMs?: number;
 }): Promise<TerritorySyncReport> {
   const startedAt = Date.now();
   const periods = input.periods;
+  const deadline = startedAt + (input.budgetMs ?? TERRITORY_SYNC_BUTTON_BUDGET_MS);
 
-  // 1) Re-stamp + rebuild the affected batches' rollups atomically, server-side, in one call. The
-  //    long request timeout matches the function's own statement_timeout; because it is one
-  //    transaction, an abort cannot leave a half-applied state.
-  const runClient = getSupabaseAdmin({ requestTimeoutMs: SYNC_REQUEST_TIMEOUT_MS });
-  const { data: runData, error: runError } = await runClient.rpc("phx_sync_sos_run", {
-    p_periods: periods,
-  });
-  if (runError) {
-    throw new Error(`Territory sync failed: ${runError.message}`);
-  }
-  const runRow = (Array.isArray(runData) ? runData[0] : runData) as
-    | { restamped_rows?: number; refreshed_batches?: number }
-    | null
-    | undefined;
-  const restampedRows = toNumber(runRow?.restamped_rows);
-  const refreshedBatches = toNumber(runRow?.refreshed_batches);
+  // 1) Re-stamp + rebuild the affected batches' rollups atomically, server-side, ONE PERIOD PER CALL
+  //    (`restampPeriodsOneByOne`). Each call is one transaction, so an abort cannot leave a
+  //    half-applied state, and a slow period no longer rolls back every other one.
+  const restampPeriod = async (period: string, timeoutMs: number) => {
+    const runClient = getSupabaseAdmin({ requestTimeoutMs: timeoutMs });
+    const { data: runData, error: runError } = await runClient.rpc("phx_sync_sos_run", {
+      p_periods: [period],
+    });
+    if (runError) throw new Error(runError.message);
+    const runRow = (Array.isArray(runData) ? runData[0] : runData) as
+      | { restamped_rows?: number; refreshed_batches?: number }
+      | null
+      | undefined;
+    return { restampedRows: toNumber(runRow?.restamped_rows), refreshedBatches: toNumber(runRow?.refreshed_batches) };
+  };
 
-  // THE DURABLE WORK IS NOW COMMITTED. Everything below this line — the reconciliation read, the
-  // cache invalidation, the audit row — is reporting ABOUT work that has already landed.
+  // THE DURABLE WORK IS COMMITTED the moment the first period returns. Everything after the loop —
+  // the reconciliation read, the cache invalidation, the audit row — is reporting ABOUT work that has
+  // already landed.
   //
   // On 2026-09-04 that distinction cost this job its heartbeat. The nightly re-stamp committed at
   // 03:20:00 Cairo (7 periods' attribution rollups carry that exact `refreshed_at`), and the
@@ -166,19 +276,32 @@ export async function syncTerritoryData(input: {
   //
   // The tail is not fast enough to be safe on its own — the run measured 24.3s on 2026-09-03
   // against cron-job.org's hard 30s cap — and production deploys land on every merge. So the
-  // caller reports success HERE, at the earliest instant the claim is true, instead of after a
-  // tail any routine deploy can cut.
+  // caller reports success at that first commit, the earliest instant the claim is true, instead of
+  // after a tail any routine deploy can cut.
   //
   // AWAITED, not fire-and-forget: an unawaited promise is exactly as orphanable as the tail it
   // replaces. Wrapped, because a reporting failure must never turn a committed sync into a failed
   // one — `pingDeadMansSwitch` already swallows its own errors, and this is the belt to that brace.
-  if (input.onWorkCommitted) {
-    try {
-      await input.onWorkCommitted();
-    } catch {
-      // Intentionally silent: this catch exists so the sync's own result survives a broken
-      // reporter, and logging from here could fail for the very reason the callback did.
+  const reportCommitted = async () => {
+    if (input.onWorkCommitted) {
+      try {
+        await input.onWorkCommitted();
+      } catch {
+        // Intentionally silent: this catch exists so the sync's own result survives a broken
+        // reporter, and logging from here could fail for the very reason the callback did.
+      }
     }
+  };
+  const restamp = await restampPeriodsOneByOne({
+    onFirstCommit: reportCommitted,
+    periods,
+    remainingMs: () => deadline - Date.now(),
+    restampPeriod,
+  });
+  const { restampedRows, refreshedBatches } = restamp;
+  if (restamp.committedPeriods.length === 0 && restamp.failedPeriods.length > 0) {
+    // Nothing landed: say so exactly as before, with the database's own words.
+    throw new Error(`Territory sync failed: ${restamp.failedPeriods[0].message}`);
   }
 
   const supabase = getSupabaseAdmin();
@@ -222,6 +345,8 @@ export async function syncTerritoryData(input: {
       geo_mismatch_rows: geoMismatchRows,
       unrollup_rows: unrollupRows,
       geography_checked: geographyChecked,
+      failed_periods: restamp.failedPeriods,
+      not_reached_periods: restamp.notReachedPeriods,
       synced_at: syncedAt,
     },
     summary:
@@ -229,8 +354,15 @@ export async function syncTerritoryData(input: {
       `reconciled=${allReconciled}` +
       (geographyChecked
         ? `, geography off on ${geoMismatchRows} row(s), ${unrollupRows} row(s) with no rollup row.`
-        : " — geography NOT checked (database still on the quantity-only reconciliation function)."),
+        : " — geography NOT checked (database still on the quantity-only reconciliation function).") +
+      unfinishedSummary(restamp),
   });
+
+  // Some periods committed and some did not: the audit row above says which, and the run still FAILS,
+  // so the job register and the Sync button never call a partial night a clean one.
+  if (restamp.failedPeriods.length > 0 || restamp.notReachedPeriods.length > 0) {
+    throw new Error(`Territory sync failed:${unfinishedSummary(restamp)}`);
+  }
 
   return {
     periods,
