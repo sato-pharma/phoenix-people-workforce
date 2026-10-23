@@ -843,6 +843,20 @@ access token for Railway to pull a private image, moves the live service off its
 measured slower on a normal day (a 2-core runner against Railway's builder) and dearer (about six more runner
 minutes per merge plus image storage).
 
+### A failed production deployment alerts the owner — `deploy-failure-alert.yml` (2026-10-23)
+
+Four production deployments failed on 23 Oct and nothing said so; `deploy-drift-check.yml` stayed green all
+morning because it is a half-hourly clock (GitHub starts it late and skips most runs) asking a different
+question. `.github/workflows/deploy-failure-alert.yml` is driven by Railway's own `deployment_status` event
+instead. On a `failure` or `error` status in a `production` environment it sends ONE Telegram message
+(same `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` as the drift check) with the commit subject, whether
+the deployment had gone live first, whether production now serves a commit that already contains the change
+(a failure a later deploy covered reads "no action"), and the `validate` / `checks` / `release-gate`
+results on that commit. Railway sends several `failure` statuses per deployment, so only the OLDEST one
+alerts. Both steps are `continue-on-error` with their own timeouts — the run's suite sits on the deployment's
+commit, so it must never go red. Self-test: dispatch the workflow with `test_alert` ticked. Pinned by
+`tests/deploy-failure-alert.test.ts`.
+
 ## The urgent route — "live in five minutes"
 
 Built 2026-10-18 at the owner's instruction: *"an extra route that you don't ever use except with a

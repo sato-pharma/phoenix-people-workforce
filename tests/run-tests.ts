@@ -2519,6 +2519,7 @@ import { runWaitPrTests } from "./wait-pr.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
+import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -9798,6 +9799,11 @@ await runTest(
 await runTest(
   "the deploy drift check compares a SETTLED commit by ancestry, so it can never fail about a deploy that is still legitimately in flight and thereby withhold it (2026-09-27, cd9e0be03: a green ci.yml withheld because this workflow own scheduled run went red on the same sha)",
   runDeployDriftSettledRefTests,
+);
+
+await runTest(
+  "the production deploy failure alert fires on a failed or errored production deployment once, never turns the deployment commit red, and delivers through the existing Telegram channel",
+  runDeployFailureAlertTests,
 );
 
 await runTest(
