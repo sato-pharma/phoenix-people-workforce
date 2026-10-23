@@ -1083,6 +1083,32 @@ export const MODULES = [
     keywords: ["design token", "design tokens", "form-kit", "form-tokens", "brand-tokens", "square-edge", "wizard shell", "panel header band"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` measured a
+  // 4,013-byte pointer against the 4,000-byte margin `tests/module-memory.test.ts` holds, the moment the
+  // audit-outbox rules landed. The cut is the OBSERVABILITY family — Sentry, `app_error_events` and what a
+  // row carries, the crash screenshot, the System Audit board and its start point, the job re-fire policy,
+  // and the audit trail's own persistence — none of which is read while editing a login, a permission or a
+  // share link. They moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so an observability file loads the
+  // PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "platform-observability",
+    title: "Platform — structured logging, Sentry and the audit trail's own persistence",
+    scope: "Structured logging and what an `app_error_events` row carries, Sentry, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.",
+    globs: [
+      "src/lib/observability/**",
+      "src/lib/error-monitor/**",
+      "src/lib/admin/audit*.ts",
+      "src/lib/http/api-errors.ts",
+      "src/components/admin/audit-log-viewer*",
+      "app/api/errors/client/route.ts",
+      "app/**/{error-monitor,logs,monitoring}/**",
+      "instrumentation.ts",
+      "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire}*",
+      "supabase/migrations/*{app_error,audit_log}*",
+    ],
+    keywords: ["error monitor", "app_error_events", "system audit", "sentry", "structured log", "logError", "audit outbox", "audit_logs", "job failure"],
+    tables: ["app_error", "audit_log"],
+  },
   {
     id: "database",
     title: "Database, migrations and Supabase",

@@ -1188,3 +1188,68 @@ collected, capped at 50), newest first, and the read is best-effort: a drawer th
 picture must still show the error.
 
 Pinned by `tests/error-screenshot-intake.test.ts`.
+
+## The audit trail stopped losing rows — the outbox (2026-10-23)
+
+`writeAuditLog` and `writeRequiredAuditLog` both go through `insertAuditLog`, which opens its client
+with `requestTimeoutMs: 3000`. That 3 seconds is deliberate: the audit trail must not sit in front
+of somebody's request. What was not deliberate is what happened when it expired — a log line, and
+nothing else. **109 `audit_persistence_failed` errors on production in 21 days, 40 of them on 22
+Oct alone.**
+
+**The rows were genuinely lost, not merely slow.** Read off `ozucdzovmcqvepbozvqf`: the notification
+logged at 16:19 Cairo on 23 Oct, entity `f67a82b2-fe70-4024-80b4-ca7e3f9a60dc`, has no `audit_logs`
+row at all, while other notifications written in the same minute do. The cause in every sampled
+case is `AbortError: Supabase request timed out`.
+
+Owner's instruction that afternoon, choosing between the timeout fix and the re-entrancy fix:
+*"Both, plus never lose a row."*
+
+### How a row is kept now
+
+1. **The fast attempt is unchanged** — 3 seconds, on the request path.
+2. **One retry at 10 seconds**, which only ever runs after the fast attempt has already failed.
+3. **Anything that fails both is parked in `audit_log_outbox`** (migration `20261023190001`) with
+   the whole `AuditLogInput` as `payload`, and retried on a doubling back-off — 1, 2, 4, 8, 16, 32
+   minutes, then hourly for ever. Nothing is ever abandoned: a row that cannot be written today is
+   still the only record that something happened.
+
+🔴 **A TIMED-OUT INSERT MAY STILL HAVE COMMITTED.** The abort is the *client* giving up, not Postgres
+rolling back. So both the retry and the drain call `auditLogAlreadyLanded` first, which reads the row
+back through `idx_audit_logs_actor_entity` (`actor_login_id, entity_type, entity_id`) narrowed on
+`created_at`. Without that probe, "never lose a row" would have become "write some rows twice", and
+`/admin/logs` would show one act happening two or three times. A probe that *fails* answers "no" on
+purpose: a duplicate is readable and explicable, a missing row is not.
+
+🔴 **NO NEW CRON, ON PURPOSE.** A scheduled drain would need a `scripts/cronjob-sync.mjs` entry, a
+cron-job.org slot and a Healthchecks slot, and the project has none free. The queue is drained off
+real audit traffic instead: every successful audit write fire-and-forgets a bounded drain of five
+rows, throttled to once per 30 seconds per process. The system that fills the queue empties it, the
+database is demonstrably answering at the moment the drain starts, it costs nothing at rest, and
+there is no schedule to rot.
+
+`writeRequiredAuditLog` **still throws** `AuditPersistenceError` after queueing. Its callers treat an
+unwritten audit row as a failed act and decide for themselves what to do about it; the queue stops
+the row being lost and deliberately does not quieten the alarm that says it was not written in time.
+
+### The flag that was eating everyone else's errors
+
+The second half of the same fix. `persistErrorEvent` held a **module-wide** boolean, set for the
+whole duration of one in-flight `logAppError` and cleared in a `.finally()`. It exists to stop a
+loop — `logAppError` reports its own failures through `logError`, which comes straight back here —
+but a module-wide flag closes the door on **every** error logged while **any** other error's insert
+is in the air, not just the monitor's own.
+
+The proof is in the numbers above: every one of those 109 failures logged the same event **twice**
+(`writeAuditLog` called `logError` twice with near-identical arguments) and left **exactly one**
+`app_error_events` row, 109 times out of 109. So the table's counts were a **floor**, not a count,
+and the dropped line was silent in the only place anyone looks.
+
+It is now blocked by name: `app_error_insert_failed` and `log_app_error_threw`, the only two events
+`logAppError` raises about itself. That stops the recursion just as completely and drops nothing
+else. The duplicate `logError` calls in `audit.ts` went with it — harmless while the flag swallowed
+the second one, a duplicate **row** the moment it did not.
+
+Pinned by `tests/audit-outbox.test.ts`, confirmed by breaking the fix twice and watching that
+section's own assertion fire: restoring the module-wide flag, and moving the landing probe to after
+the retry.
