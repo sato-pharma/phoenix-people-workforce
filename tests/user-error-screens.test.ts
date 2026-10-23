@@ -390,7 +390,7 @@ async function detectorRunTests() {
     people: createStaticPersonDirectory(PEOPLE),
     prune: async (input) => {
       prunes.push(input);
-      return { cutoff: "2026-07-25T00:00:00.000Z", candidates: 3, deletedRows: 3, deletedFiles: 3, keptForRetry: 0, error: null };
+      return { cutoff: "2026-07-25T00:00:00.000Z", cap: 1000, candidates: 3, deletedRows: 3, deletedFiles: 3, keptForRetry: 0, capped: false, remaining: 0, error: null };
     },
   });
   const now = Date.parse("2026-10-23T09:00:00.000Z");
@@ -413,7 +413,7 @@ async function detectorRunTests() {
     people: createStaticPersonDirectory(PEOPLE),
     prune: async (input) => {
       historicalPrunes.push(input);
-      return { cutoff: "", candidates: 0, deletedRows: 0, deletedFiles: 0, keptForRetry: 0, error: null };
+      return { cutoff: "", cap: 1000, candidates: 0, deletedRows: 0, deletedFiles: 0, keptForRetry: 0, capped: false, remaining: 0, error: null };
     },
   });
   const second = recordingSink(null);
