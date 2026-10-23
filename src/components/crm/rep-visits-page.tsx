@@ -26,6 +26,7 @@ import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/l
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
+import { resolveRepKeyAgents } from "@/lib/crm/kpi-board-agents";
 import { KPIS_CALL_RATE_TAB, PORTAL_CALL_RATE_PATH, PORTAL_KPIS_PATH } from "@/lib/crm/kpis-call-rate-route";
 import { buildKpisQuery, parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
@@ -104,13 +105,18 @@ export async function RepVisitsPageBody({
   // THE HOLIDAYS ARE READ ONCE, and the same set goes to the rate and to the visit list, so a call on
   // a public holiday is left out of the rate AND marked "not scored" in the list — never one without
   // the other.
-  const holidays = await loadCallRateHolidays(range.dateFrom, range.dateTo);
+  // Only the clicked rep's accounts are read (crm/kpi-board-agents.ts, resolveRepKeyAgents): the page
+  // draws his row alone, and it used to read the whole field force's window to find it.
+  const [holidays, agents] = await Promise.all([
+    loadCallRateHolidays(range.dateFrom, range.dateTo),
+    resolveRepKeyAgents(repKey, { from: range.dateFrom, to: range.dateTo }).catch(() => null),
+  ]);
   let board: Awaited<ReturnType<typeof buildRepsPlansBoard>> | null = null;
   let holidaysComplete = holidays.complete;
   let loadError: string | null = null;
   try {
     const [report, repNameByHrId, jobTitleByHrId, tree, scope] = await Promise.all([
-      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo, holidays }),
+      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo, holidays, ...(agents ? { agents } : {}) }),
       loadRepNamesByHrId().catch(() => undefined),
       loadJobTitlesByHrId().catch(() => undefined),
       loadOrgPlacementTree().catch(() => null),
