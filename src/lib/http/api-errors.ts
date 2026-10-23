@@ -128,10 +128,26 @@ export function isInfrastructureError(error: unknown): boolean {
  * is identical for every hand-authored error; it differs ONLY when the error came from
  * infrastructure, which is exactly the case that must not be echoed. The real text is still
  * available to the server log via describeUnexpectedError.
+ *
+ * 🔴 **IT LOGS AS A SIDE EFFECT, so a caller that only wants to CLASSIFY an error must pass
+ * `{ report: false }`** (2026-10-23). Redacting writes an `api_error_redacted` ERROR line and an
+ * `app_error_events` row, which is right when the error is about to be returned to someone and
+ * wrong when the caller is about to recover from it. `app/api/auth/login/route.ts` called this to
+ * decide whether to repair the Supabase bridge, then repaired it and logged the person in — so a
+ * SUCCESSFUL login left a `Failed to create Supabase auth session` row behind. Seven of them on
+ * 23 Oct alone, six real people, every login succeeding 68–242 ms later; three cost an
+ * investigation apiece, in the one table used to judge whether production is healthy.
+ *
+ * `report: false` changes nothing about the returned string — the redaction is identical. It
+ * suppresses only the log, and the caller then reports on the path where recovery actually failed.
  */
-export function clientSafeErrorMessage(error: unknown, fallbackMessage: string): string {
+export function clientSafeErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+  options?: { report?: boolean },
+): string {
   if (isInfrastructureError(error)) {
-    reportRedactedError(error, fallbackMessage);
+    if (options?.report !== false) reportRedactedError(error, fallbackMessage);
     return fallbackMessage;
   }
   if (error instanceof Error) return error.message || fallbackMessage;
