@@ -17,7 +17,7 @@ import {
   residenceUnchanged,
 } from "@/lib/employees/residence-geocode-policy";
 import { employeeRegionFields, resolveRegionByIds } from "@/lib/employees/region-resolver";
-import { quotePostgrestValue } from "@/lib/supabase/search-filter";
+import { quotedInList, quotePostgrestValue } from "@/lib/supabase/search-filter";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { logError } from "@/lib/observability/log";
@@ -893,7 +893,7 @@ function compensationSelect(includeSalaryDetails = true) {
 }
 
 function textInFilter(values: string[]) {
-  return `in.(${values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(",")})`;
+  return `in.(${quotedInList(values)})`;
 }
 
 function idInFilter(values: number[]) {

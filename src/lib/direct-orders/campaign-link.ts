@@ -39,9 +39,14 @@
  * the picker non-empty for every line that raises orders (measured 2026-09-03: Anti Infective 2,
  * Pedia 3, CNS 2 live campaigns; direct orders exist on Anti Infective and Pedia).
  *
- * Scoping any tighter was measured and rejected. "Campaigns you raised yourself" would serve only
- * 3 of the 11 people who raise direct orders — a Product Manager raises campaigns centrally that a
- * District Manager's order can legitimately belong to.
+ * ONLY THE REQUESTER'S OWN CAMPAIGNS (owner, 2026-10-23: "you must show the campaigns of the
+ * requester himself only, not all the campaigns done"). This REVERSES the earlier decision to offer
+ * every live campaign on the line, which had been rejected because only 3 of 11 requesters had a
+ * campaign of their own. The owner's rule wins: the picker lists a campaign only when
+ * `marketing_requests.requester_hr_id` is the person raising the order, and the submit-side check
+ * refuses anyone else's campaign too, so a hand-posted body cannot reach past what the list shows.
+ * A requester with no campaign of their own on the line sees an empty picker, which is the normal
+ * "No campaign" answer and never blocks a submission.
  *
  * NOT A NEW PERMISSION SURFACE. Every role that may raise a direct order — District Manager,
  * Regional Manager, National Sales Manager, Product Manager, Group Product Manager — is already in
@@ -90,9 +95,16 @@ export type DirectOrderCampaignOption = {
   readonly areaName: string | null;
   readonly lineName: string | null;
   readonly status: MarketingRequestStatus;
-  /** True when this requester raised the campaign — shown so their own work sorts first. */
-  readonly raisedByMe: boolean;
 };
+
+/**
+ * Did this person raise the campaign? HR ids are MIXED CASE in this database, so a plain equality
+ * check silently under-matches — lower BOTH sides. A blank id on either side never matches.
+ */
+export function isCampaignRaisedBy(requesterHrId: unknown, myHrId: unknown): boolean {
+  const mine = String(myHrId ?? "").trim().toLowerCase();
+  return Boolean(mine) && String(requesterHrId ?? "").trim().toLowerCase() === mine;
+}
 
 function canRaiseDirectOrder(role: PhoenixRole | string | null | undefined): boolean {
   const clean = String(role ?? "").trim() as PhoenixRole;
@@ -176,7 +188,9 @@ export async function listDirectOrderCampaignOptions(
     .in("status", [...PICKABLE_CAMPAIGN_STATUSES]);
   if (error) throw error;
 
-  const rows = (data ?? []) as CampaignRow[];
+  // The owner's rule: only the campaigns THIS requester raised. Filtered here rather than in the
+  // query because the HR id column is mixed case and the live list is small.
+  const rows = ((data ?? []) as CampaignRow[]).filter((row) => isCampaignRaisedBy(row.requester_hr_id, access.hrId));
   if (rows.length === 0) return [];
 
   const areaIds = [...new Set(rows.map((row) => Number(row.area_id)).filter((id) => Number.isFinite(id)))];
@@ -205,10 +219,6 @@ export async function listDirectOrderCampaignOptions(
   }
   const lineDisplayName = text((lineRes.data as { name?: unknown } | null)?.name);
 
-  // HR ids are MIXED CASE in this database, so a plain equality check silently under-matches and a
-  // requester's own campaign would fail to sort first. Lower BOTH sides.
-  const myHrId = String(access.hrId ?? "").trim().toLowerCase();
-
   const options = rows.map((row): DirectOrderCampaignOption => ({
     id: String(row.id),
     requestCode: text(row.request_code) ?? String(row.id),
@@ -216,22 +226,18 @@ export async function listDirectOrderCampaignOptions(
     areaName: areaNames.get(Number(row.area_id)) ?? null,
     lineName: lineDisplayName,
     status: String(row.status) as MarketingRequestStatus,
-    raisedByMe: Boolean(myHrId) && String(row.requester_hr_id ?? "").trim().toLowerCase() === myHrId,
   }));
 
-  // Own campaigns first, then by code so the order is stable between renders.
-  return options.sort((a, b) => {
-    if (a.raisedByMe !== b.raisedByMe) return a.raisedByMe ? -1 : 1;
-    return a.requestCode.localeCompare(b.requestCode, "en");
-  });
+  // By code so the order is stable between renders.
+  return options.sort((a, b) => a.requestCode.localeCompare(b.requestCode, "en"));
 }
 
 /**
  * Validate a campaign the requester says this order came from, and return the id to store.
  *
  * Server-side, and never trusting the client: the picker is a convenience, this is the boundary. It
- * re-checks the SAME three things the list applies — the campaign exists, it is in a pickable
- * state, and it is on this order's line — so a hand-posted body cannot attach an order to a
+ * re-checks the SAME things the list applies — the campaign exists, the requester raised it, it is
+ * in a pickable state, and it is on this order's line — so a hand-posted body cannot attach an order to a
  * rejected campaign, another line's campaign, or a campaign id that does not exist.
  *
  * Returns null for "no campaign", which is the normal case and must never be an error.
@@ -249,12 +255,18 @@ export async function resolveSubmittedCampaignId(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("marketing_requests")
-    .select("id, status, line_id, request_code")
+    .select("id, status, line_id, request_code, requester_hr_id")
     .eq("id", clean)
     .maybeSingle();
   if (error) throw error;
   if (!data) {
     throw new Error("That marketing campaign was not found.");
+  }
+
+  // Owner rule (2026-10-23): an order attaches only to a campaign its requester raised. Checked
+  // before the status so the message never reveals the state of someone else's campaign.
+  if (!isCampaignRaisedBy((data as { requester_hr_id?: unknown }).requester_hr_id, access.hrId)) {
+    throw new Error("That marketing campaign was not found among your campaigns.");
   }
 
   const status = String((data as { status?: unknown }).status ?? "") as MarketingRequestStatus;

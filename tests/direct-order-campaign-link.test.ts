@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
+  isCampaignRaisedBy,
   PICKABLE_CAMPAIGN_STATUSES,
   resolveSubmittedCampaignId,
 } from "../src/lib/direct-orders/campaign-link.ts";
@@ -156,6 +157,30 @@ export async function runDirectOrderCampaignLinkTests() {
   assert.ok(
     !LINK_SOURCE.includes('.select("*")'),
     "the campaign link module must never select '*' from marketing_requests",
+  );
+
+  // 7b. OWNER RULE (2026-10-23): the picker lists ONLY the campaigns the requester raised himself,
+  // never every live campaign on the line. HR ids are mixed case, so the match lowers both sides,
+  // and a blank id on either side never matches (an anonymous caller must see nothing).
+  assert.equal(isCampaignRaisedBy("B-10", "b-10"), true, "HR ids match regardless of case");
+  assert.equal(isCampaignRaisedBy(" b-10 ", "B-10"), true, "HR ids match after trimming");
+  assert.equal(isCampaignRaisedBy("B-11", "B-10"), false, "another person's campaign is never theirs");
+  assert.equal(isCampaignRaisedBy("B-10", ""), false, "a caller with no HR id owns no campaign");
+  assert.equal(isCampaignRaisedBy("", ""), false, "two blank ids must not match each other");
+  assert.equal(isCampaignRaisedBy(null, undefined), false, "missing ids never match");
+  assert.match(
+    LINK_SOURCE,
+    /\.filter\(\(row\) => isCampaignRaisedBy\(row\.requester_hr_id, access\.hrId\)\)/,
+    "the campaign list must keep only campaigns the requester raised — not every live campaign on the line",
+  );
+  assert.match(
+    LINK_SOURCE,
+    /if \(!isCampaignRaisedBy\(\(data as \{ requester_hr_id\?: unknown \}\)\.requester_hr_id, access\.hrId\)\)/,
+    "submit-side validation must refuse a campaign the requester did not raise, so a hand-posted body cannot attach someone else's",
+  );
+  assert.ok(
+    !FORM_SOURCE.includes("raisedByMe"),
+    "the form must not label or sort by raisedByMe — every offered campaign is the requester's own",
   );
 
   // 8. The options endpoint must not invent its own permission rule. The service is the boundary;
