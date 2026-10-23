@@ -2010,3 +2010,24 @@ the server sets to `action == 2`: a link sent with `action` 0 ("Do not install" 
 still be downloaded and installed, which is why neither save ever sends one, and "remove" (2) on an app
 the tablet never installed is simply skipped. And one app whose file answers 404 stalls the install queue, so
 the agent never re-applies `no_factory_reset` (§8.8) — keep config 3 free of 404 apps.
+
+### 8.15 🔴 Linking one app must send the existing link's id — an entry without one is a second link
+
+Measured on production, 23 Oct. `POST /rest/private/applications/configurations` treats an entry with
+no `id` as a NEW link row, even when the app is already on that configuration. Setting Telegram (app 84),
+WPS Office (85) and WhatsApp (86) to install on "Rep tablets" (configuration 3) through
+`linkHeadwindApp` therefore left each app on those rules twice: the old link (1002, 1003, 1004, action 2
+remove) beside a new one (1012, 1013, 1014, action 1). It was repaired by hand the same day: a POST of
+`{ id: <old link id>, action: 1, remove: false, showIcon: true }` updated each original, and a POST of
+`{ id: <duplicate id>, action: 0 }` deleted each duplicate. On this endpoint `action` 0 with an `id`
+deletes the link.
+
+**What ships.** `writeHeadwindAppLink` reads `GET /rest/private/applications/configurations/{applicationId}`
+first (`data: [{ id, configurationId, applicationId, action, showIcon, remove, … }]`), and
+`applicationLinkEntries` builds the entries from it: the link already on that configuration is sent
+with its `id` and updated in place; if the pair already carries several links, the lowest id is kept
+and every other one is sent with `action: 0`, so it is deleted; only a pair with no link at all is sent
+without an id. A link read that is not a list refuses the write. `remove: false` and `showIcon` stay on
+every entry (Headwind throws a NullPointerException under an HTTP 200 without them). Both callers, the
+configurations route (`case "app"`) and the APK upload, go through it. Pinned by
+`tests/headwind-bridge.test.ts`.
