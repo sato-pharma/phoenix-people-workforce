@@ -376,6 +376,7 @@ export const MODULES = [
     scope: "The district manager's own week in Phoenix CRM: with a rep, Admin or a single visit per half-day, Manager's own list, his single visits, the RSM/NSM approval in the Approvals Hub, the actual-versus-planned report, and the switch that retires his legacy Weekly Plan.",
     globs: [
       "src/lib/phoenix-crm/manager-plan-rules.ts",
+      "src/lib/phoenix-crm/manager-visit-*.ts",
       "src/lib/phoenix-crm/server/manager-*.ts",
       "src/components/phoenix-crm/manager-*.tsx",
       "src/components/approvals-hub/manager-plan-*.tsx",

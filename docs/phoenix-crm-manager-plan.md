@@ -637,3 +637,61 @@ manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
   count and reads neither.
 
 Pinned by `tests/phoenix-crm-manager-visit-details.test.ts`.
+
+## Writing up a logged single visit, afterwards (2026-10-23)
+
+Owner, 23 Oct 2026: *"let a district manager write up his own logged single visit afterwards"*.
+
+### Why it was asked for
+
+Logging a single visit is one tap and everything on the form is optional, deliberately — he is standing at a
+door. On 19 Oct 2026 Mina Farouk Nawar Rizkallah logged a visit at 20:17 Cairo on the vacant Cairo West area
+(brick ش المسره) with Conviban and Tebofortin and no comment: the words he meant to leave were typed into the
+territory form, which refused them, and the visit saved without them. There was no way back into a logged
+single visit at all, so that comment had to be written into `phoenix_crm_manager_visits` by hand (`update …
+where coalesce(comment,'') = ''`, one row).
+
+### What moves, and what does not
+
+One column moves: **`detail_comment`**, a second and longer account, beside the door comment and never over it
+(*"leave it and make them able to add another detailed comment"*). `detail_edited_at` carries the stamp, and
+clearing the box clears the stamp with it — an "Edited" line standing over an empty write-up would claim a
+write-up exists where there is none.
+
+Nothing else is offered: the products, the door comment, the day, the time, and the address, area and brick a
+visit recorded. They are what his own report reads, and on a vacant territory that visit is the only record of
+where its doctor is. Nobody else corrects a manager's own single visit, so a record that can be rewritten weeks
+later says nothing — the same reason the rep's own products are fixed once logged.
+
+### The shape it borrows
+
+`src/lib/phoenix-crm/visit-detail-edit-rules.ts` is the REP completing his own visit (owner, 2026-10-15), and
+`manager-visit-detail-rules.ts` is its sibling for the manager's own single visits. The wording is the rep's,
+imported rather than retyped — `VISIT_DETAIL_EDIT_PROMPT`, `VISIT_DETAIL_EDIT_AGAIN`, `visitDetailEditedLine` —
+so the two screens cannot drift apart. The limit is 2,000 characters, twice the door comment's 1,000, the rep's
+own ratio.
+
+### Who may, and where it is enforced
+
+`managerVisitDetailEditable` reads the visit's OWN `manager_hr_id` and compares it folded with the actor's: his
+own visit, and only his. A manager's single visit carries exactly one person, so there is no equivalent of the
+rep's "entered by the Super Admin" case. `saveManagerVisitDetail` holds `assertManagerPlanWriter` first, then
+that check, then the write — `read` at the door is not the gate, because a Medical Rep holds `read` too.
+
+`PATCH /api/phoenix-crm/manager-plans/visits` is the one PATCH in the module (declared in
+`src/lib/security/access-registry.ts` on `read`, CSRF required, audited as a mutation); every other write there
+is a POST, which `tests/phoenix-crm-manager-plan.test.ts` sweeps for its service gate.
+
+### The gap, stated rather than hidden
+
+The Visits tab shows **today only**, so today is as far back as the box reaches. An earlier day needs a screen
+that does not exist yet. That is a gap, not a decision — and the migration is additive, so the column is already
+there when a screen for it arrives.
+
+### The migration
+
+`supabase/migrations/20261023035106_manager_visit_detail_writeup.sql` — `add column if not exists` for both,
+no backfill, nothing dropped. Applied 23 Oct 2026 to staging `cifwmndunmlxjhyjugxa` and production
+`ozucdzovmcqvepbozvqf`, each read back out of the catalog rather than the ledger.
+
+Pinned by `tests/phoenix-crm-manager-plan.test.ts`.
