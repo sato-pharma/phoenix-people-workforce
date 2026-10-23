@@ -97,6 +97,54 @@ Two tools, two jobs. **Account setup is `scripts/sentry-setup.mjs`** (Sentry's R
     the quick tell on an unfiltered row is `release`, which is `sha-XXXXXXXX` for real
     production traffic and `unknown` for local dev.
 
+### A structured ERROR's labels reach the row (2026-10-23)
+
+`logStructured("ERROR", …, { labels })` also persists, through `persistErrorEvent` in
+`src/lib/observability/log.ts`. Until 2026-10-23 that bridge carried exactly two things —
+`labels.route ?? labels.job ?? labels.event` onto `route`, and an `Error`'s `.stack` — and dropped
+every other label silently. Read off production (`ozucdzovmcqvepbozvqf`) that day, of **2,446**
+`route_type='structured-log'` rows **0 carried an `hr_id`**, **0 carried a `role`**, and **1,677 had
+no `stack` either**: the row was the event name and nothing else.
+
+What that cost. `src/lib/needs-you/service.ts` logs a Needs You source timeout with
+`{ event, source, hrId, role, scope }`. The stored row said `route='needs_you_source_timeout'` and
+never **which** source timed out, for whom, in what scope — so the failing adapters had to be
+reconstructed out of the delivered Telegram digests in `notification_events.metadata`, a table that
+happens to keep the payload rather than one designed as the error record. Found while fixing
+[#6301](https://github.com/Gawish-1997/phoenix-people-workforce/pull/6301).
+
+**This was fixed from two ends at once, on the same day.** #6307 fixed the `stack` column —
+`persistedStack` reads a non-`Error` through `describeThrown` (a Supabase rejection is a plain
+`{ message, details, hint, code }`, so `error.stack` was undefined and the column landed empty) and
+prefixes the call site's labels, which is where `source` and `scope` now live. This change fixed the
+other end: the **columns**, plus two safety properties of that label prefix.
+
+How it is carried now, with no migration:
+
+- `hrId`/`hr_id`, `role`, `loginId`/`login_id` and `digest` go onto their **own columns**, decided in
+  one place (`structuredLogErrorInput`). Both spellings are read because both are in use — measured
+  across the call sites, `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1 — so accepting
+  only camelCase would drop a seventh of them. A column beats free text here because
+  /admin/error-monitor filters on `hr_id` and renders `role`.
+- Everything else stays in `persistedStack`'s label prefix as `key=value`, **minus** those four:
+  repeating a label that now has a column would only cost the cause characters that truncation takes
+  off the end.
+- **Every value goes through `redactSecretsFromRoute`**, which is documented to run over free text: a
+  label carries a share-link token as readily as a path does, and the row is written while the token
+  still works.
+- **The label prefix is capped at 1,000** of the column's 4,000. The labels lead and `stack` is cut
+  from the end, so without a ceiling a generously-labelled call site would evict the very cause the
+  row was captured for — trading one lost diagnostic for another.
+- `service` and `event` stay out, as #6307 decided: `service` is on every line, and `event` is
+  already the row's `route`.
+
+`logAppError`'s best-effort "never throws" contract is unchanged, and `redactSecretsFromRoute`'s own
+behaviour is untouched — it is only called from one more place. Pinned by
+`tests/structured-log-persists-the-cause.test.ts` (the cause and the ordering) and
+`tests/structured-log-labels-reach-the-row.test.ts` (the columns, the no-repeat, the redaction and
+the cap), whose sections were each confirmed by breaking the fix and watching that section's own
+assertion fire.
+
 ## Whose code threw it — attribution on a client row
 
 A minified client message says nothing about where the throw came from, and the Error Monitor
