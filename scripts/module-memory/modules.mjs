@@ -1038,7 +1038,7 @@ export const MODULES = [
       "tests/run-tests.ts",
       "package.json",
       "Dockerfile",
-      "railway.toml",
+      ".railway/**",
       "next.config.ts",
       "infra/**",
     ],
@@ -1050,7 +1050,7 @@ export const MODULES = [
   // rule was added — and a module at its pointer limit is SPLIT, never trimmed. The Production-hooks
   // section (Railway, the deploy gate, what is actually serving, and the CLI's own traps) is the one
   // coherent half that can stand alone: it is about what REACHES production, not about what CI says.
-  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD — `Dockerfile`, `railway.toml` and `infra/**` included —
+  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD — `Dockerfile`, `.railway/**` and `infra/**` included —
   // and this module ADDS its own, so a Dockerfile edit loads the PAIR and nothing that used to arrive
   // stops arriving.
   {
@@ -1059,7 +1059,7 @@ export const MODULES = [
     scope: "The Railway deploy and its CI gate, the build itself and where its base image comes from, what revision is live and how to prove it, deployment states, volumes and regions, and the railway CLI's own traps.",
     globs: [
       "Dockerfile",
-      "railway.toml",
+      ".railway/**",
       "infra/**",
       "app/api/healthz/**",
       "app/api/readyz/**",

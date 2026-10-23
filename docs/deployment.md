@@ -591,7 +591,7 @@ no variable touched, no `--confirm-destructive` needed because nothing was destr
   `healthcheckTimeout` read back from the service, but `restartPolicyType` / `restartPolicyMaxRetries`
   still plan as `null → "ON_FAILURE"` / `10` on every run — Railway applies them from `railway.toml` at
   deploy time. **His ruling: *"keep railway.toml until the restart policy is stored"*, so neither
-  `railway.toml` is deleted and rules 1-5 of `tests/railway-deploy-config.test.ts` stay.** A plan that
+  `railway.toml` was deleted then — met and retired on 2026-10-23, see "The cutover" below.** A plan that
   shows only those two lines is the expected steady state, not drift.
 - `phoenix-headwind` did not redeploy on the first apply (its deployments read `SKIPPED`), so an apply
   that leaves its fields alone leaves the MDM server alone. Its `builder` was the second apply, below.
@@ -611,6 +611,42 @@ no variable touched, no `--confirm-destructive` needed because nothing was destr
   `npm install railway` done in a SCRATCH folder holding a copy of the file and `--file` pointing at
   it — never in the repo or a worktree. A `--out` plan pins `git rev-parse HEAD:.railway` of the
   directory it ran in, so plan from a checkout of the merge before any `--plan` apply.
+
+### The cutover, 2026-10-23 — both `railway.toml` files retired
+
+His words: *"migrate railway.json to Railway's new infrastructure-as-code before December"*. Since this
+change `.railway/railway.ts` is the only deploy config: `railway.toml` and
+`infra/headwind-phoenix-actions/railway.toml` are deleted, and rules 1-5 of
+`tests/railway-deploy-config.test.ts` now refuse either file coming back (until 2026-12-01 Railway
+would read a restored toml OVER the stored settings). `infra/phoenix-mcp/railway.toml` went too: no
+service ever read it, and its settings now sit in `infra/phoenix-mcp/RUNBOOK.md`, for the day that
+service is approved and declared in `.railway/railway.ts`.
+
+- 🔴 **The 2026-10-10 ruling's condition was already met.** *"keep railway.toml until the restart
+  policy is stored"*: Railway's own service settings read `ON_FAILURE` / `10` on every service
+  (GraphQL `serviceInstance.restartPolicyType` / `restartPolicyMaxRetries`, read 23 Oct ~05:20 Cairo).
+  The plan keeps listing them as `null → "ON_FAILURE"` / `null → 10` only because `config pull` leaves
+  Railway's DEFAULT out of what it renders. Those plan lines are the steady state, not drift.
+- 🔴 **What the toml really still held was the app's 900 s healthcheck window.** The service had stored
+  `300` (the toml overrode it at every deploy). Deleting the toml first would have quietly shortened the
+  release gate's window to five minutes, so the app-only apply that stores `900` comes BEFORE the merge
+  that deletes the file.
+- 🔴 **The committed authoring file had gone destructive again.** A plan from it on 23 Oct read
+  **0 add / 4 change / 17 destroy**: sixteen live variables (the app's `HEADWIND_MDM_ACCESS_CLIENT_*`
+  Cloudflare pass, the console's `PHX_ACCESS_*` gate, the `_4`, `_PEOPLE` and `_SALES` Resend senders,
+  `SENTRY_WEBHOOK_SECRET`, `PHOENIX_DEPLOY_NUDGE`, `ANTHROPIC_API_KEY` on both app and worker) and the
+  tablet server's files disk detached (`phoenix-headwind-volume`, added 22 Oct). The variable lists were
+  re-pulled and the disk declared with its mount; the re-plan read **0 add / 3 change / 0 destroy** —
+  the app's window `300 → 900` plus the three default restart-policy pairs. Rule 15 of the test now
+  refuses a file that drops the disk or its mount.
+- **The apply is app-only**, from a scratch copy with the worker's and `phoenix-headwind`'s restart lines
+  left out, so the tablet server is not redeployed: with a volume attached Railway stops the old
+  container before starting the new one, and the tablets lose their server for the restart
+  (measured on 22 Oct, when attaching the disk took it down for about an hour behind a queued deploy).
+- **The merge restarts the tablet server once.** Deleting `infra/headwind-phoenix-actions/railway.toml`
+  matches its watch pattern, so the merge rebuilds `phoenix-headwind` (about a minute and a half of no
+  server, with the disk keeping every APK). Prove it from that build's log (`load build definition from
+  Dockerfile`), and prove the app from its own build log (`Path: /api/readyz` and a 15-minute retry window).
 
 ## Branch Model
 
@@ -715,7 +751,7 @@ should overlap: the merge then reaches production when the SLOWER of the two end
    container's own commit exists in `public.release_gates`**
    (`src/lib/platform/release-gate.ts`, the read in `release-gate-store.ts`). Railway keeps the OLD version
    serving until the probe answers 2xx, and marks the deploy failed if it never does within
-   `healthcheckTimeout` (900 s since this change, `railway.toml`).
+   `healthcheckTimeout` (900 s since this change; `.railway/railway.ts` since the 2026-10-23 cutover).
 3. The last job of `ci.yml`, **`release-gate`**, writes that row. It runs on a push to `main` only, needs
    exactly the required pair (`validate`, `checks`), uses `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` (the secret
    `migration-drift-check.yml` and `synthetic-journeys.yml` already use) and reads the row back before it
@@ -993,7 +1029,17 @@ the variable copy, the certificate, and the image booting on Fly. Pinned by `tes
 
 ### The worker on Fly
 
-Since 22 Oct 2026 03:38 Cairo the background jobs run on Fly as well (owner, choosing **"Separate worker on Fly"**).
+✅ **ENDED 23 Oct 2026, Cairo — the background jobs and every deployment are back on Railway** (owner, ~04:33: *"Railway
+is back — retire the all-deployments-through-Fly rule"*). 04:31:56 the Fly worker was scaled to zero; 04:31:58 Railway's
+worker was set to `PHOENIX_PROCESS_ROLE=worker` and redeployed, booting `[process-role] worker` and
+`[crm:live-poll] started` at 04:33:30; 04:33:32 the four cron-job.org jobs moved back to
+`phoenix-workforce-worker-production.up.railway.app` (`inbound-intake` stays off); 04:35:41 `phoenix-worker-standby` was
+destroyed. Read live 23 Oct ~05:17: the worker's `/api/healthz` answers from Railway, and Fly reports
+`Could not find App "phoenix-worker-standby"`. `phoenix-hr-standby` is kept, stopped at zero machines, as the Emergency
+host button's app. The go-live's worker step has no app to move now and fails harmlessly (`continue-on-error`). What
+follows is the outage record, kept for the next time Railway cannot deploy.
+
+From 22 Oct 2026 03:38 Cairo the background jobs ran on Fly as well (owner, choosing **"Separate worker on Fly"**).
 Railway's worker was stuck on its 20 Oct deployment holding the database key that had just been switched off, and
 Railway could not deploy, so every scheduler had stopped at about 02:35 Cairo.
 

@@ -5,8 +5,13 @@ Nothing in this document authorizes execution against production. Resolve SECURI
 ## Railway requirements
 
 Create a **new** service after explicit approval. Keep existing Phoenix services unchanged. Use the
-repository root build context, Dockerfile `infra/phoenix-mcp/Dockerfile`, and configuration file
-`infra/phoenix-mcp/railway.toml`. Keep the service in Europe. Select the reviewed commit explicitly;
+repository root build context and Dockerfile `infra/phoenix-mcp/Dockerfile`. Its deploy settings —
+builder `DOCKERFILE`, `dockerfilePath: "infra/phoenix-mcp/Dockerfile"`, one replica, healthcheck
+`/readyz` with a 60 s window, restart policy `ON_FAILURE` with 3 retries — are declared as a
+`service("phoenix-mcp", …)` block in `.railway/railway.ts` in the same approved change. Railway
+deprecated `railway.toml` (the file that used to hold them was retired on 2026-10-23), and
+`tests/railway-deploy-config.test.ts` refuses one coming back. Never add the block ahead of that
+approval: an apply of `.railway/railway.ts` would create the service. Keep the service in Europe. Select the reviewed commit explicitly;
 disable automatic releases until authorized. One replica only, initial 512 MB memory ceiling and
 0.5 vCPU ceiling subject to fixture measurement. Mount a dedicated persistent volume at `/state`,
 writable by the image's `node` user, with directory permissions restricted to that user.
