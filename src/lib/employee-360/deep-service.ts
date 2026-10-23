@@ -565,7 +565,7 @@ export function buildDoubleVisitHistory(
     // require a resolved double_hr_id here because this history names the partner.
     if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
-    const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null;
+    const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null; // gitleaks:allow — a map key, not a credential
     // A Training Manager on EITHER slot makes this a training double visit the rep received.
     const isTm = tmIds.has(key) || (key2 !== null && tmIds.has(key2));
     const name = v.double_name ?? nameByHrId.get(key) ?? null;

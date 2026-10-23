@@ -14,7 +14,7 @@ REQ = [
 blocks_out = []
 seen = {}
 for url, keep in REQ:
-    css = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode()
+    css = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode()  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected — fixed Google Fonts URLs above
     # Google emits  /* subset */\n@font-face{...}
     for m in re.finditer(r"/\*\s*([a-z0-9\-\[\] ]+)\s*\*/\s*(@font-face\s*\{[^}]*\})", css):
         subset, block = m.group(1).strip(), m.group(2)
@@ -26,7 +26,7 @@ for url, keep in REQ:
         u = src.group(1)
         name = u.rsplit("/", 1)[-1]
         if name not in seen:
-            data = urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=60).read()
+            data = urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=60).read()  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected — https-only woff2 URL read out of Google's own CSS
             with open(os.path.join(OUT, name), "wb") as fh:
                 fh.write(data)
             seen[name] = len(data)

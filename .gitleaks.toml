@@ -5,7 +5,10 @@ title = "phoenix-workforce gitleaks config"
 # high-entropy tokens, etc.) and layer repo-specific path exclusions on top.
 useDefault = true
 
-[allowlist]
+[[allowlists]]
+# gitleaks refuses the old single [allowlist] table beside a [[allowlists]] one, so both are
+# written in the array form. This first one is the original allowlist, unchanged in content.
+description = "Generated files and code identifiers"
 # Applies to `regexes` below only — `paths` always matches the file path regardless.
 regexTarget = "line"
 paths = [
@@ -37,3 +40,15 @@ regexes = [
   # property/comparison shape, not any alphanumeric string anywhere.
   '''(?i)key\s*(:|===)\s*"[a-zA-Z][a-zA-Z0-9_]*"''',
 ]
+
+[[allowlists]]
+# Data migrations stamp their rows with an idempotency label in a notes column —
+# `token=KFS2-AIF-OT-PRE-JULY` — upper-case words joined by hyphens, so a re-run can find the
+# rows it wrote. The generic-api-key rule reads `token=` as a credential. An applied migration
+# is never edited to dodge the scan, so the label is allowed here. regexTarget = "match" checks
+# the FINDING, not its line, so a real key written beside a label is still reported, and a real
+# token (mixed case, high entropy) does not fit the shape.
+description = "Migration idempotency labels (token=KFS2-AIF-D1)"
+regexTarget = "match"
+# The match carries the sentence's trailing punctuation ("token=KFS2-AIF-OT-PRE-JULY. "), hence \W*.
+regexes = ['''^token=[A-Z0-9]+(?:-[A-Z0-9]+)+\W*$''']

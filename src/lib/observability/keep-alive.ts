@@ -56,6 +56,8 @@ type DispatcherLike = { constructor?: unknown };
 async function ensureDispatcherExists(): Promise<void> {
   if ((globalThis as Record<symbol, unknown>)[GLOBAL_DISPATCHER_SYMBOL]) return;
   try {
+    // Loopback to a closed port on purpose: nothing leaves the machine, so there is no wire to secure.
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     await fetch("http://127.0.0.1:1/", { signal: AbortSignal.timeout(250) });
   } catch {
     // Expected — the point is the side effect, not the response.

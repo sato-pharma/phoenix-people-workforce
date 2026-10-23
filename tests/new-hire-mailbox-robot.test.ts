@@ -324,7 +324,7 @@ function runMailboxLoginCases(): void {
  * runs — the 2026-10-02 lesson, where a fix shipped green while its code was never executed.
  */
 async function runPageDescriptionCases(): Promise<void> {
-  const secret = "Zq7-TempPass-4417";
+  const secret = "Zq7-TempPass-4417"; // gitleaks:allow — an invented fixture, never a real password
   // The known secret is removed by exact match, case-insensitively.
   assert.equal(
     withoutSecrets(`heading says ${secret} here`, [secret]),
