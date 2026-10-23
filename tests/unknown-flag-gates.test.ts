@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, freemem, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,8 +33,17 @@ import { stripComments } from "./support/comment-strip.ts";
  *     treats `argv[2]` as a file it writes, so "spawn it with a bogus flag and see" is only safe
  *     when a failed gate cannot reach the body. Entry detection failing exits 3 instead of returning.
  *     `PHX_FLAG_GATE_PROBE_BOTH=1` (2026-10-23) has the gate also answer, in the same process, what an
- *     unknown flag would get, so each real script is spawned ONCE; the real exit-2 refusal is run end to
- *     end on the fixture, and a pinned script may not hand the gate an argv of its own.
+ *     unknown flag would get, so each script is asked once rather than twice; the real exit-2 refusal is
+ *     run end to end on the fixture, and a pinned script may not hand the gate an argv of its own.
+ *     🔴 AND THE PROBES DO NOT GET A PROCESS EACH ANY MORE (2026-10-23).
+ *     `tests/support/flag-gate-probe-driver.mjs` imports a GROUP of pinned scripts in one process,
+ *     rewriting `process.argv[1]` for each so every gate still judges a bare command line as its own
+ *     entry point, and turning the gate's exit into a throw so the next script follows it. A script
+ *     the group could not answer for — ESM evaluates a module once, so one imported by an earlier
+ *     target never re-runs its body — falls back to a spawn of its OWN, and THAT fallback is what
+ *     keeps a deleted gate red. Same 118 gates, measured 2026-10-23: 47,893 ms on CI (the slowest
+ *     test in the suite, 53% of its shard's 89.5 s) and, run back to back on one laptop, 110.5 s for
+ *     the version that spawned per script against 33.0 s for this one.
  *  4. 🔴 THE CALLER RATCHET — the one that earns this file. `.github/workflows/ci.yml` runs
  *     `node scripts/ci-tree-reuse.mjs --dry-run`, and `--dry-run` is not a literal anywhere in that
  *     script's code (it is the documented DEFAULT mode, accepted by being ignored). A vocabulary
@@ -58,6 +67,7 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const HELPER = "scripts/lib/refuse-arguments.mjs";
+const PROBE_DRIVER = "tests/support/flag-gate-probe-driver.mjs";
 const LOADER = [
   "--experimental-strip-types",
   "--experimental-specifier-resolution=node",
@@ -402,17 +412,39 @@ export async function runUnknownFlagGatesTests() {
     probeFiles.push(file);
   }
 
-  // The probes run in parallel batches, ONE spawn per script (two until 2026-10-23, which made this the
-  // slowest test in the suite at ~115 s): PHX_FLAG_GATE_PROBE_BOTH has the gate answer the bare call and an
-  // unknown flag in the same process, so each script's imports load once. Each one only loads its imports
-  // and answers at the gate. The environment is MINIMAL on purpose — CI has no .env.local and no
-  // production credentials, so a script that cannot even be imported without them must fail HERE, on the
-  // laptop, and not first on the runner.
-  const probeEnv: Record<string, string> = { PHX_FLAG_GATE_PROBE: "1" };
+  // THE PROBES RUN AS A FEW PROCESSES, NOT ONE PER SCRIPT. `tests/support/flag-gate-probe-driver.mjs`
+  // imports a GROUP of pinned scripts in one process, rewriting process.argv[1] to each in turn so
+  // every gate still judges a bare command line as its own entry point, and intercepting the exit a
+  // probed gate makes. One spawn per script cost 118 node startups and 118 copies of the src/lib
+  // graph the `.ts` scripts share: 47,893 ms on CI (2026-10-23 — the slowest test in the suite, 53%
+  // of its shard) and, run back to back on one laptop against this version, 110.5 s where this takes
+  // 33.0 s, of which the probe phase is 25.1 s. In ONE process all 118 gates answer in 43.3 s, so the
+  // cost is per-script graph compile rather than one shared block, and splitting the scripts across a
+  // few processes is what buys the rest. PHX_FLAG_GATE_PROBE_BOTH still has each gate answer the bare
+  // call and an unknown flag in the same breath, and the real exit-2 refusal is still run end to end
+  // on the fixture.
+  //
+  // 🔴 THE FALLBACK IS WHAT KEEPS A MISSING GATE RED. ESM evaluates a module once and caches the
+  // throw that stands in for the gate's exit, so a script imported by an EARLIER target in the same
+  // process never re-runs its body and cannot answer for itself. Any script the driver did not answer
+  // for — for that reason or any other — is re-probed with a spawn of its OWN, the mechanism this
+  // test used throughout, and the assertions below read whichever answer came back.
+  //
+  // The environment is MINIMAL on purpose — CI has no .env.local and no production credentials, so a
+  // script that cannot even be imported without them must fail HERE, on the laptop, and not first on
+  // the runner.
+  const probeEnv: Record<string, string> = {};
   for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "ComSpec", "PATHEXT"]) {
     const value = process.env[key];
     if (value !== undefined) probeEnv[key] = value;
   }
+  // The driver RELAYS a gate's answer and may never manufacture one: the words asserted below are not
+  // allowed to appear in it at all, so a disarmed driver cannot turn a lost gate green.
+  assert.doesNotMatch(
+    stripComments(readFileSync(PROBE_DRIVER, "utf8")),
+    /GATE-/,
+    `${PROBE_DRIVER}: must relay the gate's own output, never print a GATE- line of its own`,
+  );
   const spawnAsync = (args: string[], target: string) =>
     new Promise<{ status: number; stdout: string; stderr: string }>((done) => {
       execFile(process.execPath, args, { encoding: "utf8", env: { ...probeEnv, PHX_FLAG_GATE_PROBE: resolve(target), PHX_FLAG_GATE_PROBE_BOTH: "1" } as unknown as NodeJS.ProcessEnv, timeout: 120_000, maxBuffer: 1 << 24 }, (error: Error | null, stdout: string, stderr: string) => {
@@ -420,19 +452,69 @@ export async function runUnknownFlagGatesTests() {
         done({ status: typeof code === "number" ? code : 1, stdout, stderr });
       });
     });
-  for (let at = 0; at < probeFiles.length; at += 8) {
-    const batch = probeFiles.slice(at, at + 8);
+
+  // Each driver process holds the import graph of EVERY script in its group, so how many run at once
+  // is what FREE MEMORY allows rather than a fixed number: a CI runner takes 4, this 16 GB laptop at
+  // 2.6 GB free takes 2, and a saturated one takes 1 instead of freezing the machine it is measuring.
+  // The 900 MB is twice the ~450 MB a group measured here (2026-10-23: four groups took free RAM from
+  // 2,065 MB to 273 MB), because mem-watchdog.ps1 reaps a node job under 500 MB free — a probe that
+  // gets itself killed reports nothing, and nothing is indistinguishable from a lost gate.
+  const groupCount = Math.max(1, Math.min(4, availableParallelism(), Math.floor(freemem() / (900 * 1024 * 1024))));
+  // THE GROUPS ARE CONTIGUOUS BLOCKS OF A LIST SORTED BY KIND THEN PATH, NOT A ROUND ROBIN, because
+  // scripts in one directory import one another's libraries: keeping them in the SAME process
+  // compiles that graph once instead of once per group, and the `.mjs` scripts, which pull nothing
+  // out of src/lib, end up together where they cost almost nothing. Measured here at width 4
+  // (2026-10-23): contiguous 25.1 / 25.8 / 26.2 s against a round robin's 29.3 / 40.6 s for the same
+  // 118 gates. Sorting rather than slicing PINNED as it stands also keeps the split stable when a
+  // new script is pinned in the middle of the list.
+  const sorted = [...probeFiles].sort((left, right) =>
+    left.endsWith(".ts") === right.endsWith(".ts") ? left.localeCompare(right) : left.endsWith(".ts") ? 1 : -1,
+  );
+  const per = Math.ceil(sorted.length / groupCount);
+  const groups: string[][] = Array.from({ length: groupCount }, (_unused, index) => sorted.slice(index * per, (index + 1) * per));
+  const verdicts = new Map<string, { status: number; stdout: string; detail: string }>();
+  const runGroup = (files: string[]) =>
+    new Promise<void>((done) => {
+      execFile(process.execPath, [...LOADER, PROBE_DRIVER, ...files], { encoding: "utf8", env: probeEnv as unknown as NodeJS.ProcessEnv, timeout: 600_000, maxBuffer: 1 << 26 }, (_error: Error | null, stdout: string, stderr: string) => {
+        let current: string | null = null;
+        for (const line of stdout.split("\n")) {
+          if (line.startsWith("##PROBE ")) {
+            current = line.slice("##PROBE ".length).trim();
+            verdicts.set(current, { status: 1, stdout: "", detail: stderr.split("\n").slice(0, 2).join(" | ") });
+          } else if (current !== null && line.startsWith("##VERDICT ")) {
+            const verdict = line.slice("##VERDICT ".length).trim();
+            const seen = verdicts.get(current) as { status: number; stdout: string; detail: string };
+            seen.status = /^exit \d+$/.test(verdict) ? Number(verdict.slice(5)) : 1;
+            seen.detail = verdict;
+            current = null;
+          } else if (current !== null) {
+            (verdicts.get(current) as { status: number; stdout: string; detail: string }).stdout += `${line}\n`;
+          }
+        }
+        done();
+      });
+    });
+  await Promise.all(groups.filter((group) => group.length > 0).map(runGroup));
+
+  const answered = (file: string) => {
+    const seen = verdicts.get(file);
+    return seen !== undefined && seen.status === 0 && /GATE-OK/.test(seen.stdout) && /GATE-REFUSES \S+ --zzz-not-a-flag/.test(seen.stdout);
+  };
+  const reprobe = probeFiles.filter((file) => !answered(file));
+  for (let at = 0; at < reprobe.length; at += 8) {
     const results = await Promise.all(
-      batch.map(async (file) => ({
-        file,
-        probe: await spawnAsync([...LOADER, file], file),
-      })),
+      reprobe.slice(at, at + 8).map(async (file) => ({ file, probe: await spawnAsync([...LOADER, file], file) })),
     );
     for (const { file, probe } of results) {
-      assert.equal(probe.status, 0, `${file}: a bare probe must pass its own gate, got ${probe.status}: ${probe.stderr.split("\n").slice(0, 3).join(" | ")}`);
-      assert.match(probe.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
-      assert.match(probe.stdout, /GATE-REFUSES \S+ --zzz-not-a-flag/, `${file}: an unknown flag must be refused, got: ${probe.stdout.trim()}`);
+      verdicts.set(file, { status: probe.status, stdout: probe.stdout, detail: probe.stderr.split("\n").slice(0, 3).join(" | ") });
     }
+  }
+
+  for (const file of probeFiles) {
+    const probe = verdicts.get(file) ?? { status: 1, stdout: "", detail: "the probe never answered" };
+    assert.equal(probe.status, 0, `${file}: a bare probe must pass its own gate, got ${probe.status}: ${probe.detail}`);
+    assert.match(probe.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
+    assert.match(probe.stdout, /GATE-REFUSES \S+ --zzz-not-a-flag/, `${file}: an unknown flag must be refused, got: ${probe.stdout.trim()}`);
   }
 
   // ── 4. The caller ratchet — a flag a CALLER passes must be in the script's vocabulary ───────
