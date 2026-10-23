@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { formatServerTiming } from "@/lib/http/server-timing";
 import { emptyBadgeCounts, loadBadgeCounts } from "@/lib/approvals-hub/badge-counts-payload";
 
 export const runtime = "nodejs";
@@ -19,8 +20,14 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const access = await resolveAccessContext(request);
-    return NextResponse.json(await loadBadgeCounts(access, startedAt), {
-      headers: { "Cache-Control": "no-store" },
+    let stage = "ran";
+    const body = await loadBadgeCounts(access, startedAt, (cache) => {
+      stage = cache === "hit" ? "cached" : cache;
+    });
+    // Durations only, so the browser's network panel shows whether a slow badge poll ran, joined or was remembered.
+    const serverTiming = formatServerTiming([{ name: stage, ms: Date.now() - startedAt }]);
+    return NextResponse.json(body, {
+      headers: { "Cache-Control": "no-store", ...(serverTiming ? { "Server-Timing": serverTiming } : {}) },
     });
   } catch {
     return NextResponse.json(emptyBadgeCounts());

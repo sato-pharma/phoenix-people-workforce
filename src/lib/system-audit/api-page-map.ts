@@ -325,6 +325,7 @@ export const API_NO_UI: Readonly<Record<string, string>> = {
   "/api/employee-portal": "Portal account (activation, profile photo)",
   "/api/whatsapp": "WhatsApp connection setup",
   "/api/errors": "Error reporter",
+  "/api/telemetry": "Browser timing beacon (every page)",
   "/api/health": "Health check",
   "/api/healthz": "Health check",
   "/api/readyz": "Health check",

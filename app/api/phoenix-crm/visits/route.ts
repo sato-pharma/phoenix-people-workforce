@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { startServerTimer } from "@/lib/http/server-timing";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { captureClientOf } from "@/lib/phoenix-crm/server/capture-client";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
@@ -15,13 +16,15 @@ export const dynamic = "force-dynamic";
 // POST = save one visit: the territory's rep, or a manager of the territory (their own visit). A resend
 //        of the same visit id answers with the saved visit.
 export async function GET(request: Request) {
+  const timer = startServerTimer("crm_visits");
   try {
     const access = await resolveAccessContext(request);
+    timer.lap("access");
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
+    const viewer = await timer.measure("viewer", () => resolvePhoenixCrmViewer(access));
     const search = searchOf(request);
-    const day = await loadVisitDay(viewer, { seatId: search.get("seatId"), test: search.get("test"), date: search.get("date") });
-    return NextResponse.json({ day, success: true });
+    const day = await timer.measure("load", () => loadVisitDay(viewer, { seatId: search.get("seatId"), test: search.get("test"), date: search.get("date") }));
+    return NextResponse.json({ day, success: true }, { headers: timer.headers() });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load the visits.");
   }

@@ -2529,6 +2529,9 @@ export const accessRegistry = [
   // (e.g. a crash on the login page before any session exists) — identity is
   // read from the session cookie when present, never trusted from the body.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
+  // Page-timing beacon (performance roadmap phase 3): a painted page reports two durations and its page shape,
+  // kept in process memory only. It reads no session, so it is a public route rather than a session one.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/telemetry/page-timing", reason: "Fire-and-forget timing beacon sent with sendBeacon, open to guests too (the login page is timed as well). It reads no cookie and takes no identity: the body is reduced to a page shape (ids replaced) and two durations, kept in process memory for the per-minute health log. Capped at 1 KB and 60 a minute per address. Nothing is written to the database, so there is no state-changing or cross-site mutation surface." }),
   // The error screenshot (owner, 23 Oct 2026): the picture of an error or a block the signed-in caller
   // just met, filed under the caller's own session identity — never one from the body. Signed-in only
   // (a guest gets 401), same-origin checked, 40 an hour per person; read back only by the Super Admin.
