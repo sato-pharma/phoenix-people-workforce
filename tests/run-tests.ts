@@ -1037,7 +1037,6 @@ import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
 import { runHeadwindBridgeTests } from "./headwind-bridge.test.ts";
 import { runHeadwindCustodyConfirmTests } from "./headwind-custody-confirm.test.ts";
-import { runManageEngineBridgeTests } from "./manageengine-bridge.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -4894,20 +4893,6 @@ await runTest(
   "rep tablets add themselves to the custody register (next PHX-TAB number, only tablets on the "
   + "rep rules, never a second entry for a serial or IMEI already registered)",
   runTabletAutoRegisterTests,
-);
-await runTest(
-  "ManageEngine bridge (Zoho token exchange caches and surfaces a refusal, the client retries once "
-  + "on a 401 with a fresh token, device JSON normalizes and matches the register by serial then "
-  + "IMEI, the command allow-list is the fourteen actions with only the two wipes destructive, and the "
-  + "route error mapping keeps one status per cause) — and the enrollment template a factory-fresh "
-  + "tablet scans: the pasted payload is refused in words unless it names a device admin component "
-  + "and a downloadable agent, nothing is added to it, and the credential reaches neither the "
-  + "page's ordinary load, nor the audit row, nor any log; and everything Google's half did for an "
-  + "enrolled tablet now happens for a ManageEngine-enrolled one: it adds itself to the custody "
-  + "register under the next PHX-TAB tag, the IMEI it reports fills an entry holding none — never "
-  + "overwriting one somebody typed and never on a tie — and its rules are read and changed from "
-  + "Phoenix without Phoenix ever authoring a profile's contents)",
-  runManageEngineBridgeTests,
 );
 await runTest(
   "Headwind bridge — the company's own device-management server (the admin password is sent as the "

@@ -1197,12 +1197,11 @@ export async function reconcileDevice(input: ReconcileDeviceInput, actor: string
 }
 
 /** Which console reported the IMEI — it decides the audit row's wording, nothing else. */
-export type ReportedImeiSource = "android_management" | "manageengine" | "headwind";
+export type ReportedImeiSource = "android_management" | "headwind";
 
 const REPORTED_IMEI_SOURCE_NAMES: Readonly<Record<ReportedImeiSource, string>> = {
   android_management: "Google",
   headwind: "Headwind",
-  manageengine: "ManageEngine",
 };
 
 /**
@@ -1211,7 +1210,7 @@ const REPORTED_IMEI_SOURCE_NAMES: Readonly<Record<ReportedImeiSource, string>> =
  *
  * THE AUDIT ROW NAMES THE CONSOLE THAT REPORTED IT, and the default stays Google so the Android
  * Management path is unchanged to the byte. A row reading "reports to Google" about a number
- * ManageEngine read would be a false record of where a value came from, which is the one thing an
+ * Headwind read would be a false record of where a value came from, which is the one thing an
  * audit row exists to get right.
  *
  * The one register write whose value no person typed: Rep Tablets calls it with what the tablet
