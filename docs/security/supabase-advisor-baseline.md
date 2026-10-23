@@ -1,7 +1,7 @@
 # Supabase Advisor Baseline — Accepted / By-Design Items
 
 **Project:** Phoenix HR production (`ozucdzovmcqvepbozvqf`)
-**Last reviewed:** 2026-10-09 *(previously 2026-09-30, 2026-09-29, and 2026-07-19 before that)*
+**Last reviewed:** 2026-10-23 *(previously 2026-10-13, 2026-10-09, 2026-09-30, 2026-09-29, and 2026-07-19 before that)*
 
 This is the single triage reference for `get_advisors` output. Items listed here are
 **reviewed and accepted as by-design** (or explicitly deferred). Related context:
@@ -140,7 +140,21 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (212 as of 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (260 as of 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 212 to 260 on 2026-10-23 — 48 tables, triaged by oid against live production.** The nightly
+drift check read 260 against an accepted 212 from mid-October, and it now goes red on that. Of the 48
+that joined after `public.database_restarts` (oid 258977):
+
+| Where | Count | What |
+| --- | --- | --- |
+| `phx_backup_20261017` | 42 | the `testrest_*` and `testwork_*` pre-images of the Phoenix CRM test-data clean-up on 17 October |
+| `au` | 3 | `bak_20261015_aif_kfs2_d1_line_area_map`, `bak_20261015b_aif_kfs2_july_line_area_map`, `bak_20261015c_aif_rollup_jul_sep` |
+| `public` | 3 | `marketing_pharmacy_direct_order_venues`, `customer_360_pharmacy_matches`, `direct_order_marketing_offsets` — new modules on the server-only pattern |
+
+**Not one of all 260 grants `anon` or `authenticated` anything** (read live the same day), so every one
+is deny-all. The 45 in dated schemas leave the count on their own when `audit-backup-schemas.mjs`
+retires those schemas at the 90-day line.
 
 **Raised 210 to 212 on 2026-10-13 — two tables, both triaged by name.** The check was failing
 `advisor_baseline_exceeded` at 212 against an accepted 210. Asked live, newest by oid, the two that
@@ -363,7 +377,11 @@ one's grants outside a migration.
   overlapping `authenticated` SELECT policies into one; writes unchanged). Perf-only, not
   a security gap.
 
-### DEFERRED - `unused_index` (722 accepted as of 2026-10-09; 615 on 2026-09-29, 326 before that)
+### DEFERRED - `unused_index` (842 accepted as of 2026-10-23; 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+
+**Raised 722 to 842 on 2026-10-23.** The nightly reading climbed past 722 from mid-October as the
+October modules shipped, and their indexes read as unused until their screens and crons are exercised.
+842 is the highest reading seen (the 2026-10-23 drift run; 833 an hour later). Still not a drop list.
 
 Reviewed and **deferred** - not bulk-dropped. The reasoning has not changed, only the number.
 

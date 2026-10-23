@@ -203,6 +203,34 @@ export function runSchemaShapeRecoveryHealthTests() {
     "one recent capture must clear staleness even when six tables are 40 hours old, or the gate cries wolf on a normal week",
   );
 
+  // ── with the run log present, staleness is judged on RUNS, not content ───
+  // Staging, 2026-10-23: every table's newest snapshot 178 hours old (nothing there ever changes)
+  // while the scheduler ran 48 times in 48 hours without an error. That is healthy.
+  const quietButRunning: SchemaShape = {
+    ...allStale,
+    recovery_runs: { newest_ok_run_at: new Date(Date.now() - 0.5 * HOUR).toISOString(), runs_48h: 48, failed_runs_48h: 0 },
+  };
+  assert.ok(
+    !codes(quietButRunning).includes("recovery_snapshot_stale"),
+    "an hourly scheduler that ran half an hour ago is not stale, however old the newest snapshot is",
+  );
+
+  const stoppedScheduler: SchemaShape = {
+    ...healthyShape(),
+    recovery_runs: { newest_ok_run_at: new Date(Date.now() - 5 * HOUR).toISOString(), runs_48h: 43, failed_runs_48h: 0 },
+  };
+  const stopped = find(stoppedScheduler, "recovery_snapshot_stale");
+  assert.ok(stopped, "five hours since the last error-free run must be reported even with a recent snapshot");
+  assert.ok(stopped.message.includes("5 hours ago"), "the message must say how long ago the last good run was");
+
+  const alwaysFailing: SchemaShape = {
+    ...healthyShape(),
+    recovery_runs: { newest_ok_run_at: null, runs_48h: 48, failed_runs_48h: 48 },
+  };
+  const failing = find(alwaysFailing, "recovery_snapshot_stale");
+  assert.ok(failing, "a scheduler whose every run failed must be reported");
+  assert.ok(failing.message.includes("48 failed"), "the message must count the failed runs");
+
   // ── the SCHEDULE is in a migration, and stays idempotent and guarded ─────
   // This is the half the gate cannot see: it reads whether snapshots exist, never whether anything
   // is scheduled to take them. The migration is the only thing that brings the schedule back on a

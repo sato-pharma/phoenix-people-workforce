@@ -177,6 +177,11 @@ export type SchemaShape = {
   snapshot_tables_in_public?: SnapshotTableInPublic[];
   /** Optional for the same reason: only present once 20260929200500 is applied to this target. */
   recovery_health?: RecoveryHealth[];
+  /**
+   * The snapshotter's own run log (20261023043213_ci_recovery_runs.sql). Optional for the same
+   * reason; when present, staleness is judged on it instead of on snapshot content.
+   */
+  recovery_runs?: RecoveryRuns;
   /** Optional for the same reason: only present once 20260929203200 is applied to this target. */
   browser_reachable?: BrowserReachable[];
 };
@@ -219,6 +224,24 @@ export type RecoveryHealth = {
   newest_snapshot_at: string | null;
   ever_captured: boolean;
 };
+
+/**
+ * The hourly snapshotter's run log, summarised (20261023043213_ci_recovery_runs.sql).
+ *
+ * recovery.take_snapshots() writes one recovery.snapshot_runs row on EVERY invocation, whether or
+ * not any table changed, so the newest error-free run answers "has the scheduler stopped?"
+ * directly. Snapshot content cannot: a snapshot is written only on change, and staging's money
+ * tables never change, so content age read 178 hours there on 2026-10-23 while the scheduler had
+ * run 48 times in 48 hours without one error.
+ */
+export type RecoveryRuns = {
+  newest_ok_run_at: string | null;
+  runs_48h: number;
+  failed_runs_48h: number;
+};
+
+/** The scheduler runs at five past every hour; three missed runs in a row is a stopped scheduler. */
+const RECOVERY_RUN_STALE_HOURS = 3;
 
 /** One (granting role, object type, grantee) triple from pg_default_acl in schema public. */
 export type DefaultAclLeak = {
@@ -605,6 +628,25 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
           "failing inside recovery.take_snapshots() — read recovery.snapshot_runs.error, and " +
           "check each one's pk_columns and max_rows in recovery.protected_tables.",
       });
+    } else if (shape.recovery_runs !== undefined) {
+      // The run log is the direct signal, so it replaces the content-age proxy below.
+      const runs = shape.recovery_runs;
+      const runHours = runs.newest_ok_run_at
+        ? (Date.now() - Date.parse(runs.newest_ok_run_at)) / 3_600_000
+        : Infinity;
+      if (runHours > RECOVERY_RUN_STALE_HOURS) {
+        v.push({
+          severity: "error",
+          code: "recovery_snapshot_stale",
+          message:
+            (runs.newest_ok_run_at
+              ? `The recovery snapshotter's last error-free run was ${Math.round(runHours)} hours ago `
+              : "The recovery snapshotter has never finished a run without an error ") +
+            `(${runs.runs_48h} run(s) in the last 48 hours, ${runs.failed_runs_48h} failed). It runs at ` +
+            "five past every hour, so it has stopped or is failing. Check `select * from cron.job` " +
+            "and `recovery.snapshot_runs.error`.",
+        });
+      }
     } else if (hoursSince > 36) {
       v.push({
         severity: "error",
@@ -729,6 +771,18 @@ async function loadShape(): Promise<SchemaShape> {
     );
   } else {
     shape.recovery_health = (recovery.data ?? []) as RecoveryHealth[];
+  }
+
+  // The run log behind the same switch (20261023043213_ci_recovery_runs.sql); absent on a target
+  // that predates it, and then staleness falls back to snapshot content age.
+  const recoveryRuns = await supabase.rpc("phx_ci_recovery_runs");
+  if (recoveryRuns.error) {
+    console.log(
+      `[schema-shape] recovery run log not available on this target (${recoveryRuns.error.message}) — judging staleness on snapshot content.`,
+    );
+  } else {
+    const row = ((recoveryRuns.data ?? []) as RecoveryRuns[])[0];
+    if (row) shape.recovery_runs = row;
   }
 
   // Same pattern again (20260929203517_ci_browser_reachability.sql). Asks the LIVE catalogue
