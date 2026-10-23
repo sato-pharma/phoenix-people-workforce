@@ -246,6 +246,26 @@ export const MODULES = [
     keywords: ["phoenix crm", "phoenix-crm", "phoenix_crm", "visit app", "rep's app", "list admission", "location integrity", "mock location"],
     tables: ["phoenix_crm"],
   },
+  // 🔴 SPLIT, 2026-10-23, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `phoenix-crm` reached 33
+  // rules and its injected pointer measured 4,093 bytes against the 4,000 margin
+  // `tests/module-memory.test.ts` holds, the moment the visit-recordings key taught its rule. The voice
+  // recording kept beside a visit — the row, its claim, its review, its deletion, and the integrity audit
+  // that reads all four — is its own family, so it gets its own file. `phoenix-crm` KEEPS EVERY GLOB IT HAD,
+  // so a recordings file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-recordings",
+    title: "Phoenix CRM — the visit recording and the integrity audit that reads it",
+    scope: "The voice recording kept beside a visit: its row and real key, who it was issued to, the claim, the review and the deletion — and the System Error & Data Integrity Audit detectors that read that lifecycle.",
+    globs: [
+      "src/lib/phoenix-crm/server/visit-recordings.ts",
+      "src/lib/system-audit/**",
+      "app/api/phoenix-crm/{recording,voice}/**",
+      "tests/phoenix-crm-visit-recordings-*",
+      "tests/system-audit-*",
+    ],
+    keywords: ["visit recording", "voice note", "recordings", "visit lifecycle", "system audit", "integrity audit", "audit detector"],
+    tables: ["phoenix_crm_visit_recordings"],
+  },
   // 🔴 `phoenix-crm` KEEPS EVERY GLOB IT HAD, and `phoenix-crm-approvals` ADDS its own narrower ones,
   // so an approvals file loads the PAIR and nothing that used to arrive stops arriving. The split is
   // for the POINTER, not the file: phoenix-crm had 38 rules and its injected pointer measured 4,478

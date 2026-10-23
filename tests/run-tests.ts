@@ -2728,6 +2728,7 @@ import {
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
+import { runPhoenixCrmVisitRecordingsKeyIsPathTests } from "./phoenix-crm-visit-recordings-key-is-path.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10775,6 +10776,10 @@ await runTest(
 await runTest(
   "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
   runCrmParityMirrorExcludesPhoenixVisitsTests,
+);
+await runTest(
+  "no read of phoenix_crm_visit_recordings names a bare id — that table is keyed on path, and selecting a column that does not exist fails the whole read with 42703, which is what killed the visit_lifecycle audit detector on its first production sweep",
+  runPhoenixCrmVisitRecordingsKeyIsPathTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
