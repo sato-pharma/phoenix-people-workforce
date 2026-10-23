@@ -268,6 +268,9 @@ const ROUTE_GATES: RouteGate[] = [
   // (`territoryForVisitEdit`).
   get("visit-edit", "update"),
   post("visit-edit", "update"),
+  // A plan, visit or day record DELETED by the Super Admin as if it never happened (owner, 2026-10-23).
+  // POST only. `update`, narrowed again in the service to the Super Admin alone (`canEnterMissedRecords`).
+  post("admin-delete", "update"),
   // The detail of HIS OWN visit, filled in afterwards by the REP (owner, 2026-10-15): the detailed
   // comment, the objection, the next step, what he left, the pharmacy stock, and a pharmacy name the
   // visit does not yet carry. `read`/`create` — the rep's own permissions, he holds no `update` — and
@@ -304,6 +307,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("manager-plans/customers", "read"),
   get("manager-plans/customers/area"),
   get("manager-plans/customers/bricks"),
+  // The marks on each doctor of the rep or area he plans with (owner, 2026-10-23).
+  get("manager-plans/customers/insight"),
   { route: "manager-plans/customers/match", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   { route: "manager-plans/customers/locate", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   post("manager-plans/customers/removal", "read"),
@@ -993,6 +998,9 @@ const LATER_MIGRATIONS = [
   // Writing why is optional on that ask (owner, 2026-10-20). It REPLACES the raise function just above and
   // widens the reason column and its CHECK, so it appends at the end.
   "supabase/migrations/20261020213000_phoenix_crm_manager_single_visit_day_reason_optional.sql",
+  // The Super Admin's delete (owner, 2026-10-23): one new table that keeps a copy of everything it deletes,
+  // locked by the same four statements, and one brand-new function replacing nothing — it appends at the end.
+  "supabase/migrations/20261023223001_phoenix_crm_admin_delete_anything.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

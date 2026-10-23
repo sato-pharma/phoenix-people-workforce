@@ -32,6 +32,7 @@ import { runSystemAuditJobFailuresTests } from "./system-audit-job-failures.test
 import { runSystemAuditDataLinkageTests } from "./system-audit-data-linkage.test.ts";
 import { runUserErrorScreensTests } from "./user-error-screens.test.ts";
 import { runUserErrorScreensRetentionCapTests } from "./user-error-screens-retention-cap.test.ts";
+import { runScreenUploadPauseTests } from "./screen-upload-pause.test.ts";
 import { runSystemAuditScreenshotViewsTests } from "./system-audit-screenshot-views.test.ts";
 import { runSystemAuditVerifierTests } from "./system-audit-verifier.test.ts";
 import { runSystemAuditSweepTests } from "./system-audit-sweep.test.ts";
@@ -1900,6 +1901,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
 import { runPhoenixCrmMissedRecordsTests } from "./phoenix-crm-missed-records.test.ts";
+import { runPhoenixCrmAdminDeleteTests } from "./phoenix-crm-admin-delete.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
@@ -2013,6 +2015,7 @@ import { runPhoenixCrmAdministratorTests } from "./phoenix-crm-administrator.tes
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
+import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
@@ -2903,6 +2906,7 @@ await runTest("a failed background job or a missed scheduled-job heartbeat becom
 await runTest("a login with no access profile, a missing attendance device map or a vacancy holder mismatch is one finding per person", runSystemAuditDataLinkageTests);
 await runTest("an error or block a person meets leaves a screenshot: refusals photographed, skip list and throttle honoured, the caller answer untouched, test accounts filed under themselves, 90-day retention only nightly, pictures for the Super Admin only", runUserErrorScreensTests);
 await runTest("the nightly screenshot removal raises a System Audit issue when it stops at its 1,000 cap with pictures still past their 90 days: counted after the removals, one occurrence per Cairo night, written before the morning message, never moving the watermark", runUserErrorScreensRetentionCapTests);
+await runTest("an error screenshot upload the server cannot store (5xx, 429 or no answer) pauses every tab of the browser — 5 minutes doubling to an hour, Retry-After honoured, ended by one stored picture — before anything is throttled or drawn", runScreenUploadPauseTests);
 await runTest("every screenshot opened on the System Audit page writes one audit row naming who looked at whose screen, after the Super Admin guard and before the picture leaves", runSystemAuditScreenshotViewsTests);
 await runTest("only the verifier sets FIXED — VERIFIED, after 7 quiet days and real exposure, and a recurrence on a fixed build reopens it", runSystemAuditVerifierTests);
 await runTest("the nightly system audit sweep runs the detectors one at a time under a lease and stops on an unhealthy database", runSystemAuditSweepTests);
@@ -6966,6 +6970,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM: the Super Admin deletes a plan, a visit or a day record as if it never happened (owner, 2026-10-23: \"in every weekly plan, every visit, every record, for the admin only … delete this record or this plan as if it did not happen\" — four kinds; the database keeps a copy before the first row goes and clears every child before its parent; the service is the Super Admin's alone and withdraws notices only after the database has deleted; every screen draws the button from the server's own answer)",
+  runPhoenixCrmAdminDeleteTests,
+);
+
+await runTest(
   "PHOENIX CRM GOLDEN RULE #1, the BLIND half (owner, 2026-09-26: \"never make the medical rep feel that the system is here to catch him … never informed of any violation … recorded in the admin and the SFE account\" — the rep-facing surface is DERIVED and swept rather than listed, JSX text is read as well as string literals, no rep-callable route reaches the evidence, every reader of it is declared, the board's audience is one predicate naming the Super Admin and the SFE Manager, and it refuses with a 404 because a 403 naming the board is itself the disclosure)",
   runPhoenixCrmBlindHalfTests,
 );
@@ -7647,6 +7656,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's district manager plans his own week (owner, 2026-10-16): each half-day is with a rep, admin or a single visit, read strictly; the coming Saturday's week only, Thursday a morning, never a Friday or a holiday; his RSM or NSM approves, Hany Saad's district managers then Ali Mohamed Ali, and the Administrator may act in place; a rep's draft customer reads not sent and a dropped one stays flagged; the rep is refused everywhere, the acting district manager files both weeks and her own rep seat is never one of her reps; every table is RLS-locked to the service role, nothing outside the module reads them and his visits reach no KPI; no notice emails, the Hub counts each week once; a switched district manager loses the legacy form and the Plans tab and keeps the calendar; and his old My own visit is closed",
   runPhoenixCrmManagerPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM manager plan board marks every customer (owner, 2026-10-23): the grade as the card edge, the rep's countable visits this month as pips against the grade's number (over drawn apart, never a bonus), his own visits with the rep and alone, a live marketing request that opens it — matched by the stored link or a unique name on the requester's own list — the groups a few of the shown customers share, and Go first on at most three behind their number or carrying a request; his own territories only, and the rep never sees any of it",
+  runPhoenixCrmManagerCustomerMarksTests,
 );
 
 await runTest(

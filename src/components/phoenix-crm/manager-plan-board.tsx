@@ -37,9 +37,11 @@
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
+import { CustomerCard, CustomerGroupBar, CustomerMarks, groupLook, useCustomerInsight } from "@/components/phoenix-crm/manager-customer-marks";
 import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
 import { CrmStepFooter, CrmStepForm, CrmStepNext, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
@@ -70,6 +72,7 @@ import {
   type ManagerHalf,
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
+import { customerGroups, customerPriority, ownInsightKey, suggestedCustomers, type GroupableCustomer } from "@/lib/phoenix-crm/manager-customer-marks-rules";
 import { PLAN_AUTOSAVE_DELAY_MS } from "@/lib/phoenix-crm/plan-week-draft";
 import type {
   AreaCustomersView,
@@ -517,6 +520,20 @@ export function ManagerPlanBoard({
               <span className="mt-1 block">Only {days.find((entry) => entry.date === plan.returnedDay)?.dateText ?? plan.returnedDay} is open to change.</span>
             ) : null}
           </CrmNote>
+          {view.adminDeletes && plan.planId ? (
+            <div className="mt-3">
+              <AdminDelete
+                id={plan.planId}
+                isTest={view.isTest}
+                kind="manager_plan"
+                onDeleted={() => {
+                  board.reload();
+                  onChanged?.();
+                }}
+                subject={chip}
+              />
+            </div>
+          ) : null}
         </CrmBlock>
       ) : null}
 
@@ -877,7 +894,7 @@ function HalfStep({
       ) : null}
 
       {draft.kind === "with_rep"
-        ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} view={view} />)
+        ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} test={test} view={view} />)
         : null}
       {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
@@ -910,6 +927,7 @@ function WithRepPart({
   half,
   onDraft,
   slot,
+  test,
   view,
 }: {
   canEdit: boolean;
@@ -918,8 +936,13 @@ function WithRepPart({
   half: ManagerHalf;
   onDraft: (next: HalfDraft) => void;
   slot: ManagerBoardSlot | undefined;
+  test: boolean;
   view: ManagerPlanBoardView;
 }) {
+  // The marks on each of the rep's customers (owner, 2026-10-23): grade, the rep's visits this month against
+  // it, his own visits, a live marketing request — and the groups they share. Read for the chosen rep only.
+  const insight = useCustomerInsight({ seats: draft.repSeatId ? [draft.repSeatId] : [], date: day.date, test });
+  const [group, setGroup] = useState<string | null>(null);
   if (view.reps.length === 0) {
     return <CrmEmpty message={choosesADistrict(view) ? "No rep sits in this district right now." : "No rep sits in your team right now."} title="No reps" />;
   }
@@ -965,13 +988,26 @@ function WithRepPart({
     (customer) => customer.customerId && !onDay.has(customer.customerId),
   );
   const ticked = new Set(draft.customers.map((customer) => customer.key));
+  const marks = insight.data?.insights ?? {};
+  const groupable: GroupableCustomer[] = repCustomers.flatMap((customer) =>
+    customer.customerId ? [{ id: customer.customerId, speciality: customer.speciality, place: customer.brickName ?? customer.zone, pharmacy: marks[customer.customerId]?.pharmacy ?? null }] : [],
+  );
+  const groups = insight.data ? customerGroups(groupable, marks, insight.data.monthName) : [];
+  const suggested = suggestedCustomers(groupable.map((customer) => customer.id), marks);
+  // The customers worth his half-day most come first; the rest keep the rep's own order.
+  const ordered = [...repCustomers].sort(
+    (left, right) => Number(suggested.has(right.customerId ?? "")) - Number(suggested.has(left.customerId ?? "")),
+  );
 
   return (
     <div className="grid min-w-0 gap-4">
       <CrmChoice
         columns={2}
         label="Which rep"
-        onChange={(seatId) => onDraft({ ...draft, repSeatId: seatId, customers: [] })}
+        onChange={(seatId) => {
+          setGroup(null);
+          onDraft({ ...draft, repSeatId: seatId, customers: [] });
+        }}
         options={options}
         value={draft.repSeatId}
       />
@@ -1013,8 +1049,9 @@ function WithRepPart({
           {!chosen ? (
             <p className="text-xs font-semibold leading-5 text-amber-800">The rep has nothing planned this half any more. Untick the customers below, or choose another rep.</p>
           ) : null}
+          {chosen ? <CustomerGroupBar active={group} customers={groupable} insight={insight.data} onActive={setGroup} /> : null}
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-            {repCustomers.map((customer, index) => {
+            {ordered.map((customer, index) => {
               const details = [customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.brickName ?? customer.zone].filter(Boolean).join(" · ");
               const customerId = customer.customerId;
               if (!customerId) {
@@ -1028,18 +1065,17 @@ function WithRepPart({
                   </div>
                 );
               }
+              const look = groupLook(group, groups, customerId);
               return (
-                <CrmCheck
-                  checked={ticked.has(`c:${customerId}`)}
-                  disabled={!canEdit}
-                  key={customerId}
-                  onChange={(on) => onDraft(toggle(draft, repRef(customerId, customer.name), on))}
-                >
-                  <span className="block break-words" dir="auto">
-                    {customer.name}
-                  </span>
-                  <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
-                </CrmCheck>
+                <CustomerCard dimmed={look.dimmed} grade={marks[customerId]?.grade ?? customer.grade} highlight={look.highlight} key={customerId}>
+                  <CrmCheck checked={ticked.has(`c:${customerId}`)} disabled={!canEdit} onChange={(on) => onDraft(toggle(draft, repRef(customerId, customer.name), on))}>
+                    <span className="block break-words" dir="auto">
+                      {customer.name}
+                    </span>
+                    <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
+                    <CustomerMarks insight={marks[customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customerId)} />
+                  </CrmCheck>
+                </CustomerCard>
               );
             })}
             {dropped.map((customer) => (
@@ -1187,6 +1223,11 @@ function SingleVisitPart({
   const [limit, setLimit] = useState(AREA_PAGE);
   const [adding, setAdding] = useState(false);
   const area = useCrmGet<AreaCustomersView>(draft.areaSeatId && canEdit ? crmUrl(AREA, { area: draft.areaSeatId, test }) : null, "area");
+  // The marks on each customer of the area (owner, 2026-10-23), over every territory its lists come from, and
+  // his own list's customers with his own visits.
+  const areaSeats = area.data && area.data.area?.seatId === draft.areaSeatId ? [...new Set(area.data.repList.map((customer) => customer.seatId))] : [];
+  const insight = useCustomerInsight({ seats: areaSeats, own: true, date, test });
+  const [group, setGroup] = useState<string | null>(null);
   if (view.areas.length === 0) {
     return <CrmEmpty message={choosesADistrict(view) ? "No area of this district is on file yet." : "No area of your district is on file yet."} title="No areas" />;
   }
@@ -1202,9 +1243,30 @@ function SingleVisitPart({
   const ticked = new Set(draft.customers.map((customer) => customer.key));
   const words = query.trim().toLowerCase();
   const matches = (name: string) => !words || name.toLowerCase().includes(words);
-  const repList = (area.data?.repList ?? [])
+  const marks = insight.data?.insights ?? {};
+  const allRep = area.data?.repList ?? [];
+  const groupable: GroupableCustomer[] = allRep.map((customer) => ({
+    id: customer.customerId,
+    speciality: customer.speciality,
+    // An area list carries no brick per customer; the speciality and the pharmacy are what a group shares here.
+    place: null,
+    pharmacy: marks[customer.customerId]?.pharmacy ?? null,
+  }));
+  const groups = insight.data ? customerGroups(groupable, marks, insight.data.monthName) : [];
+  const suggested = suggestedCustomers(
+    allRep.filter((customer) => customer.listType === half).map((customer) => customer.customerId),
+    marks,
+  );
+  // This half's list first, the customers worth the visit most at its top, then by name.
+  const repList = allRep
     .filter((customer) => matches(customer.name))
-    .sort((left, right) => Number(right.listType === half) - Number(left.listType === half) || left.name.localeCompare(right.name));
+    .sort(
+      (left, right) =>
+        Number(right.listType === half) - Number(left.listType === half) ||
+        Number(suggested.has(right.customerId)) - Number(suggested.has(left.customerId)) ||
+        (insight.data ? customerPriority(marks[right.customerId]) - customerPriority(marks[left.customerId]) : 0) ||
+        left.name.localeCompare(right.name),
+    );
   const ownList = (area.data?.ownList ?? []).filter((customer) => customer.status === "active" && matches(customer.name));
   const shown = repList.slice(0, limit);
 
@@ -1239,7 +1301,16 @@ function SingleVisitPart({
       !(view.singleVisitDaysApproved ?? []).includes(date) ? (
         <ManagerSingleVisitDayAsk preferDate={date} test={test} />
       ) : null}
-      <CrmChoice columns={3} label="Area" onChange={(areaSeatId) => onDraft({ ...draft, areaSeatId, customers: [] })} options={areaOptions} value={draft.areaSeatId} />
+      <CrmChoice
+        columns={3}
+        label="Area"
+        onChange={(areaSeatId) => {
+          setGroup(null);
+          onDraft({ ...draft, areaSeatId, customers: [] });
+        }}
+        options={areaOptions}
+        value={draft.areaSeatId}
+      />
 
       {!canEdit ? (
         <div className="flex min-w-0 flex-wrap gap-1.5">
@@ -1295,23 +1366,23 @@ function SingleVisitPart({
           {area.data ? (
             <>
               <CrmSearchField id={`${idPrefix}-area-search`} label="Find a customer" onChange={setQuery} placeholder="Type a name" value={query} />
+              {allRep.length > 0 ? <CustomerGroupBar active={group} customers={groupable} insight={insight.data} onActive={setGroup} /> : null}
               {ownList.length > 0 ? (
                 <div className="grid min-w-0 gap-2">
                   <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Manager&apos;s own list</p>
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                     {ownList.map((customer) => (
-                      <CrmCheck
-                        checked={ticked.has(`m:${customer.id}`)}
-                        key={customer.id}
-                        onChange={(on) => onDraft(toggle(draft, ownRef(customer.id, customer.name), on))}
-                      >
-                        <span className="block break-words" dir="auto">
-                          {customer.name}
-                        </span>
-                        <span className="block break-words text-xs font-semibold text-slate-500">
-                          {[`Grade ${customer.grade}`, customer.potentialGrade, customer.speciality].filter(Boolean).join(" · ")}
-                        </span>
-                      </CrmCheck>
+                      <CustomerCard dimmed={false} grade={customer.grade} highlight={null} key={customer.id}>
+                        <CrmCheck checked={ticked.has(`m:${customer.id}`)} onChange={(on) => onDraft(toggle(draft, ownRef(customer.id, customer.name), on))}>
+                          <span className="block break-words" dir="auto">
+                            {customer.name}
+                          </span>
+                          <span className="block break-words text-xs font-semibold text-slate-500">
+                            {[`Grade ${customer.grade}`, customer.potentialGrade, customer.speciality].filter(Boolean).join(" · ")}
+                          </span>
+                          <CustomerMarks insight={marks[ownInsightKey(customer.id)]} monthName={insight.data?.monthName ?? ""} suggested={false} />
+                        </CrmCheck>
+                      </CustomerCard>
                     ))}
                   </div>
                 </div>
@@ -1331,22 +1402,24 @@ function SingleVisitPart({
                   </p>
                 ) : null}
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-                  {shown.map((customer) => (
-                    <CrmCheck
-                      checked={ticked.has(`c:${customer.customerId}`)}
-                      key={customer.customerId}
-                      onChange={(on) => onDraft(toggle(draft, repRef(customer.customerId, customer.name), on))}
-                    >
-                      <span className="block break-words" dir="auto">
-                        {customer.name}
-                      </span>
-                      <span className="block break-words text-xs font-semibold text-slate-500">
-                        {[customer.listType, customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.vacant ? VACANT_LIST_LABEL : (customer.repName ?? "No rep")]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </CrmCheck>
-                  ))}
+                  {shown.map((customer) => {
+                    const look = groupLook(group, groups, customer.customerId);
+                    return (
+                      <CustomerCard dimmed={look.dimmed} grade={customer.grade} highlight={look.highlight} key={customer.customerId}>
+                        <CrmCheck checked={ticked.has(`c:${customer.customerId}`)} onChange={(on) => onDraft(toggle(draft, repRef(customer.customerId, customer.name), on))}>
+                          <span className="block break-words" dir="auto">
+                            {customer.name}
+                          </span>
+                          <span className="block break-words text-xs font-semibold text-slate-500">
+                            {[customer.listType, customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.vacant ? VACANT_LIST_LABEL : (customer.repName ?? "No rep")]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                          <CustomerMarks insight={marks[customer.customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customer.customerId)} />
+                        </CrmCheck>
+                      </CustomerCard>
+                    );
+                  })}
                 </div>
               </div>
               <CrmShowMore left={repList.length - shown.length} onMore={() => setLimit((value) => value + AREA_PAGE)} page={AREA_PAGE} />

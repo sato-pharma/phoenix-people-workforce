@@ -208,6 +208,85 @@ export function decideScreenThrottle(state: ScreenThrottleState, key: string, no
 }
 
 /**
+ * THE OUTAGE PAUSE (owner, 23 Oct 2026: "pause screenshot uploads while the server cannot store
+ * them"). During a database outage every request a person makes fails, so every open tab — a rep's
+ * phone on mobile data included — drew and sent up to 12 pictures an hour, each up to 1.6 MB on the
+ * wire, that the server answered 503 and threw away. Now an answer that says THE SERVER cannot store
+ * a picture pauses the tab: nothing is drawn or sent until the pause ends. The first pause is
+ * 5 minutes and each refusal after it doubles it, up to an hour; a `Retry-After` the server gave is
+ * honoured up to that hour; one picture stored ends it.
+ *
+ * What pauses: no answer at all (the server is unreachable), 429 (the person's 40 an hour are used
+ * up), and any 5xx. What does not: 400 and 413 (that picture was wrong, the next may not be), 401 and
+ * 403 (this session may not store one; the trigger rules already skip a 401).
+ */
+export const UPLOAD_PAUSE_FIRST_MS = 5 * 60 * 1000;
+export const UPLOAD_PAUSE_MAX_MS = HOUR_MS;
+
+/** When the tab may send again, and how many refusals in a row led here. */
+export type UploadPauseState = { pausedUntil: number; strikes: number };
+
+export const EMPTY_UPLOAD_PAUSE: UploadPauseState = { pausedUntil: 0, strikes: 0 };
+
+/** Does this answer to an upload say the SERVER cannot store pictures now? `status: null` is no answer at all. */
+export function isServerCannotStore(status: number | null): boolean {
+  if (status === null) return true;
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+/** A `Retry-After` in seconds (the only form the intake sends), or null. An HTTP date is not read. */
+export function retryAfterMs(header: string | null | undefined): number | null {
+  const text = String(header ?? "").trim();
+  if (!/^\d+$/.test(text)) return null;
+  const seconds = Number(text);
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+/** Is the tab paused at `nowMs`? */
+export function uploadPaused(state: UploadPauseState, nowMs: number): boolean {
+  return nowMs < state.pausedUntil;
+}
+
+/**
+ * The pause after an upload was answered. Stored (2xx) clears it; an answer about this one picture
+ * or this session leaves it as it was; the server unable to store pauses for the next, longer step.
+ * A pause never ends EARLIER than the one already running.
+ */
+export function nextUploadPause(
+  state: UploadPauseState,
+  answer: { status: number | null; retryAfter?: string | null },
+  nowMs: number,
+): UploadPauseState {
+  if (answer.status !== null && answer.status >= 200 && answer.status <= 299) return EMPTY_UPLOAD_PAUSE;
+  if (!isServerCannotStore(answer.status)) return state;
+  const strikes = Math.min(state.strikes + 1, 16);
+  const backoff = Math.min(UPLOAD_PAUSE_FIRST_MS * 2 ** (strikes - 1), UPLOAD_PAUSE_MAX_MS);
+  const asked = retryAfterMs(answer.retryAfter);
+  const wait = asked === null ? backoff : Math.max(backoff, Math.min(asked, UPLOAD_PAUSE_MAX_MS));
+  return { pausedUntil: Math.max(state.pausedUntil, nowMs + wait), strikes };
+}
+
+/**
+ * The pause is SHARED by every tab of the browser, through localStorage: the outage one tab met is
+ * the outage every tab would meet, so one refused upload pauses them all and one stored picture ends
+ * it for them all. Anything that does not read as a pause reads as none.
+ */
+export const UPLOAD_PAUSE_STORAGE_KEY = "phoenix:screen-upload-pause";
+
+export function parseUploadPause(raw: string | null | undefined): UploadPauseState {
+  if (!raw) return EMPTY_UPLOAD_PAUSE;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    const pausedUntil = Number(value?.pausedUntil);
+    const strikes = Number(value?.strikes);
+    if (!Number.isFinite(pausedUntil) || !Number.isInteger(strikes) || strikes < 0) return EMPTY_UPLOAD_PAUSE;
+    return { pausedUntil, strikes: Math.min(strikes, 16) };
+  } catch {
+    return EMPTY_UPLOAD_PAUSE;
+  }
+}
+
+/**
  * Is `url` (as fetch was given it) a same-origin `/api/` request? Returns its path, or null. Never
  * throws: a URL that will not parse is simply not ours.
  */

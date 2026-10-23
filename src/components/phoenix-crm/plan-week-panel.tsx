@@ -36,6 +36,7 @@
 import { useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { cairoStamp, countText, dayLabel, plural, weekLabel } from "@/components/phoenix-crm/format";
 import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
 import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
@@ -200,6 +201,7 @@ function DayPair({ counts, full, listTypes }: { counts: Record<PhoenixCrmDoctorL
 
 export function PlanWeekPanel({
   activities,
+  adminDelete = null,
   autosave = false,
   busy,
   caps,
@@ -250,6 +252,11 @@ export function PlanWeekPanel({
 }: {
   /** The week's drafted activities, one of each kind a day (editable weeks only). */
   activities: ReadonlyArray<PlannedActivity>;
+  /**
+   * The Super Admin's delete of this week's plan as if it never happened (owner, 2026-10-23). Null for
+   * everyone else — the server decided, and the route asserts it again.
+   */
+  adminDelete?: { isTest: boolean; onDeleted: () => void } | null;
   /**
    * The rep's own board, which saves itself as he ticks (owner, 2026-10-02): no "Unsaved changes" pill —
    * the board's one status line says where the save stands — and no word asking him to press a Save
@@ -450,6 +457,11 @@ export function PlanWeekPanel({
         <div className="mt-3">
           <CrmFacts facts={facts} />
         </div>
+        {adminDelete && plan ? (
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <AdminDelete id={plan.planId} isTest={adminDelete.isTest} kind="rep_plan" onDeleted={adminDelete.onDeleted} subject={weekLabel(week.weekStart)} />
+          </div>
+        ) : null}
 
         {/* The week this month opens with and does not own (owner, 2026-10-01). It is shown here so he
             can reach his first days from the month he is planning — and told, in words, that the

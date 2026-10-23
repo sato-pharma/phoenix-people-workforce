@@ -901,6 +901,9 @@ export const accessRegistry = [
   // A record a rep MISSED — a visit, or how his day was spent — entered for him by the Super Admin
   // (owner, 2026-10-01). `update`, the same gate as Settings, and narrowed AGAIN in the service to the
   // Super Admin alone (`territoryForMissedRecord`), so holding `update` is not enough.
+  // The Super Admin deletes a plan, a visit or a day record as if it never happened (owner, 2026-10-23) —
+  // narrowed in the service to the Super Admin alone (`canEnterMissedRecords`), so `update` is not enough.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/admin-delete", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/missed-records", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/missed-records", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // A rep's visit CORRECTED by the Super Admin — who was on it, its products, its comment (owner,
@@ -1065,6 +1068,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/customers/area", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/customers/bricks", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/customers/insight", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/match", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/locate", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/removal", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),

@@ -724,3 +724,59 @@ What changed, and why each half:
   (43 since 13 Oct); three did not (two on 12 Oct, one on 18 Oct) and sat waiting on that manager, so the visits never
   counted. A BEFORE INSERT trigger now holds the rule in the database as well, named to fire before the
   administrator diversion.
+
+## The marks on each doctor while he plans (owner, 2026-10-23)
+
+His words: *"group the doctors, give every doctor a highlight color … if A and he is visited 2 times for the
+rep this month … show two dots … give color if the manager have visited this customer within the month …
+if a group of doctors have a common feature rather than the others, also make them a color … take the
+concept from me and upgrade it."*
+
+### What each doctor card carries
+
+On both doctor lists of the plan board — the rep's half-day (With a rep) and the area's lists plus
+Manager's own list (Single visit):
+
+- **The grade is the card's left edge** — A dark blue, B mid, C light — and a small grade square.
+- **Square pips: the rep's visits this month against the grade's monthly number** (`grade_targets`, the
+  Settings tab's own numbers) — "2 of 3 in October" is two filled and one open. A visit past the number is
+  an amber pip and the line reads "— 1 over": over is a deviation, never a bonus (the standing frequency
+  rule). With no number set, visits are plain filled pips and no verdict is given. Pips are square, not
+  round dots, because of the square-edge golden rule.
+- **"With you" / "Your single visit"** when he saw the doctor this month — the rep's double, chain or
+  product-manager visit naming him (`countsAsPlannersVisitWithRep`, the plan report's own rule), and his own
+  `phoenix_crm_manager_visits`.
+- **A violet marketing chip for a live request** (waiting, returned, on finance hold, approved, running or in
+  ROI tracking), naming its code, type and status; it opens the request in the marketing inbox in a new tab,
+  so the week he is planning stays on screen.
+- **"Go first"** on at most three doctors of the list: the highest priority (grade, visits still owed, a live
+  request, not yet seen by him), and only one behind his number or carrying a request — never a doctor
+  suggested for his grade alone. They are listed first.
+
+### The groups
+
+Above the list, one chip per group the shown doctors fall into, with its count; pressing one colours its
+doctors and fades the rest. The fixed groups (shown only when someone is in them): Marketing request,
+Behind on frequency, Not seen this month, Seen by you this month, Over frequency. Then what the system
+finds a group sharing that the others do not — a speciality, a brick, or the pharmacy they are listed with
+("one stop can serve them together") — when at least three share it and not every doctor does.
+
+### Where the numbers come from
+
+`GET /api/phoenix-crm/manager-plans/customers/insight?seats=…&date=…&own=true` →
+`server/manager-customer-marks.ts`. His own territories only (`assertManagerPlanWriter`, then every seat must
+be in `managerWriterReach`, refused whole otherwise). The rep's visits are `phoenix_crm_countable_visits`
+over the month of the day he is planning, through today — the same count the rep's own List shows him
+beside his grade norm (`loadMonthVisitCounts`). A day of a month that has not started counts nothing and
+says so.
+
+The marketing link is `marketing_customers.phoenix_crm_customer_id` first, written since 2026-10-23 when
+Customer Validation began picking the doctor from a rep's list. On that day none of the 118 marketing
+customers carried it, so a request is also matched by the doctor's NAME (`normalizeContactName`) — only on
+the list of the rep who raised it (any list in reach when the manager raised it himself), and only when
+exactly one doctor there carries the name; the chip then says "by name". Namesakes are real: an ambiguous
+name is shown on no doctor rather than on the wrong one. Measured that day: 51 of the 118 match a Phoenix
+CRM doctor by name somewhere, 19 of them ambiguously.
+
+The rep never sees any of it: the marks live only in the manager's plan board, and the test pins that the
+rep's plan board, List and visit form never import them.
