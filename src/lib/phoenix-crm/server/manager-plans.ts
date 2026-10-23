@@ -50,6 +50,8 @@ import {
   managerScopeKey,
   managerScopeTerritories,
   managerSlotKindLabel,
+  managerSlotKinds,
+  managerDmVisitTitle,
   managerSlotScopeError,
   managerWeekDays,
   managerWeekState,
@@ -324,6 +326,10 @@ export type ManagerBoardSlot = {
   activityLabel: string | null;
   areaSeatId: string | null;
   areaName: string | null;
+  /** With a district manager: the areas he ticked (one seat per area, as `areas` offers them). Empty otherwise. */
+  areaSeatIds: string[];
+  /** With a district manager: the district manager he goes with; null on a vacant district and every other kind. */
+  dmName: string | null;
   /** The scope the half-day was planned in — a regional, national or product manager's only. */
   scopeKey: string | null;
   /** "Delta (1) · Pedia — Nermeen Adel", or "Any rep in Pedia (no district manager)". */
@@ -407,6 +413,8 @@ export type ManagerPlanBoardView = {
   reps: ManagerBoardRep[];
   areas: ManagerBoardArea[];
   activities: Array<{ key: string; label: string }>;
+  /** The half-day kinds this planner is offered — With a district manager for everyone but a district manager. */
+  slotKinds: Array<{ key: ManagerSlotKind; label: string }>;
   days: ManagerBoardDay[];
   /**
    * A district manager's single-visit half-days of his FREE day this week, counted as the save counts them —
@@ -426,11 +434,13 @@ function slotSummary(input: {
   activityLabel: string | null;
   areaName: string | null;
   scopeName: string | null;
+  dmName?: string | null;
   count: number;
 }): string {
   const customers = `${input.count} customer${input.count === 1 ? "" : "s"}`;
   const scope = input.scopeName ? ` · ${input.scopeName}` : "";
   if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"} · ${customers}${scope}`;
+  if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
   return `Single visit · ${input.areaName ?? "an area"} · ${customers}${scope}`;
 }
@@ -456,6 +466,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     reps: [],
     areas: [],
     activities: managerAdminActivities("dm"),
+    slotKinds: [...managerSlotKinds("dm")],
     days: [],
     singleVisitHalvesUsed: null,
     singleVisitDaysApproved: null,
@@ -568,11 +579,13 @@ async function buildBoard(
     asks[0]?.approverHrId,
     asks[0]?.secondApproverHrId,
     ...slots.map((slot) => slot.repHrId),
+    ...slots.map((slot) => slot.dmVisit?.dmHrId),
   ]);
   view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind) };
   view.scopes = scopeChoices(viewer, writer, scopes, names);
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
+  view.slotKinds = [...managerSlotKinds(writer.kind)];
   // The count the save refuses by: the plan's single-visit halves and the visits he has already logged, less
   // those on a date his managers approved — an approved date is paid for by its approval.
   const approvedDates = approvedSingleVisitDates ?? new Set<string>();
@@ -677,6 +690,8 @@ async function buildBoard(
           activityLabel: null,
           areaSeatId: null,
           areaName: null,
+          areaSeatIds: [],
+          dmName: null,
           scopeKey: null,
           scopeName: null,
           note: null,
@@ -707,17 +722,20 @@ async function buildBoard(
       const activityLabel = managerAdminActivityLabel(slot.activityType);
       const hasScope = slot.scopeLineCode !== null;
       const slotScopeName = hasScope ? scopeName(viewer, { dmSeatId: slot.scopeDmSeatId, lineCode: slot.scopeLineCode }, names) : null;
+      const dmName = slot.dmVisit?.dmHrId ? nameOf(names, slot.dmVisit.dmHrId) : null;
       return {
         half,
         kind: slot.kind,
         kindLabel: managerSlotKindLabel(slot.kind),
-        summary: slotSummary({ kind: slot.kind, repName, activityLabel, areaName: slot.areaName, scopeName: slotScopeName, count: customers.length }),
+        summary: slotSummary({ kind: slot.kind, repName, activityLabel, areaName: slot.areaName, scopeName: slotScopeName, dmName, count: customers.length }),
         repSeatId: slot.repSeatId,
         repName,
         activityType: slot.activityType,
         activityLabel,
         areaSeatId: slot.areaSeatId,
         areaName: slot.areaName,
+        areaSeatIds: slot.dmVisit?.areas.map((area) => area.seatId) ?? [],
+        dmName,
         scopeKey: hasScope ? managerScopeKey(slot.scopeDmSeatId, slot.scopeLineCode ?? "") : null,
         scopeName: slotScopeName,
         note: slot.note,
@@ -905,6 +923,26 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     );
   }
 
+  // With a district manager (owner, 2026-10-23): the areas he ticked, each one of the chosen district manager's,
+  // vacant ones included. An area is offered as ONE seat (`areas`), so every territory of that area is kept with
+  // it — a chain visit on any of them answers the area.
+  let dmVisit: { dm_hr_id: string | null; areas: Array<{ seat_id: string; area_code: string | null; area_name: string; seat_ids: string[] }> } | null = null;
+  if (draft.kind === "with_dm") {
+    const areaKey = (seat: OrgSeat) => seat.areaCode ?? seat.areaName ?? seat.seatId;
+    const areas = draft.areaSeatIds.map((seatId) => {
+      const seat = district.find((entry) => entry.seatId === seatId);
+      if (!seat) throw forbiddenError("Choose the areas of the district manager you chose.");
+      return {
+        seat_id: seat.seatId,
+        area_code: seat.areaCode ?? null,
+        area_name: seat.areaName ?? territoryName(seat),
+        seat_ids: district.filter((entry) => areaKey(entry) === areaKey(seat)).map((entry) => entry.seatId),
+      };
+    });
+    const dmSeat = scope?.dmSeatId ? viewer.org.seats.get(scope.dmSeatId) : undefined;
+    dmVisit = { dm_hr_id: personKey(dmSeat?.occupantHrId) ?? null, areas };
+  }
+
   // A district manager's single visits are one day a week at most — two half-days (owner, 2026-10-19).
   if (draft.kind === "single_visit" && own) {
     await assertSingleVisitPlanFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(draft.date), date: draft.date, half: draft.half, isTest });
@@ -925,7 +963,8 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       activity_type: draft.activityType,
       area_seat_id: areaSeat?.seatId ?? null,
       area_code: areaSeat ? (areaSeat.areaCode ?? areaSeat.seatId) : null,
-      area_name: areaSeat ? (areaSeat.areaName ?? territoryName(areaSeat)) : null,
+      area_name: areaSeat ? (areaSeat.areaName ?? territoryName(areaSeat)) : dmVisit ? dmVisit.areas.map((area) => area.area_name).join(", ") : null,
+      dm_visit: dmVisit,
       scope_dm_seat_id: own ? null : (scope?.dmSeatId ?? null),
       scope_line_code: own ? null : (scope?.lineCode ?? null),
       note: draft.note,

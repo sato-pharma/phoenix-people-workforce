@@ -34,6 +34,7 @@ import {
   managerPlanStatusLine,
   managerPlanSummaryText,
   managerSlotKindLabel,
+  managerDmVisitTitle,
   managerVisitWindow,
   type ManagerCountRow,
   type ManagerHalf,
@@ -171,6 +172,11 @@ async function loadWithRepDone(
         if (!countsAsPlannersVisitWithRep(visit, manager)) continue;
         const keys = done.get(manager) ?? new Set<string>();
         keys.add(`${seatId}|${date}|${customerId}`);
+        // With a district manager (owner, 2026-10-23): the area is answered by a visit naming him AND that
+        // district manager (`countsAsPlannersVisitWithDm`), or by him alone where the district has none.
+        keys.add(`dmany|${seatId}|${date}`);
+        const visitManager = personKey(textOrNull(row.manager_hr_id));
+        if (visitManager) keys.add(`dm|${seatId}|${date}|${visitManager}`);
         done.set(manager, keys);
       }
     }
@@ -217,7 +223,9 @@ export async function computeManagerReports(
     loadManagerVisits(managers, managerVisitWindow(weekStart), isTest),
     loadWithRepDone(
       managers,
-      slots.flatMap((slot) => (slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : [])),
+      slots.flatMap((slot) =>
+        slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : slot.kind === "with_dm" ? (slot.dmVisit?.areas.flatMap((area) => area.seatIds) ?? []) : [],
+      ),
       weekStart,
       isTest,
       planRows.filter((plan) => plan.plannerKind === "pm").map((plan) => plan.managerHrId),
@@ -232,7 +240,7 @@ export async function computeManagerReports(
     visitedBy.set(visit.managerHrId, keys);
   }
   const [repNames, deciderNames] = await Promise.all([
-    loadPeopleNames(slots.map((slot) => slot.repHrId)),
+    loadPeopleNames([...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.dmVisit?.dmHrId)]),
     loadPeopleNames(planRows.flatMap((plan) => [plan.firstApproverHrId, plan.secondApproverHrId, plan.decidedByHrId])),
   ]);
   const personName = (hrId: string) => (deciderNames.has(hrId) ? nameOf(deciderNames, hrId) : nameOf(names, hrId));
@@ -265,6 +273,21 @@ export async function computeManagerReports(
       .filter((slot) => managerOfPlan.get(slot.planId) === managerHrId)
       .sort((left, right) => left.date.localeCompare(right.date) || left.half.localeCompare(right.half));
     for (const slot of mySlots) {
+      if (slot.kind === "with_dm") {
+        const dmHrId = slot.dmVisit?.dmHrId ?? null;
+        const dmName = dmHrId ? nameOf(repNames, dmHrId) : null;
+        const keys = withRepDone.get(managerHrId);
+        const areaRows = (slot.dmVisit?.areas ?? []).map((area): ManagerReportCustomer => {
+          const done = area.seatIds.some((seatId) => keys?.has(dmHrId ? `dm|${seatId}|${slot.date}|${dmHrId}` : `dmany|${seatId}|${slot.date}`) ?? false);
+          const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
+          countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: area.seatId }) });
+          return { key: null, name: area.areaName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null };
+        });
+        const halves = daysByDate.get(slot.date) ?? [];
+        halves.push({ half: slot.half, kind: slot.kind, kindLabel: managerSlotKindLabel(slot.kind), title: managerDmVisitTitle(dmName, slot.areaName), note: slot.note, customers: areaRows });
+        daysByDate.set(slot.date, halves);
+        continue;
+      }
       const customers = (customersBySlot.get(slot.slotId) ?? []).map((row): ManagerReportCustomer => {
         let done = false;
         let place: string | null = null;
