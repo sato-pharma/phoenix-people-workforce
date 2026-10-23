@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 import {
@@ -499,6 +500,36 @@ export async function runSystemAuditVisitLifecycleTests() {
     );
     assert.deepEqual(cursor.kpiQueue, ["b-200|2026-11"], "the judged rep-day's month waits in the queue for the next run");
     assert.deepEqual(result.watermarkTo, { touchedAfter: cursor.touchedAfter, kpiQueued: 1 }, "the run reports the watermark it wrote");
+  }
+
+  // ── Its PostgREST reads name columns the tables actually have ──
+  //
+  // Everything above runs against ports the test fills, so none of it executes one real read. The
+  // detector's own reads are plain strings the compiler never checks, and ONE missing column fails
+  // the WHOLE read with 42703 rather than blanking a field — which is exactly how this detector died
+  // on its first production run (23 Oct 2026: `column phoenix_crm_visit_recordings.id does not
+  // exist`), taking every visit-lifecycle check with it and leaving the sweep `partial`.
+  // phoenix_crm_visit_recordings is keyed on `path` and has NO `id` column; phoenix_crm_unplanned_visits
+  // is keyed on `visit_id`. Verified against production the same day, through PostgREST itself.
+  {
+    const source = readFileSync(new URL("../src/lib/system-audit/detectors/visit-lifecycle.ts", import.meta.url), "utf8");
+    const KEY_OF: Record<string, string> = {
+      phoenix_crm_visit_recordings: "path",
+      phoenix_crm_unplanned_visits: "visit_id",
+      phoenix_crm_visit_edits: "id",
+      phoenix_crm_visits: "id",
+    };
+    for (const [table, key] of Object.entries(KEY_OF)) {
+      for (const entry of source.matchAll(new RegExp(`\\{ table: "${table}", column: "[a-z_]+", tiebreak: "([a-z_]+)" \\}`, "g"))) {
+        assert.equal(entry[1], key, `the besides read of ${table} breaks ties on its own key \`${key}\`, never a column it has not got`);
+      }
+    }
+    // The chunked read of the recordings themselves: its select list and its order, both on `path`.
+    const chunked = source.slice(source.indexOf('.from("phoenix_crm_visit_recordings")'));
+    const select = chunked.match(/\.select\("([^"]+)"\)/)?.[1] ?? "";
+    assert.ok(select.startsWith("path,"), `the recordings read selects \`path\`, not \`id\` (saw "${select}")`);
+    assert.doesNotMatch(select, /(^|,)id(,|$)/, "and never names an `id` column on a table keyed by path");
+    assert.match(chunked.slice(0, 400), /\.order\("path"\)/, "and pages by `path`");
   }
 
   console.log("system-audit-visit-lifecycle: PASS");
