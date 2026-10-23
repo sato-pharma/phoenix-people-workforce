@@ -313,7 +313,13 @@ export function runSalesReadsPriceEachPairOnceTests() {
 
   // (f) SECURITY DEFINER dropped — the "one change fixes all 21" route, which was measured and
   //     rejected: inlining leaves the correlated subqueries where they are.
-  broke((d) => ({ ...d, header: d.header.replace("security definer", "security invoker") }), /must stay SECURITY DEFINER/);
+  //
+  //     🔴 The mutation MUST be case-insensitive. `header` is compared lower-cased by rule 7, but the
+  //     mutation runs against the RAW header, and a migration written out of `pg_get_functiondef`
+  //     spells it `STABLE SECURITY DEFINER` in upper case. A plain lower-case replace is then a
+  //     silent no-op and this break test stops proving anything — which is exactly what happened the
+  //     moment a later migration redefined phx_exec_brick from a catalog dump.
+  broke((d) => ({ ...d, header: d.header.replace(/security definer/i, "security invoker") }), /must stay SECURITY DEFINER/);
 
   // (g) the service_role grant lost
   broke((d) => ({ ...d, tail: d.tail.replace(/grant execute on function[^;]*;/g, "") }), /must grant execute to service_role/);
