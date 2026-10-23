@@ -2588,6 +2588,7 @@ import { runFallbackImageDeployTests } from "./fallback-image-deploy.test.ts";
 import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
+import { runRailwayDeploySettingsDriftTests } from "./railway-deploy-settings-drift.test.ts";
 import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
 import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
 import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
@@ -10191,6 +10192,11 @@ await runTest("rollup build: a member merging mid-build is survived, not a crash
 await runTest(
   "railway deploy config: a broken deploy fails its healthcheck instead of taking production traffic",
   runRailwayDeployConfigTests,
+);
+
+await runTest(
+  "railway deploy settings: the scheduled check reads what Railway stores and names a shorter healthcheck window, a changed restart policy, a detached or undeclared disk",
+  runRailwayDeploySettingsDriftTests,
 );
 
 await runTest(
