@@ -1,12 +1,20 @@
 ---
 name: the-background-worker-runs-on-fly-while-railway-is-down
-description: "Since 22 Oct 03:38 Cairo the background jobs run on the Fly app phoenix-worker-standby (owner chose \"Separate worker on Fly\"). Railway's worker is stopped and set to role web. The 4 worker cron-job.org jobs call phoenix-worker-standby.fly.dev. Only ONE worker may run; the standby workflow does NOT update this app."
+description: "ENDED 23 Oct 2026 04:35 Cairo: the background jobs are back on Railway's worker phoenix-workforce-worker (PHOENIX_PROCESS_ROLE=worker, boot lines [process-role] worker and [crm:live-poll] started at 04:33), the 4 cron-job.org jobs call phoenix-workforce-worker-production.up.railway.app again (inbound-intake still OFF), and the Fly app phoenix-worker-standby was destroyed on the owner's order. History: 22 Oct 03:38 to 23 Oct 04:31 Cairo the jobs ran on that Fly app."
 metadata:
   node_type: memory
   type: project
   originSessionId: 03486b16-34ba-44b4-af4e-c44a32696de1
-  modified: 2026-10-22T03:10:26.909Z
+  modified: 2026-10-23T01:36:38.503Z
 ---
+
+✅ **ENDED 23 Oct 2026 Cairo — the worker is back on Railway and `phoenix-worker-standby` no longer exists.**
+04:31:56 Fly worker scaled to 0; 04:31:58 Railway worker `PHOENIX_PROCESS_ROLE=worker`, redeploy 87b89459 SUCCESS
+04:32:59; boot lines `[process-role] worker` and `[crm:live-poll] started` at 04:33:30; 04:33:32 the 4 cron jobs moved
+back to Railway (inbound-intake stays OFF); 04:35:33 process-notifications and recruitment-email-intake ran from
+Railway with status OK; 04:35:41 `flyctl apps destroy phoenix-worker-standby`. `phoenix-hr-standby` is kept, suspended,
+zero machines. An emergency-host go-live no longer has a Fly worker to update (its worker step is continue-on-error).
+Everything below is history.
 
 On 22 Oct 2026 the Railway worker was stuck on its 20 Oct deployment (ed7797a85), still holding the deleted database key, and Railway could not deploy. Every background job had stopped at about 02:35 Cairo, when the old key was switched off. The owner said "dploy thjrough fly", then chose **"Separate worker on Fly"** in a multiple-choice question.
 

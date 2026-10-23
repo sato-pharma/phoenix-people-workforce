@@ -1,12 +1,18 @@
 ---
 name: rotate-config-3-agent-password-on-railway-resume
-description: "Owner decided 22 Oct 2026: when Railway builds resume, rotate the Headwind config-3 agent password OFF the 8-char default 12345678 in the SAME window the lockdown deploys (#6250 is merged but not yet on the live server). Its MD5 leaks through the public config endpoint until that deploy lands."
+description: "DONE 23 Oct 2026: the owner changed the Headwind config-3 (Rep tablets) agent password himself in the console; a read-only check that morning found it set, 15 characters, not the factory 12345678 and not digits-only. Claude never sets or prints this password — it is his click; verify only by length and not-default. Runbook §8.12's 'Set a long config-3 agent password' bullet is now stale: strike it in the next devices PR."
 metadata:
   node_type: memory
   type: project
   originSessionId: c7f8c8cf-f16c-4d7a-a67a-a7c46bb236d5
-  modified: 2026-10-22T07:09:53.127Z
+  modified: 2026-10-23T01:54:18.035Z
 ---
+
+✅ **DONE 23 Oct 2026 (Cairo morning).** The owner set a new agent password on config 3 "Rep tablets" in
+`mdm-console`. Verified read-only through the Phoenix web service's own Headwind credentials (`railway run --service
+phoenix-people-workforce --environment production`, from the repo folder): password set, length 15, not the factory
+value, not digits-only — the value itself was never printed or stored. Tablets take it at their next sync; PHX-TAB-0007
+(offline since 19 Oct) keeps the old one until it reconnects. Everything below is history.
 
 **Decision (owner, 22 Oct 2026, Cairo):** asked when to rotate config 3's agent password — still
 the 8-character default `12345678`, whose MD5 is what the unauthenticated public config endpoint
