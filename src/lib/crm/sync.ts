@@ -33,6 +33,7 @@ import {
   CRM_SYNC_RUNS_TABLE,
   CRM_VISITS_TABLE,
 } from "@/lib/crm/tables";
+import { staleReconcileIds } from "@/lib/crm/reconcile-guard";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
 import { selectUnrecognizedVisitTypeAlerts } from "@/lib/crm/unrecognized-visit-type-alert";
@@ -904,11 +905,7 @@ export async function syncIReports360Visits(input: {
       // seconds after being synced, on a board managers read live. Rows written at/after T0 are now
       // structurally immune. Note this filters only the STALE set, never `existingIds` itself,
       // which stays the full window so the 50%-truncation guard below keeps its real denominator.
-      const staleIds = existingIds.filter((id) => {
-        if (freshIds.has(id)) return false;
-        const syncedAt = syncedAtById.get(id);
-        return !syncedAt || syncedAt < runStartedAt;
-      });
+      const staleIds = staleReconcileIds(existingIds, freshIds, syncedAtById, runStartedAt);
       if (existingIds.length > 0 && staleIds.length / existingIds.length > 0.5) {
         rowsSkippedReconcile = staleIds.length;
       } else {
@@ -946,6 +943,8 @@ export async function syncIReports360Visits(input: {
         const existingCheckinIds: number[] = [];
         // check_date per row, for the deletion archive only.
         const checkDateById = new Map<number, string>();
+        // synced_at per row — the same concurrent-sync guard the visits reconcile has (audit F-07).
+        const checkinSyncedAtById = new Map<number, string>();
         const reconcilePageSize = 5000;
         // Keyset for the same reason as the visits reconcile above — this list also drives deletes.
         let checkinCursor: number | null = null;
@@ -953,7 +952,7 @@ export async function syncIReports360Visits(input: {
           let query = supabase
             .from(checkinsTable)
             // check_date rides along for the deletion archive, as visit_date does above.
-            .select("crm_checkin_id, check_date")
+            .select("crm_checkin_id, check_date, synced_at")
             .gte("check_date", `${input.dateFrom}T00:00:00`)
             .lte("check_date", `${input.dateTo}T23:59:59`)
             .order("crm_checkin_id", { ascending: true })
@@ -961,18 +960,23 @@ export async function syncIReports360Visits(input: {
           if (checkinCursor !== null) query = query.gt("crm_checkin_id", checkinCursor);
           const { data, error } = await query;
           if (error) throw new Error(error.message);
-          const page = (data ?? []) as Array<{ crm_checkin_id: number; check_date: string | null }>;
+          const page = (data ?? []) as Array<{ crm_checkin_id: number; check_date: string | null; synced_at: string | null }>;
           if (page.length === 0) break;
           existingCheckinIds.push(...page.map((row) => row.crm_checkin_id));
           for (const row of page) {
             if (row.check_date) checkDateById.set(row.crm_checkin_id, row.check_date.slice(0, 10));
+            if (row.synced_at) checkinSyncedAtById.set(row.crm_checkin_id, row.synced_at);
           }
           if (page.length < reconcilePageSize) break;
           const last = Number(page[page.length - 1]?.crm_checkin_id);
           if (!Number.isFinite(last)) break;
           checkinCursor = last;
         }
-        const staleCheckinIds = existingCheckinIds.filter((id) => !freshCheckinIds.has(id));
+        // 🔴 THE SAME GUARD AS THE VISITS (audit F-07, 2026-10-23). This used to be "not in this
+        // fetch" alone, so a check-in an OVERLAPPING run had just written was classified stale and
+        // deleted — and a check-in can be what clears a half-day deduction. A row written at or after
+        // this run's snapshot is never stale here either.
+        const staleCheckinIds = staleReconcileIds(existingCheckinIds, freshCheckinIds, checkinSyncedAtById, runStartedAt);
         if (!(existingCheckinIds.length > 0 && staleCheckinIds.length / existingCheckinIds.length > 0.5)) {
           for (let index = 0; index < staleCheckinIds.length; index += upsertBatchSize) {
             const chunk = staleCheckinIds.slice(index, index + upsertBatchSize);
@@ -985,7 +989,7 @@ export async function syncIReports360Visits(input: {
                 kind: "checkin" as const,
                 record_id: id,
                 record_date: checkDateById.get(id) ?? null,
-                synced_at: null,
+                synced_at: checkinSyncedAtById.get(id) ?? null,
                 window_from: input.dateFrom,
                 window_to: input.dateTo,
                 sync_run_id: runId,

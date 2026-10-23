@@ -19,6 +19,8 @@
  * leading 10 characters are stored, into a `date` column, so no zone math ever touches it.
  */
 
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { staleReconcileIds } from "@/lib/crm/reconcile-guard";
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
 import { addDaysIso } from "@/lib/crm/dates";
 import { getIReports360Config } from "@/lib/crm/config";
@@ -80,6 +82,56 @@ export const PLAN_PRUNE_MAX_SHARE = 0.4;
  * small window is allowed to prune freely. */
 export const PLAN_PRUNE_MIN_MIRROR_ROWS = 20;
 
+/** The mirror's ids for one window, with each row's `synced_at` for the concurrent-sync guard. */
+type MirroredPlanIds = { ids: number[]; syncedAtById: Map<number, string> };
+
+type PlanPruneClient = { from: (table: string) => unknown };
+type PlanPruneTable = {
+  select: (columns: string) => { in: (column: string, values: readonly number[]) => PromiseLike<{ data: unknown; error: unknown }> };
+  delete: () => { in: (column: string, values: readonly number[]) => PromiseLike<{ error: unknown }> };
+};
+
+function errorText(error: unknown): string {
+  const message = (error as { message?: unknown } | null)?.message;
+  return String(message ?? error ?? "unknown error");
+}
+
+/**
+ * Delete the stale plan entries, RECORDING EACH CHUNK FIRST (audit S-SAL-01, 2026-10-23). The prune
+ * used to delete with no record at all: a doctor a sync took off a rep's list left nothing to say he
+ * had ever been on it. Every chunk's full rows now go into a required audit row before the delete,
+ * and a chunk whose rows cannot be recorded is not deleted — the throw fails the sync and leaves the
+ * rows, the same fail-closed posture as the visits reconcile's archive. Returns how many rows were
+ * deleted. `audit` is injectable for the test only.
+ */
+export async function pruneStalePlanEntries(
+  supabase: PlanPruneClient,
+  staleIds: readonly number[],
+  context: { kind: "weekly" | "monthly"; window: string },
+  audit: typeof writeRequiredAuditLog = writeRequiredAuditLog,
+): Promise<number> {
+  let pruned = 0;
+  for (let index = 0; index < staleIds.length; index += PRUNE_DELETE_CHUNK) {
+    const chunk = staleIds.slice(index, index + PRUNE_DELETE_CHUNK);
+    const table = () => supabase.from(CRM_PLAN_ENTRIES_TABLE) as PlanPruneTable;
+    const read = await table().select("*").in("crm_plan_entry_id", chunk);
+    if (read.error) throw new Error(errorText(read.error));
+    const rows = (read.data ?? []) as Record<string, unknown>[];
+    if (rows.length === 0) continue; // already gone: nothing to record, nothing to delete
+    await audit({
+      entityId: `${context.kind} ${context.window}`,
+      entityType: "crm_plan_sync",
+      newValues: { pruned: rows.length },
+      oldValues: { rows },
+      summary: `CRM ${context.kind} plan sync removed ${rows.length} plan ${rows.length === 1 ? "entry" : "entries"} the CRM no longer lists (${context.window}).`,
+    });
+    const removed = await table().delete().in("crm_plan_entry_id", rows.map((row) => Number(row.crm_plan_entry_id)));
+    if (removed.error) throw new Error(errorText(removed.error));
+    pruned += rows.length;
+  }
+  return pruned;
+}
+
 export type PlanPruneDecision = {
   /** Ids that are in the mirror for this window but absent from the vendor's answer. Reported even
    * when the prune is refused, so a refusal is legible rather than silent. */
@@ -108,8 +160,16 @@ export function decidePlanPrune(input: {
   mirrorIds: readonly number[];
   vendorIds: ReadonlySet<number>;
   vendorRowCount: number;
+  /** Each mirror row's `synced_at`. With `runStartedAt`, a row a CONCURRENT sync wrote after this run
+   * began is never stale (audit S-SAL-01) — the same guard the visits reconcile has. */
+  syncedAtById?: ReadonlyMap<number, string>;
+  runStartedAt?: string;
 }): PlanPruneDecision {
-  const staleIds = input.mirrorIds.filter((id) => !input.vendorIds.has(id));
+  // Only the delete set is guarded; the share below keeps the WHOLE mirror as its denominator.
+  const staleIds =
+    input.syncedAtById && input.runStartedAt
+      ? staleReconcileIds(input.mirrorIds, input.vendorIds, input.syncedAtById, input.runStartedAt)
+      : input.mirrorIds.filter((id) => !input.vendorIds.has(id));
   if (staleIds.length === 0) return { prune: false, refusedReason: null, staleIds };
 
   if (input.vendorRowCount === 0) {
@@ -506,14 +566,15 @@ async function mirroredPlanEntryIds(input: {
   startDate: string;
   endDate: string;
   agentId?: number;
-}): Promise<number[]> {
+}): Promise<MirroredPlanIds> {
   const supabase = getSupabaseAdmin();
   const ids: number[] = [];
+  const syncedAtById = new Map<number, string>();
   let offset = 0;
   for (;;) {
     let query = supabase
       .from(CRM_PLAN_ENTRIES_TABLE)
-      .select("crm_plan_entry_id")
+      .select("crm_plan_entry_id, synced_at")
       .eq("plan_kind", "weekly")
       .gte("plan_date", input.startDate)
       .lte("plan_date", input.endDate);
@@ -522,12 +583,15 @@ async function mirroredPlanEntryIds(input: {
       .order("crm_plan_entry_id", { ascending: true })
       .range(offset, offset + PRUNE_SCAN_PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
-    const page = (data ?? []) as unknown as Array<{ crm_plan_entry_id: number }>;
-    for (const row of page) ids.push(row.crm_plan_entry_id);
+    const page = (data ?? []) as unknown as Array<{ crm_plan_entry_id: number; synced_at: string | null }>;
+    for (const row of page) {
+      ids.push(row.crm_plan_entry_id);
+      if (row.synced_at) syncedAtById.set(row.crm_plan_entry_id, row.synced_at);
+    }
     if (page.length < PRUNE_SCAN_PAGE_SIZE) break;
     offset += PRUNE_SCAN_PAGE_SIZE;
   }
-  return ids;
+  return { ids, syncedAtById };
 }
 
 /**
@@ -583,6 +647,8 @@ export async function syncIReports360WeeklyPlans(input: {
   agentId?: number;
 }): Promise<PlanSyncResult> {
   assertPlanSyncRange(input.startDate, input.endDate);
+  // Taken BEFORE the vendor fetch: a row another sync writes after this moment is never pruned here.
+  const runStartedAt = new Date().toISOString();
 
   const config = getIReports360Config();
   const token = await iReports360Login(config);
@@ -646,26 +712,25 @@ export async function syncIReports360WeeklyPlans(input: {
   // of the truth — a stale doctor on a list, which is the behaviour this module had for its whole
   // life and which the next run corrects. Pruning first would leave the opposite: a rep's list
   // missing doctors that are genuinely assigned to him, which reads as real work he failed to do.
-  const mirrorIds = await mirroredPlanEntryIds({
+  const mirror = await mirroredPlanEntryIds({
     endDate: input.endDate,
     startDate: input.startDate,
     ...(input.agentId ? { agentId: input.agentId } : {}),
   });
   const decision = decidePlanPrune({
-    mirrorIds,
+    mirrorIds: mirror.ids,
+    runStartedAt,
+    syncedAtById: mirror.syncedAtById,
     vendorIds: new Set(rows.map((row) => row.crm_plan_entry_id)),
     vendorRowCount: entries.length,
   });
 
-  let pruned = 0;
-  if (decision.prune) {
-    for (let index = 0; index < decision.staleIds.length; index += PRUNE_DELETE_CHUNK) {
-      const chunk = decision.staleIds.slice(index, index + PRUNE_DELETE_CHUNK);
-      const { error } = await supabase.from(CRM_PLAN_ENTRIES_TABLE).delete().in("crm_plan_entry_id", chunk);
-      if (error) throw new Error(error.message);
-      pruned += chunk.length;
-    }
-  }
+  const pruned = decision.prune
+    ? await pruneStalePlanEntries(supabase, decision.staleIds, {
+        kind: "weekly",
+        window: `${input.startDate} to ${input.endDate}${input.agentId ? `, CRM agent ${input.agentId}` : ""}`,
+      })
+    : 0;
 
   return {
     agents: new Set(rows.map((row) => row.agent_crm_id)).size,
@@ -776,26 +841,30 @@ export function assertPlanMonth(month: number, year: number): void {
  * monthly answer says nothing about a weekly row, and reading it as licence to delete one would
  * erase a rep's dated plan.
  */
-async function mirroredMonthlyPlanEntryIds(input: { month: number; year: number }): Promise<number[]> {
+async function mirroredMonthlyPlanEntryIds(input: { month: number; year: number }): Promise<MirroredPlanIds> {
   const supabase = getSupabaseAdmin();
   const ids: number[] = [];
+  const syncedAtById = new Map<number, string>();
   let offset = 0;
   for (;;) {
     const { data, error } = await supabase
       .from(CRM_PLAN_ENTRIES_TABLE)
-      .select("crm_plan_entry_id")
+      .select("crm_plan_entry_id, synced_at")
       .eq("plan_kind", "monthly")
       .eq("plan_month", input.month)
       .eq("plan_year", input.year)
       .order("crm_plan_entry_id", { ascending: true })
       .range(offset, offset + PRUNE_SCAN_PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
-    const page = (data ?? []) as unknown as Array<{ crm_plan_entry_id: number }>;
-    for (const row of page) ids.push(row.crm_plan_entry_id);
+    const page = (data ?? []) as unknown as Array<{ crm_plan_entry_id: number; synced_at: string | null }>;
+    for (const row of page) {
+      ids.push(row.crm_plan_entry_id);
+      if (row.synced_at) syncedAtById.set(row.crm_plan_entry_id, row.synced_at);
+    }
     if (page.length < PRUNE_SCAN_PAGE_SIZE) break;
     offset += PRUNE_SCAN_PAGE_SIZE;
   }
-  return ids;
+  return { ids, syncedAtById };
 }
 
 /**
@@ -819,6 +888,8 @@ export async function syncIReports360MonthlyPlans(input: {
   year: number;
 }): Promise<MonthlyPlanSyncResult> {
   assertPlanMonth(input.month, input.year);
+  // Taken BEFORE the vendor fetch: a row another sync writes after this moment is never pruned here.
+  const runStartedAt = new Date().toISOString();
 
   const config = getIReports360Config();
   const token = await iReports360Login(config);
@@ -875,22 +946,21 @@ export async function syncIReports360MonthlyPlans(input: {
     if (error) throw new Error(error.message);
   }
 
-  const mirrorIds = await mirroredMonthlyPlanEntryIds({ month: input.month, year: input.year });
+  const mirror = await mirroredMonthlyPlanEntryIds({ month: input.month, year: input.year });
   const decision = decidePlanPrune({
-    mirrorIds,
+    mirrorIds: mirror.ids,
+    runStartedAt,
+    syncedAtById: mirror.syncedAtById,
     vendorIds: new Set(rows.map((row) => row.crm_plan_entry_id)),
     vendorRowCount: entries.length,
   });
 
-  let pruned = 0;
-  if (decision.prune) {
-    for (let index = 0; index < decision.staleIds.length; index += PRUNE_DELETE_CHUNK) {
-      const chunk = decision.staleIds.slice(index, index + PRUNE_DELETE_CHUNK);
-      const { error } = await supabase.from(CRM_PLAN_ENTRIES_TABLE).delete().in("crm_plan_entry_id", chunk);
-      if (error) throw new Error(error.message);
-      pruned += chunk.length;
-    }
-  }
+  const pruned = decision.prune
+    ? await pruneStalePlanEntries(supabase, decision.staleIds, {
+        kind: "monthly",
+        window: `${input.year}-${String(input.month).padStart(2, "0")}`,
+      })
+    : 0;
 
   return {
     agents: new Set(rows.map((row) => row.agent_crm_id)).size,

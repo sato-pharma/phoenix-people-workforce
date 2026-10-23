@@ -8,7 +8,7 @@ import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation } from "@/lib/sales/office-upload";
 import { confirmStep } from "@/lib/sales/monthly-sales-run";
 import { officeCommitMessage, settleStepConfirmation, type StepConfirmation } from "@/lib/sales/step-confirmation";
-import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { salesSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_office_file",
       emptyMessage: "Office workbook is empty.",
       tooLargeError: "office_file_too_large",
-      tooLargeMessage: "Office workbook exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Office workbook"),
       unsupportedError: "unsupported_office_file_type",
       unsupportedMessage: "Upload the office sales sheet in .xls or .xlsx format.",
     });

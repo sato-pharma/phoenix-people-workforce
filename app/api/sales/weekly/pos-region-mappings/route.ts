@@ -8,7 +8,7 @@ import {
   importWeeklyPosRegionMappingWorkbook,
   loadWeeklyPosRegionMappingAdmin,
 } from "@/lib/sales/weekly/pos-region-mappings";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const validation = validateSpreadsheetFile(file, {
       ...xlsxSpreadsheetValidation,
       emptyError: "invalid_pos_region_mapping_file",
-      tooLargeMessage: "POS region mapping workbook exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("POS region mapping workbook"),
       unsupportedMessage: "Upload the completed POS region mapping workbook as .xlsx.",
     });
     if (!validation.ok) {

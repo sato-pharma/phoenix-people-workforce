@@ -133,7 +133,7 @@ export function CoachingImportWorkspace() {
             <span className="text-sm font-black text-phx-ink">
               {file ? file.name : "Click to choose an .xlsx coaching workbook"}
             </span>
-            <span className="text-xs font-semibold text-phx-ink-soft">Max 10MB · the first sheet is read</span>
+            <span className="text-xs font-semibold text-phx-ink-soft">Max 4 MB · the first sheet is read</span>
             <input
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"

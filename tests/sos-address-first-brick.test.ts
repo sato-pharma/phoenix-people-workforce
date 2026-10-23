@@ -133,13 +133,13 @@ export async function runSosAddressFirstBrickTests() {
   assert.deepEqual(heal.map((c) => c.customerCode), ["1001", "1005"], "only written ADDRESS corrections heal history");
 
   const calls: Array<{ args: Record<string, unknown>; fn: string }> = [];
-  let queued: Array<Record<string, unknown>> = [];
+  const queued: Array<Record<string, unknown>> = [];
   let conflictKey = "";
   const fake = {
     from: (table: string) => ({
       upsert: (rows: Array<Record<string, unknown>>, opts: { onConflict: string }) => {
         assert.equal(table, "source_of_sales_brick_move_files", "the touched files go to the brick-move queue");
-        queued = rows;
+        queued.push(...rows); // one write per correction, as it lands (audit P4-06)
         conflictKey = opts.onConflict;
         return Promise.resolve({ error: null });
       },
