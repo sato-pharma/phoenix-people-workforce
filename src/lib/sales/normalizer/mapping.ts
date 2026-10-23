@@ -11,6 +11,7 @@ import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/reso
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
+import { logError } from "@/lib/observability/log";
 
 // Distributor code -> readable name, so a learned alias records WHICH distributor it came from
 // (product aliases store it in source_labels[]; territory aliases store it in notes).
@@ -186,9 +187,23 @@ export type SaveMappingsOptions = {
 // can't hammer the DB with thousands of sequential UPDATEs.
 export const BACKFILL_MAX_MAPPINGS = 2000;
 
+// A batch whose totals did not rebuild after a backfill moved its rows. The mapping is saved and the
+// healed rows stay, so the save itself succeeds — but the Monthly Closing, the dashboards and the
+// exports keep that batch's OLD totals until a later rebuild, which is exactly what must never pass
+// unseen. It lands in the app's error table (the Error Monitor), naming the batch and the step.
+export type BackfillRollupFailure = (batchId: string, error: Error) => void;
+
+const reportBackfillRollupFailure: BackfillRollupFailure = (batchId, error) => {
+  logError("Sales mapping save: a batch's totals were not rebuilt after the mapping moved its rows", {
+    labels: { event: "sos_mapping_backfill_rollup_failed", batchId },
+    error,
+  });
+};
+
 export async function backfillCustomerRows(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rows: { distributor_code: unknown; customer_code: unknown }[],
+  onRollupFailure: BackfillRollupFailure = reportBackfillRollupFailure,
 ): Promise<number> {
   let backfilled = 0;
   // Backfilling moves an import row's brick/area/region. The fact rollup is a materialised copy of
@@ -229,29 +244,44 @@ export async function backfillCustomerRows(
   }
 
   for (const batchId of affectedBatchIds) {
+    // `rpc` never throws: a refresh that fails or times out (a rebuild now waits on its batch's lock)
+    // RESOLVES with `{ error }`. Until 2026-10-23 every one of those results was dropped, so a failed
+    // fact rollup let the channel, distributor×product and attribution rollups rebuild on the OLD fact
+    // rows and the batch stayed wrong with no trace. Each step is now checked, the first failure stops
+    // the chain (nothing downstream rebuilds on stale input), and the failure is reported.
+    const step = (name: string, result: { error: { message?: unknown } | null }) => {
+      if (result.error) throw new Error(`${name} failed for batch ${batchId}: ${String(result.error.message ?? result.error)}`);
+    };
     try {
       // The same trio the reconcile path refreshes (applyHistoricalReconciliation in
       // normalizer/customer-map.ts). A refresh failure must not undo the mapping that already
       // saved, so the corrected rows stay and a later reconcile retries the refresh.
-      await Promise.all([
+      const [fact, directory, roi] = await Promise.all([
         supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
         supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
         supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
       ]);
+      step("The fact rollup", fact);
+      step("The customer directory rollup", directory);
+      step("The marketing ROI facts", roi);
       // Channel totals rollup — reads the fact + directory rollups above, so after the trio.
-      await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
+      step("The channel rollup", await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId }));
       // Distributor×product rollup — after the fact rollup it reads.
-      await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
+      step(
+        "The distributor x product rollup",
+        await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId }),
+      );
       // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
       await writeStoreSplitNetForBatch(supabase, batchId);
       // Sales-vs-target attribution rollup — same site, after the fact rollup it reads.
-      await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+      step("Monthly attribution", await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId }));
       // Import summaries — what the Source of Sales dashboard reads. Frozen at insert until
       // 2026-08-30, so a mapping backfill refreshed every rollup EXCEPT the one the executive
       // screen actually renders from.
-      await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
-    } catch {
-      // Intentionally swallowed — see above.
+      step("The import summaries", await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId }));
+    } catch (error) {
+      // Not rethrown — see above — but never silent either.
+      onRollupFailure(batchId, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
