@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 import {
+  createDatabaseVisitLifecyclePorts,
   createVisitLifecycleDetector,
   VISIT_LIFECYCLE_DETECTOR_ID,
   type CalendarDayReading,
@@ -499,6 +500,82 @@ export async function runSystemAuditVisitLifecycleTests() {
     );
     assert.deepEqual(cursor.kpiQueue, ["b-200|2026-11"], "the judged rep-day's month waits in the queue for the next run");
     assert.deepEqual(result.watermarkTo, { touchedAfter: cursor.touchedAfter, kpiQueued: 1 }, "the run reports the watermark it wrote");
+  }
+
+  // ── The database ports name each table's REAL key, never an `id` the table does not have ──
+  //
+  // 🔴 WHY THIS EXISTS. Every case above runs the detector against ports the test builds, so none of
+  // them ever touched `createDatabaseVisitLifecyclePorts` — and that is where the detector actually
+  // broke. It paged `phoenix_crm_visit_recordings` with `tiebreak: "id"` and selected `id`, on a
+  // table keyed on `path` with no `id` column at all. PostgREST answers a missing column with 42703
+  // and fails the WHOLE read, so the entire detector died: `System audit detector failed:
+  // visit_lifecycle` on production from 23 Oct 2026 10:56 Cairo, every sweep, with four green
+  // required checks on the PR that introduced it. A select is a string the compiler never reads.
+  {
+    // Every table these ports page, read from `pg_index` and `information_schema.columns` on
+    // production (ozucdzovmcqvepbozvqf) on 23 Oct 2026: whether it has an `id` column at all, and
+    // which of its columns carry a UNIQUE index — the only ones that make a page order total.
+    // `phoenix_crm_removed_visits` is keyed on `id` and ALSO unique on `visit_id`
+    // (phoenix_crm_removed_visits_one), so ordering it by `visit_id` is correct, not a near miss.
+    const TABLES: Record<string, { hasId: boolean; totalOrder: string[] }> = {
+      phoenix_crm_visits: { hasId: true, totalOrder: ["id"] },
+      phoenix_crm_unplanned_visits: { hasId: false, totalOrder: ["visit_id"] },
+      phoenix_crm_visit_recordings: { hasId: false, totalOrder: ["path", "visit_id"] },
+      phoenix_crm_visit_edits: { hasId: true, totalOrder: ["id"] },
+      phoenix_crm_removed_visits: { hasId: true, totalOrder: ["id", "visit_id"] },
+      phoenix_crm_customers: { hasId: true, totalOrder: ["id"] },
+    };
+    type Read = { table: string; columns: string[]; orders: string[] };
+    const reads: Read[] = [];
+    // One visit row, so the per-chunk reads that depend on having ids actually run.
+    const VISIT = { id: "11111111-1111-4111-8111-111111111111", rep_hr_id: REP.hrId, visit_date: DAY, created_at: "2026-11-16T09:00:00.000Z", customer_id: null, is_test: false };
+    const client = {
+      from(table: string) {
+        const read: Read = { table, columns: [], orders: [] };
+        reads.push(read);
+        const answer = () => Promise.resolve({ data: table === "phoenix_crm_visits" ? [VISIT] : [], error: null });
+        const chain: Record<string, unknown> = {
+          select(columns: string) {
+            read.columns = columns.split(",").map((column) => column.trim());
+            return chain;
+          },
+          order(column: string) {
+            read.orders.push(column);
+            return chain;
+          },
+          then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+            return answer().then(resolve, reject);
+          },
+        };
+        for (const method of ["in", "not", "eq", "gt", "gte", "lte", "range", "limit"]) chain[method] = () => chain;
+        return chain;
+      },
+    };
+
+    const ports = createDatabaseVisitLifecyclePorts(client as never);
+    await ports.readTouchedRepDays({ after: "2026-11-15T00:00:00.000Z", until: "2026-11-18T10:00:00.000Z" });
+    await ports.readSavedVisits({ hrIds: [REP.hrId], dates: [DAY] });
+
+    const known = reads.filter((read) => TABLES[read.table]);
+    assert.ok(known.length >= 8, `the stub client must observe the ports' reads, saw ${known.length}`);
+    const recordings = known.filter((read) => read.table === "phoenix_crm_visit_recordings");
+    assert.ok(recordings.length >= 4, `the recordings table is read in both ports, saw ${recordings.length} read(s)`);
+
+    for (const read of known) {
+      const { hasId, totalOrder } = TABLES[read.table];
+      for (const column of read.columns) {
+        assert.ok(column !== "id" || hasId, `${read.table} has no id column, but a select names id — PostgREST fails the whole read with 42703`);
+      }
+      for (const column of read.orders) {
+        assert.ok(column !== "id" || hasId, `${read.table} has no id column, but a read orders by id — PostgREST fails the whole read with 42703`);
+      }
+      if (read.orders.length === 0) continue;
+      const tiebreak = read.orders[read.orders.length - 1];
+      assert.ok(
+        totalOrder.includes(tiebreak),
+        `${read.table} must break its page order on a column that is unique on it (${totalOrder.join(" or ")}), not ${tiebreak} — otherwise paging can repeat or skip rows`,
+      );
+    }
   }
 
   console.log("system-audit-visit-lifecycle: PASS");

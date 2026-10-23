@@ -1181,12 +1181,17 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
 
       // Facts kept beside the visit: an approval moving, a recording claimed, reviewed or deleted, an edit.
       const byVisit: Array<{ visit_id: string | null; at: string }> = [];
-      // `tiebreak` is each table's own key, so the page order is total.
+      // `tiebreak` is each table's own key, so the page order is total. 🔴 It is that table's REAL
+      // key, read from the database: `phoenix_crm_visit_recordings` is keyed on `path` and has no
+      // `id` column at all, and `phoenix_crm_unplanned_visits` is keyed on `visit_id`. PostgREST
+      // answers a column that does not exist with 42703 and fails the WHOLE read, so one wrong name
+      // here kills the entire detector rather than losing one field — which is what `id` on the
+      // recordings table did in production on 23 Oct 2026, every sweep, until it was corrected.
       const besides: Array<{ table: string; column: string; tiebreak: string }> = [
         { table: "phoenix_crm_unplanned_visits", column: "updated_at", tiebreak: "visit_id" },
-        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "id" },
+        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_edits", column: "edited_at", tiebreak: "id" },
       ];
       for (const { table, column, tiebreak } of besides) {
@@ -1268,9 +1273,10 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
             (from, to) =>
               supabase
                 .from("phoenix_crm_visit_recordings")
-                .select("id,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
+                // Keyed on `path`, not `id` — see the note on `besides` above.
+                .select("path,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
                 .in("visit_id", chunk)
-                .order("id")
+                .order("path")
                 .range(from, to),
           ),
           readPaged<{ visit_id: string; removed_at: string }>("phoenix_crm_removed_visits", (from, to) =>
