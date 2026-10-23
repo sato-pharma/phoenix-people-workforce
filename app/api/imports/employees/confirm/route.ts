@@ -34,7 +34,7 @@ import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { generateVacancySeatCode } from "@/lib/workforce/vacancy-code";
 import { shouldCloseVacancyForHire } from "@/lib/workforce/seat-lifecycle";
 import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
@@ -1139,7 +1139,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_excel_file",
       emptyMessage: "Employee import file is empty.",
       tooLargeError: "employee_import_file_too_large",
-      tooLargeMessage: "Employee import file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Employee import file"),
       unsupportedError: "unsupported_format",
       unsupportedMessage: "Upload an employee import Excel file in .xlsx format.",
     });

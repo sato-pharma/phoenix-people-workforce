@@ -12,6 +12,8 @@
 // future log drain would key on. Never pass secrets/PII in message or labels.
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+// Pure, and imports nothing itself, so it adds no dependency to this edge-safe module.
+import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { clientAddress } from "@/lib/security/client-address";
 
@@ -105,20 +107,57 @@ export function logStructured(severity: LogSeverity, message: string, options: L
 let persistingErrorEvent = false;
 
 /**
- * Labels that must NOT be repeated in the stored stack's label block.
+ * What goes in the row's `stack` column — the CAUSE, whatever shape it was thrown in, with the
+ * call site's remaining labels in front of it.
  *
- * Four of them have a real column and are mapped onto it below — that is strictly better than text,
- * because /admin/error-monitor filters on `hr_id` and renders `role`. `service` is the constant
- * `cleanLabels` stamps on every entry ("phoenix-hr"), so it is noise in every row.
+ * 🔴 A SUPABASE REJECTION IS NOT AN `Error`. PostgREST rethrows a plain
+ * `{ message, details, hint, code }`, so `error instanceof Error` is false, `error.stack` is
+ * undefined, and this column used to land EMPTY — the headline and nothing else. That is exactly how
+ * `Failed to read a closing publication drift status` reached `app_error_events` at 06:36 Cairo on
+ * 2026-10-23: the real answer was `57014 canceling statement due to statement timeout`, and the row
+ * the table kept could not say so. Finding it again took the Postgres log, which keeps days where
+ * this table keeps months. `describeThrown` is the same reader `serializeError` already uses for
+ * stderr, so the two halves of one ERROR no longer disagree about what happened.
  *
- * Both spellings of each are accepted because both are in use: measured across the call sites,
- * `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1.
+ * The labels LEAD, because `stack` is truncated from the END: the short, always-present part goes
+ * first and the long cause takes the loss. A headline cannot carry WHICH line, period, job or
+ * source, and that is usually the whole question.
  *
- * `event`, `route` and `job` are deliberately NOT in this set even though one of them becomes
- * `route`. The column cannot say WHICH it was, and a reader who sees `route=needs_you_source_timeout`
- * needs to know it was the event name rather than a real path.
+ * Three kinds of label are left out. `service` is on every single line ("phoenix-hr"). `event` is
+ * already the row's `route`, so repeating it costs characters truncation would take off the cause.
+ * And the four that now have a real COLUMN (see `structuredLogErrorInput`) are better there than
+ * in free text, since /admin/error-monitor filters on `hr_id` and renders `role`.
  */
-const LABELS_NOT_REPEATED_IN_THE_BLOCK = new Set(["service", "hrId", "hr_id", "role", "loginId", "login_id", "digest"]);
+const LABELS_WITH_THEIR_OWN_COLUMN = ["hrId", "hr_id", "role", "loginId", "login_id", "digest"];
+const LABELS_LEFT_OUT_OF_THE_STACK = new Set(["service", "event", ...LABELS_WITH_THEIR_OWN_COLUMN]);
+
+/**
+ * The label part gets its own ceiling, well under the column's 4,000.
+ *
+ * The labels lead and `stack` is cut from the end, so without a cap a call site that labels
+ * generously would push the cause it was captured for out of the row — trading one lost diagnostic
+ * for another. 1,000 is far more than any call site passes.
+ */
+const MAX_STACK_LABELS_LENGTH = 1000;
+
+export function persistedStack(labels: Record<string, string> | undefined, error: unknown): string | null {
+  const parts: string[] = [];
+  const extra = labels ? Object.entries(labels).filter(([key]) => !LABELS_LEFT_OUT_OF_THE_STACK.has(key)) : [];
+  if (extra.length > 0) {
+    // Redacted on the way in. A label carries a share-link token exactly as readily as a path does,
+    // and this row is written the moment the error happens — while that token still works.
+    // `redactSecretsFromRoute` is documented to run over free text for precisely this reason.
+    const rendered = extra.map(([key, value]) => `${key}=${redactSecretsFromRoute(value) ?? value}`).join(" ");
+    parts.push(rendered.length > MAX_STACK_LABELS_LENGTH ? `${rendered.slice(0, MAX_STACK_LABELS_LENGTH - 1)}…` : rendered);
+  }
+  if (error instanceof Error) {
+    parts.push(error.stack ?? error.message);
+  } else if (error != null) {
+    parts.push(describeThrown(error));
+  }
+  const joined = parts.filter((part) => part != null && part.trim() !== "").join("\n");
+  return joined === "" ? null : joined;
+}
 
 /** First non-empty label under any of the given spellings. */
 function labelValue(labels: Record<string, string> | undefined, ...keys: readonly string[]): string | null {
@@ -130,21 +169,18 @@ function labelValue(labels: Record<string, string> | undefined, ...keys: readonl
   return null;
 }
 
-/** Everything that has no column of its own, for the stack's label block. */
-function labelsWithoutAColumn(labels: Record<string, string> | undefined): Record<string, string> | null {
-  if (!labels) return null;
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(labels)) {
-    if (LABELS_NOT_REPEATED_IN_THE_BLOCK.has(key)) continue;
-    out[key] = value;
-  }
-  return Object.keys(out).length > 0 ? out : null;
-}
-
 /**
  * The whole label → row mapping, pure and exported so a test can read it without Supabase.
  *
- * Nothing else decides what a structured ERROR leaves behind in `app_error_events`.
+ * Nothing else decides what a structured ERROR leaves behind in `app_error_events`. Before the
+ * four column mappings below, `hr_id` and `role` were NEVER written by this path: measured on
+ * production 2026-10-23, of 2,446 `route_type='structured-log'` rows, ZERO carried either. So a
+ * Needs You source timeout recorded that A source had timed out and never which one, for whom, or
+ * in what scope — the adapters had to be reconstructed out of the delivered Telegram digests in
+ * `notification_events.metadata`.
+ *
+ * Both spellings of each are accepted because both are in use: measured across the call sites,
+ * `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1.
  */
 export function structuredLogErrorInput(
   message: string,
@@ -158,15 +194,11 @@ export function structuredLogErrorInput(
     // `event` is always there by convention, so this is rarely null.
     route: labels?.route ?? labels?.job ?? labels?.event ?? null,
     routeType: "structured-log",
-    stack: error instanceof Error ? (error.stack ?? null) : null,
-    // Everything else the call site labelled. Until this existed only the line above survived, so
-    // the row said that SOMETHING timed out and never which source, for whom, in what scope — see
-    // LOG_LABELS_SEPARATOR in error-monitor/service.ts for the measurement.
+    stack: persistedStack(labels, error),
     hrId: labelValue(labels, "hrId", "hr_id"),
     role: labelValue(labels, "role"),
     loginId: labelValue(labels, "loginId", "login_id"),
     digest: labelValue(labels, "digest"),
-    logLabels: labelsWithoutAColumn(labels),
   };
 }
 

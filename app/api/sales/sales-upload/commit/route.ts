@@ -7,7 +7,7 @@ import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { removeSalesUploadObject, resolveUploadedSpreadsheet } from "@/lib/sales/monthly-import-request";
 import { commitMonthlyUpload } from "@/lib/sales/sales-upload";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, spreadsheetUploadLimitBytes, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -34,7 +34,10 @@ export async function POST(request: Request) {
     const validation = validateSpreadsheetFile(file, {
       ...xlsxSpreadsheetValidation,
       emptyError: "invalid_sales_file", emptyMessage: "The sheet is empty.",
-      tooLargeError: "sales_file_too_large", tooLargeMessage: "The sheet exceeds the 10MB upload limit.",
+      tooLargeError: "sales_file_too_large",
+      // The bucket path exists for files over 4 MB, so it is held to the bucket's limit (audit F-06).
+      maxBytes: spreadsheetUploadLimitBytes(resolved.storagePath !== null),
+      tooLargeMessage: spreadsheetTooLargeMessage("The sheet", spreadsheetUploadLimitBytes(resolved.storagePath !== null)),
       unsupportedError: "unsupported_sales_file_type", unsupportedMessage: "Upload the raw sheet in .xlsx format.",
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });

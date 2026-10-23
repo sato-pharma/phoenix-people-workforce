@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { IGNORE_PRODUCT_CODE } from "@/lib/sales/normalizer/types";
+import { needsAGuess, normalizeNumberText, twoReadings } from "@/lib/sales/normalizer/number-text";
 import {
   weeklyContractByCode,
   type WeeklyContractSheet,
@@ -60,27 +61,111 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
   return String(value).trim();
 }
 
+// ── cells that could only be read by guessing ───────────────────────────────────────────────────
+//
+// A quantity or date held as TEXT can have two readings: "12,5" is 12.5 with a comma for decimals or
+// 125 with the comma dropped, and "05/10/2026" is 5 October or 10 May. Until 2026-10-23 this parser
+// picked one silently — "12,5" became 125, "1.234,56" became 1.23456, Arabic-Indic digits became 0,
+// "−500" (the minus sign) became +500, and "05/10/2026" became 10 May (audit P4-01, P4-02). The
+// monthly engine has refused such cells since 2026-09-18 (owner: "refuse them and name the cell"),
+// so a weekly file now does the same: the forms with ONE meaning are read (normalizeNumberText, the
+// monthly engine's own reader), and a cell with two readings stops the upload and is named.
+//
+// Collected while ONE file is read: set immediately before the synchronous adapter call in
+// parseWeeklyWorkbookBuffer and cleared right after it, with no await in between, so two uploads in
+// one process can never share the list.
+
+/** One text cell this parser could not read without guessing. */
+export type WeeklyUnreadableCell = {
+  /** where the cell sits, in words: `sheet "X" cell M5` */
+  where: string;
+  /** the text exactly as the file holds it */
+  text: string;
+  /** the two numbers or dates it could mean, or null when it is not one number at all */
+  readings: [string, string] | null;
+  kind: "number" | "date";
+};
+
+type CellReadLog = {
+  unreadable: WeeklyUnreadableCell[];
+  /** "05/10/2026"-style dates whose order the cell alone cannot decide, kept for the file-level decision */
+  ambiguousDates: { cell: WeeklyUnreadableCell; first: number; second: number; year: number }[];
+  /** orientations proven by a slash date whose day is above 12, e.g. "13/10/2026" proves day-first */
+  dayFirstVotes: number;
+  monthFirstVotes: number;
+};
+
+let activeCellLog: CellReadLog | null = null;
+
+function cellWhere(cell: ExcelJS.Cell): string {
+  const address = typeof cell.address === "string" ? cell.address : "";
+  let sheetName = "";
+  try {
+    sheetName = String(cell.worksheet?.name ?? "").trim();
+  } catch {
+    sheetName = "";
+  }
+  if (sheetName && address) return `sheet "${sheetName}" cell ${address}`;
+  return address ? `cell ${address}` : "a cell";
+}
+
+// Text that is nothing but a number: digits with separators, an optional sign, optional brackets.
+// Anything carrying a word ("12 units", a street address under a shifted header) keeps the old
+// strip-the-letters reading — those columns are already cross-checked or fall back to the net.
+const NUMBER_SHAPED = /^\(?\s*[-+]?[\d.,\s]*\d[\d.,\s]*\s*\)?$/;
+// A DATE under a quantity header ("31.03.2026" in a SOLDQTY column whose header row shifted against
+// its data — one real Sofico March copy) is not a quantity with two readings, it is no quantity at all:
+// it keeps the old reading (0) and the adapter falls back to the stated net, as it always did.
+const DATE_SHAPED = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/;
+
+/**
+ * Read a quantity cell's TEXT. Pure, so the whole rule is tested without a workbook.
+ * Returns the number, or the reason it cannot be read without a guess.
+ */
+export function readWeeklyNumberText(text: string): { value: number } | { readings: [string, string] | null } {
+  const folded = normalizeNumberText(text);
+  if (!folded) return { value: 0 };
+  // Accounting style text negatives, e.g. "(500)" → -500.
+  const isParenNegative = /^\(.*\)$/.test(folded);
+  const inner = isParenNegative ? folded.slice(1, -1).trim() : folded;
+  if (NUMBER_SHAPED.test(folded) && !DATE_SHAPED.test(inner.replace(/\s+/g, ""))) {
+    // "12 5" is two numbers or a typo, never 125. Whole groups of three ("1 200") were already
+    // joined by normalizeNumberText, so a space left between digits is one it could not explain.
+    if (/\d\s+\d/.test(inner)) return { readings: null };
+    const compact = inner.replace(/\s+/g, "");
+    if (needsAGuess(compact)) return { readings: twoReadings(compact) };
+    const num = Number(compact.replace(/,/g, ""));
+    if (!Number.isFinite(num)) return { readings: null };
+    return { value: isParenNegative ? -Math.abs(num) : num };
+  }
+  const raw = inner.replace(/,/g, "").replace(/[^0-9.\-]/g, "");
+  if (!raw) return { value: 0 };
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return { value: 0 };
+  return { value: isParenNegative ? -Math.abs(num) : num };
+}
+
 function cellNumber(cell: ExcelJS.Cell | undefined): number {
   if (!cell) return 0;
   const value = cell.value as unknown;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const text = cellText(cell);
   if (!text) return 0;
-  // Accounting style text negatives, e.g. "(500)" → -500, before we strip non-numeric characters.
-  const isParenNegative = /^\(.*\)$/.test(text.trim());
-  const raw = text.replace(/,/g, "").replace(/[^0-9.\-]/g, "");
-  if (!raw) return 0;
-  const num = Number(raw);
-  if (!Number.isFinite(num)) return 0;
-  return isParenNegative ? -Math.abs(num) : num;
+  const read = readWeeklyNumberText(text);
+  if ("value" in read) return read.value;
+  activeCellLog?.unreadable.push({ kind: "number", readings: read.readings, text, where: cellWhere(cell) });
+  // The upload is refused once the adapter returns (see parseWeeklyWorkbookBuffer), so this zero is
+  // never stored; it only keeps the adapter's own arithmetic finite until then.
+  return 0;
 }
 
 /**
  * True when the cell holds a readable quantity, zero included — as opposed to a blank or a word.
  * `cellNumber` answers 0 for all three, which is how a missing column passes for genuine zeros.
+ * Arabic-Indic digits count: "٠" is a stock of zero, not a missing column.
  */
 function cellHoldsNumber(cell: ExcelJS.Cell | undefined): boolean {
-  return /^\(?-?[\d,]*\.?\d+\)?$/.test(cellText(cell).replace(/\s+/g, ""));
+  return /^\(?[-+]?[\d,]*\.?\d+\)?$/.test(normalizeNumberText(cellText(cell)).replace(/\s+/g, ""));
 }
 
 /** Thousands-separated, at most 2 decimals — for numbers that appear in operator-facing messages. */
@@ -91,7 +176,56 @@ function readableNumber(value: number): string {
 const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30); // 1899-12-30, the ExcelJS/Lotus serial epoch
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Convert an Excel SERIAL number, a Date, or YYYY-MM-DD text into an ISO date (YYYY-MM-DD) or null. */
+/** YYYY-MM-DD for a civil date, or null when it is not a real day (30 February). */
+function civilIso(year: number, month: number, day: number): string | null {
+  if (!Number.isInteger(year) || year < 1900 || year > 9999) return null;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Read a date cell's TEXT. Pure. A slash date whose two parts are both 12 or under and differ
+ * ("05/10/2026") is returned as AMBIGUOUS rather than read: it is 5 October or 10 May, and the file
+ * decides which (parseWeeklyWorkbookBuffer) — never the host's `new Date(text)`, which read it as
+ * 10 May, and in a timezone ahead of UTC as the day before.
+ */
+export function readWeeklyDateText(
+  text: string,
+):
+  | { iso: string | null; orientation?: "dayFirst" | "monthFirst" }
+  | { ambiguous: { first: number; second: number; year: number } } {
+  const trimmed = normalizeNumberText(text);
+  if (!trimmed) return { iso: null };
+  const ymd = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)/.exec(trimmed);
+  if (ymd) return { iso: civilIso(Number(ymd[1]), Number(ymd[2]), Number(ymd[3])) };
+  // Numeric text that is really a serial (e.g. "45810").
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    return { iso: serial > 59 && serial < 100000 ? excelSerialToIso(serial) : null };
+  }
+  const dmy = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?!\d)/.exec(trimmed);
+  if (dmy) {
+    const first = Number(dmy[1]);
+    const second = Number(dmy[2]);
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    if (first > 12 && second <= 12) return { iso: civilIso(year, second, first), orientation: "dayFirst" };
+    if (second > 12 && first <= 12) return { iso: civilIso(year, first, second), orientation: "monthFirst" };
+    if (first === second) return { iso: civilIso(year, first, second) };
+    return { ambiguous: { first, second, year } };
+  }
+  // Last resort: the host's own parser for written-out dates ("Oct 5, 2026"). It parses as LOCAL
+  // midnight, so the day is read with the local getters — toISOString() would hand back the day
+  // before on any host ahead of UTC.
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return { iso: null };
+  return { iso: civilIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate()) };
+}
+
+/** Convert an Excel SERIAL number, a Date, or date text into an ISO date (YYYY-MM-DD) or null. */
 function cellDateIso(cell: ExcelJS.Cell | undefined): string | null {
   if (!cell) return null;
   const value = cell.value as unknown;
@@ -104,24 +238,84 @@ function cellDateIso(cell: ExcelJS.Cell | undefined): string | null {
   }
   const text = cellText(cell);
   if (!text) return null;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  // Numeric text that is really a serial (e.g. "45810").
-  if (/^\d+(\.\d+)?$/.test(text)) {
-    const serial = Number(text);
-    if (serial > 59 && serial < 100000) return excelSerialToIso(serial);
+  const read = readWeeklyDateText(text);
+  if ("ambiguous" in read) {
+    activeCellLog?.ambiguousDates.push({
+      ...read.ambiguous,
+      cell: { kind: "date", readings: null, text, where: cellWhere(cell) },
+    });
+    return null;
   }
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  if (read.orientation === "dayFirst" && activeCellLog) activeCellLog.dayFirstVotes += 1;
+  if (read.orientation === "monthFirst" && activeCellLog) activeCellLog.monthFirstVotes += 1;
+  return read.iso;
 }
 
 function excelSerialToIso(serial: number): string | null {
   // Only treat plausible date serials as dates (Excel dates after ~1900). Small integers like a
   // quantity or a branch code must NOT be mistaken for dates.
   if (serial <= 59 || serial >= 100000) return null;
-  const ms = EXCEL_EPOCH_UTC + Math.round(serial) * DAY_MS;
+  // FLOOR, never round: the fraction is the time of day, so 46,000.6 is 14:24 on day 46,000 — rounding
+  // carried every afternoon timestamp into the NEXT day (audit P4-02).
+  const ms = EXCEL_EPOCH_UTC + Math.floor(serial) * DAY_MS;
   const date = new Date(ms);
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function spokenDate(iso: string | null): string {
+  if (!iso) return "no real day";
+  const [year, month, day] = iso.split("-").map(Number);
+  return `${day} ${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+/**
+ * The file-level half of the date rule. A file whose own slash dates prove an order (a day above 12
+ * somewhere) has its ambiguous ones read that way; otherwise they stay unread. Pure.
+ */
+export function resolveAmbiguousWeeklyDates(log: Pick<CellReadLog, "ambiguousDates" | "dayFirstVotes" | "monthFirstVotes">): {
+  resolved: string[];
+  unresolved: { cell: WeeklyUnreadableCell; dayFirst: string | null; monthFirst: string | null }[];
+} {
+  const resolved: string[] = [];
+  const unresolved: { cell: WeeklyUnreadableCell; dayFirst: string | null; monthFirst: string | null }[] = [];
+  const order =
+    log.dayFirstVotes > 0 && log.monthFirstVotes === 0
+      ? "dayFirst"
+      : log.monthFirstVotes > 0 && log.dayFirstVotes === 0
+        ? "monthFirst"
+        : null;
+  for (const entry of log.ambiguousDates) {
+    const dayFirst = civilIso(entry.year, entry.second, entry.first);
+    const monthFirst = civilIso(entry.year, entry.first, entry.second);
+    if (order === "dayFirst" && dayFirst) resolved.push(dayFirst);
+    else if (order === "monthFirst" && monthFirst) resolved.push(monthFirst);
+    else unresolved.push({ cell: entry.cell, dayFirst, monthFirst });
+  }
+  return { resolved, unresolved };
+}
+
+/** At most this many cells are named in one refusal; the rest are counted. */
+const UNREADABLE_CELLS_NAMED = 8;
+
+/** The operator-facing refusal for number cells that need a guess. Pure. */
+export function unreadableNumbersMessage(distributorName: string, cells: readonly WeeklyUnreadableCell[]): string | null {
+  if (cells.length === 0) return null;
+  const named = cells.slice(0, UNREADABLE_CELLS_NAMED).map((cell) =>
+    cell.readings
+      ? `${cell.where} reads "${cell.text}", which could be ${cell.readings[0]} or ${cell.readings[1]}`
+      : `${cell.where} reads "${cell.text}", which is not one number`,
+  );
+  const more = cells.length > named.length ? ` There are ${cells.length - named.length} more like them.` : "";
+  return (
+    `${distributorName}: ${cells.length} quantity cell(s) can only be read by guessing — ${named.join("; ")}.${more} ` +
+    "Nothing was imported. Write each one as a plain number (for example 12.5 or 125), or store the column as " +
+    "numbers in Excel, and upload again."
+  );
 }
 
 // ── reference indexes ─────────────────────────────────────────────────────────────────────────
@@ -1955,36 +2149,50 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   // ── run the distributor adapter ────────────────────────────────────────────────────────────
   let adapted: AdapterResult;
+  // The text cells this file could only be read by guessing — see "cells that could only be read by
+  // guessing" above. Opened and closed around the SYNCHRONOUS adapter call only: every await (the
+  // workbook loads) happens before it is opened, so no other upload can write into this file's log.
+  const cellLog: CellReadLog = { ambiguousDates: [], dayFirstVotes: 0, monthFirstVotes: 0, unreadable: [] };
   try {
     if (canonicalCode === "PS") {
       const salesWb = input.salesBuffer ? await loadWorkbook(input.salesBuffer) : undefined;
       const stockWb = input.stockBuffer ? await loadWorkbook(input.stockBuffer) : undefined;
-      adapted = adaptPS({ workbooks: [], distributorCode: canonicalCode, branchMapIndex, contract }, salesWb, stockWb);
+      activeCellLog = cellLog;
+      try {
+        adapted = adaptPS({ workbooks: [], distributorCode: canonicalCode, branchMapIndex, contract }, salesWb, stockWb);
+      } finally {
+        activeCellLog = null;
+      }
     } else {
       if (!input.buffer) {
         return { ok: false, error: { code: "empty_file", message: "No workbook was provided." } };
       }
       const workbook = await loadWorkbook(input.buffer);
       const ctx: AdapterContext = { workbooks: [workbook], distributorCode: canonicalCode, branchMapIndex, contract };
-      adapted =
-        canonicalCode === "EG"
-          ? adaptEG(ctx)
-          : canonicalCode === "RM"
-            ? adaptRM(ctx)
-            : // IS-S (Sato Pharma) and IS-L (LACTO MISR EG) are the same Ibn Sina export for two
-              // different suppliers — one adapter, two distributor codes so de-cumulation keeps
-              // their cycles apart (distributors.ts).
-              canonicalCode === "IS-S" || canonicalCode === "IS-L"
-              ? adaptISS(ctx)
-              : canonicalCode === "IS"
-                ? adaptIS(ctx)
-                : canonicalCode === "SF"
-                  ? adaptSF(ctx)
-                  : canonicalCode === "POS"
-                    ? adaptPOS(ctx)
-                    : canonicalCode === "Direct"
-                      ? adaptDirect(ctx)
-                      : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
+      activeCellLog = cellLog;
+      try {
+        adapted =
+          canonicalCode === "EG"
+            ? adaptEG(ctx)
+            : canonicalCode === "RM"
+              ? adaptRM(ctx)
+              : // IS-S (Sato Pharma) and IS-L (LACTO MISR EG) are the same Ibn Sina export for two
+                // different suppliers — one adapter, two distributor codes so de-cumulation keeps
+                // their cycles apart (distributors.ts).
+                canonicalCode === "IS-S" || canonicalCode === "IS-L"
+                ? adaptISS(ctx)
+                : canonicalCode === "IS"
+                  ? adaptIS(ctx)
+                  : canonicalCode === "SF"
+                    ? adaptSF(ctx)
+                    : canonicalCode === "POS"
+                      ? adaptPOS(ctx)
+                      : canonicalCode === "Direct"
+                        ? adaptDirect(ctx)
+                        : { observations: [], sheetDates: new Set<string>(), sheetName: "", blockingReasons: [] };
+      } finally {
+        activeCellLog = null;
+      }
     }
   } catch (error) {
     return {
@@ -1994,6 +2202,16 @@ export async function parseWeeklyWorkbookBuffer(input: {
   }
 
   const blockingReasons = [...adapted.blockingReasons];
+
+  // A quantity cell with two readings stops the upload and is named (P4-01).
+  const unreadableNumbers = unreadableNumbersMessage(distributorName, cellLog.unreadable);
+  if (unreadableNumbers) blockingReasons.push(unreadableNumbers);
+
+  // A "05/10/2026" date is read the way the file's own unambiguous slash dates are written; with no
+  // such proof it is left unread, so it can never pick the week on its own (P4-02).
+  const dateResolution = resolveAmbiguousWeeklyDates(cellLog);
+  for (const iso of dateResolution.resolved) adapted.sheetDates.add(iso);
+  const unresolvedDates = dateResolution.unresolved;
 
   // ── what the file said about itself, against what we read ───────────────────────────────────
   // A `block` mismatch joins the blocking reasons and nothing persists; a `report` mismatch becomes an
@@ -2022,7 +2240,21 @@ export async function parseWeeklyWorkbookBuffer(input: {
   const distinctDates = [...adapted.sheetDates].sort();
   const explicitPeriod = (input.periodDate ?? "").trim() || null;
   let weekStart: string | null;
-  if (distinctDates.length === 1) {
+  if (unresolvedDates.length > 0 && !explicitPeriod) {
+    // The file's dates cannot be read without guessing the order, so none of them may choose the
+    // week — not even the readable ones beside them, which could be a different week entirely.
+    weekStart = null;
+    const first = unresolvedDates[0];
+    blockingReasons.push(
+      `The file writes its date as "${first.cell.text}" (${first.cell.where}), which could be ` +
+        `${spokenDate(first.dayFirst)} or ${spokenDate(first.monthFirst)}` +
+        (unresolvedDates.length > 1 ? `, and ${unresolvedDates.length - 1} more date cell(s) read the same way` : "") +
+        ". Provide the period date (YYYY-MM-DD) for this upload.",
+    );
+  } else if (unresolvedDates.length > 0) {
+    // The operator named the period, which is the one reading that needs no guess.
+    weekStart = explicitPeriod;
+  } else if (distinctDates.length === 1) {
     // Exactly one sheet date → auto-use it (a supplied periodDate is ignored in this case).
     weekStart = distinctDates[0];
   } else if (explicitPeriod) {

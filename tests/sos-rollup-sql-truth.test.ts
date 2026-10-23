@@ -105,17 +105,21 @@ export function runSosRollupSqlTruthTests() {
     const mapping = code(readFileSync(join(process.cwd(), "src/lib/sales/normalizer/mapping.ts"), "utf8"));
     assert.match(
       mapping,
-      /affectedBatchIds\.add\(value\)/,
+      /affectedBatchIds\.set\(value, brickId\)/,
       "backfillCustomerRows must collect the batches the RPC reports",
     );
+    // The rebuild itself is the shared `refreshBatchRollups` (customer-map.ts), which calls the trio
+    // and every rollup after it and checks each result — never a hand copy here (audit P4-05).
+    assert.match(mapping, /refreshBatchRollups/, "backfill must rebuild through the shared refreshBatchRollups");
+    const customerMap = code(readFileSync(join(process.cwd(), "src/lib/sales/normalizer/customer-map.ts"), "utf8"));
     for (const rpc of [
       "phx_refresh_sos_fact_rollup",
       "phx_refresh_sos_customer_directory_rollup",
       "phx_refresh_marketing_roi_facts",
     ]) {
       assert.ok(
-        mapping.includes(rpc),
-        `backfill must refresh ${rpc}, matching the reconcile path in normalizer/customer-map.ts`,
+        customerMap.includes(rpc),
+        `refreshBatchRollups must refresh ${rpc}`,
       );
     }
     assert.match(

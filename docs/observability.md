@@ -113,28 +113,37 @@ reconstructed out of the delivered Telegram digests in `notification_events.meta
 happens to keep the payload rather than one designed as the error record. Found while fixing
 [#6301](https://github.com/Gawish-1997/phoenix-people-workforce/pull/6301).
 
+**This was fixed from two ends at once, on the same day.** #6307 fixed the `stack` column —
+`persistedStack` reads a non-`Error` through `describeThrown` (a Supabase rejection is a plain
+`{ message, details, hint, code }`, so `error.stack` was undefined and the column landed empty) and
+prefixes the call site's labels, which is where `source` and `scope` now live. This change fixed the
+other end: the **columns**, plus two safety properties of that label prefix.
+
 How it is carried now, with no migration:
 
-- `hrId`/`hr_id`, `role`, `loginId`/`login_id` and `digest` go onto their own columns. Both
-  spellings are read because both are in use — measured across the call sites, `hrId` 89 times and
-  `hr_id` 14, `loginId` 9 and `login_id` 1 — so accepting only camelCase would drop a seventh.
-- Everything else goes into `stack` as `key=value` lines under the `— Log labels —` separator
-  (`LOG_LABELS_SEPARATOR`, exported from `service.ts`), joining the component-stack and
-  client-context blocks that already live there.
-- **The block LEADS**, like the client context and for the same reason plus one more: `stack` is
-  truncated to 4,000 **from the end**, and most of these rows have no real stack at all, so on them
-  the block *is* the diagnostic.
-- **The block is capped at 1,000** of the column's 4,000, so a call site that labels generously
-  cannot evict a real stack trace — trading one lost diagnostic for another.
-- **Every value goes through `redactSecretsFromRoute`**, which is documented to run over free text:
-  a label carries a share-link token as readily as a path does, and the row is written while the
-  token still works.
-- `event` stays in the block **as well as** becoming `route`, because the column cannot say which of
-  route/job/event it came from and a reader needs to know it is an event name, not a path.
+- `hrId`/`hr_id`, `role`, `loginId`/`login_id` and `digest` go onto their **own columns**, decided in
+  one place (`structuredLogErrorInput`). Both spellings are read because both are in use — measured
+  across the call sites, `hrId` 89 times and `hr_id` 14, `loginId` 9 and `login_id` 1 — so accepting
+  only camelCase would drop a seventh of them. A column beats free text here because
+  /admin/error-monitor filters on `hr_id` and renders `role`.
+- Everything else stays in `persistedStack`'s label prefix as `key=value`, **minus** those four:
+  repeating a label that now has a column would only cost the cause characters that truncation takes
+  off the end.
+- **Every value goes through `redactSecretsFromRoute`**, which is documented to run over free text: a
+  label carries a share-link token as readily as a path does, and the row is written while the token
+  still works.
+- **The label prefix is capped at 1,000** of the column's 4,000. The labels lead and `stack` is cut
+  from the end, so without a ceiling a generously-labelled call site would evict the very cause the
+  row was captured for — trading one lost diagnostic for another.
+- `service` and `event` stay out, as #6307 decided: `service` is on every line, and `event` is
+  already the row's `route`.
 
-`logAppError`'s best-effort "never throws" contract is unchanged — the formatting is pure and runs
-inside its existing `try`. Pinned by `tests/structured-log-labels-reach-the-row.test.ts`, whose five
-sections were each confirmed by breaking the fix and watching that section's own assertion fire.
+`logAppError`'s best-effort "never throws" contract is unchanged, and `redactSecretsFromRoute`'s own
+behaviour is untouched — it is only called from one more place. Pinned by
+`tests/structured-log-persists-the-cause.test.ts` (the cause and the ordering) and
+`tests/structured-log-labels-reach-the-row.test.ts` (the columns, the no-repeat, the redaction and
+the cap), whose sections were each confirmed by breaking the fix and watching that section's own
+assertion fire.
 
 ## Whose code threw it — attribution on a client row
 

@@ -3314,19 +3314,48 @@ async function insertSourceOfSalesRows(
   }
 }
 
+/** The slice of the client the lock read uses — structural, so a test can hand it a fake. */
+type PeriodLockReader = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: unknown) => {
+        eq: (column: string, value: unknown) => {
+          maybeSingle: () => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
+        };
+      };
+    };
+  };
+};
+
+// PostgREST answers a missing table with PGRST205 and Postgres with 42P01 — the only two errors
+// that mean "this deployment has no lock table", which is the one case read as "not locked".
+const MISSING_TABLE_CODES = new Set(["PGRST205", "42P01"]);
+
 // Period lock guard — once a Monthly Sales period is locked, all uploads/deletes for that period are
 // rejected until it is re-opened. Tolerant of a missing lock table (pre-migration = not locked) so it
 // never blocks a normal upload before the Monthly Sales migration is applied.
-export async function assertPeriodNotLocked(period: string | null): Promise<void> {
+//
+// 🔴 ANY OTHER READ ERROR REFUSES, with a 503 (audit S-SAL-09, 2026-10-23). It used to return as
+// "not locked" on every error, so a timeout let an upload for a LOCKED month write its rows; the SQL
+// lock caught it only after the rows were inserted, leaving an orphan pending batch behind. A month
+// whose lock cannot be read is not a month known to be open.
+export async function assertPeriodNotLocked(period: string | null, client?: PeriodLockReader): Promise<void> {
   if (!period) return;
-  const supabase = getSupabaseAdmin();
+  const supabase = client ?? (getSupabaseAdmin() as unknown as PeriodLockReader);
   const { data, error } = await supabase
     .from("monthly_sales_period_lock")
     .select("locked")
     .eq("period", period)
     .eq("locked", true)
     .maybeSingle();
-  if (error) return; // table absent or unreachable → treat as not locked (defensive)
+  if (error) {
+    if (MISSING_TABLE_CODES.has(String(error.code ?? ""))) return;
+    throw new SalesWorkflowError(
+      "period_lock_unreadable",
+      `Could not check whether ${period} is locked, so nothing was changed. Try again in a minute.`,
+      503,
+    );
+  }
   if (data) {
     throw new SalesWorkflowError(
       "period_locked",

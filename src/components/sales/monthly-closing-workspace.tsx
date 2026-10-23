@@ -260,8 +260,16 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
         method,
       });
       if (!response.ok) {
+        // The route answers { error } — a stale city split comes back as a 409 telling the operator
+        // to publish again — so the sentence is shown, never the raw JSON around it.
         const text = await response.text();
-        throw new Error(text || "Failed to update publish state.");
+        let message = text;
+        try {
+          message = String((JSON.parse(text) as { error?: unknown }).error ?? "") || text;
+        } catch {
+          message = text;
+        }
+        throw new Error(message || "Failed to update publish state.");
       }
       setPublished(!published);
     } catch (caught) {

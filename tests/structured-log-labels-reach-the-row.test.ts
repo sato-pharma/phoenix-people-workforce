@@ -1,27 +1,35 @@
-// A structured ERROR's labels must reach the stored row, not just its event name.
+// A structured ERROR's labels reach the stored row's own COLUMNS, not just its stack text.
 //
-// `logStructured("ERROR", …, { labels })` persists through log.ts's persistErrorEvent into
-// app_error_events. Until 2026-10-23 that bridge carried exactly two things — `labels.route ??
-// labels.job ?? labels.event` onto `route`, and an Error's `.stack` — and dropped every other
-// label. Measured on production (ozucdzovmcqvepbozvqf) the same day: of 2,446
-// `route_type='structured-log'` rows, ZERO carried an hr_id, ZERO carried a role, and 1,677 had no
-// stack either, so the row was the event name and nothing else.
+// Sibling to tests/structured-log-persists-the-cause.test.ts, which pins what `persistedStack`
+// puts in the `stack` column. This one pins the other half: the four labels that have a real
+// column of their own, and the two safety properties of the label text that the cause test does
+// not cover.
+//
+// ── WHAT WENT WRONG ──────────────────────────────────────────────────────────────────────────
+//
+// `persistErrorEvent` built its `logAppError` call from two fields — `route` and `stack` — so
+// `hr_id`, `role`, `login_id` and `digest` were NEVER written by this path, whatever the call site
+// labelled. Measured on production (ozucdzovmcqvepbozvqf) on 2026-10-23: of 2,446
+// `route_type='structured-log'` rows, ZERO carried an `hr_id` and ZERO carried a `role`.
 //
 // The case that cost the diagnosis: src/lib/needs-you/service.ts logs a source timeout with
-// `{ event, source, hrId, role, scope }`. The row said `route='needs_you_source_timeout'` and never
-// WHICH source timed out, so the failing adapters had to be reconstructed out of the delivered
-// Telegram digests in notification_events.metadata.
+// `{ event, source, hrId, role, scope }`. The row said `route='needs_you_source_timeout'` and
+// never WHICH source timed out, for whom, in what scope — so the failing adapters had to be
+// reconstructed out of the delivered Telegram digests in `notification_events.metadata`.
 //
-// Pinned here, because fixing one half still leaves the other blind:
-//   1. the four labels with a real column are mapped onto those columns;
-//   2. every remaining label survives, in the stack's label block;
-//   3. the block LEADS, so `truncate`-from-the-end cannot silently eat it;
-//   4. label values are redacted, because a label carries a share-link token as readily as a path;
-//   5. the block is capped, so a generous call site cannot push a real stack out of the row.
+// ── WHAT IS PINNED HERE ──────────────────────────────────────────────────────────────────────
+//
+//   1. the four labels with a column reach that column, under both spellings in use;
+//   2. they are NOT also repeated in the stack text, where they would only cost the cause room;
+//   3. label values are REDACTED — a label carries a share-link token as readily as a path, and
+//      the row is written while the token still works;
+//   4. the label text is CAPPED, so a generous call site cannot push the cause out of the row.
+//
+// (3) and (4) are the two gaps in the label block as first shipped. `service`/`event` exclusion
+// and the labels-lead ordering belong to the cause test and are not re-asserted here.
 
 import assert from "node:assert/strict";
-import { structuredLogErrorInput } from "../src/lib/observability/log.ts";
-import { LOG_LABELS_SEPARATOR, combineStack, formatLogLabels } from "../src/lib/error-monitor/service.ts";
+import { persistedStack, structuredLogErrorInput } from "../src/lib/observability/log.ts";
 import { TOKEN_PLACEHOLDER } from "../src/lib/error-monitor/redact-route.ts";
 
 /** The exact labels src/lib/needs-you/service.ts passes, after cleanLabels stamps `service`. */
@@ -35,7 +43,7 @@ const NEEDS_YOU_TIMEOUT_LABELS = {
 };
 
 export function runStructuredLogLabelsReachTheRowTests() {
-  // 1. COLUMNS -- the four labels that have somewhere better to go than free text.
+  // 1. COLUMNS — the four labels that have somewhere better to go than free text.
   const input = structuredLogErrorInput("Needs You source timed out", NEEDS_YOU_TIMEOUT_LABELS, undefined);
 
   assert.equal(
@@ -54,76 +62,41 @@ export function runStructuredLogLabelsReachTheRowTests() {
   assert.equal(snakeCase.loginId, "a.one", "login_id must be read under its snake_case spelling too");
   assert.equal(snakeCase.digest, "123", "digest has a column of its own and must reach it");
 
-  // 2. THE REST -- nothing else may be dropped, and the constant `service` stamp is not signal.
-  assert.deepEqual(
-    input.logLabels,
-    { event: "needs_you_source_timeout", source: "organogram-seat-drift", scope: "all" },
-    "every label without a column must survive; `service` is the constant cleanLabels stamps on " +
-      "every entry, and the four mapped onto columns are not repeated as text",
-  );
-  assert.ok(
-    input.logLabels !== null && "source" in input.logLabels,
-    "`source` is the label the whole incident turned on -- WHICH Needs You adapter timed out",
-  );
-  // `event` deliberately stays in the block as well as becoming the route: the column cannot say
-  // which of route/job/event it came from, and a reader needs to know it was an event name.
   assert.equal(
-    input.logLabels?.event,
-    "needs_you_source_timeout",
-    "`event` stays in the block too, so a reader can tell the route is an event name, not a path",
-  );
-
-  assert.equal(
-    structuredLogErrorInput("x", { service: "phoenix-hr", event: "e" }, undefined).logLabels?.service,
-    undefined,
-    "the constant service stamp must never reach the stored block",
-  );
-  assert.equal(
-    structuredLogErrorInput("x", { hrId: "B-10" }, undefined).logLabels,
+    structuredLogErrorInput("x", undefined, undefined).hrId,
     null,
-    "labels that all have columns leave no block behind -- no separator with nothing under it",
+    "no labels means no hr_id, never an empty string -- an empty string is not a person",
   );
-  assert.equal(structuredLogErrorInput("x", undefined, undefined).logLabels, null, "no labels, no block");
 
-  // 3. PLACEMENT -- the block leads, because `stack` is truncated from the END.
-  const block = formatLogLabels(input.logLabels);
-  assert.ok(block, "the needs-you labels must format into a block");
-  const withStack = combineStack("Error: boom\n    at thing (file.ts:1:1)", null, null, block);
-  assert.ok(withStack, "combineStack must return something when given a stack and a block");
+  // 2. NOT TWICE — a label in a column must not also sit in the stack text, where the only thing
+  // it can do is take characters off the cause that truncation would then drop.
+  const stack = persistedStack(NEEDS_YOU_TIMEOUT_LABELS, undefined);
+  assert.ok(stack, "the remaining labels must still produce a stack -- `source` and `scope` are the diagnostic");
   assert.ok(
-    withStack.startsWith(LOG_LABELS_SEPARATOR),
-    "the label block must LEAD -- stack is truncated to 4000 from the end, so a trailing block is " +
-      "the first thing a long stack would silently eat. Got: " + withStack.slice(0, 40),
+    stack.includes("source=organogram-seat-drift"),
+    "`source` is the label the whole incident turned on -- WHICH Needs You adapter timed out. Got: " + stack,
   );
+  assert.ok(stack.includes("scope=all"), "`scope` has no column, so the stack is the only place it can go");
   assert.ok(
-    withStack.includes("Error: boom"),
-    "leading must not cost the real stack trace -- both have to be in the stored column",
+    !stack.includes("hrId=") && !stack.includes("hr_id="),
+    "hr_id is in its own column now, so repeating it here only costs the cause room. Got: " + stack,
   );
-  // The 1,677-row case: no Error was passed, so the block is the entire diagnostic.
-  assert.equal(
-    combineStack(null, null, null, block),
-    `${LOG_LABELS_SEPARATOR}\n${block}`,
-    "with no stack the block stands alone, with no stray separators or blank lines around it",
+  assert.ok(!stack.includes("role="), "same for role, which has a column and is rendered from it");
+  assert.ok(
+    !stack.includes("digest=") && !stack.includes("loginId="),
+    "and for digest and login_id -- all four are columns, not stack text",
   );
   assert.equal(
-    combineStack("Error: boom", null, null, null),
-    "Error: boom",
-    "a row with no labels must be byte-identical to what it was before this existed",
+    persistedStack({ service: "phoenix-hr", event: "e", hrId: "B-10", role: "Super Admin" }, null),
+    null,
+    "labels that ALL have columns (or are dropped) leave no stack behind -- not an empty string, " +
+      "which reads as a cause that was captured and was blank",
   );
 
-  // 4. PARSEABLE -- one `key=value` per line, so a reader and a `like` query both get at them.
-  assert.deepEqual(
-    formatLogLabels({ a: "1", b: "2" })?.split("\n"),
-    ["a=1", "b=2"],
-    "one key=value per line is the whole contract -- a JSON blob is not greppable in a text column",
-  );
-  assert.equal(formatLogLabels({ a: "" }), null, "an empty value is not worth a line, nor a separator");
-  assert.equal(formatLogLabels(null), null, "null labels format to null, never to an empty block");
-
-  // 5. REDACTED -- a label can carry a credential exactly as a path can, and redactSecretsFromRoute
-  // is documented to run over free text for precisely this reason.
-  const leaky = formatLogLabels({ target: "/share/territory/abc123secret", url: "/x?token=abc123secret" });
-  assert.ok(leaky, "the leaky labels must still produce a block");
+  // 3. REDACTED — a label can carry a credential exactly as a path can, and
+  // redactSecretsFromRoute is documented to run over free text for precisely this reason.
+  const leaky = persistedStack({ target: "/share/territory/abc123secret", url: "/x?token=abc123secret" }, null);
+  assert.ok(leaky, "the leaky labels must still produce a stack");
   assert.ok(
     !leaky.includes("abc123secret"),
     "a share-link token in a LABEL must be redacted at capture, same as one in a route -- the row " +
@@ -131,13 +104,28 @@ export function runStructuredLogLabelsReachTheRowTests() {
   );
   assert.ok(leaky.includes(TOKEN_PLACEHOLDER), "the redaction must leave the readable placeholder behind");
 
-  // 6. CAPPED -- the block gets its own ceiling well under the column's 4000, so a call site that
-  // labels generously cannot trade a lost stack for a kept label.
-  const huge = formatLogLabels({ big: "x".repeat(5000) });
-  assert.ok(huge, "an oversized label must still produce a block rather than being dropped whole");
+  // 4. CAPPED — the labels LEAD and `stack` is cut from the END, so without a ceiling of their own
+  // a generously-labelled call site evicts the cause the row was captured for.
+  const cause = new Error("the cause that must survive");
+  const huge = persistedStack({ big: "x".repeat(5000) }, cause);
+  assert.ok(huge, "an oversized label must still produce a stack rather than being dropped whole");
   assert.ok(
-    huge.length <= 1000,
-    "the label block must be capped at 1000 so a 4000-character column keeps room for a real " +
-      "stack trace; got " + huge.length,
+    huge.includes("the cause that must survive"),
+    "the cause must still be in the column -- evicting it to keep a long label trades one lost " +
+      "diagnostic for another",
+  );
+  const labelPart = huge.split("\n")[0];
+  assert.ok(
+    labelPart.length <= 1000,
+    "the label part must be capped at 1000 so the column's 4000 keeps room for the cause; got " + labelPart.length,
+  );
+
+  // The cause test's own ground: a non-Error throw must still reach the row. Re-checked here only
+  // because the cap and the redaction run on the same path and must not disturb it.
+  const supabaseRejection = { code: "57014", details: null, hint: null, message: "canceling statement due to statement timeout" };
+  const withLabelsAndRejection = persistedStack({ hrId: "B-10", line: "CNS" }, supabaseRejection);
+  assert.ok(
+    withLabelsAndRejection?.includes("57014") && withLabelsAndRejection.includes("line=CNS"),
+    "mapping hr_id onto its column must not cost the non-Error cause or the labels that stay",
   );
 }
