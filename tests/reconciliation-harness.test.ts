@@ -27,10 +27,11 @@ import { findDuplicateEmployeeDays } from "../src/lib/reconciliation/duplicate-d
 import { partitionLoginsWithoutEmployeeRow } from "../src/lib/reconciliation/logins-without-employee-row.ts";
 import { retryOnceIfBreached } from "../src/lib/reconciliation/retry.ts";
 import { buildReconciliationAlertMessage, runReconciliationCheckList } from "../src/lib/reconciliation/runner.ts";
-import type {
-  ReconciliationCheck,
-  ReconciliationCheckResult,
-  ReconciliationOutcome,
+import {
+  RECONCILIATION_FINDINGS_CAP,
+  type ReconciliationCheck,
+  type ReconciliationCheckResult,
+  type ReconciliationOutcome,
 } from "../src/lib/reconciliation/types.ts";
 
 /**
@@ -412,6 +413,7 @@ export async function runReconciliationHarnessTests() {
       }),
       result({ id: "quiet", status: "holds" }),
       result({ id: "documented", title: "A documented finding", status: "known-open", holds: false, expectation: "known-open" }),
+      result({ id: "unanswered", title: "A check that timed out", status: "errored", holds: null, error: "timeout", detail: "Could not run: timeout" }),
     ],
   });
   assert.match(message, /2,267,000\.00 EGP/, "the alert must carry the figure the screen shows");
@@ -423,6 +425,47 @@ export async function runReconciliationHarnessTests() {
     "known-open findings are listed separately so a persistent defect never reads as a new emergency",
   );
   assert.equal(message.includes("quiet"), false, "a holding check must not add noise to a breach alert");
+  assert.equal(
+    message.split("\n")[0],
+    "⚠️ Reconciliation breach — 1 of 4 checks disagree, 1 could not be answered — 4 Aug 2026, 03:47 Cairo",
+    "the checks that could not be answered are in the TITLE, so a night of errors never reads as a quiet one",
+  );
+  assert.match(
+    message,
+    /Second source: 123 rows \/ 2,667,500\.00 EGP/,
+    "the right side is the same fact derived another way — labelled the second source, never prejudged as the actual figure",
+  );
+  assert.equal(message.includes("Actual:"), false);
+  assert.match(message, /Full report → \/admin\/system-audit/, "the report lives on the System Audit page now");
+
+  // ── The rows behind a disagreement ride through, capped per check, and the cap is said ───────
+  const manyFindings = Array.from({ length: RECONCILIATION_FINDINGS_CAP + 7 }, (_value, index) => ({
+    hrId: `B-${index}`,
+    detail: `row ${index} disagrees`,
+  }));
+  const withFindings = await runReconciliationCheckList(
+    [
+      check({ id: "names-people", run: async () => ({ ...outcome(false, "507 people disagree"), findings: manyFindings }) }),
+      check({
+        id: "documented-again",
+        expectation: "known-open",
+        openDefect: "Verified on production: 165 rows short.",
+        run: async () => outcome(false, "still short"),
+      }),
+      check({ id: "plain", run: async () => outcome(true) }),
+    ],
+    { concurrency: 1 },
+  );
+  assert.equal(withFindings.results[0].findings?.length, RECONCILIATION_FINDINGS_CAP, "one runaway check cannot bloat the stored report");
+  assert.equal(withFindings.results[0].findingsTruncated, 7, "the rows left off are counted, never dropped in silence");
+  assert.equal(withFindings.results[0].findings?.[0].hrId, "B-0", "the findings arrive untouched, in the check's order");
+  assert.equal(
+    withFindings.results[1].openDefect,
+    "Verified on production: 165 rows short.",
+    "the documented open defect is carried on the result, so the ledger can store it as the probable cause",
+  );
+  assert.equal("findings" in withFindings.results[2], false, "a check that names nobody carries no findings field at all");
+  assert.equal("openDefect" in withFindings.results[2], false);
 
   // ── Retry absorbs a read race without weakening the check ────────────────────────────────────
   let attempts = 0;

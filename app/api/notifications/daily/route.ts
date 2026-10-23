@@ -15,7 +15,6 @@ import { remindHeldNotifications } from "@/lib/notifications/held-notification-a
 import { runNeedsYouDailyDigest } from "@/lib/needs-you/deliver/daily";
 import { runNeedsYouWeeklyEmail } from "@/lib/needs-you/deliver/weekly";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
-import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import {
@@ -120,7 +119,6 @@ async function runDailyNotifications(request: Request) {
     marketingAssignmentBackfill,
     recruitment,
     telegramDigest,
-    weeklySystemHealthDigest,
     // Pre-existing off-by-one (found 2026-07-18): this name was missing, so every result from
     // here on was captured one position off (e.g. outstationGeocodeWarmup actually held the
     // probation digest's result). The jobs themselves were unaffected — each has its own
@@ -193,9 +191,10 @@ async function runDailyNotifications(request: Request) {
       onJobFailure("daily-recruitment-notifications", (message) => ({ success: false, error: message })),
     ),
     runTelegramDailyHrDigest().catch(onJobFailure("daily-telegram-digest", (message) => ({ success: false, error: message }))),
-    runWeeklySystemHealthDigest().catch(
-      onJobFailure("weekly-system-health-digest", (message) => ({ delivered: 0, skipped: true, error: message, sourceWarnings: [] })),
-    ),
+    // Retired 2026-10-23: the weekly system health digest, which summarised the retired System
+    // Issues page. The System Audit daily message (src/lib/system-audit/daily-message.ts) replaces
+    // it; its name and its result left this list together,
+    // so every position below is still aligned.
     // Retired 2026-08-02: the probation weekly digest and the Field Workforce Compliance digest
     // were removed at the owner's request. The FWC DEDUCTIONS auto-sync that used to run here was
     // retired in the C6 deductions cutover (2026-08-30): it wrote into the legacy governance
@@ -308,8 +307,8 @@ async function runDailyNotifications(request: Request) {
     // dead man's switch and `totalJobs` all still count this job exactly once.
     Promise.resolve(needsYouDailyResult),
     // The WHOLE board by email, Sundays. It self-gates to the weekday and returns
-    // `skipped: "not the weekly email day"` on the other six, the same shape as
-    // runWeeklySystemHealthDigest — so it costs one cheap call a day and no schedule of its own.
+    // `skipped: "not the weekly email day"` on the other six — so it costs one cheap call a day and
+    // no schedule of its own.
     //
     // Email rather than Telegram because it is COMPLETE: every item in every lane plus all sixteen
     // source verdicts, which cannot fit in Telegram's 900 characters. It never requests the telegram
@@ -389,7 +388,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (31 since the outstation workload refresh was added 2026-10-22; 30 since the
+  // under-reports (30 since the weekly system health digest retired 2026-10-23; 31 since the
+  // outstation workload refresh was added 2026-10-22; 30 since the
   // probation Day 30/60/75 milestone emails were added 2026-09-29;
   // 29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
   // account-setup reminder the same day; 27 since the
@@ -398,7 +398,7 @@ async function runDailyNotifications(request: Request) {
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 31;
+  const totalJobs = 30;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -465,7 +465,6 @@ async function runDailyNotifications(request: Request) {
     success: failures.length === 0,
     telegramDigest,
     totalJobs,
-    weeklySystemHealthDigest,
     vacationSla,
     weeklyPlansDrift,
     excuseDrift,

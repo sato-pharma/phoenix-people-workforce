@@ -98,7 +98,7 @@ export async function notifyJobsStranded(verdict: JobHeartbeatVerdict): Promise<
     await Promise.all(
       recipients.map(async (recipient) => {
         await createSystemNotification({
-          actionUrl: "/admin/system-issues",
+          actionUrl: "/admin/system-audit",
           actorId: ACTOR,
           // No email — see file header. In-app + Telegram + push only.
           channels: ["in_app", "telegram", "push"],
@@ -115,7 +115,7 @@ export async function notifyJobsStranded(verdict: JobHeartbeatVerdict): Promise<
           priority: "high",
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
-          telegram: { ctaLabel: "Open system issues", ctaUrl: "/admin/system-issues" },
+          telegram: { ctaLabel: "Open the System Audit", ctaUrl: "/admin/system-audit" },
           title,
         });
         delivered += 1;

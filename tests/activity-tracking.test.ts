@@ -47,8 +47,11 @@ function testModuleResolver() {
   assert.equal(resolveActivityModule("/admin").key, "command_center");
 
   // Query strings + casing + trailing slashes are normalised away.
-  assert.equal(resolveActivityModule("/admin/data-health?tab=x").key, "data_health");
-  assert.equal(normalizeActivityPath("/Admin/Data-Health/"), "/admin/data-health");
+  assert.equal(resolveActivityModule("/admin/system-audit?tab=x").key, "system_audit");
+  assert.equal(normalizeActivityPath("/Admin/System-Audit/"), "/admin/system-audit");
+  // The pages System Audit replaced (23 Oct 2026) redirect to it, so their history reads as it too.
+  assert.equal(resolveActivityModule("/admin/data-health").label, "System Audit");
+  assert.equal(resolveActivityModule("/admin/system-issues").label, "System Audit");
   assert.equal(normalizeActivityPath("admin/logs"), "/admin/logs");
 
   // Employee portal maps to friendly modules; activity-control resolves itself.

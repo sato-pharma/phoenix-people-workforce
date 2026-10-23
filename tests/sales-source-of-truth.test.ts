@@ -195,14 +195,10 @@ export function runSalesSourceOfTruthTests() {
     "and the workflow refuses before it spends minutes parsing a workbook it will not keep",
   );
 
-  // /admin/data-health audits the rows the product reports on. Auditing sales_records gave a clean
-  // bill of health for a table no employee or manager can see the numbers from.
+  // The Data Health page that classified sales ownership was retired on 23 Oct 2026 and its sales
+  // audit went with it. What must never come back is the old shape: grading sales_records, a table
+  // no employee or manager can see the numbers from.
   const adminServiceSource = readFileSync("src/lib/admin/service.ts", "utf8");
-  assert.match(
-    adminServiceSource,
-    /loadCanonicalDashboardRecords\(\)/,
-    "the governance audit classifies canonical SoS rows",
-  );
   assert.doesNotMatch(
     adminServiceSource,
     /\.from\("sales_records"\)/,

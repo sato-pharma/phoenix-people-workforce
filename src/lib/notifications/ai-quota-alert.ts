@@ -136,7 +136,7 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
     await Promise.all(
       recipients.map((recipient) =>
         createSystemNotification({
-          actionUrl: "/admin/error-monitor",
+          actionUrl: "/admin/system-audit",
           actorId: ACTOR,
           channels: ["in_app", "telegram", "push"],
           eventType: EVENT_TYPE,
@@ -152,7 +152,7 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
           priority: "high",
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
-          telegram: { ctaLabel: "Open error monitor", ctaUrl: "/admin/error-monitor" },
+          telegram: { ctaLabel: "Open the System Audit", ctaUrl: "/admin/system-audit" },
           title: aiQuotaAlertTitle(record.provider),
         }),
       ),

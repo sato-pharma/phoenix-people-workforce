@@ -85,8 +85,10 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
   },
   weekly_system_health_digest: {
     key: "weekly_system_health_digest",
-    label: "Weekly system health digest",
-    description: "Once-a-week technical/security summary of the System Issues dashboard.",
+    // The key keeps its old name on purpose: a dozen technical alerts and saved admin settings use
+    // it. The weekly digest it was named after retired with the System Issues page on 23 Oct 2026.
+    label: "System health alerts",
+    description: "System Audit daily message (new, newly shared or reopened issues) and urgent platform alarms — outbox drain, stranded job, database restart, AI credit.",
     roles: ["Super Admin"],
     enabled: true,
   },

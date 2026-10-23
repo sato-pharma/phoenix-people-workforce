@@ -36,7 +36,7 @@ import { getNavigationSections, type NavigationSectionItem } from "@/config/syst
 import { systemIdentity } from "@/config/system-settings";
 import { isUuid } from "@/lib/http/uuid";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
-import { getActiveHref, normalizePathnameForMode } from "@/lib/navigation/active-path";
+import { getActiveHref, getSections, normalizePathnameForMode } from "@/lib/navigation/active-path";
 
 /** Module and brand are joined by a middot, matching the app's own heading style. */
 export const TITLE_SEPARATOR = " · ";
@@ -205,6 +205,45 @@ function pickLabelForRole(items: readonly NavigationSectionItem[], role?: Phoeni
   const ungated = items.find((item) => !item.roles?.length);
   const item = owned ?? ungated ?? items[0];
   return (role && item.labelByRole?.[role]) || item.label;
+}
+
+/**
+ * The label the sidebar row at `href` carries for `role` — the row's own words, exactly as the rail
+ * draws them, and NEVER a name composed from the address below the row (that is what
+ * `resolveModuleName` does for a tab, where telling sibling pages apart is the point). Null when no
+ * row of this mode has that href.
+ *
+ * For the System Audit, whose column 3 must be the module name the person saw in their sidebar, not
+ * a derived one. FIRST the row the rail itself draws for the role — `getSections`, the sidebar's own
+ * gating, relabelling and first-copy-wins dedupe — so a link listed twice reads as the copy the
+ * person was shown. Only when the role is not offered the row at all (a permission the person held
+ * that day, a seat fence) does it fall back to the per-role pick, with every copy whose
+ * `excludedRoles` names the role set aside — the gate the rail never waives.
+ */
+const railLabelCache = new Map<string, Map<string, string>>();
+
+function railLabels(mode: NavigationMode, role: PhoenixRole): Map<string, string> {
+  const cacheKey = `${mode}\u0000${role}`;
+  const cached = railLabelCache.get(cacheKey);
+  if (cached) return cached;
+  const labels = new Map<string, string>();
+  for (const section of getSections(getNavigationSections(mode), mode, {}, role)) {
+    for (const item of section.items) if (!labels.has(item.href)) labels.set(item.href, item.label);
+  }
+  railLabelCache.set(cacheKey, labels);
+  return labels;
+}
+
+export function sidebarRowLabel(href: string, mode: NavigationMode, role?: PhoenixRole): string | null {
+  if (role) {
+    const drawn = railLabels(mode, role).get(href);
+    if (drawn) return drawn;
+  }
+  const items = getNavigationSections(mode)
+    .flatMap((section) => section.items)
+    .filter((item) => item.href === href);
+  const offered = role ? items.filter((item) => !item.excludedRoles?.includes(role)) : items;
+  return pickLabelForRole(offered.length > 0 ? offered : items, role) ?? null;
 }
 
 /**

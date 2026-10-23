@@ -9,8 +9,8 @@ import { logError } from "@/lib/observability/log";
  * shape `drain-health.ts` was built to detect (see that file's header for the 2026-08-14 13-day
  * freeze). Before this, that shape reached only the `drain_stranded` ERROR log and the external
  * Healthchecks.io dead-man's-switch — real, but both require someone to be watching a dashboard or
- * an inbox. This is the same pattern `reconciliation-breach-alert.ts` and `held-notification-alert.ts`
- * already use for "a background job found something wrong" cases.
+ * an inbox. This is the same pattern `held-notification-alert.ts` already uses (and the reconciliation
+ * breach alert used until it was retired on 2026-10-23) for "a background job found something wrong".
  *
  * Reuses the `weekly_system_health_digest` audience key — the existing "technical/system health"
  * recipient list — rather than inventing a new one: the owner can already retarget or silence it
@@ -84,7 +84,7 @@ export async function notifyDrainStranded(verdict: DrainHealthVerdict): Promise<
     await Promise.all(
       recipients.map(async (recipient) => {
         await createSystemNotification({
-          actionUrl: "/admin/system-issues",
+          actionUrl: "/admin/system-audit",
           actorId: "notification-drain-cron",
           // No email — see file header. In-app + Telegram + push only.
           channels: ["in_app", "telegram", "push"],
@@ -101,7 +101,7 @@ export async function notifyDrainStranded(verdict: DrainHealthVerdict): Promise<
           priority: "high",
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
-          telegram: { ctaLabel: "Open system issues", ctaUrl: "/admin/system-issues" },
+          telegram: { ctaLabel: "Open the System Audit", ctaUrl: "/admin/system-audit" },
           title: `Notification drain stranded — ${strandedQueues.join(", ")}`,
         });
         delivered += 1;
