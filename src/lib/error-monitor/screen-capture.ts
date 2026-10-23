@@ -98,8 +98,9 @@ export const SCREEN_MAX_ELEMENTS = 15_000;
  * appear in a viewport-sized picture, and dropping it drops its whole subtree — the long table below
  * the fold, the closed tabs — which is most of the cost. A zero-size box is kept: it may hold visible
  * children positioned outside it. Text and other non-element nodes are always kept.
+ * Shared with the crash picture in capture-screenshot.ts, which had neither guard until 23 Oct 2026.
  */
-function onScreen(node: Node): boolean {
+export function onScreen(node: Node): boolean {
   if (!(node instanceof Element)) return true;
   const rect = node.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return true;

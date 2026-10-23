@@ -38,6 +38,14 @@ const ALLOWED: Record<string, string> = {
   // safeupdate.
   "public.phx_backfill_sos_customer_directory_rollup":
     "hand-run backfill, never reached over PostgREST",
+  // Found when the detector learned to read `execute` strings (23 Oct 2026): its wholesale
+  // `execute format('delete from %I.%I', …)` empties the table it then refills from a snapshot.
+  // It is the disaster-recovery restore, run by hand in a SQL session exactly as
+  // docs/security/recovery-snapshots.md shows, where safeupdate is not loaded. Nothing in the app,
+  // scripts or workflows calls it. If anything ever calls it over PostgREST, it needs `where true`
+  // first — this entry does not make that path safe.
+  "recovery.restore_table":
+    "hand-run disaster-recovery restore (docs/security/recovery-snapshots.md), never reached over PostgREST",
 };
 
 type FunctionBody = { body: string; file: string; name: string };
@@ -114,14 +122,26 @@ export function splitStatements(body: string): string[] {
  * exactly the shape both 2026-10-23 rebuilds had. The keyword is found anywhere in the chunk and
  * the tail after it is what must carry a WHERE.
  */
+/**
+ * The target of a DELETE or UPDATE: an optional `only`, then anything up to whitespace — so a
+ * quoted `"name"`, a `%I` format slot and the `'` that closes an `execute` string all count. Three
+ * shapes the first version missed (review of #6346, 23 Oct 2026), each proven by running its own
+ * patterns: an ALIASED update (`update public.crm_contacts c set …`, the commonest update shape in
+ * this repo), `update only`, and the same statements built as a string for `execute`.
+ */
+const WRITE_TARGET = String.raw`(?:only\s+)?(?!set\b|only\b)[^\s;(]+`;
+/** `update t c set` / `update t as c set` — never the word `set` or `where` itself. */
+const UPDATE_ALIAS = String.raw`(?:\s+(?:as\s+)?(?!set\b|where\b)[a-z_][a-z0-9_]*)?`;
+// A quote or a parenthesis may precede the keyword: `execute 'delete from …'`, `format('update …`.
+const DELETE_WRITE = new RegExp(String.raw`(?:^|[\s'(])(delete\s+from\s+${WRITE_TARGET})(.*)$`, "i");
+// `update <target> [alias] set` only — `insert … on conflict do update set` has no target there.
+const UPDATE_WRITE = new RegExp(String.raw`(?:^|[\s'(])(update\s+${WRITE_TARGET}${UPDATE_ALIAS}\s+set)(.*)$`, "i");
+
 export function unqualifiedWrites(body: string): string[] {
   const found: string[] = [];
   for (const statement of splitStatements(body)) {
     const trimmed = statement.replace(/\s+/g, " ").trim();
-    // `update <ident> set` only — `insert … on conflict do update set` has no identifier there.
-    const write =
-      /(?:^|\s)(delete\s+from\s+[a-z0-9_".]+)(.*)$/i.exec(trimmed) ??
-      /(?:^|\s)(update\s+[a-z0-9_".]+\s+set)(.*)$/i.exec(trimmed);
+    const write = DELETE_WRITE.exec(trimmed) ?? UPDATE_WRITE.exec(trimmed);
     if (!write) continue;
     if (/\bwhere\b/i.test(write[2])) continue;
     found.push(`${write[1]}${write[2]}`.replace(/\s+/g, " ").trim().slice(0, 120));
@@ -170,6 +190,22 @@ export function runFunctionBodiesNeedAWhereClauseTests() {
   assert.deepEqual(unqualifiedWrites("begin\n  update public.a set b = 1;\nend"), [
     "update public.a set b = 1",
   ]);
+  // The three shapes the first version of this detector could not see (review of #6346).
+  assert.deepEqual(unqualifiedWrites("begin\n  update public.crm_contacts c set x = 1;\nend"), [
+    "update public.crm_contacts c set x = 1",
+  ], "an ALIASED update is still an update");
+  assert.deepEqual(unqualifiedWrites("begin\n  update public.crm_contacts as c set x = 1;\nend"), [
+    "update public.crm_contacts as c set x = 1",
+  ]);
+  assert.deepEqual(unqualifiedWrites("begin\n  update only public.a set b = 1;\nend"), [
+    "update only public.a set b = 1",
+  ], "`update only` is still an update");
+  assert.deepEqual(unqualifiedWrites("begin\n  execute format('delete from %I', t);\nend"), [
+    "delete from %I', t)",
+  ], "a delete built as a string for `execute` is still a delete");
+  assert.deepEqual(unqualifiedWrites("begin\n  update public.crm_contacts c set x = 1 where c.id = 2;\nend"), []);
+  assert.deepEqual(unqualifiedWrites("begin\n  execute format('delete from %I where id = $1', t) using 1;\nend"), []);
+  assert.deepEqual(unqualifiedWrites("begin\n  perform 1 from public.a for update skip locked;\nend"), []);
   assert.deepEqual(unqualifiedWrites("begin\n  delete from public.a_cache where true;\nend"), []);
   assert.deepEqual(unqualifiedWrites("begin\n  update public.a set b = 1 where id = 2;\nend"), []);
   assert.deepEqual(

@@ -1,5 +1,6 @@
 "use client";
 
+import { SCREEN_MAX_ELEMENTS, onScreen } from "@/lib/error-monitor/screen-capture";
 import { ERROR_SCREENSHOT_MAX_BYTES } from "@/lib/error-monitor/screenshot-intake";
 
 /**
@@ -68,6 +69,11 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | null> {
 async function rasteriseViewport(): Promise<Blob | null> {
   const target = document.body;
   if (!target) return null;
+  // The two guards the refusal picture (screen-capture.ts) has, for the same reason: html-to-image
+  // copies every computed style of every node it keeps, on the main thread, and the timeout below
+  // only stops WAITING — the work carries on. A background error on the payroll grid or a CRM board
+  // froze the tab for seconds (review of #6358, 23 Oct 2026). Too big: no picture; the report stands.
+  if (document.getElementsByTagName("*").length > SCREEN_MAX_ELEMENTS) return null;
 
   // Loaded only when something has actually crashed — it must not sit in the first-load bundle of
   // every page just to be ready for an error most sessions never see.
@@ -76,10 +82,17 @@ async function rasteriseViewport(): Promise<Blob | null> {
   const width = Math.max(1, window.innerWidth || target.clientWidth || MAX_CAPTURE_WIDTH);
   const canvas = await toCanvas(target, {
     backgroundColor: "#ffffff",
+    // Off-screen subtrees are dropped before they are copied — the long table below the fold is most
+    // of the cost, and it cannot appear in a viewport-sized picture anyway.
+    filter: onScreen,
     // Only what is on screen. A long page's full height is not what the employee was looking at,
     // and it multiplies the bytes for the part nobody was reading.
     height: Math.max(1, window.innerHeight || target.clientHeight),
     pixelRatio: Math.min(1, MAX_CAPTURE_WIDTH / width),
+    // The picture starts at the scroll position, so it is the viewport the filter above kept — without
+    // this a scrolled page drew its top, whose nodes the filter had just dropped. A margin, not a
+    // transform, as in screen-capture.ts: a transform would scroll fixed elements away with the page.
+    style: { margin: "0", marginLeft: `${-Math.round(window.scrollX)}px`, marginTop: `${-Math.round(window.scrollY)}px` },
     width,
   });
 

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   ERROR_SCREENSHOT_MAX_BYTES,
@@ -8,15 +10,16 @@ import {
   screenshotBodyTooLarge,
 } from "../src/lib/error-monitor/screenshot-intake.ts";
 import { issueErrorScreenshotTicket, readErrorScreenshotTicket } from "../src/lib/error-monitor/screenshot-ticket.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * THE SCREENSHOT DOOR IS BOUNDED, AND IT IS THE ONLY PUBLIC ONE THAT TAKES BYTES (23 Oct 2026).
  *
- * `/api/errors/client/screenshot` has to accept guests, exactly like the text report beside it — the
- * employee whose page broke is often on the login screen. What stops that being an open image
- * upload on the production domain is the ticket: it is minted only by a report that really wrote a
- * row, it names that one row, and it dies in two minutes. These are the pieces that decide it, all
- * pure — no request, no bucket, no database.
+ * `/api/errors/client/screenshot` reads no cookie; the ticket is the whole authorisation. It is
+ * minted only by a report that really wrote a row, only for a SIGNED-IN reporter (owner, 23 Oct
+ * 2026 — a guest ticket let anyone on the internet store images in the Super Admin's error drawer),
+ * it names that one row, and it dies in two minutes. These are the pieces that decide it, all pure
+ * — no request, no bucket, no database — plus source pins on the two routes.
  */
 export async function runErrorScreenshotIntakeTests() {
   const savedSecret = process.env.PHOENIX_AUTH_SECRET;
@@ -104,4 +107,41 @@ export async function runErrorScreenshotIntakeTests() {
     if (savedSecret === undefined) delete process.env.PHOENIX_AUTH_SECRET;
     else process.env.PHOENIX_AUTH_SECRET = savedSecret;
   }
+
+  // ── the three faults the 23 Oct 2026 review of #6358 found, pinned at their source ──────────────
+  const root = join(import.meta.dirname ?? ".", "..");
+  const read = (...parts: string[]) => stripComments(readFileSync(join(root, ...parts), "utf8"));
+
+  // 1. A ticket only for a SIGNED-IN reporter: a guest ticket let anyone store images in the drawer.
+  const report = read("app", "api", "errors", "client", "route.ts");
+  assert.match(
+    report,
+    /if \(eventId && report\.source === "client" && \(access\.hrId \|\| access\.loginId\)\) \{\s*screenshotTicket = issueErrorScreenshotTicket\(eventId\);/,
+    "/api/errors/client mints a screenshot ticket only for a signed-in reporter",
+  );
+  //    …and an unreadable limiter refuses the upload rather than waving it through unmetered.
+  const upload = read("app", "api", "errors", "client", "screenshot", "route.ts");
+  assert.match(
+    upload,
+    /console\.error\("Error-screenshot rate limit unavailable:", error\);\s*return NextResponse\.json\(\{ ok: false \}, \{ status: 503 \}\);/,
+    "the screenshot upload fails closed when its rate limiter cannot be read",
+  );
+
+  // 2. Retention: a crash picture is removed before its row, and a row with a picture is deleted
+  //    only by id once that picture is gone — never by the age filter alone.
+  const service = read("src", "lib", "error-monitor", "service.ts");
+  const prune = service.slice(service.indexOf("export async function pruneOldAppErrorEvents"));
+  const removal = prune.indexOf(".storage");
+  const ageDelete = prune.indexOf('.lt("created_at", cutoff)\n      .is("screenshot_path", null)');
+  assert.ok(removal > 0, "pruneOldAppErrorEvents removes the pictures through the Storage API");
+  assert.ok(ageDelete > removal, "and the age-based row delete runs after it, on rows with NO picture only");
+  assert.ok(prune.includes('.in("id", removedIds.slice('), "rows with a picture go by id, once it is removed");
+
+  // 3. The freeze guards the refusal picture already had: an element cap and an off-screen filter.
+  const capture = read("src", "lib", "error-monitor", "capture-screenshot.ts");
+  assert.ok(
+    capture.includes('if (document.getElementsByTagName("*").length > SCREEN_MAX_ELEMENTS) return null;'),
+    "a page over the element cap is not drawn at all",
+  );
+  assert.ok(capture.includes("filter: onScreen,"), "off-screen subtrees are dropped before html-to-image copies them");
 }

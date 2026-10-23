@@ -139,7 +139,40 @@ const BATCHES_PER_PASS = 25;
  */
 const MAX_PASSES = 60;
 
+/**
+ * 🔴 THE RESET IS SWITCHED OFF — the owner's decision, 23 Oct 2026, after a review of #6356.
+ *
+ * #6356 made `phx_admin_reset_module_data` really delete for the first time, and on production.
+ * The review found it unfit to be pressed there:
+ *   - its only guard is a monthly closing LOCK, not a PUBLICATION, and the two are set on different
+ *     screens (src/lib/sales/published-month-guard.ts says why that is not enough);
+ *   - Weekly Sales and Marketing Requests (with their approvals and finance rows) have no guard at
+ *     all;
+ *   - nothing is backed up first, production has no point-in-time recovery, and no audit row
+ *     records who pressed it;
+ *   - each pass runs on the admin client's 15-second fetch limit, so it can answer "Reset failed"
+ *     after the database has already committed the deletes.
+ *
+ * So every caller is refused HERE, in the domain, before any database client exists: the route,
+ * the page and any future script alike. Not keyed on the runtime: a local `pnpm run dev` points
+ * at the PRODUCTION database (.env.local), so a production-runtime check would leave it armed
+ * exactly where it is least expected. It comes back on by turning this to `null` in the PR that
+ * builds those protections — never by an environment variable.
+ */
+export const RESET_SWITCHED_OFF_REASON: string | null =
+  "Reset is switched off. It had no guard for published months, no guard at all for Weekly Sales " +
+  "and Marketing Requests, no backup before deleting and no record of who pressed it. It comes " +
+  "back once those protections are built.";
+
+export class ResetSwitchedOffError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "ResetSwitchedOffError";
+  }
+}
+
 export async function executeReset(scope: ResetScope, executedBy: string): Promise<ResetResult> {
+  if (RESET_SWITCHED_OFF_REASON) throw new ResetSwitchedOffError(RESET_SWITCHED_OFF_REASON);
   const supabase = getSupabaseAdmin();
   // `rpc()` hands back a PostgrestFilterBuilder, which is a thenable and not a Promise — awaiting
   // it here is what turns it into one. Typing ResetRpcCall as the Promise is deliberate: the stub
