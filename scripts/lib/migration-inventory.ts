@@ -1263,6 +1263,37 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20261023070000_phx_refresh_sos_fact_rollup_takes_a_batch_lock.sql",
   "20261023070100_phx_refresh_sos_channel_rollup_takes_a_batch_lock.sql",
   "20261023070200_phx_refresh_sos_distributor_product_rollup_takes_a_batch_lock.sql",
+  // 2026-10-23. The Phoenix entry-days cache. The Supabase MCP declined apply_migration — the file
+  // carries `drop trigger if exists` and a `delete` inside a function body, which the classifier
+  // reads as the statement being run — so it went through scripts/apply-sql-file.mjs, the standing
+  // route (AGENTS.md §8), which writes NO schema_migrations row on either project. Neither ledger
+  // has anything for this file under any version or name, while all of it is live.
+  //
+  // 🔴 NOT taken on existence: a `create or replace` is satisfied by an older body. All NINE
+  // functions were digested on both projects after applying and are BYTE-FOR-BYTE IDENTICAL — same
+  // file, same bodies, same lengths:
+  //   phoenix_crm_rep_entry_days                  868452bd59f81869c4eb3c9d6bb7caac, len 99
+  //     (pre-image of the live computation it replaced: e1dd0c8255019f15149563b28bf6b68f)
+  //   phoenix_crm_rep_entry_days_calc             7d092868286ec525c79dcf92c78d684e, len 1800
+  //   phoenix_crm_rep_entry_days_rebuild          f6a5bbdbf965d72d726f6ac58316f68f, len 492
+  //   phoenix_crm_rep_entry_days_touch            360cdd934567016c485016c949997649, len 653
+  //   phoenix_crm_rep_entry_days_reconcile        2a6ab8c7009c7bec29c34d21dabdef44, len 850
+  //   phoenix_crm_rep_entry_days_on_visit         9c9b19c5285cb6bd1676401218ab650b, len 294
+  //   phoenix_crm_rep_entry_days_on_day_activity  ef88ee5646ad3e54aadb24a66a71db74, len 300
+  //   phoenix_crm_rep_entry_days_on_visit_child   529e772f044395a258af9e53789b7a24, len 563
+  //   phoenix_crm_rep_entry_days_on_team_start    dd705dd69ece629fd410489d0658b73f, len 81
+  // prosecdef true on all nine, execute held by service_role only (postgres=X service_role=X, so
+  // PUBLIC, anon and authenticated hold none). Table phoenix_crm_rep_entry_days_cache exists with
+  // relrowsecurity true and both indexes; all five triggers exist and point at the right function;
+  // the cron job phoenix-crm-rep-entry-days-reconcile is active on `*/5 * * * *` on both projects.
+  //
+  // Effect proved on production, not asserted: the backfill wrote 542 rows and the migration's own
+  // guard found 0 differences against phoenix_crm_rep_entry_days_calc() before committing — 542 is
+  // exactly what the live computation returned beforehand. The trigger was then proved by breaking
+  // the cache on purpose: one row deleted for b-124/2026-10-22, a no-op update on that day activity
+  // restored it (1 back), and the reconcile then found 0 differences.
+  // Pinned by tests/phoenix-crm-rep-entry-days-cache.test.ts.
+  "20261023091035_phoenix_crm_rep_entry_days_cache.sql",
   // ── PRODUCTION leg only, 2026-10-23, same shape as the three above. STAGING is NOT drifted and
   // needs no exception: it carries an exact ledger row, version 20261023140000 / name job_leases,
   // recorded by `mcp__supabase-staging__apply_migration`. PRODUCTION has ZERO rows matching either

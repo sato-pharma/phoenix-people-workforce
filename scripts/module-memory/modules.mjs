@@ -534,6 +534,30 @@ export const MODULES = [
     keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type", "doctor list changes", "drop a doctor", "contact list"],
     tables: ["crm_", "ireports", "visit"],
   },
+  // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` RECORDS, AND THE SECOND TIME `crm` HAS
+  // HIT IT: its injected pointer measured 4,054 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the entry-days cache rule landed — the same squeeze
+  // that cut the KPIs board out three days earlier. The SQL doors are the clean cut: how
+  // `crm_visits_unified`, `crm_checkins_unified` and `phoenix_crm_countable_visits` are BUILT and read is
+  // one family — which source wins a day, the entry days behind it, the exclusion, the partner slots, the
+  // contact id all three doors emit — and none of it is read while editing a call rate or a Reps List
+  // screen. `crm` KEEPS EVERY GLOB IT HAD, so a door file loads the PAIR and nothing that used to arrive
+  // stops arriving. Both files are far from their 72,000-byte cap — two different limits, and this is the
+  // small one.
+  {
+    id: "crm-unified-doors",
+    title: "The CRM union doors — crm_visits_unified, crm_checkins_unified and the entry days",
+    scope: "How the two union views are built and read: which source wins a day, the entry-days cache behind \"Phoenix wins the day\", the departed-agent exclusion, the two partner slots, the contact id all three doors emit, and the day-at-a-time scan that reads them.",
+    globs: [
+      "src/lib/crm/{reads,master,phoenix-work-evidence,phoenix-vendor-leftovers,phoenix-team-starts,phoenix-kpi-data}.ts",
+      "supabase/migrations/*unified*",
+      "supabase/migrations/*countable*",
+      "supabase/migrations/*entry_days*",
+      "tests/phoenix-crm-{countable-visits,rep-entry-days-cache,vendor-leftovers,visits-everywhere}*",
+    ],
+    keywords: ["crm_visits_unified", "crm_checkins_unified", "countable visits", "entry days", "phoenix wins the day", "unified door", "union view", "departed agent exclusion", "partner slot", "day-at-a-time scan"],
+    tables: ["phoenix_crm_rep_entry_days_cache"],
+  },
   // 🔴 SPLIT 2026-10-20, FOR THE REASON `rep-ranks` BELOW RECORDS: `crm`'s injected pointer measured
   // 4,029 bytes against the 4,000-byte margin the moment the KPIs board's manager rows landed (owner,
   // 2026-10-20: "every dm kpis is calculated based on his reps average and nsm based on dsms av"). The

@@ -1983,6 +1983,7 @@ import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
+import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7550,6 +7551,11 @@ await runTest(
 await runTest(
   "Phoenix CRM counts an off-plan visit only once it is approved (owner, 2026-09-26; two silent ways to get it wrong are pinned here — that \"planned\" is a plan that had REACHED REVIEW before the visit's server-issued captured_at and never merely a plan row, since the rep owns his own draft and today is an editable day; and that loadMonthVisitCounts is a PostgREST read rather than one of the report functions, so moving every RPC to the countable view does not reach the figure behind the rep's own standing on four screens. The anti-fraud judge is deliberately NOT filtered, the rep still sees his waiting visit on his own day, and the legacy vendor KPI stack stays untouched)",
   runPhoenixCrmCountableVisitsTests,
+);
+
+await runTest(
+  "Phoenix CRM caches the entry days instead of recomputing them on every read (the \"Phoenix wins the day\" rule, owner 2026-10-16, was 35.2 ms and 4,509 buffers of a 79.4 ms read and was paid once per calendar day of the window): the rule still lives in exactly ONE body, phoenix_crm_rep_entry_days_calc, which is the only thing that reads the countable view or names an activity type — every write path recomputes through it, so the cache cannot drift into a second definition — the public reader reads the table and never falls back to the live computation, each of the four fact tables that decide a rep-day is triggered on insert, update AND delete with an update recomputing the OLD key as well as the new one, a team start rebuilds, the 5-minute reconcile repairs and warns rather than only reporting, and the migration refuses to commit a backfill that disagrees with the truth",
+  runPhoenixCrmRepEntryDaysCacheTests,
 );
 
 await runTest(

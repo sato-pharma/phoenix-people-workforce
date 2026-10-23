@@ -110,6 +110,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-reports` — Phoenix CRM — the reports, the boards and how every figure is counted | `src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report,team-calendar}.ts` and 4 more |
 | `phoenix-crm-visits` — Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call | `src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,double-visit-request-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-detail-edit-rules,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outcome,visit-rollup-rules}.ts` and 6 more |
 | `crm` — Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans | `src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**` and 10 more |
+| `crm-unified-doors` — The CRM union doors — crm_visits_unified, crm_checkins_unified and the entry days | `src/lib/crm/{reads,master,phoenix-work-evidence,phoenix-vendor-leftovers,phoenix-team-starts,phoenix-kpi-data}.ts` and 4 more |
 | `crm-kpis` — KPIs — the board, its three reports and the manager rows | `src/lib/crm/kpis*` and 3 more |
 | `rep-ranks` — Phoenix Ranks — the rep board, its pillars and the certificate | `src/lib/rep-ranks/**` and 6 more |
 | `weekly-planning` — Weekly and Monthly Plan — the Plans tab form | `src/lib/weekly-planning/**` and 2 more |
