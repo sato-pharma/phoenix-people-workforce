@@ -342,21 +342,9 @@ jobs:
       # Do NOT re-add a `.next` cache to soften this: tried 2026-08-29, measured from both
       # directions, 37KB cache and 148s warm against 143s cold. The note on the deleted cache
       # step above records the evidence.
-      # PROBE ONLY (codex/ci-build-memory-probe, never merged): sample the machine's memory while it builds.
-      - name: Memory probe — start
-        run: |
-          nproc; free -m; swapon --show || true
-          ( while true; do echo "$(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print "used="$3" avail="$7} NR==3{print "swap="$3}' | tr '\n' ' ') top=$(ps -eo rss=,comm= --sort=-rss | head -3 | awk '{printf "%s:%dMB ", $2, $1/1024}')"; sleep 2; done ) > /tmp/mem.log 2>&1 &
       - name: Build
         if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'
         run: pnpm run build
-      - name: Memory probe — report
-        if: always()
-        run: |
-          echo "samples: $(wc -l < /tmp/mem.log)"
-          echo "== lowest available"; sort -n <(sed 's/.*avail=\([0-9]*\).*/\1 &/' /tmp/mem.log) | head -5
-          echo "== every 10th sample"; awk 'NR%10==1' /tmp/mem.log
-          echo "== kernel OOM"; sudo dmesg 2>/dev/null | grep -iE "out of memory|oom|killed process" | tail -10 || true
 
       # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
       # by inspection — right globs, matching files, green CI — and did nothing, because tracing
