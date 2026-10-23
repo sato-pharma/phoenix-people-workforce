@@ -1086,8 +1086,9 @@ function withoutPmBand() {
  * projections, at 226-348 ms a request (pg_stat_statements, 22-23 Oct 2026). Concurrent loads of the
  * same window now share one read too. The scope gate (getDoctorCoverageScope, isAgentInScope) still
  * runs on the rows for each viewer; a narrowed read (a scope of a few people) always reads live. No
- * money, deduction, approval or notification is decided from this board, so each of its three
- * company reads below says `reuseRecentWindow: true` in so many words.
+ * money, deduction, approval or notification is decided from this board, so each of its four
+ * company reads below (the Phoenix half's visits and check-ins ride on one option) says
+ * `reuseRecentWindow: true` in so many words.
  */
 
 export async function getKpisBoard(input: {
@@ -1322,6 +1323,7 @@ export async function getKpisBoard(input: {
           // Only the scope's reps when it is a few people, as the doctor-list half above reads —
           // and, like it, the Coverage tab keeps the company-wide read (crm/phoenix-kpi-data.ts).
           narrowToScope: !input.coverageDoctors,
+          reuseRecentWindow: true,
         })
       : null;
   if (phoenix) {
