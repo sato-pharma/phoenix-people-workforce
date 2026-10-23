@@ -2595,6 +2595,7 @@ import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
+import { runPhoenixKpiNarrowingTests } from "./phoenix-kpi-narrowing.test.ts";
 import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
@@ -10222,6 +10223,10 @@ await runTest(
 await runTest(
   "the KPIs board reads only its scope's reps and every figure is the company-wide one (a rep named only on plan rows, a first plan row with no hr id, a native rep, a reused CRM slot; small scopes only, anything doubtful reads company-wide)",
   runKpiBoardAgentsTests,
+);
+await runTest(
+  "the Phoenix KPI loader reads only its scope's reps and keeps every row, agent sibling and check-in the company-wide read credited to them (a vendor row placed by the contact list, a native rep, a legacy alias; anything doubtful reads company-wide)",
+  runPhoenixKpiNarrowingTests,
 );
 await runTest(
   "neither Copilot settlement writer retires a leave row it cannot replace (bridging exclusion refused by the old 4-branch CHECK retires nothing; a settlement never clears a system correction, another request's row, or HR's bridging exclusion; 'reject' is scoped to its own request)",

@@ -1301,6 +1301,9 @@ export async function getKpisBoard(input: {
           month: { start: `${input.month}-01`, end: range.monthEnd },
           today: input.todayIso,
           employees,
+          // Only the scope's reps when it is a few people, as the doctor-list half above reads —
+          // and, like it, the Coverage tab keeps the company-wide read (crm/phoenix-kpi-data.ts).
+          narrowToScope: !input.coverageDoctors,
         })
       : null;
   if (phoenix) {
