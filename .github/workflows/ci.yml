@@ -46,8 +46,8 @@ name: CI
 #   validate  the production Build and the Playwright login smoke against it (a PR builds only when
 #             scripts/ci-build-risk.mjs says its diff can change a build)
 #   static    the check:* contracts, the dependency audit, ESLint, the type gate, the tree-reuse dry run
-#   unit      the unit suite as 3 parallel jobs of 2 shards, every test in exactly one shard
-#   checks    the gate for static + unit: green only when both are literally `success` AND the three
+#   unit      the unit suite as 2 parallel jobs of 2 shards, every test in exactly one shard
+#   checks    the gate for static + unit: green only when both are literally `success` AND the parts'
 #             coverage records add up to every test the runner declares (scripts/ci-unit-coverage.mjs)
 #
 # `validate` and `checks` are still the two required check names. NOTHING IS SKIPPED: every step that
@@ -189,8 +189,8 @@ jobs:
   # request to GitHub Support), and a job past the cap QUEUES — it does not fail. A superseded pull
   # request run is cancelled by the `concurrency` block above, which hands its slots to the newest push.
   #
-  # THE JOBS ARE SHORT ON PURPOSE: GitHub bills and caps by job, so the unit suite is three jobs (not
-  # twelve) — the point where another job costs a whole minute of setup and buys under ten seconds.
+  # THE JOBS ARE SHORT ON PURPOSE: GitHub bills and caps by job, so the unit suite is two jobs (not
+  # twelve) — every job re-pays ~70 s of setup and rounds up to a whole billed minute.
 
   # validate — the production Build and the Playwright login smoke against that very artifact.
   #
@@ -730,13 +730,16 @@ jobs:
         continue-on-error: true
         run: echo "recorded"
 
-  # unit — the unit suite, as THREE jobs of TWO shards each (2026-10-19). One runner has two CPUs, so the
-  # old single-job run (`test:sharded`, two shards) cost 170-320 s on every event; six shards spread over
-  # three runners cost one setup (~45 s) plus about a sixth of the work each.
+  # unit — the unit suite, as TWO jobs of TWO shards each (three from 2026-10-19, two since 2026-10-23).
+  # One runner has two CPUs, so the old single-job run (`test:sharded`, two shards) cost 170-320 s on
+  # every event. Three jobs billed ~9.8 minutes a run, because each re-pays ~70 s of setup and rounds up
+  # to a whole minute; two bill ~7.4 and, with the slow tests dealt by estimated time
+  # (tests/shard-deal.ts) instead of round-robin, the slower job finishes sooner than three did (~190 s
+  # against ~220 s at the median), because the slowest test (the unknown-flag one, ~115 s, halved the same day) no longer stacks onto a full share.
   #
   # 🔴 EVERY TEST RUNS EXACTLY ONCE, AND THE PROOF IS THE POINT. Each part runs global shards
-  # `(part-1)*2+1 .. part*2` of `parts*2` (tests/run-tests.ts deals calls round-robin, so any total
-  # partitions the suite), checks its own shards locally and writes a record of what it ran. `checks`
+  # `(part-1)*2+1 .. part*2` of `parts*2` (every shard computes the same deal from the same file, so any
+  # total partitions the suite), checks its own shards locally and writes a record of what it ran. `checks`
   # downloads the records and REFUSES unless the parts are exactly 1..N of one total and their `ran`
   # counts add up to the `seen` count every shard reports (scripts/ci-unit-coverage.mjs). A leg that is
   # missing, a wrong divisor or a part handed the same index twice is then a named failure rather than a
@@ -753,7 +756,7 @@ jobs:
       # not cancel a second red one out of view.
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: [1, 2]
 
     steps:
       - name: Check out repository
@@ -797,7 +800,7 @@ jobs:
   # checks — the gate for `static` and `unit`. It does no checking of its own: it reports ONE required
   # status that is green only when both jobs it stands for finished with the word `success` (an
   # allow-list: `failure`, `cancelled`, `skipped` and anything unexpected all read red) and the unit
-  # suite's three coverage records add up to every test. It needs `always()`-style semantics — a job whose
+  # suite's coverage records (one per `unit` part) add up to every test. It needs `always()`-style semantics — a job whose
   # `needs` failed is SKIPPED by default, and a skipped job reports no status, which on a required check
   # blocks the PR for ever instead of failing it — but `!cancelled()`, not `always()`: a superseded
   # pull request run is cancelled on purpose, and must not spend a runner finishing a verdict nobody reads.

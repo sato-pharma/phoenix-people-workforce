@@ -105,10 +105,19 @@ export function refuseUnknownFlags(spec) {
   // flag, and POSIX says everything after it is positional, so it is never judged.
   const endOfOptions = argv.indexOf('--');
   const judged = endOfOptions === -1 ? argv : argv.slice(0, endOfOptions);
-  const unknown = judged.filter((a) => a.startsWith('-') && !known.includes(a.split('=')[0]));
+  const unknownOf = (args) => args.filter((a) => a.startsWith('-') && !known.includes(a.split('=')[0]));
+  const unknown = unknownOf(judged);
   if (unknown.length === 0) {
     if (probe) {
       console.log(`GATE-OK ${name}`);
+      // PHX_FLAG_GATE_PROBE_BOTH=1 (tests/unknown-flag-gates.test.ts only) also answers, in this SAME
+      // process, what the gate would say to one more flag nobody knows — through the same rule as a real
+      // call. The test then pays one import per script instead of two (2026-10-23: ~115 s, a quarter of
+      // the whole unit suite). The real exit-2 refusal is still run end to end, on the fixture.
+      if (process.env.PHX_FLAG_GATE_PROBE_BOTH === "1") {
+        const bogus = "--zzz-not-a-flag";
+        console.log(unknownOf([...judged, bogus]).includes(bogus) ? `GATE-REFUSES ${name} ${bogus}` : `GATE-ACCEPTS ${name} ${bogus}`);
+      }
       process.exit(0);
     }
     return;

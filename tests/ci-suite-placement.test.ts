@@ -3,8 +3,9 @@
 //
 // WHY THIS EXISTS. The suite has moved five times: out of `validate` into its own `test` job
 // (2026-09-17), into `checks` (09-27), back into `validate` (09-30), into BOTH split by event
-// (2026-10-06), and on 2026-10-19 into its own `unit` job — a matrix of three parts, so the suite's
-// ~5 minutes of serial work runs beside the build and the lint+typecheck instead of in front of them.
+// (2026-10-06), and on 2026-10-19 into its own `unit` job — a matrix of three parts (two since
+// 2026-10-23), so the suite's ~5 minutes of serial work runs beside the build and the lint+typecheck
+// instead of in front of them.
 // Each move was for wall clock and each was right at the time, but the class of mistake they share
 // cost a real incident: on 2026-09-17 the suite left a required check and the new job's name was not
 // added to branch protection, so for a day a PR whose tests were RED showed every required check
@@ -16,7 +17,7 @@
 // the whole chain, because a break anywhere in it is the same silent failure:
 //
 //   * the suite step exists in `unit`, runs on every event (no `if:`), and is the sharded runner in
-//     PART mode — three parts of two shards — so the coverage record the gate needs is written;
+//     PART mode — two parts of two shards — so the coverage record the gate needs is written;
 //   * the suite is in NO other job, so it never runs twice on an event;
 //   * `checks` needs `unit` (and `static`), is not skipped when they fail, and demands `success`;
 //   * `checks` runs the coverage gate over the parts' records, so a leg that never ran, or ran twice,
@@ -101,7 +102,10 @@ export function runCiSuitePlacementTests() {
   assert.match(test ?? "", /PHX_TEST_PART: \$\{\{ matrix\.part \}\}\/\$\{\{ strategy\.job-total \}\}/, "the Test step must run in PART mode over the whole matrix");
   assert.match(test ?? "", /PHX_TEST_SHARDS: "\d+"/, "part mode needs an explicit shards-per-part, identical in every part");
   assert.match(test ?? "", /PHX_TEST_RESULT_FILE: .*unit-coverage-\$\{\{ matrix\.part \}\}\.json/, "each part must write its own coverage record");
-  assert.match(unit, /part: \[1, 2, 3\]/, "the matrix must name exactly the parts the runner is told about");
+  // Two parts, not three (2026-10-23): each job re-pays ~70 s of setup and rounds up to a whole billed
+  // minute, and with the slow tests dealt by time (tests/shard-deal.ts) two finish sooner than three did.
+  // The count is a cost decision, so it is pinned here rather than left to drift.
+  assert.match(unit, /part: \[1, 2\]\n/, "the matrix must be exactly two parts — a third job costs ~1.6 billed minutes a run and buys no speed");
   assert.match(unit, /fail-fast: false/, "one red part must not cancel a second red one out of view");
   assert.match(unit, /name: unit-coverage-\$\{\{ matrix\.part \}\}/, "each part must upload its coverage record for `checks`");
 

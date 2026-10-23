@@ -21,7 +21,9 @@ pnpm run test:sharded   # the same suite, CPU/memory-bounded shards; CI and remo
 This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 24+ — the repo's `engines.node` floor).
 
 `test:sharded` (`scripts/run-tests-sharded.mjs`) runs that same runner once per CPU with
-`PHX_TEST_SHARD=<i>/<n>`, which makes `runTest` execute every nth call. Measured 2026-10-06 on 2
+`PHX_TEST_SHARD=<i>/<n>`, which makes `runTest` execute only the calls `tests/shard-deal.ts` deals to
+shard i — the known slow tests placed first, the rest on the least-loaded shard (plain round-robin
+until 2026-10-23, which left the ~115 s unknown-flag test's shard ~80 s behind the others). Measured 2026-10-06 on 2
 vCPU: serial 213s, two shards 129s. 🔴 **Its point is the REFUSAL, not the speed** — each shard
 prints `PHX_SHARD_RESULT shard=i/n seen=S ran=R` from an exit handler, and the parent fails unless
 every shard reported, all saw the same S, and the R's sum to it. Without that, a bad divisor or a
@@ -116,8 +118,8 @@ rather than gates.
 |---|---|---|
 | `validate` | ci.yml | The production **build** and the Playwright **login smoke test**. On a pull request the build runs only when `scripts/ci-build-risk.mjs` says the diff can change one; on every OTHER event it always runs. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). Since 2026-10-19 it no longer carries the structural checks or the suite: they moved to `static` and `unit` so they run beside the build, not in front of it. |
 | `static` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, ESLint, `next typegen`, the type gate and the tree-reuse dry run — in parallel with `validate` and `unit`. Not a required name: `checks` gates on it. |
-| `unit` | ci.yml | The **unit/integration suite**, as a matrix of three parallel jobs of two shards each, on every event. Each leg writes a coverage record. 🔴 **So a NEW pinned test belongs in this suite; which job runs it is ci.yml's business, not yours.** Not a required name: `checks` gates on it. |
-| `checks` | ci.yml | **The gate over `static` and `unit`** — green only when both are literally `success` AND the three `unit-coverage-N` records add up to every test the runner declares (`scripts/ci-unit-coverage.mjs`). It runs even when a job it needs failed, so a red leg is reported rather than hidden behind a skipped gate. 🔴 **`lint`, `typecheck` and `test` were separate jobs until 2026-09-27 (#4527)** and those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
+| `unit` | ci.yml | The **unit/integration suite**, as a matrix of two parallel jobs of two shards each (three until 2026-10-23), on every event. Each leg writes a coverage record. 🔴 **So a NEW pinned test belongs in this suite; which job runs it is ci.yml's business, not yours.** Not a required name: `checks` gates on it. |
+| `checks` | ci.yml | **The gate over `static` and `unit`** — green only when both are literally `success` AND the `unit-coverage-N` records (one per part) add up to every test the runner declares (`scripts/ci-unit-coverage.mjs`). It runs even when a job it needs failed, so a red leg is reported rather than hidden behind a skipped gate. 🔴 **`lint`, `typecheck` and `test` were separate jobs until 2026-09-27 (#4527)** and those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
 **Not required, and not on a pull request either — corrected 2026-09-30.** The two rows below used to
 sit in the table above as required checks. Both were demoted on 2026-09-29 and taken off
 `pull_request` in the same change, so neither reports on a PR at all:
@@ -488,7 +490,7 @@ both versions enumerated the states that mean *wait*, and there was always one m
 **The third shape, found in `scripts/wait-pr.mjs` on 2026-10-20 (#6194, head `e580286fe`).** The
 script allow-listed nothing at all on the NAMES: it filtered `gh pr checks` down to the required
 names *that had a row*, then called the gate green when none of those rows was pending. The required
-`checks` job only starts after `static` and the three `unit` jobs finish, so for most of a run it has
+`checks` job only starts after `static` and the `unit` jobs finish, so for most of a run it has
 **no row**, and the script printed `GREEN on e580286fe: validate=pass` and exited 0 with `static` still
 running and `mergeStateStatus` BLOCKED — a session merging on that notification would have merged
 unverified code. A required context that is not in the listing is an unfinished check, so

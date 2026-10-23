@@ -183,8 +183,9 @@ export function parsePart(raw) {
  * The slice of the GLOBAL shard space part `part` of `parts` owns when each part runs `local`
  * shards: the total is `parts × local`, and this part owns `(part-1)×local+1 .. part×local`.
  *
- * tests/run-tests.ts deals its `runTest` calls round-robin (`seenCount++ % total === index-1`), so
- * ANY total partitions the suite and these windows tile it exactly, with no gap and no overlap.
+ * tests/run-tests.ts deals each `runTest` call to exactly one of `total` shards (tests/shard-deal.ts,
+ * the same answer in every process), so ANY total partitions the suite and these windows tile it
+ * exactly, with no gap and no overlap.
  */
 export function partWindow(part, parts, local) {
   return { total: parts * local, first: (part - 1) * local + 1, count: local };

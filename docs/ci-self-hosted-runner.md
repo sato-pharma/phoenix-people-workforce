@@ -8,8 +8,8 @@
 > | --- | --- | --- |
 > | `validate` (required name) | the production build and the Playwright login smoke | nothing |
 > | `static` | the `check:*` contracts, `pnpm audit`, ESLint, `next typegen`, the type gate, the tree-reuse dry run | nothing |
-> | `unit` | the unit suite, 3 parallel jobs of 2 shards each, every test in exactly one shard | nothing |
-> | `checks` (required name) | the gate: green only when `static` and `unit` are `success` and the three coverage records add up to every test the runner declares | `static`, `unit` |
+> | `unit` | the unit suite, 2 parallel jobs of 2 shards each (3 until 2026-10-23), every test in exactly one shard | nothing |
+> | `checks` (required name) | the gate: green only when `static` and `unit` are `success` and the parts' coverage records add up to every test the runner declares | `static`, `unit` |
 > | `mobile`, `full-e2e` | unchanged | nothing |
 >
 > Nothing is skipped: every step that ran before still runs, on the same events, in exactly one of these jobs. The wall clock is now the slowest single job instead of the sum of the steps that used to share one. Several PRs run side by side with no queue of ours — the only ceiling is GitHub's concurrent-job cap for the plan (Free 20, Pro 40, Team 60, Enterprise 500).
