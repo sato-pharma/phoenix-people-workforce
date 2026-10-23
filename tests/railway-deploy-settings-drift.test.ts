@@ -13,6 +13,36 @@ import { resolve } from "node:path";
 
 import { compareDeploySettings, parseAuthoringFile } from "../scripts/check-railway-deploy-settings.mjs";
 
+/** What parseAuthoringFile returns — the script is plain JavaScript, so the shape is stated here. */
+type Declared = {
+  services: Record<
+    string,
+    {
+      healthcheckPath?: string;
+      healthcheckTimeout?: number;
+      restartPolicyType?: string;
+      restartPolicyMaxRetries?: number;
+      mounts: Array<{ path: string; volume: string }>;
+    }
+  >;
+  volumes: string[];
+};
+
+/** What readLiveSettings returns for one environment. */
+type Live = {
+  services: Record<
+    string,
+    {
+      id: string;
+      healthcheckPath: string | null;
+      healthcheckTimeout: number | null;
+      restartPolicyType: string | null;
+      restartPolicyMaxRetries: number | null;
+    }
+  >;
+  volumes: Array<{ name: string; mountPath: string | null; serviceId: string | null }>;
+};
+
 const FILE = `
 import { defineRailway, volume, service } from "railway/iac";
 export default defineRailway(() => {
@@ -33,7 +63,7 @@ export default defineRailway(() => {
 });
 `;
 
-function liveMatching() {
+function liveMatching(): Live {
   return {
     services: {
       app: { id: "s-app", healthcheckPath: "/api/readyz", healthcheckTimeout: 900, restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
@@ -44,7 +74,7 @@ function liveMatching() {
 }
 
 export function runRailwayDeploySettingsDriftTests() {
-  const declared = parseAuthoringFile(FILE);
+  const declared = parseAuthoringFile(FILE) as Declared;
 
   // The parser reads what the file states, and nothing out of its comments.
   assert.deepEqual(Object.keys(declared.services), ["app", "tablets"]);
@@ -94,7 +124,7 @@ export function runRailwayDeploySettingsDriftTests() {
 
   // The real authoring file: every service and every volume must be read out of it, or the scheduled
   // check would compare nothing and report OK.
-  const real = parseAuthoringFile(readFileSync(resolve(".railway/railway.ts"), "utf8"));
+  const real = parseAuthoringFile(readFileSync(resolve(".railway/railway.ts"), "utf8")) as Declared;
   const names = Object.keys(real.services);
   for (const name of ["phoenix-people-workforce", "phoenix-workforce-worker", "phoenix-headwind", "phoenix-cron", "headwind-db-eu"]) {
     assert.ok(names.includes(name), `the parser did not read ${name} out of .railway/railway.ts, so it would go unchecked`);
