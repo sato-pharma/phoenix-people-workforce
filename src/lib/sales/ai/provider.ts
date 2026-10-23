@@ -18,7 +18,14 @@
 
 import { callAnthropicMessages, AnthropicRequestError, hasAnthropicApiKey, resolveAnthropicModel } from "@/lib/ai/anthropic-fallback";
 import { isOpenAiUnavailable, noteOpenAiAvailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
-import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
+import {
+  aiErrorCodeForResponse,
+  isQuotaExhaustedBody,
+  recordAiCall,
+  type AiCallComponent,
+  type AiCallProvider,
+  type AiCallRecord,
+} from "@/lib/observability/ai-metrics";
 
 type AiEnv = Record<string, string | undefined>;
 
@@ -46,6 +53,28 @@ export function resolveAiProvider(models: AiModelDefaults = DEFAULT_AI_MODELS, e
 
 // One provider the call may go to: an OpenAI-compatible chat endpoint, or Anthropic's Messages API.
 export type SalesAiLeg = { kind: "anthropic"; model: string } | { kind: "chat"; provider: AiProvider };
+
+/** The account a planned leg is billed to — the name a failed-over row gives its rescuer. */
+export function salesAiLegProvider(leg: SalesAiLeg): AiCallProvider {
+  return leg.kind === "anthropic" ? "anthropic" : leg.provider.name;
+}
+
+/**
+ * What the failover loop tells each leg about what follows it. `failoverTo` is the next planned account, or
+ * undefined on the last leg — the leg uses it to report a rescued failure as `failed_over` rather than as an
+ * AI failure (see `legOutcome` and the account in ai-metrics.ts).
+ */
+export type SalesAiLegContext = { failoverTo?: AiCallProvider };
+
+/** The outcome fields `recordAiCall` takes for a failed sales leg. A rescued one is never `error`. */
+export function salesLegOutcome(
+  code: SalesAiFailureCode,
+  failoverTo: AiCallProvider | undefined,
+): Pick<AiCallRecord, "failedOverTo" | "status"> {
+  return failoverTo && shouldFailOverToNextProvider(code)
+    ? { failedOverTo: failoverTo, status: "failed_over" }
+    : { status: "error" };
+}
 
 /**
  * The providers to try, in order. `models` is the calling path's own default tier: Anthropic's model is
@@ -115,7 +144,7 @@ export function salesAiFailureCodeFor(status: number, rawBody: string): SalesAiF
  * gave it and is thrown as it was. Throws not_configured when no provider is configured at all.
  */
 export async function runWithSalesAiFailover<T>(
-  attempt: (leg: SalesAiLeg) => Promise<T>,
+  attempt: (leg: SalesAiLeg, context: SalesAiLegContext) => Promise<T>,
   models: AiModelDefaults = DEFAULT_AI_MODELS,
 ): Promise<T> {
   const plan = planSalesAi(models);
@@ -123,7 +152,8 @@ export async function runWithSalesAiFailover<T>(
 
   for (const [index, leg] of plan.entries()) {
     try {
-      const result = await attempt(leg);
+      const next = plan[index + 1];
+      const result = await attempt(leg, { failoverTo: next ? salesAiLegProvider(next) : undefined });
       // OpenAI answered, so its account is alive: the shared wait starts from ten minutes again.
       if (leg.kind === "chat" && leg.provider.name === "openai") noteOpenAiAvailable();
       return result;
@@ -148,6 +178,8 @@ export async function runWithSalesAiFailover<T>(
  */
 export async function anthropicJson(params: {
   component: AiCallComponent;
+  /** The account asked after this one, when there is one — `SalesAiLegContext.failoverTo`. */
+  failoverTo?: AiCallProvider;
   maxRetries?: number;
   maxTokens: number;
   model: string;
@@ -188,7 +220,7 @@ export async function anthropicJson(params: {
       model: params.model,
       provider: "anthropic",
       purpose: params.purpose,
-      status: "error",
+      ...salesLegOutcome(code, params.failoverTo),
     });
     throw new SalesAiError(code, failure ? failure.message : "The Anthropic request failed.", failure?.status);
   }
@@ -206,9 +238,9 @@ export async function aiChatJson(
   const timeoutMs = opts?.timeoutMs ?? 45_000;
   const maxTokens = opts?.maxTokens ?? 1500;
 
-  return runWithSalesAiFailover(async (leg) => {
+  return runWithSalesAiFailover(async (leg, { failoverTo }) => {
     if (leg.kind === "anthropic") {
-      const reply = await anthropicJson({ component: "sales_ai_provider", maxTokens, model: leg.model, purpose, system, timeoutMs, user });
+      const reply = await anthropicJson({ component: "sales_ai_provider", failoverTo, maxTokens, model: leg.model, purpose, system, timeoutMs, user });
       return reply.text;
     }
 
@@ -268,7 +300,7 @@ export async function aiChatJson(
         model: provider.model,
         provider: provider.name,
         purpose,
-        status: "error",
+        ...salesLegOutcome(error instanceof SalesAiError ? error.code : "failed", failoverTo),
       });
       throw error;
     }

@@ -46,7 +46,17 @@ export type AiCallComponent =
   | "sales_normalizer_ai_suggest"
   | "sales_weekly_ai_verify";
 
-export type AiCallStatus = "success" | "error";
+/**
+ * What became of one LEG of a call — not of the call.
+ *
+ * 🔴 `failed_over` IS THE LEG A LATER PROVIDER RESCUED, AND IT IS NOT AN AI FAILURE. Since the Anthropic
+ * failover (2026-10-18) a dead OpenAI account refuses the first leg of every call and Claude answers the
+ * same call a second later, and both legs recorded `error` — so on 23 Oct 2026 the board carried 21
+ * "AI call failed — Shared OpenAI client: account out of credit" rows for 58 CV reads Claude had answered
+ * in full, and they were read as dead extractions. A leg the next provider is about to be asked for is
+ * reported as `failed_over`; only the leg nothing follows is a failure.
+ */
+export type AiCallStatus = "success" | "error" | "failed_over";
 
 /**
  * The ACCOUNT a call was billed to, which is what the out-of-credit alarm names and where its credit is added.
@@ -69,7 +79,26 @@ export type AiCallRecord = {
   errorCode?: string;
   inputTokens?: number;
   outputTokens?: number;
+  /** The account asked next, on a `failed_over` leg — so the row says who rescued it, by name. */
+  failedOverTo?: AiCallProvider;
 };
+
+/**
+ * The account's name as anything a human reads says it. Lives in this light module because it is the one
+ * every AI path already imports; `aiQuotaProviderLabel` in the alarm delegates here rather than keeping a
+ * second copy (owner rule: human-readable names, never raw codes).
+ */
+const PROVIDER_LABELS: Record<AiCallProvider, string> = {
+  anthropic: "Anthropic",
+  generic: "The AI provider",
+  groq: "Groq",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+};
+
+export function aiProviderLabel(provider: AiCallProvider): string {
+  return PROVIDER_LABELS[provider] ?? PROVIDER_LABELS.generic;
+}
 
 // Owner rule: human-readable names, never raw codes. These reach a screen someone triages from.
 const COMPONENT_LABELS: Record<AiCallComponent, string> = {
@@ -99,7 +128,9 @@ const lastReportedAt = new Map<string, number>();
 
 export function failureThrottleKey(record: AiCallRecord): string {
   // The account too: a dead Claude account must not hide behind a dead OpenAI one on the same feature.
-  return `${record.provider}|${record.component}|${record.purpose}|${record.errorCode ?? ""}`;
+  // And the outcome, or the hourly rescued leg would suppress the real failure of the same feature,
+  // account and code for five minutes — the one row that needed to be read.
+  return `${record.status}|${record.provider}|${record.component}|${record.purpose}|${record.errorCode ?? ""}`;
 }
 
 /**
@@ -153,9 +184,14 @@ export function aiErrorCodeForResponse(status: number, rawBody: string): string 
   return status === 429 && isQuotaExhaustedBody(rawBody) ? AI_QUOTA_EXHAUSTED_CODE : String(status);
 }
 
-/** Whether this call means the AI account is out of credit — the case that pages a human. */
+/**
+ * Whether this call means the AI account is out of credit — the case that pages a human.
+ *
+ * A rescued leg still pages: the user got their answer from the other provider, but the account is just as
+ * empty and only a top-up ends it. That is why this asks "not a success" rather than "an error".
+ */
 export function isQuotaExhaustedRecord(record: AiCallRecord): boolean {
-  return record.status === "error" && record.errorCode === AI_QUOTA_EXHAUSTED_CODE;
+  return record.status !== "success" && record.errorCode === AI_QUOTA_EXHAUSTED_CODE;
 }
 
 function describeCode(errorCode: string | undefined): string {
@@ -171,19 +207,27 @@ function describeCode(errorCode: string | undefined): string {
  * suite runs with production credentials (AGENTS.md §2.1), so a test must never reach the writer.
  */
 export function buildAiFailureEvent(record: AiCallRecord): Parameters<typeof logAppError>[0] | null {
-  if (record.status !== "error") return null;
+  if (record.status === "success") return null;
 
   const label = COMPONENT_LABELS[record.component] ?? record.component;
+  const rescued = record.status === "failed_over";
   return {
     // Grouped under one module so an outage that takes every AI feature down at once reads as one
     // story, while the pseudo-route below keeps each feature its own signature (signatureKey is
     // `module_key|route`).
     moduleKey: "ai",
     moduleLabel: "AI",
-    route: `/ai/${record.component}/${record.purpose}`,
-    routeType: "server-ai",
+    // A rescued leg gets its OWN signature, never the feature's failure signature: on the board the two
+    // must never group together, or an hourly by-design failover and a real outage of the same feature
+    // read as one story again — the mistake this whole status exists to end.
+    route: rescued ? `/ai/${record.component}/${record.purpose}/failed-over` : `/ai/${record.component}/${record.purpose}`,
+    routeType: rescued ? "server-ai-failover" : "server-ai",
     source: "server",
-    message: `AI call failed — ${label}: ${describeCode(record.errorCode)} (model ${record.model}, ${record.latencyMs}ms)`,
+    message: rescued
+      // Never "the call was answered": this row is written when the next account is ASKED, and if that
+      // one fails too it writes its own failure row. This says what is known at this moment and no more.
+      ? `AI call failed over to ${aiProviderLabel(record.failedOverTo ?? "generic")} — ${label}: ${aiProviderLabel(record.provider)} said ${describeCode(record.errorCode)} (model ${record.model}, ${record.latencyMs}ms), so the same call went to ${aiProviderLabel(record.failedOverTo ?? "generic")}.`
+      : `AI call failed — ${label}: ${describeCode(record.errorCode)} (model ${record.model}, ${record.latencyMs}ms)`,
     // No stack: these are upstream HTTP failures, and the useful diagnosis is the code plus which
     // feature it came from, both already above. Never the response body — on a 401 OpenAI echoes
     // a fragment of the key back.

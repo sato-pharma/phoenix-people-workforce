@@ -20,10 +20,11 @@ import {
   hasAiProvider,
   runWithSalesAiFailover,
   salesAiFailureCodeFor,
+  salesLegOutcome,
   SalesAiError,
   type AiProvider,
 } from "@/lib/sales/ai/provider";
-import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall } from "@/lib/observability/ai-metrics";
+import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall, type AiCallProvider } from "@/lib/observability/ai-metrics";
 
 export type AiCandidate = { code: string; label: string };
 // rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
@@ -159,17 +160,27 @@ async function generate(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandi
   const system = systemPrompt(kind);
   const user = userPrompt(unknowns, candidates, kind, referenceAliases);
   return runWithSalesAiFailover(
-    (leg) => (leg.kind === "anthropic" ? askClaude(leg.model, kind, system, user) : askChatProvider(leg.provider, kind, system, user)),
+    (leg, { failoverTo }) =>
+      leg.kind === "anthropic"
+        ? askClaude(leg.model, kind, system, user, failoverTo)
+        : askChatProvider(leg.provider, kind, system, user, failoverTo),
     SUGGEST_MODELS,
   );
 }
 
 // One batch of up to 60 rows: ~1.5k tokens of answer, so 4k is headroom, and a generous timeout because
 // the chat leg has none of its own.
-async function askClaude(model: string, kind: AiKind, system: string, user: string): Promise<string> {
+async function askClaude(
+  model: string,
+  kind: AiKind,
+  system: string,
+  user: string,
+  failoverTo?: AiCallProvider,
+): Promise<string> {
   try {
     const reply = await anthropicJson({
       component: "sales_normalizer_ai_suggest",
+      failoverTo,
       maxRetries: MAX_RATE_LIMIT_RETRIES,
       maxTokens: 4_000,
       model,
@@ -189,7 +200,13 @@ async function askClaude(model: string, kind: AiKind, system: string, user: stri
 }
 
 // One chat-completions call against the OpenAI-compatible provider.
-async function askChatProvider(provider: AiProvider, kind: AiKind, system: string, user: string): Promise<string> {
+async function askChatProvider(
+  provider: AiProvider,
+  kind: AiKind,
+  system: string,
+  user: string,
+  failoverTo?: AiCallProvider,
+): Promise<string> {
   const body_ = JSON.stringify({
     messages: [
       { content: system, role: "system" },
@@ -252,7 +269,7 @@ async function askChatProvider(provider: AiProvider, kind: AiKind, system: strin
       model: provider.model,
       provider: provider.name,
       purpose: `ai_suggest_${kind}`,
-      status: "error",
+      ...salesLegOutcome(error instanceof SalesAiError ? error.code : "failed", failoverTo),
     });
     throw error;
   }

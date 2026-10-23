@@ -602,6 +602,23 @@ page twice. Anthropic's workspace spend limit answers HTTP 400 ("You have reache
 limits"), not 429: `anthropicErrorCodeFor` reads it as `quota_exceeded`, so it fails over and pages like
 an empty balance, and the Anthropic alarm says to add credit or raise the spend limit.
 
+**A leg the next account is asked to cover is reported as failed over, not as an AI failure (owner,
+23 Oct 2026).** Until then every leg recorded `status: "error"`, so a dead OpenAI account wrote both halves
+of a healthy call to the error board: 520 `openai_request_failed` rows in the seven days to 23 Oct — the
+deliberate hourly re-test that lets a top-up be noticed with no deploy — and 21 "AI call failed — Shared
+OpenAI client: account out of credit" rows against CV extraction. They read as an outage. They were not:
+`ats_candidate_cv_extractions` shows all 58 AI-read CVs from 18 Oct to 22 Oct answered by
+`claude-haiku-5-5+rules` and `claude-sonnet-5-5+rules`, and OpenAI reading none since 18 Oct 00:50, so a
+session asked to fix dead CV extraction found nothing to fix. `AiCallStatus` now has a third member,
+`failed_over`, set by `legOutcome` (shared client) and `salesLegOutcome` (the three sales paths) only when
+there IS a next account AND `shouldFailOverToNextProvider` says the code moves to it — a timeout or a rate
+limit stays a failure with the account that gave it. Such a leg writes its row under its own route
+(`/ai/<component>/<purpose>/failed-over`) and its own log event (`openai_failed_over`,
+`anthropic_failed_over`), so a by-design failover can never group with a real outage of the same feature;
+it still pages the out-of-credit alarm, because the account is just as empty and only a top-up ends it; and
+`failureThrottleKey` carries the status so the hourly rescued leg cannot suppress the real failure for five
+minutes. Pinned by `tests/ai-failure-visibility.test.ts` and `tests/ai-provider-failover.test.ts`.
+
 ### Feature flags
 | Secret | Purpose |
 |---|---|
