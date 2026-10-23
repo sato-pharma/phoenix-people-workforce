@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { isSupabasePasswordRefusal } from "../src/lib/auth/supabase-bridge-repair.ts";
 import { clientSafeErrorMessage } from "../src/lib/http/api-errors.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -104,5 +105,47 @@ export function runLoginBridgeRepairLogsOnlyWhenItFailsTests() {
   assert.ok(
     source.includes("Failed to repair Supabase auth bridge."),
     "a repair that throws must stay reported",
+  );
+
+  // ── half three: a password GoTrue calls weak is not a bridge failure ──────
+  //
+  // The same repair that stopped logging a recovered sign-in started logging the repair itself.
+  // `provisionSupabaseAuthIdentity` resets the Supabase-side password through `updateUserById`,
+  // and GoTrue refuses a password its own strength policy rejects — AuthWeakPasswordError. The
+  // person is already authenticated by Phoenix and is signed in regardless; the refusal simply
+  // repeats on every login until the password changes. Measured on production 2026-10-23: three
+  // "Failed to repair Supabase auth bridge." rows at 15:50:35, 15:50:45 and 15:51:03 Cairo, all
+  // three the SAME Medical Representative (PD-0004, Aya Mohamed Abdelhamid Abdullah), and all
+  // three logins recorded success. Left alone it is an error row per login, for ever.
+  for (const weak of [
+    Object.assign(new Error("Password is known to be weak and easy to guess, please choose a different one."), {
+      name: "AuthWeakPasswordError",
+    }),
+    Object.assign(new Error("something else entirely"), { code: "weak_password" }),
+    new Error("Password is too weak"),
+  ]) {
+    assert.equal(
+      isSupabasePasswordRefusal(weak),
+      true,
+      "the refusal must be recognised by GoTrue's error NAME, by its `weak_password` code and by its wording — supabase-js sets the name, the REST layer sets the code, and a version that drops both still says it in the message",
+    );
+  }
+
+  assert.equal(
+    isSupabasePasswordRefusal(error),
+    false,
+    "a plain AuthApiError must NOT read as a weak password — this classifier decides what goes unreported, so a loose match would silence real bridge failures",
+  );
+
+  const flatSource = source.replace(/\s+/g, " ");
+  assert.ok(
+    /supabaseBridgeWarning = isSupabasePasswordRefusal\(repairError\) \? "Supabase auth bridge not repaired: Supabase refuses this account's password as too weak\./.test(
+      flatSource,
+    ),
+    "the weak-password branch must render a PLAIN LITERAL: clientSafeErrorMessage logs as a side effect, so routing this one through it is what wrote an app_error_events row for every successful login",
+  );
+  assert.ok(
+    /: clientSafeErrorMessage\(repairError, "Failed to repair Supabase auth bridge\."\)/.test(flatSource),
+    "and every OTHER repair failure must keep reporting through clientSafeErrorMessage — that one really is the bridge being broken",
   );
 }

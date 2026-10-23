@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { MODULE_META } from "@/lib/admin/data-backup";
-import { RESET_GROUPS, type ResetScope, type ResetTableResult } from "@/lib/admin/data-reset";
+import { RESET_GROUPS, type ResetKeptNote, type ResetScope, type ResetTableResult } from "@/lib/admin/data-reset";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,15 @@ type ResetState =
   | { status: "idle" }
   | { status: "confirming"; scope: ResetScope }
   | { status: "loading"; scope: ResetScope }
-  | { status: "done"; scope: ResetScope; tables: ResetTableResult[]; totalDeleted: number }
+  | {
+      status: "done";
+      scope: ResetScope;
+      tables: ResetTableResult[];
+      totalDeleted: number;
+      kept: ResetKeptNote[];
+      remaining: number;
+      completed: boolean;
+    }
   | { status: "error"; message: string };
 
 export function DataBackupResetSection() {
@@ -39,7 +47,17 @@ export function DataBackupResetSection() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scope, confirmation: confirmText }),
       });
-      const json = (await res.json()) as { ok?: boolean; result?: { tables: ResetTableResult[]; totalDeleted: number }; message?: string };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        result?: {
+          tables: ResetTableResult[];
+          totalDeleted: number;
+          kept?: ResetKeptNote[];
+          remaining?: number;
+          completed?: boolean;
+        };
+        message?: string;
+      };
       if (!res.ok || !json.ok) {
         setState({ status: "error", message: json.message ?? "Reset failed." });
         return;
@@ -49,6 +67,9 @@ export function DataBackupResetSection() {
         scope,
         tables: json.result?.tables ?? [],
         totalDeleted: json.result?.totalDeleted ?? 0,
+        kept: json.result?.kept ?? [],
+        remaining: json.result?.remaining ?? 0,
+        completed: json.result?.completed ?? true,
       });
       setConfirmText("");
     } catch (err) {
@@ -96,6 +117,11 @@ export function DataBackupResetSection() {
                   <p key={g.label} className="mt-1 text-xs text-slate-500">{g.description}</p>
                 ))}
                 <p className="mt-2 text-xs font-medium text-red-600">{tableCount} tables will be wiped</p>
+                {groups.flatMap((g) => g.kept).map((note) => (
+                  <p key={note} className="mt-2 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700">Kept:</span> {note}
+                  </p>
+                ))}
               </div>
 
               <div className="p-4">
@@ -153,6 +179,11 @@ export function DataBackupResetSection() {
           Wipes Source of Sales, Weekly Sales, and Marketing Requests uploaded data in one operation.
           {" "}{RESET_GROUPS.flatMap((g) => g.tables).length} tables total.
         </p>
+        {RESET_GROUPS.flatMap((g) => g.kept).map((note) => (
+          <p key={note} className="mb-3 text-xs text-slate-600">
+            <span className="font-semibold text-slate-700">Kept:</span> {note}
+          </p>
+        ))}
         {confirmingScope !== "all" ? (
           <button
             className="border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -200,7 +231,9 @@ export function DataBackupResetSection() {
       {state.status === "done" && (
         <div className="border border-green-300 bg-green-50 p-4">
           <p className="mb-2 text-sm font-semibold text-green-800">
-            Reset complete — {state.totalDeleted.toLocaleString()} rows deleted across {state.tables.length} tables
+            {state.completed
+              ? `Reset complete — ${state.totalDeleted.toLocaleString()} rows deleted across ${state.tables.length} tables`
+              : `Reset stopped early — ${state.totalDeleted.toLocaleString()} rows deleted across ${state.tables.length} tables, ${state.remaining.toLocaleString()} batches still to go. Run it again to finish.`}
           </p>
           <div className="space-y-0.5">
             {state.tables.map((t) => (
@@ -209,6 +242,20 @@ export function DataBackupResetSection() {
               </p>
             ))}
           </div>
+          {state.kept.length > 0 && (
+            <div className="mt-3 space-y-1 border-t border-green-200 pt-3">
+              <p className="text-xs font-semibold text-slate-700">Kept on purpose</p>
+              {state.kept.map((note) => (
+                <p key={note.table} className="text-xs text-slate-600">
+                  <span className="font-mono">{note.table}</span>
+                  {typeof note.batches === "number" ? ` — ${note.batches.toLocaleString()} batches` : ""}
+                  {typeof note.rows === "number" ? ` (${note.rows.toLocaleString()} rows)` : ""}
+                  {" — "}
+                  {note.reason}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

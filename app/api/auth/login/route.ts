@@ -25,7 +25,7 @@ import {
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
 } from "@/lib/auth/session";
-import { shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
+import { isSupabasePasswordRefusal, shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
 import {
   createSupabaseAuthSession,
   persistSupabaseAuthIdentityLink,
@@ -430,8 +430,15 @@ export async function POST(request: Request) {
             supabaseBridgeWarning = retryMessage;
           }
         } catch (repairError) {
-          supabaseBridgeWarning =
-            clientSafeErrorMessage(repairError, "Failed to repair Supabase auth bridge.");
+          // A password GoTrue refuses as weak is not a bridge failure: Phoenix has already
+          // authenticated this person, they are signed in, and the refusal repeats on every login
+          // until the password changes. Reporting it through clientSafeErrorMessage writes an
+          // app_error_events row per successful login — three for one Medical Representative in 28
+          // seconds on 23 Oct 2026 — so this branch renders a plain literal, which reports nothing.
+          // Every OTHER repair failure stays reported: that one really is the bridge.
+          supabaseBridgeWarning = isSupabasePasswordRefusal(repairError)
+            ? "Supabase auth bridge not repaired: Supabase refuses this account's password as too weak. Continuing with Phoenix session only."
+            : clientSafeErrorMessage(repairError, "Failed to repair Supabase auth bridge.");
         }
       }
     } // end if (!skipBridge)

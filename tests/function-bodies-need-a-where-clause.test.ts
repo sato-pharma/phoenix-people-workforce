@@ -28,12 +28,12 @@ const MIGRATIONS_DIR = join(import.meta.dirname ?? ".", "..", "supabase", "migra
  * safe, not merely a wish that it were.
  */
 const ALLOWED: Record<string, string> = {
-  // Nineteen unqualified deletes, called over PostgREST from src/lib/admin/data-reset.ts, so the
-  // admin module reset is dead on this very error. It FAILS CLOSED on a wholesale delete of the
-  // sales and marketing tables, which is the safer state to leave it in; re-arming a destructive
-  // path is the owner's call, not a side effect of an incident fix (2026-10-23).
-  "public.phx_admin_reset_module_data":
-    "fails closed on a destructive wholesale delete — re-arming it is the owner's call",
+  // `public.phx_admin_reset_module_data` was allow-listed here on 2026-10-23 because it failed
+  // closed on a wholesale delete and re-arming a destructive path was the owner's call, not a side
+  // effect of an incident fix. He made that call the same day — "fix the admin Reset module data
+  // deletes" — so the function was rewritten to delete one batch at a time with a WHERE clause on
+  // every statement, and the entry is gone. This test now enforces that repair instead of excusing
+  // its absence. `tests/admin-reset-module-data.test.ts` pins the rest of the shape.
   // Hand-run backfill, never called from the app, and a direct SQL session does not preload
   // safeupdate.
   "public.phx_backfill_sos_customer_directory_rollup":
