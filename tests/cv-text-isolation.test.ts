@@ -116,4 +116,29 @@ export async function runCvTextIsolationTests() {
   const entry = extraction.slice(extraction.indexOf("export async function extractRawTextFromFile("));
   assert.match(entry.slice(0, 1_200), /return await extractCvTextIsolated\(bytes, isolatedKind, \(\) => extractRawTextInProcess\(bytes, mimeType, fileName\)\);/);
   assert.match(entry.slice(0, 1_200), /if \(error instanceof CvParseLimitError\) throw new CvExtractionError\("unsupported_file", error\.message\);/);
+
+  // 🔴 EVERY LIBRARY THE THREAD require()s MUST BE A NEXT SERVER-EXTERNAL PACKAGE (audit follow-up, 2026-10-23).
+  // The thread loads its library by name from node_modules at run time. Next's production file tracing keeps a
+  // package on disk for that only when it is external; a package left out of serverExternalPackages is bundled
+  // into the route, so the thread answers "unavailable" and the file is read in-process WITHOUT the 384 MB and
+  // 30 s limits. word-extractor was the one left out, so a legacy .doc skipped the isolation on production.
+  {
+    const isolation = readFileSync("src/lib/recruitment/cv-text-isolation.ts", "utf8");
+    const threadLibs = [...isolation.matchAll(/require\("([^".][^"]*)"\)/g)]
+      .map((m) => m[1])
+      .filter((name) => !name.startsWith("node:") && name !== "dommatrix");
+    assert.deepEqual(
+      [...new Set(threadLibs)].sort(),
+      ["mammoth", "pdf-parse", "word-extractor"],
+      "the thread loads exactly pdf-parse, mammoth and word-extractor",
+    );
+    const config = readFileSync("next.config.ts", "utf8");
+    const externals = /serverExternalPackages:\s*\[([^\]]*)/.exec(config)?.[1] ?? "";
+    for (const name of new Set(threadLibs)) {
+      assert.ok(
+        externals.includes(`"${name}"`),
+        `next.config.ts serverExternalPackages must list "${name}" — the isolated CV thread require()s it, and a bundled package is read in-process without limits`,
+      );
+    }
+  }
 }
