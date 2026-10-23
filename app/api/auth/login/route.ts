@@ -355,14 +355,20 @@ export async function POST(request: Request) {
     if (!skipBridge) try {
       supabaseSession = await createSupabaseAuthSession(user.loginId, password);
     } catch (error) {
-      const message = clientSafeErrorMessage(error, "Failed to create Supabase auth session.");
+      // `{ report: false }`: this call CLASSIFIES the failure, it does not surrender to it. Left
+      // reporting, it wrote an `api_error_redacted` row before the repair below had even been
+      // attempted — so a login that then succeeded still left `Failed to create Supabase auth
+      // session` in `app_error_events`. Seven such rows on 23 Oct 2026, six real people, every
+      // login landing 68–242 ms later. The reporting call now sits on the branches that genuinely
+      // end in a warning: this one when no repair is attempted, and the two failure paths below.
+      const message = clientSafeErrorMessage(error, "Failed to create Supabase auth session.", { report: false });
       const shouldRepairBridge =
         !user.authUserId ||
         !user.authEmail ||
         /checking email|email|user not found|invalid login credentials/i.test(message);
 
       if (!shouldRepairBridge) {
-        supabaseBridgeWarning = message;
+        supabaseBridgeWarning = clientSafeErrorMessage(error, "Failed to create Supabase auth session.");
       } else {
         try {
           const repairedIdentity = await provisionSupabaseAuthIdentity({
