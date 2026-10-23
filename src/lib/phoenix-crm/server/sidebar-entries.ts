@@ -22,7 +22,6 @@ import {
   resolvePhoenixCrmViewer,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
-import { dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
 
 /**
  * Has the module anything to say to this person — a territory to work, or a date to wait for?
@@ -64,8 +63,6 @@ export type PhoenixCrmSidebarEntries = {
   forecast: boolean;
   placeChecks: boolean;
   doubleVisitRequests: boolean;
-  /** He plans his week in Phoenix CRM now, so the legacy Weekly / Monthly Plan row goes (2026-10-16). */
-  managerPlans: boolean;
 };
 
 /** No row at all — what a failed, refused or seatless lookup answers. */
@@ -74,7 +71,6 @@ export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = {
   forecast: false,
   placeChecks: false,
   doubleVisitRequests: false,
-  managerPlans: false,
 };
 
 /**
@@ -103,9 +99,8 @@ export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<P
       // The Double visit requests report (owner, 2026-10-16) — every manager up to the CEO and the product
       // managers a rep can ask. The page's own predicate, so the row cannot open onto a redirect.
       doubleVisitRequests: doubleVisitReportAudience(viewer) !== null,
-      // A district manager whose team is live plans his week in Phoenix CRM (owner, 2026-10-16) — the
-      // legacy form's own refusal asks the same function, so the row and the form cannot disagree.
-      managerPlans: crm && (await dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday }).catch(() => false)),
+      // No plan-switch answer here any more (2026-10-23): the Plans tab stopped reading it on 2026-10-17,
+      // and asking it cost every district manager a third sequential wave on every portal page.
     };
   } catch (error) {
     if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return NO_PHOENIX_CRM_ENTRIES;

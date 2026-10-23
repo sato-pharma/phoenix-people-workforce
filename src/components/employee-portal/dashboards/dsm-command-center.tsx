@@ -32,6 +32,7 @@ import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -57,9 +58,11 @@ const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
 ];
 
-export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus, earlyBirdStars } = snapshot;
-  const totalPending = pendingVacationCount + pendingExcuseCount;
+/**
+ * The district's four money tiles. Drawn from the role extras, so on the landing page it fills under
+ * its own Suspense once the team read lands (2026-10-23, performance roadmap phase 2).
+ */
+function DistrictPerformanceCard({ dsmTeam }: { dsmTeam: PortalHomeSnapshot["dsmTeam"] }) {
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
   const pctNum = pct ?? 0;
 
@@ -84,6 +87,40 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
   ];
 
   return (
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <SectionHead
+        title="District Performance"
+        right={
+          <SectionMeta
+            items={[
+              windowLabel,
+              dsmTeam ? `${dsmTeam.memberCount} ${dsmTeam.memberCount === 1 ? "rep" : "reps"}` : null,
+            ]}
+          />
+        }
+      />
+      {dsmTeam ? (
+        <>
+          <KeycardGrid cards={cards} />
+          {!published && (
+            <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
+          )}
+        </>
+      ) : (
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>
+      )}
+    </div>
+  );
+}
+
+export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
+  const { shell, pendingVacationCount, pendingExcuseCount, dvFocus, earlyBirdStars } = snapshot;
+  const totalPending = pendingVacationCount + pendingExcuseCount;
+  // The team read is the slow one; the identity band, pending actions, CV folders and dashboards
+  // paint without it, and each section below that needs it fills under its own Suspense.
+  const extras = roleExtrasOf(snapshot);
+
+  return (
     <div className="mx-auto w-full space-y-3" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
 
@@ -93,56 +130,48 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <ManagerCvFoldersRow summary={snapshot.cvFolders} />
 
-      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-        <SectionHead
-          title="District Performance"
-          right={
-            <SectionMeta
-              items={[
-                windowLabel,
-                dsmTeam ? `${dsmTeam.memberCount} ${dsmTeam.memberCount === 1 ? "rep" : "reps"}` : null,
-              ]}
-            />
-          }
-        />
-        {dsmTeam ? (
-          <>
-            <KeycardGrid cards={cards} />
-            {!published && (
-              <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
-            )}
-          </>
-        ) : (
-          <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>
-        )}
-      </div>
+      <Suspense fallback={<MmSectionSkeleton title="District Performance" />}>
+        <AwaitRoleExtras extras={extras}>{({ dsmTeam }) => <DistrictPerformanceCard dsmTeam={dsmTeam} />}</AwaitRoleExtras>
+      </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
 
-      <RankingPanel
-        title="My Reps"
-        subtitle="by achievement %"
-        icon={Trophy}
-        rows={dsmTeam?.members ?? []}
-        windowLabel={windowLabel}
-        footer={
-          <DepartedFromBoardNote
-            count={dsmTeam?.departedCount ?? 0}
-            sales={dsmTeam?.departedSales ?? 0}
-            totalLabel="District Performance"
-          />
-        }
-      />
+      <Suspense fallback={<MmSectionSkeleton title="My Reps" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ dsmTeam }) => (
+            <RankingPanel
+              title="My Reps"
+              subtitle="by achievement %"
+              icon={Trophy}
+              rows={dsmTeam?.members ?? []}
+              windowLabel={dsmTeam?.windowLabel ?? null}
+              footer={
+                <DepartedFromBoardNote
+                  count={dsmTeam?.departedCount ?? 0}
+                  sales={dsmTeam?.departedSales ?? 0}
+                  totalLabel="District Performance"
+                />
+              }
+            />
+          )}
+        </AwaitRoleExtras>
+      </Suspense>
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
-      <CrmFirstVisitBoard
-        action={<EarlyBirdsSyncAction />}
-        crm={dsmTeam?.crm ?? null}
-        allClearMessage="Every rep on your team has submitted their first visit."
-        rankHint="all submitters, ranked"
-        showAccount
-      />
+      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ dsmTeam }) => (
+            <CrmFirstVisitBoard
+              action={<EarlyBirdsSyncAction />}
+              crm={dsmTeam?.crm ?? null}
+              allClearMessage="Every rep on your team has submitted their first visit."
+              rankHint="all submitters, ranked"
+              showAccount
+            />
+          )}
+        </AwaitRoleExtras>
+      </Suspense>
 
       <ActionStrip items={ACTIONS} />
 

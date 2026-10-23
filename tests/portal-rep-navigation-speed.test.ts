@@ -327,9 +327,16 @@ export function runPortalRepNavigationSpeedTests(): void {
     }
     assertBefore(
       snapshot,
-      "const [vacationResult, excuseResult, batchResult] = await",
+      "const [vacationResult, excuseResult] = await",
       "const shell = await shellPromise;",
       "and the shell is only awaited once the other reads are all in flight",
+    );
+    // The payslip chain (batch, then its record) runs beside the counts, not in front of them.
+    assertBefore(
+      snapshot,
+      "const latestPayslipPromise",
+      "const [vacationResult, excuseResult] = await",
+      "the payslip chain is started before the vacation and excuse counts are awaited",
     );
 
     // 🔴 THE REP'S SLOW CARDS STREAM (owner, 2026-10-23: "the process of shifting from page to page

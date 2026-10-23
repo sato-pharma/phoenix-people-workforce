@@ -42,6 +42,7 @@ import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -242,7 +243,6 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     leaveDaysRemaining,
     plansAwaitingManagerApproval,
     plansCountAvailable,
-    rmRegional,
     dvFocus,
     earlyBirdStars,
   } = snapshot;
@@ -251,6 +251,10 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
   // Both legs must have loaded for the sum to mean anything — a failed plans lookup defaults to 0
   // and would otherwise silently understate totalPending rather than reading as unknown.
   const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
+  // The region's figures and boards are the slow reads; the identity band, pending actions,
+  // dashboards and the personal strip paint without them, and each section that needs them fills
+  // under its own Suspense.
+  const extras = roleExtrasOf(snapshot);
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
@@ -269,7 +273,9 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
       <ManagerCvFoldersRow summary={snapshot.cvFolders} />
 
-      <RegionKeycards rmRegional={rmRegional} />
+      <Suspense fallback={<MmSectionSkeleton title="Region Performance" />}>
+        <AwaitRoleExtras extras={extras}>{({ rmRegional }) => <RegionKeycards rmRegional={rmRegional} />}</AwaitRoleExtras>
+      </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
 
@@ -278,44 +284,58 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         Incentives shown below are not yet confirmed by HR.
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <RankingPanel
-          title="My Districts"
-          subtitle="by achievement %"
-          icon={Network}
-          rows={rmRegional?.dsms ?? []}
-          windowLabel={rmRegional?.windowLabel ?? null}
-        />
-        <RankingPanel
-          title="Top Medical Reps"
-          subtitle="by achievement %"
-          icon={Trophy}
-          rows={rmRegional?.topReps ?? []}
-          showManager
-          windowLabel={rmRegional?.windowLabel ?? null}
-        />
-      </div>
+      <Suspense fallback={<MmSectionSkeleton title="My Districts" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ rmRegional }) => (
+            <>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <RankingPanel
+                  title="My Districts"
+                  subtitle="by achievement %"
+                  icon={Network}
+                  rows={rmRegional?.dsms ?? []}
+                  windowLabel={rmRegional?.windowLabel ?? null}
+                />
+                <RankingPanel
+                  title="Top Medical Reps"
+                  subtitle="by achievement %"
+                  icon={Trophy}
+                  rows={rmRegional?.topReps ?? []}
+                  showManager
+                  windowLabel={rmRegional?.windowLabel ?? null}
+                />
+              </div>
 
-      {/* One note for BOTH boards: departedCount spans the districts and the reps together. */}
-      {rmRegional && rmRegional.departedCount > 0 ? (
-        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-          <DepartedFromBoardNote
-            count={rmRegional.departedCount}
-            sales={rmRegional.departedSales}
-            totalLabel="Region Performance"
-          />
-        </div>
-      ) : null}
+              {/* One note for BOTH boards: departedCount spans the districts and the reps together. */}
+              {rmRegional && rmRegional.departedCount > 0 ? (
+                <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+                  <DepartedFromBoardNote
+                    count={rmRegional.departedCount}
+                    sales={rmRegional.departedSales}
+                    totalLabel="Region Performance"
+                  />
+                </div>
+              ) : null}
 
-      <DistrictsAttention rmRegional={rmRegional} />
+              <DistrictsAttention rmRegional={rmRegional} />
+            </>
+          )}
+        </AwaitRoleExtras>
+      </Suspense>
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
-      <CrmFirstVisitBoard
-        action={<EarlyBirdsSyncAction />}
-        crm={rmRegional?.crm ?? null}
-        allClearMessage="Everyone in your region has submitted their first visit."
-      />
+      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+        <AwaitRoleExtras extras={extras}>
+          {({ rmRegional }) => (
+            <CrmFirstVisitBoard
+              action={<EarlyBirdsSyncAction />}
+              crm={rmRegional?.crm ?? null}
+              allClearMessage="Everyone in your region has submitted their first visit."
+            />
+          )}
+        </AwaitRoleExtras>
+      </Suspense>
 
       {access ? (
         <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>

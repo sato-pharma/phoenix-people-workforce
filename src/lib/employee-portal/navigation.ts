@@ -573,8 +573,6 @@ export function resolveEmployeePortalNavVisibility(
   hasPhoenixCrmForecast?: boolean,
   hasTeamPlaceChecks?: boolean,
   hasDoubleVisitRequests?: boolean,
-  // Kept so every caller still passes it: the Plans tab no longer depends on it (owner, 2026-10-17).
-  _plansInPhoenixCrm?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");

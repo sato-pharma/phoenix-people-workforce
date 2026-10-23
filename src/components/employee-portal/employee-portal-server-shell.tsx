@@ -121,7 +121,6 @@ export async function EmployeePortalServerShell({
     phoenixCrm.forecast,
     phoenixCrm.placeChecks,
     phoenixCrm.doubleVisitRequests,
-    phoenixCrm.managerPlans,
   );
 
   // The tab stays in the sidebar wearing a padlock — taking it away would say "this was removed",
