@@ -52,6 +52,8 @@ import {
   managerSlotKindLabel,
   managerSlotKinds,
   managerDmVisitTitle,
+  managerSeniorTitle,
+  managerSeniorVisitTitle,
   managerSlotScopeError,
   managerWeekDays,
   managerWeekState,
@@ -67,11 +69,12 @@ import {
   type ManagerPlanStage,
   type ManagerPlanStatus,
   type ManagerPlanWriter,
+  type ManagerSeniorOffer,
   type ManagerSlotKind,
   type ManagerWeekState,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
-import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { managerChain, personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecords, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
@@ -330,6 +333,12 @@ export type ManagerBoardSlot = {
   areaSeatIds: string[];
   /** With a district manager: the district manager he goes with; null on a vacant district and every other kind. */
   dmName: string | null;
+  /** With my manager or product manager: the person a district manager goes with, and how the picker titled them. */
+  seniorHrId: string | null;
+  seniorName: string | null;
+  seniorTitle: string | null;
+  /** With a district manager, or with my manager or product manager: each ticked area by name, a vacant one marked. */
+  tickedAreas: Array<{ seatId: string; name: string; vacant: boolean }>;
   /** The scope the half-day was planned in — a regional, national or product manager's only. */
   scopeKey: string | null;
   /** "Delta (1) · Pedia — Nermeen Adel", or "Any rep in Pedia (no district manager)". */
@@ -415,6 +424,11 @@ export type ManagerPlanBoardView = {
   activities: Array<{ key: string; label: string }>;
   /** The half-day kinds this planner is offered — With a district manager for everyone but a district manager. */
   slotKinds: Array<{ key: ManagerSlotKind; label: string }>;
+  /**
+   * A district manager's With my manager or product manager picker, from the organogram above HIS seat and his
+   * line's product managers (`managerSeniorOffers`). Empty for everyone else.
+   */
+  seniors: Array<ManagerSeniorOffer & { name: string }>;
   days: ManagerBoardDay[];
   /**
    * A district manager's single-visit half-days of his FREE day this week, counted as the save counts them —
@@ -435,14 +449,45 @@ function slotSummary(input: {
   areaName: string | null;
   scopeName: string | null;
   dmName?: string | null;
+  seniorName?: string | null;
+  seniorTitle?: string | null;
   count: number;
 }): string {
   const customers = `${input.count} customer${input.count === 1 ? "" : "s"}`;
   const scope = input.scopeName ? ` · ${input.scopeName}` : "";
   if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"} · ${customers}${scope}`;
   if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
+  if (input.kind === "with_senior") return managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName);
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
   return `Single visit · ${input.areaName ?? "an area"} · ${customers}${scope}`;
+}
+
+/**
+ * 🔴 WHO A DISTRICT MANAGER MAY GO WITH (owner, 2026-10-23: "follow organogram") — the occupied manager seats
+ * above his seat, nearest first (his regional manager where his line has one, then the national sales manager;
+ * the national sales manager alone where there is none), then the product managers of his line: the people a
+ * rep's chain visit offers (`loadDoubleVisitOffers`). Empty for everyone but a district manager on a seat.
+ */
+async function managerSeniorOffers(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<ManagerSeniorOffer[]> {
+  if (writer.kind !== "dm" || !writer.seat) return [];
+  const self = personKey(writer.hrId);
+  const seen = new Set<string>(self ? [self] : []);
+  const offers: ManagerSeniorOffer[] = [];
+  for (const member of managerChain(viewer.org, writer.seat.seatId)) {
+    const key = personKey(member.hrId);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    offers.push({ hrId: key, role: "manager", title: managerSeniorTitle(member.seat.tier) });
+  }
+  // Lazily, as scope-product-managers.ts reads it: visit-asks.ts sits above this module's readers.
+  const { loadLineProductManagers } = await import("@/lib/phoenix-crm/server/visit-asks");
+  for (const manager of await loadLineProductManagers(writer.seat)) {
+    const key = personKey(manager.hrId);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    offers.push({ hrId: key, role: "product_manager", title: manager.role || "Product Manager" });
+  }
+  return offers;
 }
 
 function decidedByAdministrator(role: string | null): boolean {
@@ -467,6 +512,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     areas: [],
     activities: managerAdminActivities("dm"),
     slotKinds: [...managerSlotKinds("dm")],
+    seniors: [],
     days: [],
     singleVisitHalvesUsed: null,
     singleVisitDaysApproved: null,
@@ -540,9 +586,10 @@ async function buildBoard(
   const team = district.filter((entry) => Boolean(personKey(entry.occupantHrId)));
   const weekEnd = addDaysIso(weekStart, 5);
 
-  const [holidays, planRows] = await Promise.all([
+  const [holidays, planRows, seniorOffers] = await Promise.all([
     loadPlanHolidays(weekStart, weekEnd),
     loadWeekPlanRows([managerHrId], weekStart, isTest),
+    managerSeniorOffers(viewer, writer),
   ]);
   const plan = planRows[0] ?? null;
   // A sent week carries its own approvers, so they are worked out (an `employees` read for everyone but a
@@ -580,8 +627,11 @@ async function buildBoard(
     asks[0]?.secondApproverHrId,
     ...slots.map((slot) => slot.repHrId),
     ...slots.map((slot) => slot.dmVisit?.dmHrId),
+    ...slots.map((slot) => slot.seniorVisit?.seniorHrId),
+    ...seniorOffers.map((offer) => offer.hrId),
   ]);
   view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind) };
+  view.seniors = seniorOffers.map((offer) => ({ ...offer, name: nameOf(names, offer.hrId) }));
   view.scopes = scopeChoices(viewer, writer, scopes, names);
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
@@ -692,6 +742,10 @@ async function buildBoard(
           areaName: null,
           areaSeatIds: [],
           dmName: null,
+          seniorHrId: null,
+          seniorName: null,
+          seniorTitle: null,
+          tickedAreas: [],
           scopeKey: null,
           scopeName: null,
           note: null,
@@ -723,19 +777,31 @@ async function buildBoard(
       const hasScope = slot.scopeLineCode !== null;
       const slotScopeName = hasScope ? scopeName(viewer, { dmSeatId: slot.scopeDmSeatId, lineCode: slot.scopeLineCode }, names) : null;
       const dmName = slot.dmVisit?.dmHrId ? nameOf(names, slot.dmVisit.dmHrId) : null;
+      const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
+      const seniorName = seniorHrId ? nameOf(names, seniorHrId) : null;
+      const seniorTitle = slot.seniorVisit?.title ?? null;
       return {
         half,
         kind: slot.kind,
         kindLabel: managerSlotKindLabel(slot.kind),
-        summary: slotSummary({ kind: slot.kind, repName, activityLabel, areaName: slot.areaName, scopeName: slotScopeName, dmName, count: customers.length }),
+        summary: slotSummary({ kind: slot.kind, repName, activityLabel, areaName: slot.areaName, scopeName: slotScopeName, dmName, seniorName, seniorTitle, count: customers.length }),
         repSeatId: slot.repSeatId,
         repName,
         activityType: slot.activityType,
         activityLabel,
         areaSeatId: slot.areaSeatId,
         areaName: slot.areaName,
-        areaSeatIds: slot.dmVisit?.areas.map((area) => area.seatId) ?? [],
+        areaSeatIds: (slot.dmVisit ?? slot.seniorVisit)?.areas.map((area) => area.seatId) ?? [],
         dmName,
+        seniorHrId,
+        seniorName,
+        seniorTitle,
+        // Vacant as the organogram reads now: no territory of the area has a rep on it.
+        tickedAreas: ((slot.dmVisit ?? slot.seniorVisit)?.areas ?? []).map((area) => ({
+          seatId: area.seatId,
+          name: area.areaName,
+          vacant: area.seatIds.every((seatId) => !personKey(viewer.org.seats.get(seatId)?.occupantHrId)),
+        })),
         scopeKey: hasScope ? managerScopeKey(slot.scopeDmSeatId, slot.scopeLineCode ?? "") : null,
         scopeName: slotScopeName,
         note: slot.note,
@@ -943,6 +1009,27 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     dmVisit = { dm_hr_id: personKey(dmSeat?.occupantHrId) ?? null, areas };
   }
 
+  // With my manager or product manager (owner, 2026-10-23: "follow organogram"): one of the people offered from
+  // the organogram above HIS seat and his line's product managers, and areas of his own district.
+  let seniorVisit: { senior_hr_id: string; role: ManagerSeniorOffer["role"]; title: string; areas: Array<{ seat_id: string; area_code: string | null; area_name: string; seat_ids: string[] }> } | null = null;
+  if (draft.kind === "with_senior") {
+    const offer = (await managerSeniorOffers(viewer, writer)).find((entry) => entry.hrId === personKey(draft.seniorHrId));
+    if (!offer) throw forbiddenError("Choose your own manager or a product manager of your line, as the list shows them. Reload the page.");
+    const areaKey = (seat: OrgSeat) => seat.areaCode ?? seat.areaName ?? seat.seatId;
+    const areas = draft.areaSeatIds.map((seatId) => {
+      const seat = district.find((entry) => entry.seatId === seatId);
+      if (!seat) throw forbiddenError("Choose areas of your own district.");
+      return {
+        seat_id: seat.seatId,
+        area_code: seat.areaCode ?? null,
+        area_name: seat.areaName ?? territoryName(seat),
+        seat_ids: district.filter((entry) => areaKey(entry) === areaKey(seat)).map((entry) => entry.seatId),
+      };
+    });
+    seniorVisit = { senior_hr_id: offer.hrId, role: offer.role, title: offer.title, areas };
+  }
+  const tickedAreas = dmVisit?.areas ?? seniorVisit?.areas ?? null;
+
   // A district manager's single visits are one day a week at most — two half-days (owner, 2026-10-19).
   if (draft.kind === "single_visit" && own) {
     await assertSingleVisitPlanFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(draft.date), date: draft.date, half: draft.half, isTest });
@@ -963,8 +1050,9 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       activity_type: draft.activityType,
       area_seat_id: areaSeat?.seatId ?? null,
       area_code: areaSeat ? (areaSeat.areaCode ?? areaSeat.seatId) : null,
-      area_name: areaSeat ? (areaSeat.areaName ?? territoryName(areaSeat)) : dmVisit ? dmVisit.areas.map((area) => area.area_name).join(", ") : null,
+      area_name: areaSeat ? (areaSeat.areaName ?? territoryName(areaSeat)) : tickedAreas ? tickedAreas.map((area) => area.area_name).join(", ") : null,
       dm_visit: dmVisit,
+      senior_visit: seniorVisit,
       scope_dm_seat_id: own ? null : (scope?.dmSeatId ?? null),
       scope_line_code: own ? null : (scope?.lineCode ?? null),
       note: draft.note,

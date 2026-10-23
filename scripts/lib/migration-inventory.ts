@@ -1659,6 +1659,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // areas; a district manager's refused (manager_plan_bad_kind); no areas, and dm_visit on an admin
   // half-day, refused (bad_input).
   "20261023233000_phoenix_crm_manager_plan_with_dm.sql",
+
+
+  // Applied 2026-10-23 through scripts/apply-sql-file.mjs, to staging cifwmndunmlxjhyjugxa and then production
+  // ozucdzovmcqvepbozvqf (PHOENIX_POOLER_HOST=aws-1); each printed {"applied":true,"count":0} and wrote no
+  // ledger row. Proven by DIGEST: md5(pg_proc.prosrc) for public.phoenix_crm_save_manager_plan_slot is
+  // 1aab131d78c5b6f86c04f7002a4d7bda on BOTH projects, equal to this file's own function body (the pre-image on
+  // both was 0737f463f34b0b6438bd0121c1a7b4dc, 20261023233000's body); EXECUTE for postgres and service_role
+  // only; phoenix_crm_manager_plan_slots_kind carries 'with_senior' and phoenix_crm_manager_plan_slots_senior_visit
+  // exists on both; production's 239 slot rows unchanged, none with senior_visit. Staging behaviour proven in a
+  // block that raised to roll back: a district manager's with_senior half-day saved; the same from a national
+  // manager refused (manager_plan_bad_kind); no areas, naming himself, and senior_visit on an admin half-day
+  // refused (bad_input).
+  "20261023233002_phoenix_crm_manager_plan_with_senior.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

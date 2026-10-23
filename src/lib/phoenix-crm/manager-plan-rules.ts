@@ -63,7 +63,7 @@ import { secondApproverHrIdForManager } from "@/lib/workforce/plan-second-approv
 // ── The words ───────────────────────────────────────────────────────────────────────────────────
 
 export type ManagerPlanStatus = "draft" | "submitted" | "first_approved" | "approved" | "returned";
-export type ManagerSlotKind = "with_rep" | "admin" | "single_visit" | "with_dm";
+export type ManagerSlotKind = "with_rep" | "admin" | "single_visit" | "with_dm" | "with_senior";
 export type ManagerHalf = "AM" | "PM";
 
 export const MANAGER_PLAN_HALVES: readonly ManagerHalf[] = ["AM", "PM"];
@@ -77,13 +77,18 @@ export const MANAGER_PLAN_HALVES: readonly ManagerHalf[] = ["AM", "PM"];
 export const MANAGER_SLOT_KINDS: ReadonlyArray<{ key: ManagerSlotKind; label: string }> = [
   { key: "with_rep", label: "With a rep" },
   { key: "with_dm", label: "With a district manager" },
+  { key: "with_senior", label: "With my manager or product manager" },
   { key: "admin", label: "Admin" },
   { key: "single_visit", label: "Single visit" },
 ];
 
-/** The half-day kinds one planner is offered: every one but With a district manager for a district manager. */
+/**
+ * The half-day kinds one planner is offered. A district manager plans With my manager or product manager and
+ * never With a district manager; everyone above him the other way round (owner, 2026-10-23: "in district
+ * managers account make them able to put the pm/gpm w regional manager … follow organogram").
+ */
 export function managerSlotKinds(kind: ManagerPlannerKind): ReadonlyArray<{ key: ManagerSlotKind; label: string }> {
-  return kind === "dm" ? MANAGER_SLOT_KINDS.filter((entry) => entry.key !== "with_dm") : MANAGER_SLOT_KINDS;
+  return MANAGER_SLOT_KINDS.filter((entry) => (kind === "dm" ? entry.key !== "with_dm" : entry.key !== "with_senior"));
 }
 
 /** The most areas one half-day with a district manager holds — the database's own limit. */
@@ -254,7 +259,7 @@ export function isManagerPlanStatus(value: unknown): value is ManagerPlanStatus 
 }
 
 export function isManagerSlotKind(value: unknown): value is ManagerSlotKind {
-  return value === "with_rep" || value === "admin" || value === "single_visit" || value === "with_dm";
+  return value === "with_rep" || value === "admin" || value === "single_visit" || value === "with_dm" || value === "with_senior";
 }
 
 export function isManagerHalf(value: unknown): value is ManagerHalf {
@@ -685,8 +690,10 @@ export type ManagerSlotDraft = {
   repSeatId: string | null;
   activityType: ManagerAdminActivity | null;
   areaSeatId: string | null;
-  /** With a district manager: the areas of his district ticked for the half-day, one at least. Empty otherwise. */
+  /** With a district manager, or with his manager or product manager: the areas ticked for the half-day, one at least. Empty otherwise. */
   areaSeatIds: string[];
+  /** With my manager or product manager: the person the district manager goes with. Null otherwise. */
+  seniorHrId: string | null;
   /**
    * The scope this half was planned in — a regional, national or product manager's pick (owner,
    * 2026-10-17). A district manager's half-day, an Admin one and a cleared one carry none.
@@ -716,7 +723,7 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
   if (!isIsoDay(date)) return { ok: false, error: "Choose a day of the week." };
   if (!isManagerHalf(body.half)) return { ok: false, error: "Choose the morning (AM) or the evening (PM)." };
   const kind = body.kind === null || body.kind === undefined || body.kind === "" ? null : body.kind;
-  if (kind !== null && !isManagerSlotKind(kind)) return { ok: false, error: "Choose what the half-day is: With a rep, With a district manager, Admin or Single visit." };
+  if (kind !== null && !isManagerSlotKind(kind)) return { ok: false, error: "Choose what the half-day is: With a rep, With a district manager, With my manager or product manager, Admin or Single visit." };
   const note = textOf(body.note);
   if (note && note.length > MANAGER_PLAN_NOTE_MAX) return { ok: false, error: `Keep the note under ${MANAGER_PLAN_NOTE_MAX} characters.` };
 
@@ -755,6 +762,7 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     activityType: null,
     areaSeatId: null,
     areaSeatIds: [],
+    seniorHrId: null,
     scopeDmSeatId: null,
     scopeLineCode: null,
     note,
@@ -777,6 +785,14 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     if (customers.length > 0) return { ok: false, error: "With a district manager, you tick the district manager's areas, not customers." };
     return { ok: true, value: { ...draft, areaSeatIds, scopeDmSeatId, scopeLineCode } };
   }
+  if (kind === "with_senior") {
+    const seniorHrId = personKey(textOf(body.seniorHrId));
+    if (!seniorHrId) return { ok: false, error: "Choose who you go with: your manager or the line's product manager." };
+    if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one area of your district." };
+    if (customers.length > 0) return { ok: false, error: "With your manager or product manager, you tick areas, not customers." };
+    if (scopeDmSeatId || scopeLineCode) return { ok: false, error: "Your half-days are planned in your own district." };
+    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId } };
+  }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };
   if (customers.length === 0) return { ok: false, error: "Choose at least one customer for the single visit." };
   return { ok: true, value: { ...draft, areaSeatId, scopeDmSeatId, scopeLineCode, customers } };
@@ -793,6 +809,7 @@ export function managerSlotScopeError(
   scopes: ReadonlyArray<ManagerPlanScope>,
 ): string | null {
   if (draft.kind === "admin" && draft.activityType === "office" && kind === "dm") return "Office is not one of a district manager's half-days.";
+  if (draft.kind === "with_senior") return kind === "dm" ? null : "With my manager or product manager is a district manager's half-day.";
   if (draft.kind === "with_dm") {
     if (kind === "dm") return "With a district manager is not one of a district manager's half-days.";
     if (!draft.scopeDmSeatId) return "Choose the district manager you go with.";
@@ -1096,6 +1113,60 @@ export function parseManagerDmVisit(raw: unknown): ManagerDmVisit | null {
   return { dmHrId: personKey(textOf(body.dm_hr_id)), areas };
 }
 
+/**
+ * 🔴 WHO A DISTRICT MANAGER MAY GO WITH, FROM THE ORGANOGRAM (owner, 2026-10-23: "put the pm/gpm w regional
+ * manager dr hany fi pedia w el ba3den de ali mohamed but anti infective district manager to national sales
+ * manager … follow organogram"). The occupied manager seats above HIS seat, nearest first — the regional
+ * manager where the line has one, then the national sales manager; the national sales manager alone where
+ * there is no regional manager — and the product managers of the line. The very people a rep's chain visit
+ * offers (`loadDoubleVisitOffers`); the server builds the list, and the save refuses anyone not on it.
+ */
+export type ManagerSeniorOffer = { hrId: string; role: "manager" | "product_manager"; title: string };
+
+/** The title a manager seat above a district manager reads as on the picker. */
+export function managerSeniorTitle(tier: string): string {
+  if (tier === "RSM") return "Regional sales manager";
+  if (tier === "NSM") return "National sales manager";
+  return "Manager";
+}
+
+/**
+ * 🔴 A REP'S VISIT THAT ANSWERS A DISTRICT MANAGER'S "WITH MY MANAGER OR PRODUCT MANAGER" HALF-DAY (owner,
+ * 2026-10-23 — the mirror of `countsAsPlannersVisitWithDm`): a chain visit naming the district manager as its
+ * manager AND the person picked as its senior or its product manager. The caller matches the visit's seat to
+ * a ticked area and its day to the half-day's.
+ */
+export function countsAsDmsVisitWithSenior(
+  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  dmHrId: string | null | undefined,
+  seniorHrId: string | null | undefined,
+): boolean {
+  const dm = personKey(dmHrId);
+  const senior = personKey(seniorHrId);
+  if (!dm || !senior || visit.kind !== "chain") return false;
+  if (personKey(textOf(visit.managerHrId)) !== dm) return false;
+  return personKey(textOf(visit.seniorHrId)) === senior || personKey(textOf(visit.productManagerHrId)) === senior;
+}
+
+/** A "with my manager or product manager" half-day's own content: who goes with the district manager, and the areas ticked. */
+export type ManagerSeniorVisit = { seniorHrId: string; role: "manager" | "product_manager"; title: string | null; areas: ManagerDmVisitArea[] };
+
+/** The `senior_visit` column read strictly; null when it names nobody or holds no area. */
+export function parseManagerSeniorVisit(raw: unknown): ManagerSeniorVisit | null {
+  const body = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null) as Record<string, unknown> | null;
+  const seniorHrId = personKey(textOf(body?.senior_hr_id));
+  if (!body || !seniorHrId) return null;
+  const areas = parseManagerDmVisit({ areas: body.areas })?.areas ?? [];
+  if (areas.length === 0) return null;
+  return { seniorHrId, role: body.role === "product_manager" ? "product_manager" : "manager", title: textOf(body.title), areas };
+}
+
+/** "With Hany Ibrahim (Regional sales manager) · Nasr City, Heliopolis" — the half-day in a line. */
+export function managerSeniorVisitTitle(seniorName: string | null, title: string | null, areaNames: string | null): string {
+  const who = `With ${seniorName ?? "your manager"}${title ? ` (${title})` : ""}`;
+  return areaNames ? `${who} · ${areaNames}` : who;
+}
+
 /** "With Nermeen Adel · Nasr City, Heliopolis" — the half-day in a line. */
 export function managerDmVisitTitle(dmName: string | null, areaNames: string | null): string {
   const who = `With ${dmName ?? "the district manager"}`;
@@ -1129,6 +1200,7 @@ export function managerEvidenceKey(input: {
 }): string | null {
   if (input.kind === "with_rep") return input.repSeatId && input.customerId ? `rep|${input.repSeatId}|${input.date}|${input.customerId}` : null;
   if (input.kind === "with_dm") return input.areaSeatId ? `dm|${input.date}|${input.areaSeatId}` : null;
+  if (input.kind === "with_senior") return input.areaSeatId ? `sr|${input.date}|${input.areaSeatId}` : null;
   if (input.kind === "single_visit") {
     if (input.customerId) return `own|${input.date}|c:${input.customerId}`;
     return input.managerCustomerId ? `own|${input.date}|m:${input.managerCustomerId}` : null;

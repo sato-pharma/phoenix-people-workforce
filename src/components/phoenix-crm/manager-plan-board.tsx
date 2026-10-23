@@ -113,14 +113,16 @@ type HalfDraft = {
   repSeatId: string | null;
   activityType: string | null;
   areaSeatId: string | null;
-  /** With a district manager: the areas of his district ticked for the half-day. */
+  /** With a district manager, or with my manager or product manager: the areas ticked for the half-day. */
   areaSeatIds: string[];
+  /** With my manager or product manager: the person a district manager goes with. */
+  seniorHrId: string | null;
   note: string;
   customers: CustomerRef[];
 };
 
 function emptyDraft(): HalfDraft {
-  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, areaSeatIds: [], note: "", customers: [] };
+  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, areaSeatIds: [], seniorHrId: null, note: "", customers: [] };
 }
 
 function halfKey(date: string, half: ManagerHalf): string {
@@ -148,6 +150,7 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
     activityType: slot?.activityType ?? null,
     areaSeatId: slot?.areaSeatId ?? null,
     areaSeatIds: slot?.areaSeatIds ?? [],
+    seniorHrId: slot?.seniorHrId ?? null,
     note: slot?.note ?? "",
     customers: (slot?.customers ?? []).map((customer) =>
       customer.customerId ? repRef(customer.customerId, customer.name) : ownRef(customer.managerCustomerId ?? "", customer.name),
@@ -170,6 +173,10 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null
   if (draft.kind === "with_dm") {
     if (!draft.scope?.startsWith("dm:")) return "choose the district manager you go with";
     if (draft.areaSeatIds.length === 0) return "tick at least one of the district manager's areas";
+  }
+  if (draft.kind === "with_senior") {
+    if (!draft.seniorHrId) return "choose who you go with";
+    if (draft.areaSeatIds.length === 0) return "tick at least one area";
   }
   if (draft.kind === "admin" && !draft.activityType) return "choose the activity";
   if (draft.kind === "single_visit") {
@@ -194,11 +201,12 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes:
     repSeatId: draft.kind === "with_rep" ? draft.repSeatId : null,
     activityType: draft.kind === "admin" ? draft.activityType : null,
     areaSeatId: draft.kind === "single_visit" ? draft.areaSeatId : null,
-    areaSeatIds: draft.kind === "with_dm" ? draft.areaSeatIds : [],
+    areaSeatIds: draft.kind === "with_dm" || draft.kind === "with_senior" ? draft.areaSeatIds : [],
+    seniorHrId: draft.kind === "with_senior" ? draft.seniorHrId : null,
     ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
-      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === null
+      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === "with_senior" || draft.kind === null
         ? []
         : draft.customers.map((customer) => (customer.customerId ? { customerId: customer.customerId } : { managerCustomerId: customer.managerCustomerId })),
   };
@@ -897,6 +905,7 @@ function HalfStep({
         ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} test={test} view={view} />)
         : null}
       {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
+      {draft.kind === "with_senior" ? <WithSeniorPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "single_visit"
         ? (districtGate ?? (
@@ -1149,6 +1158,70 @@ function WithDmPart({
           </CrmCheck>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * With my manager or product manager (owner, 2026-10-23: "in district managers account make them able to put the
+ * pm/gpm w regional manager … follow organogram"): the people the organogram puts above the district manager's
+ * own seat — the regional manager where the line has one, then the national sales manager — and the line's
+ * product managers, as the server offers them; then the areas of the district, a vacant one by its own name.
+ */
+function WithSeniorPart({
+  canEdit,
+  draft,
+  onDraft,
+  view,
+}: {
+  canEdit: boolean;
+  draft: HalfDraft;
+  onDraft: (next: HalfDraft) => void;
+  view: ManagerPlanBoardView;
+}) {
+  if (view.seniors.length === 0) {
+    return <CrmEmpty message="Nobody holds a manager seat above yours, and your line has no product manager, right now." title="Nobody to go with" />;
+  }
+  const options: Array<CrmChoiceOption<string>> = view.seniors.map((senior) => ({ value: senior.hrId, label: senior.name, note: senior.title, disabled: !canEdit }));
+  const ticked = new Set(draft.areaSeatIds);
+  const toggleArea = (seatId: string, on: boolean) => {
+    const without = draft.areaSeatIds.filter((id) => id !== seatId);
+    onDraft({ ...draft, areaSeatIds: on ? [...without, seatId] : without });
+  };
+  return (
+    <div className="grid min-w-0 gap-4">
+      <CrmChoice columns={2} label="Who you go with" onChange={(seniorHrId) => onDraft({ ...draft, seniorHrId })} options={options} value={draft.seniorHrId} />
+      {view.areas.length === 0 ? (
+        <CrmEmpty message="Your district has no area right now." title="No areas" />
+      ) : (
+        <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
+            {canEdit ? (
+              <div className="flex flex-wrap gap-2">
+                <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
+                  Mark all
+                </CrmButton>
+                <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [] })} size="sm">
+                  Clear
+                </CrmButton>
+              </div>
+            ) : null}
+          </div>
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+            {view.areas.map((area) => (
+              <CrmCheck checked={ticked.has(area.seatId)} disabled={!canEdit} key={area.seatId} onChange={(on) => toggleArea(area.seatId, on)}>
+                <span className="block break-words" dir="auto">
+                  {area.areaName}
+                </span>
+                <span className={`block break-words text-xs font-semibold ${area.vacant ? "text-amber-700" : "text-slate-500"}`}>
+                  {area.vacant ? "Vacant" : (area.repName ?? area.territoryName)}
+                </span>
+              </CrmCheck>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

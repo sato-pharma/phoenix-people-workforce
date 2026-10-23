@@ -11,10 +11,14 @@ import { fieldWeekStart, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar
 import {
   ceoHrIdOf,
   countManagerOutcomes,
+  countsAsDmsVisitWithSenior,
   countsAsPlannersVisitWithDm,
   countsAsPlannersVisitWithRep,
+  managerSeniorTitle,
+  managerSeniorVisitTitle,
   managerSlotKinds,
   parseManagerDmVisit,
+  parseManagerSeniorVisit,
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   isManagerAskLive,
   managerEvidenceKey,
@@ -1998,4 +2002,51 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   ).replace(/\r\n/g, "\n");
   assert.match(withDmMigration, /kind = 'with_dm' and scope_dm_seat_id is not null/, "the database holds a with-DM half-day to a district manager");
   assert.match(withDmMigration, /elsif v_kind = 'with_dm' then\s+if v_planner = 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refuses one from a district manager");
+
+  // ── With my manager or product manager (owner, 2026-10-23: "in district managers account … follow organogram") ──
+  assert.equal(managerSlotKinds("dm").some((entry) => entry.key === "with_senior"), true, "a district manager is offered With my manager or product manager");
+  for (const kind of ["rsm", "nsm", "pm"] as const) {
+    assert.equal(managerSlotKinds(kind).some((entry) => entry.key === "with_senior"), false, `the ${kind} is never offered it`);
+  }
+  const withSenior = (extra: Record<string, unknown>) => parseManagerSlotDraft({ date: "2026-10-25", half: "AM", kind: "with_senior", ...extra });
+  const parsedSenior = withSenior({ seniorHrId: "b-60", areaSeatIds: ["T-1", "T-1", "T-2"] });
+  assert.equal(parsedSenior.ok, true, "a with-senior half-day with a pick and ticked areas parses");
+  if (parsedSenior.ok) {
+    assert.equal(parsedSenior.value.seniorHrId, "B-60", "the pick is kept as a person key");
+    assert.deepEqual(parsedSenior.value.areaSeatIds, ["T-1", "T-2"], "its areas once each");
+    assert.equal(managerSlotScopeError("dm", parsedSenior.value, []), null, "a district manager plans it in his own district");
+    assert.equal(managerSlotScopeError("nsm", parsedSenior.value, []), "With my manager or product manager is a district manager's half-day.", "and nobody else may");
+  }
+  assert.equal(withSenior({ areaSeatIds: ["T-1"] }).ok, false, "with nobody picked it is refused");
+  assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: [] }).ok, false, "with no area ticked it is refused");
+  assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], scopeDmSeatId: "DM-1", scopeLineCode: "pedia" }).ok, false, "it carries no scope: it is his own district");
+  assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], customers: [{ customerId: "00000000-0000-4000-8000-000000000001" }] }).ok, false, "and no customer");
+
+  const rideChain = { kind: "chain", managerHrId: "B-1", seniorHrId: "B-60", productManagerHrId: null };
+  assert.equal(countsAsDmsVisitWithSenior(rideChain, "B-1", "B-60"), true, "a chain visit naming him and the regional manager he picked answers it");
+  assert.equal(countsAsDmsVisitWithSenior({ ...rideChain, seniorHrId: "B-61" }, "B-1", "B-60"), false, "a chain visit with ANOTHER senior does not");
+  assert.equal(countsAsDmsVisitWithSenior({ ...rideChain, managerHrId: "B-2" }, "B-1", "B-60"), false, "nor one with another district manager");
+  assert.equal(countsAsDmsVisitWithSenior({ kind: "chain", managerHrId: "B-1", seniorHrId: null, productManagerHrId: "B-70" }, "B-1", "B-70"), true, "a product manager he picked answers it from her own slot");
+  assert.equal(countsAsDmsVisitWithSenior({ kind: "double", managerHrId: "B-1", seniorHrId: "B-60" }, "B-1", "B-60"), false, "only a chain visit carries the three of them");
+
+  assert.equal(managerSeniorTitle("RSM"), "Regional sales manager", "an RSM seat reads as a regional manager");
+  assert.equal(managerSeniorTitle("NSM"), "National sales manager", "and an NSM seat as the national sales manager");
+  assert.equal(managerSeniorVisitTitle("Hany Saad", "Regional sales manager", "Nasr City"), "With Hany Saad (Regional sales manager) · Nasr City", "the half-day in a line");
+  const seniorVisit = parseManagerSeniorVisit({ senior_hr_id: "b-60", role: "manager", title: "Regional sales manager", areas: [{ seat_id: "T-1", area_name: "Nasr City", seat_ids: ["T-1"] }] });
+  assert.equal(seniorVisit?.seniorHrId, "B-60", "the stored pick reads back");
+  assert.equal(parseManagerSeniorVisit({ senior_hr_id: "B-60", areas: [] }), null, "no area is no content");
+  assert.equal(
+    managerEvidenceKey({ kind: "with_senior", repSeatId: null, date: "2026-10-25", customerId: null, managerCustomerId: null, areaSeatId: "T-1" }),
+    "sr|2026-10-25|T-1",
+    "one area on one day is one thing to do",
+  );
+  const offerSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
+  assert.match(offerSource, /managerChain\(viewer\.org, writer\.seat\.seatId\)/, "the picker is the organogram above his own seat");
+  assert.match(offerSource, /loadLineProductManagers\(writer\.seat\)/, "plus his line's product managers");
+
+  const withSeniorMigration = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261023233002_phoenix_crm_manager_plan_with_senior.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.match(withSeniorMigration, /kind = 'with_senior' and scope_dm_seat_id is null and scope_line_code is null/, "the database holds a with-senior half-day in his own district");
+  assert.match(withSeniorMigration, /elsif v_kind = 'with_senior' then\s+if v_planner <> 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refuses one from anyone but a district manager");
 }
