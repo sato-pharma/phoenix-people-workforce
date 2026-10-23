@@ -2015,6 +2015,7 @@ import { runPhoenixCrmAdministratorTests } from "./phoenix-crm-administrator.tes
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
+import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
@@ -7655,6 +7656,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's district manager plans his own week (owner, 2026-10-16): each half-day is with a rep, admin or a single visit, read strictly; the coming Saturday's week only, Thursday a morning, never a Friday or a holiday; his RSM or NSM approves, Hany Saad's district managers then Ali Mohamed Ali, and the Administrator may act in place; a rep's draft customer reads not sent and a dropped one stays flagged; the rep is refused everywhere, the acting district manager files both weeks and her own rep seat is never one of her reps; every table is RLS-locked to the service role, nothing outside the module reads them and his visits reach no KPI; no notice emails, the Hub counts each week once; a switched district manager loses the legacy form and the Plans tab and keeps the calendar; and his old My own visit is closed",
   runPhoenixCrmManagerPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM manager plan board marks every customer (owner, 2026-10-23): the grade as the card edge, the rep's countable visits this month as pips against the grade's number (over drawn apart, never a bonus), his own visits with the rep and alone, a live marketing request that opens it — matched by the stored link or a unique name on the requester's own list — the groups a few of the shown customers share, and Go first on at most three behind their number or carrying a request; his own territories only, and the rep never sees any of it",
+  runPhoenixCrmManagerCustomerMarksTests,
 );
 
 await runTest(

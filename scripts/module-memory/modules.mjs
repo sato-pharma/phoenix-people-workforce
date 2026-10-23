@@ -391,6 +391,24 @@ export const MODULES = [
     keywords: ["manager plan", "manager's plan", "manager's own list", "district manager plan", "district manager's plan", "dm plan", "single visits"],
     tables: ["phoenix_crm_manager_"],
   },
+  // 🔴 SPLIT, 2026-10-23, BEFORE `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN: its 34th rule — the marks
+  // on each customer of his plan board — measured its injected pointer at 4,089 bytes against the 4,000 margin
+  // `tests/module-memory.test.ts` holds. The marks are their own read and their own rules; the board and the
+  // server file still match `phoenix-crm-manager-plan`'s globs, so a file here loads the pair.
+  {
+    id: "phoenix-crm-manager-customer-marks",
+    title: "Phoenix CRM — the marks on each customer of a manager's plan board",
+    scope: "What a manager sees on each customer while he plans his week: the grade edge, the rep's visits this month against the grade's number, his own visits, a live marketing request, the groups the shown customers share, and Go first.",
+    globs: [
+      "src/lib/phoenix-crm/manager-customer-marks-rules.ts",
+      "src/lib/phoenix-crm/server/manager-customer-marks.ts",
+      "src/components/phoenix-crm/manager-customer-marks.tsx",
+      "app/api/phoenix-crm/manager-plans/customers/insight/**",
+      "tests/phoenix-crm-manager-customer-marks*",
+    ],
+    keywords: ["customer marks", "go first", "frequency pips", "highlight the customers", "marketing request on the customer"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
   // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
   // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the
