@@ -523,6 +523,16 @@ export type MarketingValidationCustomerInput = {
   capturedAt?: string | null;
   capturedLatitude?: number | null;
   capturedLongitude?: number | null;
+  /**
+   * The area the validator chose BY HAND to open the doctor list (owner, 2026-10-23) — a Phoenix CRM
+   * rep seat standing for its area. Saved to `chosen_area_*`; it never replaces the GPS area.
+   */
+  crmAreaSeatId?: string | null;
+  /**
+   * The rep's Phoenix CRM doctor picked from that area's lists. Absent when the doctor is "Not on the
+   * list" and the name was typed — that customer is saved flagged `not_on_list` for every approver.
+   */
+  crmCustomerId?: string | null;
   customerType: MarketingCustomerType;
   displayName: string;
   evidenceHasTimestamp?: boolean;

@@ -79,6 +79,11 @@ import {
   fieldEvidenceGapInput,
 } from "@/lib/marketing-requests/validation-report";
 import {
+  NOT_ON_CRM_LIST_FLAG,
+  type CrmDoctorAreasPayload,
+  type CrmDoctorOption,
+} from "@/lib/marketing-requests/crm-doctor-pick";
+import {
   canSaveMarketingValidation,
   withoutBlankCodeRows,
   describeMissingSaveRequirement,
@@ -382,6 +387,15 @@ type CustomerLine = {
   area: string;
   capture: CaptureState;
   /**
+   * The area chosen BY HAND to open the doctor list (owner, 2026-10-23) — a CRM rep seat standing for
+   * its area. Never written over `area`, which is what the GPS capture resolved and stays that way.
+   */
+  crmAreaSeatId: string;
+  /** The rep's Phoenix CRM doctor picked from that area's lists; empty while none is picked. */
+  crmCustomerId: string;
+  /** "Not on the list — type the name": the name is typed, and every approver sees it flagged. */
+  notOnCrmList: boolean;
+  /**
    * Set only by "Capture evidence" on the Pending tab: the id of the customer already on record
    * that this capture completes. Empty on the ordinary path, which mints a new customer.
    */
@@ -508,10 +522,13 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
   };
 }
 
-function newCustomerLine(distributorId = ""): CustomerLine {
+function newCustomerLine(distributorId = "", crmAreaSeatId = ""): CustomerLine {
   return {
     area: "",
     capture: emptyCapture(),
+    crmAreaSeatId,
+    crmCustomerId: "",
+    notOnCrmList: false,
     existingCustomerId: "",
     customerComplete: false,
     governorate: "",
@@ -523,6 +540,25 @@ function newCustomerLine(distributorId = ""): CustomerLine {
     speciality: "",
     type: "clinic",
   };
+}
+
+/** A draft saved before the doctor pick existed has none of its fields; it opens with nothing picked. */
+function withDoctorPickDefaults(line: CustomerLine): CustomerLine {
+  return {
+    ...line,
+    crmAreaSeatId: typeof line.crmAreaSeatId === "string" ? line.crmAreaSeatId : "",
+    crmCustomerId: typeof line.crmCustomerId === "string" ? line.crmCustomerId : "",
+    notOnCrmList: line.notOnCrmList === true,
+  };
+}
+
+/** The drop-list's value for "Not on the list — type the name". Never a CRM id. */
+const NOT_ON_CRM_LIST_VALUE = "__not_on_crm_list__";
+
+/** One doctor in the drop-list: name, then what tells two namesakes apart — speciality, list, rep. */
+function crmDoctorOptionLabel(doctor: CrmDoctorOption): string {
+  const rep = doctor.repName ? `${doctor.repName}${doctor.lineName ? ` (${doctor.lineName})` : ""}` : "Vacant territory";
+  return [doctor.name, doctor.speciality, doctor.listType, rep].filter(Boolean).join(" · ");
 }
 
 function emptyWorkspace(): MarketingValidationWorkspacePayload {
@@ -1974,6 +2010,15 @@ export function MarketingValidationWorkspace() {
     );
   }, []);
   const [customers, setCustomers] = useState<CustomerLine[]>(() => [newCustomerLine()]);
+  /**
+   * The area → doctor pick (owner, 2026-10-23). `crmAreas` is null while loading; `crmAreasFailed`
+   * when the areas could not be read, and then the only way to save is a typed name, flagged for the
+   * approvers. `crmDoctors` holds each area's doctors once read, or "failed".
+   */
+  const [crmAreas, setCrmAreas] = useState<CrmDoctorAreasPayload | null>(null);
+  const [crmAreasFailed, setCrmAreasFailed] = useState(false);
+  const [crmDoctors, setCrmDoctors] = useState<Record<string, CrmDoctorOption[] | "failed">>({});
+  const crmDoctorFetchesRef = useRef(new Set<string>());
   // Super Admin only. When set, the whole form switches to desk mode: the location comes from map
   // search instead of the phone's GPS, no live photo is required, and the saved customer is owned
   // by this employee so it lands in THEIR marketing request dropdown.
@@ -2053,6 +2098,62 @@ export function MarketingValidationWorkspace() {
     return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
 
+  // The areas he may choose. A Medical Rep's single area is pre-chosen on every new customer line.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/marketing-requests/crm-doctors", { cache: "no-store" });
+        const payload = await response.json();
+        if (cancelled) return;
+        if (!response.ok || !Array.isArray(payload?.areas)) {
+          setCrmAreasFailed(true);
+          return;
+        }
+        const loaded: CrmDoctorAreasPayload = { areas: payload.areas, areaFixed: payload.areaFixed === true };
+        setCrmAreas(loaded);
+        const onlyArea = loaded.areaFixed && loaded.areas.length === 1 ? loaded.areas[0].seatId : "";
+        if (onlyArea) {
+          setCustomers((current) =>
+            current.map((line) => (line.existingCustomerId || line.crmAreaSeatId ? line : { ...line, crmAreaSeatId: onlyArea })),
+          );
+        }
+      } catch {
+        if (!cancelled) setCrmAreasFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Each chosen area's doctors, read once. A failed read is forgotten, so the next change retries it.
+  const wantedCrmAreaKey = useMemo(
+    () =>
+      [...new Set(customers.filter((line) => !line.existingCustomerId).map((line) => line.crmAreaSeatId).filter(Boolean))].join("|"),
+    [customers],
+  );
+  useEffect(() => {
+    for (const seatId of wantedCrmAreaKey.split("|").filter(Boolean)) {
+      if (crmDoctorFetchesRef.current.has(seatId)) continue;
+      crmDoctorFetchesRef.current.add(seatId);
+      void (async () => {
+        try {
+          const response = await fetch(`/api/marketing-requests/crm-doctors?area=${encodeURIComponent(seatId)}`, {
+            cache: "no-store",
+          });
+          const payload = await response.json();
+          const doctors = response.ok && Array.isArray(payload?.doctors) ? (payload.doctors as CrmDoctorOption[]) : null;
+          if (!doctors) crmDoctorFetchesRef.current.delete(seatId);
+          setCrmDoctors((current) => ({ ...current, [seatId]: doctors ?? "failed" }));
+        } catch {
+          crmDoctorFetchesRef.current.delete(seatId);
+          setCrmDoctors((current) => ({ ...current, [seatId]: "failed" }));
+        }
+      })();
+    }
+  }, [wantedCrmAreaKey]);
+
   /* --------- Crash / refresh recovery --------- */
 
   /**
@@ -2112,7 +2213,7 @@ export function MarketingValidationWorkspace() {
         // Whatever the rep has typed while waiting outranks anything on disk.
         if (isDraftWorthKeeping(customersRef.current)) return;
 
-        setCustomers(restore.customers);
+        setCustomers(restore.customers.map(withDoctorPickDefaults));
         setOnBehalfHrId(restore.onBehalfHrId);
         setDraftNotice(describeRestoredDraft(restore));
       } catch {
@@ -2263,8 +2364,25 @@ export function MarketingValidationWorkspace() {
   // "kept in step" by comment, and they drifted — a nursery carries no distributor code, which the
   // sentence knew and the button did not, so answering "Nursery" greyed Save for good and printed
   // no reason at all.
-  const missingRequirement = !isSaving ? describeMissingSaveRequirement(customers, isDeskMode) : null;
-  const canSave = !isSaving && canSaveMarketingValidation(customers, isDeskMode);
+  // While the areas load, the pick is still asked for; once they are known to be empty or unreadable,
+  // only a typed name is possible, and it saves flagged.
+  const crmAreasAvailable = crmAreas ? crmAreas.areas.length > 0 : !crmAreasFailed;
+  const defaultCrmAreaSeatId = crmAreas?.areaFixed && crmAreas.areas.length === 1 ? crmAreas.areas[0].seatId : "";
+  const gateCustomers = customers.map((line) =>
+    line.existingCustomerId
+      ? line
+      : {
+          ...line,
+          doctorPick: {
+            areasAvailable: crmAreasAvailable,
+            areaSeatId: line.crmAreaSeatId,
+            crmCustomerId: line.crmCustomerId,
+            notOnList: line.notOnCrmList,
+          },
+        },
+  );
+  const missingRequirement = !isSaving ? describeMissingSaveRequirement(gateCustomers, isDeskMode) : null;
+  const canSave = !isSaving && canSaveMarketingValidation(gateCustomers, isDeskMode);
   const totalPharmacyCount = customers.reduce((sum, customer) => sum + customer.pharmacies.length, 0);
   // Caught only once there are several customers: the same person entered twice would mint two
   // separate records that both show up in the request dropdown. The server refuses it too — this
@@ -2297,6 +2415,34 @@ export function MarketingValidationWorkspace() {
     setCustomers((current) =>
       current.map((customer) => (customer.key === customerKey ? { ...customer, ...patch } : customer)),
     );
+  }
+
+  /** A new area empties the doctor and the name: they belonged to the area he left. */
+  function chooseCrmArea(customerKey: string, seatId: string) {
+    updateCustomer(customerKey, { crmAreaSeatId: seatId, crmCustomerId: "", name: "", notOnCrmList: false });
+  }
+
+  /** The doctor fills the name, and the speciality when it is one of ours and none was chosen yet. */
+  function chooseCrmDoctor(customer: CustomerLine, value: string) {
+    if (value === NOT_ON_CRM_LIST_VALUE) {
+      updateCustomer(customer.key, { crmCustomerId: "", name: customer.notOnCrmList ? customer.name : "", notOnCrmList: true });
+      return;
+    }
+    const list = crmDoctors[customer.crmAreaSeatId];
+    const doctor = Array.isArray(list) ? list.find((entry) => entry.crmCustomerId === value) ?? null : null;
+    if (!doctor) {
+      updateCustomer(customer.key, { crmCustomerId: "", name: "", notOnCrmList: false });
+      return;
+    }
+    const knownSpeciality = (MARKETING_CUSTOMER_SPECIALITIES as readonly string[]).includes(doctor.speciality ?? "")
+      ? (doctor.speciality ?? "")
+      : "";
+    updateCustomer(customer.key, {
+      crmCustomerId: doctor.crmCustomerId,
+      name: doctor.name,
+      notOnCrmList: false,
+      speciality: customer.speciality || knownSpeciality,
+    });
   }
 
   /** Patch one pharmacy inside one customer. Both keys are required — pharmacy keys are unique, but
@@ -2589,6 +2735,10 @@ export function MarketingValidationWorkspace() {
         ...payloadCapture(customer.capture),
         customerType: customer.type,
         displayName: customer.name,
+        // The area → doctor pick. The server re-reads the doctor from the CRM list and takes the name
+        // from there; with no doctor picked the customer is saved flagged "not on the list".
+        crmAreaSeatId: customer.existingCustomerId ? null : customer.crmAreaSeatId || null,
+        crmCustomerId: customer.existingCustomerId || customer.notOnCrmList ? null : customer.crmCustomerId || null,
         // Present only when the rep came from the Pending tab. It redirects the server from
         // minting a new customer to completing the one already waiting, which is the whole point:
         // capturing a customer that exists used to create a second copy of it.
@@ -2658,7 +2808,7 @@ export function MarketingValidationWorkspace() {
    * is already a row in production, and the rep would save it a second time.
    */
   function resetForm() {
-    setCustomers([newCustomerLine(defaultDistributorId)]);
+    setCustomers([newCustomerLine(defaultDistributorId, defaultCrmAreaSeatId)]);
     setDraftNotice(null);
     void clearValidationDraft();
   }
@@ -2736,7 +2886,7 @@ export function MarketingValidationWorkspace() {
       // The gate always has a sentence unless there is no customer at all (or a save is already in
       // flight), which is the only thing the fallback can still be about.
       setMessage(
-        describeMissingSaveRequirement(customers, isDeskMode)
+        describeMissingSaveRequirement(gateCustomers, isDeskMode)
           ?? "Add a customer before saving.",
       );
       return;
@@ -3120,17 +3270,94 @@ export function MarketingValidationWorkspace() {
                         </SelectField>
                       </Field>
                     </div>
+                    {customer.existingCustomerId ? (
+                      <div className="md:col-span-4">
+                        <Field label="Customer Name">
+                          <Input className="text-phx-md" disabled placeholder="Customer name" value={customer.name} />
+                        </Field>
+                      </div>
+                    ) : (<>
+                    {/* The doctor is PICKED, never free-typed (owner, 2026-10-23): the area first, by
+                        hand, then that area's reps' Phoenix CRM doctors. The area chosen here is its own
+                        field; the GPS area below stays exactly what the capture resolved. */}
                     <div className="md:col-span-4">
-                      <Field label="Customer Name">
-                        <Input
-                          className="text-phx-md"
-                          disabled={Boolean(customer.existingCustomerId)}
-                          onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
-                          placeholder="Customer name"
-                          value={customer.name}
-                        />
+                      <Field label="Area">
+                        {!crmAreas && !crmAreasFailed ? (
+                          <ReadOnlyCaptureValue placeholder="Loading your areas" value="" />
+                        ) : !crmAreasAvailable ? (
+                          <ReadOnlyCaptureValue
+                            placeholder={crmAreasFailed ? "The areas could not load" : "No area with a rep's CRM list"}
+                            value=""
+                          />
+                        ) : (
+                          <SelectField
+                            // A rep's one area is fixed once set; a restored draft that predates it can still take it.
+                            disabled={Boolean(defaultCrmAreaSeatId) && customer.crmAreaSeatId === defaultCrmAreaSeatId}
+                            onChange={(value) => chooseCrmArea(customer.key, value)}
+                            value={customer.crmAreaSeatId}
+                          >
+                            <option value="">Choose the area</option>
+                            {(crmAreas?.areas ?? []).map((area) => (
+                              <option key={area.seatId} value={area.seatId}>
+                                {area.areaName}
+                              </option>
+                            ))}
+                          </SelectField>
+                        )}
                       </Field>
                     </div>
+                    {crmAreasAvailable ? (
+                      <div className="md:col-span-6">
+                        <Field label="Doctor (from the reps' CRM lists)">
+                          <SelectField
+                            disabled={!customer.crmAreaSeatId}
+                            onChange={(value) => chooseCrmDoctor(customer, value)}
+                            value={customer.notOnCrmList ? NOT_ON_CRM_LIST_VALUE : customer.crmCustomerId}
+                          >
+                            <option value="">
+                              {!customer.crmAreaSeatId
+                                ? "Choose the area first"
+                                : crmDoctors[customer.crmAreaSeatId] === undefined
+                                  ? "Loading the doctors"
+                                  : "Choose the doctor"}
+                            </option>
+                            {(() => {
+                              const list = crmDoctors[customer.crmAreaSeatId];
+                              return Array.isArray(list)
+                                ? list.map((doctor) => (
+                                    <option key={doctor.crmCustomerId} value={doctor.crmCustomerId}>
+                                      {crmDoctorOptionLabel(doctor)}
+                                    </option>
+                                  ))
+                                : null;
+                            })()}
+                            <option value={NOT_ON_CRM_LIST_VALUE}>Not on the list — type the name</option>
+                          </SelectField>
+                        </Field>
+                        {crmDoctors[customer.crmAreaSeatId] === "failed" ? (
+                          <p className="mt-1.5 text-phx-sm font-bold text-amber-800">
+                            The doctor list could not load. Choose &quot;Not on the list&quot; to type the name.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {!crmAreasAvailable || customer.notOnCrmList ? (
+                      <div className="md:col-span-6">
+                        <Field label="Customer Name">
+                          <Input
+                            className="text-phx-md"
+                            onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
+                            placeholder="Type the doctor's name"
+                            value={customer.name}
+                          />
+                        </Field>
+                        <p className="mt-1.5 flex items-start gap-1.5 text-phx-sm font-bold text-amber-800">
+                          <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>Typed by hand. Every approver will see: {NOT_ON_CRM_LIST_FLAG}</span>
+                        </p>
+                      </div>
+                    ) : null}
+                    </>)}
                     {/* A customer whose own evidence is complete is here for its venue only. The server
                         never writes that row, so its capture, phone and speciality are not offered. */}
                     {customer.customerComplete ? null : (<>
@@ -3653,7 +3880,7 @@ export function MarketingValidationWorkspace() {
 
               <Button
                 className="h-10 w-full gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50/40 text-phx-md font-bold text-orange-700 hover:bg-orange-50"
-                onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId)])}
+                onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId, defaultCrmAreaSeatId)])}
                 type="button"
               >
                 <Plus className="h-4 w-4" />

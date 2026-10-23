@@ -9,6 +9,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
@@ -269,6 +270,10 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
       {/* The "already validated" stamp (owner, 2026-09-22): when this request stands on a customer
           the desk (or the evidence-gate) already validated, say so at the top — who validated it and
           when — and jump the approver to the customer evidence already lower on this same window. */}
+      {/* Typed by hand at validation — not on a rep's Phoenix CRM list (owner, 2026-10-23). First,
+          because it changes how much the rest of the customer evidence can be trusted. */}
+      <NotOnCrmListFlag flag={detail.customerCrmListFlag} />
+
       {detail.customerValidation ? (
         <ValidatedEvidenceLink
           badge={detail.customerValidation}

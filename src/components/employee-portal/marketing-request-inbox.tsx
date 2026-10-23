@@ -42,6 +42,7 @@ import { MarketingRequestedProductHistory } from "@/components/marketing-request
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type {
   MarketingApproverInboxRow,
@@ -220,6 +221,7 @@ function InboxRowCard({
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
             {row.customerName}
           </h3>
+          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
@@ -410,6 +412,7 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
             {row.customerName}
           </h3>
+          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>

@@ -17,6 +17,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -248,6 +249,7 @@ export function MarketingRequestDecisionConfirmation({
             <div className="bg-slate-50 px-3 py-2.5">
               <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
               <p className="whitespace-nowrap text-phx-md font-medium text-slate-950">{summary.customerName ?? "—"}</p>
+              <NotOnCrmListFlag compact flag={summary.customerCrmListFlag} />
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
               <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
@@ -260,6 +262,11 @@ export function MarketingRequestDecisionConfirmation({
               approver to commit real money on that. Every field below was captured at submission
               and simply never carried through. A field with no value says "Not captured" rather
               than rendering blank, so absent data never reads as a value of nothing. */}
+          {summary.customerCrmListFlag ? (
+            <div className="mt-4">
+              <NotOnCrmListFlag flag={summary.customerCrmListFlag} />
+            </div>
+          ) : null}
           <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Customer detail</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <DetailField label="Customer code" value={summary.customerCode} />
