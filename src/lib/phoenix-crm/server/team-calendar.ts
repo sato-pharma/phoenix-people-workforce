@@ -172,7 +172,11 @@ export async function loadTeamCalendar(
 
   const [visits, activities, people, leave, managerPeople, productManagerPeople, managerVisits] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
-    loadActivityDays(seatIds, isTest, bounds),
+    // 🔴 A MANAGER'S OWN SEAT TOO (owner, 2026-10-23: "if a manager chooses a meeting or anything … it must
+    //    appear"). Since 2026-10-20 a district or regional manager records his meeting, training or travel on
+    //    his own team seat (`ownDaySeat`), and this read asked the reps' seats alone — so his recorded day drew
+    //    blank on his own row. A product manager holds no seat and records none here.
+    loadActivityDays([...seatIds, ...managers.map((member) => member.seat.seatId)], isTest, bounds),
     describePeople(viewer, seats),
     loadLeaveDays(
       [
@@ -433,10 +437,19 @@ async function loadManagerDays(
     const seatId = seatOf.get(day.hrId);
     if (!seatId) continue;
     const at = `${seatId}|${day.date}`;
+    // 🔴 BY THE CUSTOMER'S LIST, NEVER THE HALF (owner, 2026-10-23): a pharmacy he called on is a Pharmacies
+    // figure on his row, exactly as a rep's is — never an AM or PM visit because of the hour he went.
+    const split = day.split ?? { am: day.am ?? 0, pharmacies: 0, pm: day.pm ?? 0 };
     const found = fold.amPm.get(at) ?? { am: 0, pm: 0 };
-    found.am += day.am ?? 0;
-    found.pm += day.pm ?? 0;
+    found.am += split.am;
+    found.pm += split.pm;
     fold.amPm.set(at, found);
+    if (split.pharmacies > 0) {
+      // One key per own pharmacy visit: his own visits are one per customer and day, so each is a pharmacy.
+      const seen = fold.pharmacies.get(at) ?? new Set<string>();
+      for (let index = 0; index < split.pharmacies; index += 1) seen.add(`own-visit:${index}`);
+      fold.pharmacies.set(at, seen);
+    }
   }
 
   const seen = new Set<string>();

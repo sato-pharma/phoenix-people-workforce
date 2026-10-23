@@ -10,7 +10,13 @@ import type {
   FieldWorkforceDayCell,
   FieldWorkforceEmployeeSummary,
 } from "@/lib/field-workforce-compliance/types";
-import { isPortalRideAlongCoachingDay, portalOwnVisitCount } from "@/lib/employee-portal/team-calendar-cell";
+import {
+  isManagerOwnVisitsOnlyDay,
+  isPortalRideAlongCoachingDay,
+  portalDaySplit,
+  portalOwnVisitCount,
+} from "@/lib/employee-portal/team-calendar-cell";
+import { emptyVisitCountSplit, mergeVisitCountSplits } from "@/lib/crm/visit-count-buckets";
 import {
   buildTeamCalendarWeeks,
   clampWeekIndex,
@@ -79,6 +85,10 @@ function statusLabel(cell: FieldWorkforceDayCell) {
  * with a same-day fingerprint punch (mainly Head Office staff who don't generate CRM visits)
  * shades teal instead of the alarming rose — punched in, not no activity. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
+  // A day whose only work is the manager's own Phoenix CRM visits is a worked day, never the alarming "No activity".
+  if (isManagerOwnVisitsOnlyDay(cell)) {
+    return cn("border-emerald-300 bg-emerald-50 text-emerald-800", cell.isPublicHoliday ? "ring-2 ring-amber-300 ring-offset-1" : "");
+  }
   const visitsClass = isPortalRideAlongCoachingDay(cell)
     ? // Ride-along / coaching ("DV") day — distinct fuchsia so it never reads as a rep's own visits.
       "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 hover:bg-fuchsia-100"
@@ -106,10 +116,31 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
   );
 }
 
+/** The pharmacy figure's own ink, in every square (owner, 2026-10-23: "in a different color, and separate"). */
+const PHARMACY_FIGURE_INK = "bg-violet-600 text-white";
+
+/**
+ * The square's figures, AM, then PM, then Pharmacies — each printed apart, never added, and only the ones the day has
+ * (owner, 2026-10-23: "make the square … 2 for AM, 9 for PM, and 5 for pharmacies … same for district managers").
+ */
+function SplitFigures({ split }: { split: { am: number; pm: number; pharmacies: number } }) {
+  return (
+    <span className="flex w-full flex-col items-stretch gap-px text-center text-phx-3xs leading-tight">
+      {split.am > 0 ? <span title={`AM ${split.am}`}>{split.am}</span> : null}
+      {split.pm > 0 ? <span title={`PM ${split.pm}`}>{split.pm}</span> : null}
+      {split.pharmacies > 0 ? (
+        <span className={PHARMACY_FIGURE_INK} title={`Pharmacies ${split.pharmacies}`}>
+          {split.pharmacies}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function LegendChip({ children, className, label }: { children: string; className: string; label: string }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-phx-xs font-black", className)}>
+    <div className="inline-flex items-center gap-2 border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center border px-1.5 text-phx-xs font-black", className)}>
         {children}
       </span>
       {label}
@@ -126,7 +157,9 @@ function TimelineLegend() {
       <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day (click to open)">5</LegendChip>
       <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only (click to open)">5</LegendChip>
       <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only (click to open)">5</LegendChip>
-      <LegendChip className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800" label="Double-visit / coaching day — manager rode along (click to open)">DV</LegendChip>
+      <LegendChip className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800" label="Double-visit / coaching day — manager rode along, figures are the visits joined (click to open)">DV</LegendChip>
+      <LegendChip className="border-slate-300 bg-white text-slate-800" label="A day's figures stack AM, then PM, then Pharmacies — never added">2·9</LegendChip>
+      <LegendChip className={PHARMACY_FIGURE_INK} label="Pharmacies, counted apart">5</LegendChip>
       <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
@@ -137,16 +170,21 @@ function TimelineLegend() {
 function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   // A ride-along/coaching day's classifier explanation ("Worked day because N numeric visits…")
   // reflects the double-credited total, which would be misleading here — describe it as coaching.
-  const explanation = isPortalRideAlongCoachingDay(cell)
-    ? "Double-visit / coaching day — rode along on the team's visits (no own primary visits logged)."
-    : cell.explanation;
+  const split = portalDaySplit(cell);
+  const splitLine = split ? ` AM ${split.am} · PM ${split.pm} · Pharmacies ${split.pharmacies}.` : "";
+  const explanation = isManagerOwnVisitsOnlyDay(cell)
+    ? `The manager's own single visits, logged in Phoenix CRM — the day's details are on the Phoenix CRM calendar.${splitLine}`
+    : isPortalRideAlongCoachingDay(cell)
+      ? `Double-visit / coaching day — rode along on the team's visits (no own primary visits logged).${splitLine}`
+      : `${cell.explanation}${splitLine}`;
   const baseClass = cn(
-    "relative flex h-10 w-full items-center justify-center rounded-lg border text-xs font-black",
+    "relative flex min-h-10 w-full items-center justify-center border text-xs font-black",
+    split ? "py-0.5" : "",
     statusCellClass(cell),
   );
   const content = (
     <>
-      {statusLabel(cell)}
+      {split ? <SplitFigures split={split} /> : statusLabel(cell)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
@@ -215,6 +253,15 @@ function RepMonthRow({
     (sum, cell) => sum + (cell.status === "VISITS" && !cell.ignored ? portalOwnVisitCount(cell) : 0),
     0,
   );
+  // His month AM · PM · Pharmacies apart: his own calls in the mirror plus, for a manager, his own Phoenix CRM single
+  // visits. Ride-along days stay out of it — they are the reps' visits, already on the reps' rows.
+  const monthSplit = employee.timeline.reduce((sum, cell) => {
+    if (cell.ignored) return sum;
+    if (cell.status === "VISITS" && cell.ownVisitSplit) mergeVisitCountSplits(sum, cell.ownVisitSplit);
+    if (cell.managerOwnSplit) mergeVisitCountSplits(sum, cell.managerOwnSplit);
+    return sum;
+  }, emptyVisitCountSplit());
+  const hasMonthSplit = employee.timeline.some((cell) => cell.ownVisitSplit || cell.managerOwnSplit);
   const coachingDays = employee.timeline.filter((cell) => !cell.ignored && isPortalRideAlongCoachingDay(cell)).length;
   return (
     <div className={cn("bg-white px-4 py-3", isFirst ? "" : "border-t border-slate-100")}>
@@ -227,7 +274,13 @@ function RepMonthRow({
           </p>
         </div>
         <div className="flex items-center gap-3 text-phx-xs font-bold">
-          <span className="text-emerald-700">{ownVisits} visits</span>
+          {hasMonthSplit ? (
+            <span className="text-emerald-700">
+              AM {monthSplit.am} · PM {monthSplit.pm} · <span className="text-violet-700">Pharmacies {monthSplit.pharmacies}</span>
+            </span>
+          ) : (
+            <span className="text-emerald-700">{ownVisits} visits</span>
+          )}
           {coachingDays > 0 ? <span className="text-fuchsia-700">{coachingDays} DV days</span> : null}
           <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
         </div>

@@ -8,7 +8,7 @@ import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic
 import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
 import { loadFieldVisitPrivateCalendarItems } from "@/lib/private-calendar/field-visits";
 import { loadManagerOwnVisitPrivateCalendarItems } from "@/lib/private-calendar/manager-own-visit-items";
-import { loadPhoenixWorkEvidencePrivateCalendarItems } from "@/lib/private-calendar/phoenix-work-evidence-items";
+import { loadPhoenixWorkEvidencePrivateCalendarItems, withoutDoorCoveredPhoenixWork } from "@/lib/private-calendar/phoenix-work-evidence-items";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -458,7 +458,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...holidays,
     ...doubleVisits.items,
     ...fieldVisits.items,
-    ...phoenixWork.items,
+    ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
     ...managerOwnVisits.items,
     ...plans.items,
   ], scopeEmployees), employees), visitDetails)
@@ -629,7 +629,7 @@ export async function getCompanyNoActivityDays(input: {
     ...holidaysByMonth.flat(),
     ...doubleVisits.items,
     ...fieldVisits.items,
-    ...phoenixWork.items,
+    ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
     ...managerOwnVisits.items,
     ...plans.items,
   ], employees), employees);
@@ -747,7 +747,7 @@ export async function getPrivateCalendarDayEvidence(
         ...excuses.items,
         ...doubleVisits.items,
         ...fieldVisits.items,
-        ...phoenixWork.items,
+        ...withoutDoorCoveredPhoenixWork(phoenixWork.items, [...fieldVisits.items, ...doubleVisits.items]),
         ...managerOwnVisits.items,
         ...plans.items,
       ],

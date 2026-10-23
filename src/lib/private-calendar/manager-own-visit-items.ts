@@ -25,6 +25,9 @@
 // pass the Daily Deductions connector adjudicates needs only "did he work", and must stay light. A failed
 // detail read leaves the count-only entry, never an unreadable calendar.
 //
+// 🔴 AND THE DAY COUNTS IN HIS OWN FIGURES (owner, 2026-10-23), AM · PM · Pharmacies apart, by the list of the customer
+// he visited — never in a rep's.
+//
 // Read-only. Never mutates CRM, attendance or deduction data.
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -68,7 +71,7 @@ export function managerOwnVisitItem(
     detailLines: [
       `Kind: ${privateCalendarActivityKindLabels.single_regular}`,
       `Visits: ${day.visits}`,
-      ...(visits.length > 0 ? [`Counted: AM ${figures.am} · PM ${figures.pm}, in the manager's own report only`] : []),
+      ...(visits.length > 0 ? [`Counted: AM ${figures.am} · PM ${figures.pm} · Pharmacies ${figures.pharmacies}, in the manager's own figures only`] : []),
       ...visits.map((visit) => managerVisitLine(visit)),
     ],
     employeeDepartmentName: null,
@@ -95,7 +98,11 @@ export function managerOwnVisitItem(
     status: "performed",
     time: summary,
     title: visits.length > 0 ? `${summary}: ${managerDaySummaryLine(figures) || summary}` : summary,
-    visitCounts: null,
+    // 🔴 COUNTED, AND COUNTED APART (owner, 2026-10-23: "any record submitted by himself … must appear … if a manager
+    // himself added a visit to a pharmacy, it should be count, but in a different color, and separate"). His own split —
+    // AM · PM · Pharmacies by his customer's list — goes into HIS row's figures. It never reaches a rep's: this item is
+    // keyed to the manager alone.
+    visitCounts: day.split ?? null,
   };
 }
 
