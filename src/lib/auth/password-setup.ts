@@ -258,6 +258,8 @@ export async function sendPasswordSetupLink(input: {
           channels: ["email"],
           email: {
             candidateEmail: deliverableEmail,
+            // A live set-your-password link: never mirrored to the admin Telegram (owner, 23 Oct 2026).
+            credentialEmail: "password_setup_link",
             // Greet the person by their real name. Without this the notification recipient
             // resolver (system.ts) falls back to recipient.name, which for a by-email "candidate"
             // send is the login/HR_ID — so the Welcome/Account-Setup and Password-Reset emails
@@ -633,6 +635,8 @@ export async function requestPasswordResetCode(input: {
     channels: ["email"],
     email: {
       candidateEmail: deliverableEmail,
+      // The 6-digit reset code itself: never mirrored to the admin Telegram (owner, 23 Oct 2026).
+      credentialEmail: "password_reset_code",
       recipientName: user.name?.trim() || undefined,
       ctaHref: "/password-reset",
       ctaLabel: "Open the password page",

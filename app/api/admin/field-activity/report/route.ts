@@ -15,6 +15,7 @@ import { canOpenSubject, resolveFieldActivityAccess } from "@/lib/field-activity
 import { resolvePeriod } from "@/lib/field-activity/period";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { loadFieldActivityReport } from "@/lib/field-activity/report";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden", success: false }, { status: 403 });
     }
     return NextResponse.json(
-      { error: "field_activity_report_failed", message: error instanceof Error ? error.message : "Unknown error", success: false },
+      { error: "field_activity_report_failed", message: clientSafeErrorMessage(error, "Unknown error"), success: false },
       { status: 500 },
     );
   }

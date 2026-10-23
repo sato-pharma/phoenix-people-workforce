@@ -15,6 +15,7 @@ import {
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export const dynamic = "force-dynamic";
 
 function apiError(error: unknown) {
   if (isForbiddenError(error)) return { message: "Not permitted.", status: 403 };
-  return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
+  return { message: clientSafeErrorMessage(error, "Something went wrong."), status: 500 };
 }
 
 /** Names for the people who printed, so the register shows a name rather than a code. */

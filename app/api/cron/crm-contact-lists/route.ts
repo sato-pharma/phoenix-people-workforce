@@ -19,6 +19,7 @@ import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +82,8 @@ const SLICE_BUDGET_MS = 21_000;
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/crm-contact-lists");
   if (denied) return denied;
+  const wrongProcess = refuseOnPageServer("cron/crm-contact-lists");
+  if (wrongProcess) return wrongProcess;
 
   // THE CRM CUTOVER. Once iReports360 is retired there is no vendor list to scrape, so the job stands
   // down — before the dead-man's switch and the configuration check, which would otherwise page every

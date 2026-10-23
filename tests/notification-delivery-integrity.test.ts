@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import { buildEmailActivityPage, type EmailActivityRow } from "../src/lib/email/engagement.ts";
 import { isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "../src/lib/notifications/recipients.ts";
 import {
@@ -10,6 +11,26 @@ import {
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+/**
+ * The two source fixes of 2026-10-23 for in-app rows that no bell could open, as a function that
+ * returns what is MISSING — so the test below can hand it a deliberately broken copy and require the
+ * pin to fire, on every run, rather than trusting a one-off break by hand. Comments are stripped first:
+ * both fixes are explained in prose right beside the code, and prose satisfies a bare substring check.
+ */
+function strandedInAppFixesMissing(systemSource: string, directOrderSource: string): string[] {
+  const missing: string[] = [];
+  const system = stripComments(systemSource).replace(/\r\n/g, "\n");
+  const direct = stripComments(directOrderSource).replace(/\r\n/g, "\n");
+  const inAppBranch = system.match(/if \(channel === "in_app"\) \{([\s\S]*?)\n    \}\n/)?.[1] ?? "";
+  if (!/!recipient\.hrId/.test(inAppBranch) || !/"skipped"/.test(inAppBranch)) {
+    missing.push("the in_app branch must record a recipient with no HR ID as skipped, never sent");
+  }
+  if (!direct.includes('recipientHrIds.length === 1 ? `:${recipientHrIds[0]}` : ""')) {
+    missing.push("a lone direct-order recipient must carry its own id in the event key, or the next rung overwrites it");
+  }
+  return missing;
 }
 
 function account(
@@ -160,5 +181,54 @@ export function runNotificationDeliveryIntegrityTests() {
     engagement,
     /if \(rows\.length >= limit\) break;/,
     "stopping the scan at the page limit is what made the chips describe one page instead of the window",
+  );
+
+  // ── In-app rows that no bell could open (reconciliation checks 13 and 16, 2026-10-23) ──
+  // Six categories were written as in_app "sent" for months while the bell filtered them out: 215
+  // rows, three of the six still being written that day. Each is addressed to one named person.
+  for (const category of ["weekly_plan", "crm", "security", "system", "market_awareness", "outstation"]) {
+    assert.equal(isPersonalBellCategory(category), true, `"${category}" is written as an in_app delivery, so the bell must render it`);
+    assert.equal(
+      (PERSONAL_BELL_CATEGORIES as readonly string[]).includes(category),
+      true,
+      `"${category}" must be in the array the SQL category filter reads, not only in the predicate`,
+    );
+  }
+  // The allowlist entries are only right while these writers still use the category.
+  for (const [path, category] of [
+    ["src/lib/weekly-planning/drift-check.ts", "weekly_plan"],
+    ["src/lib/crm/account-setup-reminder.ts", "crm"],
+    ["src/lib/notifications/settings.ts", "security"],
+    ["src/lib/notifications/dead-telegram-link-alert.ts", "system"],
+    ["src/lib/market-awareness/notifications.ts", "market_awareness"],
+  ] as const) {
+    assert.ok(
+      stripComments(source(path)).includes(`category: "${category}"`),
+      `${path} must still write category "${category}", the one the bell allowlist now carries for it`,
+    );
+  }
+
+  // The two source fixes hold in the real files…
+  const systemSource = source("src/lib/notifications/system.ts");
+  const directOrderSource = source("src/lib/direct-orders/service.ts");
+  assert.deepEqual(strandedInAppFixesMissing(systemSource, directOrderSource), [], "both stranded-in-app fixes must be present");
+  // …and the pin is proven to fire on a copy with each fix taken out (a pin that cannot fail proves nothing).
+  assert.equal(
+    strandedInAppFixesMissing(systemSource.replace("const noBell = !recipient.hrId;", "const noBell = false;"), directOrderSource).length,
+    1,
+    "removing the no-HR-ID check from the in_app branch must be caught",
+  );
+  assert.equal(
+    strandedInAppFixesMissing(systemSource, directOrderSource.replace('recipientHrIds.length === 1 ? `:${recipientHrIds[0]}` : ""', '""')).length,
+    1,
+    "removing the per-recipient direct-order key must be caught",
+  );
+  assert.equal(
+    strandedInAppFixesMissing(
+      systemSource.replace("const noBell = !recipient.hrId;", "const noBell = false;"),
+      directOrderSource.replace('recipientHrIds.length === 1 ? `:${recipientHrIds[0]}` : ""', '""'),
+    ).length,
+    2,
+    "both fixes removed must report both",
   );
 }

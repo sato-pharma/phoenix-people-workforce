@@ -4,6 +4,7 @@ import { assertPermission, canSeeEmployee, hrIdsMatch } from "@/lib/auth/permiss
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { readCrmWorkAfterDate } from "@/lib/resignations/crm-work-after-date";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You cannot read this." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Could not read the CRM.";
+    const message = clientSafeErrorMessage(error, "Could not read the CRM.");
     return NextResponse.json({ error: "crm_work_after_failed", message }, { status: 500 });
   }
 }

@@ -1,3 +1,5 @@
+import sanitizeHtml from "sanitize-html";
+
 import { systemDeployment, systemLegalEntity } from "@/config/system-settings";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
@@ -377,9 +379,55 @@ function styleSenderTables(html: string): string {
   );
 }
 
+/**
+ * 🔴 THE LAST PASS IS A SANITIZER, BECAUSE THE REWRITES ABOVE ARE REGEXES OVER A STRING.
+ *
+ * `sanitizeEmailTemplateHtml` runs first, and everything after it edits its SERIALISED output with
+ * regular expressions that cannot tell an attribute value from text. That let a body restore an
+ * event handler: `stripFills` removes ` bgcolor='…'` wherever it appears — including from the middle
+ * of a `title` attribute up to a quote in the following text — so the text after it became live
+ * attributes again (`<span title="q" onmouseover="…">`). Technical audit 23 Oct 2026, P7-02. The
+ * same string is the composer's preview (`dangerouslySetInnerHTML`) and the email that is sent.
+ *
+ * So the finished body is parsed once more and re-serialised against an allow-list. This pass only
+ * REMOVES: the tags are the first pass's tags, the attributes are the first pass's plus the three the
+ * house stamps itself (`class` for the phone sheet, `role` and the table spacing attributes), and
+ * the styles are kept VERBATIM (`parseStyleAttributes: false`) — they were filtered by the first pass
+ * or written by this file, and re-parsing them would reformat the house CSS. Entities are left as
+ * they are (`decodeEntities: false`), so the house `&nbsp;` spacer cells survive byte for byte; every
+ * entity in the sender's part was already decoded and re-escaped by the first pass.
+ */
+const FINAL_PASS_ATTRIBUTES = ["style", "dir", "class"];
+
+function sanitizeFinishedBody(html: string): string {
+  return sanitizeHtml(html, {
+    allowedAttributes: {
+      "*": FINAL_PASS_ATTRIBUTES,
+      a: ["href", "rel", "target", "title", ...FINAL_PASS_ATTRIBUTES],
+      img: ["src", "alt", "width", "height", ...FINAL_PASS_ATTRIBUTES],
+      span: ["title", ...FINAL_PASS_ATTRIBUTES],
+      table: ["role", "width", "cellpadding", "cellspacing", "border", ...FINAL_PASS_ATTRIBUTES],
+      td: ["colspan", "rowspan", "bgcolor", ...FINAL_PASS_ATTRIBUTES],
+      th: ["colspan", "rowspan", "bgcolor", ...FINAL_PASS_ATTRIBUTES],
+      tr: ["bgcolor", ...FINAL_PASS_ATTRIBUTES],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: { img: ["https"] },
+    allowProtocolRelative: false,
+    allowedTags: [
+      "a", "b", "blockquote", "br", "em", "hr", "i", "img", "li", "ol", "p", "s", "span",
+      "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
+    ],
+    disallowedTagsMode: "discard",
+    enforceHtmlBoundary: true,
+    parseStyleAttributes: false,
+    parser: { decodeEntities: false },
+  });
+}
+
 export function prepareSatoEmailBody(bodyHtml: string): string {
   const safe = dropEmptyStyles(stripFills(sanitizeEmailTemplateHtml(bodyHtml)));
-  return sectionHeadings(styleSenderTables(styleSenderBlocks(directionPerBlock(safe))));
+  return sanitizeFinishedBody(sectionHeadings(styleSenderTables(styleSenderBlocks(directionPerBlock(safe)))));
 }
 
 export function satoEmailHtmlToText(html: string): string {

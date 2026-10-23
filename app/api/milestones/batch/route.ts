@@ -92,7 +92,7 @@ export async function POST(request: Request) {
           }),
         );
       } catch (cause) {
-        skipped.push(cause instanceof Error ? cause.message : `Could not build a card for ${hrId}.`);
+        skipped.push(clientSafeErrorMessage(cause, `Could not build a card for ${hrId}.`));
       }
     }
 

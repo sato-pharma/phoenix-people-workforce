@@ -8,6 +8,7 @@ import {
   getSfeEvidencePreview,
   canSubmitSfeAssessment,
 } from "@/lib/probation/intelligence/assessments";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export async function GET(
 
     return NextResponse.json({ assessments, sfeEvidence }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     const message = String((error as { message?: unknown })?.message ?? error);
     if (message.toLowerCase().includes("not found")) return NextResponse.json({ error: message }, { status: 404 });
     return NextResponse.json({ error: message }, { status: 500 });

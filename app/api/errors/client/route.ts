@@ -2,23 +2,20 @@ import { NextResponse } from "next/server";
 
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { resolveAccessContext } from "@/lib/auth/server";
+import {
+  CLIENT_ERROR_MAX_BODY_BYTES,
+  CLIENT_ERROR_RATE_LIMIT,
+  CLIENT_ERROR_RATE_WINDOW_MS,
+  clientErrorBodyTooLarge,
+  sanitizeClientErrorReport,
+} from "@/lib/error-monitor/client-error-intake";
 import { logAppError } from "@/lib/error-monitor/service";
 import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
+import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type ClientErrorPayload = {
-  message?: unknown;
-  stack?: unknown;
-  digest?: unknown;
-  route?: unknown;
-  routeType?: unknown;
-  source?: unknown;
-  componentStack?: unknown;
-  clientContext?: unknown;
-};
 
 // Best-effort ingestion endpoint for crash reports. Used directly by browsers
 // via src/lib/error-monitor/report-client-error.ts (always source: "client"),
@@ -26,35 +23,70 @@ type ClientErrorPayload = {
 // server-side request errors here with source: "server" — instrumentation.ts
 // runs in the Edge Runtime too and can't import Node-only session/crypto code
 // directly, so it delegates the HR-ID/module resolution to this route instead.
-// Always responds success; works for guests too (e.g. a crash on the login
-// page), since a bug report must never depend on the user already being
-// authenticated.
+// Works for guests too (e.g. a crash on the login page), since a bug report must
+// never depend on the user already being authenticated.
+//
+// LIMITED SINCE 23 Oct 2026 (audit P5-03): a body over 64 KB is refused, every stored field is capped
+// (client-error-intake.ts), and one address may send CLIENT_ERROR_RATE_LIMIT reports a minute — so an
+// anonymous script can no longer fill System Issues and the weekly digest.
 export async function POST(request: Request) {
-  try {
-    const body = (await request.json().catch(() => null)) as ClientErrorPayload | null;
-    const message = typeof body?.message === "string" ? body.message : null;
+  if (clientErrorBodyTooLarge(request.headers.get("content-length"))) {
+    return NextResponse.json({ ok: false, error: "too_large" }, { status: 413 });
+  }
 
-    if (message) {
+  try {
+    await assertApiRateLimit({
+      identifier: rateLimitIdentity({ request }),
+      limit: CLIENT_ERROR_RATE_LIMIT,
+      scope: "client_error_report",
+      windowMs: CLIENT_ERROR_RATE_WINDOW_MS,
+    });
+  } catch (error) {
+    if (error instanceof ApiRateLimitError) {
+      return NextResponse.json(
+        { ok: false, error: "rate_limited" },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
+    // The limiter itself could not be read (the database is down). A crash report must not depend on
+    // it, and the insert below meets the same outage and is caught there.
+    console.error("Error-report rate limit unavailable:", error);
+  }
+
+  try {
+    const raw = await request.text();
+    // A body with no (or a false) Content-Length is capped on the read as well.
+    if (raw.length > CLIENT_ERROR_MAX_BODY_BYTES) {
+      return NextResponse.json({ ok: false, error: "too_large" }, { status: 413 });
+    }
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    const report = sanitizeClientErrorReport(parsed);
+
+    if (report.message) {
       const access = await resolveAccessContext(request);
-      const route = typeof body?.route === "string" ? body.route : null;
-      const activityModule = resolveActivityModule(route);
+      const activityModule = resolveActivityModule(report.route);
 
       await logAppError({
-        clientContext: typeof body?.clientContext === "string" ? body.clientContext : null,
-        componentStack: typeof body?.componentStack === "string" ? body.componentStack : null,
-        digest: typeof body?.digest === "string" ? body.digest : null,
+        clientContext: report.clientContext,
+        componentStack: report.componentStack,
+        digest: report.digest,
         environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
         hrId: access.hrId,
         loginId: access.loginId,
-        message,
+        message: report.message,
         moduleKey: activityModule.key,
         moduleLabel: activityModule.label,
         release: getDeployRevisionTag(),
         role: access.role,
-        route,
-        routeType: typeof body?.routeType === "string" ? body.routeType : null,
-        source: body?.source === "server" ? "server" : "client",
-        stack: typeof body?.stack === "string" ? body.stack : null,
+        route: report.route,
+        routeType: report.routeType,
+        source: report.source,
+        stack: report.stack,
         userAgent: request.headers.get("user-agent"),
       });
     }

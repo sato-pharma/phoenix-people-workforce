@@ -12,6 +12,7 @@ import {
 import { rejectUntrustedForwardedOrigin } from "@/lib/security/origins";
 
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
+import { describeUnexpectedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,7 +128,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(
       "[auth/biometric/register/verify] failed",
-      error instanceof Error ? error.message : error,
+      describeUnexpectedError(error),
     );
     return NextResponse.json(
       { error: "register_failed", message: "Biometric setup failed. Please try again." },

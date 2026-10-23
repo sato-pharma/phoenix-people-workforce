@@ -5,8 +5,14 @@ import {
   decideVacationRequest,
   getVacationDecisionConfirmationData,
   parseVacationDecision,
-  vacationErrorMessage,
 } from "@/lib/vacation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import {
+  vacationDecisionErrorToShow,
+  vacationDecisionFailureMessage,
+  vacationDecisionFormProblem,
+  vacationDecisionRetryPath,
+} from "@/lib/vacation/decision-form";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -25,12 +31,19 @@ async function recordVacationDecision(formData: FormData) {
   if (!requestId || !decision) {
     redirect(`/leave-management/vacation-report?decisionError=${encodeURIComponent("Vacation decision is invalid.")}`);
   }
+  const decisionComment = String(formData.get("decisionComment") ?? "");
 
-  await decideVacationRequest(access, {
-    decision,
-    decisionComment: String(formData.get("decisionComment") ?? ""),
-    requestId,
-  });
+  // 🔴 A refusal comes back to this form with its sentence — never the outage screen (audit P7-05).
+  // `redirect()` works by throwing, so it is called OUTSIDE the try, never inside it.
+  let failure = vacationDecisionFormProblem(decision, decisionComment);
+  if (!failure) {
+    try {
+      await decideVacationRequest(access, { decision, decisionComment, requestId });
+    } catch (error) {
+      failure = vacationDecisionFailureMessage(error);
+    }
+  }
+  if (failure) redirect(vacationDecisionRetryPath(requestId, decision, failure));
 
   redirect(`/leave-management/vacation-report?requestId=${encodeURIComponent(requestId)}&decisionRecorded=${decision}`);
 }
@@ -44,14 +57,26 @@ export default async function VacationDecisionPage({
 }) {
   const access = await resolveAccessContextFromPage();
   const { id } = await params;
-  const decision = parseVacationDecision(firstParam((await searchParams).decision)) ?? "approve";
+  const query = await searchParams;
+  const decision = parseVacationDecision(firstParam(query.decision)) ?? "approve";
+  // What the last submit was refused for. It arrives in the address, so it is shown only when the
+  // server's own signature verifies; a crafted link gets the fixed sentence, never its own words.
+  const decisionError = vacationDecisionErrorToShow(
+    id,
+    decision,
+    firstParam(query.decisionError),
+    firstParam(query.decisionErrorSig),
+  );
+  const reasonRequired = decision === "reject";
 
   let data: Awaited<ReturnType<typeof getVacationDecisionConfirmationData>> | null = null;
   let error: string | null = null;
   try {
     data = await getVacationDecisionConfirmationData(access, id);
   } catch (err) {
-    error = isForbiddenError(err) ? "You are not authorized to decide this vacation request." : vacationErrorMessage(err);
+    error = isForbiddenError(err)
+      ? "You are not authorized to decide this vacation request."
+      : clientSafeErrorMessage(err, "Unable to load this vacation decision.");
   }
 
   return (
@@ -89,12 +114,19 @@ export default async function VacationDecisionPage({
           <form action={recordVacationDecision} className="mt-6 flex flex-col gap-4">
             <input name="requestId" type="hidden" value={data.request.id} />
             <input name="decision" type="hidden" value={decision} />
+            {decisionError ? (
+              <p className="border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-800" role="alert">
+                {decisionError}
+              </p>
+            ) : null}
             <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-              Decision comment
+              {reasonRequired ? "Rejection reason (required)" : "Decision comment"}
+              {/* The service refuses a rejection with no reason, so the form says so first. */}
               <textarea
                 className={cn(phxTextareaClassName, "min-h-24")}
                 name="decisionComment"
-                placeholder={decision === "reject" ? "Rejection reason is recommended." : "Optional approval note."}
+                placeholder={reasonRequired ? "Why is this request rejected?" : "Optional approval note."}
+                required={reasonRequired}
               />
             </label>
             <div className="flex flex-wrap gap-3">
