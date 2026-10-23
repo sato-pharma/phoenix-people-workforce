@@ -167,6 +167,11 @@ exact words captured — "Error screen shown — <message>" for an error screen,
 answer carried no words when it carried none. The module is the sidebar row of the page the person was
 on. The row drawer shows the pictures ("What the person saw"), streamed by
 `/api/admin/system-audit/screens/[id]` behind `assertSystemAdministratorWorkspaceAccess`, never cached.
+**Every picture opened is logged** (owner, 23 Oct 2026: "log every screenshot view"): before the picture
+leaves, `recordScreenshotView` (`src/lib/system-audit/screenshot-views.ts`) writes one
+`system_audit_screenshot_view` audit row — who looked, whose screen it was (by name), the kind, the page
+and when it was taken. The crash picture's signed URL writes the same row when it is minted. A refused
+caller or a picture past its 90 days writes nothing. Pinned by `tests/system-audit-screenshot-views.test.ts`.
 **An error screen and the `app_error_fold` row for the same crash may both appear** — one is the
 picture, the other the error the browser reported; that is expected.
 

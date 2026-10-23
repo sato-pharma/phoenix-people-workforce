@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { ERROR_SCREENSHOT_BUCKET } from "@/lib/error-monitor/screenshot-intake";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
+import { recordScreenshotView } from "@/lib/system-audit/screenshot-views";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -23,6 +24,9 @@ const SIGNED_URL_TTL_SECONDS = 300;
  * capability is minted per view, against the viewer's own session, and expires; nothing durable is
  * ever rendered into the page. The path is read from the row rather than taken from the caller, so a
  * signed URL can only ever be issued for an object this table really points at.
+ *
+ * Minting the URL IS the view, so it writes one `system_audit_screenshot_view` audit row before the
+ * URL leaves — who looked, at whose screen (owner, 23 Oct 2026: "log every screenshot view").
  */
 export async function GET(request: NextRequest, context: { params: Promise<{ eventId: string }> }) {
   try {
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ eve
     const supabase = getSupabaseAdmin();
     const { data: row, error } = await supabase
       .from("app_error_events")
-      .select("screenshot_path")
+      .select("screenshot_path, hr_id, login_id, route, created_at")
       .eq("id", eventId)
       .maybeSingle();
     if (error) {
@@ -57,6 +61,19 @@ export async function GET(request: NextRequest, context: { params: Promise<{ eve
         { status: 500 },
       );
     }
+
+    const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+    await recordScreenshotView(
+      { hrId: access.hrId ?? null, loginId: access.loginId ?? null },
+      {
+        source: "crash",
+        id: eventId,
+        hrId: text(row?.hr_id),
+        loginId: text(row?.login_id),
+        page: text(row?.route),
+        takenAt: text(row?.created_at),
+      },
+    );
 
     return NextResponse.json(
       { url: signed.data.signedUrl, expiresInSeconds: SIGNED_URL_TTL_SECONDS },

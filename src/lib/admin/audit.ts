@@ -402,6 +402,11 @@ export type AuditEntityType =
   | "system_audit_status"
   | "system_audit_triage"
   | "system_audit_export"
+  // Who opened which screenshot on /admin/system-audit, whose screen it was, and when it was taken
+  // (owner, 23 Oct 2026: "log every screenshot view"). Both pictures are unmasked by his choice, so a
+  // look at one is a read of whatever was on that person's screen. Written before the picture leaves
+  // (src/lib/system-audit/screenshot-views.ts). `audit_logs.entity_type` is plain `text`: no migration.
+  | "system_audit_screenshot_view"
   | "system_cleanup"
   | "user"
   | "user_activity_access"

@@ -1224,7 +1224,9 @@ Nothing is masked, so the `error-screenshots` bucket is **private and stays priv
 section asks `/api/admin/system-audit/screenshot/<eventId>` for a **five-minute signed URL**, minted
 per view against the viewer's own Super Admin session and only when someone clicks to look. The
 object path is read from the row rather than taken from the caller, so a URL can only ever be issued
-for an object `app_error_events` really points at. No durable URL is rendered into the page.
+for an object `app_error_events` really points at. No durable URL is rendered into the page. Minting
+the URL is the view, so it writes a `system_audit_screenshot_view` audit row first — who looked, at
+whose screen, and when it was taken (`docs/system-audit.md`, "What the person saw").
 
 An occurrence shows the captures of its own `source_refs` (the `app_error_events` ids `collapse.ts`
 collected, capped at 50), newest first, and the read is best-effort: a drawer that cannot show a

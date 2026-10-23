@@ -57,17 +57,41 @@ export async function loadUserScreenSummaries(ids: readonly string[], override?:
   }));
 }
 
-/** One picture's bytes, or null when no screen has that id (or its file is gone). */
+/** Whose screen a picture is, for the audit row its viewing writes (screenshot-views.ts). */
+export type UserScreenTaken = {
+  hrId: string | null;
+  loginId: string | null;
+  kind: string | null;
+  pagePath: string | null;
+  capturedAt: string | null;
+  isTest: boolean;
+};
+
+/** One picture's bytes and whose screen it was, or null when no screen has that id (or its file is gone). */
 export async function loadUserScreenImage(
   id: string,
   override?: Client,
-): Promise<{ contentType: string; bytes: ArrayBuffer } | null> {
+): Promise<{ contentType: string; bytes: ArrayBuffer; taken: UserScreenTaken } | null> {
   if (!isUuid(id)) return null;
   const supabase = client(override);
-  const { data, error } = await supabase.from(USER_ERROR_SCREENS_TABLE).select("storage_path").eq("id", id).maybeSingle();
+  const { data, error } = await supabase
+    .from(USER_ERROR_SCREENS_TABLE)
+    .select("storage_path, hr_id, login_id, kind, page_path, created_at, is_test")
+    .eq("id", id)
+    .maybeSingle();
   if (error) throw failure("read", error);
-  const path = (data as { storage_path?: string } | null)?.storage_path;
-  if (!path) return null;
+  const row = (data ?? null) as Record<string, unknown> | null;
+  const path = typeof row?.storage_path === "string" ? row.storage_path : null;
+  if (!row || !path) return null;
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const taken: UserScreenTaken = {
+    hrId: text(row.hr_id),
+    loginId: text(row.login_id),
+    kind: text(row.kind),
+    pagePath: text(row.page_path),
+    capturedAt: text(row.created_at),
+    isTest: row.is_test === true,
+  };
   const { data: file, error: downloadError } = await supabase.storage.from(USER_ERROR_SCREENS_BUCKET).download(path);
   if (downloadError) {
     // A file the bucket no longer holds is "not found", never a server failure.
@@ -75,7 +99,11 @@ export async function loadUserScreenImage(
     throw failure("download", { message: downloadError.message });
   }
   if (!file) return null;
-  return { contentType: file.type || (path.endsWith(".webp") ? "image/webp" : "image/jpeg"), bytes: await file.arrayBuffer() };
+  return {
+    contentType: file.type || (path.endsWith(".webp") ? "image/webp" : "image/jpeg"),
+    bytes: await file.arrayBuffer(),
+    taken,
+  };
 }
 
 /**

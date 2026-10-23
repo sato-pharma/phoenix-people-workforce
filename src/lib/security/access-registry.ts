@@ -314,11 +314,13 @@ export const accessRegistry = [
   // GET is the row drawer's evidence; POST marks that one occurrence as no defect or unknown.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/system-audit/occurrences/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   // A five-minute signed URL for one error's screenshot. Super Admin only, same guard as the drawer
-  // it opens from; the object path is read from the row, never taken from the caller.
-  sessionApi({ methods: ["GET"], pattern: "/api/admin/system-audit/screenshot/:eventId", permission: null, guard: "domain-helper" }),
+  // it opens from; the object path is read from the row, never taken from the caller. Minting it is
+  // a view of the picture, so it writes a system_audit_screenshot_view row first, as screens/:id does.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/system-audit/screenshot/:eventId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/security", permission: null, guard: "domain-helper" }),
   // One screenshot of what a person saw, streamed from the private bucket for the row drawer (owner,
-  // 23 Oct 2026: as-is, Super Admin only, 90 days).
+  // 23 Oct 2026: as-is, Super Admin only, 90 days). Each picture served writes a
+  // system_audit_screenshot_view row before it leaves.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/system-audit/screens/:id", permission: null, guard: "domain-helper" }),
   // Blocking or unblocking a login IP changes who can authenticate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/system-audit/block-ip", permission: null, guard: "domain-helper", csrfRequired: true }),
