@@ -140,7 +140,8 @@ retries, never delays it and never throws.
 
 **Never captured.** A hidden tab; a request the page cancelled itself; the browser offline; a GET or
 HEAD answered 404 (that is a page asking "is there one?", not a block); anything past the per-tab
-throttle (the same kind + masked path + status once in 2 minutes, 12 pictures a tab an hour); and the
+throttle (the same kind + masked path + status once in 2 minutes, 12 pictures a tab an hour); anything
+while the **outage pause** runs (below); and the
 skip list `SCREEN_CAPTURE_SKIP_LIST` in `src/lib/error-monitor/screen-capture-rules.ts` — the error
 reporters themselves (`/api/errors/*`, this endpoint included), sign-in and the heartbeat
 (`/api/auth/*`), page-view tracking (`/api/activity/*`), the live activity poll, the notification
@@ -150,6 +151,18 @@ bell's poll, the sidebar layout and badge counts (`…/pending-count`, `…/need
 nothing in the HTTP answer says it was a refusal, so only a status of 400 or more is one; and a refusal
 shown by the page without any request at all (a form's own validation). An inner scrolled panel is drawn
 from its top: `html-to-image` copies the page, not a panel's scroll position.
+
+**The outage pause** (owner, 23 Oct 2026: "pause screenshot uploads while the server cannot store
+them"). During a database outage every request fails, so every open tab, a rep's phone on mobile data
+included, drew and sent up to 12 pictures an hour (each up to 1.6 MB) that the intake answered 503 and
+threw away. Now an upload answered **5xx, 429 or not at all** pauses the whole browser: nothing is drawn
+or sent, before the throttle and before the page is drawn. The first pause is 5 minutes, and each
+refusal after it doubles it, up to an hour. A `Retry-After` is honoured up to that hour, so the
+intake's own 429 waits the hour. One picture stored ends it. 400, 413, 401 and 403 are about that
+picture or that session and never pause. The pause is shared by every tab through localStorage
+(`phoenix:screen-upload-pause`); a tab whose storage is blocked keeps its own. Rules:
+`nextUploadPause` in `screen-capture-rules.ts`; the send: `uploadScreen` in `screen-capture.ts`.
+Pinned by `tests/screen-upload-pause.test.ts`.
 
 **Stored.** `/api/errors/screen` takes a signed-in caller only (a guest gets 401 and nothing is kept),
 same-origin, a body of at most 1.7 MB, a real JPEG or WebP of at most 1.2 MB decoded, every string

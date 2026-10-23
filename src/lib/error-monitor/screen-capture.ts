@@ -25,6 +25,10 @@
  * itself cancelled, anything while the browser reports itself offline (the picture could not be sent),
  * and anything beyond the per-tab throttle — the same screen once in 2 minutes, 12 a tab an hour.
  *
+ * NOTHING WHILE THE SERVER CANNOT STORE ONE. An upload answered 5xx, 429 or not at all pauses every
+ * tab of the browser — nothing drawn, nothing sent — for 5 minutes, doubling to an hour while it
+ * keeps refusing (the outage pause, screen-capture-rules.ts). One picture stored ends it.
+ *
  * NOT IN DEVELOPMENT. A local `next dev` reads and writes production (AGENTS.md §3), so a developer's
  * screen would land in the production bucket; the wrapper installs only in a production build.
  */
@@ -32,17 +36,23 @@
 import {
   CAPTURE_DELAY_MS,
   EMPTY_SCREEN_THROTTLE,
+  EMPTY_UPLOAD_PAUSE,
   MAX_REFUSAL_BODY_BYTES,
   classifyScreenKind,
   createPictureFilter,
   decideScreenThrottle,
   extractRefusalMessage,
   isSkippedScreenPath,
+  nextUploadPause,
+  parseUploadPause,
   pathWithoutQuery,
   sameOriginApiPath,
   screenThrottleKey,
+  uploadPaused,
+  UPLOAD_PAUSE_STORAGE_KEY,
   type ScreenKind,
   type ScreenThrottleState,
+  type UploadPauseState,
 } from "@/lib/error-monitor/screen-capture-rules";
 
 export {
@@ -72,8 +82,61 @@ type CaptureInput = {
 };
 
 let throttle: ScreenThrottleState = EMPTY_SCREEN_THROTTLE;
+/** This tab's own copy of the outage pause, used only when localStorage cannot be read or written. */
+let tabPause: UploadPauseState = EMPTY_UPLOAD_PAUSE;
 let capturing = false;
 let realFetch: typeof fetch | null = null;
+
+/** The outage pause every tab shares; this tab's own copy when storage is blocked (a private window). */
+function readUploadPause(): UploadPauseState {
+  try {
+    return parseUploadPause(window.localStorage.getItem(UPLOAD_PAUSE_STORAGE_KEY));
+  } catch {
+    return tabPause;
+  }
+}
+
+function writeUploadPause(state: UploadPauseState): void {
+  tabPause = state;
+  try {
+    if (state.pausedUntil === 0 && state.strikes === 0) window.localStorage.removeItem(UPLOAD_PAUSE_STORAGE_KEY);
+    else window.localStorage.setItem(UPLOAD_PAUSE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage blocked: the pause still holds in this tab.
+  }
+}
+
+/** Is the outage pause running for this browser? */
+export function screenUploadsPaused(nowMs: number): boolean {
+  return uploadPaused(readUploadPause(), nowMs);
+}
+
+/**
+ * Sends one picture, then moves the outage pause by the answer: stored ends it, the server unable to
+ * store starts or lengthens it, anything else leaves it. Never throws.
+ */
+export async function uploadScreen(send: typeof fetch, body: string): Promise<void> {
+  let answer: { status: number | null; retryAfter: string | null };
+  try {
+    const response = await send(SCREEN_CAPTURE_ENDPOINT, {
+      body,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    answer = { status: response.status, retryAfter: response.headers.get("retry-after") };
+  } catch {
+    // No answer at all. The browser said it was online a moment ago, so the server is unreachable.
+    answer = { status: null, retryAfter: null };
+  }
+  try {
+    const current = readUploadPause();
+    const next = nextUploadPause(current, answer, Date.now());
+    if (next !== current) writeUploadPause(next);
+  } catch {
+    // The pause is a saving, never a reason to surface an error.
+  }
+}
 
 function isProductionBuild(): boolean {
   return process.env.NODE_ENV === "production";
@@ -137,6 +200,8 @@ async function captureAndSend(input: CaptureInput): Promise<void> {
   if (capturing) return;
   if (typeof document === "undefined" || document.visibilityState !== "visible") return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  // Before the throttle and before any drawing: a paused tab spends neither a slot nor the main thread.
+  if (screenUploadsPaused(Date.now())) return;
   if (document.getElementsByTagName("*").length > SCREEN_MAX_ELEMENTS) return;
 
   const pagePath = pathWithoutQuery(window.location.pathname);
@@ -154,8 +219,9 @@ async function captureAndSend(input: CaptureInput): Promise<void> {
     if (!picture || decodedBytes(picture.dataUrl) > MAX_IMAGE_BYTES) return;
 
     const send = realFetch ?? window.fetch.bind(window);
-    await send(SCREEN_CAPTURE_ENDPOINT, {
-      body: JSON.stringify({
+    await uploadScreen(
+      send,
+      JSON.stringify({
         apiPath: input.apiPath,
         height: picture.height,
         image: picture.dataUrl,
@@ -166,10 +232,7 @@ async function captureAndSend(input: CaptureInput): Promise<void> {
         status: input.status,
         width: picture.width,
       }),
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    }).catch(() => undefined);
+    );
   } catch {
     // A picture that cannot be drawn or sent is simply not kept.
   } finally {
