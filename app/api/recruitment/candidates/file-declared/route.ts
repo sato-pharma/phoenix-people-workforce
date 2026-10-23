@@ -10,6 +10,7 @@ import {
   recruitmentApiError,
   requireRecruitmentAccess,
 } from "@/app/api/recruitment/_lib/http";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
         // One bad row must not abandon the rest half-done and unreported. Every failure is named.
         failed.push({
           candidateId: filing.candidateId,
-          reason: error instanceof Error ? error.message : "Failed to file this CV.",
+          reason: clientSafeErrorMessage(error, "Failed to file this CV."),
         });
       }
     }

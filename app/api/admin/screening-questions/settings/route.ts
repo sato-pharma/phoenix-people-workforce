@@ -10,6 +10,7 @@ import {
   WHATSAPP_REASK_ENABLED_KEY,
 } from "@/lib/recruitment/recruitment-settings-db";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ function failure(error: unknown, code: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = clientSafeErrorMessage(error, "The screening settings could not be updated.");
   return NextResponse.json({ error: code, message }, { status: 400 });
 }
 

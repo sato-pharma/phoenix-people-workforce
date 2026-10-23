@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { canReadAllProbation } from "@/lib/probation/service";
 import { canSubmitSfeAssessment } from "@/lib/probation/intelligence/assessments";
 import { buildConsolidatedReport } from "@/lib/probation/intelligence/consolidated-report";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(
     const report = await buildConsolidatedReport(access, caseId);
     return NextResponse.json({ report }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     const message = String((error as { message?: unknown })?.message ?? error);
     if (message.toLowerCase().includes("not found")) return NextResponse.json({ error: message }, { status: 404 });
     return NextResponse.json({ error: message }, { status: 500 });

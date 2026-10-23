@@ -10,6 +10,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getNsmDsmPerformance, normalizeTeamComparisonPeriods } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 
 import {
   TeamAchievementChart,
@@ -53,7 +54,7 @@ function periodsSummaryLabel(selectedPeriods: string[]) {
 /** Returns a Tailwind text-color class driven by achievement percentage. */
 function achievementColor(pct: number): string {
   if (pct >= 100) return "text-emerald-700";
-  if (pct >= 90) return "text-emerald-600";
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
 }
@@ -127,15 +128,15 @@ export default async function DsmsPerformancePage({
   const selectedPeriods = normalizeTeamComparisonPeriods(requestedPeriod).filter((period) =>
     periods.includes(period),
   );
-  const eligibleCount = dsms.filter((d) => d.achievementPercent >= 90).length;
+  const eligibleCount = dsms.filter((d) => d.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
 
   /* Achievement distribution zones */
   const zoneExcellent = dsms.filter((d) => d.achievementPercent >= 100).length;
   const zoneGood = dsms.filter(
-    (d) => d.achievementPercent >= 90 && d.achievementPercent < 100,
+    (d) => d.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT && d.achievementPercent < 100,
   ).length;
   const zoneFair = dsms.filter(
-    (d) => d.achievementPercent >= 70 && d.achievementPercent < 90,
+    (d) => d.achievementPercent >= 70 && d.achievementPercent < INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT,
   ).length;
   const zoneLow = dsms.filter((d) => d.achievementPercent < 70).length;
   const totalDsms = dsms.length || 1;
@@ -261,7 +262,7 @@ export default async function DsmsPerformancePage({
               <div
                 className="bg-emerald-300 transition-all"
                 style={{ width: `${(zoneGood / totalDsms) * 100}%` }}
-                title={`${zoneGood} DSMs at 90-99%`}
+                title={`${zoneGood} DSMs at ${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%`}
               />
             )}
             {zoneFair > 0 && (
@@ -286,7 +287,7 @@ export default async function DsmsPerformancePage({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm bg-emerald-300" />
-              {zoneGood} at 90-99%
+              {zoneGood} at {INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />

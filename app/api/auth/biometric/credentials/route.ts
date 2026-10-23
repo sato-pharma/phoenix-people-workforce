@@ -9,6 +9,7 @@ import {
   toCredentialSummary,
 } from "@/lib/auth/webauthn";
 import { rejectUntrustedForwardedOrigin } from "@/lib/security/origins";
+import { describeUnexpectedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error(
       "[auth/biometric/credentials] list failed",
-      error instanceof Error ? error.message : error,
+      describeUnexpectedError(error),
     );
     return NextResponse.json(
       { error: "list_failed", message: "Could not load your biometric devices." },
@@ -106,7 +107,7 @@ export async function DELETE(request: Request) {
   } catch (error) {
     console.error(
       "[auth/biometric/credentials] delete failed",
-      error instanceof Error ? error.message : error,
+      describeUnexpectedError(error),
     );
     return NextResponse.json(
       { error: "delete_failed", message: "Could not remove that device." },

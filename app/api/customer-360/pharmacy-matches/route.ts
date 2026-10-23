@@ -3,6 +3,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import type { MatchPair } from "@/lib/customer-360/pharmacy-matcher";
 import { decidePharmacyMatch, MatchDecisionError, type MatchDecisionInput } from "@/lib/customer-360/server/pharmacy-matches";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,6 @@ export async function POST(request: Request) {
       return Response.json({ error: "Pharmacy matches are decided by the system administrator only." }, { status: 403 });
     }
     if (error instanceof MatchDecisionError) return Response.json({ error: error.message }, { status: error.status });
-    return Response.json({ error: error instanceof Error ? error.message : "The decision could not be recorded." }, { status: 500 });
+    return Response.json({ error: clientSafeErrorMessage(error, "The decision could not be recorded.") }, { status: 500 });
   }
 }

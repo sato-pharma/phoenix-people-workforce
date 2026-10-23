@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { csvCell } from "@/lib/export/csv-cell";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -306,12 +307,9 @@ export async function resolveMarketingReportShareLink(input: {
   };
 }
 
-/** RFC4180 quoting — a customer name containing a comma must survive the round trip. */
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
+// `csvCell` is the shared one (`@/lib/export/csv-cell`): RFC4180 quoting — a customer name containing
+// a comma must survive the round trip — and a typed cell that starts with `=`, `+`, `-` or `@` is
+// neutralised before the sheet opens it (audit S-APP-08).
 
 /** Where a token-scoped file lives. Kept beside the CSV builder so the two cannot disagree. */
 export function shareFileUrl(baseUrl: string, token: string, kind: "evidence" | "invoice" | "proof", requestCode: string): string {

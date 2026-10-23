@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
-import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 import {
   buildBulkImportPreview,
   executeBulkImport,
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function bulkApiError(error: unknown, fallback: string) {
-  if (isForbiddenError(error)) return { code: "forbidden", message: String(error instanceof Error ? error.message : error), status: 403 };
+  if (isForbiddenError(error)) return { code: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), status: 403 };
   const apiError = toApiError(error, fallback);
   return { code: apiError.code, message: apiError.message, status: apiError.status };
 }

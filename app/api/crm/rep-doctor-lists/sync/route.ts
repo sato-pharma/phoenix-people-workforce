@@ -11,6 +11,7 @@ import { monthBounds, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lis
 import { assertRepDoctorListsAccess } from "@/lib/crm/rep-doctor-lists-access";
 import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
 import { PlanSyncRangeError, resolvePlanSyncWindow, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
     if (error instanceof PlanSyncRangeError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     return NextResponse.json({ error: String((error as { message?: unknown })?.message ?? error) }, { status: 500 });
   }
 }

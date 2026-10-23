@@ -19,6 +19,7 @@ import { loadFieldActivityReport } from "@/lib/field-activity/report";
 import { inlineLocalAssets } from "@/lib/hiring-pack/paper-artwork";
 import { stampPremiumPageNumbers } from "@/lib/hiring-pack/paper-pdf";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -154,7 +155,7 @@ export async function GET(request: Request) {
       );
     }
     return NextResponse.json(
-      { error: "field_activity_pdf_failed", message: error instanceof Error ? error.message : "Unknown error", success: false },
+      { error: "field_activity_pdf_failed", message: clientSafeErrorMessage(error, "Unknown error"), success: false },
       { status: 500 },
     );
   }

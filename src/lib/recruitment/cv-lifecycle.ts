@@ -26,6 +26,7 @@
 // all three as one number would be the confidently-wrong answer this report exists to replace.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { csvCell } from "@/lib/export/csv-cell";
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 import { isUuid } from "@/lib/http/uuid";
 import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
@@ -460,12 +461,9 @@ export function summarizeCvLifecycle(
 // The CSV bundle the sheet pulls
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** RFC4180 quoting — an Arabic candidate name containing a comma must survive the round trip. */
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const text_ = String(value);
-  return /[",\n\r]/.test(text_) ? `"${text_.replace(/"/g, '""')}"` : text_;
-}
+// `csvCell` is the shared one (`@/lib/export/csv-cell`): RFC4180 quoting — an Arabic candidate name
+// containing a comma must survive the round trip — and a name from the public application form that
+// starts with `=`, `+`, `-` or `@` is neutralised before the sheet opens it (audit S-APP-08).
 
 const CHANNEL_LABELS: Record<CvLifecycleChannel, string> = {
   email: "Email",

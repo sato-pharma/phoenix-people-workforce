@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Users, TrendingUp, Target, Award } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -100,11 +101,7 @@ export default async function EmployeePortalTeamPerformancePage({
     redirect("/employee-portals/team-performance");
   }
 
-  const eligibleCount = members.filter((m) => m.achievementPercent >= 90).length;
-  const teamAvg =
-    members.length > 0
-      ? members.reduce((s, m) => s + m.achievementPercent, 0) / members.length
-      : 0;
+  const eligibleCount = members.filter((m) => m.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
 
   return (
     <EmployeePortalPageShell
@@ -168,8 +165,9 @@ export default async function EmployeePortalTeamPerformancePage({
               <Award className="h-4 w-4 text-orange-500" />
               <p className="text-xs font-medium text-slate-500">Team Achievement</p>
             </div>
+            {/* No "Avg" line under it (owner, 2026-10-23): a plain mean of the reps' own percentages
+                read as a second, contradicting team figure — 28.2% beside 59.5% for Upper Egypt 2. */}
             <p className="text-2xl font-black text-slate-900">{pct(teamAchievementPercent)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Avg: {pct(teamAvg)}</p>
           </div>
           <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
             <div className="flex items-center gap-2 mb-1">
@@ -196,7 +194,7 @@ export default async function EmployeePortalTeamPerformancePage({
               {eligibleCount}
               <span className="text-base font-medium text-slate-400"> / {teamMemberCount}</span>
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">≥ 90% achievement</p>
+            <p className="text-xs text-slate-400 mt-0.5">≥ {INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}% achievement</p>
           </div>
         </div>
 

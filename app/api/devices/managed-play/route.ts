@@ -15,6 +15,7 @@ import {
 } from "@/lib/devices/managed-play-iframe";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: error.message }, { status: 502 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Could not open managed Google Play." },
+      { message: clientSafeErrorMessage(error, "Could not open managed Google Play.") },
       { status: 500 },
     );
   }

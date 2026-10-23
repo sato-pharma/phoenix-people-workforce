@@ -11,6 +11,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getMedRepsPerformance } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -41,7 +42,7 @@ function periodHref(period: string | null) {
 /** Returns a Tailwind text-color class driven by achievement percentage. */
 function achievementColor(pct: number): string {
   if (pct >= 100) return "text-emerald-700";
-  if (pct >= 90) return "text-emerald-600";
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
 }
@@ -49,7 +50,7 @@ function achievementColor(pct: number): string {
 /** Lighter variant of {@link achievementColor} for dark (slate-900) backgrounds. */
 function achievementColorOnDark(pct: number): string {
   if (pct >= 100) return "text-emerald-400";
-  if (pct >= 90) return "text-emerald-300";
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "text-emerald-300";
   if (pct >= 70) return "text-amber-400";
   return "text-rose-400";
 }
@@ -120,15 +121,15 @@ export default async function MedRepsPerformancePage({
 
   const validPeriod =
     requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
-  const eligibleCount = members.filter((m) => m.achievementPercent >= 90).length;
+  const eligibleCount = members.filter((m) => m.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
 
   /* Achievement distribution zones */
   const zoneExcellent = members.filter((m) => m.achievementPercent >= 100).length;
   const zoneGood = members.filter(
-    (m) => m.achievementPercent >= 90 && m.achievementPercent < 100,
+    (m) => m.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT && m.achievementPercent < 100,
   ).length;
   const zoneFair = members.filter(
-    (m) => m.achievementPercent >= 70 && m.achievementPercent < 90,
+    (m) => m.achievementPercent >= 70 && m.achievementPercent < INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT,
   ).length;
   const zoneLow = members.filter((m) => m.achievementPercent < 70).length;
   const totalMembers = members.length || 1;
@@ -251,7 +252,7 @@ export default async function MedRepsPerformancePage({
               <div
                 className="bg-emerald-300 transition-all"
                 style={{ width: `${(zoneGood / totalMembers) * 100}%` }}
-                title={`${zoneGood} reps at 90-99%`}
+                title={`${zoneGood} reps at ${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%`}
               />
             )}
             {zoneFair > 0 && (
@@ -276,7 +277,7 @@ export default async function MedRepsPerformancePage({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm bg-emerald-300" />
-              {zoneGood} at 90-99%
+              {zoneGood} at {INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />

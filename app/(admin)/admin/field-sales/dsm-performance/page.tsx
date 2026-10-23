@@ -14,6 +14,7 @@ import {
   getCompanyDsmPerformance,
   normalizeTeamComparisonPeriods,
 } from "@/lib/employee-portal/service";
+import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 
 import {
   TeamLeaderboardTable,
@@ -66,7 +67,7 @@ function periodsSummaryLabel(selectedPeriods: string[]) {
 
 function achievementColor(pct: number): string {
   if (pct >= 100) return "text-emerald-700";
-  if (pct >= 90) return "text-emerald-600";
+  if (pct >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
 }
@@ -125,10 +126,10 @@ export default async function CompanyDsmPerformancePage({
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
     .map((d, i) => ({ ...d, position: i + 1 }));
 
-  const eligibleCount = allDsms.filter((d) => d.achievementPercent >= 90).length;
+  const eligibleCount = allDsms.filter((d) => d.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
   const zoneExcellent = allDsms.filter((d) => d.achievementPercent >= 100).length;
-  const zoneGood = allDsms.filter((d) => d.achievementPercent >= 90 && d.achievementPercent < 100).length;
-  const zoneFair = allDsms.filter((d) => d.achievementPercent >= 70 && d.achievementPercent < 90).length;
+  const zoneGood = allDsms.filter((d) => d.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT && d.achievementPercent < 100).length;
+  const zoneFair = allDsms.filter((d) => d.achievementPercent >= 70 && d.achievementPercent < INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT).length;
   const zoneLow = allDsms.filter((d) => d.achievementPercent < 70).length;
   const totalDsms = allDsms.length || 1;
 
@@ -245,7 +246,7 @@ export default async function CompanyDsmPerformancePage({
               <div className="bg-emerald-500" style={{ width: `${(zoneExcellent / totalDsms) * 100}%` }} title={`${zoneExcellent} DSMs at 100%+`} />
             )}
             {zoneGood > 0 && (
-              <div className="bg-emerald-300" style={{ width: `${(zoneGood / totalDsms) * 100}%` }} title={`${zoneGood} DSMs at 90-99%`} />
+              <div className="bg-emerald-300" style={{ width: `${(zoneGood / totalDsms) * 100}%` }} title={`${zoneGood} DSMs at ${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%`} />
             )}
             {zoneFair > 0 && (
               <div className="bg-amber-400" style={{ width: `${(zoneFair / totalDsms) * 100}%` }} title={`${zoneFair} DSMs at 70-89%`} />
@@ -256,7 +257,7 @@ export default async function CompanyDsmPerformancePage({
           </div>
           <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-medium text-slate-500">
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-emerald-500" />{zoneExcellent} at 100%+</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-emerald-300" />{zoneGood} at 90-99%</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-emerald-300" />{zoneGood} at {INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}-99%</span>
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-amber-400" />{zoneFair} at 70-89%</span>
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-red-400" />{zoneLow} below 70%</span>
           </div>
@@ -298,7 +299,7 @@ export default async function CompanyDsmPerformancePage({
                 <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
                   {egp(line.performance.lineTotalSales)} / {egp(line.performance.lineTotalTarget)}
                 </p>
-                <p className={`text-xl font-black ${line.performance.lineAchievementPercent >= 90 ? "text-emerald-400" : line.performance.lineAchievementPercent >= 70 ? "text-amber-400" : "text-rose-400"}`}>
+                <p className={`text-xl font-black ${line.performance.lineAchievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT ? "text-emerald-400" : line.performance.lineAchievementPercent >= 70 ? "text-amber-400" : "text-rose-400"}`}>
                   {line.performance.lineAchievementPercent.toFixed(1)}%
                 </p>
               </div>

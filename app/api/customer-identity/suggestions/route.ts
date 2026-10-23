@@ -2,6 +2,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadIdentitySuggestions } from "@/lib/customer-identity/server/reads";
 import type { IdentityKind } from "@/lib/customer-identity/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "Customer links are available to the system administrator only." }, { status: 403 });
     }
     return Response.json(
-      { error: error instanceof Error ? error.message : "The suggestions could not be read." },
+      { error: clientSafeErrorMessage(error, "The suggestions could not be read.") },
       { status: 500 },
     );
   }

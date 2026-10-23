@@ -9,6 +9,7 @@ import {
   ProbationConfigValidationError,
   type ProbationConfigInput,
 } from "@/lib/probation/intelligence/config";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +22,8 @@ export async function GET(request: Request) {
     const config = await getProbationConfig();
     return NextResponse.json({ config }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ error: clientSafeErrorMessage(error, "The probation settings could not be read.") }, { status: 500 });
   }
 }
 
@@ -42,7 +43,7 @@ export async function PATCH(request: Request) {
     if (error instanceof ProbationConfigValidationError) {
       return NextResponse.json({ error: error.message, issues: error.issues }, { status: 400 });
     }
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     return NextResponse.json({ error: String((error as { message?: unknown })?.message ?? error) }, { status: 500 });
   }
 }

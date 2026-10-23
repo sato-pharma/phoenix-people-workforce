@@ -13,6 +13,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { canOpenSubject, resolveFieldActivityAccess } from "@/lib/field-activity/access";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden", success: false }, { status: 403 });
     }
     return NextResponse.json(
-      { error: "field_activity_subjects_failed", message: error instanceof Error ? error.message : "Unknown error", success: false },
+      { error: "field_activity_subjects_failed", message: clientSafeErrorMessage(error, "Unknown error"), success: false },
       { status: 500 },
     );
   }

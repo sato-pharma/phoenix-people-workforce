@@ -2,13 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { canUseEmployeePortalMarketingRoiTracking } from "@/lib/employee-portal/navigation";
-import {
-  clientSafeErrorMessage,
-  forbiddenError,
-  isStatementTimeoutError,
-  STATEMENT_TIMEOUT_API_ERROR,
-  toApiError,
-} from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf, forbiddenError, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
 import { canAccessMarketingAdminPage } from "@/lib/marketing-requests/admin-page-access";
 import { getMarketingManagerScorecard } from "@/lib/marketing-requests/manager-scorecard-service";
 
@@ -22,11 +16,7 @@ function scorecardApiError(error: unknown) {
   }
   if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
 
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : String(error ?? "");
+  const message = errorMessageOf(error);
   const normalized = message.toLowerCase();
   if (
     normalized.includes("marketing_request") ||

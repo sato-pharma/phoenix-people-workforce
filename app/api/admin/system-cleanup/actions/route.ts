@@ -7,11 +7,11 @@ import {
 } from "@/lib/admin/system-cleanup";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
 
 function errorStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessageOf(error);
   if (
     message.includes("at least") ||
     message.includes("limited to") ||

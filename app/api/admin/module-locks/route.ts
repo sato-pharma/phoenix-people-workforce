@@ -11,6 +11,7 @@ import {
 import { assertPermission, permissionResources, type PermissionResource } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ function failure(error: unknown, code: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  return NextResponse.json({ error: code, message: String(error) }, { status: 500 });
+  return NextResponse.json({ error: code, message: clientSafeErrorMessage(error, "The module locks could not be updated.") }, { status: 500 });
 }
 
 export async function GET(request: Request) {

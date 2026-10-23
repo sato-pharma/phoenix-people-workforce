@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isProbationAdministrator } from "@/lib/probation/service";
 import { runProbationCaseBackfill } from "@/lib/probation/intelligence/backfill";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ report, dvHistory }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ error: String(error) }, { status: 403 });
+    if (isForbiddenError(error)) return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     return NextResponse.json({ error: String((error as { message?: unknown })?.message ?? error) }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError, logInfo } from "@/lib/observability/log";
 import { sendCvIntakeDigest6h } from "@/lib/recruitment/inbound/cv-intake-digest-6h";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
     });
     await pingDeadMansSwitch(JOB_SLUG, "fail", describeThrown(error));
     return NextResponse.json(
-      { error: "cv_intake_digest_6h_failed", message: error instanceof Error ? error.message : "Unknown error" },
+      { error: "cv_intake_digest_6h_failed", message: clientSafeErrorMessage(error, "Unknown error") },
       { status: 500 },
     );
   }

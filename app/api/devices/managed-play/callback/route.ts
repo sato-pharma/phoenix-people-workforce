@@ -10,6 +10,7 @@ import {
 } from "@/lib/devices/android-enterprise-signup";
 import { androidManagementTokenProvider } from "@/lib/devices/android-management-auth";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
     }
     pageUrl.searchParams.set(
       "signupError",
-      error instanceof Error ? error.message : "The Android Enterprise signup did not complete.",
+      clientSafeErrorMessage(error, "The Android Enterprise signup did not complete."),
     );
     return NextResponse.redirect(pageUrl);
   }

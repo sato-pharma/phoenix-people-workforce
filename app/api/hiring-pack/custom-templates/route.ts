@@ -17,6 +17,7 @@ import {
 import { copyCustomTemplateFieldLayout } from "@/lib/hiring-pack/field-layout-store";
 import { customDocumentFor, isUuid } from "@/lib/hiring-pack/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ function apiError(error: unknown) {
       status: 409,
     };
   }
-  return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
+  return { message: clientSafeErrorMessage(error, "Something went wrong."), status: 500 };
 }
 
 /** Every company template that prints today, with its pages. `archived=1` includes the rest. */

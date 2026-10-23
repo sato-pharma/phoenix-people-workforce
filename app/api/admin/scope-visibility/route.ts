@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { listUserScopeOverrides } from "@/lib/auth/scope-visibility";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { saveScopeVisibilityForLogin } from "@/lib/sales/product-scope-list";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     return NextResponse.json(
-      { error: "scope_visibility_read_failed", message: String(error) },
+      { error: "scope_visibility_read_failed", message: clientSafeErrorMessage(error, "The scope settings could not be read.") },
       { status: 500 },
     );
   }
@@ -53,7 +54,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     return NextResponse.json(
-      { error: "scope_visibility_update_failed", message: String(error) },
+      { error: "scope_visibility_update_failed", message: clientSafeErrorMessage(error, "The scope settings could not be saved.") },
       { status: 500 },
     );
   }
