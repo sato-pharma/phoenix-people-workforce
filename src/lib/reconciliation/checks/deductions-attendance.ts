@@ -367,9 +367,10 @@ const absenceNeverCountedOnAnOutageDay: ReconciliationCheck = {
   title: "The monthly attendance summary must report zero absence on days the device recorded nothing for anybody",
   domain: "deductions-attendance",
   severity: "critical",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: the last punch in attendance_raw_punches was 2026-07-30 06:40 UTC and none existed after it, so every expected working day of August was a company-wide outage while the summary counted each one as absence for the whole 17-person device-mapped roster. INGESTION HAS SINCE RESUMED and that half of the condition is met — re-read on production 2026-10-12: 575 punches / 16 people in August, 647 / 16 in September, 171 / 15 in October, the last at 2026-10-12 11:44 Cairo. Do not read the 2026-08 sentence as the feed's current state (it was read that way during the CRM audit); the open half is the summary still counting absence on a day the device recorded nothing for anybody. The roster on the feed is head office only — no medical rep and no district manager punches at all, which is why a field deduction can never be checked against it (docs/deductions-half-day-trace-independence.md).",
+  expectation: "holds",
+  // Was known-open until 2026-10-23. The summary excludes an outage day (monthly-summary.ts, noDataDays /
+  // missingDataDates); what was wrong was this check, which compared ALL absence in the month with the number
+  // of outage days and so called any month holding an outage a breach.
   async run(): Promise<ReconciliationOutcome> {
     const month = cairoTodayIso().slice(0, 7);
     const summary = await getMonthlyAttendanceSummary({ month });
@@ -383,13 +384,17 @@ const absenceNeverCountedOnAnOutageDay: ReconciliationCheck = {
       outageTo < summary.dateFrom ? new Set<string>() : await getCompanyWideOutageDates(summary.dateFrom, outageTo);
 
     const rosterSize = summary.rows.length;
-    const holds = summary.totals.absentDays === 0 || outageDates.size === 0;
+    // The rule is about the outage days themselves: each one must come back from the summary as "no data"
+    // (neither expected nor absent), whatever ordinary absence the month holds on other days.
+    const reported = new Set(summary.missingDataDates);
     const dates = [...outageDates].sort();
+    const stillCounted = dates.filter((date) => !reported.has(date));
+    const holds = rosterSize === 0 || stillCounted.length === 0;
 
     return {
       left: {
-        source: `getMonthlyAttendanceSummary({ month: "${month}" }) over ${summary.dateFrom}..${summary.dateTo}`,
-        value: `${formatCount(summary.totals.absentDays, "absent employee-day")} across ${formatCount(rosterSize, "rostered employee")}`,
+        source: `getMonthlyAttendanceSummary({ month: "${month}" }).missingDataDates over ${summary.dateFrom}..${summary.dateTo}`,
+        value: `${formatCount(summary.missingDataDates.length, "day")} reported as no data (${formatCount(summary.totals.absentDays, "absent employee-day")} counted on other days, across ${formatCount(rosterSize, "rostered employee")})`,
       },
       right: {
         source: `getCompanyWideOutageDates(${summary.dateFrom}, ${outageTo}) — the canonical detector, through yesterday only`,
@@ -399,8 +404,8 @@ const absenceNeverCountedOnAnOutageDay: ReconciliationCheck = {
       detail: holds
         ? outageDates.size === 0
           ? `No company-wide outage day in ${summary.dateFrom}..${outageTo}; the summary's absence figure stands.`
-          : `The summary reports no absence, so the ${formatCount(outageDates.size, "outage day")} cannot have become false absentees.`
-        : `The summary counts ${formatCount(summary.totals.absentDays, "absent employee-day")} while the device recorded nothing for anybody on ${formatList(dates)} — each of those days turns all ${formatCount(rosterSize, "rostered employee")} into false absentees. Holiday calendar reachable: ${summary.holidayCalendarReachable && summary.holidaySourceConnected ? "yes" : "NO — a real public holiday could be being read as a working day"}.`,
+          : `Every one of the ${formatCount(outageDates.size, "outage day")} (${formatList(dates)}) is reported as no data, so none became a false absentee.`
+        : `The device recorded nothing for anybody on ${formatList(stillCounted)}, yet the summary did not report ${stillCounted.length === 1 ? "it" : "them"} as no data — all ${formatCount(rosterSize, "rostered employee")} would be counted absent. Holiday calendar reachable: ${summary.holidayCalendarReachable && summary.holidaySourceConnected ? "yes" : "NO — a real public holiday could be being read as a working day"}.`,
     };
   },
 };

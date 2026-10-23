@@ -276,9 +276,8 @@ const topCustomersListEachCustomerOnce: ReconciliationCheck = {
   title: "Source-of-Sales Top Customers lists each customer once, at its full selected-period total",
   domain: "crm-sales",
   severity: "high",
-  expectation: "known-open",
-  openDefect:
-    "Verified against production RPC output 2026-08-04. 2026-07 + 2026-06: 'مخزن الحجاز فارما لتجارة وتوزي' shows 132,570.00 EGP against a true two-month total of 184,140.00, and 'مخزن طاى جروب - طاى' shows 96,539.63 against 130,093.88. 2026-04 + 2026-06: the top-15 holds only 13 distinct customers, with two of them listed twice. This is one of the 24 audited defects and is still open.",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: sos-dashboard.ts groups the customer list on (distributor, client) before it ranks.
   async run(): Promise<ReconciliationOutcome> {
     const options = { revealRestrictedProducts: true } as const;
     const base = await getSosDashboard({}, systemAccessContext, options);

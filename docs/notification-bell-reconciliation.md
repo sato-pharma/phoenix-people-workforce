@@ -51,3 +51,14 @@ where d.channel = 'in_app' and d.status = 'sent'
 ```
 
 It was 622 before the repair and 0 after, on production, the same day.
+
+## The other five known-open checks, re-armed the same day
+
+Run once, read-only, against production on 2026-10-23 (the reconciliation service writes nothing). Four
+agreed: the payroll dashboard, the bank file and the command-center card across 9 approved batches
+(989 rows, 20,911,980.16 EGP on the dashboard and its own records), and the SoS top customers (15 rows,
+15 customers; the two-period cross-check had 0 customers it could verify independently, so only the
+one-row-per-customer half is proven). The attendance check was the check's fault, not the summary's:
+it compared all 52 ordinary absences in October with the one outage day, while the summary already
+reported 2026-10-22 as no data. It now asks whether each outage day is reported as no data.
+All five are `holds`.
