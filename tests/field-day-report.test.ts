@@ -17,6 +17,7 @@ import {
   supersededPathFor,
   SUPERSEDED_DIR,
   verifyPaper,
+  awaitPaper,
 } from "../scripts/field-day/print-day.mjs";
 import { holidayNameOf, restDayOf, weekdayOf } from "../scripts/field-day/read-day.mjs";
 import { stripComments } from "./support/comment-strip.ts";
@@ -392,6 +393,29 @@ export function runFieldDayReportTests() {
   assert.ok(printPaperSource.includes("spawnSync("), "Chrome runs under spawnSync so both streams are readable");
   assert.ok(printPaperSource.includes("Failed to write"), "the line that names the real cause is the one kept for the log");
   assert.ok(printPaperSource.includes("verifyPaper("), "every print is verified against the file on disk");
+  assert.ok(
+    printPaperSource.indexOf("awaitPaper(") > -1 && printPaperSource.indexOf("awaitPaper(") < printPaperSource.indexOf("verifyPaper("),
+    "🔴 and the verifier waits for Chrome's late write first — on 22 Oct the paper landed 5 s after Chrome exited 0",
+  );
+
+  // The wait itself, on a simulated clock: the 22 Oct shape, a file absent for 5 s, then growing, then settled.
+  {
+    let clock = 0;
+    const sizes = new Map<number, number>([[5_000, 120_000], [5_500, 298_081], [6_000, 298_081]]);
+    const fakeStat = () => {
+      const size = sizes.get(clock);
+      if (size === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return { size };
+    };
+    const landed = awaitPaper("late.bin", { stat: fakeStat as never, sleep: (ms: number) => { clock += ms; }, now: () => clock });
+    assert.equal(landed, true, "🔴 a paper that lands 5 s after Chrome exits is waited for, not reported missing");
+    assert.equal(clock, 6_000, "and only once its size has held across two reads — a half-written paper is not judged");
+
+    clock = 0;
+    const never = awaitPaper("never.bin", { stat: (() => { throw new Error("ENOENT"); }) as never, sleep: (ms: number) => { clock += ms; }, now: () => clock });
+    assert.equal(never, false, "a paper that never lands gives up, so verifyPaper names it");
+    assert.equal(clock, 30_000, "after 30 s, not forever");
+  }
   assert.ok(printPaperSource.includes("throw new Error("), "🔴 and the failure is LOUD — run-nightly.mjs writes it into xlsx/field-day-task.log");
   // 🔴 No retry: the failure guarded here is a DETERMINISTIC path error, so a second attempt fails
   // identically. The earlier cut of this fix retried three times on a race that does not exist.

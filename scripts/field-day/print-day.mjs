@@ -550,6 +550,45 @@ export function assertPapersFit(out, papers, { day = "0000-00-00", limit = MAX_P
   return longest ? longest.length : 0;
 }
 
+/** How long a paper may take to land after Chrome's launcher has already exited 0. */
+const PAPER_LANDING_MS = 30_000;
+const PAPER_POLL_MS = 500;
+const sleepMs = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+/**
+ * Wait for Chrome's late write to finish before the paper is judged. Returns true once the file
+ * exists and its size is unchanged across two reads; false at the timeout, which leaves
+ * `verifyPaper` to name what is wrong.
+ *
+ * 🔴 CHROME CAN EXIT 0 BEFORE THE PAPER IS ON DISK. Measured 22 Oct 2026: the run that started at
+ * 22:11 Cairo reported "CNS.pdf was not written — Chrome exited 0 and left no file" at 22:12:36, and
+ * the CNS paper was on disk at 22:12:41, five seconds later and complete (298,081 bytes). The launcher
+ * returned while the browser process it handed the print to was still writing, so Pedia,
+ * Anti-Infective and the CEO summary were never printed. This waits; it never prints twice, so the
+ * deterministic path error below still fails exactly once, only up to 30 s later.
+ */
+export function awaitPaper(
+  pdfPath,
+  { timeoutMs = PAPER_LANDING_MS, intervalMs = PAPER_POLL_MS, stat = statSync, sleep = sleepMs, now = Date.now } = {},
+) {
+  const deadline = now() + timeoutMs;
+  let lastSize = -1;
+  for (;;) {
+    let size = -1;
+    try {
+      size = stat(pdfPath).size;
+    } catch {
+      /* not there yet */
+    }
+    if (size >= MIN_PAPER_BYTES && size === lastSize) return true;
+    lastSize = size;
+    if (now() >= deadline) return false;
+    sleep(intervalMs);
+  }
+}
+
 /**
  * Verify a paper actually landed. Returns its size in bytes; throws, naming the paper, on anything
  * else, because a nightly job nobody watches must never log a paper it did not write.
@@ -670,7 +709,9 @@ export function supersedePaper(pdfPath, { label }) {
  * 🔴 `spawnSync`, not `execFileSync` with `{ stdio: "pipe" }`: Chrome's own "Failed to write file …
  * (0x3)" and "N bytes written to file" both ride on stderr, and discarding them is what hid the cause
  * of the lost CEO page for several steps. There is no retry — the failure this guards is a
- * deterministic path error, so a second attempt fails identically and only delays the message.
+ * deterministic path error, so a second attempt fails identically and only delays the message. It
+ * does WAIT for a late write (`awaitPaper`), which is a different thing: the 22 Oct paper landed
+ * five seconds after Chrome exited, and waiting reprints nothing.
  */
 export function printPaper({ htmlPath, pdfPath }) {
   const name = path.basename(pdfPath);
@@ -700,6 +741,7 @@ ${run.stderr ?? ""}`
   try {
     if (run.error) throw run.error;
     if (run.status !== 0) throw new Error(`Chrome exited ${run.status}${run.signal ? ` on ${run.signal}` : ""}`);
+    awaitPaper(pdfPath);
     return verifyPaper(pdfPath, { writtenAfter });
   } catch (error) {
     // 🔴 LOUD, and naming the paper: `run-nightly.mjs` puts a thrown message into

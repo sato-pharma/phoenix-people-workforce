@@ -142,7 +142,11 @@ overrides:
   # Bumped 2026-09-29 for Dependabot #81 (NAT64 64:ff9b:1::/48 not classified) and #82 (fe80::/64
   # vs fe80::/10 link-local), both SSRF/trust-boundary, both patched 10.5.1; still the
   # imapflow > socks production path.
-  ip-address: ^10.5.1
+  # Bumped 2026-10-23 for GHSA-rxp7-6hxx-x8q5 (Dependabot #122, medium): Address6 matches a zone
+  # identifier in quadratic time before its length limit, so one long string stalls the process.
+  # Covers <= 10.7.3, patched 10.7.4 (published 2026-10-11); the graph had resolved 10.7.2. Still
+  # the imapflow > socks production path.
+  ip-address: ^10.7.4
   "@hono/node-server": ^2.0.5
   # Bumped 2026-09-10 for three advisories that all patch at 4.13.5: GHSA-gqvv-2mrq-wpjv
   # (`toSSG()` still writes files outside the output directory — the incomplete fix for
@@ -159,7 +163,10 @@ overrides:
   # `minimumReleaseAgeExclude` entry for it — checked in this repo's manifests after the install,
   # which is the only way to tell. That hole is what the 2026-08-04 note refused, and it is still
   # refused: if a future bump cannot install without one, hold the floor instead.
-  hono: ^4.13.5
+  # Bumped 2026-10-23 for GHSA-5r4p-p66f-jhc7 (Dependabot #119, medium): `serveStatic` decodes the
+  # request path twice, so middleware on static paths can be bypassed. Covers >= 4.12.4 < 4.13.11,
+  # patched 4.13.11 (published 2026-09-29); the graph had resolved 4.13.7. Still DEV-ONLY.
+  hono: ^4.13.11
   # Bumped 2026-09-10 for GHSA-2883-xcg3-v3hh (high): `maxTotalMergeKeys` caps the number of merge
   # keys but not the CPU spent on empty merge sources, so a crafted document still stalls the
   # parser. Advisory covers `>=4.0.0 <4.3.2`; the graph had resolved 4.3.1. DEV-ONLY and reached
