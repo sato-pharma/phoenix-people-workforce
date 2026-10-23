@@ -29,15 +29,8 @@ import {
 
 const lib = { MODULES, mentions, modulesForPath };
 
-/**
- * Cross-cutting modules: a rule citing their files can legitimately be global.
- *
- * `engineering-tests` is here for the same reason `engineering` is, and it matters more: it owns
- * `tests/**`, and this repo's house style is for a global rule to name the test that pins it
- * ("Pinned by `tests/x.test.ts`"). Without this entry every such rule would read as owned by one
- * module the moment that module existed — two of them did when the module was added on 2026-10-23.
- */
-const CROSS_CUTTING = new Set(["engineering", "engineering-tests", "sessions", "database", "platform", "platform-design-tokens"]);
+/** Cross-cutting modules: a rule citing their files can legitimately be global. */
+const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform", "platform-design-tokens"]);
 
 /**
  * Global rules in AGENTS.md that cite ONE business module's files on purpose. Adding to this list

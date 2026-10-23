@@ -93,7 +93,7 @@ export function runTerritoryUnitsClosingBasisTests() {
   assert.ok(
     new RegExp(
       String.raw`case when r\.is_direct then coalesce\(r\.direct_value, 0\) else r\.total_qty \* ` +
-        String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\) end`,
+        String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)|[a-z_]+\.period_price), 0\) end`,
     ).test(sql),
     `${newest}: the value basis must be direct = source value, else total_qty x factory price — the ` +
       "same basis as the units, so the two columns can never disagree again",

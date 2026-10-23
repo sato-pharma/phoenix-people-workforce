@@ -1086,6 +1086,30 @@ export const MODULES = [
     keywords: ["ci", "github actions", "workflow run", "required check", "required checks", "railway", "deploy", "deployed", "test runner", "roll-up", "rollup"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `engineering` reached
+  // 72,540 bytes against its 72,000 cap the moment one more note was filed — and a module file at its
+  // cap is SPLIT, never trimmed. The coherent half that stands alone is TESTING: what makes a test
+  // prove something, what makes a green run mean nothing, and how the runner and its shards behave.
+  // It is about whether a result is evidence; `engineering` keeps CI, PRs, merges and the scripts.
+  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD — `tests/run-tests.ts` included — and this module ADDS
+  // its own, so a session editing the runner loads the PAIR and nothing that used to arrive stops.
+  {
+    id: "engineering-tests",
+    title: "Engineering — tests, and what makes a result evidence",
+    scope: "How a test proves something here: the runner and its shards, source-pinning and break tests, the seams, the environment a suite really runs in, and the many shapes of a green run that proves nothing.",
+    globs: [
+      // 🔴 NOT "tests/*.test.ts": almost every AGENTS.md rule names the test that pins it, so that
+      // glob makes a rule true everywhere look like it belongs to this one module, and
+      // tests/module-memory.test.ts fails the required validate job saying so. A session writing a
+      // test reaches these rules through the runner it must register in, through tests/support, or
+      // through the injector's keywords.
+      "tests/support/**",
+      "tests/run-tests.ts",
+      "scripts/*test*",
+    ],
+    keywords: ["test", "tests", "suite", "assertion", "break test", "shard", "pinning", "green run", "regression test"],
+    tables: [],
+  },
   // 🔴 SPLIT 2026-10-09, FOR THE REASON THE TWO ABOVE WERE: `engineering`'s injected pointer measured
   // 4,103 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the moment one deploy
   // rule was added — and a module at its pointer limit is SPLIT, never trimmed. The Production-hooks
@@ -1121,29 +1145,6 @@ export const MODULES = [
       "src/lib/platform/process-role.ts",
     ],
     keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
-    tables: [],
-  },
-  // ── `engineering` SPLIT AGAIN 2026-10-23, at 73,198 of its 72,000 bytes ──
-  //
-  // 111 notes in one file, and the required `validate` job was already refusing it. The coherent
-  // half that stands alone is the TEST SUITE: how a test is registered and run here, what makes an
-  // assertion a real pin, and the many ways a run looks green while proving nothing. That is what a
-  // session needs while WRITING a test; the rest of `engineering` is CI, the required checks, PRs
-  // and merges.
-  //
-  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD, `tests/run-tests.ts` included, and this module ADDS
-  // its own — so editing the runner loads the PAIR and nothing that used to arrive stops arriving.
-  // Only the reverse narrows: a CI or merge question no longer drags in 18 test-writing notes.
-  {
-    id: "engineering-tests",
-    title: "Engineering — the test suite and how a test proves something",
-    scope: "How this repo's tests are registered and run, what makes an assertion a real pin rather than a decorative one, and the ways a test run looks green while proving nothing.",
-    globs: [
-      "tests/**",
-      "scripts/run-tests*",
-      "playwright.config.ts",
-    ],
-    keywords: ["test", "tests", "test suite", "assertion", "break test", "break and watch", "pinned", "run-tests", "regression test"],
     tables: [],
   },
   // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──

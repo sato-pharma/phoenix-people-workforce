@@ -41,6 +41,7 @@ import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/acc
 import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
+import { ilikeAnyFilter, ilikeContainsValue, quotePostgrestValue } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   normalizeVenueType,
@@ -6717,9 +6718,16 @@ const DIRECT_ORDER_SEARCH_MATCH_LIMIT = 400;
 
 type SearchMatches = { values: string[]; overflowed: boolean };
 
-/** PostgREST needs `in.()` members quoted once a value can hold a comma, a space or a paren. */
+/** PostgREST needs `in.()` members quoted once a value can hold a comma, a space or a paren.
+ *
+ * The escaping itself belongs to the shared helper, not here. PostgREST escapes a `"` inside a
+ * quoted filter value with a BACKSLASH; the SQL-style doubling this used to do (`""`) is a
+ * different grammar, and a backslash in a member went through unescaped — which closes the value
+ * one character early. Nothing was broken in practice only because every member here is a uuid or
+ * an HR-id key, and those carry neither character: a divergence held latent by the shape of
+ * today's data rather than by anything in the code. */
 function quoteInList(values: readonly string[]): string {
-  return values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
+  return values.map((value) => quotePostgrestValue(String(value))).join(",");
 }
 
 /**
@@ -6730,11 +6738,18 @@ function quoteInList(values: readonly string[]): string {
  * full-table report read that used to back this search.
  */
 async function findPharmacyIdsMatchingSearch(term: string): Promise<SearchMatches> {
-  const like = `%${term.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  // The term goes through the shared helper, which double-quotes it. Spliced in raw, a name
+  // holding a comma split the two conditions this asks for into four fragments — two of them
+  // carrying no operator at all — and PostgREST answered 400, so the search box simply stopped
+  // working for `El Salam, Nasr City`. The helper returns "" when the term has no searchable
+  // content left, and `.or("")` is itself a 400: that case is no pharmacy match, which is what
+  // the caller already handles (it only pushes `pharmacy_id.in.(…)` for a non-empty list).
+  const filter = ilikeAnyFilter(["pharmacy_name", "phoenix_pharmacy_code"], term);
+  if (!filter) return { values: [], overflowed: false };
   const { data, error } = await getSupabaseAdmin()
     .from("direct_order_pharmacies")
     .select("id")
-    .or(`pharmacy_name.ilike.${like},phoenix_pharmacy_code.ilike.${like}`)
+    .or(filter)
     // One over the limit, so overflow is DETECTED rather than assumed from a full page.
     .limit(DIRECT_ORDER_SEARCH_MATCH_LIMIT + 1);
   if (error) throw error;
@@ -6874,7 +6889,12 @@ export async function listDirectOrderOperationalPage(
   // is worse than omitting it.
   const q = (filters.q ?? "").trim();
   if (q) {
-    const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+    // Quoted by the shared helper for the same reason as the pharmacy lookup above: `,` and `()`
+    // are structural in this grammar, so a product name carrying one used to split the expression
+    // into fragments PostgREST rejects. Null means the term had no searchable content left — it
+    // was nothing but wildcards — and the product columns are then left out rather than matched
+    // through a bare `%`, which would have returned every row the viewer can see.
+    const like = ilikeContainsValue(q);
     // `id.eq.` is added ONLY for something actually shaped like a uuid.
     //
     // This replaced an unconditional `id.eq.${q}` plus a retry-on-cast-error fallback, and the
@@ -6886,7 +6906,8 @@ export async function listDirectOrderOperationalPage(
     // Testing the shape first means the error path does not exist, so there is no second query
     // builder that can drift out of sync with this one. That is the actual fix — a corrected copy
     // of the predicates would have been one more place to forget them.
-    const clauses = [`product_name.ilike.${like}`, `product_code.ilike.${like}`];
+    const clauses: string[] = [];
+    if (like) clauses.push(`product_name.ilike.${like}`, `product_code.ilike.${like}`);
     if (looksLikeDirectOrderId(q)) clauses.push(`id.eq.${q}`);
 
     // Pharmacy and person are what people actually search by, and neither is a column on this
@@ -6906,7 +6927,11 @@ export async function listDirectOrderOperationalPage(
     if (pharmacies.values.length) clauses.push(`pharmacy_id.in.(${quoteInList(pharmacies.values)})`);
     if (requesters.values.length) clauses.push(`requester_hr_id.in.(${quoteInList(requesters.values)})`);
 
-    query = query.or(clauses.join(","));
+    // A term that resolved to nothing searchable and matched no pharmacy or person leaves no
+    // clause at all, and `.or("")` is a 400 — so the page falls back to the SCOPED, unfiltered
+    // set, exactly what the old bare-`%` pattern returned. The scope predicate above is applied
+    // separately and is untouched by this.
+    if (clauses.length) query = query.or(clauses.join(","));
   }
 
   // ── 5. Count + page, in that order ─────────────────────────────────────────

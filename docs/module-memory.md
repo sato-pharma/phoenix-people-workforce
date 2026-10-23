@@ -141,8 +141,8 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
+| `engineering-tests` — Engineering — tests, and what makes a result evidence | `tests/support/**` and 2 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 15 more |
-| `engineering-tests` — Engineering — the test suite and how a test proves something | `tests/**` and 2 more |
 | `git-worktrees` — Git, worktrees and the shared primary checkout | `scripts/{new-session,sync-worktree-env,repo-doctor}*` and 1 more |
 | `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 5 more |
 <!-- module-memory:directory-table:end -->
