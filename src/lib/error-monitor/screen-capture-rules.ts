@@ -221,3 +221,56 @@ export function sameOriginApiPath(url: string, origin: string): string | null {
     return null;
   }
 }
+
+/**
+ * WHAT THE PICTURE COPIES. html-to-image copies every computed style of every node it keeps, on the
+ * main thread, so what lies off screen is not copied in full — but it must still TAKE ITS SPACE.
+ *
+ * Until 23 Oct 2026 an off-screen element was dropped whole. Its space went with it, so everything
+ * after it moved up by its height, and THEN the picture moved the page up by the scroll position: a
+ * person scrolled down a long list was photographed with the page shifted up twice, out of the
+ * picture. Khaled Mohamed Ali Bedair's refusal on Phoenix CRM at 18:51 Cairo, the first real one, was
+ * a white card with nothing on it but the sidebar and the top bar around it (System Audit,
+ * 84aae968-c5ea-4a1a-afbd-b7abf25938d7).
+ *
+ * Now an off-screen BOX stays, EMPTY: the library writes its computed width and height onto the copy,
+ * so it holds its place exactly, and only what is INSIDE it is left out — still most of the cost.
+ * Only a box that keeps its own size is emptied. An inline element's size IS its text, and a table
+ * part's widths are decided by its cells (a fixed table reads them off the first row), so emptying
+ * either would move what is on screen; their contents are copied. A zero-size box is never off
+ * screen: it may hold visible children positioned outside it.
+ */
+export type PictureBox = { top: number; right: number; bottom: number; left: number; width: number; height: number };
+export type PictureViewport = { width: number; height: number };
+
+const BOXES_THAT_KEEP_THEIR_SIZE = new Set(["block", "flex", "grid", "flow-root", "list-item", "inline-block", "inline-flex", "inline-grid"]);
+
+/** Can this box stand in, empty, for everything inside it? Only when it cannot appear in the picture. */
+export function emptiesInPicture(box: PictureBox, display: string, viewport: PictureViewport): boolean {
+  if (box.width === 0 && box.height === 0) return false;
+  const outside = box.bottom < 0 || box.right < 0 || box.top > viewport.height || box.left > viewport.width;
+  return outside && BOXES_THAT_KEEP_THEIR_SIZE.has(display);
+}
+
+/**
+ * The `filter` html-to-image calls on every node it is about to copy: a node is left out only when
+ * the box it sits in is being kept empty. The off-screen box itself is always copied — that is what
+ * holds the layout. Each box is measured once per picture.
+ */
+export function createPictureFilter<N extends { parentElement: E | null }, E extends object>(
+  measure: (element: E) => { box: PictureBox; display: string },
+  viewport: PictureViewport,
+): (node: N) => boolean {
+  const emptied = new WeakMap<E, boolean>();
+  return (node) => {
+    const parent = node.parentElement;
+    if (!parent) return true;
+    let empty = emptied.get(parent);
+    if (empty === undefined) {
+      const { box, display } = measure(parent);
+      empty = emptiesInPicture(box, display, viewport);
+      emptied.set(parent, empty);
+    }
+    return !empty;
+  };
+}

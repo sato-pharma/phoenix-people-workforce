@@ -1,6 +1,6 @@
 "use client";
 
-import { SCREEN_MAX_ELEMENTS, onScreen } from "@/lib/error-monitor/screen-capture";
+import { SCREEN_MAX_ELEMENTS, pictureFilter } from "@/lib/error-monitor/screen-capture";
 import { ERROR_SCREENSHOT_MAX_BYTES } from "@/lib/error-monitor/screenshot-intake";
 
 /**
@@ -82,9 +82,10 @@ async function rasteriseViewport(): Promise<Blob | null> {
   const width = Math.max(1, window.innerWidth || target.clientWidth || MAX_CAPTURE_WIDTH);
   const canvas = await toCanvas(target, {
     backgroundColor: "#ffffff",
-    // Off-screen subtrees are dropped before they are copied — the long table below the fold is most
-    // of the cost, and it cannot appear in a viewport-sized picture anyway.
-    filter: onScreen,
+    // Off-screen boxes are copied EMPTY — the long table below the fold is most of the cost, and it
+    // cannot appear in a viewport-sized picture anyway — but they keep their size, or a scrolled page
+    // draws everything shifted up out of the picture (screen-capture-rules.ts, createPictureFilter).
+    filter: pictureFilter(),
     // Only what is on screen. A long page's full height is not what the employee was looking at,
     // and it multiplies the bytes for the part nobody was reading.
     height: Math.max(1, window.innerHeight || target.clientHeight),

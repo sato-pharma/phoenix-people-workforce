@@ -34,6 +34,7 @@ import {
   EMPTY_SCREEN_THROTTLE,
   MAX_REFUSAL_BODY_BYTES,
   classifyScreenKind,
+  createPictureFilter,
   decideScreenThrottle,
   extractRefusalMessage,
   isSkippedScreenPath,
@@ -94,17 +95,18 @@ function decodedBytes(dataUrl: string): number {
 export const SCREEN_MAX_ELEMENTS = 15_000;
 
 /**
- * Only what is on screen is copied. An element whose box lies wholly outside the viewport cannot
- * appear in a viewport-sized picture, and dropping it drops its whole subtree — the long table below
- * the fold, the closed tabs — which is most of the cost. A zero-size box is kept: it may hold visible
- * children positioned outside it. Text and other non-element nodes are always kept.
+ * Only what is on screen is copied in full: a box wholly outside the viewport is copied EMPTY, so it
+ * still holds its place, and what is inside it — the long table below the fold, the list above it,
+ * the closed tabs, most of the cost — is left out (`createPictureFilter`, screen-capture-rules.ts,
+ * which says why dropping the box itself photographed a scrolled page blank). A new filter for every
+ * picture: each box is measured once, at the moment the picture is taken.
  * Shared with the crash picture in capture-screenshot.ts, which had neither guard until 23 Oct 2026.
  */
-export function onScreen(node: Node): boolean {
-  if (!(node instanceof Element)) return true;
-  const rect = node.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return true;
-  return rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
+export function pictureFilter(): (node: Node) => boolean {
+  return createPictureFilter<Node, Element>(
+    (element) => ({ box: element.getBoundingClientRect(), display: getComputedStyle(element).display }),
+    { width: window.innerWidth, height: window.innerHeight },
+  );
 }
 
 /** The visible viewport, at the current scroll position, as a JPEG data URL — or null. */
@@ -118,7 +120,7 @@ async function drawViewport(pixelRatio: number, quality: number): Promise<{ data
   const dataUrl = await toJpeg(body, {
     backgroundColor: background && background !== "rgba(0, 0, 0, 0)" ? background : "#ffffff",
     cacheBust: false,
-    filter: onScreen,
+    filter: pictureFilter(),
     height,
     imagePlaceholder: IMAGE_PLACEHOLDER,
     pixelRatio,

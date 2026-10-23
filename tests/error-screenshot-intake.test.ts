@@ -143,5 +143,5 @@ export async function runErrorScreenshotIntakeTests() {
     capture.includes('if (document.getElementsByTagName("*").length > SCREEN_MAX_ELEMENTS) return null;'),
     "a page over the element cap is not drawn at all",
   );
-  assert.ok(capture.includes("filter: onScreen,"), "off-screen subtrees are dropped before html-to-image copies them");
+  assert.ok(capture.includes("filter: pictureFilter(),"), "off-screen boxes are copied empty before html-to-image copies what is inside them");
 }
