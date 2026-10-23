@@ -32,6 +32,7 @@ const DATA_CALLS = [
   "loadIntegrityOverview",
   "loadOccurrenceDetail",
   "loadUserScreenImage",
+  "recordScreenshotView",
   "triageOccurrence",
   "transitionIssueStatus",
   "writeAuditLog",

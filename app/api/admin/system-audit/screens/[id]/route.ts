@@ -5,6 +5,7 @@ import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { isAuditId } from "@/lib/system-audit/page-query";
+import { recordScreenshotView } from "@/lib/system-audit/screenshot-views";
 import { loadUserScreenImage } from "@/lib/system-audit/user-screens";
 
 export const runtime = "nodejs";
@@ -15,7 +16,9 @@ export const dynamic = "force-dynamic";
  * System Audit row drawer (owner, 23 Oct 2026: shown to the Super Admin only, never blurred, kept 90
  * days). Super Admin only: the guard runs before anything is read. The picture is streamed from the
  * private bucket by this route — no signed URL ever leaves the server — and is never cached by the
- * browser or anything between. Unknown or pruned id → 404.
+ * browser or anything between. Unknown or pruned id → 404. Every picture served writes one
+ * `system_audit_screenshot_view` audit row first — who looked, at whose screen (owner, 23 Oct 2026:
+ * "log every screenshot view").
  */
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -35,6 +38,19 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         { status: 404 },
       );
     }
+    await recordScreenshotView(
+      { hrId: access.hrId ?? null, loginId: access.loginId ?? null },
+      {
+        source: "screen",
+        id,
+        screenKind: image.taken.kind,
+        hrId: image.taken.hrId,
+        loginId: image.taken.loginId,
+        page: image.taken.pagePath,
+        takenAt: image.taken.capturedAt,
+        isTest: image.taken.isTest,
+      },
+    );
     return new NextResponse(image.bytes, {
       headers: {
         "cache-control": "private, no-store",

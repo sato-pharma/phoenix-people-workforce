@@ -166,6 +166,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   source_of_sales_product: true,
   source_of_sales_region: true,
   system_audit_export: true,
+  system_audit_screenshot_view: true,
   system_audit_status: true,
   system_audit_triage: true,
   system_cleanup: true,
