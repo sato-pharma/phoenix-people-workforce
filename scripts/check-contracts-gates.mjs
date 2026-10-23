@@ -217,6 +217,51 @@ export const CONTRACT_GATES = [
     redJobs: null,
     costMs: 120,
   },
+  // THE 2026-10-23 REPEAT OFFENDERS. Read from the failing-test lines of 126 red PR runs, 8-23 Oct 2026
+  // (every one of 19-23 Oct, every third of 8-18 Oct): ten tests turned unrelated PRs red again and
+  // again without being in this table. These four are the ones that are offline (source text only)
+  // and fast; each comment gives how many different PRs it turned red in that sample. `redJobs` stays
+  // null because that field is printed as a 9-13 Oct count. Left to the PR's own CI, deliberately:
+  //   - tests/unknown-flag-gates.test.ts (6 PRs) spawns every argument-parsing script and ran past
+  //     five minutes here;
+  //   - HR function governance (5), sidebar labels never clip (3), Phoenix CRM edges (3) and the
+  //     malformed uuid id guards (2) reach @/lib/supabase/server, so they are not offline.
+  {
+    // 3 PRs.
+    slug: 'recruitment-premium-depth',
+    file: 'tests/recruitment-premium-depth.test.ts',
+    export: 'runRecruitmentPremiumDepthTests',
+    namePrefix: "recruitment and the ATS carry the owner's premium polish",
+    redJobs: null,
+    costMs: 278,
+  },
+  {
+    // 2 PRs.
+    slug: 'employee-portal-premium-depth',
+    file: 'tests/employee-portal-premium-depth.test.ts',
+    export: 'runEmployeePortalPremiumDepthTests',
+    namePrefix: "the employee portal carries the owner's premium polish",
+    redJobs: null,
+    costMs: 353,
+  },
+  {
+    // 2 PRs.
+    slug: 'heredoc-backslash-damage',
+    file: 'tests/heredoc-backslash-damage.test.ts',
+    export: 'runHeredocBackslashDamageTests',
+    namePrefix: 'heredoc backslash damage sweep (no control byte in source',
+    redJobs: null,
+    costMs: 3300,
+  },
+  {
+    // 2 PRs.
+    slug: 'hr-id-storage-casing',
+    file: 'tests/hr-id-storage-casing.test.ts',
+    export: 'runHrIdStorageCasingTests',
+    namePrefix: 'hr ids are stored in canonical casing everywhere',
+    redJobs: null,
+    costMs: 4960,
+  },
 ];
 
 /**
