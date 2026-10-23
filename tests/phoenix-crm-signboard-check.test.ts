@@ -33,6 +33,7 @@ import {
   mergeSignboardParts,
   firstInListToAnswer,
   readerRanOutOfRoom,
+  signboardPartsTimeoutMs,
   spelledOneWay,
   signboardRejudge,
   SIGNBOARD_PART_OVERLAP,
@@ -643,7 +644,7 @@ function checkTwoReaders(): void {
     "each reader gets the whole time left, and an answer in hand is taken just before the deadline",
   );
   assert.ok(
-    stripped.includes("signal: input.signal,") && stripped.includes("if (input.signal?.aborted || !input.inPartsWhenFull"),
+    stripped.includes("signal: input.signal,") && stripped.includes("if (input.signal?.aborted || !input.partsTimeoutMs"),
     "a stopped read reaches the model call, and is never read again in parts",
   );
   assert.ok(
@@ -1201,19 +1202,38 @@ function checkBoardTooFullForOneAnswer(): void {
 
   const reader = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
   assert.ok(
-    reader.includes("if (input.signal?.aborted || !input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;"),
+    reader.includes("if (input.signal?.aborted || !input.partsTimeoutMs || !readerRanOutOfRoom(error)) return null;"),
     "only a whole-photo read that ran out of room, and was not stopped, is read again in parts",
   );
   assert.ok(
-    reader.includes("return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });"),
-    "🔴 with the time the whole read LEFT, so a place still costs at most its budget",
+    reader.includes("return readInParts({ ...input, timeoutMs: input.partsTimeoutMs() });"),
+    "🔴 the quarters get the PLACE's time left, capped like one call — never the leftover of the whole read's cap",
+  );
+  assert.ok(
+    reader.includes("const partsTimeoutMs = (): number => signboardPartsTimeoutMs(input.remaining(), input.callCapMs);"),
+    "measured off the place's own deadline when the whole read runs out of room",
   );
   assert.equal(
-    (reader.match(/readSigns\(\{ inPartsWhenFull: true, jpeg: (?:cropped\.jpeg|turned), question: WIDE_QUESTION,/g) ?? []).length,
+    (reader.match(/readSigns\(\{ jpeg: (?:cropped\.jpeg|turned), partsTimeoutMs, question: WIDE_QUESTION,/g) ?? []).length,
     2,
     "both whole-photo reads, upright and turned, fall back to the quarters",
   );
-  assert.ok(!/inPartsWhenFull: true[^\n]*CLOSE_QUESTION/.test(reader), "a single plate's close look never splits into four calls");
+  assert.ok(!/partsTimeoutMs[^\n]*CLOSE_QUESTION/.test(reader), "a single plate's close look never splits into four calls");
+
+  // 🔴 20 Oct 2026, 16:49–19:49 Cairo: the held re-read's whole-photo answer filled up after 13.7–15.7 s
+  // of its 20 s per-call cap, and the quarters got the 4.3–6.3 s left over and timed out, every hour.
+  const heldBudget = 45_000;
+  const heldCallCap = 20_000;
+  for (const wholeReadMs of [13_700, 14_900, 15_700]) {
+    assert.equal(
+      signboardPartsTimeoutMs(heldBudget - wholeReadMs, heldCallCap),
+      heldCallCap,
+      `🔴 a held board that filled up after ${wholeReadMs} ms gives its quarters a full call's time, not ${heldCallCap - wholeReadMs} ms`,
+    );
+  }
+  assert.equal(signboardPartsTimeoutMs(6_000, heldCallCap), 6_000, "never more than the place has left, so a place still costs at most its budget");
+  assert.equal(signboardPartsTimeoutMs(8_000 - 5_000, 8_000), 3_000, "the door is unchanged: its one call's cap IS its place budget");
+  assert.equal(signboardPartsTimeoutMs(-50, heldCallCap), 0, "a place past its deadline gives the quarters nothing");
   assert.ok(reader.includes("if (answered.length !== parts.length) return null;"), "a board read three-quarters is a lost call, never a reading");
 }
 

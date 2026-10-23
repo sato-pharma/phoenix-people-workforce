@@ -15,6 +15,7 @@ import {
   mergeSignboardParts,
   parseSignboardPhotoProblem,
   readerRanOutOfRoom,
+  signboardPartsTimeoutMs,
   signboardQuarters,
   signboardReadsCustomerName,
   signboardUnjudged as unjudged,
@@ -469,13 +470,15 @@ async function readSigns(input: {
   reader: SignboardReader;
   timeoutMs: number;
   question: string;
-  /** The whole photo's read: an answer that runs out of room is read again in quarters. */
-  inPartsWhenFull?: boolean;
+  /**
+   * The whole photo's read: an answer that runs out of room is read again in quarters, each given this
+   * long (`signboardPartsTimeoutMs` — the place's time left, capped like one call).
+   */
+  partsTimeoutMs?: () => number;
   /** Stops the read once the door has the answer it needs (`firstInListToAnswer`). */
   signal?: AbortSignal;
 }): Promise<SignboardReading | null> {
   if (input.timeoutMs <= 0) return null;
-  const startedAt = Date.now();
   try {
     const response = await createOpenAiResponseText({
       component: "phoenix_crm_signboard",
@@ -521,14 +524,14 @@ async function readSigns(input: {
       turn: turnOf(parsed.upright),
     };
   } catch (error) {
-    if (input.signal?.aborted || !input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;
-    return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });
+    if (input.signal?.aborted || !input.partsTimeoutMs || !readerRanOutOfRoom(error)) return null;
+    return readInParts({ ...input, timeoutMs: input.partsTimeoutMs() });
   }
 }
 
 /**
  * A board too full for one answer, read again as four overlapping quarters side by side — each with
- * the time the whole read left, never more, so a place still costs at most its budget. Any quarter that
+ * the place's time left, capped like one call, so a place still costs at most its budget. Any quarter that
  * fails fails the read: a board read three-quarters is the partial reading this file refuses.
  */
 async function readInParts(input: {
@@ -801,8 +804,9 @@ async function blindRead(input: {
   photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   const { cropped } = input;
+  const partsTimeoutMs = (): number => signboardPartsTimeoutMs(input.remaining(), input.callCapMs);
   const readWhole = (reader: SignboardReader, timeoutMs: number, signal?: AbortSignal) =>
-    readSigns({ inPartsWhenFull: true, jpeg: cropped.jpeg, question: WIDE_QUESTION, reader, signal, timeoutMs });
+    readSigns({ jpeg: cropped.jpeg, partsTimeoutMs, question: WIDE_QUESTION, reader, signal, timeoutMs });
   const first = input.sideBySide
     ? await hedgedAnswer(input.readers, input.remaining, input.callCapMs, readWhole)
     : await firstAnswer(input.readers, input.remaining, input.callCapMs, readWhole);
@@ -835,7 +839,7 @@ async function blindRead(input: {
       const turned = await turnJpeg(cropped.jpeg, turn);
       if (!turned) break;
       const again = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
-        readSigns({ inPartsWhenFull: true, jpeg: turned, question: WIDE_QUESTION, reader, timeoutMs }),
+        readSigns({ jpeg: turned, partsTimeoutMs, question: WIDE_QUESTION, reader, timeoutMs }),
       );
       if (!again) break;
       if (again.turn !== null) continue;
