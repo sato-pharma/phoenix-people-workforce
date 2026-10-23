@@ -120,4 +120,90 @@ export function runClosingDriftAcknowledgementTests() {
     sql.includes("revoke all on public.monthly_closing_drift_acknowledgements from public, anon, authenticated;"),
     "and must not be readable or writable by anon or authenticated",
   );
+
+  // ── the LIVE bodies, after 2026-10-23 split the recompute out ───────────────────────────────
+  //
+  // 🔴 EVERYTHING ABOVE NOW READS HISTORY. The 2026-09-05 file still holds the first definitions,
+  // but the formula no longer lives inside phx_closing_drift_fingerprint and the acknowledgement
+  // lookup no longer lives inside phx_closing_drift_status — both moved so that one line and period
+  // cost ONE recompute of phx_closing_publication_snapshot instead of three (production 2026-10-23:
+  // the status call alone was 3,635 ms and tipped past the 8-second statement timeout on the 06:36
+  // digest). A test that pinned only the older file would keep passing while the live bodies drifted
+  // away from it, which is the whole failure mode these assertions exist to prevent — so the same
+  // three rules are pinned again here, on the file that now defines them.
+  const live = readFileSync(
+    "supabase/migrations/20261023084810_closing_drift_one_compute_and_contact_master_timeout.sql",
+    "utf8",
+  );
+
+  const formulaBody = live.slice(
+    live.indexOf("function public.phx_closing_drift_fingerprint_of"),
+    live.indexOf("function public.phx_closing_drift_fingerprint(p_line"),
+  );
+  assert.ok(formulaBody.length > 0, "the lifted fingerprint formula must exist");
+  assert.match(
+    formulaBody,
+    /round\(d\.units_delta, 6\)/,
+    "the LIVE fingerprint must still include the UNITS delta - the expression was lifted into "
+      + "phx_closing_drift_fingerprint_of, and it is the live one now",
+  );
+  assert.match(
+    formulaBody,
+    /round\(d\.value_delta, 2\)/,
+    "the LIVE fingerprint must still include the VALUE delta - a price edit moves value on the SAME "
+      + "cells, so a cell-identity fingerprint stays matched and hides the restatement",
+  );
+
+  const rowsBody = live.slice(
+    live.indexOf("function public.phx_closing_drift_rows"),
+    live.indexOf("function public.phx_closing_drift_fingerprint_of"),
+  );
+  assert.match(
+    rowsBody,
+    /where d\.area_code <> '\(no snapshot\)'/,
+    "the '(no snapshot)' sentinel must be excluded in the one row-builder every other function "
+      + "reads - excluding it once is what stops a later caller forgetting it",
+  );
+
+  const overviewBody = live.slice(
+    live.indexOf("function public.phx_closing_drift_overview"),
+    live.indexOf("function public.phx_closing_drift_status"),
+  );
+  assert.match(
+    overviewBody,
+    /a\.drift_fingerprint = v_fingerprint/,
+    "the acknowledgement must still be matched on the fingerprint - matching on line and period "
+      + "alone is the blindfold this module exists to avoid",
+  );
+  assert.match(
+    overviewBody,
+    /CHANGED SINCE IT WAS ACKNOWLEDGED/,
+    "a drift that WAS accepted and has since moved must still say so",
+  );
+
+  // ── and the month is recomputed ONCE per line, which is the point of the whole file ─────────
+  assert.equal(
+    (live.match(/phx_closing_publication_drift\(p_line, p_period\)/g) ?? []).length,
+    1,
+    "phx_closing_publication_drift - which recomputes the whole month through "
+      + "phx_closing_publication_snapshot - must be called from exactly ONE place in this file. A "
+      + "second call site is the defect that was removed: the status function paid for the recompute "
+      + "twice and the per-area read paid for it again, so three published lines cost nine "
+      + "recomputes and one of them crossed the 8-second statement timeout",
+  );
+
+  for (const fn of [
+    "phx_closing_drift_rows(text, text)",
+    "phx_closing_drift_fingerprint_of(jsonb)",
+    "phx_closing_drift_overview(text, text)",
+  ]) {
+    assert.ok(
+      live.includes(`revoke execute on function public.${fn} from public, anon, authenticated;`),
+      `${fn} must be revoked from public/anon/authenticated - it reads the whole fact rollup`,
+    );
+    assert.ok(
+      live.includes(`grant  execute on function public.${fn} to service_role;`),
+      `${fn} must be re-granted to service_role - revoking PUBLIC on a default ACL strips it too`,
+    );
+  }
 }

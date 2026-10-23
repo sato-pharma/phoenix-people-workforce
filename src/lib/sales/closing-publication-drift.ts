@@ -61,8 +61,8 @@ export type PublicationCellDrift = {
 };
 
 /**
- * One area's fact-rollup movement as `loadFactAreaMoves` returns it — the same fields as
- * {@link PublicationAreaMove} minus `layer`, which the merge adds.
+ * One area's fact-rollup movement as {@link loadPublicationDriftOverview} returns it — the same
+ * fields as {@link PublicationAreaMove} minus `layer`, which the merge adds.
  *
  * It is NAMED rather than written inline at each use because a caller that catches a failed read
  * returns `[line, []]` from the catch and `[line, <rows>]` from the try: with the shape inline those
@@ -73,6 +73,12 @@ export type FactAreaMove = {
   cells: number;
   unitsDelta: number;
   valueDelta: number;
+};
+
+/** Both fact-rollup halves for one line, as the single `phx_closing_drift_overview` read hands them back. */
+export type PublicationDriftOverview = {
+  cellDrift: PublicationCellDrift | null;
+  areaMoves: FactAreaMove[];
 };
 
 /** One area that holds more, or less, than what was published. */
@@ -321,33 +327,8 @@ type DriftStatusRow = {
   verdict?: unknown;
 };
 
-/**
- * The fact-rollup half for one line.
- *
- * 🔴 IT THROWS. It used to catch and return null, and a live run on 2026-10-09 showed why that was
- * wrong: `phx_closing_drift_status` for CNS 2026-07 and 2026-08 answered `canceling statement due to
- * statement timeout`, and the swallowed failure came back as `cellDrift: null` — indistinguishable
- * from a line with no publication row. The Needs You row then rendered one sentence shorter and
- * otherwise identical, which is a failed read presented as a quieter answer. The caller decides what
- * to do with the rejection: {@link loadClosingPublicationDrift} collects it into
- * {@link PublicationDriftReport.linesNotRead} so the script can name it and carry on, and
- * {@link loadPublicationDriftWithoutSplitLayer} lets it travel so the board renders amber.
- */
-export async function loadPublicationCellDrift(
-  line: string,
-  period: string,
-): Promise<PublicationCellDrift | null> {
-  const { data, error } = await getSupabaseAdmin().rpc("phx_closing_drift_status", {
-    p_line: line,
-    p_period: period,
-  });
-  if (error) {
-    logError("Failed to read a closing publication drift status", { context: { line, period }, error });
-    throw new Error(`publication drift: cannot read the drift status for ${line} ${period} — ${error.message}`);
-  }
-  const row = (Array.isArray(data) ? data[0] : data) as DriftStatusRow | null | undefined;
-  // A genuine absence — the line has no publication row for the period. This is the ONLY null.
-  if (!row) return null;
+/** The status row's shape, as `phx_closing_drift_overview` nests it under `status`. */
+function toCellDrift(row: DriftStatusRow): PublicationCellDrift {
   const rawValue = row.net_value_delta;
   return {
     acknowledged: row.acknowledged === true,
@@ -359,38 +340,80 @@ export async function loadPublicationCellDrift(
   };
 }
 
-/** Per-area fact-rollup movement for one line, from the per-cell drift rows. */
-export async function loadFactAreaMoves(
+/**
+ * Per-area movement from the per-cell drift rows. The rollup stays in TypeScript — it is where it
+ * has always lived, and putting it in the migration would make the database a second implementation
+ * of it.
+ */
+function rollUpAreaMoves(
+  cells: readonly { area_code?: unknown; units_delta?: unknown; value_delta?: unknown }[],
+): FactAreaMove[] {
+  const byArea = new Map<string, FactAreaMove>();
+  for (const row of cells) {
+    const areaCode = String(row?.area_code ?? "").trim().toUpperCase();
+    // The sentinel row says nothing has ever snapshotted this line and period. It is a state to
+    // fix, not an area that moved. `phx_closing_drift_rows` already excludes it; this stays as the
+    // second belt, because an area with no code is not an area either.
+    if (areaCode === "" || areaCode === "(NO SNAPSHOT)") continue;
+    const found = byArea.get(areaCode) ?? { areaCode, cells: 0, unitsDelta: 0, valueDelta: 0 };
+    found.cells += 1;
+    found.unitsDelta += Number(row?.units_delta ?? 0);
+    found.valueDelta += Number(row?.value_delta ?? 0);
+    byArea.set(areaCode, found);
+  }
+  return [...byArea.values()];
+}
+
+/**
+ * Both fact-rollup halves for one line — the status and the per-area moves — from ONE read.
+ *
+ * 🔴 WHY ONE CALL AND NOT TWO. `phx_closing_drift_status` and `phx_closing_publication_drift` each
+ * recompute `phx_closing_publication_snapshot`, the whole month, and the status function used to pay
+ * for it TWICE: once for the fingerprint and once for its own count. Three published lines therefore
+ * cost nine recomputes of the month, and at 06:36 Cairo on 2026-10-23 one of them crossed the
+ * 8-second `authenticator` statement timeout (sql_state 57014) on the daily digest's board read and
+ * took four Needs You sources amber with it. CNS 2026-09 alone measured 3,635 ms that morning,
+ * against 743 ms for the whole set on 2026-10-09. `phx_closing_drift_overview` computes the cells
+ * once and answers both halves off that one array — three recomputes for three lines.
+ *
+ * 🔴 AND IT IS NOT A WIDENED LANE OR A RAISED BUDGET. Those are forbidden: the board's amber rows
+ * were a scheduling defect, and the way to fix a heavy source is to make it cheaper.
+ *
+ * 🔴 IT THROWS. It used to catch and return null, and a live run on 2026-10-09 showed why that was
+ * wrong: `phx_closing_drift_status` for CNS 2026-07 and 2026-08 answered `canceling statement due to
+ * statement timeout`, and the swallowed failure came back as `cellDrift: null` — indistinguishable
+ * from a line with no publication row. The Needs You row then rendered one sentence shorter and
+ * otherwise identical, which is a failed read presented as a quieter answer. The caller decides what
+ * to do with the rejection: {@link loadClosingPublicationDrift} collects it into
+ * {@link PublicationDriftReport.linesNotRead} so the script can name it and carry on, and
+ * {@link loadPublicationDriftWithoutSplitLayer} lets it travel so the board renders amber.
+ */
+export async function loadPublicationDriftOverview(
   line: string,
   period: string,
-): Promise<FactAreaMove[]> {
-  try {
-    const { data, error } = await getSupabaseAdmin().rpc("phx_closing_publication_drift", {
-      p_line: line,
-      p_period: period,
+): Promise<PublicationDriftOverview> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_closing_drift_overview", {
+    p_line: line,
+    p_period: period,
+  });
+  if (error) {
+    // The `event` label is what puts a readable route on the `app_error_events` row. Without one,
+    // this morning's failure reached the table with route null and an empty stack — the headline and
+    // nothing else, so the table said where it was NOT from and never that it was a timeout.
+    logError("Failed to read a closing publication drift status", {
+      context: { line, period },
+      labels: { event: "closing_publication_drift_read_failed", line, period },
+      error,
     });
-    if (error) throw new Error(error.message);
-    const byArea = new Map<string, FactAreaMove>();
-    for (const row of (data ?? []) as { area_code?: unknown; units_delta?: unknown; value_delta?: unknown }[]) {
-      const areaCode = String(row?.area_code ?? "").trim().toUpperCase();
-      // The sentinel row says nothing has ever snapshotted this line and period. It is a state to
-      // fix, not an area that moved.
-      if (areaCode === "" || areaCode === "(NO SNAPSHOT)") continue;
-      const found = byArea.get(areaCode) ?? { areaCode, cells: 0, unitsDelta: 0, valueDelta: 0 };
-      found.cells += 1;
-      found.unitsDelta += Number(row?.units_delta ?? 0);
-      found.valueDelta += Number(row?.value_delta ?? 0);
-      byArea.set(areaCode, found);
-    }
-    return [...byArea.values()];
-  } catch (error) {
-    // Same rule as the status read above: an empty array here would mean "no area moved", which is
-    // an answer a reader acts on. The failure travels instead.
-    logError("Failed to read closing publication drift cells", { context: { line, period }, error });
-    throw error instanceof Error
-      ? error
-      : new Error(`publication drift: cannot read the drift cells for ${line} ${period}`);
+    throw new Error(`publication drift: cannot read the drift status for ${line} ${period} — ${error.message}`);
   }
+  const envelope = (data ?? null) as { status?: DriftStatusRow | null; cells?: unknown } | null;
+  const row = envelope?.status ?? null;
+  const cells = Array.isArray(envelope?.cells)
+    ? (envelope.cells as { area_code?: unknown; units_delta?: unknown; value_delta?: unknown }[])
+    : [];
+  // A genuine absence — the line has no publication row for the period. This is the ONLY null.
+  return { areaMoves: rollUpAreaMoves(cells), cellDrift: row ? toCellDrift(row) : null };
 }
 
 /**
@@ -410,35 +433,29 @@ export async function loadClosingPublicationDrift(period: string): Promise<Publi
   }
   const publishedLines = await loadPublishedLines(trimmed);
   const linesNotRead = new Set<string>();
-  const [split, statusEntries, factEntries] = await Promise.all([
+  const [split, overviewEntries] = await Promise.all([
     loadStoreSplitDrift(trimmed),
     Promise.all(publishedLines.map(
-      async (line): Promise<readonly [string, PublicationCellDrift | null]> => {
+      async (line): Promise<readonly [string, PublicationDriftOverview]> => {
         try {
-          return [line, await loadPublicationCellDrift(line, trimmed)];
+          return [line, await loadPublicationDriftOverview(line, trimmed)];
         } catch {
           linesNotRead.add(line);
-          return [line, null];
-        }
-      },
-    )),
-    Promise.all(publishedLines.map(
-      async (line): Promise<readonly [string, FactAreaMove[]]> => {
-        try {
-          return [line, await loadFactAreaMoves(line, trimmed)];
-        } catch {
-          linesNotRead.add(line);
-          return [line, []];
+          return [line, { areaMoves: [], cellDrift: null }];
         }
       },
     )),
   ]);
 
   const statuses = new Map<string, PublicationCellDrift>();
-  for (const [line, status] of statusEntries) if (status) statuses.set(line, status);
+  const factAreaMoves = new Map<string, FactAreaMove[]>();
+  for (const [line, overview] of overviewEntries) {
+    if (overview.cellDrift) statuses.set(line, overview.cellDrift);
+    factAreaMoves.set(line, overview.areaMoves);
+  }
 
   return mergePublicationDrift({
-    factAreaMoves: new Map(factEntries),
+    factAreaMoves,
     linesNotRead: [...linesNotRead].sort(),
     period: trimmed,
     publishedLines,
@@ -475,20 +492,19 @@ export async function loadPublicationDriftWithoutSplitLayer(period: string): Pro
     throw new Error(`publication drift: period must be YYYY-MM, got ${JSON.stringify(period)}`);
   }
   const publishedLines = await loadPublishedLines(trimmed);
-  const [statusEntries, factEntries] = await Promise.all([
-    Promise.all(
-      publishedLines.map(async (line) => [line, await loadPublicationCellDrift(line, trimmed)] as const),
-    ),
-    Promise.all(
-      publishedLines.map(async (line) => [line, await loadFactAreaMoves(line, trimmed)] as const),
-    ),
-  ]);
+  const overviewEntries = await Promise.all(
+    publishedLines.map(async (line) => [line, await loadPublicationDriftOverview(line, trimmed)] as const),
+  );
 
   const statuses = new Map<string, PublicationCellDrift>();
-  for (const [line, status] of statusEntries) if (status) statuses.set(line, status);
+  const factAreaMoves = new Map<string, FactAreaMove[]>();
+  for (const [line, overview] of overviewEntries) {
+    if (overview.cellDrift) statuses.set(line, overview.cellDrift);
+    factAreaMoves.set(line, overview.areaMoves);
+  }
 
   return mergePublicationDrift({
-    factAreaMoves: new Map(factEntries),
+    factAreaMoves,
     linesNotRead: [],
     period: trimmed,
     publishedLines,

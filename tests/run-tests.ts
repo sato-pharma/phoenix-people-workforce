@@ -621,6 +621,7 @@ import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-a
 import { runSourceOfHireTests } from "./source-of-hire.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
+import { runStructuredLogPersistsTheCauseTests } from "./structured-log-persists-the-cause.test.ts";
 import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runWeeklyPlanAutoHrAcknowledgeTests } from "./weekly-plan-auto-hr-acknowledge.test.ts";
@@ -4078,6 +4079,7 @@ await runTest("hiring analytics layout (desktop table, phone cards, square edges
 await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
+await runTest("an ERROR row carries the cause, not just the headline: a Supabase rejection is not an Error, so `error.stack` was undefined and every database failure reached app_error_events with an empty stack - the 06:36 Cairo drift timeout on 2026-10-23 landed as a headline with route null and nothing about the 57014 behind it, and the Postgres log that did know keeps days where this table keeps months; the cause now comes through describeThrown whatever shape it was thrown in, the call site's labels lead it because they name WHICH line, period or job and `stack` is truncated from the end, `service` and `event` are dropped as noise and already-the-route, and nothing to say stays null rather than becoming an empty string that reads as a blank cause", runStructuredLogPersistsTheCauseTests);
 await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
 await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
