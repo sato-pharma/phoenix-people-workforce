@@ -1,19 +1,34 @@
 ---
 name: the-error-table-never-says-which-needs-you-source-timed-out
-description: "app_error_events keeps labels.event (as `route`) and DROPS every other structured label — so a `needs_you_source_timeout` row has blank hr_id, role and stack and never names the source; read notification_events.metadata (the delivered digest) instead."
+description: "FIXED 23 Oct 2026 — a `needs_you_source_timeout` row now carries `source=<id> scope=<scope>` in its `stack`, so the error table finally names the source; `hr_id` and `role` are still dropped, and for which sources a digest actually lost, `notification_events.metadata` is still the only complete reading."
 metadata:
   node_type: memory
   type: project
   originSessionId: 154ed2c1-c999-4e0b-8f74-060c2887ab9e
-  modified: 2026-10-23T06:10:47.037Z
+  modified: 2026-10-23T11:22:13.742Z
 ---
 
-`src/lib/needs-you/service.ts` logs a timeout with `labels: { event, source: adapter.id, hrId, role, scope }`, but the row that reaches `public.app_error_events` on production carries only `route = 'needs_you_source_timeout'` — `labels.event` mapped onto `route` — with `hr_id`, `role` and `stack` all NULL and **nothing anywhere holding `source`**. Measured 23 Oct 2026 on `ozucdzovmcqvepbozvqf`.
+**Until release `b48a2b5a6` (23 Oct 2026, 06:36 Cairo) a `needs_you_source_timeout` row named nothing.**
+`src/lib/needs-you/service.ts` logged `labels: { event, source: adapter.id, hrId, role, scope }`, and the
+row that reached `public.app_error_events` on production carried only `route = 'needs_you_source_timeout'`
+— `labels.event` mapped onto `route` — with `hr_id`, `role` and `stack` all NULL.
 
-So "which Needs You source failed?" cannot be answered from the error table at all, and a count of those rows undercounts the sources lost (a source whose adapter *throws* logs its own message instead — on 23 Oct, four timeout rows but five sources unread).
+🔴 **That half is FIXED and the note's old headline is WRONG.** Measured on production the same day: every
+row on `ed7797a85`, `601b6373`, `68522a1bc` and `b48a2b5a6` has `stack` NULL; the first row on release
+`683f0e879` (14:18 Cairo, source `probation-decisions`, scope `company`) carries
+`stack = 'source=probation-decisions scope=company'`. The spawned fix `task_c83bdafc` landed. **So "which
+Needs You source timed out?" IS answerable from `app_error_events` now — read `stack`.**
 
-**The reading that does work:** `public.notification_events`, `event_key like 'needs-you-daily-digest:%'`, and `metadata->>'message'` — the digest as delivered opens with a "Could not be read" section naming every unread source in his own words. That is how the 15-morning pattern was established.
+**What is still true:** `hr_id` and `role` are still dropped, and a timeout row is still not a census of
+the sources a digest lost — a source whose adapter *throws* logs its own message under a different event
+instead (23 Oct: four timeout rows, five sources unread). For "which sources did this morning's digest
+fail to read", `public.notification_events`, `event_key like 'needs-you-daily-digest:%'`,
+`metadata->>'message'` remains the complete reading: the digest as delivered opens with a
+"Could not be read" section naming every unread source.
 
-**Why:** two hours of a production investigation went into reconstructing from digests what one `select` should have answered, and the first instinct — counting error rows — would have given the wrong number of lost sources.
+**How to apply:** start at `app_error_events.stack` for the source of one timeout; go to
+`notification_events.metadata` when the question is how many sources a digest lost, or when you need the
+person or role. Before using any other structured label in a Phoenix error-table query, confirm it
+survives the write — `event` and now this `stack` line are what do.
 
-**How to apply:** investigating any Needs You or board-source failure, go to `notification_events.metadata` first and treat `app_error_events` as a timestamp index only. Before using a structured label in any Phoenix error-table query, confirm that label actually survives the write — only `event` does. Fixing the bridge is spawned task `task_c83bdafc`. Related: [[sos-monthly-closing-is-the-only-sales-truth]].
+Related: [[sos-monthly-closing-is-the-only-sales-truth]].

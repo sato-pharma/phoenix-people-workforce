@@ -5,12 +5,14 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: a4522148-cf2e-4572-8b87-ea8d8d1ae801
-  modified: 2026-10-23T10:38:49.930Z
+  modified: 2026-10-23T13:15:04.883Z
 ---
 
 Owner, 23 Oct 2026 (self-audit request): Claude's answers were "much longer than necessary" and it "overthinks simple requests". A simple question gets a simple answer; a complex implementation keeps the detail needed to execute it correctly.
 
-**Why:** the slowness he feels is mostly effort level, a 114 KB auto-loaded context and long replies, not a single broken process (audit of 23 Oct 2026, see [[slowness-audits-compare-before-and-after]]).
+**Why:** long replies cost him reading time, and his own prompts are short imperatives.
+
+🔴 **This note is about REPLY LENGTH ONLY — never about memory, context or effort.** The 23 Oct audit first blamed the effort level and the auto-loaded context, and acting on that reading (effort to medium, compaction window to 200,000) is what made the sessions "cold" and the memory fade; he reversed both the same day. The measured causes of the real slowness were the app's leaked terminal shells and renderer growth per session switch, neither of which memory touches. See [[never-lower-the-compact-window-or-the-default-effort]].
 
 **How to apply:**
 - Answer the actual question first; no intro or closing recap; do not restate what is already established.

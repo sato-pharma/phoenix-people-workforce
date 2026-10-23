@@ -2729,6 +2729,7 @@ import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.
 import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
+import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
 import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
@@ -10818,6 +10819,10 @@ await runTest(
 await runTest(
   "the public doors are bounded: reCAPTCHA refuses when its secret is unset or Google is unreachable, the paid AI read of public CVs stops at a daily ceiling and falls back to the free read, /api/errors/client caps every field, the body and the rate, and /api/readyz answers booleans only",
   runPublicIntakeLimitsTests,
+);
+await runTest(
+  "the crash-screenshot door is bounded and fails closed: 2 MB a body, a tighter rate than the text report, WebP sniffed from its own magic bytes so a PNG or an HTML page is refused, one object per error row partitioned by Cairo day, and a two-minute signed ticket that cannot be forged, re-aimed at another row, replayed late, or minted at all without a signing secret",
+  runErrorScreenshotIntakeTests,
 );
 await runTest(
   "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",

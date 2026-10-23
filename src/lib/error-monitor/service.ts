@@ -133,7 +133,13 @@ function combineStack(
  * Best-effort insert — must never throw. A logging failure should never turn
  * into a second, user-visible error on top of the one being reported.
  */
-export async function logAppError(input: LogAppErrorInput): Promise<void> {
+/**
+ * Writes one row and returns its id, so a caller that has something to attach to it — the client
+ * reporter's screenshot, through the ticket the route hands back — can name the row it belongs to.
+ * Null whenever nothing was written: local dev, a refused insert, an outage. Every existing caller
+ * ignores the value, and none may depend on it being present.
+ */
+export async function logAppError(input: LogAppErrorInput): Promise<string | null> {
   // Local dev: keep the signal on the developer's own console and leave the shared
   // (production) table alone. Returning here rather than at the API route covers every
   // caller — the client reporter and instrumentation.ts's onRequestError both funnel
@@ -143,7 +149,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       `[app-error:not-persisted] ${redactSecretsFromRoute(input.route) ?? "(no route)"} — ${input.message}`,
       input.stack ?? "",
     );
-    return;
+    return null;
   }
 
   // Cloudflare's whole "521: Web server is down" page is what a Supabase outage used to leave in this column —
@@ -152,7 +158,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
 
   try {
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("app_error_events").insert({
+    const { data, error } = await supabase.from("app_error_events").insert({
       digest: input.digest ?? null,
       // Defaulted HERE, not left to the caller. A row with no environment is invisible to every
       // read filter, and a row with no release cannot be told apart from one on the live build.
@@ -171,13 +177,20 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       source: input.source,
       stack: truncate(combineStack(input.stack, input.componentStack, input.clientContext), MAX_TEXT_LENGTH),
       user_agent: truncate(input.userAgent, MAX_USER_AGENT_LENGTH),
-    });
+    })
+      // The id only — this row is written on the error path, and a `select *` here would read the
+      // whole stack and message straight back out for nothing.
+      .select("id")
+      .single();
 
     if (error) {
       logError("Failed to persist app_error_events row", { labels: { event: "app_error_insert_failed" }, error });
+      return null;
     }
+    return typeof data?.id === "string" ? data.id : null;
   } catch (loggingError) {
     logError("logAppError threw", { labels: { event: "log_app_error_threw" }, error: loggingError });
+    return null;
   }
 }
 

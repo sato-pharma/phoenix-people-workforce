@@ -111,12 +111,26 @@ export type ReproTrail =
   | { status: "not_applicable"; reason: string }
   | { status: "unavailable"; reason: string };
 
+/**
+ * A picture of the screen one of this occurrence's own error events was reported from.
+ *
+ * `eventId` is the `app_error_events` row, which is also the object's key in the bucket — the drawer
+ * asks /api/admin/system-audit/screenshot/<eventId> for a signed URL rather than carrying one here,
+ * so a link cannot outlive the page it was rendered on.
+ */
+export type OccurrenceScreenshot = {
+  eventId: string;
+  capturedAt: string;
+  route: string | null;
+};
+
 export type OccurrenceDetail = {
   occurrence: OccurrenceDetailOccurrence;
   issue: OccurrenceDetailIssue;
   history: OccurrenceHistoryEntry[];
   fixes: OccurrenceFix[];
   reproTrail: ReproTrail;
+  screenshots: OccurrenceScreenshot[];
 };
 
 type Row = Record<string, unknown>;
@@ -244,6 +258,38 @@ async function loadReproTrail(occurrence: OccurrenceDetailOccurrence, supabase: 
 }
 
 /** Null when no occurrence has this id. */
+/**
+ * The captures taken for this occurrence's own error events, newest first.
+ *
+ * `sourceRefs` are `app_error_events` ids (`collapse.ts`), capped at 50 by the repository — so this
+ * is one bounded `in()` and never a wide read. Best-effort on purpose: a drawer that cannot show a
+ * picture must still show the error, so a failure here returns no screenshots rather than throwing.
+ *
+ * Only ids that really are uuids are sent. A single non-uuid in an `in()` list answers 22P02 and
+ * takes the whole read with it, and `source_refs` is jsonb that nothing constrains to a uuid.
+ */
+async function loadScreenshots(occurrence: OccurrenceDetailOccurrence, supabase: Client): Promise<OccurrenceScreenshot[]> {
+  const eventIds = occurrence.sourceRefs.filter((ref): ref is string => typeof ref === "string" && isUuid(ref));
+  if (eventIds.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .from("app_error_events")
+      .select("id, created_at, route, screenshot_path")
+      .in("id", eventIds)
+      .not("screenshot_path", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(12);
+    if (error || !data) return [];
+    return (data as Row[]).map((row) => ({
+      eventId: String(row.id),
+      capturedAt: String(row.created_at),
+      route: row.route === null || row.route === undefined ? null : String(row.route),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function loadOccurrenceDetail(id: string, override?: Client): Promise<OccurrenceDetail | null> {
   if (!isUuid(id)) return null;
   const supabase = client(override);
@@ -256,7 +302,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
   if (!occurrenceRow) return null;
   const occurrence = mapOccurrence(occurrenceRow as Row);
 
-  const [issueResult, historyResult, fixesResult, reproTrail] = await Promise.all([
+  const [issueResult, historyResult, fixesResult, reproTrail, screenshots] = await Promise.all([
     supabase
       .from("system_audit_issues")
       .select("id, title, family, error_code, status, root_cause_level, root_cause, root_cause_evidence, first_seen_at, last_seen_at")
@@ -274,6 +320,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
       .eq("issue_id", occurrence.issueId)
       .order("generation", { ascending: true }),
     loadReproTrail(occurrence, supabase),
+    loadScreenshots(occurrence, supabase),
   ]);
   if (issueResult.error) throw new Error(`The issue could not be read: ${issueResult.error.message}`);
   if (!issueResult.data) throw new Error(`The occurrence points at an issue that is missing (${occurrence.issueId}).`);
@@ -332,6 +379,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
       };
     }),
     reproTrail,
+    screenshots,
   };
 }
 

@@ -165,9 +165,21 @@ export function reportClientError({ error, route, digest, componentStack, contex
       headers: { "Content-Type": "application/json" },
       keepalive: true,
       method: "POST",
-    }).catch(() => {
-      // Swallow — reporting is best-effort.
-    });
+    })
+      .then(async (response) => {
+        // The route hands back a two-minute ticket ONLY when it really wrote a row, and only for a
+        // browser report. That is the signal to photograph the screen the employee is looking at —
+        // see capture-screenshot.ts for why it happens after the paint and not at the throw.
+        if (!response.ok) return;
+        const body = (await response.json().catch(() => null)) as { screenshotTicket?: unknown } | null;
+        const ticket = typeof body?.screenshotTicket === "string" ? body.screenshotTicket : null;
+        if (!ticket) return;
+        const { captureAndUploadErrorScreenshot } = await import("@/lib/error-monitor/capture-screenshot");
+        await captureAndUploadErrorScreenshot(ticket);
+      })
+      .catch(() => {
+        // Swallow — reporting is best-effort.
+      });
   } catch {
     // Swallow — reporting must never throw.
   }
