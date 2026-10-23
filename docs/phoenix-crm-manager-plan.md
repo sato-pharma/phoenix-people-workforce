@@ -695,3 +695,26 @@ no backfill, nothing dropped. Applied 23 Oct 2026 to staging `cifwmndunmlxjhyjug
 `ozucdzovmcqvepbozvqf`, each read back out of the catalog rather than the ledger.
 
 Pinned by `tests/phoenix-crm-manager-plan.test.ts`.
+
+## A manager's work, counted everywhere it is shown (owner, 2026-10-23)
+
+His words: *"any record submitted by himself or a double visit with him, it must appear … if a manager himself added a
+visit to a pharmacy, it should be count, but in a different color, and separate then the total visits … in team
+calendar … make the square … 2 for AM, 9 for PM, and 5 for pharmacies … same for district managers, and same in
+everywhere."*
+
+What changed, and why each half:
+
+- **His own single visit counts by its CUSTOMER'S list.** `loadManagerOwnVisitDays` now reads each visit's customer and
+  fills `split` through `ownVisitBucket`: a rep customer's AM, PM or Pharmacy list wins, so a pharmacy is a pharmacy
+  whatever the hour; only a customer of his own list, which carries no list, falls back to the half he logged it in.
+  Measured on production that day: 28 own visits from 5 managers, 25 to rep-list customers, 3 to own-list ones.
+- **The Phoenix CRM calendar's manager row** folds that split in, pharmacies as a violet figure, and also draws a
+  meeting, training or travel recorded on his own seat (8 such rows existed and were not drawn), as Other activity.
+- **The portal Team Calendar, the private calendar and Employee 360** carry the same split (see `portal.md` and the
+  "Own single visits" tile). His figures stay his: no rep row, team total or KPI reads them, which is his
+  2026-10-20 "Show, keep out of reps" unchanged.
+- **Off-plan double and chain visits whose reviewer was on the visit** go straight to the SFE. The app already did so
+  (43 since 13 Oct); three did not (two on 12 Oct, one on 18 Oct) and sat waiting on that manager, so the visits never
+  counted. A BEFORE INSERT trigger now holds the rule in the database as well, named to fire before the
+  administrator diversion.

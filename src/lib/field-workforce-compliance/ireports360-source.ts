@@ -30,6 +30,8 @@ import {
   phoenixWorkedDayKeySet,
 } from "@/lib/crm/phoenix-work-evidence";
 import { crmVisitTypeMeaningLenient } from "@/lib/crm/visit-type-meaning";
+import { classifyVisit } from "@/lib/crm/visit-types";
+import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
   daysInMonth,
@@ -229,6 +231,23 @@ function minutesToClockString(minutes: number): string {
 
 /** "AM"/"PM" only (case-normalized); null for anything else (blank, unrecognized values seen
  * in production) — never guessed. */
+/**
+ * The AM · PM · Pharmacies bucket a visit row counts in, or null for a row that is no customer or pharmacy call (a
+ * campaign, a meeting, leave). Through `visitCountBucket`, the golden rule's one helper — never a second copy of it.
+ */
+export function splitBucketOf(visit: Pick<IReports360Visit, "ampm" | "comment" | "speciality" | "visitType" | "visitTypeDescription">): VisitCountBucket | null {
+  const bucket = visitCountBucket({
+    ampm: visit.ampm,
+    comment: visit.comment,
+    speciality: visit.speciality,
+    visit_type: visit.visitType,
+    visit_type_description: visit.visitTypeDescription,
+  });
+  if (bucket === "Pharmacies") return bucket;
+  // A field call — Regular, or the vendor's unlabelled field visit — counts; a campaign, training or admin row does not.
+  return classifyVisit(visit.visitType, visit.comment, visit.visitTypeDescription).bucket === "regular" ? bucket : null;
+}
+
 function normalizeAmpm(value: string | null | undefined): "AM" | "PM" | null {
   const upper = String(value ?? "").trim().toUpperCase();
   return upper === "AM" || upper === "PM" ? upper : null;
@@ -384,6 +403,8 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
   matrix: unknown[][];
   ownRegularCountByHrKeyAndDate: Map<string, number>;
+  ownSplitByHrKeyAndDate: Map<string, VisitCountSplit>;
+  rideAlongSplitByHrKeyAndDate: Map<string, VisitCountSplit>;
   visitPeriodByHrKeyAndDate: Map<string, "AM" | "PM" | "MIXED">;
 } {
   const { employees, month, visits, year } = input;
@@ -429,6 +450,15 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   // so a manager's row never duplicates the visit counts of the reps they rode along with. The
   // admin matrix/preview is unchanged — this is an additional, purely informational signal.
   const ownRegularCountByHrKeyAndDate = new Map<string, number>();
+  // The same day's visits AM · PM · Pharmacies apart (owner, 2026-10-23): the person's own, and — for a manager — the
+  // ones he joined as a partner. Display only, read by the portal Team Calendar's square.
+  const ownSplitByHrKeyAndDate = new Map<string, VisitCountSplit>();
+  const rideAlongSplitByHrKeyAndDate = new Map<string, VisitCountSplit>();
+  const addToSplit = (splits: Map<string, VisitCountSplit>, key: string, bucket: VisitCountBucket) => {
+    const split = splits.get(key) ?? emptyVisitCountSplit();
+    addBucketToSplit(split, bucket);
+    splits.set(key, split);
+  };
   const credit = (hrKey: string | null, visit: FieldWorkforceMatrixVisit) => {
     if (!hrKey) return;
     if (!visitsByHrKey.has(hrKey)) visitsByHrKey.set(hrKey, []);
@@ -454,6 +484,9 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       const ownKey = `${agentKey}|${dayIso}`;
       ownRegularCountByHrKeyAndDate.set(ownKey, (ownRegularCountByHrKeyAndDate.get(ownKey) ?? 0) + 1);
     }
+    // A customer or pharmacy call, through the golden rule's one helper — a campaign, meeting or leave row is in no figure.
+    const bucket = splitBucketOf(visit);
+    if (bucket && agentKey) addToSplit(ownSplitByHrKeyAndDate, `${agentKey}|${dayIso}`, bucket);
     // Slot 1 reaches its partner by HR ID too, not only by CRM id (re-audit, 2026-10-22): a Phoenix
     // double visit's manager may have no CRM account — every hire since the vendor stopped issuing them,
     // and Nahed Tarek's five October double visits — and the old `doubleID != null` gate left that
@@ -461,7 +494,10 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     let doubleKey: string | null = null;
     if (visit.doubleID == null || visit.doubleID !== visit.agentID) {
       doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
-      if (doubleKey && doubleKey !== agentKey) credit(doubleKey, visit);
+      if (doubleKey && doubleKey !== agentKey) {
+        credit(doubleKey, visit);
+        if (bucket) addToSplit(rideAlongSplitByHrKeyAndDate, `${doubleKey}|${dayIso}`, bucket);
+      }
     }
     // Slot 2, gated on the HR ID and not on a CRM id: a Phoenix chain visit's second manager often has
     // no CRM account, so `resolveHrKey(null, …)` is the only form that reaches him. Nobody's figure
@@ -471,7 +507,10 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     // GUARANTEE rather than a reading of the data, because this row lands on a person's day list and a
     // duplicate would count a visit twice for them.
     const double2Key = resolveHrKey(null, visit.double2HrId);
-    if (double2Key && double2Key !== agentKey && double2Key !== doubleKey) credit(double2Key, visit);
+    if (double2Key && double2Key !== agentKey && double2Key !== doubleKey) {
+      credit(double2Key, visit);
+      if (bucket) addToSplit(rideAlongSplitByHrKeyAndDate, `${double2Key}|${dayIso}`, bucket);
+    }
   }
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
@@ -565,7 +604,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, visitPeriodByHrKeyAndDate };
+  return { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, ownSplitByHrKeyAndDate, rideAlongSplitByHrKeyAndDate, visitPeriodByHrKeyAndDate };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -899,7 +938,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     };
   }
 
-  const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+  const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, ownSplitByHrKeyAndDate, rideAlongSplitByHrKeyAndDate, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     deviceMappedHrKeys,
     employees: directory,
     month,
@@ -953,9 +992,13 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
       const ownVisitCount = hrKey && cell.status === "VISITS"
         ? ownRegularCountByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? 0
         : undefined;
+      const ownVisitSplit = hrKey && cell.status === "VISITS" ? ownSplitByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? emptyVisitCountSplit() : undefined;
+      const rideAlongSplit = hrKey && cell.status === "VISITS" ? rideAlongSplitByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) : undefined;
       if (!timing && !isExcuseLabeledAv && !visitPeriod && !campaignOverlay && ownVisitCount === undefined) return cell;
       return {
         ...cell,
+        ...(ownVisitSplit ? { ownVisitSplit } : {}),
+        ...(rideAlongSplit ? { rideAlongSplit } : {}),
         ...(timing ? { loggingTiming: timing } : {}),
         ...(isExcuseLabeledAv ? { isExcuseLabeledAv: true } : {}),
         ...(visitPeriod ? { visitPeriod } : {}),

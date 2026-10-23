@@ -1,3 +1,5 @@
+import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+
 export type FieldWorkforceSeverity = "Low" | "Medium" | "High" | "Review";
 
 export type FieldWorkforceCellStatus =
@@ -177,6 +179,24 @@ export type FieldWorkforceDayCell = {
    * severity, status, deduction candidates, or the admin Field Workforce Compliance surface.
    */
   ownVisitCount?: number;
+  /**
+   * The person's OWN visits that day, AM · PM · Pharmacies apart (owner, 2026-10-23: "in team calendar … make the square
+   * … 2 for AM, 9 for PM, and 5 for pharmacies … same for district managers, and same in everywhere"). Bucketed by the
+   * golden rule's one helper (`visitCountBucket`), so a pharmacy is never filed in a half. Live CRM-mirror path only,
+   * set beside `ownVisitCount`; informational — never affects severity, status or a deduction candidate.
+   */
+  ownVisitSplit?: VisitCountSplit;
+  /**
+   * The visits this person was credited with as a double or chain partner — a manager's ride-alongs — split the same
+   * way. The portal prints it on a ride-along day, so a district manager's square shows what he joined, not a bare "DV".
+   */
+  rideAlongSplit?: VisitCountSplit;
+  /**
+   * A manager's OWN single visits logged in Phoenix CRM (`phoenix_crm_manager_visits`), split by his customer's list.
+   * That table is not in the visits mirror, so the engine never sees it; the portal Team Calendar attaches it after
+   * the build (owner, 2026-10-23: "any record submitted by himself … must appear"). Display only.
+   */
+  managerOwnSplit?: VisitCountSplit;
   /**
    * Whether this day's REGULAR (customer) visits were all logged AM, all PM, or a mix, from
    * the visits mirror's ampm column. Only set when status is "VISITS" and at least one that

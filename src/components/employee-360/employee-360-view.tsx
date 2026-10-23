@@ -1037,22 +1037,27 @@ export function Employee360View({
   );
 }
 
+/** "AM 2 · PM 9 · Pharmacies 5" — the three figures apart, never added (owner, 2026-10-23). */
+function splitLine(split: { am: number; pm: number; pharmacies: number }): string {
+  return `AM ${intFmt.format(split.am)} · PM ${intFmt.format(split.pm)} · Pharmacies ${intFmt.format(split.pharmacies)}`;
+}
+
 function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { leadership: LeadershipActivity; isTM: boolean; suppressCoaching?: boolean }) {
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader
         icon={Award}
         tone="violet"
-        sub="Coaching reports authored and double-visits conducted BY this leader in the period — the delivering end, and how many distinct reps it reached."
+        sub="Coaching reports authored, double-visits conducted and single visits made BY this leader in the period — the delivering end, and how many distinct reps it reached."
       >
         Leadership Activity{isTM ? " & Impact" : ""}
       </SectionHeader>
       {!leadership.hasData ? (
-        <EmptyState>No coaching reports authored or double-visits conducted in this period.</EmptyState>
+        <EmptyState>No coaching reports authored, double-visits conducted or own visits logged in this period.</EmptyState>
       ) : (
         <>
           <SummaryLine text={leadership.summaryText} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
             {suppressCoaching ? null : (
               <KpiTile
                 label="Coaching delivered"
@@ -1063,7 +1068,14 @@ function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { lea
             <KpiTile
               label="Double-visits conducted"
               value={intFmt.format(leadership.dvConducted)}
-              hint={`${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied`}
+              hint={`${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`}
+            />
+            {/* His own single visits, logged in Phoenix CRM (owner, 2026-10-23) — kept apart from the double visits and
+                from every rep's figures. "—" when the read failed: never a zero that was not measured. */}
+            <KpiTile
+              label="Own single visits"
+              value={leadership.ownSingle ? intFmt.format(leadership.ownSingle.visits) : "—"}
+              hint={leadership.ownSingle ? splitLine(leadership.ownSingle.split) : "could not be read just now"}
             />
             <KpiTile label="Reps reached" value={intFmt.format(leadership.distinctRepsReached)} hint={suppressCoaching ? "distinct reps accompanied" : "distinct reps coached or accompanied"} />
             {suppressCoaching ? null : (

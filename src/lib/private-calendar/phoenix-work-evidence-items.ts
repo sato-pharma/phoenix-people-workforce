@@ -23,7 +23,7 @@ import {
   PHOENIX_CRM_VISITS_TABLE,
   type PhoenixWorkEvidenceDay,
 } from "@/lib/crm/phoenix-work-evidence";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { privateCalendarActivityKindLabels, type PrivateCalendarActivityKind } from "@/lib/private-calendar/activity-kinds";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 
@@ -39,6 +39,26 @@ function normalizedKey(value: string | null | undefined): string | null {
  */
 export function phoenixWorkEvidenceActivityKind(day: PhoenixWorkEvidenceDay): PrivateCalendarActivityKind {
   return day.visits > 0 ? "single_regular" : "other_crm";
+}
+
+/**
+ * Drops an evidence entry for a day the door ALREADY carries Phoenix CRM visits on — a started team's day — so the
+ * same work never shows twice, once as the door's field or double visit and once as "logged before the team was
+ * started" (audit, 2026-10-23: a started rep's day carried both). A day the door carries only iReports360 rows on,
+ * or nothing, keeps its entry: there the evidence is the only voice Phoenix CRM has. Pure, keyed (employee, date).
+ */
+export function withoutDoorCoveredPhoenixWork(
+  evidence: readonly PrivateCalendarItem[],
+  doorItems: ReadonlyArray<Pick<PrivateCalendarItem, "employeeHrId" | "startDate" | "visitCounts" | "visitRecords">>,
+): PrivateCalendarItem[] {
+  const covered = new Set<string>();
+  for (const item of doorItems) {
+    const carriesPhoenix = (item.visitCounts?.phoenix ?? 0) > 0 || (item.visitRecords ?? []).some((record) => record.phoenix === true);
+    const key = canonicalHrIdKey(item.employeeHrId);
+    if (carriesPhoenix && key) covered.add(`${key}|${item.startDate}`);
+  }
+  if (covered.size === 0) return [...evidence];
+  return evidence.filter((item) => !covered.has(`${canonicalHrIdKey(item.employeeHrId) ?? ""}|${item.startDate}`));
 }
 
 /**

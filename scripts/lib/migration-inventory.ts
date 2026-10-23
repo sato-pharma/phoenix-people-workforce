@@ -1220,6 +1220,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // copy (the two doctors above). After it, two production refreshes each reported listContactsChanged = 0
   // and wrote 0 crm_contacts rows, and both doctors kept their phones; staging's two runs also changed 0.
   "20261022163300_a_pending_copy_fills_the_vendor_blank_in_one_pass.sql",
+  // 2026-10-23, written by the session that applied it. The owner chose "Apply it now" in session; both MCP doors
+  // answered {"status":"declined"} (staging twice, production once — production read UNCHANGED right after), so it was
+  // applied by the standing route, `node scripts/apply-sql-file.mjs <file> staging|production` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), which writes NO ledger row: zero rows carry
+  // 20261023065727 or this file's name on production. Verified by digest, not presence: md5(pg_proc.prosrc) for
+  // public.phoenix_crm_unplanned_a_reviewer_on_the_visit_skips_himself reads e0b917a8cfdbc6fa695fcf8a6a8f320e on
+  // ozucdzovmcqvepbozvqf AND cifwmndunmlxjhyjugxa, md5-equal to this file's dollar-quoted body (as-is LF); the
+  // function is new, so there is no pre-image body. prosecdef true, proconfig {search_path=public}, proacl
+  // {postgres=X/postgres,service_role=X/postgres} on both, so the REVOKE landed; the trigger is enabled and sorts
+  // before phoenix_crm_unplanned_waits_for_the_administrator. The data half moved exactly 3 production rows
+  // ("applied":true,"count":3) — visits 6cdaac80…, 6955cded… and 722dfe84…, each manager_pending v1 before and
+  // sfe_pending v2 after — with 0 still stuck and the 17 correctly routed manager_pending rows untouched. Behaviour
+  // proved on staging in rolled-back blocks: a reviewer on the visit (typed ' probe-77 ' against PROBE-77) was born
+  // sfe_pending, a reviewer not on it stayed manager_pending.
+  "20261023065727_unplanned_reviewer_on_the_visit_goes_to_sfe.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

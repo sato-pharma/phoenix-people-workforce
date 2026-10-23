@@ -66,12 +66,13 @@ export function runPhoenixCrmWave2ReportTests(): void {
   //    and not his, and it cannot show the one pattern the grid exists for: a rep who only ever
   //    works mornings reads as an ordinary quiet rep under a band, and jumps off the page under this.
   //
-  // 🔴 AND PHARMACIES ARE NEVER IN IT (his answer, 2026-09-30). Twenty pharmacy visits and no
-  //    customer is a BLANK day: a pharmacy is not a contact, and letting it colour the cell makes a
-  //    day on customers and a day on shops read alike at the glance a calendar is for.
+  // 🔴 AND PHARMACIES ARE A FIGURE OF THEIR OWN, IN VIOLET (owner, 2026-10-23, replacing his 2026-09-30
+  //    "never in the cell"). They never change an AM, PM or AM + PM day — a pharmacy is not a contact —
+  //    but twenty pharmacy visits and no customer is WORK, so the day is `pharmacy`, never blank.
   const friday = "2026-03-06";
   const blank = { am: 0, pharmacies: 0, pm: 0 };
-  assert.equal(dayShape({ activity: null, counts: { am: 0, pharmacies: 20, pm: 0 }, day: "2026-03-05", onLeave: false }), "none");
+  assert.equal(dayShape({ activity: null, counts: { am: 0, pharmacies: 20, pm: 0 }, day: "2026-03-05", onLeave: false }), "pharmacy");
+  assert.equal(dayShape({ activity: "meeting", counts: { am: 0, pharmacies: 2, pm: 0 }, day: friday, onLeave: true }), "pharmacy", "a pharmacy day is work, ahead of Friday, leave and an activity");
   assert.equal(dayShape({ activity: null, counts: { am: 3, pharmacies: 9, pm: 0 }, day: "2026-03-05", onLeave: false }), "am");
   assert.equal(dayShape({ activity: null, counts: { am: 0, pharmacies: 9, pm: 7 }, day: "2026-03-05", onLeave: false }), "pm");
   assert.equal(dayShape({ activity: null, counts: { am: 1, pharmacies: 0, pm: 7 }, day: "2026-03-05", onLeave: false }), "both");
@@ -326,9 +327,18 @@ export function runPhoenixCrmWave2ReportTests(): void {
     //    it, and this one says why the shape list is the right test in the first place.
     assert.match(
       tab,
-      /function opensTheDay\(day: TeamCalendarDay\): boolean \{\s*return day\.shape === "am" \|\| day\.shape === "pm" \|\| day\.shape === "both" \|\| day\.shape === "activity";/,
+      /function opensTheDay\(day: TeamCalendarDay\): boolean \{\s*return isWorkedShape\(day\.shape\) \|\| day\.shape === "activity";/,
       "a Friday, a leave day and an empty day open nothing — there is no day to show, and the panel already says why",
     );
+    assert.match(
+      tab,
+      /function isWorkedShape\(shape: DayShape\): boolean \{\s*return shape === "am" \|\| shape === "pm" \|\| shape === "both" \|\| shape === "pharmacy";/,
+      "a day of pharmacies alone is a worked day and opens (owner, 2026-10-23)",
+    );
+    // 🔴 THE SQUARE CARRIES EVERY FIGURE THE DAY HAS — AM, PM and Pharmacies stacked, pharmacies on violet (owner,
+    //    2026-10-23: "make the square … 2 for AM, 9 for PM, and 5 for pharmacies").
+    assert.match(tab, /pharmacy: "[^"]*violet/, "a pharmacies-only day wears violet");
+    assert.match(tab, /const PHARMACY_FIGURE_INK = "bg-violet-600 text-white";/, "and the pharmacy figure is printed on violet in every cell");
   }
 
   // ── The day the calendar opens ───────────────────────────────────────────────────────────────

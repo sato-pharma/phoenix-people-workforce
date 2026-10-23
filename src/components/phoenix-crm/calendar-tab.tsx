@@ -61,6 +61,7 @@ const SHAPE_INK: Record<DayShape, string> = {
   both: "border-emerald-400 bg-emerald-100 text-emerald-900",
   leave: "border-blue-400 bg-blue-200 text-blue-900",
   none: "border-slate-200 bg-white text-slate-300",
+  pharmacy: "border-violet-300 bg-violet-100 text-violet-900",
   pm: "border-orange-300 bg-orange-100 text-orange-900",
   rest: "border-slate-900 bg-slate-900 text-white",
 };
@@ -71,12 +72,16 @@ const SHAPE_WORD: Record<DayShape, string> = {
   both: "AM + PM",
   leave: "On leave",
   none: "Nothing",
+  pharmacy: "Pharmacies only",
   pm: "PM only",
   rest: "Friday",
 };
 
 /** The order the legend reads in — the three worked shapes first, then the three reasons a day is blank. */
-const LEGEND: readonly DayShape[] = ["am", "pm", "both", "leave", "activity", "rest"];
+const LEGEND: readonly DayShape[] = ["am", "pm", "both", "pharmacy", "leave", "activity", "rest"];
+
+/** The violet a Pharmacies figure wears on every cell (owner, 2026-10-23: "in a different color, and separate"). */
+const PHARMACY_FIGURE_INK = "bg-violet-600 text-white";
 
 /** Saturday first — the field week, as every other Phoenix CRM surface reads it. */
 const WEEKDAYS = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"] as const;
@@ -119,7 +124,7 @@ function splitText(counts: VisitCountSplit): string {
 /** The whole sentence a cell means, for its tooltip and for a screen reader. Nothing is left cryptic. */
 function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string {
   const parts = [`${person} · ${day.day}`, SHAPE_WORD[day.shape]];
-  if (day.shape === "am" || day.shape === "both" || day.shape === "pm") parts.push(splitText(day.counts));
+  if (isWorkedShape(day.shape)) parts.push(splitText(day.counts));
   if (day.activity) parts.push(dayActivityLabel(day.activity));
   if (day.onLeave && day.shape !== "leave") parts.push("HR has approved leave on this day");
   if (opens) {
@@ -143,7 +148,12 @@ function dayTitle(person: string, day: TeamCalendarDay, opens: boolean): string 
  * AM and PM from being added here to decide it.
  */
 function opensTheDay(day: TeamCalendarDay): boolean {
-  return day.shape === "am" || day.shape === "pm" || day.shape === "both" || day.shape === "activity";
+  return isWorkedShape(day.shape) || day.shape === "activity";
+}
+
+/** A day with visits on it: a half, both halves, or pharmacies alone (owner, 2026-10-23). */
+function isWorkedShape(shape: DayShape): boolean {
+  return shape === "am" || shape === "pm" || shape === "both" || shape === "pharmacy";
 }
 
 /**
@@ -185,18 +195,23 @@ function cellOpens(
   return opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
 }
 
-/** What a cell prints: the figure its colour names, the two stacked, or his letter. */
+/**
+ * What a cell prints: EVERY figure the day has, stacked — AM, then PM, then Pharmacies on a violet strip
+ * (owner, 2026-10-23: "the square … 2 for AM, 9 for PM, and 5 for pharmacies … same for district managers,
+ * and same in everywhere") — or his letter. A figure the day does not have is not printed, so an AM-only
+ * day still reads as one number in the AM colour. Nothing is ever added.
+ */
 function CellFace({ day }: { day: TeamCalendarDay }) {
-  if (day.shape === "both") {
+  if (isWorkedShape(day.shape)) {
+    const { am, pm, pharmacies } = day.counts;
     return (
-      <span className="block leading-[1.1]">
-        <span className="block tabular-nums">{day.counts.am}</span>
-        <span className="block border-t border-black/15 tabular-nums">{day.counts.pm}</span>
+      <span className="block w-full leading-[1.1]">
+        {am > 0 ? <span className="block tabular-nums">{am}</span> : null}
+        {pm > 0 ? <span className={cn("block tabular-nums", am > 0 ? "border-t border-black/15" : "")}>{pm}</span> : null}
+        {pharmacies > 0 ? <span className={cn("block tabular-nums", PHARMACY_FIGURE_INK)}>{pharmacies}</span> : null}
       </span>
     );
   }
-  if (day.shape === "am") return <span className="tabular-nums">{day.counts.am}</span>;
-  if (day.shape === "pm") return <span className="tabular-nums">{day.counts.pm}</span>;
   if (day.shape === "rest") return <span aria-hidden>F</span>;
   if (day.shape === "activity") return <span aria-hidden>•</span>;
   return <span aria-hidden>{day.shape === "leave" ? "—" : ""}</span>;
@@ -335,7 +350,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
             <CrmStatGrid>
               <CrmStat label="AM" value={totals.am} />
               <CrmStat label="PM" value={totals.pm} />
-              <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={totals.pharmacies} />
+              <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM — the violet figure in a day" value={totals.pharmacies} />
               <CrmStat label="People" note={`${days.length} days each`} value={rows.length} />
             </CrmStatGrid>
             {/* 🔴 A manager's row repeats the visits he rode with a rep, so the three figures above are
@@ -343,8 +358,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
             {hasManagers && !filtered ? (
               <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                 The AM, PM and Pharmacies figures count the reps&apos; visits only. A manager&apos;s row shows the
-                days they worked: their own single visits and the visits they joined a rep on, which are
-                already in that rep&apos;s row.
+                days they worked, AM · PM · Pharmacies apart: their own single visits, the visits they joined a
+                rep on (already in that rep&apos;s row), and a meeting, training or travel they recorded.
               </p>
             ) : null}
             {/* A cell that looks empty because the customer is not validated yet, not because the
@@ -548,8 +563,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               <p className="mt-1 break-words text-sm font-black text-slate-900">{splitText(chosen.day.counts)}</p>
               <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-600">
                 {chosen.day.counts.pharmacies > 0
-                  ? "Pharmacies are counted apart and never colour the day — a pharmacy is not a contact."
-                  : "No pharmacy feedback was recorded on this day."}
+                  ? "Pharmacies are counted apart, in violet, and never inside AM or PM — a pharmacy is not a contact."
+                  : "No pharmacy was visited on this day."}
               </p>
               {chosen.day.activity ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
@@ -569,8 +584,9 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                 </p>
               ) : chosen.row.kind === "manager" ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
-                  A manager&apos;s day: their own single visits plus the visits they joined a rep on. A day with
-                  either opens in full, in a new tab. A day spent on admin, a meeting or travel is not drawn here.
+                  A manager&apos;s day: their own single visits plus the visits they joined a rep on, AM · PM ·
+                  Pharmacies apart. A day with either opens in full, in a new tab. A meeting, training or travel they
+                  recorded is drawn as Other activity.
                 </p>
               ) : null}
             </CrmBlock>

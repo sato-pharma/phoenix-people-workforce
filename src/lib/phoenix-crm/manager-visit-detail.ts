@@ -224,16 +224,15 @@ export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDa
       figures.awaitingValidation += 1;
       continue;
     }
-    // An own visit is bucketed by its half; a ride-along or a rep's own visit by the customer's list — through the golden rule's
-    // own helper, so a pharmacy is never filed among the doctors.
-    const bucket = visit.source === "own" ? visit.bucket : visitCountBucketForListType(visit.listType);
+    // Every visit by the customer's list — through the golden rule's own helper, so a pharmacy is never filed among the
+    // doctors. 🔴 HIS OWN VISIT TOO (owner, 2026-10-23: "if a manager himself added a visit to a pharmacy, it should be
+    // count … separate"): only a customer of Manager's own list, which carries no list, falls back to the half.
+    const bucket = visit.source === "own" && visit.listType === null ? visit.bucket : visitCountBucketForListType(visit.listType);
     if (bucket === "AM") figures.am += 1;
     else if (bucket === "PM") figures.pm += 1;
-    if (visit.source !== "own") {
-      for (const name of pharmacyNamesOnVisit(visit.listType, visit.pharmacyName ?? "")) {
-        const key = pharmacyNameKey(name);
-        if (key) pharmacyNames.add(key);
-      }
+    for (const name of pharmacyNamesOnVisit(visit.listType, visit.pharmacyName ?? "")) {
+      const key = pharmacyNameKey(name);
+      if (key) pharmacyNames.add(key);
     }
   }
   figures.pharmacies = pharmacyNames.size;

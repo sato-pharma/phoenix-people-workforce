@@ -101,7 +101,7 @@ export type PrivateCalendarItem = {
   // everyone on it, so a team view counts it once by these ids (summarizePrivateCalendarVisits).
   visitRecords?: PrivateCalendarVisitRecord[];
   // A district manager's OWN single visits behind a `manager-own-visit` item, in full — customer, address, brick,
-  // half, clock, who came along (owner, 2026-10-20). They count in no figure; the item still carries `visitCounts: null`.
+  // half, clock, who came along (owner, 2026-10-20). Since 2026-10-23 the item's `visitCounts` carries their split, in his figures alone.
   managerVisits?: ManagerDayVisit[];
   // The day's plan behind those visits, so a screen can set the two side by side (owner, 2026-10-20). Absent when the
   // plan was not asked for; `managerPlanUnread` says it was asked for and could not be read.

@@ -17,7 +17,8 @@ import { provenWorkedDayReason, selectProvenWorkedDays } from "../src/lib/deduct
 import { excludeProvenWorkedDays } from "../src/lib/deductions/connectors/crm.ts";
 import { selectNoRecordsDrafts, type NoRecordsDay } from "../src/lib/daily-deductions/no-records-select.ts";
 import { describeManagerOwnVisitDay } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
-import { phoenixWorkEvidenceActivityKind } from "../src/lib/private-calendar/phoenix-work-evidence-items.ts";
+import { phoenixWorkEvidenceActivityKind, withoutDoorCoveredPhoenixWork } from "../src/lib/private-calendar/phoenix-work-evidence-items.ts";
+import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import type { DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -310,6 +311,23 @@ function theCalendarShowsTheDayAsFieldWork(): void {
     phoenixWorkEvidenceActivityKind(evidence({ date: "2026-10-07", dayActivities: ["Training"], hrId: "MR-0101" })),
     "other_crm",
   );
+
+  // 🔴 ONE DAY, ONE ENTRY (audit, 2026-10-23). A started team's Phoenix visits reach the door, so the evidence entry
+  //    for that day repeated them as "logged before the team was started". It goes — only where the door carries
+  //    Phoenix rows for that person and date; an iReports360-only day, or another person's, keeps it.
+  const entry = (hrId: string, startDate: string) => ({ employeeHrId: hrId, id: `phoenix-work-${hrId}|${startDate}`, startDate }) as unknown as PrivateCalendarItem;
+  const evidenceItems = [entry("MR-0101", "2026-10-20"), entry("MR-0101", "2026-10-21"), entry("MR-0102", "2026-10-20")];
+  const kept = withoutDoorCoveredPhoenixWork(evidenceItems, [
+    { employeeHrId: "mr-0101", startDate: "2026-10-20", visitCounts: { am: 3, pharmacies: 0, phoenix: 3, pm: 2 }, visitRecords: undefined },
+    { employeeHrId: "MR-0101", startDate: "2026-10-21", visitCounts: { am: 4, pharmacies: 0, pm: 0 }, visitRecords: undefined },
+    { employeeHrId: "MR-0102", startDate: "2026-10-19", visitCounts: null, visitRecords: [{ bucket: "AM", id: "x", phoenix: true }] },
+  ]);
+  assert.deepEqual(
+    kept.map((item) => `${item.employeeHrId}|${item.startDate}`),
+    ["MR-0101|2026-10-21", "MR-0102|2026-10-20"],
+    "the door's Phoenix day drops the evidence entry; an iReports360-only day and another day keep theirs",
+  );
+  assert.equal(withoutDoorCoveredPhoenixWork(evidenceItems, []).length, 3, "nothing from the door, nothing dropped");
 }
 
 /**
