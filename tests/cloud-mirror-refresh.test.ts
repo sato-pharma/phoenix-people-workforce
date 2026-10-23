@@ -104,6 +104,9 @@ export function runCloudMirrorRefreshTests() {
   assert.match(launcher, /git\(\["worktree", "add", "-q", "--detach", tree, "origin\/main"\]\)/, "it runs refresh.mjs from a throwaway worktree at origin/main");
   assert.match(launcher, /scripts", "cloud-mirror", "refresh\.mjs"/, "it runs origin/main's own refresh.mjs — never a stale copy from a working tree");
   assert.match(launcher, /appendFileSync\(LOG/, "it writes its own log — the task runs node directly");
+  // stripComments blanks a comment to spaces of the same length, so these windows span the comments too.
+  assert.match(launcherCode, /if \(existsSync\(refresh\)\) \{[\s\S]{0,500}\} else \{[\s\S]{0,500}WAITING/, "a main that does not carry refresh.mjs yet is a logged WAITING night, not a FAILED one — the task is installed the day the job is written, and the PR merges later");
+  assert.doesNotMatch(launcherCode, /process\.exit\(0\)/, "no early exit past the finally block: it would leave the throwaway worktree registered every night");
   assert.ok(new RegExp("say\\(" + String.fromCharCode(96) + "FAILED — ").test(launcher), "a failure lands in the log with its reason");
   assert.match(launcher, /timeZone: "Africa\/Cairo"/, "log lines carry Cairo time");
   assertFetchRetriesALostLock(launcherCode, "scripts/cloud-mirror/run-refresh.mjs");

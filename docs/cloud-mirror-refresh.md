@@ -112,6 +112,7 @@ were **withheld** from production. The cure was one commit filing the four slugs
 | `pushed onto #N` | a refresh PR was already open; this night's drift went onto it |
 | `REFUSED — module memory is not healthy` | fix the orphan or stale block by hand, then rerun the job |
 | `REFUSED — the refresh carries …` | a memory note quotes key material: redact it on the laptop, then rerun |
+| `WAITING — origin/main has no …` | the PR carrying the job has not merged yet (the task is installed the day the job is written, because a cadence in a doc is not an installed job). After the merge, the same line means the script was renamed or removed |
 | `FAILED — …` | the launcher's own line, with the reason and the last lines of output |
 | nothing in the log at all | the task did not run: `Get-ScheduledTaskInfo -TaskName "Phoenix nightly cloud mirror refresh"` |
 

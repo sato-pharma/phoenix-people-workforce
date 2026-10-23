@@ -85,12 +85,21 @@ try {
   git(["worktree", "add", "-q", "--detach", tree, "origin/main"]);
   added = true;
 
+  // 🔴 NOT A FAILURE, AND NOT A SILENT SKIP EITHER. The task is installed the day the job is written,
+  // because a cadence that lives only in a doc is a description and not an installed job — but the
+  // launcher runs `origin/main`'s copy, which does not exist until the PR carrying it MERGES. So the
+  // nights in between say so in the log, by name, and exit 0; the same line after the merge means the
+  // script was renamed or removed, which is why it names the path rather than shrugging.
   const refresh = path.join(tree, "scripts", "cloud-mirror", "refresh.mjs");
-  if (!existsSync(refresh)) throw new Error("origin/main has no scripts/cloud-mirror/refresh.mjs — has it been renamed?");
-
-  const out = execFileSync(process.execPath, [refresh], { cwd: tree, encoding: "utf8", maxBuffer: 1 << 24 });
-  for (const line of out.split(/\r?\n/).filter(Boolean)) say(line);
-  say("done");
+  if (existsSync(refresh)) {
+    const out = execFileSync(process.execPath, [refresh], { cwd: tree, encoding: "utf8", maxBuffer: 1 << 24 });
+    for (const line of out.split(/\r?\n/).filter(Boolean)) say(line);
+    say("done");
+  } else {
+    // It exits 0 through the same cleanup as any other night — never process.exit here, which would
+    // skip the finally below and leave the throwaway worktree registered until someone pruned it.
+    say("WAITING — origin/main has no scripts/cloud-mirror/refresh.mjs; the PR carrying it has not merged (or it was renamed). Nothing run, nothing pushed");
+  }
 } catch (error) {
   say(`FAILED — ${error?.message ?? error}`);
   const details = `${String(error?.stdout ?? "").trim()}\n${String(error?.stderr ?? "").trim()}`.trim();
