@@ -2731,6 +2731,7 @@ import {
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
+import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10793,6 +10794,10 @@ await runTest(
 await runTest(
   "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
   runCrmParityMirrorExcludesPhoenixVisitsTests,
+);
+await runTest(
+  "the published-closing snapshot resolves each product's period price ONCE from a distinct-product CTE, never once per rollup row — 18,558 SECURITY DEFINER invocations the planner cannot inline cost 1,645 ms and 38,963 buffers per line, and timed the Needs You drift source out on 12 of 15 mornings",
+  runClosingSnapshotPricesOnceTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
