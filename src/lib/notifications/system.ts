@@ -886,26 +886,26 @@ async function loadTelegramConnection(input: CreateSystemNotificationInput) {
  * The id of the stored notice for this key when it already reached somebody, else null.
  * A read that fails answers null, and the write below runs as before: its own error handling (an
  * old schema, a real outage) is unchanged, and the delivery claim still stops a second send.
+ *
+ * ONE call (performance phase 1, 2026-10-23): the event and its reached deliveries come back together
+ * through the `notification_deliveries_notification_event_id_fkey` embed — the old event-then-deliveries
+ * pair was two sequential round trips in front of every notification write. The embed is a plain
+ * (non-inner) one, so an event with no reached delivery still returns, with an empty list, as before.
  */
 async function reachedNoticeId(eventKey: string): Promise<string | null> {
   try {
-    const supabase = getSupabaseAdmin();
-    const { data: event, error } = await supabase
+    const { data: event, error } = await getSupabaseAdmin()
       .from("notification_events")
-      .select("id")
+      .select("id, notification_deliveries(status)")
       .eq("event_key", eventKey)
+      .in("notification_deliveries.status", [...REACHED_DELIVERY_STATUSES])
+      .limit(1, { referencedTable: "notification_deliveries" })
       .maybeSingle();
     if (error || !event) return null;
-    const eventId = String((event as { id?: string | number }).id ?? "");
+    const row = event as { id?: string | number; notification_deliveries?: Array<{ status?: string | null }> | null };
+    const eventId = String(row.id ?? "");
     if (!eventId) return null;
-    const { data: deliveries, error: deliveryError } = await supabase
-      .from("notification_deliveries")
-      .select("status")
-      .eq("notification_event_id", eventId)
-      .in("status", [...REACHED_DELIVERY_STATUSES])
-      .limit(1);
-    if (deliveryError) return null;
-    const statuses = ((deliveries ?? []) as Array<{ status?: string | null }>).map((row) => row.status);
+    const statuses = (row.notification_deliveries ?? []).map((delivery) => delivery.status);
     return noticeAlreadyReached(statuses) ? eventId : null;
   } catch {
     return null;

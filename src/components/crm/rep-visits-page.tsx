@@ -112,6 +112,7 @@ export async function RepVisitsPageBody({
     resolveRepKeyAgents(repKey, { from: range.dateFrom, to: range.dateTo }).catch(() => null),
   ]);
   let board: Awaited<ReturnType<typeof buildRepsPlansBoard>> | null = null;
+  let partnerNameByHrId: Awaited<ReturnType<typeof loadRepNamesByHrId>> | undefined;
   let holidaysComplete = holidays.complete;
   let loadError: string | null = null;
   try {
@@ -129,6 +130,7 @@ export async function RepVisitsPageBody({
       getDoctorCoverageScope(access),
     ]);
     holidaysComplete = report.holidaysComplete;
+    partnerNameByHrId = repNameByHrId;
     board = buildRepsPlansBoard(report, {
       isCurrentMonth: range.isCurrentMonth,
       jobTitleByHrId,
@@ -198,7 +200,8 @@ export async function RepVisitsPageBody({
       holidays: holidays.dates,
       // The directory names the double-visit partner, for the same reason it names the rep: the
       // CRM's `double_name` is a login handle.
-      partnerNameByHrId: await loadRepNamesByHrId().catch(() => undefined),
+      // The copy read above, not a second read awaited before the visit list may start.
+      partnerNameByHrId,
       // WHO IS READING. The Phoenix field set is on this page because the owner asked for it
       // (2026-10-07, "everything, GPS and evidence included"), and WHICH half each reader sees is his
       // own 2026-10-02 ruling: the Super Admin and the SFE Manager read the measurement behind a

@@ -127,8 +127,8 @@ export async function runProbationRecipientLookupsTests() {
     };
     const run = bodyOf("export async function processDueProbationReminderEvents(");
     assert.match(run, /createProbationRecipientLookups\(hrApproverHrIds\)/, "the run builds ONE set of shared lookups from the approvers it already read");
-    assert.match(run, /ensureProbationReminderEvents\(employee, employees, lookups\)/, "the scheduled reminders get the run's lookups");
-    assert.match(run, /ensureOverdueProbationReminderEvents\(employee, row, employees, lookups\)/, "the overdue escalation gets the run's lookups");
+    assert.match(run, /ensureProbationReminderEvents\(employee, employees, lookups(?:, storedKeys)?\)/, "the scheduled reminders get the run's lookups");
+    assert.match(run, /ensureOverdueProbationReminderEvents\(employee, row, employees, lookups(?:, storedKeys)?\)/, "the overdue escalation gets the run's lookups");
     for (const name of ["async function ensureProbationReminderEvents(", "async function ensureOverdueProbationReminderEvents("]) {
       assert.ok(!bodyOf(name).includes("app_auth_users"), `${name} must not read app_auth_users itself — that is the per-employee read`);
     }

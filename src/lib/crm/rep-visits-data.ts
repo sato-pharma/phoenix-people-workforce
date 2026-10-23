@@ -311,7 +311,16 @@ export async function loadRepVisits(
       // variant itself, which is the only safe way to match `agent_hr_id` in this mirror.
       ...(hrId ? { agentHrIdILike: hrId } : {}),
     }),
-    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
+    // A rep with a CRM id is read by it here, the same narrowing the filter below applies, so the month
+    // is one keyset scan of the rep's own check-ins instead of the whole company's read day by day (performance
+    // phase 1, 2026-10-23). A rep without one is still read company-wide and narrowed by hr id below:
+    // those rows can carry any casing or a legacy spelling, which only the canonical key below matches.
+    queryCheckins<CheckinRow>({
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      columns: CHECKIN_COLUMNS,
+      ...(input.agentCrmId != null ? { agentCrmIds: [input.agentCrmId] } : {}),
+    }),
     loadCrmRegionTerritoryIndex(),
     loadRepContactDirectory(hrId, input.dateTo),
   ]);

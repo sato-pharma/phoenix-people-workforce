@@ -17,8 +17,17 @@ export function storedNoticeGuardMissing(systemSource: string): string[] {
   const write = body.indexOf(".upsert(row");
   if (guard < 0) missing.push("createNotificationEvent must return the reached notice before writing");
   else if (write >= 0 && guard > write) missing.push("the reached-notice check must run BEFORE the upsert");
-  if (!/\.in\("status", \[\.\.\.REACHED_DELIVERY_STATUSES\]\)/.test(code)) {
+  const reached = code.match(/async function reachedNoticeId\([\s\S]*?\n}\n/)?.[0] ?? "";
+  if (!/\.in\("notification_deliveries\.status", \[\.\.\.REACHED_DELIVERY_STATUSES\]\)/.test(reached)) {
     missing.push("reachedNoticeId must read the deliveries that reached the person");
+  }
+  // Performance phase 1 (2026-10-23): the event and its reached deliveries are ONE embedded read, not a
+  // second sequential round trip in front of every notification write.
+  if (!/\.select\("id, notification_deliveries\(status\)"\)/.test(reached)) {
+    missing.push("reachedNoticeId must read the event and its deliveries in one embedded call");
+  }
+  if (/\.from\("notification_deliveries"\)/.test(reached)) {
+    missing.push("reachedNoticeId must not make a second, separate deliveries read");
   }
   return missing;
 }
@@ -38,4 +47,15 @@ export async function runNotificationStoredNoticeTests() {
   const broken = source.replace(/const reachedId = await reachedNoticeId\(eventKey\);\s*if \(reachedId\) return reachedId;/, "");
   assert.notEqual(broken, source, "the broken copy must actually remove the guard");
   assert.ok(storedNoticeGuardMissing(broken).length > 0, "the pin fires when the guard is removed");
+
+  // The one-call read fires when it is split back into the old event-then-deliveries pair.
+  const split = source.replace(
+    '.select("id, notification_deliveries(status)")',
+    '.select("id")',
+  );
+  assert.notEqual(split, source, "the split copy must actually drop the embed");
+  assert.ok(
+    storedNoticeGuardMissing(split).includes("reachedNoticeId must read the event and its deliveries in one embedded call"),
+    "the pin fires when the deliveries read leaves the embed",
+  );
 }
