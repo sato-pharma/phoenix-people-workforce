@@ -1293,6 +1293,7 @@ export function PlanBoard({
     selected && selectedDay ? (
     <PlanWeekPanel
       activities={selected.activities}
+      adminDelete={view.adminDeletes && selected.week.plan ? { isTest: view.isTest, onDeleted: resource.reload } : null}
       autosave={repBoard}
       busy={weekBusy}
       caps={caps}

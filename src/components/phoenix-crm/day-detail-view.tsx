@@ -3,7 +3,8 @@
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
-import { MissedRecordPanel, RemoveEnteredVisit } from "@/components/phoenix-crm/missed-record-panel";
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
+import { MissedRecordPanel } from "@/components/phoenix-crm/missed-record-panel";
 import {
   CrmBlock,
   CrmCard,
@@ -120,6 +121,11 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                 {dayActivity.enteredByAdmin ? ` · ${MISSED_RECORD_MARK}` : ""}
               </p>
             ) : null}
+            {dayActivity && view.adminDeletes && dayActivity.id ? (
+              <div className="mt-2">
+                <AdminDelete id={dayActivity.id} isTest={view.isTest} kind="day_activity" subject={`the record "${dayActivity.activityLabel}"`} />
+              </div>
+            ) : null}
             {onLeave ? (
               <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-700">
                 HR has approved leave covering this day.
@@ -163,17 +169,14 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   // only on his own entries; the database refuses every other visit anyway.
                   // And corrects one a rep submitted (owner, 2026-10-06) — who was on it, its products, its
                   // comment — on any visit of the day, his own entries included.
+                  // And, since 2026-10-23, deletes ANY visit as if it never happened — his own entries
+                  // included, which is why the older "remove what I entered" button is gone.
                   actions={
-                    view.editsVisits || (view.removesEnteredVisits && visit.enteredByAdmin) ? (
+                    view.editsVisits || view.adminDeletes ? (
                       <>
                         {view.editsVisits ? <EditVisit isTest={view.isTest} seatId={territory.seatId} visitId={visit.visitId} /> : null}
-                        {view.removesEnteredVisits && visit.enteredByAdmin ? (
-                          <RemoveEnteredVisit
-                            customerName={visit.customerName}
-                            isTest={view.isTest}
-                            seatId={territory.seatId}
-                            visitId={visit.visitId}
-                          />
+                        {view.adminDeletes ? (
+                          <AdminDelete id={visit.visitId} isTest={view.isTest} kind="visit" subject={`the visit to ${visit.customerName}`} />
                         ) : null}
                       </>
                     ) : undefined

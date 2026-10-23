@@ -85,6 +85,7 @@ import {
   assertReviewer,
   canOverrideDecision,
   canReturnTerritoryPlan,
+  canEnterMissedRecords,
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
@@ -325,6 +326,8 @@ export type MonthlyPlannerView = {
   customers: PlannerCustomer[];
   viewerIsRep: boolean;
   viewerIsReviewer: boolean;
+  /** The Super Admin may delete a week's plan as if it never happened (owner, 2026-10-23). */
+  adminDeletes: boolean;
   /** The one week the rep plans now (calendar.ts `repPlanWeek`) — where his board opens. */
   repWeek: string;
   /** The month's own send and take-back: always false since 2026-10-01 (a rep sends a week at a time). */
@@ -776,6 +779,7 @@ export async function loadMonthlyPlanner(
     customers: plannerCustomers,
     viewerIsRep,
     viewerIsReviewer,
+    adminDeletes: canEnterMissedRecords(viewer),
     repWeek: repPlanWeek(today),
     // A rep no longer sends or takes back a MONTH (owner, 2026-10-01 — weekly only): these stay false,
     // and transitionMonthlyPlanAsRep refuses both for a screen one release behind.

@@ -251,7 +251,7 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
       "and mapVisitRow still hands that boolean to the one shaper, so the move cannot have dropped it",
     );
     const activities = source("src/lib/phoenix-crm/server/day-activities.ts");
-    assert.match(activities, /const DAY_ACTIVITY_COLUMNS = "activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";/);
+    assert.match(activities, /const DAY_ACTIVITY_COLUMNS = "id, activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";/);
     assert.match(activities, /enteredByAdmin: isActivityEnteredForRep\(\{ enteredBy: row\.entered_by_hr_id, rep: row\.rep_hr_id \}\),/);
 
     // Every screen that shows the visit or the day says so in words.
@@ -410,8 +410,8 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     const panel = source("src/components/phoenix-crm/missed-record-panel.tsx");
     assert.equal(
       (panel.match(/crmPost<[^>]+>\("\/api\/phoenix-crm\/missed-records"/g) ?? []).length,
-      4,
-      "a visit, a day activity, clearing one, and removing a visit he entered",
+      3,
+      "a visit, a day activity, and clearing one (taking a visit back is the Super Admin delete since 2026-10-23)",
     );
     assert.match(panel, /setPlanned\(next\.onSentPlan \? "planned" : "unplanned"\);/, "it starts from the plan, and he turns it either way");
   }
@@ -462,11 +462,12 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     const route = source("app/api/phoenix-crm/missed-records/route.ts");
     assert.match(route, /if \(body\.record === "remove-visit"\) \{\s*const removed = await removeMissedVisit\(viewer, body\);/);
 
-    // On the day page, on his own entries only.
+    // On the day page, the button that takes a visit back is the Super Admin's delete (owner, 2026-10-23),
+    // drawn on EVERY visit; this older function still refuses a rep's visit if anything ever calls it.
     const view = source("src/components/phoenix-crm/day-detail-view.tsx");
-    assert.match(view, /view\.removesEnteredVisits && visit\.enteredByAdmin \? \(\s*<RemoveEnteredVisit/, "Remove is drawn on a visit he entered, and only there");
+    assert.match(view, /view\.adminDeletes \? \(\s*<AdminDelete id=\{visit\.visitId\}[^>]*kind="visit"/, "Delete is drawn on every visit for the Super Admin");
     const detail = source("src/lib/phoenix-crm/server/day-detail.ts");
-    assert.match(detail, /removesEnteredVisits: canEnterMissedRecords\(viewer\)/);
+    assert.match(detail, /adminDeletes: canEnterMissedRecords\(viewer\)/);
   }
 
   // ── 11 · The notice goes with the visit (owner, 2026-10-02) ────────────────────────────────────

@@ -23,6 +23,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 export type DayActivityRow = {
+  /** The stored row's id, for the Super Admin's delete (owner, 2026-10-23); null on a row shaped from a save's answer. */
+  id: string | null;
   activityDate: string;
   activityType: PhoenixCrmDayActivity;
   activityLabel: string;
@@ -36,7 +38,7 @@ export type DayActivityRow = {
 };
 
 /** Who wrote the day and for whom ride along, so the row can say it was entered for him. */
-const DAY_ACTIVITY_COLUMNS = "activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";
+const DAY_ACTIVITY_COLUMNS = "id, activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";
 
 /**
  * One stored day activity, as every screen reads it. Exported for the Super Admin's missed-record save,
@@ -47,6 +49,7 @@ export function mapDayActivityRow(row: Row): DayActivityRow | null {
   const activityDate = textOrNull(row.activity_date);
   if (!activityType || !activityDate) return null;
   return {
+    id: textOrNull(row.id),
     activityDate,
     activityType: activityType as PhoenixCrmDayActivity,
     activityLabel: dayActivityLabel(activityType as PhoenixCrmDayActivity),
