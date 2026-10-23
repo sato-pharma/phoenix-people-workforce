@@ -131,6 +131,10 @@ overrides:
   # DEPLOYS (see the brace-expansion note above) and a blanket update is its own blast radius.
   # Still DEV-ONLY via shadcn > ajv, so `pnpm audit --prod` never sees it - but the failing Dependabot
   # job it causes withholds production deploys, which is why it is bumped now rather than at leisure.
+  # SCHEDULED 2026-10-23 (owner: "schedule the recurring pnpm update the fast-uri note says is due"):
+  # scripts/deps-refresh/ re-resolves every package inside its range weekly, Sunday 10:00 Cairo, on
+  # GitHub (lockfile.yml mode=refresh) and opens one PR. A floor is still how an advisory is answered
+  # the same day; the refresh is what stops the next allow-but-resolve-below from needing one.
   fast-uri: ^3.1.8
   # Added 2026-08-03 for GHSA-mwp4-54f8-5fhr: Address4 decodes leading-zero octets as decimal
   # while resolvers decode them as octal, so a host like 0177.0.0.1 can pass a check and then

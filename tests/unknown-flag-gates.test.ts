@@ -101,6 +101,7 @@ const PINNED = [
   "scripts/cv-area-questions.mjs",
   "scripts/cv-rule-extraction-report.ts",
   "scripts/cv-triage-questions.mjs",
+  "scripts/deps-refresh/refresh.mjs",
   "scripts/dictation-corrector-eval.ts",
   "scripts/direct-orders-pharmacy-price-backfill.ts",
   "scripts/direct-orders-rebuild-approval-chains.ts",
