@@ -143,7 +143,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 15 more |
 | `git-worktrees` — Git, worktrees and the shared primary checkout | `scripts/{new-session,sync-worktree-env,repo-doctor}*` and 1 more |
-| `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 4 more |
+| `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 5 more |
 <!-- module-memory:directory-table:end -->
 
 ## How memory stays current
