@@ -11,7 +11,7 @@ retirement).
 |---|---|---|
 | Application hosting (production) | **Railway** | Project `Phoenix-HR-Workforce`, service `phoenix-people-workforce`, region `europe-west4-drams3a` (Amsterdam, EU West) — colocated with the Frankfurt Supabase project on purpose; **must stay in Europe** if re-platformed |
 | Background jobs (production) | **Railway** | Service `phoenix-workforce-worker`, same project, same image, `europe-west4-drams3a`, one replica — `https://phoenix-workforce-worker-production.up.railway.app`. Runs the live CRM poller and the cron routes that do heavy work, so the website never freezes under them. See "The worker service" below |
-| Application hosting (staging) | **Railway** | Same project and service, environment `staging` — `https://phoenix-people-workforce-staging.up.railway.app`, also `europe-west4-drams3a`. Tracks `main` and uses the staging Supabase project; see "Staging Environment" below |
+| Application hosting (staging) | **Railway** | Same project and service, environment `staging` — `https://phoenix-people-workforce-staging.up.railway.app`, also `europe-west4-drams3a`. Tracks `main` **through its own deployment trigger** — it had none for nine days in Oct 2026 and silently stopped deploying while every reading still said `main` (see "Staging stopped deploying because its trigger was gone" below) — and uses the staging Supabase project; see "Staging Environment" below |
 | Database + Auth | Supabase | Separate production (`ozucdzovmcqvepbozvqf`) and staging (`cifwmndunmlxjhyjugxa`) projects |
 | Scheduled jobs | **cron-job.org** (third-party, outside this repo) | See "Cron Jobs" below |
 | Email delivery | Resend | — |
@@ -1337,7 +1337,8 @@ same project, not a separate service — verified live 2026-08-23:
 | URL | `https://phoenix-people-workforce-staging.up.railway.app` |
 | Region / replicas | `europe-west4-drams3a`, 1 replica — same as production |
 | Build | `DOCKERFILE` (`/Dockerfile`), so `NODE_ENV=production` — same as production |
-| Source branch | **`main`** |
+| Source branch | **`main`** — and a **deployment trigger** on the staging environment is what makes that branch actually deploy; the branch alone does nothing (see below) |
+| Deployment trigger | `e981745c-94a-496a-9b6a-2bc9146b8749`, branch `main`, `checkSuites: false` — created 2026-10-23 after nine days with none |
 | Database | staging Supabase `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`) — **not** production |
 
 Every Supabase credential in the environment resolves to the staging project, not just the URL:
@@ -1350,7 +1351,9 @@ railway status --environment staging --json
 ```
 
 🔴 **Staging tracks `main`, exactly like production — so by default it is not a preview of your
-branch.** Both environments deploy the same commit; at the time of writing `/api/healthz` returned
+branch.** (And it tracks it only while its deployment trigger exists; it lost that trigger for nine
+days in October 2026 and deployed nothing, with every setting still reading `main` — see "Staging
+stopped deploying because its trigger was gone" below.) Both environments deploy the same commit; at the time of writing `/api/healthz` returned
 revision `4ebbf45c` on *both* the production domain and the staging domain. What staging gives you
 by default is the shipped code running against a throwaway database, not your unmerged work.
 
@@ -1398,6 +1401,66 @@ Railway environment above — the two share the database, nothing else.
 
 `PHOENIX_PREVIEW_READ_ONLY` / the `proxy.ts` preview-read-only guard are legacy from the Vercel
 preview model and are inert (nothing sets `APP_ENV=preview`).
+
+### Staging stopped deploying because its trigger was gone
+
+🔴 **"Tracks `main`" is two separate things, and only one of them is visible anywhere: the service
+instance's SOURCE BRANCH, and a DEPLOYMENT TRIGGER on that environment. Lose the trigger and every
+reading still says `main`.** Found on 2026-10-23: the staging domain answered
+
+```json
+{"status":"error","code":404,"message":"Application not found"}
+```
+
+and its newest deployment was `REMOVED`, dated **14 Oct 11:48 Cairo** — nine days and roughly 180
+merges earlier. Nothing was misconfigured. The domain existed, the service instance existed, its
+GitHub source read `Gawish-1997/phoenix-people-workforce`, its source branch read `main`, and all 50
+environment variables were present and resolving to the staging Supabase project. The project had
+**three** deployment triggers and all three were on the **production** environment, so `main` moved
+180 times and no merge ever built staging.
+
+**Why nine days passed with nobody noticing** — every signal that could have shown it says something
+else:
+
+| What you would look at | What it said | Why that is no use |
+|---|---|---|
+| The staging domain | `404 Application not found` | That is the **edge router** finding no service for the Host — the same answer a deleted domain gives. It reads like a DNS or domain problem, not a service that stopped being deployed. A stale service would answer 200 with an old `revision`. |
+| `railway status -e staging` | source branch `main` | A source branch says what WOULD be built. It is not a trigger and it does not say anything will be. |
+| The Railway dashboard | source `main`, 50 variables | Same. The dashboard shows what it is wired WITH, never whether it is wired AT ALL. |
+| Every CI check | green | CI never looks at Railway. |
+| `secret-drift-check.yml` | green | Before this incident it compared the healthcheck, restart policy, disk mounts and variable NAMES — all of which were correct. |
+| A deploy-failure alert | silent | There was no failed deploy. There was no deploy. |
+
+**The fix was one trigger**, created on the staging environment for `phoenix-people-workforce`
+(branch `main`, `checkSuites: false`, trigger `e981745c-94a-496a-9b6a-2bc9146b8749`). It worked
+immediately and with no further action: #6386 merged at 21:07 Cairo and staging went `BUILDING` at
+**21:09:59** on `d7d100097`, then #6388 at **21:13:37** on `bdbb09746`. The first finished `SUCCESS`
+and `/api/healthz` returned `revision d7d10009…`, `/api/readyz` `ready` with `database: true`, and
+`/login` served its HTML — the environment had simply been nine days behind, not broken.
+
+🔴 **The project's four triggers, read live afterwards, are the whole wiring** — production for
+`phoenix-people-workforce`, `phoenix-workforce-worker` and `phoenix-headwind`, and staging for
+`phoenix-people-workforce`, every one on branch `main` with `checkSuites: false` (Wait for CI is off
+on both services since 2026-10-20 — "The release gate" above). `phoenix-cron` (`alpine:3`) and
+`headwind-db-eu` (a postgres image) deploy from IMAGES and correctly have none.
+
+**What now catches it: `scripts/check-railway-deploy-triggers.mjs`, a fourth leg of the daily
+`secret-drift-check.yml`** (the one scheduled job holding `RAILWAY_API_TOKEN`). 🔴 **Its invariant is
+DERIVED, not a hand-written list of what should exist, so it cannot rot as services come and go:
+every service instance whose source is a GIT REPOSITORY must have a deployment trigger in ITS OWN
+environment; an image-sourced instance is exempt by definition.** It also names a trigger watching a
+different repository than the instance deploys from, a trigger with no branch (it can never fire, and
+it looks identical to a working one in a listing), a trigger for an environment/service pair with no
+instance, and a trigger pointed at an image-deployed instance. It is **read-only** — exit 0 wired,
+1 unwired, 2 cannot tell, and `tests/railway-deploy-triggers.test.ts` asserts as a property of the
+file that it contains no `mutation` at all, because creating a trigger is a deliberate act taken with
+the owner's knowledge. That test's fixture is the real pre-fix shape read off Railway, so the headline
+case asserts this failure rather than an imagined one.
+
+**If the check goes red, the fix is to create the missing trigger on the environment that lost it**
+(Railway dashboard → the environment → the service → **Settings** → **Source** → connect the branch,
+which creates the trigger). Do not repoint a source branch and do not `railway redeploy`: neither one
+creates a trigger, so neither one fixes this.
 
 ## Rollback
 

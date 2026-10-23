@@ -2658,6 +2658,7 @@ import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
 import { runRailwayDeploySettingsDriftTests } from "./railway-deploy-settings-drift.test.ts";
+import { runRailwayDeployTriggersTests } from "./railway-deploy-triggers.test.ts";
 import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
 import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
 import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
@@ -10448,6 +10449,11 @@ await runTest(
 await runTest(
   "railway deploy settings: the scheduled check reads what Railway stores and names a shorter healthcheck window, a changed restart policy, a detached or undeclared disk",
   runRailwayDeploySettingsDriftTests,
+);
+
+await runTest(
+  "railway deployment triggers: every git-sourced service instance must have a trigger in its OWN environment (staging had none for nine days and answered 404 with every setting correct), image services are exempt, a wrong repository, a branchless trigger and an orphan are all named, the checker never mutates Railway, and the scheduled drift check actually runs it",
+  runRailwayDeployTriggersTests,
 );
 
 await runTest(
