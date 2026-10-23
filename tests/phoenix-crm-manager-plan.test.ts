@@ -61,6 +61,12 @@ import {
   vacantVisitPlaceError,
   visitPlaceText,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
+import {
+  MANAGER_VISIT_DETAIL_FIXED_OTHER,
+  MANAGER_VISIT_DETAIL_MAX,
+  managerVisitDetailEditable,
+  parseManagerVisitDetail,
+} from "../src/lib/phoenix-crm/manager-visit-detail-rules.ts";
 import { isVacantTerritory, managerAreaChoices } from "../src/lib/phoenix-crm/server/manager-customers.ts";
 import {
   isOldCrmPlanAction,
@@ -493,7 +499,10 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   }
   // A migration that only widens the table itself — its own columns, checks and comments — reads nothing from
   // it. Named one by one, and each still may not read it, view it or wrap it in a function.
-  const widensOwnVisitsOnly = new Set(["20261019103745_phoenix_crm_manager_visit_place.sql"]);
+  const widensOwnVisitsOnly = new Set([
+    "20261019103745_phoenix_crm_manager_visit_place.sql",
+    "20261023035106_manager_visit_detail_writeup.sql",
+  ]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
@@ -1124,7 +1133,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 20, "twenty declarations across the sixteen routes");
+  assert.equal(registry.length, 21, "twenty-one declarations across the sixteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
@@ -1753,8 +1762,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(/address: vacant \? address : null/.test(visitsServer), false, "the save never throws away an address again");
   assert.match(
     todayBody,
-    /place: visitOf\.get\(row\.customerId \? `c:\$\{row\.customerId\}` : `m:\$\{row\.managerCustomerId\}`\)\?\.placeText \?\? null,/,
-    "a logged planned customer carries its visit's place",
+    /const visit = visitOf\.get\(row\.customerId \? `c:\$\{row\.customerId\}` : `m:\$\{row\.managerCustomerId\}`\);/,
+    "a planned customer is matched to its own visit",
+  );
+  assert.match(todayBody, /logged: visit !== undefined,[\s\S]*?place: visit\?\.placeText \?\? null,/, "and carries that visit's place");
+  assert.match(
+    todayBody,
+    /visitId: visit\?\.id \?\? null,\s*detailComment: visit\?\.detailComment \?\? null,\s*detailEditedAt: visit\?\.detailEditedAt \?\? null,/,
+    "and its id and write-up, so the screen can reopen the visit he logged",
   );
   assert.match(todayBody, /vacant: visit\.inVacantTerritory,\s*place: visit\.placeText,/, "an unplanned visit says what it recorded, not what the territory is today");
   const reportServer = source("src/lib/phoenix-crm/server/manager-plan-report.ts");
@@ -1833,4 +1848,89 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     /onOwnSingleVisitSaved=\{\(\) => setOwnSingleVisitNonce\(\(current\) => current \+ 1\)\}/,
     "the sibling panel holding the visit is the one remounted",
   );
+
+  // ── He writes up a visit he already logged (owner, 2026-10-23) ────────────────────────────────
+  // The whole point of the write-up is that it adds a SECOND account and moves nothing else: the
+  // products, the door comment and a vacant area's recorded place are what his own report reads.
+  const mine = { managerHrId: "B-116", actorHrId: "b-116 " };
+  assert.equal(managerVisitDetailEditable(mine).editable, true, "his own visit is his to write up, HR ids folded");
+  const another = managerVisitDetailEditable({ managerHrId: "B-120", actorHrId: "B-116" });
+  assert.equal(another.editable, false, "another manager's visit is not");
+  assert.equal(another.editable === false && another.reason, MANAGER_VISIT_DETAIL_FIXED_OTHER, "and it is refused with a sentence, not silence");
+  assert.equal(
+    managerVisitDetailEditable({ managerHrId: null, actorHrId: "B-116" }).editable,
+    false,
+    "a visit with no manager on it is nobody's to write up",
+  );
+
+  const emptyWriteUp = parseManagerVisitDetail({ visitId: "3F2504E0-4F89-11D3-9A0C-0305E82C3301", detailComment: "   " });
+  assert.equal(emptyWriteUp.ok && emptyWriteUp.value.detailComment, null, "an empty box clears the write-up rather than storing blanks");
+  assert.equal(
+    parseManagerVisitDetail({ visitId: "not-a-uuid", detailComment: "x" }).ok,
+    false,
+    "an unreadable visit id is refused before anything is written",
+  );
+  const tooLong = parseManagerVisitDetail({ visitId: "3F2504E0-4F89-11D3-9A0C-0305E82C3301", detailComment: "x".repeat(MANAGER_VISIT_DETAIL_MAX + 1) });
+  assert.equal(tooLong.ok, false, "and an account over the limit is refused");
+  const kept = parseManagerVisitDetail({
+    visitId: "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+    detailComment: " what came of it ",
+    products: ["Tebofortin"],
+    comment: "the door comment",
+  });
+  assert.equal(kept.ok && kept.value.detailComment, "what came of it", "the write-up is trimmed and kept");
+  assert.equal(kept.ok && "products" in kept.value, false, "and nothing else travels with it — not the products");
+  assert.equal(kept.ok && "comment" in kept.value, false, "and not the comment he typed at the door");
+
+  const managerVisits = source("src/lib/phoenix-crm/server/manager-visits.ts");
+  const writeUp = functionBody(managerVisits, "export async function saveManagerVisitDetail(");
+  assert.match(writeUp, /managerVisitDetailEditable\(\{ managerHrId: textOrNull\(visit\.manager_hr_id\)/, "whose visit it is comes off the visit's OWN row, never the request");
+  assert.match(
+    writeUp,
+    /\.update\(\{ detail_comment: entry\.detailComment, detail_edited_at: entry\.detailComment \? new Date\(\)\.toISOString\(\) : null \}\)/,
+    "the save moves those two columns and no other",
+  );
+  assert.equal(/\.update\(\{[^}]*\bcomment:/.test(writeUp), false, "the door comment is never overwritten by the write-up");
+  assert.equal(/\.update\(\{[^}]*\bproducts:/.test(writeUp), false, "and neither are the products");
+  assert.match(writeUp, /return loadManagerToday\(viewer, \{ test: isTest \}\)/, "it answers with today's view, so the screen refreshes from the save");
+  // The POST sweep above is the standard: `read` at the door makes the SERVICE the gate, because a Medical
+  // Rep holds `read` too. The one PATCH is held to it here — the writer check, then whose visit it is, then
+  // the write.
+  assert.ok(
+    writeUp.indexOf("assertManagerPlanWriter(viewer)") >= 0 &&
+      writeUp.indexOf("assertManagerPlanWriter(viewer)") < writeUp.indexOf("managerVisitDetailEditable(") &&
+      writeUp.indexOf("managerVisitDetailEditable(") < writeUp.indexOf(".update({"),
+    "the writer check and the owner check both stand before the write",
+  );
+  assert.deepEqual(
+    accessRegistry
+      .filter((entry) => entry.pattern.startsWith("/api/phoenix-crm/manager-plans") && entry.methods.includes("PATCH"))
+      .map((entry) => entry.pattern),
+    ["/api/phoenix-crm/manager-plans/visits"],
+    "and it is the only PATCH in the module, so the POST sweep above still covers every other write",
+  );
+
+  assert.match(
+    source("app/api/phoenix-crm/manager-plans/visits/route.ts"),
+    /export async function PATCH\(request: Request\)[\s\S]*assertSameOriginMutation\(request\)[\s\S]*saveManagerVisitDetail\(viewer, body\)/,
+    "the write-up is its own verb on the visits route, behind the same-origin check",
+  );
+  assert.match(
+    source("src/lib/security/access-registry.ts"),
+    /methods: \["PATCH"\], pattern: "\/api\/phoenix-crm\/manager-plans\/visits"/,
+    "and it is declared, or the required validate job refuses the route",
+  );
+
+  const writeUpScreen = source("src/components/phoenix-crm/manager-single-visits.tsx");
+  assert.match(writeUpScreen, /customer\.detailComment \? VISIT_DETAIL_EDIT_AGAIN : VISIT_DETAIL_EDIT_PROMPT/, "the button wears the REP's own words for the same act");
+  assert.match(writeUpScreen, /visitDetailEditedLine\(customer\.detailEditedAt, cairoStamp\)/, "the edited line is the rep's too, stamped in Cairo");
+  assert.match(writeUpScreen, /crmPatch<ManagerTodayView>\(VISITS, \{ visitId: customer\.visitId, detailComment: text, test \}, "today"\)/, "and it sends only the write-up");
+  assert.equal(/<VisitWriteUp/.test(writeUpScreen.slice(writeUpScreen.indexOf("Not planned"))), true, "an unplanned logged visit can be written up");
+  assert.match(writeUpScreen, /\{customer\.logged \? \(\s*<VisitWriteUp/, "and a planned one only once it is logged");
+
+  const writeUpMigration = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261023035106_manager_visit_detail_writeup.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.match(writeUpMigration, /add column if not exists detail_comment text/, "the column the write-up lands in");
+  assert.match(writeUpMigration, /add column if not exists detail_edited_at timestamptz/, "and the stamp beside it");
 }

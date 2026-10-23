@@ -37,6 +37,7 @@ import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { managerVisitDetailEditable, parseManagerVisitDetail } from "@/lib/phoenix-crm/manager-visit-detail-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import {
@@ -77,6 +78,10 @@ export type ManagerVisitRow = {
   managerCustomerId: string | null;
   products: string[];
   comment: string | null;
+  /** The longer account he wrote up afterwards (owner, 2026-10-23); null until he writes one. */
+  detailComment: string | null;
+  /** When that write-up was last saved, for the "Edited" line on his card. */
+  detailEditedAt: string | null;
   hasPin: boolean;
   capturedAt: string | null;
   isTest: boolean;
@@ -87,7 +92,7 @@ export type ManagerVisitRow = {
 };
 
 const VISIT_COLUMNS =
-  "id, manager_hr_id, plan_slot_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, is_test, in_vacant_territory, address, area_name, brick_name";
+  "id, manager_hr_id, plan_slot_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, detail_comment, detail_edited_at, lat, captured_at, is_test, in_vacant_territory, address, area_name, brick_name";
 
 function visitRowOf(raw: unknown): ManagerVisitRow | null {
   const row = record(raw);
@@ -108,6 +113,8 @@ function visitRowOf(raw: unknown): ManagerVisitRow | null {
     managerCustomerId: textOrNull(row.manager_customer_id),
     products: Array.isArray(row.products) ? row.products.map(String) : [],
     comment: textOrNull(row.comment),
+    detailComment: textOrNull(row.detail_comment),
+    detailEditedAt: textOrNull(row.detail_edited_at),
     hasPin,
     capturedAt: textOrNull(row.captured_at),
     isTest: row.is_test === true,
@@ -161,6 +168,11 @@ export type ManagerTodayCustomer = {
   knownAddress: string | null;
   /** Once logged: the address, area and brick the visit recorded (`visitPlaceText`). */
   place: string | null;
+  /** Once logged: the visit itself, which the write-up panel saves against. Null until he logs it. */
+  visitId: string | null;
+  /** The longer account he wrote up afterwards (owner, 2026-10-23), and when he last saved it. */
+  detailComment: string | null;
+  detailEditedAt: string | null;
 };
 
 /** A customer of Manager's own list as the Visits tab needs him: with whether his area has a rep today. */
@@ -268,18 +280,24 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const ownById = new Map(ownList.map((customer) => [customer.id, customer]));
   const planned = slotCustomers
     .filter((row) => !row.gone)
-    .map((row): ManagerTodayCustomer => ({
-      slotId: row.slotId,
-      half: halfOfSlot.get(row.slotId) ?? null,
-      customerId: row.customerId,
-      managerCustomerId: row.managerCustomerId,
-      name: row.name,
-      speciality: row.speciality,
-      own: row.managerCustomerId !== null,
-      logged: visitOf.has(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`),
-      ...placeOf(row.customerId, row.managerCustomerId),
-      place: visitOf.get(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`)?.placeText ?? null,
-    }))
+    .map((row): ManagerTodayCustomer => {
+      const visit = visitOf.get(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`);
+      return {
+        slotId: row.slotId,
+        half: halfOfSlot.get(row.slotId) ?? null,
+        customerId: row.customerId,
+        managerCustomerId: row.managerCustomerId,
+        name: row.name,
+        speciality: row.speciality,
+        own: row.managerCustomerId !== null,
+        logged: visit !== undefined,
+        ...placeOf(row.customerId, row.managerCustomerId),
+        place: visit?.placeText ?? null,
+        visitId: visit?.id ?? null,
+        detailComment: visit?.detailComment ?? null,
+        detailEditedAt: visit?.detailEditedAt ?? null,
+      };
+    })
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
 
   const unplanned = unplannedVisits.map((visit): ManagerTodayCustomer => {
@@ -298,6 +316,9 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       // What the visit recorded, never what the territory is today: it was vacant when he logged it.
       vacant: visit.inVacantTerritory,
       place: visit.placeText,
+      visitId: visit.id,
+      detailComment: visit.detailComment,
+      detailEditedAt: visit.detailEditedAt,
     };
   });
   return {
@@ -519,5 +540,47 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       throw error;
     }
   }
+  return loadManagerToday(viewer, { test: isTest });
+}
+
+/**
+ * He comes back to a visit he logged and writes up its detail (owner, 2026-10-23).
+ *
+ * 🔴 IT MOVES ONE COLUMN. The comment he typed while logging, the products, the day, the time, the
+ * location and a vacant area's recorded address, area and brick are all left exactly as they were —
+ * `detail_comment` is a SECOND, longer account beside the first, and `detail_edited_at` is what the card
+ * prints as "Edited · <date time>". `managerVisitDetailEditable` is what decides, read from the visit's
+ * OWN row rather than from the request, so a visit id belonging to another manager is refused with a
+ * sentence rather than silently ignored.
+ *
+ * It answers with today's view, the same shape `logManagerVisit` answers with, so the screen refreshes
+ * from the save instead of asking again.
+ */
+export async function saveManagerVisitDetail(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerTodayView> {
+  assertManagerPlanWriter(viewer);
+  const body = record(raw);
+  const isTest = testModeFor(viewer, body.test);
+  const parsed = parseManagerVisitDetail(body);
+  if (!parsed.ok) throw validationError(parsed.error);
+  const entry = parsed.value;
+
+  const rows = await fetchAllRowsKeyset<Row>(
+    () => getSupabaseAdmin().from("phoenix_crm_manager_visits").select("id, manager_hr_id, is_test").eq("id", entry.visitId),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  const visit = rows[0];
+  if (!visit || visit.is_test !== isTest) throw notFoundError("This visit is no longer there. Reload the page.");
+
+  const editable = managerVisitDetailEditable({ managerHrId: textOrNull(visit.manager_hr_id), actorHrId: viewer.hrId });
+  if (!editable.editable) throw forbiddenError(editable.reason);
+
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_manager_visits")
+    // Cleared on purpose reads as never written: the line is a courtesy, and an "Edited" stamp over an
+    // empty box would say a write-up exists where there is none.
+    .update({ detail_comment: entry.detailComment, detail_edited_at: entry.detailComment ? new Date().toISOString() : null })
+    .eq("id", entry.visitId);
+  if (error) throw error;
+
   return loadManagerToday(viewer, { test: isTest });
 }
