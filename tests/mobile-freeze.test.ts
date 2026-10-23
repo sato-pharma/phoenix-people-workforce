@@ -144,28 +144,49 @@ export function runMobileFreezeTests() {
     );
   }
 
-  // 3. The rule, in the three files a session actually loads. Deleting these IS how he lifts the
-  //    freeze, so this test goes with them — it is not a reason to keep the rule alive.
+  // 3. The freeze itself, in the two files a session actually loads. Deleting these IS how he lifts
+  //    the freeze, so this test goes with them — it is not a reason to keep the rule alive.
   const agents = readFileSync(resolve("AGENTS.md"), "utf8").replace(/\s+/g, " ");
   assert.match(agents, /THE MOBILE APP IS FROZEN/, "AGENTS.md §4 must carry the freeze as its first owner rule");
   assert.match(agents, /the-mobile-app-is-frozen-until-he-lifts-it/, "the freeze's memory slug must stay reachable from AGENTS.md");
-  // Each of the other mobile rules carries its own marker, counted — one marker covering two rules
-  // leaves the uncovered one reading as live guidance, and that is precisely how a frozen app gets
-  // worked on by a session that has just read a rule about it.
-  for (const headline of ["MANAGED GOOGLE PLAY REACHES NO REP TABLET", "THE MOBILE APP IS A SHELL OVER THE WEB PORTAL"]) {
-    const at = agents.indexOf(headline);
-    assert.ok(at > 0, `AGENTS.md §4 must still carry the ${headline} rule`);
-    const preamble = agents.slice(Math.max(0, at - 400), at);
-    assert.match(
-      preamble,
-      /DORMANT under the mobile-app freeze/,
-      `the "${headline}" rule must be marked dormant, or a session reads it as live guidance on a frozen app`,
-    );
-  }
 
   const claude = readFileSync(resolve("CLAUDE.md"), "utf8").replace(/\s+/g, " ");
   assert.match(claude, /The mobile app is FROZEN/, "CLAUDE.md must carry the freeze where a session reads it first");
 
+  // The two older mobile rules are DORMANT history until he lifts the freeze, so on 2026-10-23
+  // their text left the always-loaded rulebook for the account doc and AGENTS.md kept a pointer.
+  // What this still pins is the marker, counted per rule: a slug or a section with no dormancy word
+  // beside it reads as live guidance, and that is precisely how a frozen app gets worked on by a
+  // session that has just read a rule about it.
+  for (const slug of ["the-mobile-app-is-a-shell-over-the-web-portal", "managed-play-cannot-reach-the-rep-tablets"]) {
+    assert.ok(
+      agents.includes(slug),
+      `AGENTS.md §4 must still reach the ${slug} rule by its slug, wherever the rule's text lives`,
+    );
+    const marked = [...agents.matchAll(new RegExp(slug, "g"))].some((hit) =>
+      /DORMANT/.test(agents.slice(Math.max(0, (hit.index ?? 0) - 400), hit.index)),
+    );
+    assert.ok(
+      marked,
+      `the "${slug}" pointer in AGENTS.md must be marked dormant, or a session reads it as live guidance on a frozen app`,
+    );
+  }
+
   const account = readFileSync(resolve("docs/agents-owner-rules.md"), "utf8").replace(/\s+/g, " ");
   assert.match(account, /## The mobile-app freeze — owner golden rule, 2026-09-29/, "the account must stay in docs/agents-owner-rules.md");
+
+  // And each dormant rule opens with its own banner where it now lives — a reader who arrives at
+  // the section directly never sees AGENTS.md's pointer.
+  for (const heading of [
+    "## The mobile app is a shell over the web portal",
+    "## Managed Google Play cannot reach the rep tablets",
+  ]) {
+    const at = account.indexOf(heading);
+    assert.ok(at > 0, `docs/agents-owner-rules.md must hold the "${heading}" rule`);
+    assert.match(
+      account.slice(at, at + 400),
+      /DORMANT under the mobile-app freeze/,
+      `the "${heading}" section must open with its dormancy banner`,
+    );
+  }
 }
