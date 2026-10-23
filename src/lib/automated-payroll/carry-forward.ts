@@ -1,5 +1,6 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { roundCurrency } from "@/lib/payroll/money";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { AssembledRow } from "./assemble.ts";
@@ -201,7 +202,7 @@ export async function recordOverpaidCarryForward(input: {
 async function releaseUnappliedCarryForward(runId: string, keepCompacts?: Set<string>): Promise<void> {
   let query = getSupabaseAdmin().from(TABLE).delete().eq("source_run_id", runId).is("applied_run_id", null);
   if (keepCompacts && keepCompacts.size > 0) {
-    query = query.not("employee_hr_id_compact", "in", `(${Array.from(keepCompacts).join(",")})`);
+    query = query.not("employee_hr_id_compact", "in", `(${quotedInList(Array.from(keepCompacts))})`);
   }
   const { error } = await query;
   if (error && !isMissingTableError(error)) throw error;

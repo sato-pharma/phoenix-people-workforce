@@ -4,6 +4,7 @@ import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
+import { quotedInList } from "@/lib/supabase/search-filter";
 
 import {
   applyOrganogramMirrorSafety,
@@ -270,7 +271,7 @@ function inFilter(idsToLoad: number[]) {
 }
 
 function textInFilter(values: string[]) {
-  return `in.(${values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(",")})`;
+  return `in.(${quotedInList(values)})`;
 }
 
 const TRANSIENT_SERVER_ERRORS = [502, 503, 504];
