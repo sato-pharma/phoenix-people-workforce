@@ -97,6 +97,7 @@ const PINNED = [
   "scripts/correct-excuse-days-orgwide.ts",
   "scripts/cronjob-sync.mjs",
   "scripts/customer-pharmacy-pending-questions.ts",
+  "scripts/cloud-mirror/refresh.mjs",
   "scripts/customer-territory-questions.ts",
   "scripts/cv-area-questions.mjs",
   "scripts/cv-rule-extraction-report.ts",
