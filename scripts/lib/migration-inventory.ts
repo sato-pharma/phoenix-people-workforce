@@ -1623,6 +1623,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // reads indisvalid true, indisready true, 55 MB. Staging got the file as written; indisvalid true.
   "20261023203000_user_error_screens.sql",
   "20261023210000_phoenix_crm_touch_trail_day_id_index.sql",
+
+  // Applied 2026-10-23 through scripts/apply-sql-file.mjs (the supabase-staging MCP declined the call), to
+  // staging cifwmndunmlxjhyjugxa and then production ozucdzovmcqvepbozvqf (PHOENIX_POOLER_HOST=aws-1), so
+  // neither ledger has a row for it. Proven by DIGEST, not presence: md5(pg_proc.prosrc) for
+  // public.phoenix_crm_save_manager_plan_slot is 0737f463f34b0b6438bd0121c1a7b4dc on BOTH projects, equal to
+  // the md5 of this file's own function body (the pre-image on production was aa335a2dbe2e91aed813f778feb76e1c,
+  // 20261021130000's body). The CHECK phoenix_crm_manager_plan_slots_kind carries 'with_dm', the column
+  // dm_visit is jsonb and phoenix_crm_manager_plan_slots_dm_visit exists on both; EXECUTE is postgres and
+  // service_role only. Staging behaviour proven in a rolled-back block: a with_dm half-day saved with two
+  // areas; a district manager's refused (manager_plan_bad_kind); no areas, and dm_visit on an admin
+  // half-day, refused (bad_input).
+  "20261023233000_phoenix_crm_manager_plan_with_dm.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

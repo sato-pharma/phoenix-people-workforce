@@ -68,7 +68,7 @@ export function managerPlanTitle(weekStart: string): string {
 export type LegacyPlanActivityType = "Field" | "Office" | "Travel" | "Meeting" | "Training" | "Admin" | "Event";
 
 export function managerHalfLegacyType(kind: ManagerSlotKind, activityType: string | null): LegacyPlanActivityType {
-  if (kind === "with_rep" || kind === "single_visit") return "Field";
+  if (kind === "with_rep" || kind === "single_visit" || kind === "with_dm") return "Field";
   // A regional, national or product manager's Office half-day reads as the legacy plan's own "Office"
   // (owner, 2026-10-17), the word the attendance policy "office days only" keys on.
   if (activityType === "office") return "Office";
@@ -213,6 +213,7 @@ export async function loadManagerPlanHalfDays(input: {
 export function managerHalfDayText(halfDay: Pick<ManagerPlanHalfDay, "kind" | "activityLabel" | "areaName">, repName: string | null): string {
   if (halfDay.kind === "with_rep") return `With ${repName ?? "a rep"}`;
   if (halfDay.kind === "admin") return halfDay.activityLabel ?? "Admin";
+  if (halfDay.kind === "with_dm") return `With a district manager · ${halfDay.areaName ?? "his areas"}`;
   return `Single visit · ${halfDay.areaName ?? "an area"}`;
 }
 

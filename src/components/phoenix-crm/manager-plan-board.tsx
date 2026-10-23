@@ -65,7 +65,6 @@ import {
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
   MANAGER_SLOT_CUSTOMER_MAX,
-  MANAGER_SLOT_KINDS,
   VACANT_AREA_NOTE,
   VACANT_LIST_LABEL,
   type ManagerHalf,
@@ -111,12 +110,14 @@ type HalfDraft = {
   repSeatId: string | null;
   activityType: string | null;
   areaSeatId: string | null;
+  /** With a district manager: the areas of his district ticked for the half-day. */
+  areaSeatIds: string[];
   note: string;
   customers: CustomerRef[];
 };
 
 function emptyDraft(): HalfDraft {
-  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, note: "", customers: [] };
+  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, areaSeatIds: [], note: "", customers: [] };
 }
 
 function halfKey(date: string, half: ManagerHalf): string {
@@ -131,9 +132,9 @@ function ownRef(managerCustomerId: string, name: string): CustomerRef {
   return { key: `m:${managerCustomerId}`, customerId: null, managerCustomerId, name };
 }
 
-/** A half-day that names a district: with a rep, or single visits in one of its areas. */
+/** A half-day that names a district: with a rep, with its district manager, or single visits in one of its areas. */
 function namesADistrict(kind: ManagerSlotKind | null): boolean {
-  return kind === "with_rep" || kind === "single_visit";
+  return kind === "with_rep" || kind === "single_visit" || kind === "with_dm";
 }
 
 function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
@@ -143,6 +144,7 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
     repSeatId: slot?.repSeatId ?? null,
     activityType: slot?.activityType ?? null,
     areaSeatId: slot?.areaSeatId ?? null,
+    areaSeatIds: slot?.areaSeatIds ?? [],
     note: slot?.note ?? "",
     customers: (slot?.customers ?? []).map((customer) =>
       customer.customerId ? repRef(customer.customerId, customer.name) : ownRef(customer.managerCustomerId ?? "", customer.name),
@@ -161,6 +163,10 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null
   if (draft.kind === "with_rep") {
     if (!draft.repSeatId) return "choose the rep you go with";
     if (draft.customers.length === 0) return "tick at least one of the rep's customers";
+  }
+  if (draft.kind === "with_dm") {
+    if (!draft.scope?.startsWith("dm:")) return "choose the district manager you go with";
+    if (draft.areaSeatIds.length === 0) return "tick at least one of his areas";
   }
   if (draft.kind === "admin" && !draft.activityType) return "choose the activity";
   if (draft.kind === "single_visit") {
@@ -185,10 +191,11 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes:
     repSeatId: draft.kind === "with_rep" ? draft.repSeatId : null,
     activityType: draft.kind === "admin" ? draft.activityType : null,
     areaSeatId: draft.kind === "single_visit" ? draft.areaSeatId : null,
+    areaSeatIds: draft.kind === "with_dm" ? draft.areaSeatIds : [],
     ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
-      draft.kind === "admin" || draft.kind === null
+      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === null
         ? []
         : draft.customers.map((customer) => (customer.customerId ? { customerId: customer.customerId } : { managerCustomerId: customer.managerCustomerId })),
   };
@@ -312,7 +319,7 @@ export function ManagerPlanBoard({
     for (const entry of day.halves) {
       const halfDraft = draftOf(day, entry);
       if (!namesADistrict(halfDraft.kind) || halfDraft.scope === next) continue;
-      const untouched = !halfDraft.repSeatId && !halfDraft.areaSeatId && halfDraft.customers.length === 0;
+      const untouched = !halfDraft.repSeatId && !halfDraft.areaSeatId && halfDraft.areaSeatIds.length === 0 && halfDraft.customers.length === 0;
       if (untouched) moved[halfKey(day.date, entry)] = { ...halfDraft, scope: next };
       else if (entry === currentHalf && halfDraft.scope) shown = halfDraft.scope;
     }
@@ -328,7 +335,7 @@ export function ManagerPlanBoard({
     if (!day) return;
     const dayScope = dayScopeOf(day);
     if (!dayScopes[day.date] && dayScope) setDayScopes((previous) => ({ ...previous, [day.date]: dayScope }));
-    edit({ ...draft, scope: next, repSeatId: null, areaSeatId: null, customers: [] });
+    edit({ ...draft, scope: next, repSeatId: null, areaSeatId: null, areaSeatIds: [], customers: [] });
     showScope(next);
   }
 
@@ -819,7 +826,7 @@ function HalfStep({
     label: entry,
     note: day.slots.find((candidate) => candidate.half === entry)?.summary ?? "Nothing planned",
   }));
-  const kindOptions: Array<CrmChoiceOption<ManagerSlotKind>> = MANAGER_SLOT_KINDS.map((entry) => ({
+  const kindOptions: Array<CrmChoiceOption<ManagerSlotKind>> = view.slotKinds.map((entry) => ({
     value: entry.key,
     label: entry.label,
     disabled: !canEdit,
@@ -852,7 +859,7 @@ function HalfStep({
       ) : null}
       <div className="grid min-w-0 gap-2">
         <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${half}`}</p>
-        <CrmChoice columns={3} label="What you do" onChange={chooseKind} options={kindOptions} value={draft.kind} />
+        <CrmChoice columns={kindOptions.length > 3 ? 2 : 3} label="What you do" onChange={chooseKind} options={kindOptions} value={draft.kind} />
       </div>
 
       {choosesDistrict && canEdit && dayScope && namesADistrict(draft.kind) ? (
@@ -872,6 +879,7 @@ function HalfStep({
       {draft.kind === "with_rep"
         ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} view={view} />)
         : null}
+      {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "single_visit"
         ? (districtGate ?? (
@@ -1050,6 +1058,61 @@ function WithRepPart({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * With a district manager (owner, 2026-10-23: "he chooses one, then all his areas including vacant appear"):
+ * every area of the district manager picked for the half-day, a vacant one by its own name, ticked one or more.
+ */
+function WithDmPart({
+  canEdit,
+  draft,
+  onDraft,
+  view,
+}: {
+  canEdit: boolean;
+  draft: HalfDraft;
+  onDraft: (next: HalfDraft) => void;
+  view: ManagerPlanBoardView;
+}) {
+  if (!draft.scope?.startsWith("dm:")) {
+    return <CrmEmpty message="Choose a district manager above. Any rep in the line has no district manager to go with." title="Choose the district manager" />;
+  }
+  if (view.areas.length === 0) return <CrmEmpty message="This district manager has no area right now." title="No areas" />;
+  const ticked = new Set(draft.areaSeatIds);
+  const toggleArea = (seatId: string, on: boolean) => {
+    const without = draft.areaSeatIds.filter((id) => id !== seatId);
+    onDraft({ ...draft, areaSeatIds: on ? [...without, seatId] : without });
+  };
+  return (
+    <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
+        {canEdit ? (
+          <div className="flex flex-wrap gap-2">
+            <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
+              Mark all
+            </CrmButton>
+            <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [] })} size="sm">
+              Clear
+            </CrmButton>
+          </div>
+        ) : null}
+      </div>
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+        {view.areas.map((area) => (
+          <CrmCheck checked={ticked.has(area.seatId)} disabled={!canEdit} key={area.seatId} onChange={(on) => toggleArea(area.seatId, on)}>
+            <span className="block break-words" dir="auto">
+              {area.areaName}
+            </span>
+            <span className={`block break-words text-xs font-semibold ${area.vacant ? "text-amber-700" : "text-slate-500"}`}>
+              {area.vacant ? "Vacant" : (area.repName ?? area.territoryName)}
+            </span>
+          </CrmCheck>
+        ))}
+      </div>
     </div>
   );
 }
