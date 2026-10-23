@@ -83,9 +83,8 @@ const sentInAppMustBeBellRenderable: ReconciliationCheck = {
   title: 'Every in_app delivery recorded as "sent" must be a category the bell can actually render',
   domain: "notifications-integrity",
   severity: "critical",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: 23 of 2,232 in_app 'sent' deliveries carry a category the bell cannot render — direct_order_request (11, addressed to real approvers on 2026-08-03), high_risk_digest (8) and telegram_connection_linked (4). The bell allowlist is vacation_request, probation, coaching_report, general, internal_message, excuse, recruitment.",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: every category written as an in_app delivery is on PERSONAL_BELL_CATEGORIES; the six that were missing were added and the 215 stranded rows now render.
   async run(): Promise<ReconciliationOutcome> {
     const deliveries = await loadSentInAppDeliveries();
     const categories = new Map<string, { count: number; newest: SentInAppDeliveryRow | null }>();
@@ -339,9 +338,8 @@ const sentInAppRecipientMustBeAbleToSeeIt: ReconciliationCheck = {
   title: 'Every in_app delivery recorded as "sent" names a recipient the bell\'s own visibility rule admits',
   domain: "notifications-integrity",
   severity: "critical",
-  expectation: "known-open",
-  openDefect:
-    "Verified on production 2026-08-04: 9 of 2,232 rows fail. Eight from 2026-06-23..29 (weekly_plans, support_requests) carry no employee_hr_id and empty recipients, identifying the recipient only by a login id — no viewer can ever see them. One from 2026-07-20 (holiday_confirmation) produced two in-app deliveries from an event naming a single person, so the second copy is invisible. The writers have emitted 2,223 consecutive clean rows since, so this is stale history awaiting a one-off backfill rather than an active regression.",
+  expectation: "holds",
+  // Was known-open until 2026-10-23: a recipient with no HR ID is recorded skipped, not sent, and a direct-order rung keeps its own event; the 622 stranded rows (386 with no HR ID, 236 overwritten) were repaired.
   async run(): Promise<ReconciliationOutcome> {
     const deliveries = await loadSentInAppDeliveries();
     const invisible = deliveries.filter(

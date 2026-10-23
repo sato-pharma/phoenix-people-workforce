@@ -601,6 +601,9 @@ function emailDeliveryMetadata(
   };
 }
 
+/** Stored on the delivery row too, so the audit trail says WHY nothing was shown, not just that nothing was. */
+const NO_HR_ID_IN_APP_REASON = "Recipient has no HR ID, and the in-app bell is keyed on one — nothing could be shown.";
+
 function eventKeyFor(input: CreateSystemNotificationInput) {
   const metadataKey = typeof input.metadata?.idempotencyKey === "string" ? cleanText(input.metadata.idempotencyKey) : "";
   if (metadataKey) return metadataKey;
@@ -2024,9 +2027,18 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
     }
 
     if (channel === "in_app") {
-      const status = preferences.in_app_enabled ? "sent" : "skipped";
-      const reason = preferences.in_app_enabled ? undefined : "In-app notifications are disabled for this user.";
-      await upsertDelivery({ channel, eventId, idempotencyKey, recipient, status });
+      // The bell is keyed on an HR ID (listInAppNotificationsForViewer returns nothing without one),
+      // so a recipient known only by a login — the admin-HR service account — can never open this.
+      // Recording it "sent" is the lie the in-app-sent-recipient-must-be-able-to-see-it reconciliation
+      // check exists to catch: 385 rows of it by 2026-10-23.
+      const noBell = !recipient.hrId;
+      const status = preferences.in_app_enabled && !noBell ? "sent" : "skipped";
+      const reason = noBell
+        ? NO_HR_ID_IN_APP_REASON
+        : preferences.in_app_enabled
+          ? undefined
+          : "In-app notifications are disabled for this user.";
+      await upsertDelivery({ channel, eventId, idempotencyKey, lastError: status === "skipped" ? reason : undefined, recipient, status });
       deliveries.push({ channel, idempotencyKey, reason, status });
       continue;
     }

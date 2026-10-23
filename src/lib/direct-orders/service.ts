@@ -370,7 +370,11 @@ async function notifyDirectOrder(input: {
       metadata: {
         employeeHrId: input.subjectHrId,
         directOrderId: input.requestId,
-        idempotencyKey: `direct_orders:${input.requestId}:${input.eventType}${input.idempotencySuffix ? `:${input.idempotencySuffix}` : ""}`,
+        // A lone recipient gets the per-person suffix createSystemNotificationForRecipients puts on
+        // every key of a group. Without it each approval rung's single-recipient call upserted the
+        // SAME event row, so the next rung rewrote employee_hr_id/recipients and the previous
+        // approver's notice lost its owner: 234 in-app deliveries by 2026-10-23 that no bell could open.
+        idempotencyKey: `direct_orders:${input.requestId}:${input.eventType}${input.idempotencySuffix ? `:${input.idempotencySuffix}` : ""}${recipientHrIds.length === 1 ? `:${recipientHrIds[0]}` : ""}`,
       },
       module: "direct_orders",
       priority: "high",

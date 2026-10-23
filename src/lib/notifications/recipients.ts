@@ -56,6 +56,21 @@ export const PERSONAL_BELL_CATEGORIES = [
   // plans waiting for a manager, and the decisions back to the rep. Leave it off and the bell stays
   // empty while the delivery audit reports "sent".
   "phoenix_crm",
+  // The six below were written as in_app "sent" for months while the bell filtered them out, found by
+  // the in-app-sent-must-be-bell-renderable reconciliation check on 2026-10-23 (215 rows, three of
+  // the six still being written that day). Each is addressed to one named person, so each belongs.
+  //   weekly_plan       — weekly-planning/drift-check.ts, the plan-drift alert
+  //   crm               — crm/account-setup-reminder.ts, the account-setup reminder and chase
+  //   security          — notifications/settings.ts, "your Telegram was linked"
+  //   system            — notifications/dead-telegram-link-alert.ts, the dead-link alert
+  //   market_awareness  — market-awareness/notifications.ts, activity approved / decision pending
+  //   outstation        — outstation high-risk digest
+  "weekly_plan",
+  "crm",
+  "security",
+  "system",
+  "market_awareness",
+  "outstation",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);
