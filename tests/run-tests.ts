@@ -1699,6 +1699,7 @@ import { runNotificationDeliveryIntegrityTests } from "./notification-delivery-i
 import { runNotificationStoredNoticeTests } from "./notification-stored-notice.test.ts";
 import { runPerformancePhase1Tests } from "./performance-phase-1.test.ts";
 import { runPerformancePhase2Tests } from "./performance-phase-2.test.ts";
+import { runPerformancePhase3Tests } from "./performance-phase-3.test.ts";
 import { runNoticesAfterTheReplyTests } from "./notices-after-the-reply.test.ts";
 import { runSystemAuditRootCauseFixesTests } from "./system-audit-root-cause-fixes.test.ts";
 import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expense-approval-state-metrics.test.ts";
@@ -6050,6 +6051,7 @@ await runTest("one human receives one notification (person-level recipient dedup
 await runTest("a stored notice is never rewritten once it reached somebody, for every sender", runNotificationStoredNoticeTests);
 await runTest("performance phase 1: the directory, rep visits and probation reminder reads are cut, and each cut is pinned", runPerformancePhase1Tests);
 await runTest("performance phase 2: the manager Command Center streams its role extras, the payslip chain runs beside the counts, and the sidebar asks no plan-switch question", runPerformancePhase2Tests);
+await runTest("performance phase 3: no whole-company rep read, no new OFFSET walk or uncached reference read, one-wave shell, durations-only Server-Timing and an identity-free browser beacon", runPerformancePhase3Tests);
 await runTest("a button's answer never waits for the notices it raises: vacation, excuse and direct-order notices follow the reply", runNoticesAfterTheReplyTests);
 await runTest("the confirmed defects the System Audit root-cause report found stay fixed", runSystemAuditRootCauseFixesTests);
 

@@ -50,7 +50,12 @@ import {
  * `startedAt` is when the REQUEST began, so the timing measures what the caller paid, not what this
  * function took after its own first line.
  */
-export async function loadBadgeCounts(access: AccessContext, startedAt: number = Date.now()) {
+export async function loadBadgeCounts(
+  access: AccessContext,
+  startedAt: number = Date.now(),
+  /** Told how the answer was served, so a caller can report it (the Server-Timing header). */
+  onServed?: (cache: "hit" | "joined" | "ran") => void,
+) {
   const served = await serveViewerBadgeCounts(badgeCountsViewerKey(access), async () => {
     const settled = await Promise.allSettled([
       (async () => {
@@ -148,6 +153,7 @@ export async function loadBadgeCounts(access: AccessContext, startedAt: number =
   if (served.cache === "hit") recordTiming("badge_counts_cached", Date.now() - startedAt);
   else if (served.cache === "joined") recordTiming("badge_counts_joined", Date.now() - startedAt);
   else recordTiming("badge_counts", Date.now() - startedAt);
+  onServed?.(served.cache === "hit" ? "hit" : served.cache === "joined" ? "joined" : "ran");
   return served.body;
 }
 

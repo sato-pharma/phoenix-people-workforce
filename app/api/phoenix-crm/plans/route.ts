@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { startServerTimer } from "@/lib/http/server-timing";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadMonthlyWeekAfterSave } from "@/lib/phoenix-crm/server/monthly-plans";
@@ -19,13 +20,15 @@ export const dynamic = "force-dynamic";
 //        board draws them, so the board does not read the whole month again after it (2026-10-16 speed
 //        audit); without it, or when that answer cannot be drawn, the save answers exactly as before.
 export async function GET(request: Request) {
+  const timer = startServerTimer("crm_plans");
   try {
     const access = await resolveAccessContext(request);
+    timer.lap("access");
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
+    const viewer = await timer.measure("viewer", () => resolvePhoenixCrmViewer(access));
     const search = searchOf(request);
-    const planner = await loadPlanner(viewer, { seatId: search.get("seatId"), test: search.get("test"), weekStart: search.get("weekStart") });
-    return NextResponse.json({ planner, success: true });
+    const planner = await timer.measure("load", () => loadPlanner(viewer, { seatId: search.get("seatId"), test: search.get("test"), weekStart: search.get("weekStart") }));
+    return NextResponse.json({ planner, success: true }, { headers: timer.headers() });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not open the weekly plan.");
   }

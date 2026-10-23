@@ -91,6 +91,34 @@ shape, not just its two specific symptoms.
     A short-circuit guard in front of the test — `p_codes is null or …`, or `cardinality(p_codes) = 0
     or …` — is a cheap exit, not the correctness: a site carrying no guard at all is still correct.
 
+## Guards and timing (performance phase 3, 23 Oct 2026)
+
+17. **A rep's own page reads the CRM door with a person, customer or visit key — never the whole
+    company.** `tests/performance-phase-3.test.ts` finds every `queryVisits`, `queryVisitsLimited`,
+    `queryCheckins` and `queryPlanEntries` call in the four rep-page files and fails one that names
+    none of `agentCrmIds`, `agentHrIds`, `agentCrmOrHrIds`, `agentHrIdILike`, `doubleHrIds`,
+    `contactCrmIds` or `visitIds`.
+
+18. **No new OFFSET walk over a unified CRM view, and no new direct reference-list read.** Both are
+    ratchets with a per-file baseline taken 2026-10-23 that may only fall. Page a unified view with
+    the keyset reader (`walkMasterExportPages`, `docs/crm-ordered-door-pages.md`); read `lines`,
+    `areas` and `departments` through `src/lib/reference/reference-lists.ts`. A file that drops below
+    its baseline fails too, so the gain is written down instead of silently spent.
+
+19. **The portal shell is ONE parallel wave.** `employee-portal-server-shell.tsx` awaits exactly
+    `assertPermission`, one `Promise.all` of four reads, the already-started module-lock promise,
+    `headers()` and `cookies()`. A sixth sequential await in front of the page fails the test; add a
+    read inside the wave, not beside it.
+
+20. **Server-Timing is durations only; the browser beacon is a page shape and two numbers.** The
+    four Phoenix CRM GET routes and badge-counts answer with `Server-Timing` (`total` plus the stage
+    names `access`, `viewer`, `load`, or `cached`/`joined`/`ran` for badges), and the same stages are
+    recorded as `route_<label>_<stage>` in the per-minute `process_health` line. `PageTimingBeacon`
+    sends first and largest content time on hard loads to `/api/telemetry/page-timing`, which keeps
+    them under `page_first_content <path>` and `page_largest_content <path>`. Soft navigations are
+    not measured, and a page cannot set `Server-Timing` on its own HTML except through `proxy.ts`.
+    These are measurements to be taken after a deploy, not achieved figures.
+
 ## Related documentation
 
 - [Database](database.md) - schema and migration conventions
