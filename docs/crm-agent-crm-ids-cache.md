@@ -6,6 +6,14 @@ module memory: `.claude/rules/crm-unified-doors.md`
 
 Owner's instruction, 2026-10-23, chosen over leaving it alone: **"Cache the 254 pairings"**.
 
+> 🔴 **The cache holds 172 rows, not 254** — read back on production straight after the migration
+> was applied. 254 was the count of `distinct (agent_hr_id, agent_crm_id)` with no filter on the
+> key, and **83 of those pairs carry a NULL `agent_hr_id`**, which the door can never match:
+> `where c.agent_hr_id = any(p_agent_hr_ids)` is never true for NULL, and the pre-cache body had
+> the same blind spot. `_calc()` drops them explicitly, so the keyed set is 172 (255 pairs on the
+> day of writing, 83 of them NULL-keyed). Every "254" below is corrected to the measured number;
+> the quoted instruction above is left in the owner's own words.
+
 ## What was there
 
 `phx_crm_agent_crm_ids_for_hr_ids(text[])` has, since
@@ -32,7 +40,7 @@ before it can discard duplicates.
 * **`crm_agent_crm_ids_calc(p_agent_hr_id text default null)`** holds the one body — the same
   `select distinct … from public.crm_visits_unified`, widened to return the PAIR
   `(agent_hr_id, agent_crm_id)` and narrowable to one agent.
-* **`crm_agent_crm_ids_cache`** is that pair set as a table: **254 rows**, primary key
+* **`crm_agent_crm_ids_cache`** is that pair set as a table: **172 rows**, primary key
   `(agent_hr_id, agent_crm_id)`. RLS on, revoked from `public`/`anon`/`authenticated`, granted to
   `service_role` — exactly the reach the door already had.
 * **`crm_agent_crm_ids_rebuild()`** empties and refills it THROUGH `_calc()`, so there is no second
@@ -54,9 +62,13 @@ Live-shaped input: the 108 non-active employees the live tier actually passes, e
 | | time | shared buffers |
 | --- | --- | --- |
 | before | 220 ms | 57,005 |
-| after | a 254-row index-only probe of the cache | — |
+| after | **2.3 ms** | **406** |
 
-The read scanned ~136,000 visit rows and quicksorted 140,616 of them to return 76 integers.
+The read scanned ~136,000 visit rows and quicksorted 140,616 of them to return 76 integers. The
+after figure is the same `explain (analyze, buffers)` on production once the migration was applied
+(2026-10-23, 17:10 Cairo): a Function Scan returning **the same 76 rows**, 406 shared buffers of
+which 198 belong to the `employees` lookup that builds the input array — so the door itself costs
+208 buffers. Same answer, ~96x less time.
 
 ## 🔴 The index was never the problem — do not try that again
 
