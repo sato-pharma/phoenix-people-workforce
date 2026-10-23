@@ -649,6 +649,12 @@ policy):
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
    | `phoenix-crm-agent-crm-ids-reconcile` | `*/15 * * * *` | 1h | pg_cron job `crm-agent-crm-ids-reconcile`, inside the database · **in-house only** |
+   | `phoenix-crm-person-by-hr-key-reconcile` | `*/15 * * * *` | 1h | pg_cron job `crm-person-by-hr-key-reconcile`, inside the database · **in-house only** |
+   | `phoenix-crm-contact-truth-reconcile` | `*/15 * * * *` | 1h | pg_cron job `phoenix-crm-contact-truth-reconcile`, inside the database · **in-house only** |
+   | `phoenix-crm-rep-entry-days-reconcile` | `*/5 * * * *` | 30m | pg_cron job `phoenix-crm-rep-entry-days-reconcile`, inside the database · **in-house only** |
+   | `phoenix-data-retention` | `40 3 * * *` | 2h | pg_cron job `phoenix-data-retention` at 01:40 UTC (03:40 Cairo in winter, 04:40 in summer — declared at the earlier), production only · **in-house only** |
+   | `phoenix-marketing-roi-refresh` | `20 * * * *` | 1h | pg_cron job `phoenix-marketing-roi-refresh`, inside the database · **in-house only** |
+   | `phoenix-recovery-snapshot` | `5 * * * *` | 1h | pg_cron job `phoenix-recovery-snapshot`, inside the database · **in-house only** |
    | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org job `8351275` |
 
    **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
@@ -744,6 +750,12 @@ policy):
    | `phoenix-ireports360-sync` | `crm` | The rolling iReports360 visits sync, every three hours between 06:00 and 21:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
    | `phoenix-reconcile-visits` | `crm` | The weekly full-window iReports360 reconciliation, Sunday 04:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
    | `phoenix-crm-agent-crm-ids-reconcile` | `crm in-house-only` | The 15-minute pg_cron reconcile inside the database that keeps the departed-agent CRM id cache in step with the visits; nothing else refreshes it. A red means the cache has frozen, so a CRM id first used after it stopped is missing from the departed-agent exclusion that Double Visit Analytics, Field Workforce Compliance and the payroll no-activity detector read. |
+   | `phoenix-crm-person-by-hr-key-reconcile` | `crm in-house-only` | The 15-minute pg_cron safety net behind the one-row-per-HR-id employee cache both CRM visit doors join to name a person; a trigger on employees does the real work. A red means a change that trigger missed would stay wrong in every CRM read that names who made a visit. |
+   | `phoenix-crm-contact-truth-reconcile` | `crm in-house-only` | The 15-minute pg_cron safety net behind the Phoenix contact-truth cache all three CRM doors read for a doctor's name and speciality; a trigger on the customer table does the real work. A red means a change that trigger missed would stay wrong on every CRM screen. |
+   | `phoenix-crm-rep-entry-days-reconcile` | `crm in-house-only` | The five-minute pg_cron reconcile behind the rep entry-days cache that decides whether Phoenix wins a field day. Employee and seat changes are not triggered, so this job is their only refresh; a red means those changes have stopped reaching the visit counts. |
+   | `phoenix-data-retention` | `platform in-house-only` | The nightly pg_cron prune of audit log rows and raw attendance punches over 12 months and email delivery events over 6 months, the ages the owner set. Production only. A red means those three tables have stopped being trimmed and keep growing. |
+   | `phoenix-marketing-roi-refresh` | `marketing in-house-only` | The hourly :20 pg_cron rebuild of the Marketing ROI fact tables the ROI dashboard reads. A run that finds another rebuild holding the lock reports skipped, which is normal; a red means the dashboard's figures have stopped moving. |
+   | `phoenix-recovery-snapshot` | `platform in-house-only` | The hourly :05 pg_cron capture of the protected tables into the recovery undo log, which stands in for the point-in-time recovery production does not have. It reports a failure when any one table could not be captured. A red means the undo log has stopped being a recovery path. |
    | `phoenix-job-heartbeat-sweep` | `platform` | The sweeper for the in-house dead-man's switch: it judges every declared job against its schedule and pages a human when one stops reporting. A red here means the thing that watches everything else has stopped. |
 
    🔴 **STANDING A JOB DOWN AND BRINGING IT BACK NEEDS `watchingSince`, or the restore alarms about
@@ -902,9 +914,28 @@ is the pg_cron job that alone keeps the departed-agent CRM id cache current; its
 SQL twin of `recordJobHeartbeat`, writing only its own outcome's timestamp — after each run. It
 never calls Healthchecks, so it is in-house only by nature. 🔴 **A failing run is deliberately not
 caught**: pg_cron runs the command in one transaction, so a caught failure would read `succeeded`
-in `cron.job_run_details`; uncaught, it reads FAILED there and stranded here, both true. The other
-six pg_cron jobs on production are still unwatched. Account: `docs/crm-agent-crm-ids-cache.md`,
-"Who watches the reconcile".
+in `cron.job_run_details`; uncaught, it reads FAILED there and stranded here, both true. Account:
+`docs/crm-agent-crm-ids-cache.md`, "Who watches the reconcile".
+
+**And so do the other six, since the same evening (owner: "Watch all six").**
+`20261023223000_pg_cron_jobs_report_heartbeats.sql` re-points every other pg_cron job at a `_run()`
+wrapper of its unchanged function — the three CRM cache reconciles, `phoenix-data-retention`,
+`phoenix-marketing-roi-refresh` and `phoenix-recovery-snapshot` — so all seven are declared and
+judged. Three things in it are deliberate:
+
+- **It uses `cron.alter_job`, never `cron.schedule`**, so it only changes the command of a job that
+  already exists. Staging carries no `phoenix-data-retention` by the owner's decision, and
+  `cron.schedule` would have created it there and started pruning. A job running an unexpected
+  command is refused, not overwritten.
+- **The recovery snapshot is the one wrapper that records `fail`.** `recovery.take_snapshots()`
+  catches per table and returns the message in `error`, so pg_cron reads `succeeded` whatever
+  happened; the wrapper reads that field instead of guessing.
+- **`phoenix-data-retention` is declared `40 3 * * *`** — the winter Cairo reading of 01:40 UTC — so
+  the summer run lands an hour inside its 2-hour grace. Declared at 04:40 it would read every winter
+  run as an hour early and the job as stranded.
+
+Pinned by `tests/pg-cron-heartbeats.test.ts`, which also asserts that every `cron.schedule` in any
+migration names one of these seven jobs — a new pg_cron job must be declared here too.
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.

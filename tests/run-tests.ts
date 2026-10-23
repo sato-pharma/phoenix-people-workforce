@@ -2022,6 +2022,7 @@ import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
 import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
 import { runCrmAgentCrmIdsReconcileHeartbeatTests } from "./crm-agent-crm-ids-reconcile-heartbeat.test.ts";
+import { runPgCronHeartbeatsTests } from "./pg-cron-heartbeats.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7687,6 +7688,11 @@ await runTest(
 await runTest(
   "The departed-agent CRM id cache can no longer freeze in silence (its pg_cron job is the only thing keeping it current and the door never falls back to the live read): the job runs crm_agent_crm_ids_reconcile_run(), which records success in job_heartbeats AFTER the unchanged reconcile and never catches a failed run, because a caught failure would read `succeeded` in cron.job_run_details; no later migration may point the job back at the bare reconcile; the register write moves only its own outcome's timestamp and only warns when it fails; and the slug is declared on the same */15 cadence and marked in-house only",
   runCrmAgentCrmIdsReconcileHeartbeatTests,
+);
+
+await runTest(
+  "Every pg_cron job reports to the heartbeat register (seven ran on production with none declared and none writing a heartbeat): the six wrappers each run their unchanged function and THEN record, none catches because a caught failure reads `succeeded` in cron.job_run_details, the recovery snapshot records 'fail' when take_snapshots() reports a table it could not capture, the re-point uses cron.alter_job so it can never create staging's absent data retention job and refuses an unexpected command, each slug is declared on its real cadence (data retention at the earlier, winter reading of 01:40 UTC) and marked in-house only, and every cron.schedule in any migration names a watched job",
+  runPgCronHeartbeatsTests,
 );
 
 await runTest(
