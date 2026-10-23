@@ -177,6 +177,13 @@ export async function loadRepKpiReports(input: {
   /** Canonical hr id → the person's real name. A CRM handle is never shown to a human. */
   repNameByHrId?: ReadonlyMap<string, string>;
   standards?: RepKpiStandards;
+  /**
+   * Opt-in, DISPLAY callers only: the whole-company visit window may come from a copy up to a minute
+   * old, shared by every viewer (crm/reads.ts, "A dashboard may reuse a company window"). The scope
+   * gate below still runs on those rows for each viewer. Never for money, a deduction, an approval or
+   * a notification.
+   */
+  reuseRecentWindow?: boolean;
 }): Promise<RepKpiReportsResult> {
   if (input.scope.kind === "none") return { reports: [], unidentifiedReps: 0 };
 
@@ -187,6 +194,7 @@ export async function loadRepKpiReports(input: {
       dateTo: input.dateTo,
       columns: VISIT_COLUMNS,
       collapseDoubleVisits: true,
+      reuseRecentWindow: input.reuseRecentWindow === true,
     }),
   ]);
 
