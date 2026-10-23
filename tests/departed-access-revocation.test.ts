@@ -125,7 +125,7 @@ export async function runDepartedAccessRevocationTests() {
 
   assert.match(
     service,
-    /import \{ isEmploymentAccessRevoked \} from "@\/lib\/auth\/session-lifecycle";/,
+    /import \{[^}]*\bisEmploymentAccessRevoked\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
     "the resignation service must reuse the shared rule rather than re-deriving the date comparison",
   );
   assert.match(

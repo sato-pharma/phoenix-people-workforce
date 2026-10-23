@@ -258,10 +258,16 @@ function abbreviatedAntiInfectiveLineStillMatches() {
 // throw, which this file's existing conventions don't otherwise reach for.
 function employeeDirectoryFallbackStaysActiveOnly() {
   const source = read("../src/lib/sales/employees.ts");
+  // Both names, from that module, in whatever order and alongside whatever else it imports there.
   assert.match(
     source,
-    /import \{ ACTIVE_EMPLOYMENT_STATUSES_IN_LIST, isTerminalEmploymentStatus \} from "@\/lib\/auth\/session-lifecycle";/,
-    "employees.ts must import the canonical active-status constant and terminal-status predicate",
+    /import \{[^}]*\bACTIVE_EMPLOYMENT_STATUSES_IN_LIST\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
+    "employees.ts must import the canonical active-status constant",
+  );
+  assert.match(
+    source,
+    /import \{[^}]*\bisTerminalEmploymentStatus\b[^}]*\} from "@\/lib\/auth\/session-lifecycle";/,
+    "employees.ts must import the canonical terminal-status predicate",
   );
   assert.match(
     source,

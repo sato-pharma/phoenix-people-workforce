@@ -1,5 +1,5 @@
 ﻿import { getRequiredEnv } from "@/lib/env";
-import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST, hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import {
   normalizePayrollPaymentMode,
   resolveFixedSalaryAmounts,
@@ -563,6 +563,49 @@ export function isActiveDirectoryEmployee(employee: DirectoryMembershipFields) {
     !isSystemAdminDirectoryEmployee(employee) &&
     isClassifiedActiveEmployee(employee)
   );
+}
+
+/**
+ * The last day a departed employee could still have worked: the LATER of the last working date and
+ * the resignation date, or null when the row carries neither.
+ *
+ * The later of the two deliberately. When a record holds both and they differ, the later one is the
+ * day the person was still at work, and a surface that cut at the earlier one would drop someone who
+ * had not left yet — the whole defect {@link isWithinNoticePeriod} exists to stop.
+ */
+export function employeeExitDay(employee: Pick<EmployeeDirectoryRow, "lastWorkingDate" | "resignationDate">): string | null {
+  const days = [employee.lastWorkingDate, employee.resignationDate]
+    .map((value) => String(value ?? "").slice(0, 10))
+    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .sort();
+  return days.at(-1) ?? null;
+}
+
+/**
+ * A departed employee whose exit day has NOT passed — someone serving out a notice period: still at
+ * work, still logging visits, and already carrying a resignation row.
+ *
+ * 🔴 THE CUT IS THE RESIGNATION DATE, NEVER THE SUBMISSION DATE (owner, 2026-10-23: "drop after his
+ * resignation date not submission date"). `employees.employment_status` flips to `resigned` and
+ * `organogram_visible` to false the moment a resignation is SUBMITTED, so every surface built on
+ * {@link isActiveDirectoryEmployee} loses the person while they are still working — measured that day
+ * on a Medical Representative whose resignation was submitted on 18 October for a last working day of
+ * 31 October, who had already dropped off the Private Calendar while logging 10 and 12 customer
+ * visits on the 21st and the 22nd.
+ *
+ * A departed row carrying NEITHER date is not covered: there is no day to compare, and treating that
+ * as open-ended would quietly restore the whole inactive roster to every caller.
+ *
+ * It says nothing about whether those days should be CHARGED. The no-activity and deduction engines
+ * keep their own active-only roster on purpose, and widening this predicate does not widen theirs.
+ */
+export function isWithinNoticePeriod(employee: EmployeeDirectoryRow, onDate: string): boolean {
+  if (!hasDepartedEmployment(employee.employmentStatus)) return false;
+  if (isSystemAdminDirectoryEmployee(employee)) return false;
+  const day = String(onDate ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const exit = employeeExitDay(employee);
+  return exit !== null && exit >= day;
 }
 
 // ── Names only, for a caller that holds HR ids and owes the reader names ─────────────────────────
