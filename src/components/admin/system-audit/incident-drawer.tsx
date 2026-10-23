@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { phxButtonGhostClassName, phxButtonPrimaryClassName, phxFieldClassName, phxFormErrorClassName, phxLabelClassName, phxSelectClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
@@ -410,31 +410,34 @@ export function IncidentDrawer({
 }) {
   const open = occurrenceId !== null;
   const dialogRef = useDialogA11y<HTMLDivElement>({ open, onClose });
-  const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
-
-  const load = useCallback(async (id: string, signal: AbortSignal) => {
-    try {
-      const response = await fetch(`/api/admin/system-audit/occurrences/${id}`, { cache: "no-store", signal });
-      const payload = (await response.json().catch(() => null)) as { detail?: OccurrenceDetail; message?: string } | null;
-      if (signal.aborted) return;
-      if (!response.ok || !payload?.detail) {
-        setLoaded({ status: "error", message: payload?.message ?? `Unavailable — the server answered ${response.status}.` });
-        return;
-      }
-      setLoaded({ status: "ready", detail: payload.detail });
-    } catch (error) {
-      if (signal.aborted) return;
-      setLoaded({ status: "error", message: `Unavailable — ${error instanceof Error ? error.message : "the request failed"}` });
-    }
-  }, []);
+  // The answer is stored with the incident and the reload it answers, so a different incident (or a
+  // re-read after a saved change) shows "Reading the record" until its own answer arrives — derived
+  // here, never set synchronously inside the effect.
+  const [result, setResult] = useState<{ id: string; reload: number; loaded: Loaded } | null>(null);
+  const loaded: Loaded =
+    result && result.id === occurrenceId && result.reload === reloadKey ? result.loaded : { status: "loading" };
 
   useEffect(() => {
     if (!occurrenceId) return;
     const controller = new AbortController();
-    void load(occurrenceId, controller.signal);
+    const settle = (value: Loaded) => {
+      if (!controller.signal.aborted) setResult({ id: occurrenceId, reload: reloadKey, loaded: value });
+    };
+    fetch(`/api/admin/system-audit/occurrences/${occurrenceId}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as { detail?: OccurrenceDetail; message?: string } | null;
+        if (!response.ok || !payload?.detail) {
+          settle({ status: "error", message: payload?.message ?? `Unavailable — the server answered ${response.status}.` });
+          return;
+        }
+        settle({ status: "ready", detail: payload.detail });
+      })
+      .catch((error: unknown) => {
+        settle({ status: "error", message: `Unavailable — ${error instanceof Error ? error.message : "the request failed"}` });
+      });
     return () => controller.abort();
-  }, [occurrenceId, reloadKey, load]);
+  }, [occurrenceId, reloadKey]);
 
   if (!open) return null;
 

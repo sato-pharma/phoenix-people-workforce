@@ -6,8 +6,8 @@ import {
 } from "@/lib/fixture-hygiene";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-// The Monitoring page this module also fed (getOperationalMonitoringStats, its email-delivery
-// summary and its security feed) was retired on 23 Oct 2026; the sign-in half moved to
+// The Monitoring page this module also fed (its aggregate stats, its email-delivery summary and
+// its security feed) was retired on 23 Oct 2026; the sign-in half moved to
 // src/lib/security/login-security.ts for the System Audit page. What stays is the business
 // activity feed and the audit-log page reader.
 
@@ -141,8 +141,8 @@ function isDisposableSalesFixture(row: SalesAuditActivityRow) {
 /**
  * The business activity feed: payroll batch movements and sales import decisions, newest first.
  *
- * Two corrections on 23 Oct 2026. The feed used to read a third source, `job_offer_audit_logs`,
- * as "Recruitment" — that table had been DROPPED, so every call failed that read and showed no
+ * Two corrections on 23 Oct 2026. The feed used to read a third source, the job-offer audit table,
+ * as a recruitment feed — that table had been DROPPED, so every call failed that read and showed no
  * recruitment activity as if there were none. And every failed read became `[]` while
  * `staleSources` stayed hard-wired to `[]`, so a payroll or sales outage looked like a quiet day.
  * A failed source is now named in `staleSources`.

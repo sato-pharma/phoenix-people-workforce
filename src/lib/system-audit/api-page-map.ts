@@ -82,7 +82,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/approvals-hub": { admin: "/admin/approvals-hub", portal: "/employee-portals/approvals-hub" },
 
   // ── Attendance ──────────────────────────────────────────────────────────────────────────────────
-  "/api/attendance": { admin: "/attendance", hr: "/hr/attendance/monthly-summary", portal: "/employee-portals/fingerprint-analytics" },
+  "/api/attendance": { admin: "/attendance/monthly-summary", hr: "/hr/attendance/monthly-summary", portal: "/employee-portals/fingerprint-analytics" },
   "/api/attendance/device-user-mappings": { admin: "/attendance/device-user-mapping", hr: "/hr/attendance/device-user-mapping" },
   "/api/attendance/disputes": { admin: "/attendance/disputes" },
   "/api/attendance/employee-day-report": { admin: "/attendance/employee-day-report" },
