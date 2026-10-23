@@ -1950,6 +1950,7 @@ import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
 import { runPhoenixCrmTapToRetryTests } from "./phoenix-crm-tap-to-retry.test.ts";
+import { runRouteNavigationStallRetryTests } from "./route-navigation-stall-retry.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
@@ -7310,6 +7311,11 @@ await runTest(
 await runTest(
   "Phoenix CRM answers the portal's + (owner, 2026-09-29: Add visit and Make weekly plan for a medical rep, first in the menu). The links name a tab and an ask the page reads; the page answers with a counter the tab watches, never a remount, so a visit half entered survives a stray tap; and the ask comes off the address once read, so the second tap on the same action is a change the page sees",
   runPhoenixCrmPortalIntentTests,
+);
+
+await runTest(
+  "A page navigation that died offers a retry (owner, 2026-10-23: \"add the same retry when a CRM page navigation dies\" — the bigger half of the same measurement, since most of the 1,161 network-failure rows were the router's own page fetch, which no screen catches because nothing had rendered, and 905 fired with the tab in the FOREGROUND: the rep tapped and the tap did nothing, because the provider showed its progress bar, waited out nine seconds and took the bar away again. The notice shares that one deadline, the page arriving clears it with nothing pressed, a transition the provider only GUESSED at from a capture-phase click never grows it, and Try again is a full document load of the href that was wanted — never another push through the router that just failed)",
+  runRouteNavigationStallRetryTests,
 );
 
 await runTest(
