@@ -1,3 +1,4 @@
+import { needsAGuess, normalizeNumberText, twoReadings } from "@/lib/sales/normalizer/number-text";
 import type { SalesRecordInput, SalesValidationState } from "@/lib/sales/types";
 
 const salesColumnAliases = {
@@ -37,8 +38,27 @@ export function normalizeNumber(value: unknown) {
   }
   if (value === null || value === undefined || value === "") return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
-  const parsed = Number(String(value).replace(/,/g, "").trim());
+  // The forms with ONE meaning are read the way the monthly engine reads them (Arabic-Indic digits,
+  // the minus sign, "1.234,56"), and a text with TWO readings is refused: this used to strip every
+  // comma, so "12,5" was imported as 125 with nothing said (audit 2026-10-23, the old sales upload).
+  const text = normalizeNumberText(String(value));
+  if (needsAGuess(text)) return Number.NaN;
+  const parsed = Number(text.replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+/**
+ * The FAIL note for a number cell held as text with two readings, or null when it has at most one.
+ * Named by row and column, with both readings, so the person fixing the sheet knows what to type.
+ */
+export function ambiguousNumberNote(raw: unknown, rowNumber: number, column: string): string | null {
+  const unwrapped = raw && typeof raw === "object" && "result" in raw ? (raw as { result?: unknown }).result : raw;
+  if (typeof unwrapped !== "string") return null;
+  const text = normalizeNumberText(unwrapped);
+  if (!needsAGuess(text)) return null;
+  const readings = twoReadings(text);
+  const meaning = readings ? `, which could be ${readings[0]} or ${readings[1]}` : ", which is not one number";
+  return `FAIL: Row ${rowNumber}, column "${column}" reads "${unwrapped.trim()}"${meaning}. Write it as one plain number and upload again.`;
 }
 
 export function normalizeString(value: unknown) {
@@ -158,10 +178,25 @@ export function parseSalesRow(
   if (!record.line) validationNotes.push("FAIL: Cannot import this sales row because Line is missing.");
   if (!record.month) validationNotes.push("FAIL: Cannot import this sales row because Month is missing or invalid.");
   if (!record.year || record.year < 2000) validationNotes.push("FAIL: Cannot import this sales row because Year is missing or invalid.");
-  if (!Number.isFinite(record.salesUnits)) validationNotes.push("FAIL: Cannot import this sales row because Sales Units is not numeric.");
-  if (!Number.isFinite(record.salesValue)) validationNotes.push("FAIL: Cannot import this sales row because Sales Value is not numeric.");
-  if (targetUnitsHasValue && !Number.isFinite(record.targetUnits)) validationNotes.push("FAIL: Cannot import this sales row because Target Units is not numeric.");
-  if (targetValueHasValue && !Number.isFinite(sheetTargetValue)) validationNotes.push("FAIL: Cannot import this sales row because Target Value is not numeric.");
+  // A number written so that it has two readings is named with both, rather than as "not numeric".
+  const ambiguous = new Map<string, string>();
+  for (const [aliases, label] of [
+    [salesColumnAliases.factoryPrice, "Factory Price"],
+    [salesColumnAliases.salesUnits, "Sales Units"],
+    [salesColumnAliases.salesValue, "Sales Value"],
+    [salesColumnAliases.targetUnits, "Target Units"],
+    [salesColumnAliases.targetValue, "Target Value"],
+  ] as const) {
+    const note = ambiguousNumberNote(firstValue(row, aliases), rowNumber, exactColumnLabel(aliases));
+    if (note) {
+      ambiguous.set(label, note);
+      validationNotes.push(note);
+    }
+  }
+  if (!Number.isFinite(record.salesUnits) && !ambiguous.has("Sales Units")) validationNotes.push("FAIL: Cannot import this sales row because Sales Units is not numeric.");
+  if (!Number.isFinite(record.salesValue) && !ambiguous.has("Sales Value")) validationNotes.push("FAIL: Cannot import this sales row because Sales Value is not numeric.");
+  if (targetUnitsHasValue && !Number.isFinite(record.targetUnits) && !ambiguous.has("Target Units")) validationNotes.push("FAIL: Cannot import this sales row because Target Units is not numeric.");
+  if (targetValueHasValue && !Number.isFinite(sheetTargetValue) && !ambiguous.has("Target Value")) validationNotes.push("FAIL: Cannot import this sales row because Target Value is not numeric.");
 
   // A target the sheet states is kept even when Factory Price is missing — the flat sheet does not
   // require a price. Only the half that would need the price is left at zero, and the note says so.

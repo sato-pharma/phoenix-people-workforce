@@ -5,7 +5,7 @@ import { importDeviceMappingsFromWorkbook } from "@/lib/attendance/device-user-m
 import { assertAttendanceSetupPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
-import { validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
     const validation = validateSpreadsheetFile(file, {
       ...xlsxValidation,
-      tooLargeMessage: "Attendance device mapping file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Attendance device mapping file"),
       unsupportedMessage: "Upload the Phoenix attendance device mapping .xlsx template.",
     });
     if (!validation.ok) {

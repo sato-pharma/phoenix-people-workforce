@@ -7,7 +7,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { IMS_OTHERS_REGION_CODE } from "@/lib/sales/ims-ratio";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 import {
   MASTER_DEFINITIONS,
@@ -252,7 +252,7 @@ export async function importMasterWorkbook(input: {
     emptyError: "invalid_master_file",
     emptyMessage: "The master workbook is empty.",
     tooLargeError: "master_file_too_large",
-    tooLargeMessage: "The master workbook exceeds the 10MB upload limit.",
+    tooLargeMessage: spreadsheetTooLargeMessage("The master workbook"),
     unsupportedError: "unsupported_master_file_type",
     unsupportedMessage: "Upload the master sheet in .xlsx format.",
   });

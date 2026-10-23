@@ -8,7 +8,7 @@ import {
   buildWeeklyUnmappedWorkbook,
   listWeeklyNormalizeReferences,
 } from "@/lib/sales/weekly/normalizer";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       const validation = validateSpreadsheetFile(candidate, {
         ...xlsxSpreadsheetValidation,
         emptyError: "invalid_weekly_file",
-        tooLargeMessage: "Weekly workbook exceeds the 10MB upload limit.",
+        tooLargeMessage: spreadsheetTooLargeMessage("Weekly workbook"),
       });
       if (!validation.ok) {
         return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });

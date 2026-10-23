@@ -7,7 +7,7 @@ import {
   type SalesImportUploadCaller,
 } from "@/lib/sales/sales-import-upload-path";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { salesSpreadsheetValidation, spreadsheetTooLargeMessage, spreadsheetUploadLimitBytes, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 // Shared request resolver for the Source of Sales monthly-import endpoints (preview / commit).
 // Handles BOTH transport paths identically:
@@ -28,7 +28,6 @@ const SPREADSHEET_VALIDATION = {
   emptyError: "invalid_sales_file",
   emptyMessage: "Sales workbook is empty.",
   tooLargeError: "sales_file_too_large",
-  tooLargeMessage: "Sales workbook exceeds the 10MB upload limit.",
   unsupportedError: "unsupported_sales_file_type",
   unsupportedMessage: "Upload a distributor monthly sales sheet in .xls or .xlsx format.",
 } as const;
@@ -92,7 +91,14 @@ export async function resolveSalesUploadRequest(request: Request, caller: SalesI
   if (!file) return { error: "Sales workbook file is required.", ok: false, status: 400 };
   if (!distributorCode) return { error: "Distributor is required.", ok: false, status: 400 };
 
-  const fileValidation = validateSpreadsheetFile(file, SPREADSHEET_VALIDATION);
+  // A workbook that came through the bucket is held to the bucket's limit, not the direct path's:
+  // the bucket path exists for the files over 4 MB (audit F-06).
+  const maxBytes = spreadsheetUploadLimitBytes(storagePath !== null);
+  const fileValidation = validateSpreadsheetFile(file, {
+    ...SPREADSHEET_VALIDATION,
+    maxBytes,
+    tooLargeMessage: spreadsheetTooLargeMessage("The sales workbook", maxBytes),
+  });
   if (!fileValidation.ok) {
     return { code: fileValidation.error, error: fileValidation.message, ok: false, status: fileValidation.status };
   }

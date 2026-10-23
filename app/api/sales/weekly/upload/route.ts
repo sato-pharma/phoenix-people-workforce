@@ -6,7 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { removeSalesUploadObjects, resolveWeeklyUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importWeeklySalesFile } from "@/lib/sales/weekly/service";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, spreadsheetUploadLimitBytes, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -40,7 +40,9 @@ export async function POST(request: Request) {
       const validation = validateSpreadsheetFile(value, {
         ...xlsxSpreadsheetValidation,
         emptyError: "invalid_weekly_file",
-        tooLargeMessage: "Weekly workbook exceeds the 10MB upload limit.",
+        // The bucket path exists for files over 4 MB, so it is held to the bucket's limit (audit F-06).
+        maxBytes: spreadsheetUploadLimitBytes(resolved.storagePaths.length > 0),
+        tooLargeMessage: spreadsheetTooLargeMessage("Weekly workbook", spreadsheetUploadLimitBytes(resolved.storagePaths.length > 0)),
       });
       if (!validation.ok) {
         return { ok: false as const, response: NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status }) };

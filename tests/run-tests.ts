@@ -717,6 +717,19 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import {
+  runAddressCorrectionQueueTests,
+  runFinalizeRecoveryTests,
+  runMappingBackfillRebuildTests,
+  runOldSalesUploadNumberTests,
+  runPeriodLockReadTests,
+  runPublishSplitGateTests,
+  runUploadLimitTests,
+  runWeeklyCairoDayTests,
+  runWeeklyDateCellTests,
+  runWeeklyNumberCellTests,
+} from "./sales-imports-audit-fixes.test.ts";
+import { runCrmCheckinReconcileGuardTests, runCrmPlanPruneArchiveTests } from "./crm-reconcile-overlap-guard.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
 import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts";
@@ -4271,6 +4284,18 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
+await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
+await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);
+await runTest("weekly sales takes today from Cairo, not UTC (no manager gap 00:00-03:00 on a change day)", runWeeklyCairoDayTests);
+await runTest("monthly import period lock (an unreadable lock refuses with a 503)", runPeriodLockReadTests);
+await runTest("spreadsheet upload limits (the message is the limit enforced; a stored workbook gets the bucket's 20 MB)", runUploadLimitTests);
+await runTest("mapping save rebuilds through refreshBatchRollups and queues a file it could not rebuild", runMappingBackfillRebuildTests);
+await runTest("address corrections queue their files as each one lands", runAddressCorrectionQueueTests);
+await runTest("sales import finalize recovery (a finalize that committed after an error is treated as landed)", runFinalizeRecoveryTests);
+await runTest("closing publish refuses a stale city split and rebuilds it", runPublishSplitGateTests);
+await runTest("crm check-in reconcile guard (a check-in an overlapping sync wrote is never deleted)", runCrmCheckinReconcileGuardTests);
+await runTest("crm plan prune (guarded against an overlapping sync, every row recorded before delete)", runCrmPlanPruneArchiveTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
 await runTest("sos crosswalk pagination (keyset, never unordered offset)", runSosCrosswalkPaginationTests);
 await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-stable)", runSosCustomerMapKeysetTests);

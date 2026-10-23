@@ -5,7 +5,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { importWeeklyFilledWorkbook } from "@/lib/sales/weekly/normalizer";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     const validation = validateSpreadsheetFile(file, {
       ...xlsxSpreadsheetValidation,
       emptyError: "invalid_mapping_file",
-      tooLargeMessage: "Mapping workbook exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Mapping workbook"),
     });
     if (!validation.ok) {
       return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });

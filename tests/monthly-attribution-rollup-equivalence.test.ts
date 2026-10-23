@@ -217,8 +217,10 @@ export function runMonthlyAttributionRollupEquivalenceTests() {
   // The TS fallback paths (period-unknown) refresh each rollup individually; the attribution call must
   // follow the channel rollup, which itself follows the fact/directory trio the attribution reads.
   const TS_SITES = [
+    // normalizer/mapping.ts no longer hand-copies the chain: since the 23 Oct audit (P4-05) its
+    // backfill runs `refreshBatchRollups` from customer-map.ts, pinned by
+    // tests/sales-imports-audit-fixes.test.ts. customer-map.ts is checked here and carries the chain.
     "src/lib/sales/normalizer/customer-map.ts",
-    "src/lib/sales/normalizer/mapping.ts",
     "src/lib/sales/normalizer/service.ts",
     "src/lib/sales/monthly-distributor-import.ts",
   ];

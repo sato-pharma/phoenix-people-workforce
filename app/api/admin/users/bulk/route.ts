@@ -8,7 +8,7 @@ import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -315,7 +315,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_users_file",
       emptyMessage: "Users import file is empty.",
       tooLargeError: "users_file_too_large",
-      tooLargeMessage: "Users import file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Users import file"),
       unsupportedError: "unsupported_users_file_type",
       unsupportedMessage: "Upload a users Excel file in .xls or .xlsx format.",
     });

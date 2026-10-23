@@ -11,14 +11,19 @@ import { backfillCustomerRows } from "../src/lib/sales/normalizer/mapping.ts";
  * nothing. A failed fact rollup then let the channel, distributor x product and attribution rollups
  * rebuild on the OLD fact rows, and the Monthly Closing kept that batch's old totals with no trace.
  *
+ * The rebuild now runs through the shared `refreshBatchRollups` (customer-map.ts), which checks every
+ * step and stops at the first failure, and a file it could not rebuild is queued in
+ * `source_of_sales_brick_move_files` for the 20-minute rebuild clock (audit P4-05).
+ *
  * Driven against a stand-in client, so it touches no database: the first failing step must stop the
- * chain and be reported with the batch and the step, and the save itself must still succeed.
+ * chain, the file must be queued, and the save itself must still succeed.
  */
 
 type Call = { fn: string; args: unknown };
 
 function fakeClient(failing: Record<string, string>) {
   const calls: Call[] = [];
+  const queued: Record<string, unknown>[] = [];
   const client = {
     rpc: async (fn: string, args: unknown) => {
       calls.push({ fn, args });
@@ -28,28 +33,33 @@ function fakeClient(failing: Record<string, string>) {
       if (failing[fn]) return { data: null, error: { message: failing[fn] } };
       return { data: null, error: null };
     },
+    from: (table: string) => ({
+      upsert: async (rows: Record<string, unknown>[]) => {
+        assert.equal(table, "source_of_sales_brick_move_files", "a failed rebuild is queued on the brick-move queue");
+        queued.push(...rows);
+        return { error: null };
+      },
+    }),
   };
-  return { calls, client: client as unknown as Parameters<typeof backfillCustomerRows>[0] };
+  return { calls, queued, client: client as unknown as Parameters<typeof backfillCustomerRows>[0] };
 }
 
-const ROWS = [{ customer_code: "C-1", distributor_code: "D-1" }];
+const ROWS = [{ customer_code: "C-1", distributor_code: "D-1", brick_id: "BR-1" }];
 
 export async function runSosMappingBackfillRollupErrorsTests(): Promise<void> {
-  // ── A failed fact rollup stops the chain and is reported ─────────────────────────────────────────
+  // ── A failed fact rollup stops the chain and the file is queued ──────────────────────────────────
   {
-    const { calls, client } = fakeClient({ phx_refresh_sos_fact_rollup: "canceling statement due to statement timeout" });
-    const failures: { batchId: string; message: string }[] = [];
-    const healed = await backfillCustomerRows(client, ROWS, (batchId, error) => failures.push({ batchId, message: error.message }));
+    const { calls, queued, client } = fakeClient({ phx_refresh_sos_fact_rollup: "canceling statement due to statement timeout" });
+    const healed = await backfillCustomerRows(client, ROWS);
 
     assert.equal(healed, 3, "the save itself still succeeds: the healed rows are kept and counted");
     assert.equal(
-      failures.length,
+      queued.length,
       1,
-      "HEADLINE: a fact rollup that resolves with { error } is REPORTED, never dropped — it used to leave the batch's Closing totals stale with no trace",
+      "HEADLINE: a fact rollup that resolves with { error } QUEUES the file for the rebuild clock, never drops it — it used to leave the batch's Closing totals stale with no trace",
     );
-    assert.equal(failures[0].batchId, "batch-7", "the report names the batch whose totals are stale");
-    assert.match(failures[0].message, /fact rollup/i, "the report names the step that failed");
-    assert.match(failures[0].message, /statement timeout/, "the report carries the database's own reason");
+    assert.equal(queued[0].batch_id, "batch-7", "the queued row names the batch whose totals are stale");
+    assert.equal(queued[0].old_brick_id, "BR-1", "keyed by a brick the re-pointed rows now sit on");
 
     const called = new Set(calls.map((c) => c.fn));
     for (const downstream of [
@@ -67,12 +77,10 @@ export async function runSosMappingBackfillRollupErrorsTests(): Promise<void> {
 
   // ── A failure further down stops what reads it, and keeps what already rebuilt ───────────────────
   {
-    const { calls, client } = fakeClient({ phx_refresh_sos_channel_rollup: "deadlock detected" });
-    const failures: string[] = [];
-    await backfillCustomerRows(client, ROWS, (_batchId, error) => failures.push(error.message));
+    const { calls, queued, client } = fakeClient({ phx_refresh_sos_channel_rollup: "deadlock detected" });
+    await backfillCustomerRows(client, ROWS);
 
-    assert.deepEqual(failures.length, 1, "a failed channel rollup is reported once");
-    assert.match(failures[0], /channel rollup failed for batch batch-7: deadlock detected/);
+    assert.equal(queued.length, 1, "a failed channel rollup queues the file once");
     const called = calls.map((c) => c.fn);
     assert.ok(called.includes("phx_refresh_sos_fact_rollup"), "the fact rollup ran before the failure");
     assert.ok(
@@ -81,7 +89,7 @@ export async function runSosMappingBackfillRollupErrorsTests(): Promise<void> {
     );
   }
 
-  // ── A backfill that moved nothing rebuilds nothing and reports nothing ───────────────────────────
+  // ── A backfill that moved nothing rebuilds nothing and queues nothing ────────────────────────────
   {
     const calls: Call[] = [];
     const client = {
@@ -89,10 +97,11 @@ export async function runSosMappingBackfillRollupErrorsTests(): Promise<void> {
         calls.push({ fn, args });
         return { data: [{ updated_rows: 0, affected_batch_ids: [] }], error: null };
       },
+      from: () => {
+        throw new Error("nothing may be queued when no batch was touched");
+      },
     } as unknown as Parameters<typeof backfillCustomerRows>[0];
-    const failures: string[] = [];
-    assert.equal(await backfillCustomerRows(client, ROWS, (_b, e) => failures.push(e.message)), 0);
-    assert.equal(failures.length, 0, "no batch touched, nothing to report");
+    assert.equal(await backfillCustomerRows(client, ROWS), 0);
     assert.deepEqual(calls.map((c) => c.fn), ["sos_backfill_import_rows_from_customer_map"], "no rebuild runs for no batch");
   }
 }

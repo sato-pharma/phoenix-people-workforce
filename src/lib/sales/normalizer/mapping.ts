@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { systemIdentity } from "@/config/system-settings";
+import { logError, logWarning } from "@/lib/observability/log";
 import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -10,8 +11,6 @@ import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
-import { logError } from "@/lib/observability/log";
 
 // Distributor code -> readable name, so a learned alias records WHICH distributor it came from
 // (product aliases store it in source_labels[]; territory aliases store it in notes).
@@ -187,31 +186,57 @@ export type SaveMappingsOptions = {
 // can't hammer the DB with thousands of sequential UPDATEs.
 export const BACKFILL_MAX_MAPPINGS = 2000;
 
-// A batch whose totals did not rebuild after a backfill moved its rows. The mapping is saved and the
-// healed rows stay, so the save itself succeeds — but the Monthly Closing, the dashboards and the
-// exports keep that batch's OLD totals until a later rebuild, which is exactly what must never pass
-// unseen. It lands in the app's error table (the Error Monitor), naming the batch and the step.
-export type BackfillRollupFailure = (batchId: string, error: Error) => void;
-
-const reportBackfillRollupFailure: BackfillRollupFailure = (batchId, error) => {
-  logError("Sales mapping save: a batch's totals were not rebuilt after the mapping moved its rows", {
-    labels: { event: "sos_mapping_backfill_rollup_failed", batchId },
-    error,
-  });
+/** What a backfill needs from the database client — structural, so a test can hand it a fake. */
+type BackfillClient = {
+  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
+  from: (table: string) => unknown;
 };
 
+/** The one table write the queue makes. */
+type BrickMoveQueueTable = {
+  upsert: (rows: Record<string, unknown>[], options: { onConflict: string }) => PromiseLike<{ error: unknown }>;
+};
+
+/** The shared rebuild (`refreshBatchRollups` in customer-map.ts), injectable for the test only. */
+export type BatchRollupRefresher = (
+  supabase: never,
+  batchId: string,
+  failure: (step: string, message: string) => Error,
+) => Promise<void>;
+
+/**
+ * Hand a file whose totals could not be rebuilt to the brick-move queue, whose 20-minute clock
+ * (`phoenix-brick-move-drain`) rebuilds it with the same `refreshBatchRollups` and settles its months'
+ * split net. Keyed by a brick the file's re-pointed rows now sit on, which is a brick that exists (the
+ * queue's key references the brick master). Returns whether the file is now queued.
+ */
+export async function queueBatchForRebuild(
+  supabase: BackfillClient,
+  batchId: string,
+  brickId: string | null,
+): Promise<boolean> {
+  if (!brickId) return false;
+  const table = supabase.from("source_of_sales_brick_move_files") as BrickMoveQueueTable;
+  const { error } = await table.upsert(
+    [{ batch_id: batchId, moved_at: new Date().toISOString(), moved_rows: 1, old_brick_id: brickId, refresh_started_at: null, refreshed_at: null }],
+    { onConflict: "old_brick_id,batch_id" },
+  );
+  return !error;
+}
+
 export async function backfillCustomerRows(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  rows: { distributor_code: unknown; customer_code: unknown }[],
-  onRollupFailure: BackfillRollupFailure = reportBackfillRollupFailure,
+  supabase: BackfillClient,
+  rows: { distributor_code: unknown; customer_code: unknown; brick_id?: unknown }[],
+  deps?: { refresh?: BatchRollupRefresher },
 ): Promise<number> {
   let backfilled = 0;
   // Backfilling moves an import row's brick/area/region. The fact rollup is a materialised copy of
   // that geography, so without a refresh the corrected sale keeps its OLD owner indefinitely — the
   // mapping looks fixed on screen while every rollup-driven report still credits the wrong area.
   // Collected across the whole loop and refreshed once per batch: one bulk save commonly touches the
-  // same batch hundreds of times.
-  const affectedBatchIds = new Set<string>();
+  // same batch hundreds of times. The value is a brick the batch's re-pointed rows now sit on, kept
+  // so a failed rebuild can be queued (below).
+  const affectedBatchIds = new Map<string, string | null>();
 
   for (const row of rows) {
     try {
@@ -219,7 +244,15 @@ export async function backfillCustomerRows(
         p_customer: String(row.customer_code ?? ""),
         p_distributor: String(row.distributor_code ?? ""),
       });
-      if (error) continue;
+      if (error) {
+        // The RPC runs in one transaction, so a failure moved nothing — the mapping itself is saved
+        // and the next backfill or reconcile retries the history. Logged, never silent.
+        logWarning("A saved customer mapping could not re-point its earlier sales.", {
+          context: { customerCode: String(row.customer_code ?? ""), distributorCode: String(row.distributor_code ?? "") },
+          error,
+        });
+        continue;
+      }
       // Post-migration the RPC returns one row { updated_rows, affected_batch_ids }; before it is
       // applied it still returns a bare integer. Accept both, so a deploy landing ahead of the
       // migration degrades to the old behaviour instead of throwing.
@@ -234,54 +267,48 @@ export async function backfillCustomerRows(
       if (!record) continue;
       backfilled += Number(record.updated_rows ?? 0);
       const batchIds = Array.isArray(record.affected_batch_ids) ? record.affected_batch_ids : [];
+      const brickId = String(row.brick_id ?? "").trim() || null;
       for (const id of batchIds) {
         const value = String(id ?? "").trim();
-        if (value) affectedBatchIds.add(value);
+        if (value && !affectedBatchIds.get(value)) affectedBatchIds.set(value, brickId);
       }
-    } catch {
+    } catch (error) {
       // RPC absent (pre-migration) or transient failure — the mapping itself is already saved.
+      logWarning("A saved customer mapping could not re-point its earlier sales.", {
+        context: { customerCode: String(row.customer_code ?? ""), distributorCode: String(row.distributor_code ?? "") },
+        error,
+      });
     }
   }
 
-  for (const batchId of affectedBatchIds) {
-    // `rpc` never throws: a refresh that fails or times out (a rebuild now waits on its batch's lock)
-    // RESOLVES with `{ error }`. Until 2026-10-23 every one of those results was dropped, so a failed
-    // fact rollup let the channel, distributor×product and attribution rollups rebuild on the OLD fact
-    // rows and the batch stayed wrong with no trace. Each step is now checked, the first failure stops
-    // the chain (nothing downstream rebuilds on stale input), and the failure is reported.
-    const step = (name: string, result: { error: { message?: unknown } | null }) => {
-      if (result.error) throw new Error(`${name} failed for batch ${batchId}: ${String(result.error.message ?? result.error)}`);
-    };
+  // 🔴 THROUGH THE SHARED REBUILD, AND A FAILURE IS QUEUED — NEVER SWALLOWED (audit P4-05, 2026-10-23).
+  // This loop used to hand-copy the seven rebuild calls, check none of their results, and wrap them
+  // in an empty catch: a failed rebuild left the re-pointed sales on their new brick with every
+  // total still crediting the old one, and nothing anywhere said so. It now runs
+  // `refreshBatchRollups` — the one chain the reconcile and the brick-move drain run, which checks
+  // every step — and a file it could not rebuild goes to the brick-move queue, whose 20-minute clock
+  // rebuilds it and settles its split net. Imported lazily: customer-map.ts imports THIS module.
+  const refresh: BatchRollupRefresher =
+    deps?.refresh ?? ((await import("@/lib/sales/normalizer/customer-map")).refreshBatchRollups as unknown as BatchRollupRefresher);
+  for (const [batchId, brickId] of affectedBatchIds) {
     try {
-      // The same trio the reconcile path refreshes (applyHistoricalReconciliation in
-      // normalizer/customer-map.ts). A refresh failure must not undo the mapping that already
-      // saved, so the corrected rows stay and a later reconcile retries the refresh.
-      const [fact, directory, roi] = await Promise.all([
-        supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
-        supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
-        supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
-      ]);
-      step("The fact rollup", fact);
-      step("The customer directory rollup", directory);
-      step("The marketing ROI facts", roi);
-      // Channel totals rollup — reads the fact + directory rollups above, so after the trio.
-      step("The channel rollup", await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId }));
-      // Distributor×product rollup — after the fact rollup it reads.
-      step(
-        "The distributor x product rollup",
-        await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId }),
-      );
-      // The wholesaler city split net FIRST — au.f_monthly_attribution reads it.
-      await writeStoreSplitNetForBatch(supabase, batchId);
-      // Sales-vs-target attribution rollup — same site, after the fact rollup it reads.
-      step("Monthly attribution", await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId }));
-      // Import summaries — what the Source of Sales dashboard reads. Frozen at insert until
-      // 2026-08-30, so a mapping backfill refreshed every rollup EXCEPT the one the executive
-      // screen actually renders from.
-      step("The import summaries", await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId }));
+      await refresh(supabase as never, batchId, (step, message) => new Error(`${step}: ${message}`));
     } catch (error) {
-      // Not rethrown — see above — but never silent either.
-      onRollupFailure(batchId, error instanceof Error ? error : new Error(String(error)));
+      const queued = await queueBatchForRebuild(supabase, batchId, brickId).catch(() => false);
+      if (queued) {
+        logWarning("A mapping save could not rebuild a sales file's totals; the file is queued for the 20-minute rebuild clock.", {
+          context: { batchId, brickId },
+          error,
+        });
+      } else {
+        // Neither rebuilt nor queued: the totals stay on the old brick until something else rebuilds
+        // this file. That is a wrong number on a manager's screen, so it pages.
+        logError("A mapping save left a sales file's totals stale: the rebuild failed and the file could not be queued.", {
+          context: { batchId, brickId },
+          error,
+          labels: { event: "sos_mapping_backfill_rebuild_lost" },
+        });
+      }
     }
   }
 
@@ -556,7 +583,7 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
   if (options?.backfill && customerSaved > 0 && customerWriteRows.length <= BACKFILL_MAX_MAPPINGS) {
     backfilled = await backfillCustomerRows(
       supabase,
-      customerWriteRows.map((r) => ({ customer_code: r.customer_code, distributor_code: r.distributor_code })),
+      customerWriteRows.map((r) => ({ brick_id: r.brick_id, customer_code: r.customer_code, distributor_code: r.distributor_code })),
     );
   }
   return { saved, skipped, invalid, invalidEntries, backfilled, skippedOwnerVerified, detailsFilled };

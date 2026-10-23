@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { learnFromCleanedFile } from "@/lib/sales/normalizer/service";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_mapping_file",
       emptyMessage: "The file is empty.",
       tooLargeError: "mapping_file_too_large",
-      tooLargeMessage: "The file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("The file"),
       unsupportedError: "unsupported_mapping_file_type",
       unsupportedMessage: "Upload the file in .xlsx format.",
     });

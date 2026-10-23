@@ -7,7 +7,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { downloadSalesUploadFile, removeSalesUploadObject } from "@/lib/sales/monthly-import-request";
 import { isOwnSalesImportUploadPath, SALES_UPLOAD_PATH_REFUSAL } from "@/lib/sales/sales-import-upload-path";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
-import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { salesSpreadsheetValidation, spreadsheetTooLargeMessage, spreadsheetUploadLimitBytes, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -74,7 +74,9 @@ export async function POST(request: Request) {
       emptyError: "invalid_sales_file",
       emptyMessage: "Sales workbook is empty.",
       tooLargeError: "sales_file_too_large",
-      tooLargeMessage: "Sales workbook exceeds the 10MB upload limit.",
+      // The bucket path exists for files over 4 MB, so it is held to the bucket's limit (audit F-06).
+      maxBytes: spreadsheetUploadLimitBytes(cleanupStoragePath !== null),
+      tooLargeMessage: spreadsheetTooLargeMessage("Sales workbook", spreadsheetUploadLimitBytes(cleanupStoragePath !== null)),
       unsupportedError: "unsupported_sales_file_type",
       unsupportedMessage: "Upload a distributor monthly sales sheet in .xls or .xlsx format.",
     });

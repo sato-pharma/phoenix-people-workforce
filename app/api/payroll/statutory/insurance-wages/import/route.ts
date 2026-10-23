@@ -10,7 +10,7 @@ import {
   previewInsuranceWages,
 } from "@/lib/payroll/statutory/insurance-wage-import";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_wage_file",
       emptyMessage: "The insurance-wage file is empty.",
       tooLargeError: "wage_file_too_large",
-      tooLargeMessage: "The insurance-wage file exceeds the 4 MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("The insurance-wage file"),
       unsupportedError: "unsupported_wage_file_type",
       unsupportedMessage: "Upload an Excel file (.xls or .xlsx) with HR_ID and Insurance Wage columns.",
     });

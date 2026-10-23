@@ -33,6 +33,7 @@
 // real RSM seat (Alex-BHR, Delta (1), Delta (2)) sitting between DM and NSM, while Cairo, Giza, UE
 // and Others report straight to the Pedia NSM. Hard-coding that shape would rot the moment a seat moves.
 
+import { todayInCairo } from "@/lib/date-only";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -149,8 +150,11 @@ export async function loadWeeklyManagerIndex(): Promise<WeeklyManagerIndex> {
   }
 
   // (line, area) -> operational region. Effective-dated exactly as loadLineOperationalRegions does,
-  // so an area that has moved territory resolves to whoever owns it TODAY.
-  const today = new Date().toISOString().slice(0, 10);
+  // so an area that has moved territory resolves to whoever owns it TODAY — Cairo's today. The UTC
+  // date is still yesterday from 00:00 to 03:00 Cairo, so on the day an area changed hands both its
+  // old row (ended yesterday) and its new one (starting today) failed the window and the area showed
+  // no manager for those three hours (audit 2026-10-23, Pass 4).
+  const today = todayInCairo();
   const operationalRegionByLineArea = new Map<string, string>();
   for (const row of areaMapResult.error ? [] : (areaMapResult.data ?? [])) {
     const record = row as Record<string, unknown>;
