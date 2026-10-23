@@ -10,19 +10,16 @@ import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
-import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
+import { getVacationReportData } from "@/lib/vacation/service";
 import {
   getExcuseRequestForActionCenterDeepLink,
   getExcuseWorkspace,
-  getManagerPendingExcuses,
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
 import { canUseAdminOutstationWorkspace } from "@/lib/outstation/admin-access";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
 import {
   getEmployeePlansWorkspace,
-  getPlansAwaitingAction,
-  type ApproverPendingPlan,
   type EmployeePlan,
 } from "@/lib/weekly-planning/service";
 import { resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
@@ -31,7 +28,7 @@ import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { listMyDirectOrders } from "@/lib/direct-orders/service";
 import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderApprovalListItem } from "@/lib/direct-orders/types";
-import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacation/types";
+import type { VacationRequestRecord } from "@/lib/vacation/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
 import type { ContractRow } from "@/lib/contracts/types";
@@ -271,47 +268,10 @@ function liveEmployeeName(
   return employee?.displayName ?? rawName;
 }
 
-function mapLeaveItem(
-  row: VacationActionCenterRow,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
-): ActionHubItem {
-  const typeLabel = vacationTypeLabel(row.vacationType);
-  return {
-    id: row.id,
-    module: "leave",
-    employeeName: liveEmployeeName(employees, row.employeeHrId, row.employeeName),
-    employeeHrId: row.employeeHrId,
-    title: `${typeLabel} · ${row.durationDays} day${row.durationDays === 1 ? "" : "s"}`,
-    statusLabel: row.status.replace(/_/g, " "),
-    submittedAt: row.createdAt,
-    urgency: row.slaAgeDays >= 3 ? "high" : "normal",
-    slaAgeDays: row.slaAgeDays,
-    slaIsOverdue: row.slaAgeDays >= 3,
-    detail: {
-      module: "leave",
-      vacationType: typeLabel,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      durationDays: row.durationDays,
-      paymentStatus: row.paymentStatus,
-      balanceBeforeDays: row.balanceBeforeDays,
-      hrDecisionComment: row.hrDecisionComment,
-      actionAvailability: Object.fromEntries(
-        Object.entries(row.actionAvailability).map(([k, v]) => [k, (v as { enabled: boolean }).enabled]),
-      ),
-      approvalSteps: row.approvalSteps.map((step) => ({
-        order: step.order,
-        status: step.status,
-        stepKey: step.stepKey,
-        genericStep: step.genericStep,
-        approverName: step.approverName,
-        decidedAt: step.decidedAt,
-        decisionComment: step.decisionComment,
-      })),
-      slaAgeDays: row.slaAgeDays,
-    },
-  };
-}
+// `mapLeaveItem` and `mapWeeklyPlanItem` were deleted on 2026-10-23 with the reads that fed them:
+// every item they built was dropped by `survivesAwaitingInbox`, so the awaiting-action fan-out no
+// longer asks for leave or plans at all. Leave, excuse and plans each have their own Needs You
+// source. `mapExcuseItem` SURVIVES — the Action Center deep link still renders one excuse request.
 
 function mapResignationItem(
   record: ResignationRecord,
@@ -426,36 +386,6 @@ function mapContractRenewalItem(
   };
 }
 
-function mapWeeklyPlanItem(
-  plan: ApproverPendingPlan,
-  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
-): ActionHubItem {
-  const kindLabel = plan.planKind === "weekly" ? "Weekly" : "Monthly";
-  return {
-    id: plan.id,
-    module: "weekly_plan",
-    employeeName: liveEmployeeName(employees, plan.employeeHrId, plan.employeeName),
-    employeeHrId: plan.employeeHrId,
-    title: `${kindLabel} plan · ${plan.periodKey}`,
-    statusLabel: plan.stage === "manager" ? "Needs manager review" : "Needs CEO approval",
-    submittedAt: plan.submittedAt,
-    urgency: "normal",
-    detail: {
-      module: "weekly_plan",
-      stage: plan.stage,
-      planKind: plan.planKind,
-      periodKey: plan.periodKey,
-      periodStartDate: plan.periodStartDate,
-      periodEndDate: plan.periodEndDate,
-      employeeJobTitle: plan.employeeJobTitle,
-      managerName: plan.managerName,
-      itemCount: plan.itemCount,
-      items: plan.items,
-      reviewHref: plan.reviewHref,
-    },
-  };
-}
-
 export type ActionInboxAudience = "admin" | "portal";
 
 /**
@@ -477,18 +407,20 @@ export function isForbiddenSourceError(error: unknown): boolean {
 export type ActionSourceFailure = { source: string; because: string };
 
 /**
- * Names for the seven reads below, in the SAME ORDER as the `Promise.allSettled` array — the index
+ * Names for the four reads below, in the SAME ORDER as the `Promise.allSettled` array — the index
  * is the join. Exported so a test can hold the two lengths against each other: a source added to
  * the fan-out without a label here would report as the generic "An approval queue", which is the
  * quiet half of the failure this whole function exists to end.
+ *
+ * 🔴 FOUR, NOT SEVEN — leave, excuse and plans are NOT read here, so they get no label. They each
+ * have their own Needs You source (`leaveApprovals`, `excuseApprovals`, `planApprovals`), with
+ * their own health and their own clock; naming them here again would report one queue twice and
+ * amber this source for a failure that already has its own row.
  */
 export const ACTION_SOURCE_LABELS = [
-  "Leave requests",
-  "Excuse requests",
   "Resignations",
   "Outstation requests",
   "Contract renewals",
-  "Weekly and monthly plans",
   "The employee directory",
 ] as const;
 
@@ -496,7 +428,7 @@ export const ACTION_SOURCE_LABELS = [
  * The awaiting-action inbox, PLUS which of its sources failed to answer.
  *
  * 🔴 WHY THIS EXISTS, AND WHY THE `.catch(() => null)` WRAPPERS HAD TO GO. Until 2026-09-28 the
- * seven reads below each carried `.catch(() => null)` INSIDE the surrounding `Promise.allSettled`.
+ * reads below each carried `.catch(() => null)` INSIDE the surrounding `Promise.allSettled`.
  * That made the `allSettled` decorative: every settled result was `"fulfilled"`, every failure
  * arrived as a `null` the item loops simply skipped, and this file contains no logging of any kind
  * — so a dead resignations read produced a shorter list and total silence, in the function
@@ -528,13 +460,19 @@ export async function getAwaitingMyActionItemsWithHealth(
   // No `.catch()` on any of these — a rejection has to reach `allSettled` as a rejection, or the
   // failure is indistinguishable from an empty queue. The outstation slot resolves to `null` when
   // this viewer holds no approval authority, which is a real "nothing here", not a failure.
+  //
+  // 🔴 ONLY THE SOURCES WHOSE ITEMS SURVIVE `survivesAwaitingInbox` ARE READ (2026-10-23, the other
+  // half of PERF-001 below). This used to read leave, excuse and plans too and then drop every item
+  // they produced, which cost this source the full vacation, excuse and plan reads for nothing —
+  // and because this source declares `cost: "heavy"` and Needs You gives it ONE 8-second budget in
+  // a lane of its own, those three reads were spending a budget they could never contribute to.
+  // `countAwaitingMyActionItems` was narrowed to these same sources on 2026-10-04; the list was
+  // left behind, and the board reads the LIST. Each of the three has its own Needs You source, so
+  // nothing is under-reported by not reading it twice.
   const settled = await Promise.allSettled([
-    getVacationActionCenterData(access),
-    getManagerPendingExcuses(access),
     getResignationsDashboardData(access),
     includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
     getContractRenewalDashboardData(access),
-    getPlansAwaitingAction(access),
     getEmployeeDirectory(),
   ]);
 
@@ -560,16 +498,10 @@ export async function getAwaitingMyActionItemsWithHealth(
     });
   });
 
-  const [leave, excuse, resignations, outstation, contract, plans, directoryResult] = settled;
+  const [resignations, outstation, contract, directoryResult] = settled;
   const employees = directoryResult.status === "fulfilled" && directoryResult.value ? directoryResult.value.employees : [];
   const items: ActionHubItem[] = [];
 
-  if (leave.status === "fulfilled" && leave.value) {
-    for (const row of leave.value.rows) items.push(mapLeaveItem(row, employees));
-  }
-  if (excuse.status === "fulfilled" && excuse.value) {
-    for (const request of excuse.value) items.push(mapExcuseItem(request, employees));
-  }
   items.push(
     ...residualActionItems({
       resignations: resignations.status === "fulfilled" ? resignations.value : null,
@@ -578,9 +510,6 @@ export async function getAwaitingMyActionItemsWithHealth(
       employees,
     }),
   );
-  if (plans.status === "fulfilled" && plans.value) {
-    for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan, employees));
-  }
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return { items: items.filter((item) => survivesAwaitingInbox(item, access)), unavailable };
 }

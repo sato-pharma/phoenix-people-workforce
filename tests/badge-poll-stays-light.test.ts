@@ -101,6 +101,22 @@ export function runBadgePollStaysLightTests() {
   assert.match(list, /residualActionItems\(/, "the list must build its residual items with the shared builders");
   assert.match(list, /survivesAwaitingInbox\(item, access\)/, "the list must filter with the shared filter");
 
+  // The OTHER half of PERF-001, closed 2026-10-23. The badge was narrowed on 2026-10-04 and the
+  // LIST was left reading all seven — and the list is what the Needs You board reads, through an
+  // adapter that declares `cost: "heavy"` and so gets ONE 8-second budget in a lane of its own.
+  // Measured from the delivered digests: "Other approvals inbox" was unreadable on 15 of the 15
+  // mornings 9-23 Oct 2026, the worst of eleven sources, and three of its reads could contribute
+  // nothing to the answer because every item they produced was filtered out again.
+  for (const discarded of ["getVacationActionCenterData(", "getManagerPendingExcuses(", "getPlansAwaitingAction("]) {
+    assert.ok(
+      !list.includes(discarded),
+      `getAwaitingMyActionItemsWithHealth reads ${discarded.slice(0, -1)} — every item it produces is filtered out ` +
+        "by survivesAwaitingInbox, so it spends part of the Needs You heavy budget on an answer it cannot change. " +
+        "Leave, excuse and plans each have their own Needs You source (leaveApprovals, excuseApprovals, " +
+        "planApprovals), so dropping the read here under-reports nothing.",
+    );
+  }
+
   for (const route of ["app/api/approvals/badge-counts/route.ts", "app/api/approvals-hub/pending-count/route.ts"]) {
     const source = read(route);
     assert.match(source, /countAwaitingMyActionItems\(access, audience\)/, `${route} must count, not list, the hub inbox`);
