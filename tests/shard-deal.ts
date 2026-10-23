@@ -5,9 +5,11 @@
  * WHY NOT PLAIN ROUND-ROBIN ANY MORE (2026-10-23). Round-robin balances the COUNT of tests per
  * shard, not their time. One test — every script that parses arguments refuses an unknown one —
  * took ~115 s on its own (CI median, 20 runs), a quarter of the whole suite's ~484 shard-seconds, so
- * whichever shard drew it finished ~80 s after the others and its job set the PR's wait. It was halved
- * the same day (one spawn per script, not two), and it is still the slowest test by far. With the
- * suite in two jobs instead of three, that gap is the difference between a faster and a slower PR.
+ * whichever shard drew it finished ~80 s after the others and its job set the PR's wait. Sharing one
+ * process across a group of probes took it to 12.0 s the same day (run 39998004516, shard 1), which
+ * leaves no single test able to set the wait on its own — the heaviest entry in the table below is now
+ * within a second or two of the next. The deal still has to balance TIME: the long tail of 5-12 s
+ * tests is what a count-balanced round-robin stacks unevenly.
  *
  * THE DEAL, deterministic in every process:
  *   1. The known slow tests ({@link KNOWN_SLOW_TESTS_MS}) are placed FIRST, heaviest first, each on
@@ -34,9 +36,9 @@
  * 2-vCPU runner. Only tests well above the default are worth listing.
  */
 export const KNOWN_SLOW_TESTS_MS: Readonly<Record<string, number>> = {
-  // 114.8 s measured with two spawns per script; one spawn since 2026-10-23 took 46% of the time on a
-  // 10-script sample, so this is an ESTIMATE until the next "Slowest:" read replaces it.
-  runUnknownFlagGatesTests: 53_000,
+  // Read, not estimated: 12,047 ms in run 39998004516 (shard 1), the first green CI run after the
+  // probes stopped getting a process each. The 114.8 s and the 53 s that followed it are both dead.
+  runUnknownFlagGatesTests: 12_000,
   runLocalTypecheckGuardTests: 11_200,
   runUnitsAreUnitsNoDiscountFactorTests: 10_600,
   runClosingRepRankingTests: 9_300,
