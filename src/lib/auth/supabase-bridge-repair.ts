@@ -36,3 +36,28 @@ export function shouldRepairSupabaseAuthBridge(input: {
   if (!input.authEmail) return true;
   return repairableBridgeFailure.test(errorMessageOf(input.error));
 }
+
+/**
+ * GoTrue's password-strength refusal, which is the one repair failure that is NOT a broken bridge.
+ *
+ * `provisionSupabaseAuthIdentity` repairs the bridge by writing the password Phoenix just accepted
+ * into the Supabase user. When that password is on GoTrue's weak-password list, `updateUserById`
+ * throws `AuthWeakPasswordError` — and it will throw it again on every future login, because
+ * nothing about the account changes between attempts. Phoenix has already authenticated the person
+ * by then; they sign in and work normally, with no Supabase session.
+ *
+ * Measured on production 23 Oct 2026: three `Failed to repair Supabase auth bridge.` rows at
+ * 15:50:35, 15:50:45 and 15:51:03 Cairo, all one person (Aya Mohamed Abdelhamid Abdullah, PD-0004,
+ * Medical Representative), all three logins recorded `success: true`. Reported as redacted API
+ * errors, they read as an outage in the one table used to judge whether production is healthy, and
+ * they recur for as long as that password stands.
+ */
+const passwordRefusedAsWeak = /weak[_ -]?password|password is known to be weak|password is too weak/i;
+
+export function isSupabasePasswordRefusal(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null | undefined)?.name;
+  if (name === "AuthWeakPasswordError") return true;
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  if (code === "weak_password") return true;
+  return passwordRefusedAsWeak.test(errorMessageOf(error));
+}
