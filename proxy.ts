@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
 import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
-import { phoenixSessionCookieName } from "@/lib/auth/session-token";
+import { phoenixDevPreviewCookieName } from "@/lib/auth/dev-preview";
+import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session-token";
 import { CANDIDATE_LINK_PARAM, PORTAL_CANDIDATES_PATH } from "@/lib/recruitment/candidate-page-link";
 import { resolvePortalCandidatesRedirectPath } from "@/lib/recruitment/portal-candidates-redirect";
 import {
@@ -155,6 +156,87 @@ function portalCandidatesRedirectResponse(request: NextRequest) {
     const response = NextResponse.redirect(url, 307);
     // Per-user, like the root redirect: a cached answer would be handed to somebody else.
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    return response;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A signed-in page whose request carries no usable session cookie is answered with a real 307 to
+ * /login before anything renders (performance brief, 2026-10-23).
+ *
+ * WHY: the owner's screen recording that day measured about 8 s from opening a portal page on an
+ * expired session to seeing the sign-in page. The layouts already send such a request to /login,
+ * but only after the session bundle call, and `app/employee-portals/loading.tsx` (and the admin
+ * group's) means the portal skeleton has painted first, so the redirect arrives late as an RSC
+ * instruction rather than as the response itself — the same trap `rootRedirectResponse` describes.
+ *
+ * SECURITY: this only ever SENDS PEOPLE TO SIGN IN; it never lets anybody through. A cookie whose
+ * signature and expiry pass `verifySessionToken` (a local HMAC check, no database) carries on to the
+ * full server check exactly as before — nothing is trusted on the signature alone. Only a cookie
+ * that is missing, forged, malformed or expired is turned away here, and the server would turn every
+ * one of those away too (`resolveSessionState` starts with the same check). That stale cookie is
+ * cleared on the way, so /login does not validate it a second time.
+ *
+ * Left alone, so they keep the path they had:
+ *  - GET/HEAD only, and only the two signed-in page trees (`/employee-portals`, `/admin`) — never
+ *    `/api`, which answers 401 as JSON and must never receive an HTML redirect, and never the `/hr`
+ *    spelling, which also rewrites public pages (`/hr/login`, `/hr/password-reset`);
+ *  - a request with a bearer token or the native client header (the app authenticates by header);
+ *  - local development with the dev-auth role headers or the dev preview cookie, which sign in
+ *    without a session cookie;
+ *  - the marketing-request decision page, which records its own "opened without a session" audit
+ *    row and shows its own sign-in notice.
+ *
+ * Fails OPEN like the root redirect: a throw (for instance no PHOENIX_AUTH_SECRET) falls through to
+ * the layouts, which still send the person to /login, only slower.
+ */
+const SIGNED_IN_PAGE_PREFIXES = ["/employee-portals", "/admin"] as const;
+
+function isSignedInPagePath(pathname: string): boolean {
+  if (pathname.startsWith("/employee-portals/marketing-requests/decision/")) return false;
+  return SIGNED_IN_PAGE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function signsInWithoutSessionCookie(request: NextRequest): boolean {
+  if (request.headers.get("authorization")) return true;
+  if (isNativeClientRequest(request.headers)) return true;
+  if (process.env.NODE_ENV === "development") {
+    if (request.headers.get("x-phoenix-role") || request.headers.get("x-phoenix-hr-id")) return true;
+    if (request.cookies.get(phoenixDevPreviewCookieName)?.value) return true;
+  }
+  return false;
+}
+
+function signedOutPageRedirectResponse(request: NextRequest) {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return null;
+  if (!isSignedInPagePath(request.nextUrl.pathname)) return null;
+  if (signsInWithoutSessionCookie(request)) return null;
+
+  try {
+    const sessionCookie = request.cookies.get(phoenixSessionCookieName)?.value;
+    if (verifySessionToken(sessionCookie)) return null;
+
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+
+    const response = NextResponse.redirect(url, 307);
+    // Per-user, like the root redirect: a cached answer must never be handed to somebody else.
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    if (sessionCookie !== undefined) {
+      response.cookies.set({
+        httpOnly: true,
+        maxAge: 0,
+        name: phoenixSessionCookieName,
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        value: "",
+      });
+    }
     return response;
   } catch {
     return null;
@@ -360,6 +442,9 @@ export function proxy(request: NextRequest) {
 
   const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;
   if (intervention) return intervention;
+
+  const signedOutRedirect = signedOutPageRedirectResponse(request);
+  if (signedOutRedirect) return signedOutRedirect;
 
   const portalRedirect = portalCandidatesRedirectResponse(request);
   if (portalRedirect) return portalRedirect;

@@ -105,23 +105,19 @@ export function runPortalCandidatesProxyRedirectTests() {
     assert.equal(other.passedThrough, true, `${role}: the request carries on to the page`);
   }
 
-  // No session, a forged one, an expired one: never a redirect chosen from an unverified cookie.
-  assert.equal(answer(proxy(requestFor(`${PORTAL_LIST}?candidate=${CANDIDATE}`))).location, null, "no cookie: carry on to the page");
+  // No session, a forged one, an expired one: never a redirect chosen from an unverified cookie. Since
+  // the performance brief (2026-10-23) such a request is sent to sign in by the proxy itself
+  // (`signedOutPageRedirectResponse`) — to /login, never to the candidate the payload would pick.
+  const signIn = (cookieValue?: string) =>
+    answer(proxy(requestFor(`${PORTAL_LIST}?candidate=${CANDIDATE}`, cookieValue))).location?.pathname ?? null;
+  assert.equal(signIn(), "/login", "no cookie: sent to sign in, never to the candidate");
   assert.equal(
-    answer(proxy(requestFor(`${PORTAL_LIST}?candidate=${CANDIDATE}`, `${superAdmin}x`))).location,
-    null,
+    signIn(`${superAdmin}x`),
+    "/login",
     "a signature that does not verify must not be believed, whatever role the payload claims",
   );
-  assert.equal(
-    answer(proxy(requestFor(`${PORTAL_LIST}?candidate=${CANDIDATE}`, "not-a-real-token"))).location,
-    null,
-    "an unsigned string is not a session",
-  );
-  assert.equal(
-    answer(proxy(requestFor(`${PORTAL_LIST}?candidate=${CANDIDATE}`, tokenFor("Super Admin", -60)))).location,
-    null,
-    "an expired token is not a session",
-  );
+  assert.equal(signIn("not-a-real-token"), "/login", "an unsigned string is not a session");
+  assert.equal(signIn(tokenFor("Super Admin", -60)), "/login", "an expired token is not a session");
 
   // Only this address, only a read.
   assert.equal(

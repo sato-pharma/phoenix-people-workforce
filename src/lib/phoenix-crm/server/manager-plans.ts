@@ -184,21 +184,24 @@ export async function loadRepWeeks(
   const weeks = new Map<string, RepWeek>();
   for (const seatId of seatIds) weeks.set(seatId, { seatId, state: "no_plan", halves: new Map(), oldCrm: null });
   if (seatIds.length === 0) return weeks;
-  const planRows: Row[] = [];
-  for (const part of chunk(dedupeIds(seatIds), 100)) {
-    planRows.push(
-      ...(await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_plans")
-            .select("id, seat_id, status")
-            .in("seat_id", part)
-            .eq("week_start", weekStart)
-            .eq("is_test", isTest),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      )),
-    );
-  }
+  // Each 100-seat part is its own read, so the parts run side by side (performance brief, 2026-10-23): a
+  // national manager's week used to wait on them one after another. Concatenated in the same order.
+  const planRows: Row[] = (
+    await Promise.all(
+      chunk(dedupeIds(seatIds), 100).map((part) =>
+        fetchAllRowsKeyset<Row>(
+          () =>
+            getSupabaseAdmin()
+              .from("phoenix_crm_plans")
+              .select("id, seat_id, status")
+              .in("seat_id", part)
+              .eq("week_start", weekStart)
+              .eq("is_test", isTest),
+          { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+        ),
+      ),
+    )
+  ).flat();
   const seatOfPlan = new Map<string, string>();
   for (const row of planRows) {
     const seatId = textOrNull(row.seat_id);

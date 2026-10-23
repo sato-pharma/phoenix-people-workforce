@@ -664,6 +664,30 @@ async function getUpcomingMarketingActivity(requesterHrId?: string): Promise<Upc
 }
 
 /** One lightweight, role-gated query/aggregate — never throws, never blocks the rest of the snapshot. */
+type CrmComplianceInput = Parameters<typeof getNsmCrmCompliance>[0];
+
+/** The board's compliance read, failing to its "unavailable" answer exactly as each branch did inline. */
+function crmComplianceFor(access: AccessContext, module: string, input: CrmComplianceInput): Promise<NsmCrmComplianceData> {
+  return getNsmCrmCompliance(input).catch((error: unknown) => {
+    logPortalFailure({ hrId: access.hrId, module, role: access.role, route: "/employee-portals" }, error);
+    return nsmCrmComplianceUnavailable(input);
+  });
+}
+
+/**
+ * 🔴 STARTED THE MOMENT THE ORG TREE ANSWERS, BESIDE THE SALES READS (performance brief, 2026-10-23). When the
+ * serving roster resolves, the compliance input is built from it ALONE — the sales rows are only its fallback —
+ * so the read no longer waits for the slower sales services to finish first. A null roster answers null here
+ * and the branch builds its fallback input after the sales rows land, exactly as before. A roster that throws
+ * is the branch's own failure (its Promise.all rejects), so this side only swallows it.
+ */
+function crmComplianceFromRoster(
+  rosterPromise: Promise<Awaited<ReturnType<typeof resolveServingRoster>>>,
+  run: (roster: NonNullable<Awaited<ReturnType<typeof resolveServingRoster>>>) => Promise<NsmCrmComplianceData>,
+): Promise<NsmCrmComplianceData | null> {
+  return rosterPromise.then((roster) => (roster ? run(roster) : null)).catch(() => null);
+}
+
 async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: string): Promise<RoleSpecificExtras> {
   try {
     if (role === "Product Manager" || role === "Group Product Manager") {
@@ -688,10 +712,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       // sales call and never from it. getDsmTeamPerformance is membership-by-sales-history, so it is
       // gated on a published closing — see serving-roster.ts for the day that blanked a whole
       // district's head count and CRM board.
+      const rosterPromise = resolveServingRoster({ viewerHrId: hrId, label: "your district" });
+      const earlyCrm = crmComplianceFromRoster(rosterPromise, (roster) =>
+        crmComplianceFor(access, "dsm-crm-compliance", { reps: roster.reps, dsms: [], limit: Number.POSITIVE_INFINITY }),
+      );
       const [team, directoryRows, servingRoster] = await Promise.all([
         getDsmTeamPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
-        resolveServingRoster({ viewerHrId: hrId, label: "your district" }),
+        rosterPromise,
       ]);
       if (!team) return emptyRoleExtras;
 
@@ -711,13 +739,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         dsms: [],
         limit: Number.POSITIVE_INFINITY,
       };
-      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
-        logPortalFailure(
-          { hrId: access.hrId, module: "dsm-crm-compliance", role: access.role, route: "/employee-portals" },
-          error,
-        );
-        return nsmCrmComplianceUnavailable(crmInput);
-      });
+      const crm = (await earlyCrm) ?? (await crmComplianceFor(access, "dsm-crm-compliance", crmInput));
 
       return {
         ...emptyRoleExtras,
@@ -738,11 +760,15 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
     if (role === "National Sales Manager") {
       // See the District Manager branch: servingRoster answers "who is in my line today" from the
       // org tree, so the daily board and the head count never ride on a published closing.
+      const rosterPromise = resolveServingRoster({ viewerHrId: hrId, label: "your line" });
+      const earlyCrm = crmComplianceFromRoster(rosterPromise, (roster) =>
+        crmComplianceFor(access, "nsm-crm-compliance", { reps: roster.reps, dsms: servingRosterManagers(roster) }),
+      );
       const [national, repTeam, directoryRows, servingRoster] = await Promise.all([
         getNsmDsmPerformance(access, {}),
         getDsmTeamPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
-        resolveServingRoster({ viewerHrId: hrId, label: "your line" }),
+        rosterPromise,
       ]);
       if (!national) return emptyRoleExtras;
 
@@ -802,13 +828,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
               directoryRows,
             ),
       };
-      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
-        logPortalFailure(
-          { hrId: access.hrId, module: "nsm-crm-compliance", role: access.role, route: "/employee-portals" },
-          error,
-        );
-        return nsmCrmComplianceUnavailable(crmInput);
-      });
+      const crm = (await earlyCrm) ?? (await crmComplianceFor(access, "nsm-crm-compliance", crmInput));
 
       return {
         ...emptyRoleExtras,
@@ -831,10 +851,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
     }
     if (role === "Regional Manager") {
       // See the District Manager branch: the org tree, not the sales rows, says who is in the region.
+      const rosterPromise = resolveServingRoster({ viewerHrId: hrId, label: "your region" });
+      const earlyCrm = crmComplianceFromRoster(rosterPromise, (roster) =>
+        crmComplianceFor(access, "rm-crm-compliance", { reps: roster.reps, dsms: servingRosterManagers(roster) }),
+      );
       const [regional, directoryRows, servingRoster] = await Promise.all([
         getRmRegionalPerformance(access, {}),
         getEmployeeDirectoryRows().catch(() => []),
-        resolveServingRoster({ viewerHrId: hrId, label: "your region" }),
+        rosterPromise,
       ]);
       if (!regional) return emptyRoleExtras;
 
@@ -889,13 +913,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
               directoryRows,
             ),
       };
-      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
-        logPortalFailure(
-          { hrId: access.hrId, module: "rm-crm-compliance", role: access.role, route: "/employee-portals" },
-          error,
-        );
-        return nsmCrmComplianceUnavailable(crmInput);
-      });
+      const crm = (await earlyCrm) ?? (await crmComplianceFor(access, "rm-crm-compliance", crmInput));
 
       return {
         ...emptyRoleExtras,

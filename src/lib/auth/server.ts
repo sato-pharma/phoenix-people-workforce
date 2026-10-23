@@ -38,6 +38,7 @@ import {
 } from "@/lib/auth/session-lifecycle";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import { afterResponse } from "@/lib/http/after-response";
 import { ApiError } from "@/lib/http/api-errors";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
@@ -263,6 +264,13 @@ async function resolveEmployeeLifecycleGate(
   }
 }
 
+/**
+ * The audit row for a rejected session is still written, every time — but after the response has
+ * gone (performance brief, 2026-10-23). It was awaited on the request path, so a person whose
+ * session had expired waited on an insert before being sent to sign in. Its failure was already
+ * swallowed, so nothing the caller returns ever depended on it — the one condition `afterResponse`
+ * asks for. Outside a request scope it is awaited exactly as before.
+ */
 async function auditSessionRejection(input: {
   entityId: string | null;
   loginId: string | null;
@@ -270,13 +278,13 @@ async function auditSessionRejection(input: {
   oldValues?: Record<string, unknown>;
   summary: string;
 }) {
-  await writeAuthAudit({
+  await afterResponse("auth_session_rejection_audit", () => writeAuthAudit({
     actorLoginId: input.loginId,
     entityId: input.entityId,
     newValues: input.newValues,
     oldValues: input.oldValues,
     summary: input.summary,
-  }).catch(() => undefined);
+  }).catch(() => undefined));
 }
 
 function appSessionRejectionSummary(reason: AppSessionRejectionReason) {

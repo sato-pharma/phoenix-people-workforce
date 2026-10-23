@@ -453,12 +453,20 @@ async function loadManagerDays(
   }
 
   const seen = new Set<string>();
+  // Every (part, slot) read is independent, so they run side by side (performance brief, 2026-10-23) — the
+  // tab used to wait on three passes over the view one after another. The rows are still folded in the
+  // same order as before, so the `seen` de-dupe keeps exactly the same visit.
+  const reads: Array<{ column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id"; asked: string[] }> = [];
   for (const part of chunk(hrIds, 100)) {
     for (const column of ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const) {
       // The product-manager slot is asked of the product managers only, and not at all when none is drawn.
       const asked = column === "product_manager_hr_id" ? part.filter((hrId) => productManagerIds.has(hrId)) : part;
-      if (asked.length === 0) continue;
-      const rows = await fetchAllRowsKeyset<Row>(
+      if (asked.length > 0) reads.push({ column, asked });
+    }
+  }
+  const results = await Promise.all(
+    reads.map(({ column, asked }) =>
+      fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
             .from("phoenix_crm_countable_visits")
@@ -468,7 +476,11 @@ async function loadManagerDays(
             .lte("visit_date", bounds.to)
             .in(column, asked),
         { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      );
+      ),
+    ),
+  );
+  {
+    for (const rows of results) {
       for (const row of rows) {
         const day = cleanDay(row.visit_date);
         if (!day || !territorySeatIds.has(String(row.seat_id ?? ""))) continue;
@@ -501,18 +513,23 @@ async function loadActivityDays(
   bounds: { from: string; to: string },
 ): Promise<{ seatId: string; day: string; activity: PhoenixCrmDayActivity }[]> {
   const out: { seatId: string; day: string; activity: PhoenixCrmDayActivity }[] = [];
-  for (const part of chunk([...seatIds], 150)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () =>
-        getSupabaseAdmin()
-          .from("phoenix_crm_day_activities")
-          .select("id, seat_id, activity_date, activity_type")
-          .eq("is_test", isTest)
-          .gte("activity_date", bounds.from)
-          .lte("activity_date", bounds.to)
-          .in("seat_id", part),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
+  // The parts read side by side and are kept in their original order (performance brief, 2026-10-23).
+  const parts = await Promise.all(
+    chunk([...seatIds], 150).map((part) =>
+      fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_day_activities")
+            .select("id, seat_id, activity_date, activity_type")
+            .eq("is_test", isTest)
+            .gte("activity_date", bounds.from)
+            .lte("activity_date", bounds.to)
+            .in("seat_id", part),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ),
+  );
+  for (const rows of parts) {
     for (const row of rows) {
       const day = cleanDay(row.activity_date);
       const seatId = String(row.seat_id ?? "");
@@ -555,8 +572,10 @@ async function latestWorkedMonth(
     dayOf: (row: Row) => unknown,
   ): Promise<string | null> => {
     let newest: string | null = null;
-    for (const part of chunk([...seatIds], 150)) {
-      const { data, error } = await run(part);
+    // The parts are one-row reads with no order between them, so they run side by side (performance
+    // brief, 2026-10-23); the newest day is the same whichever answers first.
+    const answers = await Promise.all(chunk([...seatIds], 150).map((part) => run(part)));
+    for (const { data, error } of answers) {
       // A scope with no rows is the normal answer here, not a fault — but a BROKEN read must not
       // read as one, or the tab would quietly go back to opening on the current month for ever.
       if (error) throw new Error(`phoenix-crm calendar: reading the newest day in ${table} failed — ${error.message}`);
