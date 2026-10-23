@@ -172,7 +172,7 @@ function countItem(input: {
  * 🔴 ANY DEAD SUB-SOURCE MAKES THE WHOLE SOURCE AMBER, and the items that DID arrive are dropped.
  *
  * That is the deliberate trade, not an oversight. `getAwaitingMyActionItemsWithHealth` fans out over
- * seven queues behind one return value, and `NeedsYouSourceState` has no branch that carries items
+ * four queues behind one return value, and `NeedsYouSourceState` has no branch that carries items
  * AND a failure — because structural guarantee 1 is that a failed source can write no number
  * anywhere. Reporting `ok` with a short list would be exactly the swallowed failure this module
  * exists to end: a dead resignations read would render as "no resignations".
