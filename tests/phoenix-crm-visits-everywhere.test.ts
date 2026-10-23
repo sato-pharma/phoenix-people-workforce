@@ -197,8 +197,13 @@ function withPhoenixOverrides(items: string[], overrides: Record<string, string>
 }
 
 /** The person's own name plus the vendor's trailing "( territory )", when the row's hr id is a person. */
+// `full_name_nz` since 20261023153000: the person lookup is a cached table now, and it carries the
+// blank-as-NULL name as its own column so this expression reads exactly what the inline
+// `nullif(btrim(e.full_name), '')` used to hand it. The raw column is on the same row — reading it
+// here would make an employee whose name is an empty string look like a name on record, and the
+// vendor's own spelling would be thrown away for a blank.
 const PERSON_NAME = (column: "agent_name" | "double_name", person: string) =>
-  String.raw`case when ${person}.full_name is not null then concat_ws(' ', ${person}.full_name, substring(v.${column} from '(\([^()]*\))\s*$')) else v.${column} end as ${column}`;
+  String.raw`case when ${person}.full_name_nz is not null then concat_ws(' ', ${person}.full_name_nz, substring(v.${column} from '(\([^()]*\))\s*$')) else v.${column} end as ${column}`;
 
 function isoDow(day: string): number {
   const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
@@ -937,15 +942,25 @@ function runNoDoubleCountTests(code: string): void {
   // One Phoenix row per visit: the people it joins are one row per person, whatever the casing.
   // `partner1` and `partner2` since 2026-10-07 — the door carries BOTH people on a chain visit, and
   // each lookup has to stay one-row-per-person or a second slot would double the visit outright.
+  //
+  // THE LOOKUP MOVED, IT DID NOT CHANGE (2026-10-23). Each slot used to inline
+  // `select distinct on (upper(btrim(e.hr_id))) ... order by upper(btrim(e.hr_id)), e.hr_id`, so one
+  // read sorted all 220 employees once per slot. The rule now lives once, in
+  // `crm_person_by_hr_key_calc()`, behind `crm_person_by_hr_key_cache` — whose PRIMARY KEY on hr_key
+  // is what now makes "one row per person" unbreakable, rather than each site remembering to say
+  // `distinct on`. Pinned in full by tests/crm-person-by-hr-key-cache.test.ts.
   for (const role of ["agent", "partner1", "partner2"]) {
     assert.ok(
       flat(visitBranch).includes(
-        "left join ( select distinct on (upper(btrim(e.hr_id))) upper(btrim(e.hr_id)) as hr_key, e.crm_id, e.full_name " +
-          `from public.employees e order by upper(btrim(e.hr_id)), e.hr_id ) ${role} on ${role}.hr_key = upper(btrim(`,
+        `left join public.crm_person_by_hr_key_cache ${role} on ${role}.hr_key = upper(btrim(`,
       ),
       `the ${role} lookup is one row per person, so it can never double a visit`,
     );
   }
+  assert.ok(
+    !flat(visitBranch).includes("distinct on (upper(btrim(e.hr_id)))"),
+    "and no slot keeps a second copy of that rule inline",
+  );
   assert.ok(flat(visitBranch).includes("join public.phoenix_crm_customers customer on customer.id = p.customer_id"), "one customer per visit");
 
   // The Phoenix CRM List's "iReports360 history" reads vendor rows only, so the visits it already shows

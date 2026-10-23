@@ -1443,6 +1443,35 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // back, and the reconcile then found 0 differences.
   // Pinned by tests/crm-contact-phoenix-truth-cache.test.ts.
   "20261023140001_crm_contact_phoenix_truth_cache.sql",
+
+  // 2026-10-23. The person-by-HR-id cache, the third of the day's siblings (20261023091035 and
+  // 20261023140001 are the other two). Same reason for being here: the file is one `begin; ... commit;`
+  // with `drop trigger if exists` and a `delete` inside a function body, which the Supabase MCP's
+  // classifier declines, so it went the standing route — scripts/apply-sql-file.mjs (AGENTS.md §8),
+  // STAGING FIRST and then production, with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com.
+  // That route writes NO schema_migrations row on either project, while all of it is live.
+  //
+  // 🔴 NOT taken on existence — a `create or replace` is satisfied by an older body. All FOUR functions
+  // were digested on production after applying:
+  //   crm_person_by_hr_key_calc         1fc7bdfa3168667f21135e4c7346e454, len 336
+  //   crm_person_by_hr_key_rebuild      9cdf3a76ec2d06023e6b4f48e3bb8419, len 351
+  //   crm_person_by_hr_key_on_employee  7af97b6efe46e281240d3e50bdc8aff5, len 75
+  //   crm_person_by_hr_key_reconcile    42207a80f24115a360a145feeef993bf, len 573
+  // prosecdef true on all four and none reachable with a browser key (each ACL is exactly
+  // `postgres=X/postgres | service_role=X/postgres`). The table carries 220 rows with RLS on and
+  // service_role as its only grantee; the trigger reads
+  // `AFTER INSERT OR DELETE OR UPDATE OF hr_id, crm_id, full_name ON public.employees FOR EACH STATEMENT`
+  // and is enabled; the cron job crm-person-by-hr-key-reconcile is active on `*/15 * * * *`.
+  //
+  // Effect proved on production, not asserted. The doors are BYTE-IDENTICAL across the swap: the md5 of
+  // every row of crm_visits_unified since 2026-09-01 (25,038 rows) and of crm_checkins_unified over the
+  // same window (30,449 rows) is unchanged from the reading taken immediately before applying. Speed, by
+  // nine interleaved runs of the old shape and the new against the same day on production: planning
+  // 8.76 -> 7.97 ms, execution 16.73 -> 11.09 ms, 1,227 -> 283 buffers. The trigger was then proved by
+  // breaking the cache on purpose: one row deleted for hr_key B-10 (220 -> 219), a no-op update on that
+  // employee restored it (220), and the reconcile then found 0 differences.
+  // Pinned by tests/crm-person-by-hr-key-cache.test.ts.
+  "20261023153000_crm_person_by_hr_key_cache.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
