@@ -262,6 +262,41 @@ diagnostic JSON showed it. `totalJobs` is hand-maintained beside it and feeds th
 dead man's switch. Those three lists are now pinned against each other by
 `tests/needs-you-daily-digest.test.ts`. **Append, never insert.**
 
+### The digest runs outside the fan-out
+
+🔴 **The board is awaited on its OWN, before that route's 31-way `Promise.all`, and it has to stay
+there.** The lanes under "The sources" stop the 22 sources starving each other. They cannot stop the
+other 30 sub-jobs of `/api/notifications/daily` starving them — every one of those starts in the same
+instant — so as a passenger the board's sources spent their 8-second budgets queueing rather than
+querying. That is the *same* defect the lanes were built to remove, one level up, and the lanes made
+it likelier rather than less: serialising the heavy sources stretched the board's own wall-clock from
+about 8 s to 12–20 s, which is 12–20 s of overlap with the other 30 instead of 8.
+
+**Measured on production from the digests actually delivered** (`notification_events`,
+`event_key like 'needs-you-daily-digest:%'`, `metadata->>'message'`), 06:36 Cairo:
+
+| | |
+| --- | --- |
+| Mornings affected | **15 of 15**, 2026-10-09 → 2026-10-23 |
+| First timeout each day | 06:36:09 – 06:36:17, without exception |
+| Sources lost per run | 1–5 |
+| Lost on all 15 | `action-inbox`, `closing-publication-drift` — the two `heavy` ones |
+| Worst run | 23 Oct: 5 lost, `payroll-publish` among them, so that morning carried **no payroll line at all** |
+
+Reading `/admin/needs-you` by hand ambers **0 of 22** throughout. Only the 06:36 run ever failed,
+which is exactly the one context with 30 siblings in it — and it is why the page's own measurements
+said the board was healthy while his morning message was losing a fifth of it.
+
+🔴 **`route.ts` hands the settled result to the fan-out at its own position (26)**, so every position
+below keeps its meaning and the positional destructure above is not disturbed a third time.
+`onJobFailure` has already run, so `failures`, the run summary, the dead man's switch and `totalJobs`
+still count the job exactly once — `tests/dead-telegram-link-alert.test.ts` counts passes from
+`onJobFailure`'s definition rather than from the fan-out for that reason. **Never move the call back
+inside, never add a second call beside it, and never answer a returning amber row by widening a lane
+or raising the 8-second budget** — that buys a green digest with the board's honesty, which is the one
+thing this module refuses to sell. Make a heavy source cheaper instead; that changes what it measures
+and is the owner's call. Pinned by `tests/needs-you-digest-runs-outside-the-fanout.test.ts`.
+
 **Daily is Telegram and in-app; weekly is email.** One email to him is already *three* deliveries —
 `send-phoenix-email.ts` always BCCs `ADMIN_STANDING_EMAIL` and mirrors a preview to his Telegram, with
 no opt-out. That is why email is weekly, and why the weekly never also requests the `telegram`
