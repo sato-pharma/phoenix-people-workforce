@@ -1,4 +1,12 @@
 
+import {
+  AUDIT_INSERT_RETRY_TIMEOUT_MS,
+  AUDIT_INSERT_TIMEOUT_MS,
+  auditLogAlreadyLanded,
+  auditLogRow,
+  maybeDrainAuditLogOutbox,
+  queueAuditLog,
+} from "@/lib/admin/audit-outbox";
 import { getOperationalAuditLogs } from "@/lib/operations/events";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -494,54 +502,74 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
   return getOperationalAuditLogs(filter);
 }
 
-async function insertAuditLog(input: AuditLogInput) {
-  const supabase = getSupabaseAdmin({ requestTimeoutMs: 3000 });
-  const { error } = await supabase.from("audit_logs").insert({
-    actor_login_id: input.actorLoginId ?? "system",
-    entity_id: input.entityId ?? null,
-    entity_type: input.entityType,
-    new_values: input.newValues ?? null,
-    old_values: input.oldValues ?? null,
-    summary: input.summary,
-  });
+async function insertAuditLog(input: AuditLogInput, timeoutMs: number = AUDIT_INSERT_TIMEOUT_MS) {
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: timeoutMs });
+  const { error } = await supabase.from("audit_logs").insert(auditLogRow(input));
 
   if (error) {
     throw error;
   }
 }
 
-export async function writeAuditLog(input: AuditLogInput) {
+/**
+ * Fast attempt, then ONE slower retry, then the outbox. Returns the error that ended it, or null.
+ *
+ * The 3-second first attempt is what keeps the audit trail off the critical path of a request, and
+ * it stays. What changed on 23 Oct 2026 is what happens when it expires: it used to be a log line
+ * and a lost row — 109 of them in 21 days, 40 on 22 Oct alone. Now the write is retried with room
+ * to breathe, and if that fails too the whole input is parked in `audit_log_outbox` for a later
+ * drain. Owner's instruction: "both, plus never lose a row".
+ *
+ * 🔴 THE RETRY PROBES FIRST. A 3-second abort is the CLIENT giving up, not Postgres rolling back,
+ * so retrying blind would write some rows twice. `auditLogAlreadyLanded` reads the row back through
+ * `idx_audit_logs_actor_entity` before the second attempt.
+ */
+async function persistAuditLog(input: AuditLogInput): Promise<unknown | null> {
+  const attemptedAt = new Date().toISOString();
   try {
     await insertAuditLog(input);
-  } catch (error) {
+    maybeDrainAuditLogOutbox();
+    return null;
+  } catch (firstError) {
+    if (await auditLogAlreadyLanded(input, attemptedAt)) return null;
+    try {
+      await insertAuditLog(input, AUDIT_INSERT_RETRY_TIMEOUT_MS);
+      maybeDrainAuditLogOutbox();
+      return null;
+    } catch (retryError) {
+      await queueAuditLog(input, attemptedAt, retryError ?? firstError);
+      return retryError;
+    }
+  }
+}
+
+export async function writeAuditLog(input: AuditLogInput) {
+  const error = await persistAuditLog(input);
+  if (error) {
+    // ONE line, not two. Until 23 Oct 2026 this logged the same failure twice, and the second call
+    // never reached `app_error_events` at all: `persistErrorEvent` was holding a module-wide
+    // re-entrancy flag that any in-flight persist closed the door with. That flag now blocks only
+    // the error monitor's own two self-reports, so a second line here would be a second ROW.
     logError("Audit log could not be persisted", {
       labels: { event: "audit_persistence_failed", entityType: input.entityType, entityId: input.entityId ?? null },
       context: { actorLoginId: input.actorLoginId ?? null, summary: input.summary },
-      error,
-    });
-    logError("Audit log could not be persisted", {
-      labels: { event: "audit_persistence_failed", entityType: input.entityType },
-      context: { summary: input.summary, entityId: input.entityId ?? null },
       error,
     });
   }
 }
 
 export async function writeRequiredAuditLog(input: AuditLogInput) {
-  try {
-    await insertAuditLog(input);
-  } catch (error) {
+  const error = await persistAuditLog(input);
+  if (error) {
+    // Critical: a required audit row could not be written. Page this loudly.
     logError("Critical audit log could not be persisted", {
       labels: { event: "critical_audit_persistence_failed", entityType: input.entityType, entityId: input.entityId ?? null },
       context: { actorLoginId: input.actorLoginId ?? null, summary: input.summary },
       error,
     });
-    // Critical: a required audit row could not be written. Page this loudly.
-    logError("Critical audit log could not be persisted", {
-      labels: { event: "critical_audit_persistence_failed", entityType: input.entityType },
-      context: { summary: input.summary, entityId: input.entityId ?? null },
-      error,
-    });
+    // Still thrown, even though the row is now queued. These callers treat an unwritten audit row
+    // as a failed act and decide for themselves what to do about it; the queue stops the row being
+    // LOST, and deliberately does not quieten the alarm that says it was not written in time.
     throw new AuditPersistenceError(error);
   }
 }

@@ -1,0 +1,61 @@
+---
+paths:
+  - "src/lib/observability/**"
+  - "src/lib/error-monitor/**"
+  - "src/lib/admin/audit*.ts"
+  - "src/lib/http/api-errors.ts"
+  - "src/components/admin/audit-log-viewer*"
+  - "app/api/errors/client/route.ts"
+  - "app/**/{error-monitor,logs,monitoring}/**"
+  - "instrumentation.ts"
+  - "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire}*"
+  - "supabase/migrations/*{app_error,audit_log}*"
+---
+
+# Module memory — Platform — structured logging, Sentry and the audit trail's own persistence
+
+**Scope:** Structured logging and what an `app_error_events` row carries, Sentry, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+
+These rules moved VERBATIM out of `platform` on 2026-10-23, when its injected pointer measured 4,013
+bytes against the 4,000-byte margin `tests/module-memory.test.ts` holds. `platform` kept every glob it
+had, so a file under `src/lib/observability/` or `src/lib/error-monitor/` loads the PAIR.
+
+### Sentry
+
+- 🔒 **SENTRY'S PAGE SURVEY ENDS ITSELF AT MIDNIGHT CAIRO, 2026-10-19** (owner, 2026-10-16: "measure all pages, every single page"). A new error reaches his Telegram only through the signed webhook below. Until that instant `sentryTracesSampler` traces every page request (`SENTRY_PAGE_SURVEY_ENDS_AT_MS`); after it the fixed 5% applies with no deploy — never extend it by editing the date without his word. `/api/webhooks/sentry` verifies the HMAC in `sentry-hook-signature` against `SENTRY_WEBHOOK_SECRET` before it parses anything, refuses everything when the secret is unset, and sends a scrubbed summary to the standing admin's chats; it is CSRF-exempt in `proxy.ts` and listed in the access registry. Account: `docs/observability.md`.
+
+- 🔒 **SENTRY RUNS ON PRODUCTION ONLY — THE GATE IS `APP_ENV=production` PLUS A DSN (BROWSER: THE PRODUCTION HOST), NEVER THE BUILD MODE** (owner, 2026-10-16: set up sentry.io on production only, then "everything that could be on sentry"; retired 2026-07-31, back as an add-on beside `app_error_events`). Staging and the previews build as `NODE_ENV=production`, so `isProductionRuntime()` would switch it on there. The SDK is only ever a dynamic import behind `src/lib/observability/sentry-policy.ts`. It sends errors, 5% traces, profiles, error-only masked replay, warn/error logs and cron check-ins, and every span, log and event is scrubbed first (HR ids in paths, user, cookies, bodies, headers, SQL); a rate or a scrubber changes only in that file. Cron monitors are created by the first check-in, from the register in `job-schedule.ts` (the trial plan has no payment method, so nothing bills); the uptime monitor is made in Sentry's screen. The source-map plugin runs only when `SENTRY_AUTH_TOKEN` is set at build. The account itself (scrubbing, the test-issue cleanup, and a CHECK that an alert emails on every new issue) is handled by `node scripts/sentry-setup.mjs` — a dry run unless `--apply`, token from `SENTRY_AUTH_TOKEN` only, never printed. Account: `docs/observability.md`, "Sentry" and "Operating Sentry from a terminal". Pinned by `tests/sentry-production-only.test.ts` and `tests/sentry-account-setup.test.ts`.
+
+### Re-firing a stranded morning job
+
+- 🔴 **A STRANDED MORNING JOB IS RE-FIRED ONLY IF IT IS IN `JOB_REFIRE_POLICIES` (`src/lib/observability/job-refire.ts`), AND A JOB JOINS THAT LIST ONLY AFTER ITS SUB-JOBS WERE READ FOR A SAME-DAY REPEAT.** Today that is `phoenix-notify-daily` alone (audited 2026-10-16: every send passes `claimDelivery`'s unique-key insert). The sweep re-fires `verdict.stranded` only, never a job that reported failure, once per Cairo day through the atomic rate-limit claim (a claim it cannot make starts nothing), on the day it was missed and before 12:00 Cairo, in production with `CRON_SECRET`. Never widen it to failing jobs, and never add a job on the strength of "it is only a digest". Account: `docs/observability.md`, "Re-firing a stranded morning job". Pinned by `tests/job-heartbeat-register.test.ts`.
+
+### What an `app_error_events` row carries
+
+- 🔴 **AN `app_error_events` ROW CARRIES THE CAUSE FOR ANY SHAPE OF THROW, AND THE CALL SITE'S LABELS LEAD IT — A SUPABASE REJECTION IS NOT AN `Error`, SO `error.stack` IS UNDEFINED.** `persistedStack` in `src/lib/observability/log.ts` reads a non-Error through `describeThrown` and prefixes the labels other than `service`, `event` (already the row's `route`) and the four that have their own column, because `stack` is truncated from the END. Before 2026-10-23 every database failure landed as a headline with an EMPTY stack: that morning's closing-drift timeout reached the table with `route` null and nothing about the `57014` behind it, and the Postgres log that did know keeps days where this table keeps months. 🔴 **Every label value is redacted and the prefix is capped at 1,000** — a label carries a share-link token as readily as a path, and since the labels LEAD an uncapped prefix evicts the cause. **A `logError` with no `event` label gets `route` null** — always pass one. Pinned by `tests/structured-log-persists-the-cause.test.ts` and `tests/structured-log-labels-reach-the-row.test.ts`.
+
+- 🔴 **AND `hrId`/`role`/`loginId`/`digest` GO ONTO THEIR OWN COLUMNS, UNDER EITHER SPELLING — NOT INTO THE STACK TEXT.** `persistErrorEvent` built its call from `route` and `stack` alone, so those four columns were NEVER written by this path however the call site labelled: measured on production 2026-10-23, of 2,446 `route_type='structured-log'` rows ZERO carried an `hr_id` and ZERO a `role`. `needs_you_source_timeout` therefore recorded that *a* Needs You source had timed out and never which one, for whom or in what scope, and the failing adapters had to be reconstructed out of the delivered Telegram digests in `notification_events.metadata`. `structuredLogErrorInput` is the one place that decides it; both spellings are read because both are in use (`hrId` 89 call sites, `hr_id` 14; `loginId` 9, `login_id` 1). A column beats free text because /admin/error-monitor filters on `hr_id` and renders `role`. Account: `docs/observability.md`, "A structured ERROR's labels reach the row".
+
+- 🔴 **`clientSafeErrorMessage` LOGS AS A SIDE EFFECT, SO A CALLER THAT ONLY CLASSIFIES AN ERROR MUST PASS `{ report: false }`** (2026-10-23). Redacting an infrastructure error writes an `api_error_redacted` line and an `app_error_events` row — right when the error is going back to a caller, wrong when the caller is about to recover. `app/api/auth/login/route.ts` called it to decide whether to repair the Supabase bridge, repaired it, and signed the person in: seven `Failed to create Supabase auth session` rows on 23 Oct between 11:20 and 12:58 Cairo, six real people, every matching login recorded success 68–242 ms later, three of them costing an investigation. The option suppresses the log ONLY — the redaction is unchanged — and the reporting call then sits on the branches that end in a warning. Pinned by `tests/login-bridge-repair-logs-only-when-it-fails.test.ts`.
+
+- 🔴 **AN `audit_logs` WRITE THAT TIMES OUT IS RETRIED AND THEN PARKED IN `audit_log_outbox`, NEVER DROPPED** (owner, 23 Oct 2026: *"both, plus never lose a row"*). `insertAuditLog` keeps its 3s request timeout so the trail stays off the request path, then retries at 10s, then queues the whole input; the queue is drained opportunistically off successful audit writes (5 rows, once per 30s per process) because no cron-job.org or Healthchecks slot is free — **never add a cron for it**. 🔴 **Both the retry and the drain probe `auditLogAlreadyLanded` FIRST — a 3s abort is the CLIENT giving up, not Postgres rolling back**, so a blind retry writes the row twice and /admin/logs shows one act happening three times. `writeRequiredAuditLog` still throws after queueing: the queue stops the row being lost, it does not decide the act may proceed unrecorded. 109 rows were genuinely lost in the 21 days before this. Account: `docs/observability.md`, "The audit trail stopped losing rows". Pinned by `tests/audit-outbox.test.ts`.
+
+- 🔴 **`persistErrorEvent` BLOCKS THE ERROR MONITOR'S TWO SELF-REPORTS BY NAME, NEVER WITH A MODULE-WIDE FLAG** (2026-10-23). `app_error_insert_failed` and `log_app_error_threw` are the only events `logAppError` raises about itself and the only ones that can recurse. The boolean they replaced was set for the whole of one in-flight insert, so every error logged while ANY other error's insert was in the air never reached `app_error_events`: all 109 `audit_persistence_failed` failures logged two lines and left exactly one row, 109 times out of 109, making that table's counts a FLOOR rather than a count. 🔴 **A second `logError` for one failure is therefore now a second ROW** — do not re-add the duplicate pairs removed from `audit.ts`. Account: `docs/observability.md`, "The flag that was eating everyone else's errors".
+
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (0)
+
+_No notes filed under this module yet._
+<!-- module-memory:notes:end -->

@@ -95,16 +95,34 @@ export function logStructured(severity: LogSeverity, message: string, options: L
  *                    Importing it lazily keeps `log.ts` free of that dependency until an ERROR
  *                    actually happens, which on most requests is never.
  *   no recursion     `logAppError` reports its OWN failures through `logError` — `app_error_insert_failed`
- *                    at service.ts:169 and `log_app_error_threw` at :172. Those come straight back
- *                    here, so a single failing insert would loop for ever. A `.catch()` cannot stop
- *                    it, because `logAppError` never rejects: it catches internally and logs. The
- *                    re-entrancy flag below is the only thing that does, and it is why this is not
- *                    the obvious three-liner.
+ *                    and `log_app_error_threw`, the only two it raises (service.ts, inside
+ *                    `logAppError` itself). Those come straight back here, so a single failing
+ *                    insert would loop for ever. A `.catch()` cannot stop it, because `logAppError`
+ *                    never rejects: it catches internally and logs. Naming those two events is what
+ *                    stops it, and it is why this is not the obvious three-liner.
+ *
+ * 🔴 IT USED TO BE A MODULE-WIDE FLAG, AND THAT FLAG WAS DROPPING OTHER PEOPLE'S ERRORS. Set for
+ * the whole duration of one in-flight persist and cleared in a `.finally()`, it closed the door on
+ * EVERY error logged while any other error's insert was in the air — not just the monitor's own.
+ * On a request path that logs twice in a row the second never reached `app_error_events`: measured
+ * 23 Oct 2026, all 109 `audit_persistence_failed` failures logged two lines each and left exactly
+ * one row every time. So the table's counts were a FLOOR, not a count, and the dropped line was
+ * silent in the only place anyone looks. Blocking the two self-reports by name stops the recursion
+ * just as completely and drops nothing else.
  *
  * `logAppError` applies its own production gate (`shouldPersistErrorEvents`) and its own
  * signature-based dedupe, so neither is restated here.
  */
-let persistingErrorEvent = false;
+const ERROR_MONITOR_SELF_REPORT_EVENTS = new Set(["app_error_insert_failed", "log_app_error_threw"]);
+
+/**
+ * Is this ERROR the error monitor complaining about its own insert? Those, and only those, must not
+ * be persisted — persisting them is what loops.
+ */
+export function isErrorMonitorSelfReport(labels: Record<string, string> | undefined): boolean {
+  const event = labels?.event;
+  return typeof event === "string" && ERROR_MONITOR_SELF_REPORT_EVENTS.has(event);
+}
 
 /**
  * What goes in the row's `stack` column — the CAUSE, whatever shape it was thrown in, with the
@@ -203,17 +221,13 @@ export function structuredLogErrorInput(
 }
 
 function persistErrorEvent(message: string, labels: Record<string, string> | undefined, error: unknown) {
-  // While one persist is in flight, every ERROR it logs about itself stays on stderr only. That is
-  // the right trade: the line is never lost, and the alternative is an unbounded loop.
-  if (persistingErrorEvent) return;
-  persistingErrorEvent = true;
+  // The error monitor's own two complaints stay on stderr only — persisting them is what loops.
+  // Everything else is persisted, including a second error raised while a first is still in flight.
+  if (isErrorMonitorSelfReport(labels)) return;
   void import("@/lib/error-monitor/service")
     .then(({ logAppError }) => logAppError(structuredLogErrorInput(message, labels, error)))
     .catch(() => {
       // Only an import failure can land here; logAppError itself never rejects.
-    })
-    .finally(() => {
-      persistingErrorEvent = false;
     });
 }
 
