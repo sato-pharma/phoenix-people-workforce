@@ -1123,6 +1123,29 @@ export const MODULES = [
     keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
     tables: [],
   },
+  // ── `engineering` SPLIT AGAIN 2026-10-23, at 73,198 of its 72,000 bytes ──
+  //
+  // 111 notes in one file, and the required `validate` job was already refusing it. The coherent
+  // half that stands alone is the TEST SUITE: how a test is registered and run here, what makes an
+  // assertion a real pin, and the many ways a run looks green while proving nothing. That is what a
+  // session needs while WRITING a test; the rest of `engineering` is CI, the required checks, PRs
+  // and merges.
+  //
+  // 🔴 `engineering` KEEPS EVERY GLOB IT HAD, `tests/run-tests.ts` included, and this module ADDS
+  // its own — so editing the runner loads the PAIR and nothing that used to arrive stops arriving.
+  // Only the reverse narrows: a CI or merge question no longer drags in 18 test-writing notes.
+  {
+    id: "engineering-tests",
+    title: "Engineering — the test suite and how a test proves something",
+    scope: "How this repo's tests are registered and run, what makes an assertion a real pin rather than a decorative one, and the ways a test run looks green while proving nothing.",
+    globs: [
+      "tests/**",
+      "scripts/run-tests*",
+      "playwright.config.ts",
+    ],
+    keywords: ["test", "tests", "test suite", "assertion", "break test", "break and watch", "pinned", "run-tests", "regression test"],
+    tables: [],
+  },
   // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──
   //
   // 135 notes in one file, and they are NOT one subject: half are git and worktree MECHANICS (what a
