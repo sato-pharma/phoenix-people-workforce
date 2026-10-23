@@ -1,8 +1,106 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
+import { shouldRepairSupabaseAuthBridge } from "../src/lib/auth/supabase-bridge-repair.ts";
+import { clientSafeErrorMessage } from "../src/lib/http/api-errors.ts";
+
 function source(path: string) {
   return readFileSync(path, "utf8");
+}
+
+/** What `supabase.auth.signInWithPassword` throws when GoTrue refuses the password. */
+function authApiError(message: string) {
+  const error = new Error(message);
+  error.name = "AuthApiError";
+  (error as Error & { status?: number }).status = 400;
+  return error;
+}
+
+/**
+ * The bridge repair must be CLASSIFIED ON THE RAW MESSAGE.
+ *
+ * `clientSafeErrorMessage` redacts an infrastructure error, and `AuthApiError` is one by name — so
+ * it answers with the caller's fallback sentence, never "Invalid login credentials". The login
+ * route tested the redacted sentence against the repairable-failure pattern until 23 Oct 2026,
+ * which could never match: repair was skipped for every user who already had an identity, the
+ * login fell through to the warning path, and a SUCCESSFUL login left a `Failed to create Supabase
+ * auth session` row in `app_error_events` (14 rows, 11 real people, all signed in).
+ */
+function runBridgeRepairClassificationTests() {
+  const fallback = "Failed to create Supabase auth session.";
+  const refused = authApiError("Invalid login credentials");
+
+  // The premise: redaction really does throw GoTrue's words away.
+  assert.equal(
+    clientSafeErrorMessage(refused, fallback, { report: false }),
+    fallback,
+    "AuthApiError is infrastructure, so the client-safe message is the fallback — never GoTrue's text",
+  );
+
+  // The bug this pins: an existing identity plus a refused password must still repair.
+  assert.equal(
+    shouldRepairSupabaseAuthBridge({
+      authEmail: "b-10@phoenix.local",
+      authUserId: "11111111-2222-3333-4444-555555555555",
+      error: refused,
+    }),
+    true,
+    "a user WITH an identity whose Supabase password is refused must still repair — Phoenix already verified that password, so the bridge is what drifted",
+  );
+
+  // Classifying on the redacted sentence is exactly what must never come back.
+  assert.equal(
+    shouldRepairSupabaseAuthBridge({
+      authEmail: "b-10@phoenix.local",
+      authUserId: "11111111-2222-3333-4444-555555555555",
+      error: new Error(fallback),
+    }),
+    false,
+    "the fallback sentence itself is not a repairable failure — if this ever reads true the pattern has been widened into matching its own redaction",
+  );
+
+  // A missing half of the link repairs whatever the message says.
+  assert.equal(
+    shouldRepairSupabaseAuthBridge({ authEmail: null, authUserId: null, error: authApiError("boom") }),
+    true,
+    "no identity at all must always repair",
+  );
+  assert.equal(
+    shouldRepairSupabaseAuthBridge({
+      authEmail: null,
+      authUserId: "11111111-2222-3333-4444-555555555555",
+      error: authApiError("boom"),
+    }),
+    true,
+    "an id with no auth email is a half-built link and must repair",
+  );
+
+  // A genuine outage is not a credential drift: it warns, it does not re-provision.
+  assert.equal(
+    shouldRepairSupabaseAuthBridge({
+      authEmail: "b-10@phoenix.local",
+      authUserId: "11111111-2222-3333-4444-555555555555",
+      error: authApiError("upstream connect error or disconnect/reset before headers"),
+    }),
+    false,
+    "an unreachable GoTrue must NOT drag the login into a re-provision it cannot complete",
+  );
+
+  // And the route must call it rather than re-implementing the test on a redacted string.
+  // Comments are stripped first: the route explains the old defect in prose, and that prose
+  // names the very call this asserts is gone.
+  const loginRoute = source("app/api/auth/login/route.ts");
+  const loginRouteCode = loginRoute.replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, "");
+  assert.match(
+    loginRouteCode,
+    /const shouldRepairBridge = shouldRepairSupabaseAuthBridge\(/,
+    "the login route must classify through shouldRepairSupabaseAuthBridge",
+  );
+  assert.doesNotMatch(
+    loginRouteCode,
+    /clientSafeErrorMessage\([^)]*\{\s*report:\s*false\s*\}\s*\)/,
+    "nothing in the login route may classify on a redacted message again — that is the defect itself",
+  );
 }
 
 // Locks the login-bridge hardening: a failed Supabase-auth sign-in on the login
@@ -11,6 +109,8 @@ function source(path: string) {
 // password-hash re-sync migration that makes GoTrue verify the same password Phoenix
 // already does.
 export function runLoginBridgeResyncHardeningTests() {
+  runBridgeRepairClassificationTests();
+
   const identity = source("src/lib/auth/supabase-identity.ts");
 
   // Paginated email scan is bounded (no 10-page worst case).
