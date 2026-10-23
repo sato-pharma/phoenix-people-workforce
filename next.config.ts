@@ -322,6 +322,15 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
       "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
       "./node_modules/@napi-rs/*/**",
+      // The isolated CV reader (src/lib/recruitment/cv-text-isolation.ts) runs in a worker thread that
+      // require()s its library BY BARE NAME from /app/node_modules. Next links a package there only when
+      // something traced requires it by that name: mammoth and word-extractor happened to be, pdf-parse
+      // was not (the app reaches it through a hashed alias in .next/node_modules), so every PDF fell back
+      // to the unlimited in-process reader on production. Listing all three here makes the link certain,
+      // the same way @napi-rs above gets one. Pinned by tests/cv-text-isolation.test.ts.
+      "./node_modules/pdf-parse/**",
+      "./node_modules/mammoth/**",
+      "./node_modules/word-extractor/**",
     ],
   },
   experimental: {
