@@ -2006,6 +2006,7 @@ import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
+import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7604,6 +7605,11 @@ await runTest(
 await runTest(
   "Phoenix CRM caches the entry days instead of recomputing them on every read (the \"Phoenix wins the day\" rule, owner 2026-10-16, was 35.2 ms and 4,509 buffers of a 79.4 ms read and was paid once per calendar day of the window): the rule still lives in exactly ONE body, phoenix_crm_rep_entry_days_calc, which is the only thing that reads the countable view or names an activity type — every write path recomputes through it, so the cache cannot drift into a second definition — the public reader reads the table and never falls back to the live computation, each of the four fact tables that decide a rep-day is triggered on insert, update AND delete with an update recomputing the OLD key as well as the new one, a team start rebuilds, the 5-minute reconcile repairs and warns rather than only reporting, and the migration refuses to commit a backfill that disagrees with the truth",
   runPhoenixCrmRepEntryDaysCacheTests,
+);
+
+await runTest(
+  "The Phoenix contact truth is cached, and the winner rule still lives in ONE body (crm_contact_phoenix_truth is left-joined by all THREE unified doors for the name they show, and a join qual cannot be pushed into a `distinct on`, so every read of every door hashed all 2,285 winners out of 20,774 customer rows — 240 blocks whatever the page held, and 96% of a 2,948 ms ordered page over an 83-day window): phoenix_crm_contact_truth_calc holds the winner — active first, then newest validated_at, then newest updated_at — and is the only thing that reads phoenix_crm_customers or names `distinct on`, both write paths recompute through it, the view keeps its name, its three columns and security_invoker while reading nothing but the cache, NO door is edited so all three got it for free, the one row trigger covers insert, update AND delete with the UPDATE arm recomputing the OLD contact too, a TRUNCATE rebuilds, the 15-minute reconcile compares the VALUES and repairs with a warning, and the migration refuses to commit a backfill that disagrees",
+  runCrmContactPhoenixTruthCacheTests,
 );
 
 await runTest(
