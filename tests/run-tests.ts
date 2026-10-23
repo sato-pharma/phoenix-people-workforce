@@ -1901,6 +1901,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
 import { runPhoenixCrmMissedRecordsTests } from "./phoenix-crm-missed-records.test.ts";
+import { runPhoenixCrmAdminDeleteTests } from "./phoenix-crm-admin-delete.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
@@ -6965,6 +6966,11 @@ await runTest(
 await runTest(
   "Phoenix CRM: the Super Admin enters a record a rep MISSED (owner, 2026-10-01: \"if he missed a visit or a record, admin can enter it for him … anyone, anytime, anywhere\", \"I choose planned or unplanned\", \"marked as entered by admin\" — the Super Admin alone, any day that has begun, a rep who exists on a line that has opened; planned or unplanned is HIS required choice; it adds what is missing and never rewrites the rep's own record; the mark is read from who entered the visit because capture_source is rep-blind; and an entered visit has NO location, so the location checks, the behaviour sweep and place-against-actual all leave it out — the coordinate read no longer turns a missing reading into 0°N 0°E)",
   runPhoenixCrmMissedRecordsTests,
+);
+
+await runTest(
+  "Phoenix CRM: the Super Admin deletes a plan, a visit or a day record as if it never happened (owner, 2026-10-23: \"in every weekly plan, every visit, every record, for the admin only … delete this record or this plan as if it did not happen\" — four kinds; the database keeps a copy before the first row goes and clears every child before its parent; the service is the Super Admin's alone and withdraws notices only after the database has deleted; every screen draws the button from the server's own answer)",
+  runPhoenixCrmAdminDeleteTests,
 );
 
 await runTest(

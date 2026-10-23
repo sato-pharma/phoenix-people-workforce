@@ -2098,6 +2098,45 @@ export async function withdrawPhoenixCrmVisitNotices(
   }
 }
 
+/** Every notice ever raised about one rep's weekly plan — each version and step, and the test-world copies. */
+export function phoenixCrmPlanNoticeKeyPrefix(planId: string): string {
+  return `phoenix_crm:plan:${planId}:`;
+}
+
+/** Every notice ever raised about one request to edit a week — each version and status. */
+export function phoenixCrmPlanEditNoticeKeyPrefix(requestId: string): string {
+  return `phoenix_crm:plan_edit:${requestId}:`;
+}
+
+/**
+ * Take back every notice about a weekly plan the Super Admin deleted as if it never happened (owner,
+ * 2026-10-23): the plan's own notices and those of every request to edit it. A plan's absence is what
+ * justifies it, exactly like a removed visit's.
+ *
+ * Never throws, exactly like `notifyPhoenixCrm`: a notice that cannot be withdrawn must not undo a
+ * deletion that has already happened in the database.
+ */
+export async function withdrawPhoenixCrmPlanNotices(plan: {
+  kind: "rep_plan" | "manager_plan";
+  planId: string;
+  editRequestIds: ReadonlyArray<string>;
+}): Promise<void> {
+  const prefixes = [
+    plan.kind === "rep_plan" ? phoenixCrmPlanNoticeKeyPrefix(plan.planId) : managerPlanNoticeKeyPrefix(plan.planId),
+    ...plan.editRequestIds.map(phoenixCrmPlanEditNoticeKeyPrefix),
+  ];
+  for (const prefix of prefixes) {
+    try {
+      await withdrawInAppNotificationsByEventKeyPrefix(prefix);
+    } catch (error) {
+      logError("Phoenix CRM plan notice withdrawal failed", {
+        labels: { event: "phoenix_crm_plan_notice_withdraw_failed", planId: plan.planId },
+        error,
+      });
+    }
+  }
+}
+
 /** Every notice ever raised about one visit ask — each step, each person, and the test-world copies. */
 export function phoenixCrmVisitAskNoticeKeyPrefix(askId: string): string {
   return `phoenix_crm:visit_ask:${askId}:`;

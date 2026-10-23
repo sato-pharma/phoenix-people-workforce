@@ -199,6 +199,8 @@ const REFUSALS: Record<string, Refusal> = {
   future_day: { status: 400, message: "That day has not begun yet. Choose today or an earlier day." },
   // ...and taken back by him when entered by mistake: his own entry only.
   visit_not_found: { status: 404, message: "This visit is no longer there. Reload the page." },
+  // ...and any record DELETED by him as if it never happened (owner, 2026-10-23).
+  activity_not_found: { status: 404, message: "This record is no longer there. Reload the page." },
   not_entered_by_you: { status: 403, message: "Only a visit you entered for a rep can be removed. A rep's own visit stays their record." },
   // ...and CORRECTED by him when a rep chose wrongly (owner, 2026-10-06): who was on it, its products and
   // its comment. The database refuses a visit a manager entered, whose people stay as the manager recorded.

@@ -37,6 +37,7 @@
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 
+import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
@@ -510,6 +511,20 @@ export function ManagerPlanBoard({
               <span className="mt-1 block">Only {days.find((entry) => entry.date === plan.returnedDay)?.dateText ?? plan.returnedDay} is open to change.</span>
             ) : null}
           </CrmNote>
+          {view.adminDeletes && plan.planId ? (
+            <div className="mt-3">
+              <AdminDelete
+                id={plan.planId}
+                isTest={view.isTest}
+                kind="manager_plan"
+                onDeleted={() => {
+                  board.reload();
+                  onChanged?.();
+                }}
+                subject={chip}
+              />
+            </div>
+          ) : null}
         </CrmBlock>
       ) : null}
 

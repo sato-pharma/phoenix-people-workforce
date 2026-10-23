@@ -50,17 +50,16 @@ export type PhoenixCrmDayDetail = VisitDayView &
      */
     missedRecords: { seatId: string; through: string } | null;
     /**
-     * The Super Admin may take back a visit HE entered on this page (owner, 2026-10-01). Apart from
-     * `missedRecords` on purpose: his own mistake stays his to remove after the rep has left the seat or
-     * the line has closed again, where nothing new may be entered (`territoryForMissedRecordRemoval`).
-     */
-    removesEnteredVisits: boolean;
-    /**
      * The Super Admin may CORRECT a rep's visit on this page — who was on it, its products, its comment
      * (owner, 2026-10-06). Drawn per visit; the route (`/visit-edit`) asserts the same gate again
      * (`territoryForVisitEdit`), so nothing on the screen decides who may.
      */
     editsVisits: boolean;
+    /**
+     * The Super Admin may DELETE any visit or the day's record on this page as if it never happened
+     * (owner, 2026-10-23). The route (`/admin-delete`) asserts the same gate again.
+     */
+    adminDeletes: boolean;
     /**
      * Every visit of the day as the record a manager's day carries — customer, type, half, clock, brick, area,
      * address, single or double, who came along (owner, 2026-10-21: "everyone's visits in details … exactly as Mina
@@ -157,8 +156,8 @@ export async function loadPhoenixCrmDayDetail(
     missedRecords,
     onLeave,
     pharmacies,
-    removesEnteredVisits: canEnterMissedRecords(viewer),
     editsVisits: canEnterMissedRecords(viewer),
+    adminDeletes: canEnterMissedRecords(viewer),
     visitsInFull,
     visitsInFullUnread,
   };

@@ -70,7 +70,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -390,6 +390,8 @@ export type ManagerPlanBoardView = {
   isTest: boolean;
   mode: "own" | "pick";
   canWrite: boolean;
+  /** The Super Admin may delete this week's plan as if it never happened (owner, 2026-10-23). */
+  adminDeletes: boolean;
   weekStart: string;
   weeks: Array<{ weekStart: string; name: string }>;
   /** "pick" mode: every manager to choose from. Null in "own" mode. */
@@ -442,6 +444,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     isTest,
     mode,
     canWrite: false,
+    adminDeletes: canEnterMissedRecords(viewer),
     weekStart,
     weeks: managerPlanWeeks(viewer.cairoToday).map((week) => ({ weekStart: week, name: managerPlanWeekName(week, viewer.cairoToday) })),
     managers: null,
