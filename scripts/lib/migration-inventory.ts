@@ -1235,6 +1235,34 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // proved on staging in rolled-back blocks: a reviewer on the visit (typed ' probe-77 ' against PROBE-77) was born
   // sfe_pending, a reviewer not on it stayed manager_pending.
   "20261023065727_unplanned_reviewer_on_the_visit_goes_to_sfe.sql",
+  // ── 2026-10-23, written by the session that applied them: the three per-batch Closing rollup
+  // rebuilds take a transaction lock on (their own name, the batch) before their first delete
+  // (technical audit P4-04). Both pre-authorized doors refuse a `create or replace function` whose
+  // body contains `delete from`: `mcp__supabase-staging__apply_migration` answered {"status":"declined"}
+  // twice. So each file was applied with `node scripts/apply-sql-file.mjs <file> staging`, then
+  // `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs <file>
+  // production`, the standing route (.claude/rules/database.md), which writes NO ledger row: ZERO rows
+  // carry version 2026102307% on either project, read in the same query as the digests below.
+  // Verified by digest, not by presence, on BOTH ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa —
+  // md5(pg_proc.prosrc) equals md5 of each file's own dollar-quoted body (as-is LF), each file is the
+  // function's LAST definer, and the pre-image (read on both projects before the apply) equals md5 of
+  // that same body with the lock line removed, so the lock is the ONLY change:
+  //   phx_refresh_sos_fact_rollup                 b5fd564f39865cd41461ddbc59b4f96a, pre-image
+  //     ebb17ddca10f481d2bbd27f791990757 (production's prosrc carried CRLF: 070154c9587916e4652fb4e49f742323
+  //     as stored, ebb17ddc… with CR removed); rollback body 20260907190000.
+  //   phx_refresh_sos_channel_rollup              f6d6dcdc70364bd47244c714e954ec74, pre-image
+  //     f1f3a78f24933ed31ebef32f94e13ef4; rollback body 20260928190024.
+  //   phx_refresh_sos_distributor_product_rollup  b8721984073f1ec249abb23c387d6045, pre-image
+  //     6f6fdd0ec54b1a409673dd205d92f2a0, which is 20260815160000's body without its one in-body
+  //     comment line — the file drops that line too, so the body is the live one plus the lock.
+  // proconfig {search_path=public,statement_timeout=120s} and prosecdef true unchanged on all three;
+  // execute held by service_role only (anon and authenticated false). Effect proved on staging: with
+  // the lock held on one connection each function hit lock_timeout (55P03) on another, and two
+  // concurrent rebuilds of one batch ran one after the other and left its rows unchanged.
+  // Pinned by tests/sos-rollup-refresh-batch-lock.test.ts.
+  "20261023070000_phx_refresh_sos_fact_rollup_takes_a_batch_lock.sql",
+  "20261023070100_phx_refresh_sos_channel_rollup_takes_a_batch_lock.sql",
+  "20261023070200_phx_refresh_sos_distributor_product_rollup_takes_a_batch_lock.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

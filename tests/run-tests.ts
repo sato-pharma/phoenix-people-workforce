@@ -879,6 +879,7 @@ import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-await
 import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
 import { runMarketingRoiRefreshPeriodSkipTests } from "./marketing-roi-refresh-period-skip.test.ts";
 import { runCrmContactMasterRefreshSpeedTests } from "./crm-contact-master-refresh-speed.test.ts";
+import { runSosRollupRefreshBatchLockTests } from "./sos-rollup-refresh-batch-lock.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -4406,6 +4407,10 @@ await runTest(
 await runTest(
   "the CRM contact-master refresh reads its started reps once into arrays, runs the region-from-name scan only when a contact can use it, and offers its two contact upserts only rows that would change — same counts and rows, three times faster",
   runCrmContactMasterRefreshSpeedTests,
+);
+await runTest(
+  "each per-batch Closing rollup rebuild (fact, channel, distributor-product) takes a transaction lock on its own name and the batch before its first delete, so two rebuilds of one batch run one after the other and never count it twice",
+  runSosRollupRefreshBatchLockTests,
 );
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
