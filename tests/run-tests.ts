@@ -10658,11 +10658,11 @@ await runTest(
   runProductionPlanningRequestSequenceTests,
 );
 await runTest(
-  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — never the outage screen and never a database sentence",
+  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — signed by the server, so a crafted link shows the fixed sentence and never its own — never the outage screen, never a database sentence, and never a claim that nothing was saved",
   runVacationDecisionFormTests,
 );
 await runTest(
-  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, raw error text in route files can only go down, and no public or share route carries any",
+  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, every redacted error is still logged once as api_error_redacted with its real text, raw error text in route files can only go down, and no public or share route carries any",
   runApiErrorWrappedDatabaseTextTests,
 );
 await runTest(

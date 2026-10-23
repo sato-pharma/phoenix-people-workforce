@@ -1,3 +1,5 @@
+import { logError } from "@/lib/observability/log";
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -128,7 +130,10 @@ export function isInfrastructureError(error: unknown): boolean {
  * available to the server log via describeUnexpectedError.
  */
 export function clientSafeErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (isInfrastructureError(error)) return fallbackMessage;
+  if (isInfrastructureError(error)) {
+    reportRedactedError(error, fallbackMessage);
+    return fallbackMessage;
+  }
   if (error instanceof Error) return error.message || fallbackMessage;
   return fallbackMessage;
 }
@@ -178,6 +183,20 @@ export function describeUnexpectedError(error: unknown): string {
   });
 }
 
+/**
+ * 🔴 A HIDDEN ERROR STILL REACHES THE LOG. Redacting the caller's copy used to be the only thing that
+ * happened to it, so a page or route that never logged turned a real database failure into the
+ * fallback sentence and nothing else — no line, no app_error_events row (risk review of #6295,
+ * 2026-10-23). A route that already logs will now log twice; one extra line is the cheap side.
+ */
+function reportRedactedError(error: unknown, fallbackMessage: string) {
+  logError(`API error hidden from the caller: ${fallbackMessage}`, {
+    labels: { event: "api_error_redacted" },
+    error,
+    context: { detail: describeUnexpectedError(error) },
+  });
+}
+
 export function toApiError(error: unknown, fallbackMessage: string) {
   if (error instanceof ApiError) {
     return error;
@@ -193,6 +212,7 @@ export function toApiError(error: unknown, fallbackMessage: string) {
   // schema detail used to leave as a 404 or a 400. The caller's own fallbackMessage is what the
   // client sees; describeUnexpectedError(error) still carries the real code/details/hint to logs.
   if (isInfrastructureError(error)) {
+    reportRedactedError(error, fallbackMessage);
     if (isStatementTimeoutError(error)) {
       return new ApiError(
         STATEMENT_TIMEOUT_API_ERROR.status,
