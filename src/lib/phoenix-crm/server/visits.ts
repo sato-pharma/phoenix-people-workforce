@@ -546,20 +546,30 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   // adds to (owner, 2026-09-29). A past day is read only; a future one does not exist yet.
   const today = viewer.visitDay;
   const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
-  const rows = await loadVisitRows(seat.seatId, isTest, date);
   const ownSeat = date === today ? ownDaySeat(viewer, seat) : null;
-  const [names, activity, ownDayActivity, productManagerRoles, dayStart] = await Promise.all([
-    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
+  // TWO WAVES, NOT THREE (2026-10-23, every page change under 1 second). The day's activities, its
+  // start and the line's product managers need only the seat and the date, so they start BESIDE the
+  // visit rows instead of after them; the names and the recordings need the rows, and go together in
+  // the one wave after. Every answer is the one the three waves gave, and the rows' own failure is
+  // still the one that surfaces first — the early reads are handled the moment they start.
+  const rowsRead = loadVisitRows(seat.seatId, isTest, date);
+  const dayReads = Promise.all([
     loadDayActivityOn(seat.seatId, isTest, date),
     ownSeat ? loadDayActivityOn(ownSeat.seatId, isTest, date) : Promise.resolve(null),
     productManagerRolesFor(viewer.org, seat.seatId),
     loadDayStartOn(seat.seatId, isTest, date),
   ]);
-  const sight = locationSight(viewer, seat);
+  dayReads.catch(() => undefined);
+  const rows = await rowsRead;
   // The visit recordings. Their LENGTH (what draws the player) goes only to a reader who may hear them;
   // the Administrator's approval is read for every reader, because a recorded visit he has not approved
   // counts in nothing (owner, 2026-10-16) and `countsInKpi` must say what the countable view says.
-  const recordings = await loadRecordingsByVisit(rows.map((row) => String(row.id)));
+  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart]] = await Promise.all([
+    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
+    loadRecordingsByVisit(rows.map((row) => String(row.id))),
+    dayReads,
+  ]);
+  const sight = locationSight(viewer, seat);
   const hears = hearsVisitRecording(viewer, seat);
   return {
     territory: describeTerritory(viewer.org, seat, names),

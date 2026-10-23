@@ -284,8 +284,6 @@ export function PortalBottomNavQuickActions({
                         className="flex min-h-[52px] items-center gap-3 px-4 py-3 text-slate-800 active:bg-orange-50"
                         href={action.href}
                         onClick={close}
-                        // Loads the page at the touch — see `experimental.dynamicOnHover` in next.config.ts.
-                        unstable_dynamicOnHover
                       >
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-orange-50 text-orange-700">
                           <Icon className="h-[18px] w-[18px]" />

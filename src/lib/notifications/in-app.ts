@@ -232,63 +232,68 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
   const stale = new Set<string>();
   const candidatesByDomain = classifyActionableApprovalCandidates(rows);
 
-  if (candidatesByDomain.vacation.length > 0) {
-    try {
-      const { awaiting } = await getVacationApprovalsForResponder(access);
-      const awaitingIds = new Set(awaiting.map((item) => item.id));
-      for (const candidate of candidatesByDomain.vacation) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
-    } catch {
-      // fail-open — leave vacation candidates visible
-    }
-  }
-
-  if (candidatesByDomain.excuse.length > 0) {
-    try {
-      const { awaiting } = await getExcuseApprovalsForResponder(access);
-      const awaitingIds = new Set(awaiting.map((item) => item.id));
-      for (const candidate of candidatesByDomain.excuse) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
-    } catch {
-      // fail-open — leave excuse candidates visible
-    }
-  }
-
-  if (candidatesByDomain.plan.length > 0) {
-    try {
-      const { awaiting, unavailable } = await getPlanApprovalsForResponder(access);
-      // A source that could not be read is missing from `awaiting`, so every one of its notices
-      // would read as decided and be archived for good — leave the whole domain visible instead,
-      // as the catch below does.
-      if (unavailable.length === 0) {
+  // The five sources are independent and each fails open on its own, so they are asked side by side:
+  // read one after another they queued five approval reads in front of every bell open.
+  await Promise.all([
+    (async () => {
+      if (!(candidatesByDomain.vacation.length > 0)) return;
+      try {
+        const { awaiting } = await getVacationApprovalsForResponder(access);
         const awaitingIds = new Set(awaiting.map((item) => item.id));
-        for (const candidate of candidatesByDomain.plan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+        for (const candidate of candidatesByDomain.vacation) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      } catch {
+        // fail-open — leave vacation candidates visible
       }
-    } catch {
-      // fail-open — leave plan candidates visible
-    }
-  }
-
-  if (candidatesByDomain.phoenixCrm.length > 0) {
-    try {
-      // "Still HIS", not "still open" — at the SFE stage the visit is still waiting, but not on him.
-      const awaitingIds = await phoenixCrmVisitIdsAwaitingDecision(access);
-      for (const candidate of candidatesByDomain.phoenixCrm) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
-    } catch {
-      // fail-open — leave the off-plan candidates visible. A viewer who is not a Phoenix CRM user
-      // at all lands here too (resolvePhoenixCrmViewer throws), and keeping an unreadable notice is
-      // the harmless half of that trade.
-    }
-  }
-
-  if (candidatesByDomain.phoenixCrmPlan.length > 0) {
-    try {
-      // "Still his" again: a week he approved, a week he returned, and a week the rep took back are
-      // all gone from this set, and the next send writes its own notice.
-      const awaitingIds = await phoenixCrmPlanIdsAwaitingDecision(access);
-      for (const candidate of candidatesByDomain.phoenixCrmPlan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
-    } catch {
-      // fail-open — leave the weekly-plan candidates visible, as the off-plan ones above are.
-    }
-  }
+    })(),
+    (async () => {
+      if (!(candidatesByDomain.excuse.length > 0)) return;
+      try {
+        const { awaiting } = await getExcuseApprovalsForResponder(access);
+        const awaitingIds = new Set(awaiting.map((item) => item.id));
+        for (const candidate of candidatesByDomain.excuse) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      } catch {
+        // fail-open — leave excuse candidates visible
+      }
+    })(),
+    (async () => {
+      if (!(candidatesByDomain.plan.length > 0)) return;
+      try {
+        const { awaiting, unavailable } = await getPlanApprovalsForResponder(access);
+        // A source that could not be read is missing from `awaiting`, so every one of its notices
+        // would read as decided and be archived for good — leave the whole domain visible instead,
+        // as the catch below does.
+        if (unavailable.length === 0) {
+          const awaitingIds = new Set(awaiting.map((item) => item.id));
+          for (const candidate of candidatesByDomain.plan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+        }
+      } catch {
+        // fail-open — leave plan candidates visible
+      }
+    })(),
+    (async () => {
+      if (!(candidatesByDomain.phoenixCrm.length > 0)) return;
+      try {
+        // "Still HIS", not "still open" — at the SFE stage the visit is still waiting, but not on him.
+        const awaitingIds = await phoenixCrmVisitIdsAwaitingDecision(access);
+        for (const candidate of candidatesByDomain.phoenixCrm) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      } catch {
+        // fail-open — leave the off-plan candidates visible. A viewer who is not a Phoenix CRM user
+        // at all lands here too (resolvePhoenixCrmViewer throws), and keeping an unreadable notice is
+        // the harmless half of that trade.
+      }
+    })(),
+    (async () => {
+      if (!(candidatesByDomain.phoenixCrmPlan.length > 0)) return;
+      try {
+        // "Still his" again: a week he approved, a week he returned, and a week the rep took back are
+        // all gone from this set, and the next send writes its own notice.
+        const awaitingIds = await phoenixCrmPlanIdsAwaitingDecision(access);
+        for (const candidate of candidatesByDomain.phoenixCrmPlan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      } catch {
+        // fail-open — leave the weekly-plan candidates visible, as the off-plan ones above are.
+      }
+    })(),
+  ]);
 
   // A test login (src/lib/auth/test-persona.ts) reads the real person's bell, so it keeps the filter
   // below for THIS response but never writes her archive state — that row is hers. The Super Admin's

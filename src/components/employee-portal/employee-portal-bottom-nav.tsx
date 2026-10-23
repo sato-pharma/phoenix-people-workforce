@@ -187,10 +187,8 @@ export function EmployeePortalBottomNav({
                 onPointerDown={(event) => {
                   if (event.pointerType === "touch") tapHaptic(reducedMotion);
                 }}
-                // The page's data starts loading at the touch, the ~100 ms before the tap lands; on
-                // screen the tab only prefetches down to the page's loading.tsx. Needs
-                // `experimental.dynamicOnHover` (next.config.ts), which explains the trade.
-                unstable_dynamicOnHover
+                // On screen the tab prefetches down to the page's loading.tsx only, never the full
+                // page on touch (next.config.ts, beside `staleTimes`, explains why).
               >
                 {/*
                   The pending-count badge, as the COMPACT dot on the icon rather than the count

@@ -363,17 +363,13 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
 }
 
 export async function listInternalMessagesForViewer(access: AccessContext, limit = 20) {
-  const sender = await resolveSender(access);
-  const filters = [
+  const viewerFilters = (sender: { hrId: string | null; loginId: string | null }) => [
     sender.hrId ? `recipient_hr_id.eq.${sender.hrId}` : null,
     sender.loginId ? `recipient_login_id.eq.${sender.loginId}` : null,
     sender.hrId ? `sender_hr_id.eq.${sender.hrId}` : null,
     sender.loginId ? `sender_login_id.eq.${sender.loginId}` : null,
   ].filter((filter): filter is string => Boolean(filter));
-
-  if (filters.length === 0) return { messages: [], unreadCount: 0 };
-
-  try {
+  const readMessageRows = async (filters: string[]) => {
     const { data, error } = await getSupabaseAdmin()
       .from(internalMessagesTable)
       .select("id,sender_login_id,sender_hr_id,sender_name,recipient_login_id,recipient_hr_id,recipient_name,recipient_email,subject,body,email_status,email_provider_id,email_error,read_at,created_at")
@@ -382,8 +378,37 @@ export async function listInternalMessagesForViewer(access: AccessContext, limit
       .limit(Math.max(1, Math.min(limit, 50)));
 
     if (error) throw error;
+    return (data ?? []) as InternalMessageRow[];
+  };
 
-    const messages = ((data ?? []) as InternalMessageRow[]).map((row) => mapMessage(row, sender));
+  // ONE WAVE, NOT TWO (2026-10-23, every page change under 1 second). The messages list waited for the
+  // sender lookup before it asked for a single message, though the sender almost always resolves to the
+  // very login id and HR id the session already carries. So the list now asks with the session's own
+  // ids BESIDE the lookup, and its rows are used only when the filters the lookup resolves to are the
+  // SAME strings — the same rows the old second wave would have read, mapped with the resolved sender.
+  // When they differ (an HR id only the employee record knows), that early read is thrown away and the
+  // list is read again with the resolved filters, exactly as before. Its failure is held as a value,
+  // never dropped: it is raised only if its rows are the ones used, and the lookup's own failure, or
+  // "Authentication is required.", still surfaces first.
+  const sessionFilters = viewerFilters({ hrId: normalizeHrId(access.hrId), loginId: cleanText(access.loginId) || null });
+  const senderLookup = resolveSender(access);
+  const earlyRows = sessionFilters.length > 0
+    ? readMessageRows(sessionFilters).then(
+        (rows) => ({ rows, error: null as unknown }),
+        (error: unknown) => ({ rows: null, error }),
+      )
+    : null;
+  const sender = await senderLookup;
+  const filters = viewerFilters(sender);
+
+  if (filters.length === 0) return { messages: [], unreadCount: 0 };
+
+  try {
+    const early = earlyRows && sessionFilters.join(",") === filters.join(",") ? await earlyRows : null;
+    if (early && early.rows === null) throw early.error;
+    const rows = early?.rows ?? (await readMessageRows(filters));
+
+    const messages = rows.map((row) => mapMessage(row, sender));
     return {
       messages,
       unreadCount: messages.filter((message) => message.direction === "inbox" && !message.readAt).length,

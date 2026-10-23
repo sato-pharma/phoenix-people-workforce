@@ -186,6 +186,7 @@ import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { afterResponse } from "@/lib/http/after-response";
+import { createRecentOnce } from "@/lib/phoenix-crm/server/recent-once";
 
 /** Decided requests stay on the rep's screen this long, so the answer is seen. */
 const DECIDED_REQUESTS_DAYS = 45;
@@ -783,12 +784,59 @@ const CUSTOMER_IDS_READ_MAX = 150;
  */
 export async function ensureReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<void> {
   if (!seat.lineCode) return;
+  const startedAt = referenceMints.generation();
+  await mintReferenceCustomers(seat, isTest);
+  referenceMints.stamp(referenceMintKey(seat.seatId, seat.lineCode, isTest), startedAt);
+}
+
+async function mintReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<void> {
   const { error } = await getSupabaseAdmin().rpc("phoenix_crm_ensure_reference_customers", {
     p_seat_id: seat.seatId,
     p_line_code: seat.lineCode,
     p_is_test: isTest,
   });
   throwIfError(error);
+}
+
+/**
+ * How long a seat's successful mint lets the PLANNERS skip the next one (2026-10-23, every page change
+ * under 1 second). The mint finds something new only after an iReports360 change, yet the monthly
+ * planner and the week's plan used to run it — and wait on it before reading a single customer — on
+ * every open. The List, the visit form and missed records still mint on every read, and each of those
+ * mints restarts this window, so a new iReports360 customer reaches the planner within five minutes at
+ * the outside, at once if the rep has opened his List since.
+ */
+export const REFERENCE_MINT_FRESH_MS = 5 * 60_000;
+/** The most seats whose last mint is remembered; past it the oldest goes, which costs one extra mint. */
+export const REFERENCE_MINT_STAMPS_MAX = 2_000;
+
+const referenceMints = createRecentOnce({ freshMs: REFERENCE_MINT_FRESH_MS, maxKeys: REFERENCE_MINT_STAMPS_MAX });
+
+function referenceMintKey(seatId: string, lineCode: string, isTest: boolean): string {
+  return `${seatId}|${lineCode}|${isTest ? "test" : "live"}`;
+}
+
+/**
+ * `ensureReferenceCustomers` for the two planners: a seat minted successfully in the last
+ * `REFERENCE_MINT_FRESH_MS` answers with an already-settled promise, so `ensured.then(...)` starts the
+ * customer read at once instead of one hop later. The first open (no stamp, or an expired one) still
+ * mints BEFORE the customer read, a mint already running is joined rather than repeated, and a failed
+ * mint is never remembered — the next open mints again (src/lib/phoenix-crm/server/recent-once.ts).
+ */
+export function ensureReferenceCustomersRecently(seat: OrgSeat, isTest: boolean): Promise<void> {
+  const lineCode = seat.lineCode;
+  if (!lineCode) return Promise.resolve();
+  return referenceMints.run(referenceMintKey(seat.seatId, lineCode, isTest), () => mintReferenceCustomers(seat, isTest));
+}
+
+/**
+ * Drop the seats' mint stamps after an app write that changes what their next mint finds — a customer
+ * moved off a seat can be minted back onto it as pending — so the planner mints on its next open
+ * exactly as it did before the throttle.
+ */
+export function forgetReferenceMints(seatIds: ReadonlyArray<string>): void {
+  const prefixes = seatIds.map((seatId) => `${seatId}|`);
+  referenceMints.forget((key) => prefixes.some((prefix) => key.startsWith(prefix)));
 }
 
 /**
@@ -3086,6 +3134,9 @@ export async function moveCustomerToSeat(
       reason,
     },
   });
+  // The seat he left can mint him back as pending on its next read; the planners must not skip that
+  // mint on a stamp taken before the move (2026-10-23, every page change under 1 second).
+  forgetReferenceMints([seat.seatId, toSeatId]);
   return {
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),

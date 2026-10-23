@@ -280,7 +280,9 @@ export function runPhoenixCrmSplitModulesTests(): void {
     }
     const chooserLink = source("src/components/phoenix-crm/module-link.tsx");
     assert.match(chooserLink, /preloadPhoenixCrmTab\(moduleKey\)/, "a chooser card starts its module's screen at the touch");
-    assert.match(chooserLink, /unstable_dynamicOnHover/, "and the module's page with it");
+    // The screen's code only — never the module PAGE on touch: that built a page on the server for every
+    // card a finger crossed (tests/portal-link-prefetch.test.ts).
+    assert.doesNotMatch(chooserLink, /\bunstable_dynamicOnHover\b(?!`)/, "and never the module's page on touch");
   }
 
   console.log("phoenix-crm split modules: OK");

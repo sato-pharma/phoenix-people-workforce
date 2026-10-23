@@ -1306,6 +1306,7 @@ import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.t
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
+import { runBadgeCountsViewerCacheTests } from "./badge-counts-viewer-cache.test.ts";
 import { runBadgePollStaysLightTests } from "./badge-poll-stays-light.test.ts";
 import { runWeeklyRowCacheTests } from "./weekly-row-cache.test.ts";
 import { runWeeklyProductUnitsTests } from "./weekly-product-units.test.ts";
@@ -2647,6 +2648,8 @@ import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
 import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
+import { runPhoenixCrmReferenceMintThrottleTests } from "./phoenix-crm-reference-mint-throttle.test.ts";
+import { runPageChangeFewerWavesTests } from "./page-change-fewer-waves.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 import { runPhoenixKpiNarrowingTests } from "./phoenix-kpi-narrowing.test.ts";
@@ -5506,6 +5509,7 @@ await runTest(
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
+await runTest("badge counts: per-viewer 20 s memory and the self-only Other Approvals zero", runBadgeCountsViewerCacheTests);
 await runTest(
   "the sidebar badge poll stays light: no full Vacation Report, no discarded inbox sources, and the same deciding code as the pages",
   runBadgePollStaysLightTests,
@@ -10413,12 +10417,20 @@ await runTest(
   runDockerfileParseGateTests,
 );
 await runTest(
-  "portal links never full-prefetch; the touch-time upgrade is backed by experimental.dynamicOnHover and the router cache stays bounded",
+  "portal links never full-prefetch, no link anywhere builds its page on hover or touch, and the router cache stays bounded",
   runPortalLinkPrefetchTests,
 );
 await runTest(
   "the rep's pages never queue a read behind one it does not need: Phoenix CRM's List, board, chunked mirror reads, Reports and shared chunk, and the landing snapshot",
   runPortalRepNavigationSpeedTests,
+);
+await runTest(
+  "the planners mint a seat's carried-over customers at most once in five minutes, never skip a first mint and never remember a failed one",
+  runPhoenixCrmReferenceMintThrottleTests,
+);
+await runTest(
+  "the visit day reads in two waves and the messages list in one, never with another viewer's rows",
+  runPageChangeFewerWavesTests,
 );
 
 await runTest(

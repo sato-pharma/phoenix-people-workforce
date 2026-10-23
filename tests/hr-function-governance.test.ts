@@ -220,6 +220,16 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // carries no salary figure (its metrics are name, title, area, line, renewal date and the run).
   "app/api/notifications/contract-renewals/route.ts",
   "src/config/system-navigation.ts",
+  // Names HR Resourcing in SELF_ONLY_OTHER_APPROVALS_ROLES, added 2026-10-23 so the 30 s badge poll
+  // stops reading the whole resignations and contract-renewal dashboards to prove a zero. Reviewed
+  // verdict: it REMOVES a read and grants nothing. A seat in the set is answered 0 in the "Other
+  // Approvals" badge without the two dashboards being read; no page opens, no query widens, no record
+  // is read on the seat's behalf. It is listed only because canSeeEmployee and canSeeHrScopedRecord
+  // return true for HR Resourcing on her own record alone, so the full read could never count a
+  // request for her — tests/badge-counts-viewer-cache.test.ts probes both for every role in the set,
+  // so a widening of her reach goes red there before the zero can hide a waiting request. HR
+  // Operations and the retired HR Advisory seat are deliberately NOT in the set.
+  "src/lib/action-center/inbox-reach.ts",
   "src/lib/admin/access-control.ts",
   // src/lib/auth/account-job-titles.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   "src/lib/auth/hr-functions.ts",

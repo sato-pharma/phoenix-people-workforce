@@ -8882,3 +8882,41 @@ call in the Deductions module, never a side effect of a calendar fix.
 (owner, 2026-10-18): a resigned rep is judged up to his last working day and his own visits count,
 read back with `includeResignedAgents` — without it a rep serving notice read "not seen" on 31 of 31
 visit days. `.claude/rules/time-off.md`; pinned by `tests/private-calendar-notice-period.test.ts`.
+
+## A page change lands inside one second — owner, 2026-10-23
+
+**His words** (23 Oct 2026, ~15:10 Cairo, after a screen recording of a rep's portal): *"Once I press
+login, once I'm in the login page. Once I go to CRM, I'm in the CRM page. Once I press plan, I'm in
+CRM. The process of shifting from page to page never take more than 1 second."*
+
+**What production showed that afternoon.** The Command Center took 7.0 s at the median and 21 s at
+the 90th percentile; sign-in 2.2 s; the monthly planner 1.16 s (3.7 s at p90); the team view 1.96 s
+(9.1 s at p90); the visit day 2.2 s. The navigation badge counts used 226 s of server time over 141
+calls. And the hover prefetch — `unstable_dynamicOnHover` on the portal's links, backed by
+`experimental.dynamicOnHover` — rendered 8 WHOLE pages, 46 s of server work, for rows a mouse or a
+scrolling finger merely crossed, queued in front of one rep's real tap on Visits.
+
+**What was built.**
+
+- **No link builds a page nobody tapped.** No portal `<Link>` takes `prefetch` or
+  `unstable_dynamicOnHover`, `next.config.ts` leaves `experimental.dynamicOnHover` off, and the type
+  shim for it is gone. A slow page gets a faster loader, never a prefetch.
+- **The Medical Rep's slow home cards stream.** The landing asks `getPortalHomeSnapshot` for
+  `streamRepCards: true`; the snapshot then returns sales, rank, field KPIs and the rep's record on
+  `repCards` as promises that never reject, and skips the early-bird read it does not need.
+  `MedicalRepCommandCenter` awaits nothing: each of its six cards is an `async` component under its
+  own `<Suspense>`, drawn in the real tile's frame while it loads. The honour strip streams with no
+  placeholder, because most reps never get one. Every other role still awaits the snapshot as before.
+- **Sign-in runs its checks side by side** and does its tidy-up after the response.
+- **Short per-person caches** for the excluded-agents list and calendar access (2 minutes).
+- **Phoenix CRM waits less.** The planners mint a seat's carried-over customers at most once in five
+  minutes (a failed mint is never remembered, and a seat move forgets both seats). The visit day
+  reads in two waves instead of three, and the messages list in one instead of two — its early rows
+  are used only when the resolved viewer's filters are exactly the session's, so it never shows
+  another viewer's rows.
+
+**Never fold it back.** Never await a rep card in the centre, never put the four rep reads back into
+the snapshot's wait, and never re-add a hover or touch prefetch to make a page "feel" faster.
+
+**Pinned by** `tests/portal-link-prefetch.test.ts`, `tests/portal-rep-navigation-speed.test.ts`,
+`tests/phoenix-crm-reference-mint-throttle.test.ts` and `tests/page-change-fewer-waves.test.ts`.

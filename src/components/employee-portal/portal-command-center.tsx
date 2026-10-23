@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -34,7 +35,12 @@ import { MarketingManagerCommandCenter } from "@/components/employee-portal/dash
 import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-adherence-report";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { MyInterviewsCard } from "@/components/employee-portal/my-interviews-card";
-import type { PortalHomeSnapshot, PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
+import type {
+  PortalHomeRepCards,
+  PortalHomeRepSales,
+  PortalHomeSnapshot,
+  PortalMyInterview,
+} from "@/lib/employee-portal/home-snapshot";
 import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -1074,35 +1080,27 @@ function RepFact({ label, value, tone }: { label: string; value: string; tone?: 
   );
 }
 
-// 🔴 `REP_TOOLS` — the rep's "My tools" rail — WAS REMOVED HERE ON 2026-09-30 at the owner's own
-// instruction, and his day took the column. It listed CRM, My KPIs, Source of Sales, My incentive,
-// Vacation request, My payslips and Outstation expenses; every one of those is still in the rep's
-// sidebar, which is where he actually reaches them. Restoring the rail needs his word, not a
-// tidy-up — `tests/portal-tools-grid-fits-a-phone.test.ts` records the removal and fails if it
-// comes back on its own.
+// Synthetic UTC dates, formatted as UTC on purpose: these are period labels, not instants, and
+// Cairo would shift them back a month. Same reason the rest of this file does it.
+function monthName(m: number, y: number) {
+  return `${new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${y}`;
+}
 
-function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: RepTodayPlan | null; snapshot: PortalHomeSnapshot }) {
-  const {
-    shell,
-    pendingVacationCount,
-    pendingExcuseCount,
-    pendingCountsAvailable,
-    leaveDaysRemaining,
-    mrSalesAchievement,
-    monthlySalesTrend,
-    mrAchievementPeriod,
-    mrRankStanding,
-    mrFieldKpis,
-    doubleVisitPulse,
-    kpiMonth,
-    kpiMonthOptions,
-    // `earlyBirdStars` is deliberately NOT read here any more — see the note where the card was.
-  } = snapshot;
+// The board hands over "September 2026"; a tile meta has room for "Sep 2026".
+function shortPeriod(label: string | undefined) {
+  return label ? label.replace(/^(\w{3})\w*/, "$1") : undefined;
+}
 
-  const totalPending = pendingVacationCount + pendingExcuseCount;
-  const kpis = mrFieldKpis;
-  const serviceDuration = shell.hrContract?.serviceDurationText;
-  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
+function monthShort(m: number) {
+  return new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
+}
+
+/**
+ * Everything the Achievement tile and the by-month chart print, from the one sales read. Plain
+ * arithmetic, no I/O — both cards call it on the same resolved value, so they cannot disagree.
+ */
+function repAchievementView(sales: PortalHomeRepSales, kpiMonth: string) {
+  const { mrSalesAchievement, monthlySalesTrend, mrAchievementPeriod } = sales;
 
   // Oldest first, whatever order the snapshot hands over. A month with no target carries no
   // achievement at all — targets only start at 2026-07 — so it is excluded from the scale, from
@@ -1111,15 +1109,6 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
   const closed = trend.filter((t) => t.targetValue > 0);
   const noTarget = trend.filter((t) => t.targetValue <= 0);
   const trendMax = Math.max(100, ...closed.map((t) => Math.round(t.achievementPercent)));
-
-  // Synthetic UTC dates, formatted as UTC on purpose: these are period labels, not instants, and
-  // Cairo would shift them back a month. Same reason the rest of this file does it.
-  const monthName = (m: number, y: number) =>
-    `${new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${y}`;
-  // The board hands over "September 2026"; a tile meta has room for "Sep 2026".
-  const shortPeriod = (label: string | undefined) => (label ? label.replace(/^(\w{3})\w*/, "$1") : undefined);
-  const monthShort = (m: number) =>
-    new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
 
   // THE MONTH ON SCREEN. `kpiMonth` is the running Cairo month unless the rep picked another one
   // from the month box above these tiles (owner, 2026-10-01), and it drives all four of them — the
@@ -1175,8 +1164,84 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
       ? Math.round(closed[achIndex].achievementPercent) - Math.round(achPrior.achievementPercent)
       : null;
 
-  const missedDoctors = kpis?.hasMeasurablePlan ? kpis.missedDoctors : 0;
-  const openCount = totalPending + missedDoctors;
+  return { closed, noTarget, trendMax, latestClosed, achValue, achPct, achMonth, achDelta };
+}
+
+/**
+ * The rep's four slow reads. The landing page asks the snapshot to hand them back still RUNNING
+ * (`streamRepCards`), so it paints on the fast reads and each card fills under its own Suspense
+ * boundary (owner, 2026-10-23: "the process of shifting from page to page never take more than 1
+ * second"). Any other caller gets an awaited snapshot, and the same values are wrapped here as
+ * resolved promises, so the cards have one shape to read either way.
+ */
+function repCardsOf(snapshot: PortalHomeSnapshot): PortalHomeRepCards {
+  if (snapshot.repCards) return snapshot.repCards;
+  return {
+    sales: Promise.resolve({
+      mrSalesAchievement: snapshot.mrSalesAchievement,
+      monthlySalesTrend: snapshot.monthlySalesTrend,
+      mrAchievementPeriod: snapshot.mrAchievementPeriod,
+    }),
+    rankStanding: Promise.resolve(snapshot.mrRankStanding),
+    fieldKpis: Promise.resolve(snapshot.mrFieldKpis),
+    record: Promise.resolve({ leaveDaysRemaining: snapshot.leaveDaysRemaining, doubleVisitPulse: snapshot.doubleVisitPulse }),
+  };
+}
+
+/**
+ * What a streamed tile shows for the moment before its numbers land: the real tile's own frame and
+ * label, the value drawn as a shimmer bar. The same frame keeps the grid from jumping when it fills.
+ */
+function RepTileLoading({ label }: { label: string }) {
+  return (
+    <RepTile label={label}>
+      <div aria-busy="true">
+        <span className="sr-only">Loading</span>
+        <div aria-hidden="true" className="employee-portal-skeleton h-[21px] w-16" />
+        <div aria-hidden="true" className="employee-portal-skeleton mt-2 h-1.5 w-full" />
+      </div>
+    </RepTile>
+  );
+}
+
+/** The panel equivalent: the real header, two shimmer rows where the body will be. */
+function RepPanelLoading({ title }: { title: string }) {
+  return (
+    <RepPanel title={title}>
+      <div aria-busy="true" className="space-y-2 px-3 py-3">
+        <span className="sr-only">Loading</span>
+        <div aria-hidden="true" className="employee-portal-skeleton h-4 w-3/4" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-4 w-1/2" />
+      </div>
+    </RepPanel>
+  );
+}
+
+// 🔴 `REP_TOOLS` — the rep's "My tools" rail — WAS REMOVED HERE ON 2026-09-30 at the owner's own
+// instruction, and his day took the column. It listed CRM, My KPIs, Source of Sales, My incentive,
+// Vacation request, My payslips and Outstation expenses; every one of those is still in the rep's
+// sidebar, which is where he actually reaches them. Restoring the rail needs his word, not a
+// tidy-up — `tests/portal-tools-grid-fits-a-phone.test.ts` records the removal and fails if it
+// comes back on its own.
+
+function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: RepTodayPlan | null; snapshot: PortalHomeSnapshot }) {
+  const {
+    shell,
+    pendingVacationCount,
+    pendingExcuseCount,
+    pendingCountsAvailable,
+    kpiMonth,
+    kpiMonthOptions,
+    // `earlyBirdStars` is deliberately NOT read here any more — see the note where the card was.
+  } = snapshot;
+
+  // 🔴 THE SLOW CARDS STREAM (2026-10-23). Achievement, rank, the three CRM measures and his record
+  // are each a read the page used to wait on before painting anything; the slowest of them held a
+  // rep on a blank screen for seven seconds at the median. They now arrive under Suspense, inside
+  // the same frames, so the page itself answers on the fast reads. Never await them here again.
+  const cards = repCardsOf(snapshot);
+  const serviceDuration = shell.hrContract?.serviceDurationText;
+  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
 
   return (
     <div className="mx-auto w-full space-y-2" dir="auto">
@@ -1194,8 +1259,11 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
           only a strip telling the rank in company and line, then buttons telling the export or share.
           That simple, easy cake — not all over-engineered." It replaced two full-width medals and a
           separate export panel, ~330px of a phone before he reached his own keycards. Renders nothing
-          when he is outside both bands, which is most reps most months. */}
-      <RepHonourStrip standing={mrRankStanding} />
+          when he is outside both bands, which is most reps most months — so it streams with NO
+          placeholder: a shimmer for a strip most reps never get would promise them a rank. */}
+      <Suspense fallback={null}>
+        <RepHonourCard standing={cards.rankStanding} />
+      </Suspense>
       {/* 🔒 NO "MEDICAL REPRESENTATIVE · FIELD PERFORMANCE" BAR — removed at the owner's instruction,
           2026-10-03: "remove this section, Medical Representative / Field Performance". The rep's
           landing goes straight from the identity rows (and his rank strip, when he has one) to his KPI
@@ -1234,268 +1302,45 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                 four-across form is kept only for the no-day layout, where this column IS the page.
                 `lg:` was wrong here for a different reason and must not come back — it fired at a
                 1024px window whose content was ~636px once the sidebar opened, leaving each tile
-                ~127px, and "SEP 2026" broke in two while "10.2 of 10" wrapped. */}
+                ~127px, and "SEP 2026" broke in two while "10.2 of 10" wrapped.
+                Suspense renders no element of its own, so the four tiles stay direct items of this grid
+                whether they are still loading or filled. */}
             <div className="@container">
               <div className={`grid gap-2 ${repTodayPlan ? "grid-cols-2" : "grid-cols-2 @3xl:grid-cols-4"}`}>
-                <RepTile
-                  hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
-                  label="Achievement"
-                  meta={achMonth}
-                  rail={achPct !== null ? repTone(achPct).rail : undefined}
-                >
-                  {achPct !== null ? (
-                    <RepPercent
-                      note={
-                        achDelta !== null ? (
-                          <span
-                            className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
-                          >
-                            {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
-                          </span>
-                        ) : null
-                      }
-                      pct={achPct}
-                    />
-                  ) : (
-                    <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
-                  )}
-                </RepTile>
-
-                <RepTile
-                  hint={
-                    kpis?.hasMeasurablePlan
-                      ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
-                      : "No doctors planned"
-                  }
-                  label="Coverage"
-                  meta={shortPeriod(kpis?.monthLabel)}
-                  rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
-                >
-                  {kpis?.hasMeasurablePlan ? (
-                    <RepPercent pct={kpis.coveragePct} />
-                  ) : (
-                    <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
-                  )}
-                </RepTile>
-
-                {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
-                    printed with a slash between them — he read "1.63 / 6.57" as one number over another.
-                    Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
-                    carries no bar and no "of N". */}
-                <RepTile
-                  hint={
-                    kpis?.noGpsFeed
-                      ? "Calls logged, but no GPS check-in reached the CRM to prove them"
-                      : kpis?.hasCallRate
-                        ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
-                        : "No calls logged"
-                  }
-                  label="Call rate"
-                  meta={shortPeriod(kpis?.monthLabel)}
-                  rail="bg-sky-500"
-                >
-                  {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
-                      check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
-                  {kpis?.noGpsFeed ? (
-                    <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
-                  ) : kpis?.hasCallRate ? (
-                    <div className="space-y-2.5">
-                      <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
-                      <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
-                      <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
-                    </div>
-                  ) : (
-                    <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
-                  )}
-                </RepTile>
-
-                <RepTile
-                  hint={
-                    kpis?.hasMeasurablePlan
-                      ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
-                      : "No doctors planned"
-                  }
-                  label="Frequency"
-                  meta={shortPeriod(kpis?.monthLabel)}
-                  rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
-                >
-                  {kpis?.hasMeasurablePlan ? (
+                <Suspense fallback={<RepTileLoading label="Achievement" />}>
+                  <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
+                </Suspense>
+                <Suspense
+                  fallback={
                     <>
-                      <RepPercent pct={kpis.frequencyPct} />
-                      <RepFrequencyBreakdown
-                        above={kpis.overDoctors}
-                        below={kpis.underDoctors}
-                        exact={kpis.onPlanDoctors}
-                      />
+                      <RepTileLoading label="Coverage" />
+                      <RepTileLoading label="Call rate" />
+                      <RepTileLoading label="Frequency" />
                     </>
-                  ) : (
-                    <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
-                  )}
-                </RepTile>
+                  }
+                >
+                  <RepFieldTiles fieldKpis={cards.fieldKpis} />
+                </Suspense>
               </div>
             </div>
 
-            {closed.length > 0 && (
-              <RepPanel
-                right={
-                  <span className="text-right text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    {noTarget.length > 0
-                      ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
-                      : "Uploaded months"}
-                  </span>
-                }
-                title="Achievement by month"
-              >
-                {/* The % label rides ON its bar (absolute, above it) instead of sharing the column with
-                    it. When the label took ~19px of a 118px column, every bar at 84%+ of the scale was
-                    squeezed to the same ~99px: 85%, 95% and 100% looked identical, and a 100% month
-                    stopped short of the dashed 100% line drawn on the same scale. */}
-                <div className="px-3 pb-3 pt-6">
-                  <div className="relative flex h-[98px] items-end gap-2">
-                    {/* The 100% line, positioned on the same scale as the bars. */}
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
-                      style={{ bottom: `${(100 / trendMax) * 100}%` }}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute right-0 text-phx-3xs font-bold tabular-nums text-slate-400"
-                      style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
-                    >
-                      100%
-                    </span>
-                    {closed.map((t) => {
-                      const pct = Math.max(0, Math.round(t.achievementPercent));
-                      const isLatest =
-                        latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
-                      return (
-                        <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
-                          {/* Capped width: with only two scorable months, full-width bars read as
-                              slabs rather than as a chart. */}
-                          <div
-                            className={`relative mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
-                            style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
-                          >
-                            <p
-                              className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-2xs font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
-                            >
-                              {pct}%
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
-                    {closed.map((t) => (
-                      <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
-                        <p className="text-phx-2xs font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
-                        <p className="text-phx-3xs uppercase tracking-[0.04em] text-slate-400">
-                          {egpCompact(t.salesValue)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </RepPanel>
-            )}
+            <Suspense fallback={<RepPanelLoading title="Achievement by month" />}>
+              <RepAchievementByMonth kpiMonth={kpiMonth} sales={cards.sales} />
+            </Suspense>
 
-            <RepPanel
-              right={
-                pendingCountsAvailable ? (
-                  <span
-                    className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
-                  >
-                    {openCount} open
-                  </span>
-                ) : null
-              }
-              title="Needs you"
-            >
-              {!pendingCountsAvailable ? (
-                <p className="px-3 py-3 text-phx-sm font-semibold text-slate-400">Requests unavailable — not zero</p>
-              ) : openCount === 0 ? (
-                <p className="px-3 py-3 text-phx-sm font-semibold text-emerald-700">
-                  Nothing open — no requests waiting, no doctor missed
-                </p>
-              ) : (
-                <>
-                  {/* Each kind goes to the page that actually lists it. "Track" used to open the
-                      approvals hub, which drops leave and excuse requests from every tab — a dead end
-                      — and the count includes requests already with HR, so the heading no longer
-                      says "your manager". */}
-                  {pendingVacationCount > 0 && (
-                    <RepNeedRow
-                      count={pendingVacationCount}
-                      cta="Track"
-                      detail="With your manager or HR"
-                      headline={pendingVacationCount === 1 ? "Vacation request in approval" : "Vacation requests in approval"}
-                      href="/employee-portals/vacation-report?tab=requests"
-                      rail="bg-amber-500"
-                    />
-                  )}
-                  {pendingExcuseCount > 0 && (
-                    <RepNeedRow
-                      count={pendingExcuseCount}
-                      cta="Track"
-                      detail="With your manager or HR"
-                      headline={pendingExcuseCount === 1 ? "Excuse in approval" : "Excuses in approval"}
-                      href="/employee-portals/excuses"
-                      rail="bg-amber-500"
-                    />
-                  )}
-                  {missedDoctors > 0 && kpis && (
-                    <RepNeedRow
-                      count={missedDoctors}
-                      cta="Open"
-                      detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
-                      headline="Planned doctors not seen yet"
-                      // The month this row just NAMED, carried through to the board, AND the tab that
-                      // answers the row. The KPIs page reads `?month=YYYY-MM` and otherwise opens on
-                      // the running month, so a bare link made the row say September and its own Open
-                      // button show October; it reads `?tab=coverage` too, and without it the board
-                      // opened on Summary — three KPIs and no list of the doctors this row counted.
-                      // Coverage is the one tab that names them (it loads `coverageDoctors`), so the
-                      // owner asked for the button to land there (2026-10-01). It is a page of its own
-                      // since 2026-10-14, so the link goes straight to it instead of through the KPIs
-                      // page's redirect.
-                      href={`/employee-portals/kpis/coverage?month=${kpiMonth}`}
-                      rail="bg-orange-500"
-                    />
-                  )}
-                </>
-              )}
-            </RepPanel>
+            <Suspense fallback={<RepPanelLoading title="Needs you" />}>
+              <RepNeedsYou
+                fieldKpis={cards.fieldKpis}
+                kpiMonth={kpiMonth}
+                pendingCountsAvailable={pendingCountsAvailable}
+                pendingExcuseCount={pendingExcuseCount}
+                pendingVacationCount={pendingVacationCount}
+              />
+            </Suspense>
 
-            <RepPanel title="Your record">
-              <dl className="flex flex-wrap gap-px bg-slate-200">
-                <RepFact
-                  label="Annual leave left"
-                  value={leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "Not recorded"}
-                />
-                {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
-                {daysUntilRenewal != null && (
-                  <RepFact
-                    label="Until contract renewal"
-                    tone={daysUntilRenewal <= 30 ? "text-rose-700" : daysUntilRenewal <= 60 ? "text-amber-700" : undefined}
-                    value={`${daysUntilRenewal} days`}
-                  />
-                )}
-                {doubleVisitPulse && (
-                  <>
-                    <RepFact label="Double visits this month" value={String(doubleVisitPulse.dvsThisMonth)} />
-                    <RepFact label="Double visits, 90 days" value={String(doubleVisitPulse.dvsLast90Days)} />
-                    {doubleVisitPulse.daysSinceLastDv != null && (
-                      <RepFact
-                        label="Last double visit"
-                        value={doubleVisitPulse.daysSinceLastDv === 0 ? "Today" : `${doubleVisitPulse.daysSinceLastDv} days ago`}
-                      />
-                    )}
-                  </>
-                )}
-              </dl>
-            </RepPanel>
+            <Suspense fallback={<RepPanelLoading title="Your record" />}>
+              <RepRecord daysUntilRenewal={daysUntilRenewal} record={cards.record} serviceDuration={serviceDuration} />
+            </Suspense>
           </div>
 
           {/* 🔴 EARLY BIRDS AND MY TOOLS WERE REMOVED FROM HERE, AND THE DAY TOOK THEIR PLACE
@@ -1523,6 +1368,326 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
         </div>
       </div>
     </div>
+  );
+}
+
+// --- The Medical Rep's streamed cards ---
+//
+// Each awaits only its own read, and each read resolves (never rejects) to the null the awaited
+// snapshot would have carried, so a failed read draws the same honest empty state it always did.
+
+async function RepHonourCard({ standing }: { standing: Promise<PortalHomeSnapshot["mrRankStanding"]> }) {
+  const mrRankStanding = await standing;
+  return <RepHonourStrip standing={mrRankStanding} />;
+}
+
+async function RepAchievementCard({ sales, kpiMonth }: { sales: Promise<PortalHomeRepSales>; kpiMonth: string }) {
+  const { achValue, achPct, achMonth, achDelta } = repAchievementView(await sales, kpiMonth);
+  return (
+    <RepTile
+      hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
+      label="Achievement"
+      meta={achMonth}
+      rail={achPct !== null ? repTone(achPct).rail : undefined}
+    >
+      {achPct !== null ? (
+        <RepPercent
+          note={
+            achDelta !== null ? (
+              <span
+                className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+              >
+                {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
+              </span>
+            ) : null
+          }
+          pct={achPct}
+        />
+      ) : (
+        <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
+      )}
+    </RepTile>
+  );
+}
+
+/** Coverage, Call rate and Frequency — one CRM read, so one boundary and one moment they fill. */
+async function RepFieldTiles({ fieldKpis }: { fieldKpis: Promise<PortalHomeSnapshot["mrFieldKpis"]> }) {
+  const kpis = await fieldKpis;
+  return (
+    <>
+      <RepTile
+        hint={
+          kpis?.hasMeasurablePlan
+            ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
+            : "No doctors planned"
+        }
+        label="Coverage"
+        meta={shortPeriod(kpis?.monthLabel)}
+        rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
+      >
+        {kpis?.hasMeasurablePlan ? (
+          <RepPercent pct={kpis.coveragePct} />
+        ) : (
+          <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+        )}
+      </RepTile>
+
+      {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
+          printed with a slash between them — he read "1.63 / 6.57" as one number over another.
+          Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
+          carries no bar and no "of N". */}
+      <RepTile
+        hint={
+          kpis?.noGpsFeed
+            ? "Calls logged, but no GPS check-in reached the CRM to prove them"
+            : kpis?.hasCallRate
+              ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
+              : "No calls logged"
+        }
+        label="Call rate"
+        meta={shortPeriod(kpis?.monthLabel)}
+        rail="bg-sky-500"
+      >
+        {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
+            check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
+        {kpis?.noGpsFeed ? (
+          <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
+        ) : kpis?.hasCallRate ? (
+          <div className="space-y-2.5">
+            <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
+            <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+            <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
+          </div>
+        ) : (
+          <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
+        )}
+      </RepTile>
+
+      <RepTile
+        hint={
+          kpis?.hasMeasurablePlan
+            ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
+            : "No doctors planned"
+        }
+        label="Frequency"
+        meta={shortPeriod(kpis?.monthLabel)}
+        rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
+      >
+        {kpis?.hasMeasurablePlan ? (
+          <>
+            <RepPercent pct={kpis.frequencyPct} />
+            <RepFrequencyBreakdown
+              above={kpis.overDoctors}
+              below={kpis.underDoctors}
+              exact={kpis.onPlanDoctors}
+            />
+          </>
+        ) : (
+          <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+        )}
+      </RepTile>
+    </>
+  );
+}
+
+async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<PortalHomeRepSales>; kpiMonth: string }) {
+  const { closed, noTarget, trendMax, latestClosed } = repAchievementView(await sales, kpiMonth);
+  if (closed.length === 0) return null;
+  return (
+    <RepPanel
+      right={
+        <span className="text-right text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+          {noTarget.length > 0
+            ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
+            : "Uploaded months"}
+        </span>
+      }
+      title="Achievement by month"
+    >
+      {/* The % label rides ON its bar (absolute, above it) instead of sharing the column with
+          it. When the label took ~19px of a 118px column, every bar at 84%+ of the scale was
+          squeezed to the same ~99px: 85%, 95% and 100% looked identical, and a 100% month
+          stopped short of the dashed 100% line drawn on the same scale. */}
+      <div className="px-3 pb-3 pt-6">
+        <div className="relative flex h-[98px] items-end gap-2">
+          {/* The 100% line, positioned on the same scale as the bars. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
+            style={{ bottom: `${(100 / trendMax) * 100}%` }}
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute right-0 text-phx-3xs font-bold tabular-nums text-slate-400"
+            style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
+          >
+            100%
+          </span>
+          {closed.map((t) => {
+            const pct = Math.max(0, Math.round(t.achievementPercent));
+            const isLatest =
+              latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
+            return (
+              <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
+                {/* Capped width: with only two scorable months, full-width bars read as
+                    slabs rather than as a chart. */}
+                <div
+                  className={`relative mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
+                  style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
+                >
+                  <p
+                    className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-2xs font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
+                  >
+                    {pct}%
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
+          {closed.map((t) => (
+            <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
+              <p className="text-phx-2xs font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
+              <p className="text-phx-3xs uppercase tracking-[0.04em] text-slate-400">
+                {egpCompact(t.salesValue)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </RepPanel>
+  );
+}
+
+/** Streams because its open count adds the planned doctors not seen yet, which is the CRM read. */
+async function RepNeedsYou({
+  fieldKpis,
+  pendingVacationCount,
+  pendingExcuseCount,
+  pendingCountsAvailable,
+  kpiMonth,
+}: {
+  fieldKpis: Promise<PortalHomeSnapshot["mrFieldKpis"]>;
+  pendingVacationCount: number;
+  pendingExcuseCount: number;
+  pendingCountsAvailable: boolean;
+  kpiMonth: string;
+}) {
+  const kpis = await fieldKpis;
+  const totalPending = pendingVacationCount + pendingExcuseCount;
+  const missedDoctors = kpis?.hasMeasurablePlan ? kpis.missedDoctors : 0;
+  const openCount = totalPending + missedDoctors;
+
+  return (
+    <RepPanel
+      right={
+        pendingCountsAvailable ? (
+          <span
+            className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
+          >
+            {openCount} open
+          </span>
+        ) : null
+      }
+      title="Needs you"
+    >
+      {!pendingCountsAvailable ? (
+        <p className="px-3 py-3 text-phx-sm font-semibold text-slate-400">Requests unavailable — not zero</p>
+      ) : openCount === 0 ? (
+        <p className="px-3 py-3 text-phx-sm font-semibold text-emerald-700">
+          Nothing open — no requests waiting, no doctor missed
+        </p>
+      ) : (
+        <>
+          {/* Each kind goes to the page that actually lists it. "Track" used to open the
+              approvals hub, which drops leave and excuse requests from every tab — a dead end
+              — and the count includes requests already with HR, so the heading no longer
+              says "your manager". */}
+          {pendingVacationCount > 0 && (
+            <RepNeedRow
+              count={pendingVacationCount}
+              cta="Track"
+              detail="With your manager or HR"
+              headline={pendingVacationCount === 1 ? "Vacation request in approval" : "Vacation requests in approval"}
+              href="/employee-portals/vacation-report?tab=requests"
+              rail="bg-amber-500"
+            />
+          )}
+          {pendingExcuseCount > 0 && (
+            <RepNeedRow
+              count={pendingExcuseCount}
+              cta="Track"
+              detail="With your manager or HR"
+              headline={pendingExcuseCount === 1 ? "Excuse in approval" : "Excuses in approval"}
+              href="/employee-portals/excuses"
+              rail="bg-amber-500"
+            />
+          )}
+          {missedDoctors > 0 && kpis && (
+            <RepNeedRow
+              count={missedDoctors}
+              cta="Open"
+              detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
+              headline="Planned doctors not seen yet"
+              // The month this row just NAMED, carried through to the board, AND the tab that
+              // answers the row. The KPIs page reads `?month=YYYY-MM` and otherwise opens on
+              // the running month, so a bare link made the row say September and its own Open
+              // button show October; it reads `?tab=coverage` too, and without it the board
+              // opened on Summary — three KPIs and no list of the doctors this row counted.
+              // Coverage is the one tab that names them (it loads `coverageDoctors`), so the
+              // owner asked for the button to land there (2026-10-01). It is a page of its own
+              // since 2026-10-14, so the link goes straight to it instead of through the KPIs
+              // page's redirect.
+              href={`/employee-portals/kpis/coverage?month=${kpiMonth}`}
+              rail="bg-orange-500"
+            />
+          )}
+        </>
+      )}
+    </RepPanel>
+  );
+}
+
+async function RepRecord({
+  record,
+  serviceDuration,
+  daysUntilRenewal,
+}: {
+  record: PortalHomeRepCards["record"];
+  serviceDuration: string | null | undefined;
+  daysUntilRenewal: number | null | undefined;
+}) {
+  const { leaveDaysRemaining, doubleVisitPulse } = await record;
+  return (
+    <RepPanel title="Your record">
+      <dl className="flex flex-wrap gap-px bg-slate-200">
+        <RepFact
+          label="Annual leave left"
+          value={leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "Not recorded"}
+        />
+        {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
+        {daysUntilRenewal != null && (
+          <RepFact
+            label="Until contract renewal"
+            tone={daysUntilRenewal <= 30 ? "text-rose-700" : daysUntilRenewal <= 60 ? "text-amber-700" : undefined}
+            value={`${daysUntilRenewal} days`}
+          />
+        )}
+        {doubleVisitPulse && (
+          <>
+            <RepFact label="Double visits this month" value={String(doubleVisitPulse.dvsThisMonth)} />
+            <RepFact label="Double visits, 90 days" value={String(doubleVisitPulse.dvsLast90Days)} />
+            {doubleVisitPulse.daysSinceLastDv != null && (
+              <RepFact
+                label="Last double visit"
+                value={doubleVisitPulse.daysSinceLastDv === 0 ? "Today" : `${doubleVisitPulse.daysSinceLastDv} days ago`}
+              />
+            )}
+          </>
+        )}
+      </dl>
+    </RepPanel>
   );
 }
 

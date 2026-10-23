@@ -130,7 +130,9 @@ export function runPortalHomeAnnualLeaveLeftTests() {
     const source = readFileSync(new URL("../src/components/employee-portal/portal-command-center.tsx", import.meta.url), "utf8");
     const start = source.indexOf("function MedicalRepCommandCenter(");
     assert.ok(start > 0, "MedicalRepCommandCenter must exist");
-    const nextFn = source.indexOf("\nfunction ", start + 1);
+    // The tile lives in the rep's streamed "Your record" card since 2026-10-23, which sits after the
+    // centre itself, so the range runs to the next role's layout rather than to the next function.
+    const nextFn = source.indexOf("\nfunction StandardCommandCenter(", start + 1);
     const body = source.slice(start, nextFn > 0 ? nextFn : undefined);
 
     assert.match(body, /leaveDaysRemaining/, "the Medical Rep dashboard must read leaveDaysRemaining");
