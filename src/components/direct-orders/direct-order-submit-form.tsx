@@ -61,7 +61,6 @@ type CampaignOption = {
   /** The campaign’s own line. Read back so the offer can be filtered to the product’s line. */
   lineName: string | null;
   status: string;
-  raisedByMe: boolean;
 };
 type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 type BrickOption = {
@@ -1036,7 +1035,6 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       option.customerName,
                       option.areaName,
                       option.status === "active" ? null : option.status.replace(/_/g, " "),
-                      option.raisedByMe ? "yours" : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -1045,7 +1043,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               </select>
               <p className="mt-1 text-phx-xs text-slate-400">
                 {campaignOptionsForLine.length === 0
-                  ? `No approved ${product.line} campaign is open, so this order is recorded without one.`
+                  ? `You have no open approved ${product.line} campaign of your own, so this order is recorded without one.`
                   : "Pick it only if this order came out of that campaign — it credits the campaign’s ROI with this sale."}
               </p>
             </div>
