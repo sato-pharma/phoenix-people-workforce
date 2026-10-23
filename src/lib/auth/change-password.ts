@@ -3,8 +3,10 @@ import bcrypt from "bcryptjs";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSupabaseBridgeRequiredForRole, updateAppSessionVersion } from "@/lib/auth/app-sessions";
 import { normalizeRole } from "@/lib/auth/permissions";
+import { errorMessageOf } from "@/lib/http/api-errors";
 import {
   createSupabaseAuthSession,
+  createSupabaseAuthSessionWithoutPassword,
   persistSupabaseAuthIdentityLink,
   phoenixSupabaseAccessTokenCookieName,
   phoenixSupabaseRefreshTokenCookieName,
@@ -129,6 +131,8 @@ export async function changeUserPassword(input: {
 
   // Sync Supabase auth identity with the new password.
   let supabaseSession: { accessToken: string; refreshToken: string } | null = null;
+  let supabaseBridgeError: string | null = null;
+  let supabaseWeakPasswordReplaced = false;
   const role = normalizeRole(row.role ?? "Employee");
   const bridgeRequired = isSupabaseBridgeRequiredForRole(role);
 
@@ -161,15 +165,22 @@ export async function changeUserPassword(input: {
       role: String(row.role ?? "Employee") as Parameters<typeof provisionSupabaseAuthIdentity>[0]["role"],
     });
 
+    // A new password GoTrue refuses as weak was replaced on the Supabase side by a random secret
+    // (provisionSupabaseAuthIdentity) — so the old password no longer signs in there either.
+    supabaseWeakPasswordReplaced = identity.weakPasswordReplaced === true;
+
     // For roles that rely on the Supabase bridge, create a fresh Supabase auth
     // session with the new password so their access token cookie stays valid.
     if (bridgeRequired) {
-      supabaseSession = await createSupabaseAuthSession(input.loginId, input.newPassword);
+      supabaseSession = supabaseWeakPasswordReplaced
+        ? await createSupabaseAuthSessionWithoutPassword(input.loginId)
+        : await createSupabaseAuthSession(input.loginId, input.newPassword);
     }
-  } catch {
-    // Non-fatal: bridge sync failure is logged below but does not roll back
-    // the Phoenix password change. Bridge-required roles will need to re-login
-    // if the Supabase cookie becomes stale, which is handled at session validation.
+  } catch (error) {
+    // Non-fatal: a bridge sync failure does not roll back the Phoenix password change. It is
+    // recorded on the audit row below — until 23 Oct 2026 this catch was empty and the comment
+    // promised a log that nothing wrote, so a failed sync left no trace at all.
+    supabaseBridgeError = errorMessageOf(error);
   }
 
   await writeRequiredAuditLog({
@@ -182,7 +193,9 @@ export async function changeUserPassword(input: {
       ip: input.ip ?? null,
       sessionId: input.sessionId,
       sessionRefreshRequired,
+      supabaseBridgeError,
       supabaseBridgeSynced: bridgeRequired ? supabaseSession !== null : null,
+      supabaseWeakPasswordReplaced,
     },
     oldValues: null,
     summary: `Password changed by ${input.loginId} (self-service)`,

@@ -1,4 +1,7 @@
+import { randomBytes } from "node:crypto";
+
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { isSupabasePasswordRefusal } from "@/lib/auth/supabase-bridge-repair";
 import { resolveStoredHrId } from "@/lib/hr-id";
 import { getSupabaseAdmin, getSupabaseAuthBridgeClient } from "@/lib/supabase/server";
 
@@ -12,6 +15,13 @@ export type SupabaseAuthIdentity = {
   authEmail: string;
   authUserId: string;
   coarseRole: CoarseAccessRole;
+  /**
+   * True when GoTrue refused the Phoenix password as weak and the Supabase user was given an
+   * unguessable random secret instead (see provisionSupabaseAuthIdentity). The person's Phoenix
+   * password then does NOT sign in to Supabase, so their session comes from
+   * createSupabaseAuthSessionWithoutPassword, never createSupabaseAuthSession.
+   */
+  weakPasswordReplaced?: boolean;
 };
 
 export type SupabaseAuthProvisionInput = {
@@ -25,6 +35,11 @@ export type SupabaseAuthProvisionInput = {
   name?: string | null;
   password?: string | null;
   role: PhoenixRole;
+  /**
+   * Set only by provisionReplacingWeakPassword: the password being written is the random secret,
+   * not the person's own. Recorded as `bridge_password_replaced` in app_metadata (see appMetadata).
+   */
+  bridgePasswordReplaced?: boolean;
 };
 
 export type SupabaseAuthSession = {
@@ -116,6 +131,10 @@ function appMetadata(input: SupabaseAuthProvisionInput) {
     line: input.line ?? null,
     login_id: input.loginId,
     phoenix_role: input.role,
+    // Written ONLY alongside a password — true for the random secret, false for the person's own —
+    // and left out of a metadata-only update, which GoTrue merges key by key, so the mark survives
+    // it. It is how a later login knows the secret is already in place and must not be rotated.
+    ...(input.password ? { bridge_password_replaced: input.bridgePasswordReplaced === true } : {}),
   };
 }
 
@@ -181,7 +200,81 @@ async function updateSupabaseAuthUser(input: SupabaseAuthProvisionInput, authUse
   };
 }
 
+/**
+ * A Supabase password nobody knows or types: 32 random bytes, plus a fixed tail that guarantees a
+ * lower-case letter, an upper-case letter, a digit and a symbol — base64url alone leaves a quarter
+ * of secrets with no symbol, which a "require symbols" policy would refuse.
+ */
+export function unguessableBridgeSecret() {
+  return `${randomBytes(32).toString("base64url")}aZ7!`;
+}
+
+/** Does this Supabase user already hold a random secret from an earlier weak-password refusal? */
+async function holdsReplacedBridgeSecret(authUserId: string) {
+  const { data, error } = await getSupabaseAdmin().auth.admin.getUserById(authUserId);
+  if (error) throw error;
+  return data.user?.app_metadata?.bridge_password_replaced === true;
+}
+
+/**
+ * Create or update the Supabase user behind a Phoenix login.
+ *
+ * 🔴 **A PASSWORD GOTRUE REFUSES AS WEAK IS REPLACED, NEVER LEFT BEHIND** (23 Oct 2026). Phoenix
+ * accepts any password of 8+ characters; GoTrue refuses the ones on its leaked-password list. Until
+ * this date that refusal threw out of every caller: the login repair failed on EVERY sign-in for as
+ * long as the password stood (two Medical Reps on 23 Oct, PD-0004 and PD-0013), and a password
+ * setup or self-service change left the Supabase user on its PREVIOUS password — still live, and
+ * the public anon key signs in with it — or, for someone with no Supabase user yet, created none.
+ * Now the Supabase user is written with an unguessable random secret instead, `weakPasswordReplaced`
+ * says so, and the caller mints the session with createSupabaseAuthSessionWithoutPassword. Phoenix
+ * has already verified the person by then; Supabase only needs to hold a password nobody can guess.
+ *
+ * 🔴 **The secret is written ONCE, not on every login.** The person's own password is still tried
+ * first (it may have become acceptable), and when it is refused again and the user is already
+ * marked `bridge_password_replaced`, only the metadata is refreshed. Rotating each time cost an
+ * extra password write per sign-in, and a password write can end the person's other Supabase
+ * sessions — a second device, or a double-submitted login racing the first.
+ */
 export async function provisionSupabaseAuthIdentity(
+  input: SupabaseAuthProvisionInput,
+  options?: { hotPath?: boolean },
+): Promise<SupabaseAuthIdentity> {
+  return provisionReplacingWeakPassword(
+    input,
+    (attempt) => provisionSupabaseAuthIdentityOnce(attempt, options),
+    holdsReplacedBridgeSecret,
+  );
+}
+
+/**
+ * The replacement rule on its own, taking the single provisioning attempt and the "already
+ * replaced?" read as arguments — which is what lets `tests/weak-password-bridge.test.ts` prove it
+ * without a GoTrue to talk to.
+ */
+export async function provisionReplacingWeakPassword(
+  input: SupabaseAuthProvisionInput,
+  provisionOnce: (input: SupabaseAuthProvisionInput) => Promise<SupabaseAuthIdentity>,
+  holdsReplacedSecret: (authUserId: string) => Promise<boolean>,
+): Promise<SupabaseAuthIdentity> {
+  try {
+    return await provisionOnce(input);
+  } catch (error) {
+    if (!input.password || !isSupabasePasswordRefusal(error)) throw error;
+    // An unreadable mark is treated as "not replaced": writing a fresh secret is always safe, it
+    // only costs the rotation this check exists to avoid.
+    const alreadyReplaced = input.authUserId
+      ? await holdsReplacedSecret(input.authUserId).catch(() => false)
+      : false;
+    const identity = await provisionOnce({
+      ...input,
+      bridgePasswordReplaced: true,
+      password: alreadyReplaced ? null : unguessableBridgeSecret(),
+    });
+    return { ...identity, weakPasswordReplaced: true };
+  }
+}
+
+async function provisionSupabaseAuthIdentityOnce(
   input: SupabaseAuthProvisionInput,
   // hotPath = called from the login request. The linked authUserId is
   // authoritative there, so we do a single direct update and never fall back to
@@ -358,6 +451,45 @@ export async function createSupabaseAuthSession(
   const { data, error } = await supabase.auth.signInWithPassword({
     email: authEmail,
     password,
+  });
+
+  if (error || !data.session) {
+    throw error ?? new Error("Failed to create Supabase auth session.");
+  }
+
+  return {
+    accessToken: data.session.access_token,
+    expiresAt: data.session.expires_at ?? null,
+    refreshToken: data.session.refresh_token,
+  };
+}
+
+/**
+ * A Supabase session for a person whose Supabase password is a random secret (weakPasswordReplaced).
+ *
+ * The admin API mints a single-use sign-in token for the user and the bridge client exchanges it
+ * at once — the same session a password sign-in returns, for the same user and the same RLS claims.
+ * `generateLink` SENDS NOTHING: it only returns the token, which never leaves this server. A token
+ * replayed after the exchange is refused (proved on staging, 23 Oct 2026). Call it ONLY after Phoenix
+ * has verified the person itself: unlike createSupabaseAuthSession it checks no password at all.
+ * It takes the LOGIN ID, never an email, for the same reason createSupabaseAuthSession does: a
+ * magic-link token for an address GoTrue does not know can create that user.
+ */
+export async function createSupabaseAuthSessionWithoutPassword(
+  loginId: string,
+): Promise<SupabaseAuthSession> {
+  const { data: link, error: linkError } = await getSupabaseAdmin().auth.admin.generateLink({
+    email: buildPhoenixAuthEmail(loginId),
+    type: "magiclink",
+  });
+  const tokenHash = link?.properties?.hashed_token;
+  if (linkError || !tokenHash) {
+    throw linkError ?? new Error("Failed to create a Supabase sign-in token.");
+  }
+
+  const { data, error } = await getSupabaseAuthBridgeClient().auth.verifyOtp({
+    token_hash: tokenHash,
+    type: "magiclink",
   });
 
   if (error || !data.session) {

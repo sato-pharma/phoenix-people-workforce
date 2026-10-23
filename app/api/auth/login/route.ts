@@ -25,9 +25,10 @@ import {
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
 } from "@/lib/auth/session";
-import { isSupabasePasswordRefusal, shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
+import { shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
 import {
   createSupabaseAuthSession,
+  createSupabaseAuthSessionWithoutPassword,
   persistSupabaseAuthIdentityLink,
   phoenixSupabaseAccessTokenCookieName,
   phoenixSupabaseRefreshTokenCookieName,
@@ -422,7 +423,13 @@ export async function POST(request: Request) {
           });
 
           try {
-            supabaseSession = await createSupabaseAuthSession(user.loginId, password);
+            // A password GoTrue refuses as weak was replaced by a random secret during the repair
+            // (provisionSupabaseAuthIdentity), so the typed password cannot sign in to Supabase —
+            // the session is minted from a single-use server token instead. Phoenix verified the
+            // password above; this is the same person, the same Supabase user, the same RLS.
+            supabaseSession = repairedIdentity.weakPasswordReplaced
+              ? await createSupabaseAuthSessionWithoutPassword(user.loginId)
+              : await createSupabaseAuthSession(user.loginId, password);
           } catch (retryError) {
             const retryMessage =
               clientSafeErrorMessage(retryError, "Failed to create Supabase auth session after bridge repair.");
@@ -430,15 +437,13 @@ export async function POST(request: Request) {
             supabaseBridgeWarning = retryMessage;
           }
         } catch (repairError) {
-          // A password GoTrue refuses as weak is not a bridge failure: Phoenix has already
-          // authenticated this person, they are signed in, and the refusal repeats on every login
-          // until the password changes. Reporting it through clientSafeErrorMessage writes an
-          // app_error_events row per successful login — three for one Medical Representative in 28
-          // seconds on 23 Oct 2026 — so this branch renders a plain literal, which reports nothing.
-          // Every OTHER repair failure stays reported: that one really is the bridge.
-          supabaseBridgeWarning = isSupabasePasswordRefusal(repairError)
-            ? "Supabase auth bridge not repaired: Supabase refuses this account's password as too weak. Continuing with Phoenix session only."
-            : clientSafeErrorMessage(repairError, "Failed to repair Supabase auth bridge.");
+          // Every repair failure is reported. A password GoTrue refuses as weak no longer reaches
+          // here: provisionSupabaseAuthIdentity replaces it with a random secret (23 Oct 2026). This
+          // branch used to render an unreported literal for that refusal — three error rows for one
+          // Medical Representative in 28 seconds that day — but the only weak refusal left to land
+          // here is of the RANDOM SECRET itself, which means the password policy changed under the
+          // bridge: a real failure, and blaming the person's password for it would hide it.
+          supabaseBridgeWarning = clientSafeErrorMessage(repairError, "Failed to repair Supabase auth bridge.");
         }
       }
     } // end if (!skipBridge)
