@@ -74,6 +74,52 @@ export function runAiFailureVisibilityTests() {
     "never attach the upstream body — on a 401 OpenAI echoes a fragment of the key back",
   );
 
+  // --- a leg the next provider is asked to cover is NOT an AI failure ------------------------
+  // 🔴 23 Oct 2026: the board carried 21 "AI call failed — Shared OpenAI client: account out of credit"
+  // rows against CV extraction while Claude had answered all 58 reads, and they were read as dead
+  // extractions. The leg is reported as what it is — handed to another account.
+  const rescued = record({
+    component: "openai_client",
+    purpose: "recruitment-cv-extraction",
+    errorCode: AI_QUOTA_EXHAUSTED_CODE,
+    failedOverTo: "anthropic",
+    status: "failed_over",
+  });
+  const rescuedEvent = buildAiFailureEvent(rescued);
+  assert.ok(rescuedEvent, "a rescued leg is still recorded — it is the only trace that the account is dead");
+  assert.doesNotMatch(
+    rescuedEvent.message,
+    /^AI call failed —/,
+    "it must NOT read as an AI failure: that is the whole mislabelling this status exists to end",
+  );
+  assert.match(rescuedEvent.message, /failed over to Anthropic/, "it names the account that was asked next");
+  assert.match(rescuedEvent.message, /OpenAI said account out of credit/, "and the account that refused, by name");
+  assert.doesNotMatch(
+    rescuedEvent.message,
+    /was answered/,
+    "never claim the call succeeded — this row is written when the next account is ASKED, and it may fail too",
+  );
+  assert.equal(
+    rescuedEvent.route,
+    "/ai/openai_client/recruitment-cv-extraction/failed-over",
+    "its own signature: an hourly by-design failover must never group with a real outage of the same feature",
+  );
+  assert.notEqual(
+    rescuedEvent.route,
+    buildAiFailureEvent(record({ component: "openai_client", purpose: "recruitment-cv-extraction" }))!.route,
+    "and that signature differs from the feature's failure signature",
+  );
+  assert.equal(
+    isQuotaExhaustedRecord(rescued),
+    true,
+    "a rescued leg still pages: the user got an answer from the other account, but this one is just as empty and only a top-up ends it",
+  );
+  assert.notEqual(
+    failureThrottleKey(rescued),
+    failureThrottleKey({ ...rescued, status: "error", failedOverTo: undefined }),
+    "the five-minute throttle must not let the rescued leg suppress the real failure of the same feature, account and code",
+  );
+
   // --- every component maps to a distinct, human-readable signature -------------------------
   const components = [
     "openai_client",
