@@ -8804,6 +8804,21 @@ over 15 km from any centre still changes nothing. Pinned in `tests/photo-pin-ter
 Still not done: other photo modules, and `venue-territory.ts` (a marketing customer's own `area_id` still comes
 from the code and infers nothing from GPS — a different mechanism, not changed by this ruling's transfer fix).
 
+## Managed Google Play cannot reach the rep tablets — owner, 2026-09-28
+
+> ⏸️ **DORMANT under the mobile-app freeze above** — read it when he lifts the freeze, not before.
+> Moved here from `AGENTS.md` §4 on 2026-10-23 so an explicitly dormant rule stops loading into
+> every request; the rule text is unchanged.
+
+🔴 **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the store `.aab` is NOT how the mobile app ships,
+and the upload is DROPPED** (owner, 2026-09-28: *"drop the managed play upload since it cannot reach
+the fleet"*). Measured the same day: `enterprises/LC017auv4o` has **0 enrolled devices** and the
+package answers **404**, because the tablets are enrolled in the company's own **Headwind MDM**,
+which installs an **APK it hosts** and links to a configuration — and they carry no Google account by
+design. **The fleet artifact is `eas.json`'s `mdm` profile** (arm64 APK, `production` channel), a
+dispatch choice on the Mobile build workflow since #4652. Never read a green store build as fleet
+cover, and never re-propose the Play upload as the way to ship to reps.
+`managed-play-cannot-reach-the-rep-tablets`
 ## The Private Calendar keeps a leaver until his exit day — owner, 2026-10-23
 
 **His words**, asked which way to fix a rep who had vanished from the calendar while still working:

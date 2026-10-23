@@ -21,7 +21,16 @@ import { stripComments } from "./support/comment-strip.ts";
 // in the one table used to judge whether production is healthy.
 //
 // Two halves are pinned: the option exists and really suppresses the log, and the login route
-// actually uses it for the classification while still reporting where recovery fails.
+// decides whether to repair WITHOUT rendering a message at all, while still reporting where
+// recovery fails.
+//
+// The second half moved on 23 Oct 2026. The first repair passed `{ report: false }` to the
+// classifying call, which silenced the row; the follow-up found the classification was reading the
+// REDACTED sentence — so it could never match GoTrue's words and the repair was skipped for every
+// user who already had an identity. The decision now goes through
+// `shouldRepairSupabaseAuthBridge`, which reads the raw message and renders nothing, so there is no
+// classifying call left to silence. That is strictly stronger than the option, and the two tests
+// would otherwise pin opposite shapes of the same line.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Mirrors supabase-js's AuthApiError closely enough for isInfrastructureError to classify it. */
@@ -66,16 +75,17 @@ export function runLoginBridgeRepairLogsOnlyWhenItFailsTests() {
     "{ report: false } suppresses the log only — the redaction itself is unchanged, so the real text still never reaches a caller",
   );
 
-  // ── half two: the login route uses it where it classifies, and only there ──
+  // ── half two: the login route classifies without rendering a message at all ──
   const routePath = path.join(process.cwd(), "app", "api", "auth", "login", "route.ts");
   const source = stripComments(readFileSync(routePath, "utf8"));
 
-  const classifyingCall = /const message = clientSafeErrorMessage\(\s*error,\s*"Failed to create Supabase auth session\.",\s*\{ report: false \}\s*\)/.test(
-    source.replace(/\s+/g, " "),
+  assert.ok(
+    /const shouldRepairBridge = shouldRepairSupabaseAuthBridge\(/.test(source.replace(/\s+/g, " ")),
+    "the login route's bridge decision must go through shouldRepairSupabaseAuthBridge — it reads the raw error and renders no message, so the classification cannot log a failure the login then recovers from",
   );
   assert.ok(
-    classifyingCall,
-    "the login route's bridge classification must pass { report: false } — reporting there is what logged a failure before the repair that fixed it",
+    !/clientSafeErrorMessage\([^)]*\{\s*report:\s*false\s*\}\s*\)/.test(source.replace(/\s+/g, " ")),
+    "no call in the login route may classify through clientSafeErrorMessage again, silenced or not — redaction throws GoTrue's words away, which is what skipped the repair for every user who already had an identity",
   );
 
   // The branch that gives up without repairing is a real failure and must still be reported.
