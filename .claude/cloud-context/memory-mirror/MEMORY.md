@@ -29,6 +29,8 @@
 
 
 ## Inbox — new notes land here
+- [Re-read the PR before widening its branch](re-read-the-pr-before-widening-its-branch.md) — he may merge it mid-work; the push then recreates the deleted branch and the widening needs a NEW PR.
+- [PowerShell rmdir of a spaced path is blocked](a-powershell-rmdir-of-a-spaced-path-is-blocked-as-a-system-path.md) — the triage skill's `cmd /c rmdir` is refused before it runs; remove a worktree's node_modules junction with `[IO.Directory]::Delete($p, $false)`.
 
 
 
