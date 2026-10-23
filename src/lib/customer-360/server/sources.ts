@@ -14,6 +14,7 @@ import { readContactVisitMonths } from "@/lib/crm/reads";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { loadActuals, mapRoiRequest } from "@/lib/marketing-requests/roi-report-service";
 import { pharmacyNameKey } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { readNamedPharmaciesOnVisits } from "@/lib/phoenix-crm/server/named-pharmacies";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/confidential-products";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -473,7 +474,10 @@ async function loadReps(hrIds: Iterable<string | null | undefined>): Promise<{ n
   const lines = new Map<string, HubLineCode>();
   if (keys.length === 0) return { lines, names };
   const db = getSupabaseAdmin();
-  const lineRows = await pageAll<Row>(() => db.from("lines").select("id, name"));
+  // The four product lines come from the shared one-minute copy (src/lib/reference/reference-lists.ts),
+  // not from a read of their own on every hub. Keyed by `String(row.id)` because `line_id` below is
+  // compared as a string, and the column is a number.
+  const lineRows = await loadReferenceLines();
   const lineName = new Map(lineRows.map((row) => [String(row.id), text(row.name)]));
   for (const part of chunk(keys, 50)) {
     const { data, error } = await db.from("employees").select("hr_id, full_name, nickname, line_id").in("hr_id", part);

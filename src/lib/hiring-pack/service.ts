@@ -19,6 +19,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { composeResidenceFromHiringAddress } from "@/lib/hiring-pack/residence-address";
 import { canonicalHrIdForDisplay, hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
 import { isRenewalObjectiveReasonCode } from "@/lib/hiring-pack/renewal-reasons";
@@ -1222,17 +1223,16 @@ export async function getHiringPack(
   };
 }
 
-/** Every sales line, for the "Department" picker on the facts editor. */
+/** Every sales line, for the "Department" picker on the facts editor — from the shared one-minute
+ *  copy (src/lib/reference/reference-lists.ts). It still THROWS on a failed read, because a picker
+ *  silently offering no lines is how a line gets left blank on a signed contract. Sorted here
+ *  instead of by the database: the same four names in the same order. */
 export async function listHiringPackLines(): Promise<{ id: number; name: string }[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("lines")
-    .select("id, name")
-    .order("name", { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return (data ?? [])
-    .filter((row): row is { id: number; name: string } => Boolean(row.name))
-    .map((row) => ({ id: row.id, name: row.name }));
+  const rows = await loadReferenceLines();
+  return rows
+    .filter((row): row is typeof row & { id: number; name: string } => Boolean(row.name) && row.id != null)
+    .map((row) => ({ id: row.id, name: row.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

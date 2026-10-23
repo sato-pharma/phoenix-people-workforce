@@ -2733,6 +2733,7 @@ import { runPhoenixCrmAddPharmacyMatchesByResolvedIdTests } from "./phoenix-crm-
 import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
 import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
 import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
+import { runReferenceListCacheTests } from "./reference-list-cache.test.ts";
 import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
 import { runSalesReadsPriceEachPairOnceTests } from "./sales-reads-price-each-pair-once.test.ts";
 import { runSalesReadsExcludeCodesOnceTests } from "./sales-reads-exclude-codes-once.test.ts";
@@ -10777,6 +10778,10 @@ await runTest(
 await runTest(
   "a dashboard may reuse the company CRM window for up to one minute and nothing else may — a copy older than sixty seconds is never served, two viewers missing at once share one load, a write drops the copy and a load the write overtook is served but never kept, a missing source is never remembered, no stored row is handed out by reference, the cache is bounded by entries and rows, only the SFE field analytics opts in, the shared key carries every input, and a saved Phoenix CRM visit or a poll that wrote rows refreshes it",
   runSharedReadCacheTests,
+);
+await runTest(
+  "the four reference lists - employees, lines, areas and departments - are read once a minute per process and not by everyone: the employee superset names identity and placement but no compensation column at all, every list is keyset-paged on its own primary key with no cap, exactly the eleven display readers and the two write paths import the module while payroll, automated payroll, deductions, daily deductions, attendance, notifications, approvals, marketing requests, sales, direct orders, auth and the employee importer keep their own fresh reads, each table has its own namespace so forgetting one list leaves the other three served, and the employee directory and the employee importer drop the copy where they already invalidate everything else",
+  runReferenceListCacheTests,
 );
 await runTest(
   "the Monthly Closing's brick and distributor-product reads price each product ONCE through phx_factory_price with the period they were asked for, keep every join, filter and the confidential exclusion they had, keep a priceless product at zero, carry no comment that would change the live body's digest, and stay executable by the service role alone",

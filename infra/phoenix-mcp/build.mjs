@@ -4,6 +4,33 @@ import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
+// 🔴 The PURE marker is inserted as TEXT, so it must never land inside a comment or a string:
+// `/* @__PURE__ */` written into a docblock CLOSES that docblock, and the prose behind it is then
+// parsed as code. On 2026-10-23 a comment reading "the weekly sales row cache
+// (src/lib/sales/weekly/row-cache.ts), generalised:" did exactly that, and esbuild failed with
+// `Expected ";" but found ":"` pointing at a line of src/lib/cache/shared-read.ts that holds no
+// code at all. So the scan below walks each file once, copies comments, strings and template
+// literals through untouched, and marks only real `cache(` / `unstable_cache(` CALLS. It never
+// deletes and never rewrites: a call it declines to mark simply stays unmarked, which the bundle
+// assertions at the bottom of this file catch — it fails closed, never open.
+const PURE_CALL=/(?:cache|unstable_cache)\s*\(/y;
+const IDENT=/[\w$]/;
+function markPureCalls(source){
+  const n=source.length;
+  let out='',i=0,prev=' ';
+  while(i<n){
+    const c=source[i],d=source[i+1];
+    if(c==='/'&&d==='/'){const e=source.indexOf('\n',i);const stop=e<0?n:e;out+=source.slice(i,stop);i=stop;prev=' ';continue;}
+    if(c==='/'&&d==='*'){const e=source.indexOf('*/',i+2);const stop=e<0?n:e+2;out+=source.slice(i,stop);i=stop;prev=' ';continue;}
+    // A quoted string cannot span a line, so a stray quote inside a regex literal can confuse this
+    // scan for one line at most — and only ever into marking less.
+    if(c==='"'||c==="'"){let j=i+1;while(j<n&&source[j]!=='\n'){if(source.charCodeAt(j)===92){j+=2;continue;}if(source[j]===c){j+=1;break;}j+=1;}out+=source.slice(i,j);i=j;prev=c;continue;}
+    if(c==='`'){let j=i+1;while(j<n){if(source.charCodeAt(j)===92){j+=2;continue;}if(source[j]==='`'){j+=1;break;}j+=1;}out+=source.slice(i,j);i=j;prev=c;continue;}
+    if((c==='c'||c==='u')&&!IDENT.test(prev)){PURE_CALL.lastIndex=i;const m=PURE_CALL.exec(source);if(m){out+='/* @__PURE__ */ '+m[0];i+=m[0].length;prev='(';continue;}}
+    out+=c;i+=1;prev=c;
+  }
+  return out;
+}
 // Reuse PURE Phoenix policy exports. No administrative client may survive bundling.
 const denyIo = {
   name: 'deny-phoenix-business-io',
@@ -13,7 +40,7 @@ const denyIo = {
       // These wrappers are replaced by identity functions below. Mark only their calls
       // pure so discarded exports cannot retain administrative loaders in the bundle.
       const source=await readFile(args.path,'utf8');
-      return {contents:source.replace(/\b(cache|unstable_cache)\s*\(/g,'/* @__PURE__ */ $&'),loader:args.path.endsWith('.tsx')?'tsx':'ts'};
+      return {contents:markPureCalls(source),loader:args.path.endsWith('.tsx')?'tsx':'ts'};
     });
     b.onResolve({filter:/^(next\/cache(?:\.js)?|react)$/},()=>({path:'cache',namespace:'pure-cache',sideEffects:false}));
     b.onResolve({filter:/^react\/jsx-runtime$/},()=>({path:'jsx',namespace:'no-ui',sideEffects:false}));

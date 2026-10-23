@@ -44,6 +44,7 @@ import {
 } from "@/lib/auth/session-lifecycle";
 import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import { paperFieldBinding, paperFieldCurrentValue } from "@/lib/hiring-pack/paper-fields";
+import { loadReferenceDepartments } from "@/lib/reference/reference-lists";
 import type { PaperFieldSource } from "@/lib/hiring-pack/paper-fields";
 import {
   HIRING_PACK_EMPLOYEE_COLUMNS,
@@ -172,15 +173,12 @@ async function loadRosterRecords(): Promise<RosterRecords> {
   const rows: EmployeeDbRow[] = employees ?? [];
   if (rows.length === 0) return [];
 
-  // The department table whole, once — nine rows, against one join per employee.
+  // The department table whole, once — eleven rows, against one join per employee. From the shared
+  // one-minute copy (src/lib/reference/reference-lists.ts), which still throws on a failed read, so
+  // a department never silently renders as blank here.
   const departmentNames = new Map<number, string | null>();
-  const { data: departments, error: departmentError } = await supabase
-    .from("departments")
-    .select("id, name")
-    .returns<{ id: number; name: string | null }[]>();
-  if (departmentError) throw new Error(departmentError.message);
-  for (const department of departments ?? []) {
-    departmentNames.set(department.id, department.name);
+  for (const department of await loadReferenceDepartments()) {
+    if (department.id != null) departmentNames.set(department.id, department.name);
   }
 
   const hrIds = rows.map((row) => row.hr_id);

@@ -51,6 +51,7 @@ import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folder
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { isUuid } from "@/lib/http/uuid";
@@ -459,9 +460,16 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   // cases.
   const lineNameById = new Map<number, string>();
   {
-    const { data, error } = await supabase.from("lines").select("id,name");
-    if (error && !isMissingRelation(error)) throw error;
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    // From the shared one-minute copy (src/lib/reference/reference-lists.ts). It kept its tolerance
+    // of a missing `lines` relation — an environment without the sales tables still renders this
+    // report, with no line on each manager — and that is all it tolerates: any other failure throws.
+    let rows: Awaited<ReturnType<typeof loadReferenceLines>> = [];
+    try {
+      rows = await loadReferenceLines();
+    } catch (error) {
+      if (!isMissingRelation(error)) throw error;
+    }
+    for (const row of rows) {
       const id = Number(row.id);
       const name = textOrNull(row.name);
       if (Number.isFinite(id) && name) lineNameById.set(id, name);

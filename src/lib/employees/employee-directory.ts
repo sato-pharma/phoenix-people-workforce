@@ -21,6 +21,7 @@ import { quotedInList } from "@/lib/supabase/search-filter";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { logError } from "@/lib/observability/log";
+import { forgetReferenceEmployees } from "@/lib/reference/reference-lists";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
 import { isMissingColumnError } from "./missing-column";
@@ -509,6 +510,13 @@ export function invalidateEmployeeDirectoryCache() {
   directoryCache = null;
   directoryRowsCache.clear();
   invalidateReferenceLists();
+  // The minute-old employee reference list (src/lib/reference/reference-lists.ts) answers the same
+  // question as this cache — "who is in the company, where are they placed" — so it is dropped by
+  // the same call rather than by a second one every writer would have to remember. Fourteen call
+  // sites already invalidate here: the importer, access provisioning, the probation decision, every
+  // resignation path and this module's own writes. One line covers all of them, and the next one
+  // someone adds.
+  forgetReferenceEmployees("employee directory invalidated");
 }
 
 function normalizeHrId(value: string | null | undefined) {
