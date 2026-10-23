@@ -2704,6 +2704,7 @@ import {
 } from "./app-layer-audit.test.ts";
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
+import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10716,6 +10717,10 @@ await runTest(
 await runTest(
   "a structured ERROR's labels reach the stored app_error_events row: hrId/role/loginId/digest onto their own columns under both spellings, every remaining label into the stack's leading, redacted, capped label block, and a row with no labels byte-identical to before",
   runStructuredLogLabelsReachTheRowTests,
+);
+await runTest(
+  "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
+  runCrmParityMirrorExcludesPhoenixVisitsTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
