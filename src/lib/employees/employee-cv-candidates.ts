@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ilikeContainsValue } from "@/lib/supabase/search-filter";
 
 /**
  * Finding the candidate whose CV belongs on an employee's record.
@@ -115,7 +116,7 @@ export function newestCvPerCandidate(
  * shown, and it must not be reachable only through the network.
  */
 export function planCandidateQuery(query: string | null | undefined): {
-  /** PostgREST `or` filters — `*` is its wildcard, not `%`. */
+  /** PostgREST `or` filters, each value double-quoted through `@/lib/supabase/search-filter`. */
   filters: string[];
   /** Set when the query is a phone: the digits every result must end with. */
   phoneTailDigits: string | null;
@@ -134,15 +135,18 @@ export function planCandidateQuery(query: string | null | undefined): {
     // comparison that cannot confuse two people. The FILTER is the last 4, because that is the
     // longest run that stays contiguous through "+20 109 588 8700".
     const tail = digits.slice(-9);
+    const tailFilter = ilikeContainsValue(digits.slice(-4));
     return {
-      filters: [`phone.ilike.*${digits.slice(-4)}*`],
+      filters: tailFilter ? [`phone.ilike.${tailFilter}`] : [],
       phoneTailDigits: tail,
       tokens: [],
     };
   }
 
-  // `,` `(` `)` and `*` are PostgREST's own syntax inside an `or` — a name carrying one would
-  // break the filter apart rather than search for it.
+  // `,` `(` `)` and `.` are separators HERE because a name is searched word by word — "Ahmed
+  // (Acting), M." is three words to rank on, not one string. They are no longer dropped for the
+  // filter's safety: each value below is double-quoted, so a token that did keep one would be
+  // searched for rather than ending the clause. `*` goes to the shared wildcard rule.
   const tokens = raw
     .replace(/[,()*.]/g, " ")
     .split(/\s+/)
@@ -150,8 +154,13 @@ export function planCandidateQuery(query: string | null | undefined): {
     .filter((word) => word.length >= 3)
     .slice(0, 6);
   if (tokens.length === 0) return { filters: [], phoneTailDigits: null, tokens: [] };
+  const filters = tokens
+    .map((token) => ilikeContainsValue(token))
+    .filter((value): value is string => value !== null)
+    .map((value) => `full_name.ilike.${value}`);
+  if (filters.length === 0) return { filters: [], phoneTailDigits: null, tokens: [] };
   return {
-    filters: tokens.map((token) => `full_name.ilike.*${token}*`),
+    filters,
     phoneTailDigits: null,
     tokens: tokens.map((token) => token.toLowerCase()),
   };

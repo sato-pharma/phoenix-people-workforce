@@ -14,7 +14,7 @@ import {
   incidentShortRef,
   moduleLabelSourceLabel,
 } from "@/lib/system-audit/incidents-display";
-import type { OccurrenceDetail } from "@/lib/system-audit/occurrence-detail";
+import type { OccurrenceDetail, OccurrenceScreenshot } from "@/lib/system-audit/occurrence-detail";
 import {
   ROOT_CAUSE_LEVEL_LABELS,
   SYSTEM_AUDIT_HUMAN_STATUSES,
@@ -41,6 +41,58 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</h3>
       {children}
     </section>
+  );
+}
+
+/**
+ * The screen the employee was looking at, fetched only when it is asked for.
+ *
+ * The bucket is private and these images are unmasked — a payslip that errored is photographed with
+ * the pay on it — so the URL is minted per view, lives five minutes, and is never rendered into the
+ * page until someone here clicks to see it.
+ */
+function ScreenshotView({ screenshot }: { screenshot: OccurrenceScreenshot }) {
+  const [state, setState] = useState<
+    { status: "closed" } | { status: "loading" } | { status: "error"; message: string } | { status: "open"; url: string }
+  >({ status: "closed" });
+
+  async function open() {
+    setState({ status: "loading" });
+    try {
+      const response = await fetch(`/api/admin/system-audit/screenshot/${screenshot.eventId}`, { cache: "no-store" });
+      const body = (await response.json().catch(() => null)) as { url?: string; message?: string } | null;
+      if (!response.ok || !body?.url) {
+        setState({ status: "error", message: body?.message ?? "The screenshot could not be opened." });
+        return;
+      }
+      setState({ status: "open", url: body.url });
+    } catch {
+      setState({ status: "error", message: "The screenshot could not be opened." });
+    }
+  }
+
+  return (
+    <li className="border border-slate-200 p-2">
+      <p className="text-xs text-slate-700">
+        {cairoDateTime(screenshot.capturedAt)} Cairo
+        {screenshot.route ? (
+          <span className="block font-mono text-phx-2xs text-slate-500 [overflow-wrap:anywhere]">{screenshot.route}</span>
+        ) : null}
+      </p>
+      {state.status === "open" ? (
+        <img
+          alt={`The screen as the employee saw it at ${cairoDateTime(screenshot.capturedAt)} Cairo`}
+          className="mt-2 w-full border border-slate-200"
+          src={state.url}
+        />
+      ) : (
+        <button className={cn(phxButtonGhostClassName, "mt-2")} disabled={state.status === "loading"} onClick={open} type="button">
+          {state.status === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
+          {state.status === "loading" ? "Opening" : "Show the screen"}
+        </button>
+      )}
+      {state.status === "error" ? <p className="mt-2 break-words text-xs font-semibold text-rose-700">{state.message}</p> : null}
+    </li>
   );
 }
 
@@ -232,7 +284,7 @@ function TriageForm({ detail, onDone }: { detail: OccurrenceDetail; onDone: () =
 }
 
 function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged: () => void }) {
-  const { occurrence, issue, history, fixes, reproTrail } = detail;
+  const { occurrence, issue, history, fixes, reproTrail, screenshots } = detail;
   const pageRow = {
     employeeName: occurrence.employeeName,
     family: occurrence.family,
@@ -363,6 +415,21 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
               </li>
             ))}
           </ol>
+        )}
+      </Section>
+
+      <Section title="What the employee saw">
+        {screenshots.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No screen was captured for this one. A picture is taken only for an error the browser itself reported, and
+            only from a build that carries the capture.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {screenshots.map((screenshot) => (
+              <ScreenshotView key={screenshot.eventId} screenshot={screenshot} />
+            ))}
+          </ul>
         )}
       </Section>
 

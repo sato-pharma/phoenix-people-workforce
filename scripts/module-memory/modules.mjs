@@ -553,10 +553,12 @@ export const MODULES = [
       "supabase/migrations/*unified*",
       "supabase/migrations/*countable*",
       "supabase/migrations/*entry_days*",
+      "supabase/migrations/*agent_crm_ids*",
       "tests/phoenix-crm-{countable-visits,rep-entry-days-cache,vendor-leftovers,visits-everywhere}*",
+      "tests/crm-agent-crm-ids-cache.test.ts",
     ],
     keywords: ["crm_visits_unified", "crm_checkins_unified", "countable visits", "entry days", "phoenix wins the day", "unified door", "union view", "departed agent exclusion", "partner slot", "day-at-a-time scan"],
-    tables: ["phoenix_crm_rep_entry_days_cache"],
+    tables: ["phoenix_crm_rep_entry_days_cache", "crm_agent_crm_ids_cache"],
   },
   // 🔴 SPLIT 2026-10-20, FOR THE REASON `rep-ranks` BELOW RECORDS: `crm`'s injected pointer measured
   // 4,029 bytes against the 4,000-byte margin the moment the KPIs board's manager rows landed (owner,

@@ -125,7 +125,7 @@ export function runIdentityAliasesTests() {
   );
   assert.match(
     actionCenter,
-    /columns\.flatMap\(\(column\) => actorHrIds\.map\(\(id\) => `\$\{column\}\.ilike\.\$\{id\}`\)\)/,
+    /columns\.flatMap\(\(column\) => actorHrIds\.map\(\(id\) => quotedOrClause\(column, "ilike", id\)\)\)/,
     "each decider column is matched case-insensitively against all of the person's HR_IDs",
   );
   assert.doesNotMatch(

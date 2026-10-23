@@ -1541,6 +1541,34 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Pinned by tests/sales-reads-exclude-codes-once.test.ts.
   "20261023180800_phx_marketing_roi_customer_dashboard_resolves_the_excluded_codes_once.sql",
 
+  // 2026-10-23. `drop index concurrently if exists public.ireports360_visits_agent_idx` — a btree on
+  // (agent_hr_id) that was a strict prefix of perf_ireports360_visits_agent_hr_id_visit_date_crm, so
+  // every insert into the 1.6-million-row visits mirror maintained both. It went the standing route,
+  // scripts/apply-sql-file.mjs (AGENTS.md §8), which writes NO schema_migrations row: `drop index
+  // concurrently` cannot run inside a transaction block, so the Supabase MCP's apply_migration — which
+  // wraps its body — could not carry it.
+  //
+  // 🔴 NOT taken on the script's own exit code. Read back on PRODUCTION afterwards from
+  // pg_stat_user_indexes: public.ireports360_visits lists 12 indexes and ireports360_visits_agent_idx
+  // is not among them, while the surviving perf_ireports360_visits_agent_hr_id_visit_date_crm carries
+  // 67,874 scans — so the planner moved to it rather than losing the access path. Reproducing the
+  // departed-agent scan on the live-shaped input confirmed the new plan: `Index Scan using
+  // perf_ireports360_visits_agent_hr_id_visit_date_crm`, same row count, same answer.
+  //
+  // SPEED ONLY, and it bought less than was predicted — 189 ms before the drop against 220 ms after,
+  // the same shape either way. That measurement is the reason 20261023190000 caches the pairs instead:
+  // the cost is the ~136,000-row scan the `distinct` forces, not the index it uses. What the drop did
+  // buy is real and small: 2.8 MB back and one less index written on every insert.
+  //
+  // STAGING NEVER HAD IT — and the earlier wording of this entry, which said staging still carried
+  // the index and the two projects therefore differed, was an ASSUMPTION written without reading
+  // staging. Read back on 2026-10-23 after 20261023190000 merged: public.ireports360_visits on
+  // STAGING lists 12 indexes, exactly as production does after the drop, and none of them is named
+  // ireports360_visits_agent_idx. Staging also RECORDS this migration (schema_migrations carries
+  // 20261023181000) because .github/workflows/staging-migrate.yml applies every merged migration
+  // there on the push to main — staging is automatic, production is the deliberate hand step. No
+  // staging run is owed, and this file's absence from PRODUCTION's ledger is the whole exception.
+  "20261023181000_crm_drop_duplicate_visits_agent_index.sql",
   // 2026-10-23. The admin "Reset module data" button, which had never deleted a row. The file is one
   // `begin; ... commit;` opening with
   // `drop function if exists public.phx_admin_reset_module_data(text)`, which the Supabase MCP's

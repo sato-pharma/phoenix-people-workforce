@@ -44,6 +44,7 @@ import type { OfferRecord, OfferVacancyOption } from "@/lib/offers/types";
 import { findOpenOfferVacancy } from "@/lib/offers/vacancies";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { todayInCairo } from "@/lib/date-only";
 
@@ -388,7 +389,17 @@ async function findExistingHire(
   const identity = await db
     .from("employees")
     .select("hr_id")
-    .or(`national_id.eq.${answers.nationalId},mobile_number.eq.${answers.mobileNumber}`)
+    // Both values are typed by the CANDIDATE into the joining form, so they are the widest untrusted
+    // input any `.or(...)` in this repo receives: a comma or a parenthesis in either one used to end
+    // its arm early, and the duplicate-hire check then asked PostgREST a question nobody wrote —
+    // which, because a failed read is "unknown" and a false negative is "no duplicate", is the
+    // direction that pays a man twice. Quoted, both match literally (AGENTS.md MR-B04).
+    .or(
+      [
+        quotedOrClause("national_id", "eq", answers.nationalId),
+        quotedOrClause("mobile_number", "eq", answers.mobileNumber),
+      ].join(","),
+    )
     .limit(1);
   if (identity.error) return { kind: "unknown" };
   if ((identity.data ?? []).length > 0) {

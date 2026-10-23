@@ -4,6 +4,7 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
@@ -207,13 +208,21 @@ function buildPayrollIdentityFilterValue(hrId: string, mode: "exact" | "contains
   return mode === "contains" ? `%${normalized}%` : normalized;
 }
 
+/** One arm of the access filter, the value QUOTED.
+ *
+ * `normalizeHrId` trims and lower-cases; it does not restrict the character set (see
+ * `canonicalHrIdKey` in `@/lib/hr-id`), so an id carrying a comma or a parenthesis used to end this
+ * clause early and leave PostgREST a filter nobody wrote — on a payroll read, where the filter IS
+ * the access boundary. The `%` of the contains mode goes INSIDE the quotes and is still a wildcard
+ * there: quoting settles PostgREST's own filter grammar (`,` `(` `)`), and `ilike` reads its
+ * wildcards from the value afterwards. */
 function buildPayrollIdentityOrClause(
   hrId: string,
   mode: "exact" | "contains" = "exact",
 ) {
   const value = buildPayrollIdentityFilterValue(hrId, mode);
   if (!value) return null;
-  return `hr_id.ilike.${value}`;
+  return quotedOrClause("hr_id", "ilike", value);
 }
 
 type PayrollBatchLookupResult = {
@@ -231,7 +240,10 @@ async function collectPayrollBatchIdsForColumnBatch(
 ): Promise<PayrollBatchLookupResult> {
   if (targetHrIds.length === 0) return { batchIds: new Set(), schemaMissing: false, columnMissing: false };
 
-  const orClause = targetHrIds.map((id) => `${column}.ilike.${id}`).join(",");
+  // Each HR id is QUOTED: these come from the access scope, not from a validated character set, so
+  // one carrying `,` or `)` would otherwise close its own arm and change what the rest of the OR
+  // means (AGENTS.md MR-B04).
+  const orClause = targetHrIds.map((id) => quotedOrClause(column, "ilike", id)).join(",");
   const { data, error } = await supabase
     .from("salary_records")
     .select("batch_id")

@@ -33,6 +33,7 @@ import { applyLiveExpenseReportCounts } from "@/lib/outstation/expense-report-li
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { fetchAllRows, POSTGREST_PAGE_SIZE } from "@/lib/outstation/page-all-rows";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import {
   resolveExpenseDecisionWrite,
   type ExpenseDecisionWrite,
@@ -520,9 +521,13 @@ function applyHrIdFilter<T extends { or: (value: string) => T; ilike: (column: s
   if (!normalized) return query;
   const canonical = normalizeHrIdForAccess(normalized);
 
+  // Both arms QUOTED: `normalizeHrId` and `normalizeHrIdForAccess` trim, lower-case and map an
+  // alias — neither restricts the character set, so a `,` or `)` in an id would end its arm early
+  // and leave PostgREST a filter nobody wrote, on the read that IS this module's access boundary
+  // (AGENTS.md MR-B04).
   return query.or(
-    `hr_id.ilike.${normalized}` +
-      (canonical && canonical !== normalized ? `,hr_id.ilike.${canonical}` : ""),
+    quotedOrClause("hr_id", "ilike", normalized) +
+      (canonical && canonical !== normalized ? `,${quotedOrClause("hr_id", "ilike", canonical)}` : ""),
   );
 }
 
@@ -555,7 +560,7 @@ function applyHrIdInFilter<T extends { or: (value: string) => T; ilike: (column:
     return applyHrIdFilter(query, normalized[0]);
   }
 
-  const ors = normalized.map((id) => `hr_id.ilike.${id}`).join(",");
+  const ors = normalized.map((id) => quotedOrClause("hr_id", "ilike", id)).join(",");
 
   return query.or(ors);
 }
@@ -571,7 +576,7 @@ export function applyEmployeeHrIdInFilter<T extends { or: (value: string) => T }
   const normalized = buildHrIdFilters(hrIds);
   if (normalized.length === 0) return query;
 
-  return query.or(normalized.map((id) => `employee_hr_id.ilike.${id}`).join(","));
+  return query.or(normalized.map((id) => quotedOrClause("employee_hr_id", "ilike", id)).join(","));
 }
 
 export async function listPayrollExpenseReports(accessContext: AccessContext) {

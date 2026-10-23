@@ -8,6 +8,7 @@ import { logStructured } from "@/lib/observability/log";
 // surfaces answer the same question — "every request this person decided" — and a cap on either
 // hides real decisions the same way.
 import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
+import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
@@ -800,8 +801,11 @@ export async function getMyApprovalHistory(
   const actorHrIds = Array.from(sharedIdentityKeys(hrId));
   // PostgREST `or` terms. `ilike` (not `eq`/`in`) because stored casing drifts — "admin-HR",
   // "ADMIN-HR" and "admin-hr" all appear in historic decision columns.
+  // Each value is QUOTED. `sharedIdentityKeys` upper-cases and expands aliases; it does not restrict
+  // the character set, so a `,` or `)` in one login id would end that arm early and hand PostgREST a
+  // filter nobody wrote — across all eleven history reads below at once (AGENTS.md MR-B04).
   const decidedByAnyOfMine = (...columns: string[]) =>
-    columns.flatMap((column) => actorHrIds.map((id) => `${column}.ilike.${id}`)).join(",");
+    columns.flatMap((column) => actorHrIds.map((id) => quotedOrClause(column, "ilike", id))).join(",");
   /** True when a stored decider value is this same person, under any of their logins. */
   const decidedByMe = (value: unknown) => isSamePerson(hrId, value == null ? null : String(value));
 

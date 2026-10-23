@@ -13,6 +13,7 @@
 
 import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ilikeContainsValue, searchableTerm } from "@/lib/supabase/search-filter";
 
 type Client = ReturnType<typeof getSupabaseAdmin>;
 
@@ -26,14 +27,24 @@ const PEOPLE_SCAN = 400;
 const PEOPLE_RETURNED = 25;
 
 /**
- * The typed text as a quoted PostgREST `ilike` pattern. Names and HR IDs never carry the
- * characters PostgREST's `or=` grammar or LIKE treat specially, so those are dropped rather than
- * escaped (a backslash escape inside a quoted PostgREST value is itself consumed by PostgREST).
+ * The typed text as a quoted PostgREST `ilike` value.
+ *
+ * It used to drop `,` `(` `)` `.` `"` `\` `_` on the belief that "a backslash escape inside a
+ * quoted PostgREST value is itself consumed by PostgREST". That belief is wrong, and it was
+ * measured to be wrong against production PostgREST on 2026-08-31 — every one of `)`, `()`, `,`,
+ * `"` and `\` inside a double-quoted value returned 200/206 and matched LITERALLY (the proof is in
+ * the header of `@/lib/supabase/search-filter`). Dropping them cost real rows: a person recorded as
+ * `Ahmed (Acting)` or an HR id written `B.10` could not be found at all, and the dot is in the drop
+ * set, so even `b.10` was searched as `b 10`.
+ *
+ * `%` and `*` are still neutralised, in the shared helper and for a different reason: they are
+ * wildcards with no `ESCAPE` clause available, and a lone one matches every row.
  */
 export function personSearchPattern(text: string): string | null {
-  const clean = text.replace(/[,().:"\\%_*]/g, " ").replace(/\s+/g, " ").trim();
-  if (clean.length < 2) return null;
-  return `"*${clean}*"`;
+  const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
+  const searchable = searchableTerm(collapsed);
+  if (!searchable || searchable.length < 2) return null;
+  return ilikeContainsValue(searchable);
 }
 
 export async function lookupAuditPeople(query: string, override?: Client): Promise<AuditPersonOption[]> {

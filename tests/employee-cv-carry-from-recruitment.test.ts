@@ -104,8 +104,18 @@ export function runEmployeeCvCarryFromRecruitmentTests() {
       "that found nobody on production",
   );
   assert.ok(
-    byName.filters.every((filter) => /^full_name\.ilike\.\*[^*]+\*$/.test(filter)),
+    byName.filters.every((filter) => /^full_name\.ilike\."%[^%"]+%"$/.test(filter)),
     "a name query must search full_name only, one word per filter",
+  );
+  // The value is DOUBLE-QUOTED and the wildcard is `%`, not `*` (AGENTS.md MR-B04). `*` is what
+  // PostgREST translates to `%` for the caller's convenience, which is exactly why it cannot be
+  // left in a value: a name token carrying one would have become a wildcard. The quotes are what
+  // stop a token holding a `,` or a `)` from ending the clause and handing PostgREST a filter
+  // nobody wrote — the whole-name search this test already proves must keep finding her.
+  assert.deepEqual(
+    byName.filters[0],
+    'full_name.ilike."%Samaa%"',
+    "the first word's filter, quoted, with the term unaltered inside it",
   );
   assert.equal(byName.phoneTailDigits, null, "a name is not a phone");
   assert.deepEqual(byName.tokens, ["samaa", "abdelrahman", "abdelraouf", "shalabi"]);
@@ -123,7 +133,7 @@ export function runEmployeeCvCarryFromRecruitmentTests() {
   );
   assert.deepEqual(
     spaced.filters,
-    ["phone.ilike.*8700*"],
+    ['phone.ilike."%8700%"'],
     "the DB filter is the last FOUR digits: the longest run that survives \"+20 109 588 8700\"",
   );
   assert.equal(spaced.tokens.length, 0, "a phone query must not also search names");

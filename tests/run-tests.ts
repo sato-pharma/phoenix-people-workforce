@@ -2012,6 +2012,7 @@ import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visit
 import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
 import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
+import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -2728,6 +2729,7 @@ import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.
 import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
+import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
 import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
@@ -7654,6 +7656,11 @@ await runTest(
 );
 
 await runTest(
+  "The departed-agent CRM exclusion reads a 254-row cache, and ONLY the cache (phx_crm_agent_crm_ids_for_hr_ids ran `select distinct agent_crm_id from crm_visits_unified` on every cold exclusion cache — 220 ms and 57,005 buffers on production with the live-shaped 108-person input, scanning ~136,000 visit rows and quicksorting 140,616 of them to return 76 integers; dropping the duplicate index the day before moved the plan and not the time, 189 ms against 220, which is what proved the shape rather than the index is the cost): crm_agent_crm_ids_calc holds the one body and is the only thing in the migration that reads crm_visits_unified, the rebuild refills THROUGH it and its DELETE carries `where true` because safeupdate refuses an unqualified one over PostgREST and that is how the joining form died on 2026-10-23, the reconcile compares the VALUES both ways and repairs, the door keeps its exact signature, volatility, security, search_path, statement_timeout and grants so src/lib/crm/reads.ts and its PGRST202 page-walk fallback are untouched, it does NOT fall back to _calc() because an empty cache must surface rather than hide behind the slow path, the cache is revoked from every browser role and granted to service_role alone, the migration refuses to commit on a disagreement OR on 0 rows, and the 15-minute reconcile is the staleness bound rather than a safety net because the view's ~10 inputs leave no one table to trigger on",
+  runCrmAgentCrmIdsCacheTests,
+);
+
+await runTest(
   "Phoenix CRM draws one brick in one colour everywhere (owner, 2026-09-26: \"every brick highlighted, the doctors in the same brick highlighted with the same colour\"; the palette the Reps List board and the List tab already used now also groups Add Visit, which is the moment a third copy would have been made — a brick that is teal on one screen and indigo on the next is no use as a landmark — so it lives in one module, its hues are assigned from the WHOLE list rather than the filtered one, and the visit form carries the brick's NAME because a screen shows names, never codes)",
   runPhoenixCrmBrickTintsTests,
 );
@@ -10812,6 +10819,10 @@ await runTest(
 await runTest(
   "the public doors are bounded: reCAPTCHA refuses when its secret is unset or Google is unreachable, the paid AI read of public CVs stops at a daily ceiling and falls back to the free read, /api/errors/client caps every field, the body and the rate, and /api/readyz answers booleans only",
   runPublicIntakeLimitsTests,
+);
+await runTest(
+  "the crash-screenshot door is bounded and fails closed: 2 MB a body, a tighter rate than the text report, WebP sniffed from its own magic bytes so a PNG or an HTML page is refused, one object per error row partitioned by Cairo day, and a two-minute signed ticket that cannot be forged, re-aimed at another row, replayed late, or minted at all without a signing secret",
+  runErrorScreenshotIntakeTests,
 );
 await runTest(
   "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
