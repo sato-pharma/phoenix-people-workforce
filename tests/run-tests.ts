@@ -2008,6 +2008,7 @@ import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
 import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
+import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -7616,6 +7617,11 @@ await runTest(
 await runTest(
   "The Phoenix contact truth is cached, and the winner rule still lives in ONE body (crm_contact_phoenix_truth is left-joined by all THREE unified doors for the name they show, and a join qual cannot be pushed into a `distinct on`, so every read of every door hashed all 2,285 winners out of 20,774 customer rows — 240 blocks whatever the page held, and 96% of a 2,948 ms ordered page over an 83-day window): phoenix_crm_contact_truth_calc holds the winner — active first, then newest validated_at, then newest updated_at — and is the only thing that reads phoenix_crm_customers or names `distinct on`, both write paths recompute through it, the view keeps its name, its three columns and security_invoker while reading nothing but the cache, NO door is edited so all three got it for free, the one row trigger covers insert, update AND delete with the UPDATE arm recomputing the OLD contact too, a TRUNCATE rebuilds, the 15-minute reconcile compares the VALUES and repairs with a warning, and the migration refuses to commit a backfill that disagrees",
   runCrmContactPhoenixTruthCacheTests,
+);
+
+await runTest(
+  "One employee row per HR id is a cached table, and the rule still lives in ONE body (the two union doors carried SEVEN copies of `select distinct on (upper(btrim(hr_id))) ... from employees order by upper(btrim(hr_id)), hr_id` — one per person slot — so a single day's first page sorted and de-duplicated all 220 employees up to seven times, 736 buffers and 16.73 ms against 283 and 11.09 after): crm_person_by_hr_key_calc holds the rule and is the only thing in the migration that reads public.employees or names `distinct on`, the rebuild, the trigger and the reconcile all recompute through it, the statement trigger on employees names all THREE deciding columns because one left out is a staleness hole no figure shows, the cache is revoked from every browser role and granted to service_role alone exactly as the doors are, the two iReports360 name slots read the blank-as-NULL name while the five Phoenix slots read the raw one (swapped, the door still runs), neither door keeps an inline copy, and the migration refuses to commit a backfill that disagrees with the truth",
+  runCrmPersonByHrKeyCacheTests,
 );
 
 await runTest(
