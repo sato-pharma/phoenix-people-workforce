@@ -2787,6 +2787,36 @@ export async function resolveSubmitterIsDistrictManager(row: {
   return isDistrictManagerPlanSubmitter(row.employee_job_title, await authRoleForHrId(row.employee_hr_id));
 }
 
+/**
+ * resolveSubmitterIsDistrictManager for a whole queue, with ONE login-role read instead of one per
+ * row. An inbox loop used to await authRoleForHrId row after row, so the page waited on as many
+ * round trips as there were plans resting at manager_approved under a second approver. Same answer
+ * per row, in the same order; a failed read leaves every role unknown, as authRoleForHrId does.
+ */
+export async function resolveSubmittersAreDistrictManagers(
+  rows: Array<Parameters<typeof resolveSubmitterIsDistrictManager>[0]>,
+): Promise<Array<boolean | undefined>> {
+  const needs = (row: (typeof rows)[number]) =>
+    row.status === "manager_approved" && Boolean(secondApproverLabelForManager(row.manager_hr_id));
+  const lookupIds = [
+    ...new Set(rows.filter(needs).map((row) => hrIdForStorage(row.employee_hr_id)).filter((id): id is string => Boolean(id))),
+  ];
+  const roleByHrId = new Map<string, PhoenixRole>();
+  if (lookupIds.length > 0) {
+    const { data, error } = await getSupabaseAdmin().from("app_auth_users").select("hr_id,role").in("hr_id", lookupIds);
+    if (!error) {
+      for (const row of (data as Array<{ hr_id: string | null; role: string | null }> | null) ?? []) {
+        if (row.hr_id && row.role) roleByHrId.set(row.hr_id, row.role as PhoenixRole);
+      }
+    }
+  }
+  return rows.map((row) => {
+    if (!needs(row)) return undefined;
+    const lookupId = hrIdForStorage(row.employee_hr_id);
+    return isDistrictManagerPlanSubmitter(row.employee_job_title, (lookupId && roleByHrId.get(lookupId)) || null);
+  });
+}
+
 // One planned activity, flattened for read-only calendar rendering in the approver
 // inbox. Mirrors WeeklyPlanCalendarItem in the action-center types (kept structurally
 // identical so the action-center mapper can pass it through without re-shaping).
@@ -2950,13 +2980,14 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
     const directoryByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
 
     const items: ApproverPendingPlan[] = [];
-    for (const row of rows) {
+    const submitterIsDm = await resolveSubmittersAreDistrictManagers(rows);
+    for (const [index, row] of rows.entries()) {
       const stage = resolveApproverPlanStage(
         row.status,
         row.manager_hr_id,
         access,
         row.employee_job_title,
-        await resolveSubmitterIsDistrictManager(row),
+        submitterIsDm[index],
       );
       if (!stage) continue;
       const planItems = (row.employee_plan_items ?? [])
@@ -3580,6 +3611,57 @@ async function loadOwnPlanRows(employeeHrId: string): Promise<PlanHeaderRow[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as PlanHeaderRow[];
+}
+
+/** The header fields a "My requests" row shows for one of the viewer's own plans. */
+export type OwnPlanSummary = Pick<
+  EmployeePlan,
+  "id" | "employeeHrId" | "managerName" | "periodKey" | "periodStartDate" | "status" | "submittedAt" | "updatedAt"
+>;
+
+/**
+ * Every plan the viewer filed on this form, newest first, headers only — what "My requests" shows.
+ *
+ * It used to come from getEmployeePlansWorkspace, which builds the whole plan form (directory, seat
+ * map, rep options, the 250 newest plans company-wide with every activity and decision, adherence
+ * scores read from the CRM) and then kept the viewer's own rows. That made the approve-plans page
+ * and the Actions tab wait on the form, and it missed his own plans older than the 250-plan window.
+ * The same two permission checks gate it, and an owner may always read his own plan (canViewPlan).
+ */
+export async function listMyOwnPlanSummaries(access: AccessContext): Promise<OwnPlanSummary[]> {
+  await assertPermission(access, "employee_profile", "read");
+  await assertPermission(access, "weekly_plans", "read");
+  const ids = hrIdLookupKeys(access.hrId);
+  if (ids.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,employee_hr_id,manager_name,period_key,period_start_date,status,submitted_at,updated_at")
+    .in("employee_hr_id", ids)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) throw error;
+  type OwnPlanRow = {
+    id: string;
+    employee_hr_id: string;
+    manager_name: string | null;
+    period_key: string;
+    period_start_date: string;
+    status: EmployeePlanStatus;
+    submitted_at: string | null;
+    updated_at: string;
+  };
+  return ((data ?? []) as OwnPlanRow[])
+    .filter((row) => normalizeHrId(row.employee_hr_id) === normalizeHrId(access.hrId))
+    .map((row) => ({
+      id: row.id,
+      employeeHrId: row.employee_hr_id,
+      managerName: row.manager_name,
+      periodKey: row.period_key,
+      periodStartDate: row.period_start_date,
+      status: row.status,
+      submittedAt: row.submitted_at,
+      updatedAt: row.updated_at,
+    }));
 }
 
 export async function createEmployeePlan(access: AccessContext, input: {

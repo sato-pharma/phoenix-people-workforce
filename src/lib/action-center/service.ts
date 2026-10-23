@@ -19,10 +19,7 @@ import {
 } from "@/lib/excuses/service";
 import { canUseAdminOutstationWorkspace } from "@/lib/outstation/admin-access";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
-import {
-  getEmployeePlansWorkspace,
-  type EmployeePlan,
-} from "@/lib/weekly-planning/service";
+import { listMyOwnPlanSummaries, type OwnPlanSummary } from "@/lib/weekly-planning/service";
 import { resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
@@ -116,7 +113,7 @@ function mapOutstation(row: OutstationExpenseRequest): MyRequestItem {
   };
 }
 
-function mapPlan(row: EmployeePlan): MyRequestItem {
+function mapPlan(row: OwnPlanSummary): MyRequestItem {
   return {
     id: `weekly_plan:${row.id}`,
     module: "weekly_plan",
@@ -196,20 +193,28 @@ function mapMyDirectOrder(row: DirectOrderApprovalListItem): MyRequestItem {
  * Every source is additionally filtered to the caller's own HR_ID as a guard,
  * so a manager viewing their own list never sees a direct report's request here.
  */
-export async function getMyRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
+export async function getMyRequestItems(
+  access: AccessContext,
+  // `only` reads one module's source and skips the rest — each approve page (leave, excuse, plans)
+  // shows one module and used to wait on all six sources, then filter. The mapping is the same.
+  options?: { only?: MyRequestItem["module"] },
+): Promise<MyRequestItem[]> {
   const hrId = access.hrId?.trim() ?? "";
   if (!hrId) return [];
+  const source = <T,>(module: MyRequestItem["module"], read: () => Promise<T>): Promise<T | null> =>
+    !options?.only || options.only === module ? read().catch(() => null) : Promise.resolve(null);
 
   const settled = await Promise.allSettled([
-    getVacationReportData(access, { employee: hrId }).catch(() => null),
-    getExcuseWorkspace(access).catch(() => null),
-    listMedicalRepExpenseRequests(access).catch(() => null),
-    getEmployeePlansWorkspace(access).catch(() => null),
-    getMyResignations(access).catch(() => null),
+    source("leave", () => getVacationReportData(access, { employee: hrId })),
+    source("excuse", () => getExcuseWorkspace(access)),
+    source("outstation", () => listMedicalRepExpenseRequests(access)),
+    // The viewer's own plan headers — no longer the whole plan form (getEmployeePlansWorkspace).
+    source("weekly_plan", () => listMyOwnPlanSummaries(access)),
+    source("resignation", () => getMyResignations(access)),
     // listMyDirectOrders already filters to requester_hr_id = the caller and asserts
     // direct_orders:read, so a role without the resource contributes nothing (catch -> null)
     // rather than failing the tab — the same per-source tolerance every other entry here uses.
-    listMyDirectOrders(access).catch(() => null),
+    source("direct_order", () => listMyDirectOrders(access)),
   ]);
 
   const [vacation, excuse, outstation, plans, resignations, directOrders] = settled;
@@ -229,7 +234,7 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
     }
   }
   if (plans.status === "fulfilled" && plans.value) {
-    for (const row of plans.value.plans) {
+    for (const row of plans.value) {
       if (hrIdsMatch(row.employeeHrId, hrId)) items.push(mapPlan(row));
     }
   }
@@ -776,9 +781,17 @@ type DecidedDirectOrderEventRow = {
  * ever made, across leave, excuse, weekly-plan, and resignation modules.
  * Ordered by decision timestamp descending (newest first).
  */
-export async function getMyApprovalHistory(access: AccessContext): Promise<HistoricalApprovalItem[]> {
+export async function getMyApprovalHistory(
+  access: AccessContext,
+  // `only` reads one module's feed and skips the other nine — the approve-plans page asks for
+  // "weekly_plan" and used to wait on all ten, then filter. The mapping below is the same either way.
+  options?: { only?: HistoricalApprovalItem["module"] },
+): Promise<HistoricalApprovalItem[]> {
   const hrId = (access.hrId ?? "").trim().toUpperCase();
   if (!hrId) return [];
+  const skipped = { data: [] as never[], error: null };
+  const feed = <T,>(module: HistoricalApprovalItem["module"], read: () => Promise<{ data: T[] | null; error: unknown }>) =>
+    !options?.only || options.only === module ? read() : Promise.resolve(skipped);
 
   // A person who holds more than one login (the HR Manager also operates the system-administrator
   // console) records decisions under whichever HR_ID was signed in at the time. History is per
@@ -856,75 +869,75 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     directOrderEvents,
     directoryResult,
   ] = await Promise.allSettled([
-      fetchAllApprovalRows<DecidedLeaveRow>(() =>
+      feed("leave", () => fetchAllApprovalRows<DecidedLeaveRow>(() =>
         db
           .from("v2_vacation_requests")
           .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
           .or(decidedByAnyOfMine("manager_decision_by_hr_id", "hr_decision_by_hr_id"))
           .not("manager_decision_at", "is", null)
           .order("manager_decision_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedExcuseRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("excuse", () => fetchAllApprovalRows<DecidedExcuseRow>(() =>
         db
           .from("v2_excuse_requests")
           .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
           .or(decidedByAnyOfMine("manager_decision_by_hr_id"))
           .not("manager_decision", "is", null)
           .order("manager_decision_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedPlanRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("weekly_plan", () => fetchAllApprovalRows<DecidedPlanRow>(() =>
         db
           .from("employee_plan_headers")
           .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
           .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
           .not("manager_decision_at", "is", null)
           .order("manager_decision_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedResignationRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("resignation", () => fetchAllApprovalRows<DecidedResignationRow>(() =>
         db
           .from("employee_resignations")
           .select("id,employee_name,employee_hr_id,effective_date,status,reviewed_by,reviewed_at,approved_by,approved_at,rejected_by,rejected_at")
           .or(decidedByAnyOfMine("reviewed_by", "approved_by", "rejected_by"))
           .order("reviewed_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedSalaryBatchRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("salary", () => fetchAllApprovalRows<DecidedSalaryBatchRow>(() =>
         db
           .from("salary_batches")
           .select("id,file_name,month,year,status,approved_by,approved_at")
           .or(decidedByAnyOfMine("approved_by"))
           .not("approved_at", "is", null)
           .order("approved_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedSalesImportRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("sales_import", () => fetchAllApprovalRows<DecidedSalesImportRow>(() =>
         db
           .from("sales_import_batches")
           .select("id,file_name,period,month,year,status,approved_by,approved_at,rejected_by,rejected_at")
           .or(decidedByAnyOfMine("approved_by", "rejected_by"))
           .order("approved_at", { ascending: false })
-          .order("id", { ascending: false })),
+          .order("id", { ascending: false }))),
       // `id` joins the select purely so the ordering can be made total — the consumer keys this
       // item on request_id + step_name, which is not unique enough to page on.
-      fetchAllApprovalRows<DecidedMarketingStepRow>(() =>
+      feed("marketing_request", () => fetchAllApprovalRows<DecidedMarketingStepRow>(() =>
         db
           .from("marketing_request_approval_steps")
           .select("id,request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id)")
           .or(decidedByAnyOfMine("decision_by_hr_id"))
           .not("decision_at", "is", null)
           .order("decision_at", { ascending: false })
-          .order("id", { ascending: false })),
-      fetchAllApprovalRows<DecidedExpenseRow>(() =>
+          .order("id", { ascending: false }))),
+      feed("payroll_expense", () => fetchAllApprovalRows<DecidedExpenseRow>(() =>
         db
           .from("outstation_expenses")
           .select("id,specialist,hr_id,expense_date,total,status,approved_by,approved_at")
           .or(decidedByAnyOfMine("approved_by"))
           .not("approved_at", "is", null)
           .order("approved_at", { ascending: false })
-          .order("id", { ascending: false })),
+          .order("id", { ascending: false }))),
       // manager_of_manager and manager_level_3 decisions are never written to the main request's
       // manager_decision_by_hr_id column (only direct_manager is). Query the
       // steps table directly so the secondary manager sees their history too.
       // `id` is selected for the same reason as the marketing steps above.
-      fetchAllApprovalRows<DecidedVacationStepRow>(() =>
+      feed("leave", () => fetchAllApprovalRows<DecidedVacationStepRow>(() =>
         db
           .from("v2_vacation_approval_steps")
           .select("id,request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
@@ -933,19 +946,19 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
           .neq("status", "pending")
           .not("decided_at", "is", null)
           .order("decided_at", { ascending: false })
-          .order("id", { ascending: false })),
+          .order("id", { ascending: false }))),
       // Direct orders read from the EVENT log, not direct_order_approval_steps: a `return` decision
       // deliberately leaves the step row untouched (see phx_apply_direct_order_decision), so the
       // steps table cannot attribute a return to the approver who made it. The event log records
       // every transition with its actor, so returns show up here too.
-      fetchAllApprovalRows<DecidedDirectOrderEventRow>(() =>
+      feed("direct_order", () => fetchAllApprovalRows<DecidedDirectOrderEventRow>(() =>
         db
           .from("direct_order_events")
           .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(product_name,qty,sales_value,requester_hr_id)")
           .or(decidedByAnyOfMine("actor_hr_id"))
           .in("event_type", ["approve", "reject", "return"])
           .order("created_at", { ascending: false })
-          .order("id", { ascending: false })),
+          .order("id", { ascending: false }))),
       getEmployeeNameRoster(),
     ]);
 
