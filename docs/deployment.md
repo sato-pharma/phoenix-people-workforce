@@ -542,7 +542,8 @@ The safe sequence, for whoever does this before the deadline:
 1. `railway config pull` into `.railway/railway.ts`, from a directory linked to
    `Phoenix-HR-Workforce` — **immediately before the plan, never trusting the committed list**, for
    the drift reason above.
-2. Add the app's `deploy` block by hand: `healthcheckPath: "/api/readyz"`, `healthcheckTimeout: 300`,
+2. Add the app's `deploy` block by hand: `healthcheckPath: "/api/readyz"`, `healthcheckTimeout: 900`
+   (the window became 900 s on 2026-10-19 when the probe also became the release gate — never 300),
    `restartPolicyType: "ON_FAILURE"`, `restartPolicyMaxRetries: 10`. **A `pull` overwrites the file,
    so this step is not optional after a re-pull** — and since 2026-10-10 it is also not a step you
    can forget silently: rules 9-12 of `tests/railway-deploy-config.test.ts` assert the block, the
@@ -550,8 +551,13 @@ The safe sequence, for whoever does this before the deadline:
    directly against `.railway/railway.ts`, in the required `validate` job.
 3. `npm install railway` at the repo root — the authoring file imports `railway/iac`, so this adds a
    real dependency.
-4. `railway config plan --out railway-plan.json`, and **read it**. A destructive apply in an agent
-   session requires `--confirm-destructive`, which is Railway's own admission that this can delete.
+4. **Run `node scripts/railway-iac-preapply-check.mjs` first** (needs `RAILWAY_API_TOKEN` +
+   `RAILWAY_PROJECT_ID`). It reads each service's live variable names and **refuses, exit 1, if
+   applying the committed file would delete any** — the mechanical form of the drift warning above.
+   A clean run proves the re-pull in step 1 caught up; a refusal names the variables still missing
+   from the file, so re-pull before going on. Then `railway config plan --out railway-plan.json`, and
+   **read it**. A destructive apply in an agent session requires `--confirm-destructive`, which is
+   Railway's own admission that this can delete.
 5. Apply the reviewed plan only, and prefer CI: `railwayapp/config` with
    `apply --plan railway-plan.json`. **An apply is a production infrastructure change that does not
    pass through the deploy gate**, so it needs the owner's word in the same way a migration does.

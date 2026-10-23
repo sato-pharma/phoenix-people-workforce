@@ -30,6 +30,10 @@
 // also silently drops the restart policy it is migrating. This file came from `railway config pull`
 // instead, which reads the live project, with the deploy blocks added by hand below.
 //
+//   node scripts/railway-iac-preapply-check.mjs    # FIRST — refuses if applying this file as it
+//                                                  #   stands would DELETE a live variable the
+//                                                  #   committed env lists have drifted behind
+//                                                  #   (needs RAILWAY_API_TOKEN + RAILWAY_PROJECT_ID)
 //   railway config plan --out railway-plan.json    # read it; an apply in an agent session needs
 //   railway config apply --plan railway-plan.json  #   --confirm-destructive, Railway's own admission
 //                                                  #   that this can delete

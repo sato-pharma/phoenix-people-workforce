@@ -2447,6 +2447,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
 import { runBackgroundCatGuardTests } from "./background-cat-guard.test.ts";
@@ -9537,6 +9538,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "the Railway IaC pre-apply guard parses every service's env block out of .railway/railway.ts and REFUSES (flags a would-delete) when a live variable is absent from the committed block — the control that stops a config apply from a stale file deleting live production secrets — while a clean match and platform RAILWAY_* names delete nothing",
+  runRailwayIacPreapplyTests,
 );
 
 await runTest(
