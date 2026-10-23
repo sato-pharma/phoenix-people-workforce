@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { ADMIN_STANDING_EMAIL, buildAdminMirrorMessage } from "@/lib/email/admin-telegram-mirror.ts";
+import { shouldMirrorEmailToAdminTelegram } from "@/lib/email/transactional-types.ts";
 
 /**
  * Every automated email must fire a Telegram "twin" to the standing admin — the Telegram
@@ -58,11 +59,20 @@ export async function runAdminTelegramMirrorTests() {
     /sendPreparedEmailWithFailover\(prepared\)[\s\S]*mirrorEmailToAdminTelegram/,
     "the mirror fires AFTER the email is dispatched, never before",
   );
+  // Since 23 Oct 2026 the gate is one decision, shouldMirrorEmailToAdminTelegram, which also withholds
+  // the two credential emails (owner: "Skip credential emails"). It is still fed the testing redirect,
+  // and the call stays fire-and-forget.
   assert.match(
     sendSource,
-    /if \(!testingRecipients\) \{\s*void mirrorEmailToAdminTelegram/,
+    /if \(shouldMirrorEmailToAdminTelegram\(\{ credentialEmail: input\.credentialEmail, testingRedirectActive: Boolean\(testingRecipients\) \}\)\) \{\s*void mirrorEmailToAdminTelegram/,
     "the mirror is fire-and-forget (void) and skipped in testing-redirect mode",
   );
+  assert.equal(
+    shouldMirrorEmailToAdminTelegram({ credentialEmail: null, testingRedirectActive: true }),
+    false,
+    "the mirror is fire-and-forget (void) and skipped in testing-redirect mode",
+  );
+  assert.equal(shouldMirrorEmailToAdminTelegram({ credentialEmail: null, testingRedirectActive: false }), true, "an ordinary email keeps its Telegram twin");
 
   // --- Wiring: the mirror module can never throw into the caller ---------------------
   const mirrorSource = readFileSync("src/lib/email/admin-telegram-mirror.ts", "utf8");

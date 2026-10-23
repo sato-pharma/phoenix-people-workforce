@@ -17,6 +17,7 @@ import {
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
 
 const DEFAULT_SPIKE_THRESHOLD = 8;
 
@@ -157,6 +158,8 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/recruitment-email-intake");
   if (denied) return denied;
+  const wrongProcess = refuseOnPageServer("cron/recruitment-email-intake");
+  if (wrongProcess) return wrongProcess;
 
   // Runs regardless of how the mailbox poll goes, and can never fail the request — a broken
   // health probe must not become a third failure mode on top of the two it is watching.

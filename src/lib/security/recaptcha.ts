@@ -5,28 +5,34 @@
 // per-IP rate limit is the anti-abuse story: the browser solves the challenge, sends the token as a
 // form field, and this verifies it against Google before the CV is ingested.
 //
-// TWO DELIBERATE FAIL DIRECTIONS. When the secret is UNSET the check is SKIPPED (ok, skipped) so the
-// feature works the moment the form ships and hardens when the owner adds the key — the rate limit
-// still guards it meanwhile. When the secret IS set, an explicit `success:false` from Google is a
-// hard REJECT (a forged, replayed or absent token), but a NETWORK failure reaching Google fails OPEN
-// (logged): a genuine applicant must not be lost to a Google outage, and abuse at that moment is
-// still rate-limited. So the only thing that turns applicants away is Google itself saying "no".
-//
-// 🔴 THE SKIP IS NOW LOGGED (2026-09-30). It used to return { ok: true, skipped: true } with no log
-// and no metric, and the sole caller (app/api/public/apply/route.ts) reads only `ok` — so with the
-// secret absent from production the public form's bot protection was OFF and nothing anywhere said
-// so. Still fails OPEN, deliberately: making it fail closed would take the live careers form down
-// the moment it shipped. The change is only that the state is now visible.
+// 🔴 IT FAILS CLOSED (23 Oct 2026 audit, P5-02). It used to fail OPEN twice over: with the secret unset
+// the check was skipped, and when Google could not be reached (a network failure, a timeout, a non-200)
+// the application was let through. Either way the public form then ran its paid AI CV read for
+// whoever was posting. Now:
+//   - secret unset          → refused, reason "not_configured" (logged once per process);
+//   - Google unreachable    → refused, reason "verify_unavailable" (logged);
+//   - Google says no / low  → refused, as before.
+// The route answers a refusal the applicant can act on: 503 "captcha_unavailable" for the first two
+// (try again shortly), 400 "captcha_failed" for the last. The secret is set on production (named in the
+// 10 Oct 2026 variable read, docs/deployment.md, and declared in .railway/railway.ts), so the unset
+// branch changes nothing there; a host without it now refuses public applications instead of taking them
+// unchecked.
 
 import { logError } from "@/lib/observability/log";
 
 const SITEVERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 const DEFAULT_MIN_SCORE = 0.5;
 // A Google hang must not hold the applicant's submission open. A timeout lands in the catch below
-// and fails OPEN, exactly like any other network failure — the policy in the header.
+// and is refused, exactly like any other network failure — the policy in the header.
 const RECAPTCHA_TIMEOUT_MS = 5000;
 
-export type RecaptchaResult = { ok: boolean; skipped?: boolean; reason?: string };
+export type RecaptchaReason = "challenge_failed" | "low_score" | "missing_token" | "not_configured" | "verify_unavailable";
+export type RecaptchaResult = { ok: boolean; reason?: RecaptchaReason };
+
+/** A refusal that is OUR side failing (no key, Google unreachable), not the applicant failing the check. */
+export function isRecaptchaUnavailable(result: RecaptchaResult): boolean {
+  return !result.ok && (result.reason === "not_configured" || result.reason === "verify_unavailable");
+}
 
 function minScore(): number {
   const raw = Number(process.env.RECRUITMENT_APPLY_RECAPTCHA_MIN_SCORE);
@@ -47,11 +53,11 @@ export async function verifyRecaptcha(
   if (!secret) {
     if (!loggedMissingSecret) {
       loggedMissingSecret = true;
-      logError("reCAPTCHA is not configured — the public apply endpoint is accepting submissions with no bot check", {
+      logError("reCAPTCHA is not configured — the public apply endpoint is REFUSING every submission until RECRUITMENT_APPLY_RECAPTCHA_SECRET is set", {
         labels: { event: "recaptcha_secret_unset" },
       });
     }
-    return { ok: true, skipped: true };
+    return { ok: false, reason: "not_configured" };
   }
 
   const response = String(token ?? "").trim();
@@ -68,11 +74,11 @@ export async function verifyRecaptcha(
       signal: AbortSignal.timeout(RECAPTCHA_TIMEOUT_MS),
     });
     if (!res.ok) {
-      // Google reachable but unhappy at the transport level — treat like an outage, fail open.
+      // Google reachable but unhappy at the transport level — treat like an outage: refused.
       logError("reCAPTCHA siteverify returned a non-200", {
         labels: { event: "recaptcha_verify_http_error", status: String(res.status) },
       });
-      return { ok: true, reason: "verify_unavailable", skipped: true };
+      return { ok: false, reason: "verify_unavailable" };
     }
 
     const data = (await res.json()) as { success?: boolean; score?: number };
@@ -83,11 +89,11 @@ export async function verifyRecaptcha(
     }
     return { ok: true };
   } catch (error) {
-    // Network failure reaching Google — never lose a real applicant to it.
+    // Network failure or timeout reaching Google — refused; the applicant is told to try again shortly.
     logError("reCAPTCHA siteverify request failed", {
       error,
       labels: { event: "recaptcha_verify_request_failed" },
     });
-    return { ok: true, reason: "verify_unavailable", skipped: true };
+    return { ok: false, reason: "verify_unavailable" };
   }
 }

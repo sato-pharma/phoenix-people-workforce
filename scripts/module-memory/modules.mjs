@@ -752,6 +752,22 @@ export const MODULES = [
     keywords: ["offer letter", "job offer", "offer email", "offer template", "offer letter design", "joining form", "accept button", "offer job titles"],
     tables: ["offer_"],
   },
+  // 🔴 SPLIT 2026-10-23, THE SAME WAY: the CV-parsing limits rule (technical audit, P5-04) took
+  // `recruitment`'s pointer to 4,143 bytes against the 4,000-byte margin. READING A CV FILE — its text,
+  // the worker thread that bounds it, OCR, the rule pass and the model read — is one family, read while
+  // working those engine files, never while editing the workspace, an offer or the calendar.
+  // `recruitment` KEEPS EVERY GLOB IT HAD, so a CV-reading file loads the PAIR.
+  {
+    id: "recruitment-cv-reading",
+    title: "Recruitment — reading a CV file: its text, OCR, the rule pass and the model read",
+    scope: "How a CV file becomes fields: text extraction and its isolated worker thread, scanned-CV OCR, the free rule pass, the paid model read and its limits.",
+    globs: [
+      "src/lib/recruitment/cv-*",
+      "tests/*{cv-extraction,cv-text,rule-extraction}*",
+    ],
+    keywords: ["cv extraction", "cv parsing", "cv text", "pdf-parse", "mammoth", "ocr", "tesseract", "rule extraction"],
+    tables: ["ats_candidate_cv_extractions"],
+  },
   {
     id: "hiring-documents",
     title: "Hiring documents, contracts and company papers",

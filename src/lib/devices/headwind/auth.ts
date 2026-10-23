@@ -257,6 +257,8 @@ function tokenFromLogin(payload: LoginResponse): string | null {
  * naming what the server said, because on our own server a refused login means the credential is
  * wrong — there is no rate limit or vendor throttle to confuse it with.
  */
+export const HEADWIND_LOGIN_TIMEOUT_MS = 30_000;
+
 export async function getHeadwindToken(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
@@ -279,6 +281,9 @@ async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv
     // tunnel would otherwise turn every other call into a failure that blames the credential.
     headers: { accept: "application/json", "content-type": "application/json", ...headwindAccessHeaders(env) },
     method: "POST",
+    // The same 30-second deadline as every other call (client.ts HEADWIND_REQUEST_TIMEOUT_MS) — a
+    // sign-in that hangs would otherwise hold every call queued behind it on `pending`.
+    signal: AbortSignal.timeout(HEADWIND_LOGIN_TIMEOUT_MS),
   });
 
   let payload: LoginResponse = {};

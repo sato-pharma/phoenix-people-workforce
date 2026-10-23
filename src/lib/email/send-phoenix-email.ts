@@ -1,5 +1,10 @@
 
-import { isRecipientPreferenceSuppression, isTransactionalEmailType } from "@/lib/email/transactional-types";
+import {
+  isRecipientPreferenceSuppression,
+  isTransactionalEmailType,
+  shouldMirrorEmailToAdminTelegram,
+  type CredentialEmailKind,
+} from "@/lib/email/transactional-types";
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage, isNonDeliverableEmail } from "@/lib/email/email-safety";
@@ -105,6 +110,12 @@ export type SendPhoenixEmailInput = {
    * copy exactly as it has always been.
    */
   suppressAdminStandingBcc?: boolean;
+  /**
+   * Set ONLY by a send whose body is a live credential (a reset code, a set-your-password link):
+   * that email is not mirrored to the admin's Telegram (owner, 23 Oct 2026, "Skip credential emails").
+   * Unset — every other email — keeps the mirror exactly as before. See CREDENTIAL_EMAIL_KINDS.
+   */
+  credentialEmail?: CredentialEmailKind | null;
   /**
    * Per-send Reply-To override. When unset, falls back to NOTIFICATION_REPLY_TO / the
    * system default reply-to. Lets a specific email type (e.g. job offers) route replies
@@ -285,6 +296,13 @@ function removeNonDeliverable(emails: string[]): string[] {
  *
  * Everything else keeps the copy, which is the default when neither flag is set.
  */
+/**
+ * The skip reason when the Recipient Assurance Guard cannot run. Worded so classifyOutboxSkip reads it
+ * as TRANSIENT (it matches none of the terminal phrases), so a queued email is retried, never closed.
+ */
+export const RECIPIENT_ASSURANCE_UNAVAILABLE_REASON =
+  "Recipient check unavailable — the employee directory could not be read, so the email was held back and will be retried.";
+
 export function withStandingAdminBcc(options: {
   bcc: string[] | undefined;
   suppress?: boolean;
@@ -395,14 +413,17 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
 
       finalTo = decision.to;
     } catch (assuranceError) {
-      // FAIL-OPEN on infrastructure failure only. A directory-load outage must not become a total
-      // email blackout — that would turn a read failure into a worse incident than the one this
-      // guard prevents. A genuine block above still returns skipped; only an unexpected throw
-      // lands here, and it is logged so the gap is visible rather than assumed.
-      logError("Recipient Assurance Guard could not run — sending unguarded", {
+      // FAILS CLOSED (23 Oct 2026 audit, Pass 5). This used to send UNGUARDED whenever the guard
+      // threw. A short directory outage is now covered by the last good copy of the directory
+      // (resolveAssuranceDirectory keeps one for 24 hours), so reaching here means the guard truly
+      // cannot check the recipients — and an email to an unchecked address is the incident the guard
+      // exists to prevent. Not sent; the reason is a transient one, so an outbox row is retried on its
+      // normal schedule rather than closed.
+      logError("Recipient Assurance Guard could not run — email held back, not sent", {
         error: assuranceError,
         labels: { event: "recipient_assurance_unavailable", module: input.origin?.module ?? "unknown" },
       });
+      return { reason: RECIPIENT_ASSURANCE_UNAVAILABLE_REASON, skipped: true };
     }
   }
   // Privacy: a multi-recipient fan-out must not expose every recipient to the others.
@@ -487,8 +508,9 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   // Telegram twin of the always-BCC above: mirror this just-dispatched email to the standing
   // admin's Telegram so he receives every automated email in both channels. Fire-and-forget and
   // best-effort — never awaited into the email result and unable to throw (see the module). Same
-  // testing guard as the BCC: no mirror when redirecting to test inboxes.
-  if (!testingRecipients) {
+  // testing guard as the BCC: no mirror when redirecting to test inboxes. And no mirror for an email
+  // whose send is stamped as a credential (owner, 23 Oct 2026, "Skip credential emails").
+  if (shouldMirrorEmailToAdminTelegram({ credentialEmail: input.credentialEmail, testingRedirectActive: Boolean(testingRecipients) })) {
     void mirrorEmailToAdminTelegram({
       cc: prepared.cc,
       html: prepared.html,

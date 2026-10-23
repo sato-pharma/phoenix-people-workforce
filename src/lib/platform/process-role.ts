@@ -44,3 +44,29 @@ export function processRoleRefusal(value: string | undefined = process.env.PHOEN
     ? null
     : "PHOENIX_PROCESS_ROLE is 'web' — the worker service runs the background jobs";
 }
+
+/**
+ * The answer a WORKER-ONLY cron route gives when it is called on the page server, or null where it may
+ * run (23 Oct 2026 audit, F-04).
+ *
+ * The heavy cron routes (the notification drain, the inbound intake, the careers-mailbox poll and the
+ * CRM contact lists) are called on the worker's address. Nothing stopped the same request — a
+ * cron-job.org job left on, or moved back to, the website's address — from running the whole job on
+ * the page server, freezing every page while it ran: the exact thing the worker split exists to stop.
+ * Refused LOUDLY (503), so the scheduler shows the job red and its dead-man's switch goes quiet,
+ * instead of quietly doing the work in the wrong place. "all" (role unset) still runs it, as before.
+ */
+export function workerOnlyRouteRefusal(
+  job: string,
+  value: string | undefined = process.env.PHOENIX_PROCESS_ROLE,
+): { body: { error: "wrong_process"; job: string; message: string }; status: 503 } | null {
+  if (runsBackgroundJobs(resolveProcessRole(value))) return null;
+  return {
+    body: {
+      error: "wrong_process",
+      job,
+      message: "This job runs on the worker service, not the page server. Point the scheduler at the worker's address.",
+    },
+    status: 503,
+  };
+}

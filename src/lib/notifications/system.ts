@@ -271,6 +271,66 @@ export async function closeOrphanedDeliveryClaim(
   return (data ?? []).length > 0;
 }
 
+/**
+ * How long a claimed retry stays out of the drain window. A send that finishes writes its own outcome
+ * well inside this; one whose process died is retried once the lease runs out, with its attempt
+ * already counted, so a send that kills the process every time still reaches its attempt limit.
+ */
+export const DELIVERY_RETRY_LEASE_MS = 10 * 60 * 1000;
+
+/** The open statuses a retry drain reads; a claim from a drain must find the row still in one of them. */
+export const DELIVERY_RETRY_OPEN_STATUSES = ["failed", "pending", "retrying"] as const;
+
+/**
+ * Claim one Telegram or push delivery row for a retry send, BEFORE the send.
+ *
+ * WHY (23 Oct 2026 audit, Pass 5): the Telegram and push retry drains read due rows, sent, and only
+ * then wrote the outcome. Two drains overlapping — a cron fire that outlives cron-job.org's 30-second
+ * cut and the next fire, or the deploy overlap — read the same row and BOTH sent it. The claim is a
+ * compare-and-set on `attempts`: it spends the attempt and pushes `next_attempt_at` a lease ahead, and
+ * only the run whose write matched the attempt count it READ owns the send. Every later write of that
+ * run (`attempts + 1`) lands on the same count, so nothing else about the row's lifecycle changes.
+ *
+ * `openStatuses: null` is the admin's manual retry, which may resend anything that is not `sent`.
+ * Never throws: a failed claim is a skipped row this tick, never a send without one.
+ */
+export async function claimDeliveryRetry(
+  supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from">,
+  row: { attempts?: number | null; id: string },
+  options: { nowMs?: number; openStatuses?: readonly string[] | null } = {},
+): Promise<boolean> {
+  const nowMs = options.nowMs ?? Date.now();
+  const openStatuses = options.openStatuses === undefined ? DELIVERY_RETRY_OPEN_STATUSES : options.openStatuses;
+  try {
+    let query = supabase
+      .from("notification_deliveries")
+      .update({
+        attempts: Number(row.attempts ?? 0) + 1,
+        next_attempt_at: new Date(nowMs + DELIVERY_RETRY_LEASE_MS).toISOString(),
+        status: "retrying",
+        updated_at: new Date(nowMs).toISOString(),
+      })
+      .eq("id", row.id);
+    query = row.attempts === null || row.attempts === undefined ? query.is("attempts", null) : query.eq("attempts", row.attempts);
+    query = openStatuses ? query.in("status", [...openStatuses]) : query.neq("status", "sent");
+    const { data, error } = await query.select("id");
+    if (error) {
+      logWarning("Could not claim a delivery retry (skipped this tick, retried on the next)", {
+        error,
+        labels: { event: "delivery_retry_claim_failed" },
+      });
+      return false;
+    }
+    return (data ?? []).length > 0;
+  } catch (error) {
+    logWarning("Could not claim a delivery retry (skipped this tick, retried on the next)", {
+      error,
+      labels: { event: "delivery_retry_claim_failed" },
+    });
+    return false;
+  }
+}
+
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
 }
@@ -1287,6 +1347,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   }
 
   let attempted = 0;
+  let claimLost = 0;
   let closedOrphans = 0;
   let failed = 0;
   let sent = 0;
@@ -1354,6 +1415,12 @@ export async function processTelegramDeliveryRetries(limit = 10) {
         continue;
       }
 
+      // Claim BEFORE the send: a concurrent drain that read the same row loses here and sends nothing.
+      if (!(await claimDeliveryRetry(supabase, row))) {
+        claimLost += 1;
+        continue;
+      }
+
       const result = await sendTelegramNotification({
         actionUrl: telegram.actionUrl ?? null,
         buttons: governance.genericOnly ? null : telegram.buttons ?? null,
@@ -1403,7 +1470,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
     }
   }
 
-  return { attempted, closedOrphans, failed, sent };
+  return { attempted, claimLost, closedOrphans, failed, sent };
 }
 
 // Mirrors processTelegramDeliveryRetries: drains both genuine send failures AND
@@ -1435,6 +1502,7 @@ export async function processPushDeliveryRetries(limit = 10) {
   }
 
   let attempted = 0;
+  let claimLost = 0;
   let closedOrphans = 0;
   let failed = 0;
   let sent = 0;
@@ -1468,6 +1536,12 @@ export async function processPushDeliveryRetries(limit = 10) {
           .from("notification_deliveries")
           .update({ attempts, last_error: "Push disabled by user preference.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
           .eq("id", row.id);
+        continue;
+      }
+
+      // Claim BEFORE the send - see claimDeliveryRetry.
+      if (!(await claimDeliveryRetry(supabase, row))) {
+        claimLost += 1;
         continue;
       }
 
@@ -1517,7 +1591,7 @@ export async function processPushDeliveryRetries(limit = 10) {
     }
   }
 
-  return { attempted, closedOrphans, failed, sent };
+  return { attempted, claimLost, closedOrphans, failed, sent };
 }
 
 export async function retryTelegramDeliveryById(id: string): Promise<SystemNotificationDeliveryResult> {
@@ -1610,6 +1684,11 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
   const attempts = Number(row.attempts ?? 0);
   const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
   if (attempts >= maxAttempts) return { channel: "telegram", idempotencyKey, reason: "Maximum retry attempts reached.", status: "skipped" };
+  // Claim BEFORE the send, so a drain running at the same moment cannot send it too. A manual retry may
+  // resend anything that is not already sent, so the claim checks only that.
+  if (!(await claimDeliveryRetry(supabase, row, { openStatuses: null }))) {
+    return { channel: "telegram", idempotencyKey, reason: "Delivery is already being retried.", status: "skipped" };
+  }
 
   try {
       const result = await sendTelegramNotification({
@@ -1779,6 +1858,8 @@ async function buildChannelEmailInput(
     bcc: input.email?.bcc,
     candidateEmail: input.email?.candidateEmail ?? null,
     cc: input.email?.cc,
+    // The credential stamp (reset code / set-your-password link) rides through untouched.
+    credentialEmail: input.email?.credentialEmail ?? null,
     ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
     // Passed straight through, NOT run through notificationHrefForViewerRole like the primary

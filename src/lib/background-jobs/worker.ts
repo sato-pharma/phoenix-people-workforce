@@ -6,6 +6,7 @@ import {
   completeBackgroundJob,
   failBackgroundJob,
   JOB_EXPORTS_BUCKET,
+  recoverStaleBackgroundJobs,
   uploadJobResult,
   type BackgroundJob,
 } from "./service";
@@ -58,6 +59,26 @@ export type BackgroundJobsRunResult = { processed: number; results: BackgroundJo
  */
 export async function processBackgroundJobs(maxJobs = 3): Promise<BackgroundJobsRunResult> {
   const results: BackgroundJobRunOutcome[] = [];
+
+  // A job whose process died mid-run is still `processing`; put it back in the queue (or fail it once
+  // its attempts are spent) BEFORE claiming, so it is picked up by this very run (F-05).
+  try {
+    const recovered = await recoverStaleBackgroundJobs();
+    if (recovered.failed + recovered.requeued > 0) {
+      logInfo("Recovered interrupted background jobs", {
+        labels: {
+          event: "background_jobs_recovered",
+          failed: String(recovered.failed),
+          requeued: String(recovered.requeued),
+        },
+      });
+    }
+  } catch (error) {
+    logError("Could not recover interrupted background jobs", {
+      labels: { event: "background_jobs_recovery_failed" },
+      error,
+    });
+  }
 
   for (let i = 0; i < maxJobs; i += 1) {
     const job = await claimNextBackgroundJob(BACKGROUND_JOB_TYPES);

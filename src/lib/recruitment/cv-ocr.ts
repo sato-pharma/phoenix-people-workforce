@@ -145,22 +145,68 @@ async function prepareForOcr(image: Buffer): Promise<Buffer> {
 }
 
 /**
+ * The whole read's deadline — PDF image extraction, Tesseract start-up and every page together.
+ *
+ * WHY (23 Oct 2026 audit, P5-04). MAX_OCR_PAGES bounded the pages but not the time: a pathological
+ * image could keep Tesseract (and the request that started it) busy indefinitely on the process that
+ * also serves payroll. Three pages measure 2-5 seconds each, so a minute is generous for a real CV;
+ * past it the worker is terminated and the caller goes to the model exactly as on any other failure.
+ */
+export const OCR_DEADLINE_MS = 60_000;
+
+/** Resolves `work`, or null once `timeoutMs` passes (calling `onTimeout` first). Never rejects on the timeout. */
+export async function withOcrDeadline<T>(work: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      resolve(null);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+type OcrRun = { timedOut: boolean; worker: OcrWorker | null };
+
+/**
  * Reads a scanned CV, or returns null.
  *
  * Null means "use the model" and is a perfectly normal outcome — an Arabic document, a bad
- * photograph, a PDF with no extractable image, or any failure at all. NOTHING in here is allowed to
- * throw at the caller: this runs ahead of a path that already works, so its worst case must be that
- * it changes nothing.
+ * photograph, a PDF with no extractable image, a read past OCR_DEADLINE_MS, or any failure at all.
+ * NOTHING in here is allowed to throw at the caller: this runs ahead of a path that already works,
+ * so its worst case must be that it changes nothing.
  */
-export async function extractTextByOcr(input: {
-  bytes: Buffer;
-  fileKind: "pdf" | "image";
-  fileName: string;
-}): Promise<OcrResult | null> {
-  let worker: OcrWorker | null = null;
+export async function extractTextByOcr(
+  input: {
+    bytes: Buffer;
+    fileKind: "pdf" | "image";
+    fileName: string;
+  },
+  options: { deadlineMs?: number } = {},
+): Promise<OcrResult | null> {
+  const run: OcrRun = { timedOut: false, worker: null };
+  try {
+    return await withOcrDeadline(readByOcr(input, run), options.deadlineMs ?? OCR_DEADLINE_MS, () => {
+      run.timedOut = true;
+      logError("Free OCR of a scanned CV ran past its deadline and was stopped; falling back to the vision model", {
+        labels: { event: "cv_ocr_timed_out", file_name: input.fileName },
+      });
+    });
+  } finally {
+    // Always. A leaked Tesseract worker is a leaked child process holding ~200 MB, on a single
+    // production replica that also serves payroll.
+    if (run.worker) await run.worker.terminate().catch(() => undefined);
+  }
+}
+
+async function readByOcr(input: { bytes: Buffer; fileKind: "pdf" | "image"; fileName: string }, run: OcrRun): Promise<OcrResult | null> {
   try {
     const images = input.fileKind === "pdf" ? await pdfPageImages(input.bytes) : [input.bytes];
-    if (images.length === 0) return null;
+    if (images.length === 0 || run.timedOut) return null;
 
     const { createWorker } = await import("tesseract.js");
     // langPath + cacheMethod "none" is what keeps this offline. Without both, tesseract.js fetches
@@ -169,11 +215,17 @@ export async function extractTextByOcr(input: {
       cacheMethod: "none",
       langPath: TESSDATA_DIR,
     })) as unknown as OcrWorker;
-    worker = active;
+    if (run.timedOut) {
+      // The deadline passed while the worker was starting: the caller's cleanup has already run.
+      await active.terminate().catch(() => undefined);
+      return null;
+    }
+    run.worker = active;
 
     const texts: string[] = [];
     const confidences: number[] = [];
     for (const image of images.slice(0, MAX_OCR_PAGES)) {
+      if (run.timedOut) return null;
       const prepared = await prepareForOcr(image);
       const { data } = await active.recognize(prepared);
       const text = data.text ?? "";
@@ -192,14 +244,13 @@ export async function extractTextByOcr(input: {
     if (readableChars(text) < OCR_MIN_READABLE_CHARS) return null;
     return { confidence, pages: texts.length, text };
   } catch (error) {
-    logError("Free OCR of a scanned CV failed; falling back to the vision model", {
-      error,
-      labels: { event: "cv_ocr_failed", file_name: input.fileName },
-    });
+    // After the deadline the worker is terminated under this read, which then fails — already logged.
+    if (!run.timedOut) {
+      logError("Free OCR of a scanned CV failed; falling back to the vision model", {
+        error,
+        labels: { event: "cv_ocr_failed", file_name: input.fileName },
+      });
+    }
     return null;
-  } finally {
-    // Always. A leaked Tesseract worker is a leaked child process holding ~200 MB, on a single
-    // production replica that also serves payroll.
-    if (worker) await worker.terminate().catch(() => undefined);
   }
 }

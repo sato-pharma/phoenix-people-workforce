@@ -23,7 +23,7 @@ import {
   assertApiRateLimit,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
-import { verifyRecaptcha } from "@/lib/security/recaptcha";
+import { isRecaptchaUnavailable, verifyRecaptcha } from "@/lib/security/recaptcha";
 import { clientAddress } from "@/lib/security/client-address";
 
 export const runtime = "nodejs";
@@ -119,6 +119,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     String(form.get("recaptchaToken") ?? "") || null,
     clientAddress(request),
   );
+  // Fails closed (P5-02): our side not able to check is "try again shortly", never a pass.
+  if (isRecaptchaUnavailable(captcha)) return json(request, { error: "captcha_unavailable" }, 503);
   if (!captcha.ok) return json(request, { error: "captcha_failed" }, 400);
 
   const cv = form.get("cv");

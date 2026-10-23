@@ -2671,6 +2671,13 @@ import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-onc
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
+import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
+import { runJobLeaseTests } from "./job-lease.test.ts";
+import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
+import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
+import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
+import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
+import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
   runCsvFormulaNeutraliserTests,
@@ -10613,6 +10620,34 @@ await runTest(
 await runTest(
   "the Regular · No Check-in tabs of CRM Master cannot fail on a missing column: crm_visits_checkin_flags, as its last migration defines it, carries every column CRM Master's visit select asks for (the second manager and the Phoenix visit detail included), and keeps security_invoker and its locked-out browser roles",
   runCrmCheckinFlagsCarriesMasterSelectTests,
+);
+await runTest(
+  "the background queues never loop and never send twice: an interrupted outbox send spends one attempt and the last one is terminal, each reap pinned to the lock it read; a background job left processing past an hour is re-queued, or failed once its attempts are spent, before new work is claimed; a Telegram or push retry is claimed by a compare-and-set on its attempt count BEFORE it is sent, so a second drain that read the same row sends nothing; and a failed outbox write is logged",
+  runBackgroundJobsRecoveryTests,
+);
+await runTest(
+  "one CRM poller across every process: each tick claims the crm-live-poll lease first and stands by while another live process holds it, a heartbeat renews it through a long run, a dead holder is replaced within three minutes, and a lease that cannot be read (the migration not yet applied, any error) never stops the poller",
+  runJobLeaseTests,
+);
+await runTest(
+  "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
+  runWorkerOnlyCronRoutesTests,
+);
+await runTest(
+  "every outside call in the background jobs has a deadline: the careers IMAP clients cut a silent host after 30 seconds and carry an error listener, a Headwind call that times out answers 504 saying it may have acted (never that it never reached a server), uploads get a longer deadline, and free OCR stops and terminates its worker at its whole-read deadline",
+  runIntegrationDeadlinesTests,
+);
+await runTest(
+  "the public doors are bounded: reCAPTCHA refuses when its secret is unset or Google is unreachable, the paid AI read of public CVs stops at a daily ceiling and falls back to the free read, /api/errors/client caps every field, the body and the rate, and /api/readyz answers booleans only",
+  runPublicIntakeLimitsTests,
+);
+await runTest(
+  "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
+  runCvTextIsolationTests,
+);
+await runTest(
+  "the reset-code and set-your-password-link emails are not mirrored to the admin Telegram, by the explicit credential stamp that rides the outbox payload, while every other email keeps its mirror; and the Recipient Assurance Guard fails closed — a day-old directory copy covers a short outage, past it the email is held back with a transient reason and retried",
+  runCredentialEmailMirrorTests,
 );
 await runTest(
   "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",

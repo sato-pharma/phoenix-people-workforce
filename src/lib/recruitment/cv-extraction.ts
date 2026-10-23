@@ -54,6 +54,7 @@ import {
   type CvPositionSchema,
 } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind, isLegacyDocBytes } from "@/lib/recruitment/cv-file-kind";
+import { CvParseLimitError, extractCvTextIsolated } from "@/lib/recruitment/cv-text-isolation";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import {
   aiFieldsWorthAsking,
@@ -377,7 +378,24 @@ const CV_EXTRACTION_CLASSIFICATION_PREAMBLE =
 // word-extractor; which of the two Word readers runs is decided by the bytes, not the label).
 // ---------------------------------------------------------------------------
 
+// Since 23 Oct 2026 (audit P5-04) the parse runs in a bounded worker thread (cv-text-isolation.ts):
+// a file that needs more than its memory ceiling or its deadline is refused as unreadable instead of
+// stalling or exhausting the web process. The in-process reader below is unchanged, and it is still
+// what runs if the thread cannot load its library.
 export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
+  const kind = detectCvFileKind(mimeType, fileName);
+  if (kind !== "pdf" && kind !== "docx") return extractRawTextInProcess(bytes, mimeType, fileName);
+  const isolatedKind = kind === "pdf" ? "pdf" : isLegacyDocBytes(bytes) ? "doc" : "docx";
+  try {
+    return await extractCvTextIsolated(bytes, isolatedKind, () => extractRawTextInProcess(bytes, mimeType, fileName));
+  } catch (error) {
+    if (error instanceof CvParseLimitError) throw new CvExtractionError("unsupported_file", error.message);
+    throw error;
+  }
+}
+
+/** The pre-isolation reader, unchanged. Runs in-process: only as the fallback, and in tests as the reference text. */
+export async function extractRawTextInProcess(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
   const kind = detectCvFileKind(mimeType, fileName);
 
   if (kind === "pdf") {
@@ -714,6 +732,11 @@ async function readCvFieldsFromBytes(input: {
   // It does NOT widen what is asked for — narrowedTextKeys still applies, so a forced call still
   // skips the fields the merge would discard. Forcing all 59 costs about $0.25 at the nano tier.
   forceModel?: boolean;
+  // A SPEND GATE on the model, asked once and only when this read is about to call it (after the free
+  // rule pass has decided it needs the model). False means "read it the free way": the rules' read if
+  // there is one, else OCR, else the same failure as an unconfigured model. Only the public careers
+  // form passes it (P5-02, 23 Oct 2026); every other caller leaves it out and nothing changes.
+  aiBudget?: () => Promise<boolean>;
 }): Promise<CvFieldExtraction> {
   const declaredSchema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
   if (!declaredSchema) {
@@ -851,6 +874,17 @@ async function readCvFieldsFromBytes(input: {
     throw new CvExtractionError(
       "ai_not_configured",
       "This isn't configured yet. Add OPENAI_API_KEY or ANTHROPIC_API_KEY on the server.",
+    );
+  }
+  // The public careers form's daily spend ceiling (P5-02), asked only now that a model call would
+  // really be made. Past it the CV takes exactly the free path above; no other caller passes a budget.
+  if (input.aiBudget && !(await input.aiBudget())) {
+    if (rule && rule.isCv) return ruleOnly();
+    const scanned = await ruleFromOcr();
+    if (scanned) return scanned;
+    throw new CvExtractionError(
+      "ai_rate_limited",
+      "The daily ceiling on AI reads of public applications was reached, so this CV was kept but not read by the model.",
     );
   }
 

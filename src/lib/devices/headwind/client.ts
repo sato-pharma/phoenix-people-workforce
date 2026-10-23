@@ -110,6 +110,48 @@ function unreachableMessage(error: unknown, env: NodeJS.ProcessEnv): string {
   );
 }
 
+/**
+ * DEADLINES (23 Oct 2026 audit, P5-01). Every call used to wait as long as the socket allowed: a
+ * Headwind box (or the Cloudflare tunnel in front of it) that accepted the connection and went silent
+ * held the request — a fleet sync, a page, a remote lock — until the platform killed it. Now a call
+ * has HEADWIND_REQUEST_TIMEOUT_MS, an upload (an APK going into the app repository) the longer
+ * HEADWIND_UPLOAD_TIMEOUT_MS, and the timer covers reading the reply as well as sending.
+ */
+export const HEADWIND_REQUEST_TIMEOUT_MS = 30_000;
+export const HEADWIND_UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
+export function headwindTimeoutFor(init: RequestInit): number {
+  return init.body instanceof FormData ? HEADWIND_UPLOAD_TIMEOUT_MS : HEADWIND_REQUEST_TIMEOUT_MS;
+}
+
+function withDeadline(init: RequestInit): AbortSignal {
+  const deadline = AbortSignal.timeout(headwindTimeoutFor(init));
+  return init.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
+}
+
+/** A fetch that ran out of time — DOMException "TimeoutError" from AbortSignal.timeout, however it is wrapped. */
+export function isHeadwindTimeout(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && depth < 4; depth += 1) {
+    if (typeof current === "object" && (current as { name?: unknown }).name === "TimeoutError") return true;
+    current = typeof current === "object" ? (current as { cause?: unknown }).cause : null;
+  }
+  return false;
+}
+
+/**
+ * 🔴 A TIMED-OUT REQUEST IS NOT ONE THAT "NEVER REACHED A SERVER". The request may well have arrived
+ * and done its work — locked the tablet, pushed the configuration — with only the reply lost. The
+ * transport sentence below says the opposite, and on a remote action it would invite a second press
+ * of a button that has already worked. So a timeout says what is actually known.
+ */
+export function headwindTimeoutMessage(init: RequestInit, env: NodeJS.ProcessEnv): string {
+  const base = env.HEADWIND_MDM_BASE_URL?.trim() || "the configured Headwind address";
+  const seconds = Math.round(headwindTimeoutFor(init) / 1000);
+  const method = String(init.method ?? "GET").toUpperCase();
+  const acted = method === "GET" ? "" : " The request may have reached Headwind and taken effect — check the device before repeating it.";
+  return `The Headwind server at ${base} did not answer within ${seconds} seconds, so Phoenix stopped waiting.${acted}`;
+}
+
 type Attempt = { ok: boolean; status: number; body: unknown; envelopeError: string | null };
 
 async function once(
@@ -122,6 +164,7 @@ async function once(
   const response = await fetchImpl(`${headwindApiBase(env)}${path}`, {
     ...init,
     cache: "no-store",
+    signal: withDeadline(init),
     headers: {
       authorization: `Bearer ${token}`,
       // Cloudflare Access, when the console is behind the tunnel. Empty when it is not — see
@@ -185,6 +228,8 @@ export async function callHeadwind<T = unknown>(
     // advice it ended on pointed at the one value that was right. An error that already carries
     // Headwind's own account of what happened is passed through untouched.
     if (error instanceof HeadwindNotConfiguredError || error instanceof HeadwindRequestError) throw error;
+    // A deadline is not a transport failure: the request may have arrived (see headwindTimeoutMessage).
+    if (isHeadwindTimeout(error)) throw new HeadwindRequestError(504, headwindTimeoutMessage(init, env));
     // A TRANSPORT FAILURE USED TO ARRIVE AS "fetch failed" AND NOTHING ELSE. Every refusal above
     // carries Headwind's own sentence, but a request that never reached a server at all fell through
     // to the generic 500 handler, so the page said "fetch failed" — which names neither the address

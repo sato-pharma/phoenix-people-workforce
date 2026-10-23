@@ -16,6 +16,7 @@ import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/em
 import { EMPLOYEE_LINE_SELECT, resolveEmployeeLineName } from "@/lib/employees/employee-org-labels";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
+import type { CredentialEmailKind } from "@/lib/email/transactional-types";
 import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
@@ -116,6 +117,13 @@ export type NotificationEmailInput = {
    * stale key can never silently drop an email.
    */
   templateKey?: string | null;
+  /**
+   * Set ONLY by a send whose body is a live credential (the reset code, a set-your-password link).
+   * Such an email is not mirrored to the admin Telegram (owner, 23 Oct 2026, "Skip credential
+   * emails"); every other email keeps the mirror. Travels in the outbox payload with the rest of
+   * this input, so a queued row is covered when it drains.
+   */
+  credentialEmail?: CredentialEmailKind | null;
   notificationType?: EmailNotificationType;
   /** Pre-rendered HTML table of submitted plan rows for the {{planTable}} variable. */
   planTableHtml?: string;
@@ -1978,6 +1986,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       origin,
       overrides,
       templateKey: migratedTemplateKey,
+      credentialEmail: input.credentialEmail ?? null,
     });
   }
 
@@ -1988,6 +1997,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     // A job candidate has no employee record, so their address is unknown to the Recipient
     // Assurance Guard by definition. Declare it, or every offer/recruitment email blocks.
     externalRecipients: input.candidateEmail ? [input.candidateEmail] : undefined,
+    credentialEmail: input.credentialEmail ?? null,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal
@@ -2133,7 +2143,7 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
     : retryAfterMs != null
       ? new Date(Math.max(Date.parse(baseNext), Date.now() + retryAfterMs)).toISOString()
       : baseNext;
-  await supabase
+  const { error: writeError } = await supabase
     .from(notificationOutboxTable)
     .update({
       attempts,
@@ -2144,6 +2154,15 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
       updated_at: now,
     })
     .eq("id", row.id);
+  // S-INT-01 (23 Oct 2026 audit): this write's error used to be dropped, so a failed write left the
+  // row `processing` with nothing said until the 10-minute reaper found it. It is said now; the
+  // reaper (reapStaleProcessingOutboxRows) still returns the row to the queue and counts the attempt.
+  if (writeError) {
+    logError("Notification outbox row failed to mark failed (left processing until the stale reaper)", {
+      labels: { event: "outbox_mark_failed_write_failed", outbox_id: row.id },
+      error: writeError,
+    });
+  }
 
   // A row that has exhausted every retry is a notification that was never delivered.
   // Surface it individually (the batch-level warning only says "something failed").
@@ -2288,24 +2307,86 @@ export async function loadDueNotificationOutboxRows(
 const staleProcessingThresholdMinutes = 10;
 const retentionDays = 90;
 
-export async function reapStaleProcessingOutboxRows(): Promise<number> {
+export const STALE_OUTBOX_REAP_REASON =
+  "The send was interrupted (a restart, a deploy or a crash) while this row was being processed.";
+
+type StaleOutboxRow = Pick<NotificationOutboxRow, "attempts" | "id" | "locked_at" | "max_attempts">;
+
+/**
+ * What the reaper writes for one stale `processing` row. Pure, so the attempt count is tested without
+ * a database.
+ *
+ * F-04 (23 Oct 2026 audit): the reaper used to put a stale row back to `pending` WITHOUT counting an
+ * attempt. A row whose send kills the process every time (or one that is simply interrupted on every
+ * deploy) therefore looped for ever, and the attempts filter that keeps dead rows out of the drain never
+ * saw it. Every reap now spends one attempt, exactly as a failed send does, and the last one is terminal.
+ */
+export function planStaleOutboxReap(row: StaleOutboxRow, nowIso: string) {
+  const attempts = Number(row.attempts ?? 0) + 1;
+  const maxAttempts = Number(row.max_attempts ?? notificationOutboxMaxAttempts);
+  const terminal = attempts >= maxAttempts;
+  return {
+    attempts,
+    last_error: STALE_OUTBOX_REAP_REASON,
+    locked_at: null,
+    next_attempt_at: terminal ? null : nowIso,
+    status: terminal ? ("failed" as const) : ("pending" as const),
+    updated_at: nowIso,
+  };
+}
+
+type OutboxReapClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
+
+/**
+ * Returns stale `processing` rows to the queue, counting the interrupted attempt. Each write is
+ * conditional on the row still carrying the SAME lock it was read with, so a row a live drain claimed
+ * again between the read and the write is never touched. `client` is injectable for the tests.
+ */
+export async function reapStaleProcessingOutboxRows(client?: OutboxReapClient): Promise<number> {
   try {
-    const supabase = getSupabaseAdmin();
+    const supabase = client ?? getSupabaseAdmin();
     const threshold = new Date();
     threshold.setMinutes(threshold.getMinutes() - staleProcessingThresholdMinutes);
 
-    const { data, error } = await supabase
+    const { data: stale, error: readError } = await supabase
       .from(notificationOutboxTable)
-      .update({ locked_at: null, status: "pending", updated_at: new Date().toISOString() })
+      .select("id,attempts,max_attempts,locked_at")
       .eq("status", "processing")
-      .lt("locked_at", threshold.toISOString())
-      .select("id");
+      .lt("locked_at", threshold.toISOString());
 
-    if (error) {
-      if (notificationSchemaMissing(error)) return 0;
-      throw error;
+    if (readError) {
+      if (notificationSchemaMissing(readError)) return 0;
+      throw readError;
     }
-    return data?.length ?? 0;
+
+    let reaped = 0;
+    for (const row of (stale ?? []) as StaleOutboxRow[]) {
+      const plan = planStaleOutboxReap(row, new Date().toISOString());
+      const { data, error } = await supabase
+        .from(notificationOutboxTable)
+        .update(plan)
+        .eq("id", row.id)
+        .eq("status", "processing")
+        .eq("locked_at", row.locked_at as string)
+        .select("id");
+      if (error) {
+        logError("Failed to reap one stale processing notification outbox row", {
+          labels: { event: "outbox_reap_stale_row_failed", outbox_id: row.id },
+          error,
+        });
+        continue;
+      }
+      if ((data ?? []).length === 0) continue;
+      reaped += 1;
+      if (plan.status === "failed") {
+        console.log("Email outbox row terminally failed after repeated interrupted sends", {
+          level: "error",
+          tags: { component: "email", cron: "outbox-processing" },
+          extra: { id: row.id, attempts: plan.attempts, last_error: STALE_OUTBOX_REAP_REASON },
+        });
+      }
+    }
+    return reaped;
   } catch (error) {
     if (!notificationSchemaMissing(error)) {
       logError("Failed to reap stale processing notification outbox rows", {

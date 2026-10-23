@@ -13,7 +13,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 // Readiness probe: verifies the process can actually serve requests — required config is
 // present AND Supabase is reachable with a cheap head query. Returns 503 (not ready) when
 // a dependency is down so orchestration/uptime checks can react. Public + unauthenticated,
-// but it returns only booleans/status — never data or secret values. Not called per user
+// so it returns only booleans/status — never data, error text or variable names. Not called per user
 // request, so a light DB ping is acceptable.
 //
 // 🔴 THIS IS RAILWAY'S DEPLOY HEALTHCHECK SINCE 2026-09-30 (`railway.json`, `healthcheckPath`), SO
@@ -135,27 +135,37 @@ export async function GET() {
   }
 
   const ready = missingEnv.length === 0 && databaseOk && releaseGate.passed;
+  const workflowRegistryOk = skippedModules.length === 0 && !registryCheckError;
+
+  // 🔴 THE PUBLIC ANSWER IS BOOLEANS ONLY (23 Oct 2026 audit, Pass 5). This route is unauthenticated and
+  // used to return the raw database and registry error text, the NAMES of missing environment
+  // variables, the skipped workflow modules with their reasons and the notification-config warnings.
+  // None of that is a secret value, but all of it is a map of the inside for anyone who asks. The
+  // detail now goes to the server log (only when something is wrong), where an operator reads it; the
+  // probe answers yes or no per dependency. The release gate keeps its fixed reason code (a closed list
+  // in release-gate.ts, never error text), because the deploy runbooks read it.
+  // A release gate that is merely waiting for CI is not logged: Railway polls this probe through the
+  // whole wait, and the config warnings and skipped modules are already logged above.
+  if (missingEnv.length > 0 || !databaseOk || registryCheckError) {
+    logWarning("Readiness probe found a problem", {
+      labels: { event: "readyz_not_clean", ready: String(ready) },
+      context: { databaseError: databaseOk ? null : databaseError, missingEnv, registryCheckError },
+    });
+  }
+
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
       checks: {
-        // `passed` is false only while CI has not released this commit (or could not be asked). Never a secret:
-        // the reason, and the commit this container was built from.
-        releaseGate: { required: releaseGate.required, passed: releaseGate.passed, reason: releaseGate.reason, sha: releaseGate.sha },
+        // `passed` is false only while CI has not released this commit (or could not be asked).
+        releaseGate: { required: releaseGate.required, passed: releaseGate.passed, reason: releaseGate.reason },
         env: missingEnv.length === 0,
-        // Only the NAMES of any missing vars — never values.
-        missingEnv,
         database: databaseOk,
-        databaseError: databaseOk ? null : databaseError,
-          // A skipped module reads to users as a MISSING one. Naming it here turns a silent
-          // outage into a one-request diagnosis.
-        workflowRegistry: skippedModules.length === 0 && !registryCheckError,
-        skippedWorkflowModules: skippedModules,
-        registryCheckError,
+        // A skipped module reads to users as a MISSING one; the names are in the server log.
+        workflowRegistry: workflowRegistryOk,
+        // Non-fatal notification-config drift (email flag / Resend key unset in prod); the detail is logged.
+        notificationConfig: warnings.length === 0,
       },
-      // Non-fatal notification-config drift (email flag / Resend key unset in prod). Present
-      // so an operator or synthetic monitor can catch a silent-email regression early.
-      warnings,
       // An urgent `railway up` deploy carries no git sha; it names itself in public/urgent-deploy.json,
       // which only an urgent upload ever contains, so it wins whenever it is there.
       revision: readUrgentDeployRevision() ?? getDeployRevision(),

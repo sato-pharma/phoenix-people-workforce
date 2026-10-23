@@ -5,6 +5,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
 import { cacheInboxMedia } from "@/lib/whatsapp-inbox/store";
 import { fetchPendingInboundVideos } from "@/lib/whatsapp-videos/inbox";
 import { thankDueFtpVideoSenders } from "@/lib/whatsapp-videos/thanks";
@@ -20,6 +21,8 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/inbound-intake");
   if (denied) return denied;
+  const wrongProcess = refuseOnPageServer("cron/inbound-intake");
+  if (wrongProcess) return wrongProcess;
   try {
     const limit = Number(new URL(request.url).searchParams.get("limit"));
     const maxItems = Number.isFinite(limit) && limit > 0 ? Math.min(25, Math.floor(limit)) : undefined;

@@ -22,7 +22,7 @@ import {
 } from "./key-resolution";
 import { TOKEN_REGISTRY } from "./token-registry";
 import { sendPhoenixEmail, type SendPhoenixEmailAttachment, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
-import { isOneTimeCodeTemplateKey } from "@/lib/email/transactional-types";
+import { isOneTimeCodeTemplateKey, type CredentialEmailKind } from "@/lib/email/transactional-types";
 import type { NotificationOrigin } from "@/lib/notifications/confidence-gate";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -371,6 +371,11 @@ export type SendTemplatedEmailInput = {
     to?: string[] | null;
   };
   templateKey: EmailTemplateKey | string;
+  /**
+   * Stamped by a send whose body is a live credential, so it is not mirrored to the admin Telegram
+   * (owner, 23 Oct 2026, "Skip credential emails"). Passed straight to sendPhoenixEmail.
+   */
+  credentialEmail?: CredentialEmailKind | null;
 };
 
 export type EmailTemplateValidationIssue = {
@@ -2765,6 +2770,8 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     // Decided from the resolved template key here, so a queued outbox row written before this
     // existed is covered too — the key is re-resolved on every delivery attempt.
     suppressAdminStandingBcc: isOneTimeCodeTemplateKey(key),
+    // The Telegram mirror is withheld only on an explicit credential stamp from the send site.
+    credentialEmail: input.credentialEmail ?? null,
     from: input.from ?? undefined,
     replyTo: input.replyTo ?? undefined,
     headers: unsubscribeHeaders,

@@ -84,6 +84,7 @@ import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-syn
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { processRoleRefusal } from "@/lib/platform/process-role";
+import { createJobLeaseKeeper, type JobLeaseRpcClient } from "@/lib/platform/job-lease";
 import { trackJob } from "@/lib/observability/running-jobs";
 import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
@@ -447,6 +448,21 @@ const state: PollerState = {
   tickIndex: 0,
   timer: null,
 };
+// ONE poller across every process, not just one per process (23 Oct 2026 audit, P5-05): the old and new
+// container overlap on every deploy, and the worker has a standby. Each tick first claims the lease in
+// public.job_leases; a process that cannot claim it stands by and takes over once the holder stops
+// renewing. The heartbeat renews every minute, so even a long deep run never lets it lapse, and a
+// dead holder is replaced within LIVE_POLL_LEASE_TTL_SECONDS. Fails OPEN (src/lib/platform/job-lease.ts).
+export const LIVE_POLL_LEASE_KEY = "crm-live-poll";
+export const LIVE_POLL_LEASE_TTL_SECONDS = 180;
+const LIVE_POLL_LEASE_HEARTBEAT_MS = 60_000;
+const liveLease = createJobLeaseKeeper({
+  client: () => getSupabaseAdmin() as unknown as JobLeaseRpcClient,
+  jobKey: LIVE_POLL_LEASE_KEY,
+  ttlSeconds: LIVE_POLL_LEASE_TTL_SECONDS,
+});
+let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
+
 let visitMemo: SnapshotMemo = new Map();
 let checkinMemo: SnapshotMemo = new Map();
 let cachedToken: { fetchedAtMs: number; token: string } | null = null;
@@ -1067,6 +1083,9 @@ async function tick(): Promise<void> {
   // to src/lib/crm/housekeeping-scheduler.ts. Fails open: an unreadable setting keeps the poller on.
   if (await resolveVendorSyncStandDown()) return;
 
+  // Another live process holds the poller lease — stand by; it is doing this tick's work.
+  if (!(await liveLease.ensure())) return;
+
   // A marker the restart could not read is read again before any deep run is weighed (`seedMarkers`).
   const stillHeld = SEED_GROUPS.filter((group) => state.seedHeldSinceMs[group] !== null);
   if (stillHeld.length > 0) await seedMarkers(stillHeld);
@@ -1228,6 +1247,8 @@ export function startLiveCrmPoller(): LivePollerStartResult {
       .finally(scheduleNext);
   }, STARTUP_DELAY_MS);
   unrefTimer(state.timer);
+  leaseHeartbeat = setInterval(() => void liveLease.renew(), LIVE_POLL_LEASE_HEARTBEAT_MS);
+  unrefTimer(leaseHeartbeat);
   console.log(
     `[crm:live-poll] started — ${FAST_TICK_SECONDS}s in the 08:00–12:30 Cairo compliance window, ` +
       `${DAY_TICK_SECONDS}s daytime, ${NIGHT_TICK_SECONDS}s overnight; wide (2-day) probe every ` +
@@ -1244,4 +1265,6 @@ export function stopLiveCrmPoller(): void {
   state.running = false;
   if (state.timer) clearTimeout(state.timer);
   state.timer = null;
+  if (leaseHeartbeat) clearInterval(leaseHeartbeat);
+  leaseHeartbeat = null;
 }

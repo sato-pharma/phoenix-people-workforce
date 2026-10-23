@@ -1174,6 +1174,15 @@ and bearer unchanged and read back):
 
 Every other job, `job-heartbeat-sweep` included, still calls `https://phoenix-hr.satopharma.com`.
 
+**Since 23 Oct 2026 these four, and `phoenix-background-jobs` (`8200915`, on the website), are declared in
+`scripts/cronjob-sync.mjs` as `adopted`** (technical audit, S-INT-19): the script reports each one — OK,
+DRIFT or MISSING — and never creates or patches it, even with `--apply`, so `cron-autoarm.yml` writes
+nothing for them. And the four worker routes now answer **503 `wrong_process`** on the page server
+(`PHOENIX_PROCESS_ROLE=web`), so a job pointed back at the website goes red instead of running there
+(audit F-04, `src/lib/platform/worker-only-route.ts`). The live poller is single across processes by a
+database lease since the same day (`public.job_leases`, `src/lib/platform/job-lease.ts`) — once
+`20261023140000_job_leases.sql` is applied; until then it runs exactly as before.
+
 🔴 **A job declared in `scripts/cronjob-sync.mjs` that runs on the worker carries `base: WORKER`.**
 The script matches a live job by its full URL, so a moved job declared without it reads as MISSING,
 and `--apply` would create a second copy on the website. To move another job, change only its URL in
