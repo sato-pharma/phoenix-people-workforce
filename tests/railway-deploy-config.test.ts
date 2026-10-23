@@ -54,6 +54,7 @@ export function runRailwayDeployConfigTests() {
     "railway.json",
     "infra/headwind-phoenix-actions/railway.toml",
     "infra/headwind-phoenix-actions/railway.json",
+    "infra/phoenix-mcp/railway.toml",
   ]) {
     assert.ok(
       !existsSync(resolve(path)),

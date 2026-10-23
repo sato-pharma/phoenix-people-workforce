@@ -618,8 +618,9 @@ His words: *"migrate railway.json to Railway's new infrastructure-as-code before
 change `.railway/railway.ts` is the only deploy config: `railway.toml` and
 `infra/headwind-phoenix-actions/railway.toml` are deleted, and rules 1-5 of
 `tests/railway-deploy-config.test.ts` now refuse either file coming back (until 2026-12-01 Railway
-would read a restored toml OVER the stored settings). `infra/phoenix-mcp/railway.toml` stays: no
-service in the project reads it.
+would read a restored toml OVER the stored settings). `infra/phoenix-mcp/railway.toml` went too: no
+service ever read it, and its settings now sit in `infra/phoenix-mcp/RUNBOOK.md`, for the day that
+service is approved and declared in `.railway/railway.ts`.
 
 - 🔴 **The 2026-10-10 ruling's condition was already met.** *"keep railway.toml until the restart
   policy is stored"*: Railway's own service settings read `ON_FAILURE` / `10` on every service
