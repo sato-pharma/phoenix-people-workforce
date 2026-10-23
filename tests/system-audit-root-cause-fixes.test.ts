@@ -72,7 +72,7 @@ function firesOnBreak(name: string, check: (source: string) => string[], source:
 }
 
 export async function runSystemAuditRootCauseFixesTests() {
-  const heartbeat = code("app/api/auth/heartbeat/route.ts");
+  const heartbeat = code("src/lib/auth/session-heartbeat.ts");
   assert.deepEqual(heartbeatRateLimitOutageMissing(heartbeat), [], "the heartbeat never crashes on a database restart");
   firesOnBreak(
     "heartbeat",

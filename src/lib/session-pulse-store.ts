@@ -1,0 +1,320 @@
+/**
+ * Module-level singleton for the SESSION PULSE — the one request an open tab sends where it used to
+ * send three (/api/auth/pulse, app/api/auth/pulse/route.ts).
+ *
+ * A visible tab used to run three clocks: the sidebar badges every 30 s (nav-badge-store.ts), the
+ * notification bell every 60 s (in-app-notifications-bell.tsx) and the session heartbeat on activity
+ * with a 60 s floor (session-security-guard.tsx). Each request resolved the viewer, and resolving the
+ * viewer is one `phx_auth_session_bundle` call — 36,926 calls a day on production, 87 ms each, the
+ * heaviest function in the system (measured 23 Oct 2026). This store owns the ONE loop all three now
+ * ride, so a visible tab pays two session reads a minute instead of four with every number as fresh
+ * as before.
+ *
+ * What it guarantees:
+ *  - One 30 s interval and one `visibilitychange` listener, however many subscribers exist.
+ *  - One request in flight at a time.
+ *  - The interval skips a hidden tab (nobody can see its badges); a tab shown again refetches unless
+ *    it fetched inside PULSE_RETURN_GAP_MS.
+ *  - A tick asks only for what a subscriber wants: badges while a badge is mounted, notices when a
+ *    bell is mounted and its list is at least NOTICES_GAP_MS old, and a request that nobody needs is
+ *    not sent at all.
+ *  - The heartbeat is a POST, sent when the viewer has been active and the last one is at least
+ *    HEARTBEAT_GAP_MS old; every other tick is a read-only GET. Only the POST confirms the session
+ *    is still live, so a 401 on it is the sign-out signal.
+ *  - SSR-safe: every browser global is guarded before access.
+ */
+
+/** The shared tick. A visible tab fetches this often when anything wants fresh data. */
+export const PULSE_INTERVAL_MS = 30_000;
+
+/** The least time between two fetches when the trigger is a tab coming back into view. */
+export const PULSE_RETURN_GAP_MS = 15_000;
+
+/** The notification list is refreshed on a tick only when it is at least this old (one minute, with slack). */
+export const NOTICES_GAP_MS = 55_000;
+
+/** The session heartbeat floor — unchanged from the standalone heartbeat it replaces. */
+export const HEARTBEAT_GAP_MS = 60_000;
+
+export const PULSE_ENDPOINT = "/api/auth/pulse";
+
+/** The notices half of a pulse, in the shape the bell already reads. */
+export interface PulseNotices {
+  data?: unknown[];
+  success?: boolean;
+  error?: string;
+  message?: string;
+}
+
+/** The badges half of a pulse: one `{ count, overdue? }` slot per badge, keyed as nav-badge-store.ts maps them. */
+export type PulseBadges = Partial<Record<string, { count?: number; overdue?: boolean }>>;
+
+type BadgesListener = (badges: PulseBadges) => void;
+type NoticesListener = (notices: PulseNotices) => void;
+type SessionListener = () => void;
+
+const state: {
+  badgeListeners: Set<BadgesListener>;
+  noticeListeners: Set<NoticesListener>;
+  sessionEndedListeners: Set<SessionListener>;
+  inFlight: Promise<void> | null;
+  /** What the request in flight carries, so a subscriber arriving mid-request is not answered by a second one. */
+  inFlightBadges: boolean;
+  inFlightNotices: boolean;
+  intervalId: ReturnType<typeof setInterval> | null;
+  onVisible: (() => void) | null;
+  /** When the last request STARTED (Date.now()); 0 = never. */
+  lastFetchStartedAt: number;
+  /** When the last heartbeat POST started; 0 = never. */
+  lastHeartbeatAt: number;
+  /** When notices last arrived; 0 = never. */
+  lastNoticesAt: number;
+  /** The viewer has done something since the last heartbeat. */
+  activitySinceHeartbeat: boolean;
+  /** A subscriber arrived and has no data yet — the next request must include it. */
+  needBadges: boolean;
+  needNotices: boolean;
+  badges: PulseBadges | null;
+  notices: PulseNotices | null;
+} = {
+  badgeListeners: new Set(),
+  noticeListeners: new Set(),
+  sessionEndedListeners: new Set(),
+  inFlight: null,
+  inFlightBadges: false,
+  inFlightNotices: false,
+  intervalId: null,
+  onVisible: null,
+  lastFetchStartedAt: 0,
+  lastHeartbeatAt: 0,
+  lastNoticesAt: 0,
+  activitySinceHeartbeat: false,
+  needBadges: false,
+  needNotices: false,
+  badges: null,
+  notices: null,
+};
+
+function tabIsHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+function hasSubscribers(): boolean {
+  return state.badgeListeners.size > 0 || state.noticeListeners.size > 0 || state.sessionEndedListeners.size > 0;
+}
+
+function heartbeatDue(now: number): boolean {
+  return state.activitySinceHeartbeat && now - state.lastHeartbeatAt >= HEARTBEAT_GAP_MS;
+}
+
+/** One request that carries whatever is wanted right now, or nothing when nothing is. */
+function pulse(): void {
+  if (state.inFlight) return;
+  if (!hasSubscribers()) {
+    // Everyone who asked has already left (a page change inside the same task).
+    state.needBadges = false;
+    state.needNotices = false;
+    return;
+  }
+
+  const now = Date.now();
+  const wantBadges = state.badgeListeners.size > 0 || state.needBadges;
+  const wantNotices =
+    (state.noticeListeners.size > 0 && now - state.lastNoticesAt >= NOTICES_GAP_MS) || state.needNotices;
+  const sendHeartbeat = heartbeatDue(now);
+  if (!wantBadges && !wantNotices && !sendHeartbeat) return;
+
+  state.needBadges = false;
+  state.needNotices = false;
+  state.lastFetchStartedAt = now;
+  state.inFlightBadges = wantBadges;
+  state.inFlightNotices = wantNotices;
+  if (sendHeartbeat) {
+    state.lastHeartbeatAt = now;
+    state.activitySinceHeartbeat = false;
+  }
+
+  const query = [wantBadges ? "badges=1" : "", wantNotices ? "notices=1" : ""].filter(Boolean).join("&");
+  const url = query ? `${PULSE_ENDPOINT}?${query}` : PULSE_ENDPOINT;
+
+  state.inFlight = globalThis
+    .fetch(url, sendHeartbeat ? { method: "POST" } : undefined)
+    .then(async (response) => {
+      if (response.status === 401) {
+        // Only the POST confirms the session; a GET resolves the viewer softly and never answers 401.
+        state.sessionEndedListeners.forEach((listener) => listener());
+        return;
+      }
+      const body = (await response.json()) as { badges?: PulseBadges; notices?: PulseNotices } | null;
+      if (body?.badges) {
+        state.badges = body.badges;
+        const badges = body.badges;
+        state.badgeListeners.forEach((listener) => listener(badges));
+      }
+      if (body?.notices) {
+        state.notices = body.notices;
+        state.lastNoticesAt = Date.now();
+        const notices = body.notices;
+        state.noticeListeners.forEach((listener) => listener(notices));
+      }
+    })
+    .catch(() => {
+      // Transient network hiccup — the next tick or activity retries.
+    })
+    .finally(() => {
+      state.inFlight = null;
+      state.inFlightBadges = false;
+      state.inFlightNotices = false;
+      // A subscriber that arrived mid-request, or activity that came due, waits for no one.
+      if (state.needBadges || state.needNotices || heartbeatDue(Date.now())) pulse();
+    });
+}
+
+let pulseQueued = false;
+
+/**
+ * Send the pulse at the end of the current task rather than inside it, so subscribers mounting in the
+ * same React commit (the sidebar badge and the bell, side by side) share ONE request instead of the
+ * first one going out alone. A request already carrying what a subscriber wants answers it too.
+ */
+function pulseSoon(): void {
+  if (pulseQueued) return;
+  pulseQueued = true;
+  queueMicrotask(() => {
+    pulseQueued = false;
+    pulse();
+  });
+}
+
+function ensureLoop(): void {
+  if (typeof window === "undefined") return;
+  if (state.intervalId === null) {
+    state.intervalId = setInterval(() => {
+      if (!tabIsHidden()) pulse();
+    }, PULSE_INTERVAL_MS);
+  }
+  if (state.onVisible === null && typeof document !== "undefined") {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - state.lastFetchStartedAt < PULSE_RETURN_GAP_MS) return;
+      pulse();
+    };
+    state.onVisible = onVisible;
+    document.addEventListener("visibilitychange", onVisible);
+  }
+}
+
+function teardownIfIdle(): void {
+  if (hasSubscribers()) return;
+  if (state.intervalId !== null) clearInterval(state.intervalId);
+  state.intervalId = null;
+  if (state.onVisible && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", state.onVisible);
+  }
+  state.onVisible = null;
+}
+
+/**
+ * Subscribe to the sidebar badge counts. A cached payload is delivered at once; with none, a request
+ * is sent at the end of the current task and carries them. Returns the unsubscribe function.
+ */
+export function subscribePulseBadges(listener: BadgesListener): () => void {
+  if (typeof window === "undefined") return () => {};
+  state.badgeListeners.add(listener);
+  ensureLoop();
+  if (state.badges) listener(state.badges);
+  else requestPulseBadges();
+  return () => {
+    state.badgeListeners.delete(listener);
+    teardownIfIdle();
+  };
+}
+
+/**
+ * Subscribe to the notification list. A cached list is delivered at once and refreshed only when it
+ * is at least NOTICES_GAP_MS old; with none, a request is sent at the end of the current task and carries it.
+ */
+export function subscribePulseNotices(listener: NoticesListener): () => void {
+  if (typeof window === "undefined") return () => {};
+  state.noticeListeners.add(listener);
+  ensureLoop();
+  if (state.notices) listener(state.notices);
+  if ((!state.notices || Date.now() - state.lastNoticesAt >= NOTICES_GAP_MS) && !(state.inFlight && state.inFlightNotices)) {
+    state.needNotices = true;
+    pulseSoon();
+  }
+  return () => {
+    state.noticeListeners.delete(listener);
+    teardownIfIdle();
+  };
+}
+
+/**
+ * Subscribe to the end of the session: called when the heartbeat answers 401 (revoked, expired or
+ * role changed). Subscribing also keeps the loop alive, so a page with no badge and no bell still
+ * keeps its session.
+ */
+export function subscribePulseSessionEnded(listener: SessionListener): () => void {
+  if (typeof window === "undefined") return () => {};
+  state.sessionEndedListeners.add(listener);
+  ensureLoop();
+  return () => {
+    state.sessionEndedListeners.delete(listener);
+    teardownIfIdle();
+  };
+}
+
+/**
+ * The viewer did something (a click, a key, a focus). Marks the session active so the next request
+ * is the heartbeat POST, and sends one at once when the last heartbeat is old enough — the same
+ * moment the standalone heartbeat used to fire.
+ */
+export function notePulseActivity(): void {
+  if (typeof window === "undefined") return;
+  state.activitySinceHeartbeat = true;
+  if (heartbeatDue(Date.now())) pulse();
+}
+
+/** The last badge payload, or null before the first answer. */
+export function pulseBadgesSnapshot(): PulseBadges | null {
+  return state.badges;
+}
+
+/**
+ * Ask for the badges in the next request and send it now (a badge mounted after the first answer).
+ * A request already in flight with the badges in it answers this too, so no second one is sent.
+ */
+export function requestPulseBadges(): void {
+  if (state.inFlight && state.inFlightBadges) return;
+  state.needBadges = true;
+  pulseSoon();
+}
+
+/** For test cleanup only — do not call in production code. */
+export function _resetSessionPulse(): void {
+  if (state.intervalId !== null) clearInterval(state.intervalId);
+  state.intervalId = null;
+  if (state.onVisible && typeof document !== "undefined") {
+    try {
+      document.removeEventListener("visibilitychange", state.onVisible);
+    } catch {
+      // ignore — document may be a test stub
+    }
+  }
+  state.onVisible = null;
+  state.badgeListeners.clear();
+  state.noticeListeners.clear();
+  state.sessionEndedListeners.clear();
+  state.inFlight = null;
+  state.inFlightBadges = false;
+  state.inFlightNotices = false;
+  state.lastFetchStartedAt = 0;
+  state.lastHeartbeatAt = 0;
+  state.lastNoticesAt = 0;
+  state.activitySinceHeartbeat = false;
+  state.needBadges = false;
+  state.needNotices = false;
+  state.badges = null;
+  state.notices = null;
+  pulseQueued = false;
+}

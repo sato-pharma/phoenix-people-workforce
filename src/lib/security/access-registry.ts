@@ -107,6 +107,32 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/login", reason: "Credential bootstrap endpoint; no existing Phoenix session is expected." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/logout", reason: "Session teardown endpoint accepts an existing cookie but does not expose data." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/heartbeat", reason: "Session heartbeat endpoint validates the Phoenix session token directly." }),
+  // THE SESSION PULSE — the heartbeat, the sidebar badge counts and the notification list in one
+  // request, so a visible tab pays two session reads a minute instead of four
+  // (app/api/auth/pulse/route.ts). Two entries for one pattern, with disjoint methods, exactly as
+  // /api/auth/web-session below is declared: the two halves genuinely differ in how they authorise.
+  //
+  // POST is the heartbeat half and is declared like the heartbeat above — a public-token route that
+  // validates the session token itself rather than resolving an access context, because the resolver
+  // refuses every POST from a seat view or a test login and would stop both from refreshing their
+  // session. It then serves the badges and notices off the session it just confirmed, layering the
+  // seat view on by hand (applySeatView), so a view never sees the Super Admin's own counts.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/pulse", reason: "Session pulse: the heartbeat endpoint under another name, validating the Phoenix session token directly, with the caller's own badge counts and notices served off the session it just confirmed." }),
+  // GET is the read-only tick — badges and notices, no session refresh. domain-helper because the
+  // route body asserts nothing itself: the eleven badge guards live in loadBadgeCounts and the
+  // notice fence in listInAppNotificationsForViewer, the same model /api/notifications/in-app and
+  // /api/approvals/badge-counts are declared under. The permissions named are theirs.
+  sessionApi({
+    guard: "domain-helper",
+    methods: ["GET"],
+    pattern: "/api/auth/pulse",
+    permission: [
+      { resource: "leave", action: "read" },
+      { resource: "weekly_plans", action: "read" },
+      { resource: "direct_orders", action: "read" },
+      { resource: "employee_profile", action: "read" },
+    ],
+  }),
   // The native app opening a production portal module, already signed in. Two halves, declared apart
   // because they genuinely differ (src/lib/auth/native-web-handoff.ts):
   //
@@ -2518,7 +2544,7 @@ export const accessRegistry = [
   // domain-helper guard is the same model its sibling /inbox already uses — marketing has no
   // permission resource, so the badge is scoped by the caller's own assigned_hr_id instead). They
   // all stay registered and live for other consumers; each sub-count enforces its own domain guard.
-  sessionApi({ methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }, { resource: "direct_orders", action: "read" }] }),
+  sessionApi({ guard: "domain-helper", methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }, { resource: "direct_orders", action: "read" }] }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/vacation/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/excuse/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/plan/pending-count", permission: { resource: "weekly_plans", action: "read" } }),

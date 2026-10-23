@@ -1316,6 +1316,7 @@ import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.t
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
+import { runSessionPulseTests } from "./session-pulse.test.ts";
 import { runBadgeCountsViewerCacheTests } from "./badge-counts-viewer-cache.test.ts";
 import { runBadgePollStaysLightTests } from "./badge-poll-stays-light.test.ts";
 import { runWeeklyRowCacheTests } from "./weekly-row-cache.test.ts";
@@ -5552,6 +5553,7 @@ await runTest(
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
+await runTest("session pulse: one request for the badges, the bell and the heartbeat", runSessionPulseTests);
 await runTest("badge counts: per-viewer 20 s memory and the self-only Other Approvals zero", runBadgeCountsViewerCacheTests);
 await runTest(
   "the sidebar badge poll stays light: no full Vacation Report, no discarded inbox sources, and the same deciding code as the pages",

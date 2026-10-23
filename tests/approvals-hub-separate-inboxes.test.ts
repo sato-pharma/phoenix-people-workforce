@@ -181,7 +181,7 @@ export function runApprovalsHubSeparateInboxesTests() {
     "the badge must ride the one batched poll rather than opening a separate 30s request",
   );
   assert.match(
-    read("app/api/approvals/badge-counts/route.ts"),
+    read("src/lib/approvals-hub/badge-counts-payload.ts"),
     /calendarDisputes:/,
     "the batched endpoint must answer the calendarDisputes slot it is now asked for",
   );
@@ -311,7 +311,7 @@ export function runApprovalsHubSeparateInboxesTests() {
     "the badge must ride the one batched poll rather than opening a separate 30s request",
   );
   assert.match(
-    read("app/api/approvals/badge-counts/route.ts"),
+    read("src/lib/approvals-hub/badge-counts-payload.ts"),
     /deductionDisputes:/,
     "the batched endpoint must answer the deductionDisputes slot it is now asked for",
   );
@@ -324,7 +324,7 @@ export function runApprovalsHubSeparateInboxesTests() {
     "RED the count is a company-wide deductions read: deductions:read alone is held by seats that may see only their own line, and that one grant already leaked 69 employees' amounts once",
   );
   assert.match(
-    read("app/api/approvals/badge-counts/route.ts"),
+    read("src/lib/approvals-hub/badge-counts-payload.ts"),
     /assertDeductionsReadActor\(access\)/,
     "RED the batched poll must pass the same gate as the dedicated endpoint — it is the one every open tab actually calls",
   );

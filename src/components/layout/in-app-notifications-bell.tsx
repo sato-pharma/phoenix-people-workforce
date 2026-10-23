@@ -7,6 +7,7 @@ import Link from "next/link";
 import { alarmGlowRef } from "@/components/layout/alarm-glow";
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
+import { subscribePulseNotices } from "@/lib/session-pulse-store";
 import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
@@ -41,8 +42,6 @@ const pendingStatuses = new Set(["pending", "scheduled", "awaiting", "action_req
 /** Panel width, and the breathing room kept either side of it on a phone. */
 const NOTIFICATION_PANEL_WIDTH = 380;
 const NOTIFICATION_PANEL_GUTTER = 12;
-/** A tab shown again within this long of its last read keeps the list it has. */
-const BELL_RETURN_GAP_MS = 15_000;
 
 /** Cairo wall-clock, whatever zone the device is on — the instant is one this app stamped. */
 function formatNotificationTime(value: string | null) {
@@ -155,32 +154,29 @@ export function InAppNotificationsBell({
   }, []);
 
   useEffect(() => {
-    const signal = { aborted: false };
-    let lastLoadAt = 0;
-    const load = () => {
-      lastLoadAt = Date.now();
-      void loadNotifications(signal);
-    };
-    // Defer the first load so we don't call setState synchronously inside the effect.
-    const initial = window.setTimeout(load, 0);
-    // A tab in the background skips its poll — nobody can see its bell, and every open tab cost the
-    // server a full read each minute (Phoenix CRM performance audit, 2026-10-16; the badge store's
-    // own rule, src/lib/nav-badge-store.ts). It reads the moment the tab is shown again, so a returning
-    // viewer never reads a stale list — unless it read moments ago.
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== "hidden") load();
-    }, 60_000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastLoadAt >= BELL_RETURN_GAP_MS) load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    // The list rides the session pulse (src/lib/session-pulse-store.ts): the one 30 s request an open
+    // tab sends for the sidebar badges, this list and the session heartbeat together, where the bell
+    // used to run its own 60 s read (a full session lookup each time — 36,926 a day on production,
+    // 23 Oct 2026). The pulse asks for the list when it is at least a minute old, skips a hidden tab,
+    // and refetches a tab shown again unless it fetched moments ago — the rules this effect used to
+    // hold itself. loadNotifications below stays for the refresh and try-again buttons.
+    let active = true;
+    const unsubscribe = subscribePulseNotices((notices) => {
+      if (!active) return;
+      if (Array.isArray(notices.data)) {
+        setError(null);
+        setNotifications(notices.data as InAppNotificationView[]);
+      } else {
+        setError("We couldn't load your notifications.");
+        setNotifications([]);
+      }
+      setLoading(false);
+    });
     return () => {
-      signal.aborted = true;
-      window.clearTimeout(initial);
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
+      active = false;
+      unsubscribe();
     };
-  }, [loadNotifications]);
+  }, []);
 
   useDismissOnOutsideInteraction(containerRef, open, setOpen);
   useRepositionOnViewportChange(open, repositionPanel);

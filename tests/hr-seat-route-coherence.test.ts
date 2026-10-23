@@ -109,9 +109,6 @@ function routeFiles(dir: string, out: string[] = []): string[] {
  * behind an existing exemption.
  */
 const NOT_A_HARD_GATE: Record<string, string> = {
-  "app/api/approvals/badge-counts/route.ts":
-    "every domain runs inside Promise.allSettled and a rejected assertion falls back to {count: 0}, " +
-    "so a seat missing one of the three reads gets an unbadged row, never a 403",
   // Added 2026-10-20 with the HR Operations Specialist seat (HR Administration), which holds
   // employees:update and NOT employees:create (owner: she does not add an employee).
   "app/api/employees/route.ts":

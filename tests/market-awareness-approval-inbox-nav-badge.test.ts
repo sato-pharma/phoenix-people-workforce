@@ -379,7 +379,7 @@ export function runMarketAwarenessApprovalInboxNavBadgeTests() {
       /"\/api\/market-awareness\/pending-count": "marketAwareness"/,
       "13: the awareness src must be batched, or it costs an extra HTTP request every 30s per tab",
     );
-    const badgeCountsRoute = readFileSync("app/api/approvals/badge-counts/route.ts", "utf8");
+    const badgeCountsRoute = readFileSync("src/lib/approvals-hub/badge-counts-payload.ts", "utf8");
     assert.match(
       badgeCountsRoute,
       /getMarketAwarenessDecisionBadge\(access\)/,

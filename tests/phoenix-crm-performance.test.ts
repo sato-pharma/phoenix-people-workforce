@@ -129,14 +129,19 @@ export function runPhoenixCrmPerformanceTests(): void {
   // ── 4. The bell and the template wording ──────────────────────────────────────────────────────────────
   {
     const bell = code("src/components/layout/in-app-notifications-bell.tsx");
+    // The bell no longer owns a timer: its list rides the one session pulse (/api/auth/pulse), and the
+    // hidden-tab skip, the return read and the "unless it read moments ago" gap live in that store.
+    assert.match(bell, /subscribePulseNotices\(\(notices\) => \{/, "the bell takes its list from the one pulse");
+    assert.doesNotMatch(bell, /setInterval\(/, "and opens no timer of its own");
+    const pulse = code("src/lib/session-pulse-store.ts");
     assert.match(
-      bell,
-      /window\.setInterval\(\(\) => \{\s*if \(document\.visibilityState !== "hidden"\) load\(\);\s*\}, 60_000\)/,
-      "a hidden tab skips its minute poll",
+      pulse,
+      /setInterval\(\(\) => \{\s*if \(!tabIsHidden\(\)\) pulse\(\);\s*\}, PULSE_INTERVAL_MS\)/,
+      "a hidden tab skips its poll",
     );
-    assert.match(bell, /document\.addEventListener\("visibilitychange", onVisible\);/, "and reads the moment it is shown again");
-    assert.match(bell, /document\.removeEventListener\("visibilitychange", onVisible\);/, "and lets go of the listener on unmount");
-    assert.match(bell, /Date\.now\(\) - lastLoadAt >= BELL_RETURN_GAP_MS/, "unless it read moments ago");
+    assert.match(pulse, /document\.addEventListener\("visibilitychange", onVisible\);/, "and reads the moment it is shown again");
+    assert.match(pulse, /document\.removeEventListener\("visibilitychange", state\.onVisible\);/, "and lets go of the listener when nobody is listening");
+    assert.match(pulse, /Date\.now\(\) - state\.lastFetchStartedAt < PULSE_RETURN_GAP_MS\) return;/, "unless it read moments ago");
 
     const templates = code("src/lib/notifications/templates.ts");
     const load = bodyOf(templates, "async function loadTemplate(");
