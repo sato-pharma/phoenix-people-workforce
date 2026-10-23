@@ -1304,6 +1304,54 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Safe in both orders by design, per the file's own header: the shipping code treats a missing
   // claim_job_lease() as "held", which is the behaviour that was already live.
   "20261023140000_job_leases.sql",
+
+  // ── The three findings of the 2026-10-23 09:50 Cairo PRODUCTION sweep (`--no-grace`, so the 48h
+  // grace window was stood down and every migration was judged, including the newest). All three
+  // were merged to main and absent from ozucdzovmcqvepbozvqf's schema_migrations by version AND by
+  // name. Each was established as applied-or-missing FIRST, per the sweep's own instruction, and
+  // never from object presence alone.
+  //
+  // (1) APPLIED, proven by the CHECK it rewrites — not by presence. The file drops and re-adds
+  // phoenix_crm_plan_activities_type, and production's live definition is the file's NEW form
+  // exactly: activity_type = ANY (ARRAY['meeting','training','conference','admin_work','travel',
+  // 'health_day','sales_day','rtd','group_meeting']) — both added values present. The companion
+  // phoenix_crm_manager_plan_slots_kind carries 'rtd' and 'group_meeting' too. A CHECK cannot be
+  // satisfied by an older generation the way `create or replace` can, so this is positive evidence
+  // the file itself ran. Its two functions are security definer with search_path=public on
+  // production, as the file specifies.
+  "20261021130000_phoenix_crm_plan_activities_rtd_and_group_meeting.sql",
+
+  // (2) APPLIED, proven by the view body. public.crm_visits_unified on production contains both
+  // 'group_meeting' and 'rtd' — the worked-day codes this file exists to add; the pre-image view
+  // had neither.
+  //
+  // 🔴 ITS FUNCTION DIGEST DELIBERATELY DOES NOT MATCH, AND THAT IS NOT DRIFT. md5(prosrc) for
+  // public.phoenix_crm_rep_entry_days is 868452bd59f81869c4eb3c9d6bb7caac at length 99 — a thin
+  // read of public.phoenix_crm_rep_entry_days_cache — because a LATER migration (the entry-days
+  // speed work, PR #6274) replaced the body this file installed. A digest comparison against this
+  // file therefore CANNOT prove or disprove its apply, and chasing it is wasted work: judge this
+  // file by the view, which nothing since has touched.
+  "20261021140000_crm_visits_unified_group_meeting_and_rtd_worked_day_codes.sql",
+
+  // (3) WAS GENUINELY MISSING, AND THIS SESSION APPLIED IT — the one of the three that was not a
+  // bookkeeping gap. Staging had it complete (table, bucket and an exact ledger row); production
+  // had NO table at all (to_regclass('public.device_screen_recordings') was null) while
+  // src/lib/devices/headwind/recordings.ts on main already reads it, so the production leg had
+  // simply never been run after the 2026-10-22 merge. Applied with
+  // `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs
+  // supabase/migrations/20261022170000_tablet_screen_recordings.sql production`, the standing route
+  // (AGENTS.md §8, .claude/rules/database.md), which writes NO ledger row — hence this entry, never
+  // a ledger write. Additive only: one new table and one new bucket, nothing existing altered.
+  //
+  // The pre-image is the apply's own two NOTICEs — `policy "device_screen_recordings_service_role"
+  // ... does not exist, skipping` for BOTH public.device_screen_recordings and storage.objects — so
+  // production held nothing of this file before it ran.
+  //
+  // Readback, the file's own, all nine figures as its header specifies: RLS-locked table 1,
+  // bucket_limit 268435456, bucket public false, mime video/mp4,video/webm, 1 table policy,
+  // 13 columns, 3 indexes, anon SELECT false, and 0 ledger rows matching `20261022170%` or
+  // name `%screen_recording%`.
+  "20261022170000_tablet_screen_recordings.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
