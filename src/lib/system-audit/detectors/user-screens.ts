@@ -13,6 +13,7 @@ import { messageTemplate } from "@/lib/system-audit/signature";
 import type { ScreenPruneResult } from "@/lib/system-audit/user-screens";
 import {
   emptyDetectorResult,
+  SILENT_DATA_MESSAGE,
   type AuditDetector,
   type AuditIssueInput,
   type AuditOccurrenceInput,
@@ -40,9 +41,10 @@ import {
  * EVERY WRITE CARRIES ITS WATERMARK, and an operation never spans two writes (each batch folds on its
  * own), so a re-run lands on the same dedupe keys and `max` keeps them as they were.
  *
- * AFTER the fold, on a cron run only, the 90-day retention: at most 500 pictures older than 90 days —
+ * AFTER the fold, on a cron run only, the 90-day retention: at most 1,000 pictures older than 90 days —
  * and never past the watermark, so a picture is always in the ledger before it goes — counted in the
- * run's report (user-screens.ts `pruneUserErrorScreens`).
+ * run's report (user-screens.ts `pruneUserErrorScreens`). A night that stops at that cap with pictures
+ * still past their 90 days raises its own issue on the board (`buildRetentionCapFinding`).
  *
  * An error screen and the `app_error_fold` row for the same crash may both appear: one is the picture
  * of what the person saw, the other the error the browser reported. That is expected and documented.
@@ -325,6 +327,86 @@ function asCursor(value: Record<string, unknown> | null): UserScreenCursor | nul
   return createdAt && id ? { createdAt, id } : null;
 }
 
+// ─── The removal's own alarm ──────────────────────────────────────────────────────────────────────
+
+export const RETENTION_CAP_SIGNATURE = "screen:retention-cap";
+export const RETENTION_CAP_ERROR_CODE = "SCREEN-RETENTION-CAP";
+const SYSTEM_AUDIT_PAGE = "/admin/system-audit";
+
+function cairoDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+}
+
+/**
+ * The night's removal stopped at its cap with pictures still past their 90 days → one issue on the
+ * board, so the morning message says so (owner, 23 Oct 2026: "alert when the nightly screenshot
+ * removal hits its 1,000 cap"). Before this the only trace was `candidates` in the run report, which
+ * nobody reads: after a day of more than 1,000 captures (an outage) pictures outlive the owner's 90
+ * days for as many nights as the backlog takes, and nothing said so.
+ *
+ * ONE issue, ONE occurrence per Cairo night it happens, so the message carries it the first night
+ * (a NEW issue) and again only if it comes back after being closed (REOPENED) — not every night of
+ * the same backlog. A full batch that left nothing behind (exactly 1,000 due) raises nothing; an
+ * unreadable count does raise it, saying the count could not be read — never "caught up".
+ */
+export function buildRetentionCapFinding(
+  retention: ScreenPruneResult,
+  nowIso: string,
+  label: (input: { route: string | null; role: string | null; recentPageRoute: string | null }) => SidebarLabel = (args) =>
+    resolveSidebarLabel(args),
+): { issue: AuditIssueInput; occurrence: AuditOccurrenceInput } | null {
+  if (!retention.capped || retention.remaining === 0) return null;
+  const count = (value: number) => value.toLocaleString("en-US");
+  const waiting =
+    retention.remaining === null
+      ? "how many are still waiting could not be counted"
+      : `${count(retention.remaining)} picture${retention.remaining === 1 ? " is" : "s are"} still past their 90 days`;
+  const where = label({ route: SYSTEM_AUDIT_PAGE, role: "Super Admin", recentPageRoute: null });
+  const technical =
+    `The nightly screenshot removal stopped at its cap of ${count(retention.cap)} ` +
+    `(${count(retention.deletedRows)} removed, ${count(retention.keptForRetry)} kept for retry, cutoff ${retention.cutoff}); ` +
+    `${waiting}. Each night removes up to ${count(retention.cap)} more, oldest first.`;
+  return {
+    issue: {
+      signatureKey: RETENTION_CAP_SIGNATURE,
+      family: "user_screen",
+      errorCode: RETENTION_CAP_ERROR_CODE,
+      title: `Screenshot removal hit its nightly cap of ${count(retention.cap)} — pictures are outliving their 90 days`,
+      rootCauseLevel: "confirmed",
+      rootCause: `More pictures fell past 90 days than one night removes (${count(retention.cap)} — SCREEN_PRUNE_BATCH in src/lib/system-audit/user-screens.ts).`,
+      rootCauseEvidence: { cutoff: retention.cutoff, remaining: retention.remaining, deletedRows: retention.deletedRows },
+      firstSeenAt: nowIso,
+      lastSeenAt: nowIso,
+    },
+    occurrence: {
+      dedupeKey: `${RETENTION_CAP_SIGNATURE}:${cairoDay(nowIso)}`,
+      signatureKey: RETENTION_CAP_SIGNATURE,
+      hrKey: null,
+      moduleLabel: where.label,
+      moduleLabelSource: where.source,
+      shell: where.shell,
+      route: SYSTEM_AUDIT_PAGE,
+      occurredAt: nowIso,
+      occurredAtKind: "detected",
+      userMessage: SILENT_DATA_MESSAGE,
+      isSilent: true,
+      technicalMessage: technical,
+      errorCode: RETENTION_CAP_ERROR_CODE,
+      relatedTable: USER_ERROR_SCREENS_TABLE,
+      relatedId: null,
+      evidence: {
+        cap: retention.cap,
+        cutoff: retention.cutoff,
+        candidates: retention.candidates,
+        deletedRows: retention.deletedRows,
+        deletedFiles: retention.deletedFiles,
+        keptForRetry: retention.keptForRetry,
+        remaining: retention.remaining,
+      },
+    },
+  };
+}
+
 // ─── The detector ─────────────────────────────────────────────────────────────────────────────────
 
 export type UserScreensDetectorDeps = {
@@ -400,10 +482,31 @@ export function createUserScreensDetector(deps: UserScreensDetectorDeps): AuditD
       // The 90-day retention runs on the nightly sweep only, after the fold, and never past what the
       // ledger holds. A retention failure is reported, never allowed to undo the fold above.
       let retention: ScreenPruneResult | { error: string } | null = null;
+      let retentionAlert: "raised" | "none" | { error: string } = "none";
       if (ctx.mode === "cron" && deps.prune) {
         try {
-          retention = await deps.prune({ nowMs: ctx.now(), notAfter: cursor?.createdAt ?? null });
-          if (retention.error && result.status === "ok") result.status = "partial";
+          const pruned = await deps.prune({ nowMs: ctx.now(), notAfter: cursor?.createdAt ?? null });
+          retention = pruned;
+          if (pruned.error && result.status === "ok") result.status = "partial";
+          // A night that stopped at the cap with pictures still past 90 days goes on the board before
+          // the sweep's morning message reads it. The watermark is left where the fold put it.
+          const finding = buildRetentionCapFinding(pruned, new Date(ctx.now()).toISOString());
+          if (finding) {
+            try {
+              const written = await ctx.sink.write(USER_SCREENS_DETECTOR, ctx.runId, {
+                issues: [finding.issue],
+                occurrences: [finding.occurrence],
+                merge: "max",
+                cursor: null,
+              });
+              result.inserted += written.inserted;
+              result.updated += written.updated;
+              retentionAlert = "raised";
+            } catch (error) {
+              retentionAlert = { error: error instanceof Error ? error.message : String(error) };
+              if (result.status === "ok") result.status = "partial";
+            }
+          }
         } catch (error) {
           retention = { error: error instanceof Error ? error.message : String(error) };
           if (result.status === "ok") result.status = "partial";
@@ -411,7 +514,7 @@ export function createUserScreensDetector(deps: UserScreensDetectorDeps): AuditD
       }
 
       if (result.status === "ok" && result.unreadableSources.length > 0) result.status = "partial";
-      result.report = { screens: result.scanned, testScreens, occurrencesWritten, settleBefore: before, window, retention };
+      result.report = { screens: result.scanned, testScreens, occurrencesWritten, settleBefore: before, window, retention, retentionAlert };
       return result;
     },
   };

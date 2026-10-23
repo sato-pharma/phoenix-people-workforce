@@ -110,7 +110,9 @@ export async function loadUserScreenImage(
  * Pictures removed per night, at most — 10 storage calls of 100, and exactly the 1,000 rows one PostgREST
  * read returns (a larger limit would be cut to 1,000 without a word). At 500 a
  * day of more than 500 new pictures would outlive the owner’s 90 days with no alarm (risk review,
- * 23 Oct 2026); a run that hits this cap shows `candidates` equal to it in the run report.
+ * 23 Oct 2026). A run that hits this cap and leaves pictures past their 90 days raises an issue on
+ * the System Audit board, which the morning message carries (owner, 23 Oct 2026: "alert when the
+ * nightly screenshot removal hits its 1,000 cap") — detectors/user-screens.ts `buildRetentionCapFinding`.
  */
 export const SCREEN_PRUNE_BATCH = 1_000;
 const STORAGE_REMOVE_CHUNK = 100;
@@ -122,11 +124,21 @@ export type ScreenPruneResult = {
   deletedFiles: number;
   /** Rows kept because their file could not be removed — tried again next night. */
   keptForRetry: number;
+  /** The most this run would remove (SCREEN_PRUNE_BATCH, or a smaller test limit). */
+  cap: number;
+  /** The run read a full batch: it stopped at `cap`, not at the last old picture. */
+  capped: boolean;
+  /**
+   * Pictures still older than the cutoff once this run finished — counted only when `capped`
+   * (0 otherwise), null when that count could not be read. The System Audit raises an issue when
+   * a capped run leaves any (detectors/user-screens.ts `buildRetentionCapFinding`).
+   */
+  remaining: number | null;
   error: string | null;
 };
 
 /**
- * The 90-day retention (owner, 23 Oct 2026), run inside the nightly sweep. Removes at most 500
+ * The 90-day retention (owner, 23 Oct 2026), run inside the nightly sweep. Removes at most 1,000
  * pictures older than 90 days — and never one the detector has not folded yet (`notAfter`, its
  * watermark), so a picture is always in the ledger before it goes. Each file goes through the
  * Storage API first (a delete on storage.objects is refused by storage.protect_delete), and a row is
@@ -140,7 +152,18 @@ export async function pruneUserErrorScreens(
   const cutoffMs = input.nowMs - USER_ERROR_SCREENS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const notAfterMs = input.notAfter ? Date.parse(input.notAfter) : Number.NaN;
   const cutoff = new Date(Number.isFinite(notAfterMs) ? Math.min(cutoffMs, notAfterMs) : cutoffMs).toISOString();
-  const result: ScreenPruneResult = { cutoff, candidates: 0, deletedRows: 0, deletedFiles: 0, keptForRetry: 0, error: null };
+  const limit = Math.min(input.limit ?? SCREEN_PRUNE_BATCH, SCREEN_PRUNE_BATCH);
+  const result: ScreenPruneResult = {
+    cutoff,
+    cap: limit,
+    candidates: 0,
+    deletedRows: 0,
+    deletedFiles: 0,
+    keptForRetry: 0,
+    capped: false,
+    remaining: 0,
+    error: null,
+  };
   // Never folded at all: nothing is old enough to be safe to remove.
   if (!input.notAfter) return result;
 
@@ -149,10 +172,11 @@ export async function pruneUserErrorScreens(
     .select("id, storage_path")
     .lt("created_at", cutoff)
     .order("created_at", { ascending: true })
-    .limit(Math.min(input.limit ?? SCREEN_PRUNE_BATCH, SCREEN_PRUNE_BATCH));
+    .limit(limit);
   if (error) throw failure("retention read", error);
   const rows = (data ?? []) as Array<{ id: string; storage_path: string }>;
   result.candidates = rows.length;
+  result.capped = rows.length >= limit;
   if (rows.length === 0) return result;
 
   // A hundred at a time: the ids travel in the request URL, and five hundred of them would not fit.
@@ -172,6 +196,17 @@ export async function pruneUserErrorScreens(
     const { error: deleteError, count } = await supabase.from(USER_ERROR_SCREENS_TABLE).delete({ count: "exact" }).in("id", ids);
     if (deleteError) throw failure("retention delete", deleteError);
     result.deletedRows += count ?? ids.length;
+  }
+
+  // A full batch means the night stopped at the cap, not at the last old picture. Count what is still
+  // waiting so the System Audit can say how far behind the 90 days are; an unreadable count is null,
+  // never 0, so it can never read as "caught up".
+  if (result.capped) {
+    const { count, error: countError } = await supabase
+      .from(USER_ERROR_SCREENS_TABLE)
+      .select("id", { count: "exact", head: true })
+      .lt("created_at", cutoff);
+    result.remaining = countError || typeof count !== "number" ? null : count;
   }
   return result;
 }

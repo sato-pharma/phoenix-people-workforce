@@ -31,6 +31,7 @@ import { runSystemAuditSyncRunsTests } from "./system-audit-sync-runs.test.ts";
 import { runSystemAuditJobFailuresTests } from "./system-audit-job-failures.test.ts";
 import { runSystemAuditDataLinkageTests } from "./system-audit-data-linkage.test.ts";
 import { runUserErrorScreensTests } from "./user-error-screens.test.ts";
+import { runUserErrorScreensRetentionCapTests } from "./user-error-screens-retention-cap.test.ts";
 import { runSystemAuditScreenshotViewsTests } from "./system-audit-screenshot-views.test.ts";
 import { runSystemAuditVerifierTests } from "./system-audit-verifier.test.ts";
 import { runSystemAuditSweepTests } from "./system-audit-sweep.test.ts";
@@ -2899,6 +2900,7 @@ await runTest("a failed or stuck iReports360 sync run becomes a finding and veri
 await runTest("a failed background job or a missed scheduled-job heartbeat becomes a finding, named in plain words", runSystemAuditJobFailuresTests);
 await runTest("a login with no access profile, a missing attendance device map or a vacancy holder mismatch is one finding per person", runSystemAuditDataLinkageTests);
 await runTest("an error or block a person meets leaves a screenshot: refusals photographed, skip list and throttle honoured, the caller answer untouched, test accounts filed under themselves, 90-day retention only nightly, pictures for the Super Admin only", runUserErrorScreensTests);
+await runTest("the nightly screenshot removal raises a System Audit issue when it stops at its 1,000 cap with pictures still past their 90 days: counted after the removals, one occurrence per Cairo night, written before the morning message, never moving the watermark", runUserErrorScreensRetentionCapTests);
 await runTest("every screenshot opened on the System Audit page writes one audit row naming who looked at whose screen, after the Super Admin guard and before the picture leaves", runSystemAuditScreenshotViewsTests);
 await runTest("only the verifier sets FIXED — VERIFIED, after 7 quiet days and real exposure, and a recurrence on a fixed build reopens it", runSystemAuditVerifierTests);
 await runTest("the nightly system audit sweep runs the detectors one at a time under a lease and stops on an unhealthy database", runSystemAuditSweepTests);

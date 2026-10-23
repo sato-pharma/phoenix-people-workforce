@@ -181,6 +181,16 @@ file through the Storage API first, its row after; a file that will not go keeps
 night. The counts are in the `user_screens` run's report (`retention`). The ledger rows stay; the drawer
 says how many of an occurrence's pictures have passed their 90 days.
 
+**A night that stops at the 1,000 cap raises an issue** (owner, 23 Oct 2026: "alert when the nightly
+screenshot removal hits its 1,000 cap"). The removal reports `capped` and, only then, counts the pictures
+still past the cutoff (`remaining`; null when that count fails, never 0). If any remain,
+`buildRetentionCapFinding` (`src/lib/system-audit/detectors/user-screens.ts`) writes one issue,
+"Screenshot removal hit its nightly cap of 1,000", with one occurrence per Cairo night, before the
+sweep's morning message reads the board, so the message carries it the first night and again only
+if it is reopened. A full batch that left nothing behind raises nothing. The run report records
+`retentionAlert` (`raised`, `none`, or the write's error). Pinned by
+`tests/user-error-screens-retention-cap.test.ts`.
+
 ## The nightly sweep and the one daily message
 
 `/api/cron/system-audit-sweep` (heartbeat slug `phoenix-system-audit-sweep`) runs at **04:57 Cairo**,
