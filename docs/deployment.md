@@ -993,7 +993,17 @@ the variable copy, the certificate, and the image booting on Fly. Pinned by `tes
 
 ### The worker on Fly
 
-Since 22 Oct 2026 03:38 Cairo the background jobs run on Fly as well (owner, choosing **"Separate worker on Fly"**).
+✅ **ENDED 23 Oct 2026, Cairo — the background jobs and every deployment are back on Railway** (owner, ~04:33: *"Railway
+is back — retire the all-deployments-through-Fly rule"*). 04:31:56 the Fly worker was scaled to zero; 04:31:58 Railway's
+worker was set to `PHOENIX_PROCESS_ROLE=worker` and redeployed, booting `[process-role] worker` and
+`[crm:live-poll] started` at 04:33:30; 04:33:32 the four cron-job.org jobs moved back to
+`phoenix-workforce-worker-production.up.railway.app` (`inbound-intake` stays off); 04:35:41 `phoenix-worker-standby` was
+destroyed. Read live 23 Oct ~05:17: the worker's `/api/healthz` answers from Railway, and Fly reports
+`Could not find App "phoenix-worker-standby"`. `phoenix-hr-standby` is kept, stopped at zero machines, as the Emergency
+host button's app. The go-live's worker step has no app to move now and fails harmlessly (`continue-on-error`). What
+follows is the outage record, kept for the next time Railway cannot deploy.
+
+From 22 Oct 2026 03:38 Cairo the background jobs ran on Fly as well (owner, choosing **"Separate worker on Fly"**).
 Railway's worker was stuck on its 20 Oct deployment holding the database key that had just been switched off, and
 Railway could not deploy, so every scheduler had stopped at about 02:35 Cairo.
 
