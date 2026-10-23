@@ -318,7 +318,7 @@ export function runPortalRepNavigationSpeedTests(): void {
     const shellStart = snapshot.indexOf("const shellPromise = getEmployeePortalShellData(access);");
     assert.ok(shellStart >= 0 && shellStart < firstAwait, "the landing snapshot starts the shell read without waiting on it");
     for (const started of [
-      "const earlyBirdStarsPromise = ",
+      "const earlyBirdStarsPromise",
       "const planAdherencePromise = ",
       "const leaveDaysRemainingPromise = ",
       "const myInterviewsPromise",
@@ -331,6 +331,34 @@ export function runPortalRepNavigationSpeedTests(): void {
       "const shell = await shellPromise;",
       "and the shell is only awaited once the other reads are all in flight",
     );
+
+    // 🔴 THE REP'S SLOW CARDS STREAM (owner, 2026-10-23: "the process of shifting from page to page
+    // never take more than 1 second"). The page asks for them unawaited, the snapshot hands them back
+    // still running, and the centre reads each one under its own Suspense boundary. Undo any one of
+    // the three and the rep waits on the slowest read again — seven seconds at the median, measured.
+    const page = source("app/employee-portals/page.tsx");
+    assert.match(
+      page,
+      /getPortalHomeSnapshot\(access,\s*\{[^}]*streamRepCards: true[^}]*\}\)/,
+      "the landing page asks for the rep's slow cards to stream",
+    );
+    assert.match(
+      snapshot,
+      /\[repSales, mrRankStanding, mrFieldKpis, doubleVisitPulse\] = repCards\s*\?\s*\[repSalesFields\(null\), null, null, null\]/,
+      "a streamed snapshot never awaits the rep's sales, rank, field KPIs or double visits",
+    );
+    assert.match(snapshot, /repCards \? Promise\.resolve\(null\) : leaveDaysRemainingPromise/, "nor his leave left");
+    const center = source("src/components/employee-portal/portal-command-center.tsx");
+    const rep = functionBody(center, "function MedicalRepCommandCenter(");
+    assert.match(rep, /const cards = repCardsOf\(snapshot\);/, "the centre reads the cards as promises");
+    assert.doesNotMatch(rep, /\bawait\b/, "and never awaits one itself — that would hold the whole page again");
+    for (const card of ["RepHonourCard", "RepAchievementCard", "RepFieldTiles", "RepAchievementByMonth", "RepNeedsYou", "RepRecord"]) {
+      assert.match(center, new RegExp(`\\nasync function ${card}\\(`), `${card} is its own async card`);
+      const at = rep.indexOf(`<${card}`);
+      assert.ok(at >= 0, `the centre renders ${card}`);
+      assert.ok(rep.lastIndexOf("<Suspense", at) > rep.lastIndexOf("</Suspense>", at), `${card} sits inside a Suspense boundary`);
+      assert.match(rep.slice(at), new RegExp(`^<${card}\\b[^>]*/>\\s*</Suspense>`), `${card} is the one child of its boundary`);
+    }
 
     // The rep's KPI tile never reads the board's two per-rep reports.
     assert.match(

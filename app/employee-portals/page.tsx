@@ -59,7 +59,10 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
 
   let snapshot;
   try {
-    snapshot = await getPortalHomeSnapshot(access, { kpiMonth: one(params.kpiMonth) });
+    // streamRepCards: a Medical Rep's slow cards (achievement, rank, field KPIs, his record) arrive
+    // still running and fill under Suspense, so the page paints on the fast reads alone (owner,
+    // 2026-10-23: "the process of shifting from page to page never take more than 1 second").
+    snapshot = await getPortalHomeSnapshot(access, { kpiMonth: one(params.kpiMonth), streamRepCards: true });
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals", module: "home-snapshot", role: access.role, hrId: access.hrId },

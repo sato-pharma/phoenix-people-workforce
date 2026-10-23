@@ -9,11 +9,12 @@ import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 /**
  * A chooser card's link: the one piece of the chooser that runs in the browser.
  *
- * At the TOUCH (or the hover, or the keyboard's focus) it starts both halves of the module page —
- * the page itself, through `unstable_dynamicOnHover`, and the module's screen, through
- * `preloadPhoenixCrmTab` — so by the time the tap lands the two are already on their way, and they
- * travel side by side instead of one after the other (owner, 2026-10-01: "slow to transfer between
- * page and page", Phoenix CRM first).
+ * At the TOUCH (or the hover, or the keyboard's focus) it starts downloading the module's screen,
+ * through `preloadPhoenixCrmTab` — browser code only, nothing the server has to build — so the tap
+ * finds it already on its way (owner, 2026-10-01: "slow to transfer between page and page", Phoenix
+ * CRM first). It deliberately does NOT prefetch the module PAGE on touch (`unstable_dynamicOnHover`):
+ * that built the whole page on the server for every card a finger or a mouse crossed, and the card
+ * actually tapped queued behind them (next.config.ts, beside `staleTimes`).
  *
  * The chooser stays a server component around it: it renders these links and nothing else ships.
  */
@@ -30,7 +31,7 @@ export function PhoenixCrmModuleLink({
 }) {
   const warm = () => preloadPhoenixCrmTab(moduleKey);
   return (
-    <Link className={className} href={href} onFocus={warm} onPointerDown={warm} onPointerEnter={warm} unstable_dynamicOnHover>
+    <Link className={className} href={href} onFocus={warm} onPointerDown={warm} onPointerEnter={warm}>
       {children}
     </Link>
   );

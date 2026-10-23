@@ -1,4 +1,5 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { otherApprovalsInboxIsAlwaysEmptyFor } from "@/lib/action-center/inbox-reach";
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, ActionHubModule, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeNameRoster, type EmployeeNameRosterRow } from "@/lib/employees/employee-directory";
@@ -598,6 +599,12 @@ export async function countAwaitingMyActionItems(
     audience === "admin" &&
     !OTHER_APPROVALS_MOVED_OUT.outstation &&
     canUseAdminOutstationWorkspace(access, "approve");
+  // A seat that can only ever see its OWN resignation and contract records has nothing this inbox
+  // could count — survivesAwaitingInbox drops a viewer's own items — so it answers 0 without reading
+  // either dashboard (2026-10-23, every page change under 1 second: these two reads are the heavy half
+  // of every 30 s badge poll, and the seats listed in otherApprovalsInboxIsAlwaysEmptyFor are most of
+  // the company). The proof, and why it is an allow-list, sit with that predicate.
+  if (!includeOutstationAdminSource && otherApprovalsInboxIsAlwaysEmptyFor(access)) return 0;
   const [resignations, outstation, contract] = await Promise.allSettled([
     getResignationsDashboardData(access),
     includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),

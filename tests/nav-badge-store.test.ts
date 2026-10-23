@@ -4,6 +4,7 @@ import {
   subscribeNavBadge,
   _resetNavBadgeChannels,
   BADGE_COUNTS_ENDPOINT,
+  BADGE_RETURN_GAP_MS,
 } from "../src/lib/nav-badge-store.ts";
 
 // ── Minimal browser-environment mock ─────────────────────────────────────────
@@ -271,6 +272,52 @@ export async function runNavBadgeStoreTests() {
     } finally {
       mockDocument.visibilityState = "visible";
       (globalThis as unknown as Record<string, unknown>)["setInterval"] = realSetInterval;
+      _resetNavBadgeChannels();
+      setupFetch(0);
+    }
+  }
+
+  // ── 10. A tab shown again within 15 s of the last batched fetch keeps its count ──
+  // 2026-10-23, every page change under 1 second: the badge-counts endpoint cost 226 s of server time
+  // in 27 minutes of production, much of it visibility returns seconds after the last recount. The
+  // return is rationed; a badge mounting for the first time is not. Date.now is driven by hand.
+  {
+    const realNow = Date.now;
+    let now = 1_000_000;
+    Date.now = () => now;
+    try {
+      setupFetch(1);
+      _resetNavBadgeChannels();
+      const unsubVacation = subscribeNavBadge("/api/approvals/vacation/pending-count", () => {});
+      await flush();
+      assert.equal(fetchCallCount, 1, "10: the first batched badge must fetch at once");
+
+      now += BADGE_RETURN_GAP_MS - 1;
+      visibilityListeners.forEach((fn) => fn());
+      await flush();
+      assert.equal(
+        fetchCallCount,
+        1,
+        "10: a tab shown again inside 15 s of the last batched fetch must keep its count, not recount",
+      );
+
+      const unsubHub = subscribeNavBadge("/api/approvals-hub/pending-count", () => {});
+      await flush();
+      assert.equal(fetchCallCount, 2, "10: a batched badge mounting for the first time must still fetch at once, gap or not");
+
+      now += BADGE_RETURN_GAP_MS - 1;
+      visibilityListeners.forEach((fn) => fn());
+      await flush();
+      assert.equal(fetchCallCount, 2, "10: the gap must be measured from the LAST fetch's start, not the first");
+
+      now += 1;
+      visibilityListeners.forEach((fn) => fn());
+      await flush();
+      assert.equal(fetchCallCount, 3, "10: a tab shown again 15 s after the last fetch started must recount");
+      unsubVacation();
+      unsubHub();
+    } finally {
+      Date.now = realNow;
       _resetNavBadgeChannels();
       setupFetch(0);
     }

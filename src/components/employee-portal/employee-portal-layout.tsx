@@ -1314,9 +1314,8 @@ function EmployeePortalMenu({
                         // page on the server the moment the sidebar drew — ~15 pages per portal load,
                         // measured 4.5–7.5 s each in production — and a tap queued behind them. The
                         // default prefetches down to the page's loading.tsx, so the skeleton is still
-                        // instant; this upgrades to the full page on touchstart / mouseenter only.
-                        // Needs `experimental.dynamicOnHover` in next.config.ts.
-                        unstable_dynamicOnHover
+                        // instant. Nor `unstable_dynamicOnHover`: a mouse crossing the menu built every
+                        // row it touched (next.config.ts, beside `staleTimes`).
                       >
                         {/* The standout row wears the Phoenix LOGO before its name (owner, 2026-09-30:
                             "before the Phoenix CRM, put the logo") — the same asset and the same
@@ -2088,10 +2087,9 @@ export function EmployeePortalSidebar({
                     onMouseEnter={(event) => openFlyout(section.title, event.currentTarget)}
                     onMouseLeave={scheduleFlyoutClose}
                     // The default prefetch — down to the page's loading.tsx — and deliberately NOT a
-                    // full one, nor `unstable_dynamicOnHover`: hovering a rail icon opens its pop-out,
-                    // so a hover here is browsing the sections, not a visit to the first page. The
-                    // pop-out's own rows upgrade on intent below. See `dynamicOnHover` in next.config.ts
-                    // for what the old full `prefetch` cost on every portal load.
+                    // full one: hovering a rail icon opens its pop-out, so a hover here is browsing the
+                    // sections, not a visit to the first page. See the comment beside `staleTimes` in
+                    // next.config.ts for what the full `prefetch` and the hover upgrade cost.
                     title={collapsed ? undefined : section.title}
                   >
                     {active ? <span className="absolute left-0 h-7 w-[3px] rounded-r-sm bg-[#F05A1A] shadow-[0_0_10px_rgba(240,90,26,0.9)]" /> : null}
@@ -2236,8 +2234,6 @@ export function EmployeePortalSidebar({
                   handleRailNavigate(event, item.href);
                 }}
                 role="menuitem"
-                // A row in the pop-out IS a choice of page, so it fetches that page on touch/hover.
-                unstable_dynamicOnHover
               >
                 <ItemIcon className={`h-4 w-4 shrink-0 ${locked ? "text-amber-600" : active ? "text-[#F05A1A]" : "text-[#25314A]/76"}`} />
                 <span className={locked ? "opacity-70" : undefined}>{item.label}</span>

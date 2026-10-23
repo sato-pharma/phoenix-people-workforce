@@ -79,12 +79,27 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   "/api/deductions/disputes/pending-count": "deductionDisputes",
 };
 
+/**
+ * The least time between two batched fetches when the trigger is a tab coming BACK into view
+ * (2026-10-23, every page change under 1 second). Production, 2026-10-23, about 27 minutes: the
+ * badge-counts endpoint answered 141 calls for 226 s of server time, about 1.6 s each, and a large
+ * share were visibility returns — an alt-tab to the mail and back, a phone screen woken for a second
+ * — each one a full eleven-domain recount seconds after the last. The bell already rations its own
+ * return refetch the same way (BELL_RETURN_GAP_MS in in-app-notifications-bell.tsx). Measured from
+ * when the last fetch STARTED, so a slow answer does not stretch the gap. Only the visibility return
+ * is rationed: a badge mounting for the first time still fetches at once, and the 30 s poll is
+ * untouched, so a returning viewer reads a count at most 15 s old and never a blank one.
+ */
+export const BADGE_RETURN_GAP_MS = 15_000;
+
 /** Shared polling infrastructure for every batched channel (one poll serves all). */
 const batch: {
   inFlight: Promise<void> | null;
   intervalId: ReturnType<typeof setInterval> | null;
   onVisible: (() => void) | null;
-} = { inFlight: null, intervalId: null, onVisible: null };
+  /** When the last batched fetch actually started (Date.now()); 0 = never. See BADGE_RETURN_GAP_MS. */
+  lastFetchStartedAt: number;
+} = { inFlight: null, intervalId: null, onVisible: null, lastFetchStartedAt: 0 };
 
 function isBatchedSrc(src: string): boolean {
   return Object.prototype.hasOwnProperty.call(BATCH_KEY_BY_SRC, src);
@@ -141,6 +156,7 @@ function fetchAndBroadcastBatch(): void {
   // inFlight guard: if a batched request is already running, reuse it.
   if (batch.inFlight) return;
 
+  batch.lastFetchStartedAt = Date.now();
   batch.inFlight = globalThis
     .fetch(BADGE_COUNTS_ENDPOINT)
     .then((r) => r.json())
@@ -242,8 +258,12 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
         }, 30_000);
       }
       if (batch.onVisible === null && typeof document !== "undefined") {
+        // A return inside BADGE_RETURN_GAP_MS of the last fetch's start keeps the count it already
+        // shows (2026-10-23, every page change under 1 second); the next 30 s tick refreshes it.
         const onVisible = () => {
-          if (document.visibilityState === "visible") fetchAndBroadcastBatch();
+          if (document.visibilityState !== "visible") return;
+          if (Date.now() - batch.lastFetchStartedAt < BADGE_RETURN_GAP_MS) return;
+          fetchAndBroadcastBatch();
         };
         batch.onVisible = onVisible;
         document.addEventListener("visibilitychange", onVisible);
@@ -303,4 +323,5 @@ export function _resetNavBadgeChannels(): void {
   }
   batch.onVisible = null;
   batch.inFlight = null;
+  batch.lastFetchStartedAt = 0;
 }

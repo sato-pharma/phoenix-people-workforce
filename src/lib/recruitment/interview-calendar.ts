@@ -292,13 +292,33 @@ function mayReadSessions(caller: InterviewCalendarCaller, weekStart: string): bo
 
 const NOT_YOURS = "Forbidden: this interview is not one you were chosen to conduct.";
 
+/**
+ * How long the sidebar's yes/no is kept per person. It only decides whether a LINK shows: the page and
+ * every route behind it still resolve the role fresh, so a share switched off is refused at once and
+ * at worst the link lingers this long. Before it the answer cost three round trips (shares, bookings,
+ * the person) on every portal document load, for a Medical Rep who can never hold the calendar too.
+ */
+const CALENDAR_ACCESS_TTL_MS = 2 * 60_000;
+const CALENDAR_ACCESS_MAX_PEOPLE = 2000;
+const calendarAccessCache = new Map<string, { at: number; value: Promise<boolean> }>();
+
 /** Whether this person should be offered the calendar at all — the portal sidebar asks this. */
 export async function hasInterviewCalendarAccess(access: AccessContext): Promise<boolean> {
-  try {
-    return (await resolveInterviewCalendarRole(access)) !== null;
-  } catch {
-    return false;
-  }
+  const key = `${access.source}|${canonicalHrIdKey(access.hrId) ?? ""}|${access.loginId ?? ""}|${access.role ?? ""}|${access.scope ?? ""}`;
+  const now = Date.now();
+  const cached = calendarAccessCache.get(key);
+  if (cached && now - cached.at < CALENDAR_ACCESS_TTL_MS) return cached.value;
+  const value = resolveInterviewCalendarRole(access).then(
+    (role) => role !== null,
+    () => {
+      // A failed read is answered "no" and not kept, so the next load asks again.
+      calendarAccessCache.delete(key);
+      return false;
+    },
+  );
+  if (calendarAccessCache.size >= CALENDAR_ACCESS_MAX_PEOPLE) calendarAccessCache.clear();
+  calendarAccessCache.set(key, { at: now, value });
+  return value;
 }
 
 /**

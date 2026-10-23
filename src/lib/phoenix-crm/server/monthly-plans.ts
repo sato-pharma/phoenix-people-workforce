@@ -96,7 +96,7 @@ import {
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { ensureReferenceCustomers, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomersRecently, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
@@ -548,7 +548,10 @@ export async function loadMonthlyPlanner(
   // Who decides this territory's weeks — known before the plan rows are read, because a week waiting on
   // their decision brings what its sends kept (what changed since the last send, owner 2026-10-02).
   const decidesWeeks = canReviewTerritory(viewer, seat, isTest) || canReturnTerritoryPlan(viewer, seat, isTest);
-  const ensured = ensureReferenceCustomers(seat, isTest);
+  // The mint runs at most once per seat in five minutes (2026-10-23, every page change under 1 second;
+  // ensureReferenceCustomersRecently in list.ts): inside that window the customer list starts at once,
+  // and the first open still mints before it reads.
+  const ensured = ensureReferenceCustomersRecently(seat, isTest);
   const planPartsRead = (async () => {
     const [headerResult, monthsResult, planRowsResult, leadingResult] = await Promise.all([
       supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).eq("month_start", monthStart).maybeSingle(),

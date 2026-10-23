@@ -584,7 +584,41 @@ export type PortalHomeSnapshot = {
    * shelf, so the overview row is absent rather than reading "0 folders".
    */
   cvFolders?: ManagerFolderSummary | null;
+  /**
+   * Medical Rep only, and only when the page asked for it (`streamRepCards`): the four slow reads of
+   * the rep's landing, handed over STILL RUNNING so the page can paint at once and fill each card the
+   * moment its own read lands (owner, 2026-10-23: "the process of shifting from page to page never
+   * take more than 1 second"). While this is set, the seven fields it carries — achievement, the
+   * trend, the achievement month, the rank, the field KPIs, the leave left and the double-visit pulse
+   * — are null on the snapshot itself and must be read from here. Absent everywhere else, so every
+   * other caller (the home API route, the Training Manager page) still gets a whole snapshot.
+   */
+  repCards?: PortalHomeRepCards | null;
 };
+
+/** What a Medical Rep's achievement tile and his "Achievement by month" panel are drawn from. */
+export type PortalHomeRepSales = Pick<PortalHomeSnapshot, "mrSalesAchievement" | "monthlySalesTrend" | "mrAchievementPeriod">;
+
+/**
+ * The rep's slow landing reads, one promise per card group. NONE OF THEM EVER REJECTS — a failed
+ * read resolves to the same null the awaited snapshot would have carried — so a card can await its
+ * own without a boundary, and a page that stops rendering half way leaves no unhandled rejection.
+ */
+export type PortalHomeRepCards = {
+  sales: Promise<PortalHomeRepSales>;
+  rankStanding: Promise<RepRankStanding | null>;
+  fieldKpis: Promise<MrFieldKpis | null>;
+  record: Promise<Pick<PortalHomeSnapshot, "leaveDaysRemaining" | "doubleVisitPulse">>;
+};
+
+/** The sales half of the snapshot from one canonical load; a failed load reads as no data, never 0%. */
+function repSalesFields(canonical: Awaited<ReturnType<typeof loadMrCanonicalSales>> | null): PortalHomeRepSales {
+  return {
+    mrSalesAchievement: canonical?.current ?? null,
+    monthlySalesTrend: canonical?.trend ?? null,
+    mrAchievementPeriod: canonical?.effectivePeriod ?? null,
+  };
+}
 
 type RoleSpecificExtras = Pick<
   PortalHomeSnapshot,
@@ -1017,6 +1051,13 @@ export async function getPortalHomeSnapshot(
      * month, an array from a repeated query parameter — falls back to the running Cairo month.
      */
     kpiMonth?: string | null;
+    /**
+     * Medical Rep only: hand the four slow reads back unawaited, on `repCards`, instead of holding
+     * the whole snapshot for the slowest of them. Only a caller that renders those promises may ask
+     * — the landing page does, through Suspense; the JSON home route must not, since a promise
+     * serializes to `{}`.
+     */
+    streamRepCards?: boolean;
   },
 ): Promise<PortalHomeSnapshot> {
   // STARTED, NOT AWAITED (2026-10-01, "slow to transfer between page and page"). Nothing below needs
@@ -1031,6 +1072,11 @@ export async function getPortalHomeSnapshot(
   const today = cairoTodayIso();
   const supabase = getSupabaseAdmin();
   const isMr = role.toLowerCase() === "medical rep";
+  // The rep's sales, rank, field KPIs, leave and double visits are what held his landing page for
+  // seconds — 7 s at the median, 21 s at the 90th percentile in production on 2026-10-23 — because
+  // the page could draw nothing until the slowest of them had answered. Streamed, they fill their
+  // own cards as they land and the page itself paints on the fast reads alone.
+  const streamRepCards = options?.streamRepCards === true && isMr && hrId !== "";
 
   // Start MR sales query + the role-specific KPI extras immediately so they run in parallel
   // with the batch below. getRoleSpecificExtras never throws — it resolves emptyRoleExtras
@@ -1087,7 +1133,12 @@ export async function getPortalHomeSnapshot(
   // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
   // resolving it per role would be the same query many times over. Degrades to [] like every other
   // snapshot field — a missing announcement must never fail a landing page.
-  const earlyBirdStarsPromise = getLatestLineEarlyBirds().catch(() => []);
+  // Not read at all on the streamed rep landing: the Early Bird card is retired from the Medical
+  // Rep's page (owner, 2026-09-30, see the note where it was in portal-command-center.tsx), so
+  // waiting for it there was pure cost.
+  const earlyBirdStarsPromise: Promise<EarlyBirdsWinnerRecord[]> = streamRepCards
+    ? Promise.resolve([])
+    : getLatestLineEarlyBirds().catch(() => []);
   // Also outside the role branches, and for a stronger reason: the plan module's population does not
   // follow the role map. It is DSM, NSM, Product Manager, Group Product Manager AND Training Manager
   // today, and an acting DSM keeps the job title "Medical Representative" (her authority is her app
@@ -1217,48 +1268,46 @@ export async function getPortalHomeSnapshot(
     }
   }
 
-  // Await all MR + manager promises together (they've been in-flight since the start).
-  const [mrSalesResult, dvResult, expenseResult, managerPlanResult, fieldKpisResult, mrRankResult] =
-    await Promise.allSettled([
-      mrSalesPromise,
-      dvPromise,
-      expensePromise,
-      managerPlanCountPromise,
-      fieldKpisPromise,
-      mrRankPromise,
-    ]);
+  // Await the fast MR + manager counts together (they've been in-flight since the start).
+  const [expenseResult, managerPlanResult] = await Promise.allSettled([expensePromise, managerPlanCountPromise]);
 
-  const mrFieldKpis: PortalHomeSnapshot["mrFieldKpis"] =
-    fieldKpisResult.status === "fulfilled" ? fieldKpisResult.value : null;
-
-  // Current-month achievement and the last 4 uploaded months — one canonical load, both shapes.
-  const mrCanonical = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
-  const mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = mrCanonical?.current ?? null;
-  const monthlySalesTrend: PortalHomeSnapshot["monthlySalesTrend"] = mrCanonical?.trend ?? null;
-  const mrAchievementPeriod: PortalHomeSnapshot["mrAchievementPeriod"] = mrCanonical?.effectivePeriod ?? null;
-  const mrRankStanding: PortalHomeSnapshot["mrRankStanding"] =
-    mrRankResult.status === "fulfilled" ? mrRankResult.value : null;
-
-  // Double-visit pulse for this MR.
-  let doubleVisitPulse: PortalHomeSnapshot["doubleVisitPulse"] = null;
-  try {
-    const dvData = dvResult.status === "fulfilled" ? dvResult.value : null;
-    if (Array.isArray(dvData)) {
+  // Double-visit pulse for this MR. Null on failure, never a rejection.
+  const doubleVisitPulseFrom = (dvData: unknown): PortalHomeSnapshot["doubleVisitPulse"] => {
+    try {
+      if (!Array.isArray(dvData)) return null;
       const rows = dvData as Array<{ visit_date: string }>;
       const thisMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
-      if (rows.length === 0) {
-        doubleVisitPulse = { daysSinceLastDv: null, dvsThisMonth: 0, dvsLast90Days: 0 };
-      } else {
-        const lastDate = new Date(rows[0].visit_date);
-        const daysSinceLastDv = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-        const dvsThisMonth = rows.filter((r) => r.visit_date.startsWith(thisMonthPrefix)).length;
-        const dvsLast90Days = rows.filter((r) => r.visit_date >= ninetyDaysAgo).length;
-        doubleVisitPulse = { daysSinceLastDv, dvsThisMonth, dvsLast90Days };
-      }
+      if (rows.length === 0) return { daysSinceLastDv: null, dvsThisMonth: 0, dvsLast90Days: 0 };
+      const lastDate = new Date(rows[0].visit_date);
+      const daysSinceLastDv = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+      const dvsThisMonth = rows.filter((r) => r.visit_date.startsWith(thisMonthPrefix)).length;
+      const dvsLast90Days = rows.filter((r) => r.visit_date >= ninetyDaysAgo).length;
+      return { daysSinceLastDv, dvsThisMonth, dvsLast90Days };
+    } catch {
+      return null;
     }
-  } catch {
-    // null on failure
-  }
+  };
+
+  // Current-month achievement and the last 4 uploaded months — one canonical load, both shapes.
+  // Each of these four never rejects (see PortalHomeRepCards), so they can be handed over running.
+  const repSalesPromise = mrSalesPromise.then(repSalesFields, () => repSalesFields(null));
+  const doubleVisitPulsePromise = dvPromise.then(doubleVisitPulseFrom, () => null);
+  const repCards: PortalHomeRepCards | null = streamRepCards
+    ? {
+        sales: repSalesPromise,
+        rankStanding: mrRankPromise,
+        fieldKpis: fieldKpisPromise,
+        record: Promise.all([leaveDaysRemainingPromise, doubleVisitPulsePromise]).then(
+          ([leaveDaysRemaining, doubleVisitPulse]) => ({ leaveDaysRemaining, doubleVisitPulse }),
+        ),
+      }
+    : null;
+  // Not streamed — the home API route, the Training Manager page and every other role — waits here,
+  // exactly as the whole landing page used to.
+  const [repSales, mrRankStanding, mrFieldKpis, doubleVisitPulse] = repCards
+    ? [repSalesFields(null), null, null, null]
+    : await Promise.all([repSalesPromise, mrRankPromise, fieldKpisPromise, doubleVisitPulsePromise]);
+  const { mrSalesAchievement, monthlySalesTrend, mrAchievementPeriod } = repSales;
 
   // Pending submitted expenses count.
   let mrPendingExpenseCount: PortalHomeSnapshot["mrPendingExpenseCount"] = null;
@@ -1290,7 +1339,8 @@ export async function getPortalHomeSnapshot(
       dvFocusPromise,
       earlyBirdStarsPromise,
       planAdherencePromise,
-      leaveDaysRemainingPromise,
+      // Streamed: the leave left rides on repCards.record, so the page does not wait for it here.
+      repCards ? Promise.resolve(null) : leaveDaysRemainingPromise,
       myInterviewsPromise,
       cvFoldersPromise,
     ]);
@@ -1321,5 +1371,6 @@ export async function getPortalHomeSnapshot(
     plansCountAvailable,
     dvFocus,
     cvFolders,
+    repCards,
   };
 }

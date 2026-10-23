@@ -42,6 +42,7 @@ import {
   rejectUntrustedForwardedOrigin,
   trustedOriginForRedirect,
 } from "@/lib/security/origins";
+import { afterResponse } from "@/lib/http/after-response";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -226,14 +227,26 @@ export async function POST(request: Request) {
     }
 
     if (!ciSmokeMode) {
-      try {
-        await assertApiRateLimit({
-          identifier: rateLimitIdentity({ actor: loginId || null, request }),
-          limit: 20,
-          scope: "auth:login",
-          windowMs: 15 * 60 * 1000,
-        });
-      } catch (error) {
+      // The cheap request cap runs ALONE first, so a login flood past it is refused for one database
+      // call, as it always was. Only then are the two remaining gates — the failed-attempt lockout
+      // and the blocklist — asked AT ONCE, and their answers read in the order they always were, so
+      // the same request is refused for the same reason and with the same response as before; only
+      // the wait is shorter (owner, 2026-10-23: "once I press login … never take more than 1
+      // second"). Each answer is caught where it starts, so the blocklist's verdict, never read when
+      // the lockout refuses, cannot surface as an unhandled rejection; the lockout's own failure
+      // still ends the request in the 500 below, as it did when it ran alone.
+      const apiCapCheck = assertApiRateLimit({
+        identifier: rateLimitIdentity({ actor: loginId || null, request }),
+        limit: 20,
+        scope: "auth:login",
+        windowMs: 15 * 60 * 1000,
+      }).then(
+        () => null,
+        (error: unknown) => ({ error }),
+      );
+      const apiCap = await apiCapCheck;
+      if (apiCap) {
+        const { error } = apiCap;
         if (!isApiRateLimitError(error)) throw error;
 
         await writeAuthAudit({
@@ -252,7 +265,15 @@ export async function POST(request: Request) {
         );
       }
 
-      if (await isLoginRateLimited(loginId, ip)) {
+      const lockoutCheck = isLoginRateLimited(loginId, ip).then(
+        (limited) => ({ limited }),
+        (error: unknown) => ({ error, limited: false }),
+      );
+      const blocklistCheck = isIpBlocked(ip).catch(() => false);
+
+      const lockout = await lockoutCheck;
+      if ("error" in lockout) throw lockout.error;
+      if (lockout.limited) {
         await writeAuthAudit({
           actorLoginId: loginId || null,
           entityId: loginId || null,
@@ -272,7 +293,7 @@ export async function POST(request: Request) {
       // Admin-managed IP blocklist (System Issues security lens). Fail-open (isIpBlocked
       // never throws), and returns the SAME generic rate-limited response so a blocked
       // attacker gets no signal that their IP specifically is denied.
-      if (await isIpBlocked(ip)) {
+      if (await blocklistCheck) {
         await writeAuthAudit({
           actorLoginId: loginId || null,
           entityId: loginId || null,
@@ -470,11 +491,17 @@ export async function POST(request: Request) {
       sessionVersion: user.sessionVersion,
     });
 
+    // The bookkeeping of a sign-in that has already succeeded — the success row, the lockout reset
+    // and the audit line — runs AFTER the reply (src/lib/http/after-response.ts). Nothing in the
+    // reply depends on it and both calls already swallowed their failures; awaited here it was four
+    // more database round trips between the press and the page. The session row above is NOT
+    // deferred: the very next request reads it.
     if (!ciSmokeMode) {
-      await clearFailedLoginState({ ip, loginId: user.loginId }).catch(() => undefined);
-      await writeAuthAudit({
-        actorLoginId: user.loginId,
-        entityId: user.loginId,
+      // Read now, while the values are narrowed — the tasks run once this function has returned.
+      const succeededLoginId = user.loginId;
+      const successAudit = {
+        actorLoginId: succeededLoginId,
+        entityId: succeededLoginId,
         newValues: {
           ip,
           remember: Boolean(payload.remember),
@@ -488,7 +515,11 @@ export async function POST(request: Request) {
           sessionVersion: user.sessionVersion,
         },
         summary: "Login succeeded",
-      }).catch(() => undefined);
+      };
+      await afterResponse("auth.login.clear_failed_state", () =>
+        clearFailedLoginState({ ip, loginId: succeededLoginId }),
+      );
+      await afterResponse("auth.login.audit_success", () => writeAuthAudit(successAudit));
     }
 
     // The native app has no cookie jar we control, so it needs the token itself. Returned ONLY to a

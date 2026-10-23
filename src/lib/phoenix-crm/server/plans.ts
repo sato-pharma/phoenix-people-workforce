@@ -87,7 +87,7 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import {
-  ensureReferenceCustomers,
+  ensureReferenceCustomersRecently,
   loadMonthVisitCounts,
   loadPlannerReferences,
   loadReadiness,
@@ -490,7 +490,10 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   //     names need only the plan rows, so they follow those rather than the whole first wave.
   // Every answer is the one the waves gave. The mint's own failure is still the one that surfaces,
   // first, and every read started early is handled the moment it starts.
-  const ensured = ensureReferenceCustomers(seat, isTest);
+  // The mint itself runs at most once per seat in five minutes (2026-10-23, every page change under 1
+  // second): a seat minted inside that window answers at once, so the customer list starts without
+  // waiting a hop on a mint that would find nothing new. The first open still mints before it reads.
+  const ensured = ensureReferenceCustomersRecently(seat, isTest);
   const viewerIsRep = canWriteAsRep(viewer, seat, isTest);
   const planRowsRead = (async () => {
     const planRowsResult = await getSupabaseAdmin()

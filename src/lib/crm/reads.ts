@@ -418,12 +418,17 @@ export function selectOwnVisitsThroughLastWorkingDate<T extends { agent_hr_id?: 
   });
 }
 
-/** Cached accessor for the effective exclusion; refreshes at most once per
- * {@link EXCLUDED_AGENTS_TTL_MS} and dedupes concurrent refreshes. Always resolves (never below the
- * static list). */
-async function getEffectiveExclusion(): Promise<EffectiveExclusion> {
-  const cached = excludedAgentsCache;
-  if (cached && Date.now() - cached.at < EXCLUDED_AGENTS_TTL_MS) return cached;
+/**
+ * After {@link EXCLUDED_AGENTS_TTL_MS} the copy still answers for this much longer while a fresh
+ * one is computed behind it. The recompute is the whole-company directory plus the distinct scan of
+ * the visits mirror — 1.55 s mean and 8.6 s at worst in production (pg_stat_statements, 22–23 Oct
+ * 2026) — and it used to land on whichever rep's tap first arrived after the five minutes, every
+ * five minutes, in every process. A departed rep is hidden at most fifteen minutes late instead of
+ * five; nobody waits for it.
+ */
+const EXCLUDED_AGENTS_REFRESH_BEHIND_MS = 10 * 60_000;
+
+function refreshEffectiveExclusion(): Promise<EffectiveExclusion> {
   if (excludedAgentsInFlight) return excludedAgentsInFlight;
   excludedAgentsInFlight = computeEffectiveExclusion()
     .then((result) => {
@@ -434,6 +439,23 @@ async function getEffectiveExclusion(): Promise<EffectiveExclusion> {
       excludedAgentsInFlight = null;
     });
   return excludedAgentsInFlight;
+}
+
+/** Cached accessor for the effective exclusion; refreshes at most once per
+ * {@link EXCLUDED_AGENTS_TTL_MS}, behind the caller while the copy is inside
+ * {@link EXCLUDED_AGENTS_REFRESH_BEHIND_MS} of it, and dedupes concurrent refreshes. Always resolves
+ * (never below the static list — {@link computeEffectiveExclusion} never throws). */
+async function getEffectiveExclusion(): Promise<EffectiveExclusion> {
+  const cached = excludedAgentsCache;
+  if (cached) {
+    const age = Date.now() - cached.at;
+    if (age < EXCLUDED_AGENTS_TTL_MS) return cached;
+    if (age < EXCLUDED_AGENTS_TTL_MS + EXCLUDED_AGENTS_REFRESH_BEHIND_MS) {
+      void refreshEffectiveExclusion();
+      return cached;
+    }
+  }
+  return refreshEffectiveExclusion();
 }
 
 /** The PostgREST `in` list literal for the EFFECTIVE exclusion (static ∪ live departed). Consumers
