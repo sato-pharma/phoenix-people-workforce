@@ -496,8 +496,8 @@ function serveStaleOnFailure<T>(
 const directoryRowsCache = new Map<boolean, { data: EmployeeDirectoryRow[]; timestamp: number }>();
 const inFlightDirectoryRows = new Map<boolean, Promise<EmployeeDirectoryRow[]>>();
 
-function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
-  return classifyEmployeeNode(employee).eligible_for_headcount;
+function isClassifiedActiveEmployee(employee: DirectoryMembershipFields) {
+  return classifyEmployeeNode({ ...employee }).eligible_for_headcount;
 }
 
 export function invalidateEmployeeDirectoryCache() {
@@ -534,7 +534,7 @@ const systemAdminDirectoryHrIdKeys = new Set(
     .filter((hrId): hrId is string => Boolean(hrId)),
 );
 
-function isSystemAdminDirectoryEmployee(employee: EmployeeDirectoryRow) {
+function isSystemAdminDirectoryEmployee(employee: DirectoryMembershipFields) {
   const hrId = normalizeHrId(employee.hrId);
 
   return (
@@ -556,13 +556,174 @@ function normalizeEnrollmentStatus(value: string | null | undefined) {
     : null;
 }
 
-export function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
+export function isActiveDirectoryEmployee(employee: DirectoryMembershipFields) {
   return (
     isActiveLifecycleStatus(employee.employmentStatus) &&
     employee.organogramVisible !== false &&
     !isSystemAdminDirectoryEmployee(employee) &&
     isClassifiedActiveEmployee(employee)
   );
+}
+
+// ── Names only, for a caller that holds HR ids and owes the reader names ─────────────────────────
+
+/**
+ * Exactly the fields that decide whether somebody is IN the employee directory.
+ *
+ * A Pick rather than the whole row, so the lean name roster below cannot drift from the real
+ * filter: add a field to this membership rule and the roster's own select stops compiling until it
+ * reads that field too.
+ */
+export type DirectoryMembershipFields = Pick<
+  EmployeeDirectoryRow,
+  | "hrId"
+  | "fullName"
+  | "jobTitle"
+  | "employmentStatus"
+  | "organogramVisible"
+  | "payrollEligible"
+  | "positionTitle"
+  | "lineName"
+>;
+
+/** An HR id to match on and the name to print — all a `liveEmployeeName`-style lookup ever reads. */
+export type EmployeeNameRosterRow = Pick<EmployeeDirectoryRow, "hrId" | "displayName">;
+
+const NAME_ROSTER_SELECT = [
+  "hr_id,full_name,nickname,job_title,employment_status,payroll_eligible,organogram_visible,position_id,line_id",
+  "positions!employees_position_id_fkey(title)",
+  "lines!employees_line_id_fkey(name)",
+].join(",");
+
+type NameRosterDbRow = {
+  hr_id: string;
+  full_name: string;
+  nickname?: string | null;
+  job_title?: string | null;
+  employment_status?: string | null;
+  payroll_eligible?: boolean | null;
+  organogram_visible?: boolean | null;
+  position_id?: number | null;
+  line_id?: number | null;
+  positions?: { title?: string | null } | Array<{ title?: string | null }> | null;
+  lines?: { name?: string | null } | Array<{ name?: string | null }> | null;
+};
+
+/** PostgREST hands back a to-one embed as an object or a one-element array, depending on how it resolves. */
+function embeddedText(embed: unknown, key: "title" | "name"): string | null {
+  const one = Array.isArray(embed) ? embed[0] : embed;
+  if (!one || typeof one !== "object") return null;
+  return compact((one as Record<string, unknown>)[key] as string | null | undefined) ?? null;
+}
+
+let nameRosterCache: { data: EmployeeNameRosterRow[]; timestamp: number; generation: number } | null = null;
+let inFlightNameRoster: Promise<EmployeeNameRosterRow[]> | null = null;
+
+function directoryNameRoster(data: EmployeeDirectoryData): EmployeeNameRosterRow[] {
+  return data.employees.map((employee) => ({ hrId: employee.hrId, displayName: employee.displayName }));
+}
+
+async function fetchEmployeeNameRoster(): Promise<EmployeeNameRosterRow[]> {
+  let rows: NameRosterDbRow[];
+  try {
+    rows = await supabaseRest<NameRosterDbRow[]>(
+      `employees?${new URLSearchParams({ select: NAME_ROSTER_SELECT, order: "full_name.asc" })}`,
+    );
+  } catch (error) {
+    // A LAXER FILTER IS THE ONE FALLBACK THIS MUST NEVER TAKE. Without the two embeds a vacancy or
+    // placeholder node named only in its position title classifies as a live employee and starts
+    // supplying a name the directory withholds. Pay for the full directory instead.
+    console.log("Employee name roster select failed; falling back to the full directory", {
+      level: "warning",
+      tags: { component: "employee-directory", action: "fetchEmployeeNameRoster" },
+      extra: { message: employeeDirectoryErrorMessage(error) },
+    });
+    return directoryNameRoster(await getEmployeeDirectory());
+  }
+
+  const roster: EmployeeNameRosterRow[] = [];
+  for (const row of rows) {
+    const active = isActiveLifecycleStatus(row.employment_status);
+    const candidate: DirectoryMembershipFields = {
+      hrId: row.hr_id,
+      fullName: row.full_name,
+      jobTitle: row.job_title ?? null,
+      employmentStatus: row.employment_status ?? null,
+      // Both defaults are the directory's own (see the row mapping in fetchEmployeeDirectory): a
+      // NULL column means "whatever the lifecycle status implies", never false.
+      organogramVisible: row.organogram_visible ?? active,
+      payrollEligible: row.payroll_eligible ?? active,
+      positionTitle: row.position_id ? embeddedText(row.positions, "title") : null,
+      lineName: row.line_id ? embeddedText(row.lines, "name") : null,
+    };
+    if (!isActiveDirectoryEmployee(candidate)) continue;
+    roster.push({
+      hrId: row.hr_id,
+      displayName: resolveEmployeeDisplayName(row.full_name, row.nickname, row.hr_id),
+    });
+  }
+  return roster;
+}
+
+/**
+ * The directory's HR ids and display names — one small query instead of twelve.
+ *
+ * 🔴 WHY THIS EXISTS BESIDE getEmployeeDirectory(), AND WHY IT IS NOT A SECOND FILTER.
+ * `getEmployeeDirectory()` is twelve reads: a ~70-column `employees` select with six embedded FK
+ * joins (the whole of `employee_compensation` among them), then residence, pending-manager-
+ * replacement, photo, CV and five lookup loads side by side. A caller that only ever asks it "what
+ * is this person called" pays every one of them — and `src/lib/action-center/service.ts` had three
+ * such callers, one of them loading the directory to name a SINGLE deep-linked item.
+ *
+ * 🔴 MEMBERSHIP IS NOT RE-DECIDED HERE. The rows run through the same `isActiveDirectoryEmployee`
+ * the directory itself filters on (`directory-active-filter-gate`: a module that bypasses the
+ * directory misses that gate), and here it matters more than it looks — a resigned employee is
+ * absent from the directory ON PURPOSE, so a resignation item deliberately falls back to the name
+ * stored on the request. A roster that quietly included leavers would RENAME people on the one
+ * screen where they are leaving.
+ *
+ * 🔴 AND IT IS NOT `namesByHrId`, WHICH WOULD LOSE NAMES HERE. That helper filters by id, so it
+ * matches on `canonicalHrIdKey` alone; the lookup these callers use is `hrIdsMatch`, which ALSO
+ * matches with punctuation stripped (`B-10` ≡ `B10`), and `hrIdLookupKeys` never generates that
+ * spelling. Reading the roster whole keeps the looser match intact and needs no `.in("hr_id", …)`
+ * filter at all, which is the trap that rule guards.
+ *
+ * Same name for the same person as the directory, the same people in it, the same 30-second TTL and
+ * in-flight de-duplication, and `invalidateEmployeeDirectoryCache()` drops this too — it shares the
+ * directory's generation counter.
+ */
+export async function getEmployeeNameRoster(): Promise<EmployeeNameRosterRow[]> {
+  // A directory somebody else already paid for answers this for free, and answers it identically.
+  if (directoryCache && directoryCacheDisposition(Date.now() - directoryCache.timestamp) === "fresh") {
+    return directoryNameRoster(directoryCache.data);
+  }
+  if (
+    nameRosterCache &&
+    nameRosterCache.generation === directoryGeneration &&
+    Date.now() - nameRosterCache.timestamp < CACHE_TTL
+  ) {
+    return nameRosterCache.data;
+  }
+  if (!inFlightNameRoster) {
+    const generation = directoryGeneration;
+    inFlightNameRoster = fetchEmployeeNameRoster()
+      .then((data) => {
+        // A load that started before an invalidation must not put its older answer back.
+        if (generation === directoryGeneration) {
+          nameRosterCache = { data, timestamp: Date.now(), generation };
+        }
+        return data;
+      })
+      .catch((error) => {
+        const stale = serveStaleOnFailure(nameRosterCache, { surface: "getEmployeeNameRoster", error });
+        if (stale) return stale;
+        throw error;
+      })
+      .finally(() => {
+        inFlightNameRoster = null;
+      });
+  }
+  return inFlightNameRoster;
 }
 
 function activeStatusOptions(employees: EmployeeDirectoryRow[]) {
