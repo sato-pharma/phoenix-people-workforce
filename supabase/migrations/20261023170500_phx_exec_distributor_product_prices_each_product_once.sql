@@ -55,6 +55,18 @@
 -- differences. A NULL product_code would make the concatenated key NULL and fail the join exactly
 -- as the equality join fails it, falling to `coalesce(…, 0)` — the same number either way.
 --
+-- 🔴 AND THE PAIR KEY WENT IN AFTER THE FULL-FUNCTION RUN BELOW, SO THE PROOF FOR THIS BODY IS A
+-- COMPOSITION, SAID PLAINLY. The run below was taken against the body that joined on two columns.
+-- What makes THIS body equivalent is that run, plus the whole-relation lemma above, plus a
+-- mechanical diff of the live body against this one taken on 2026-10-23 before applying: every
+-- hunk is one of exactly three kinds — the `period_price` CTE added, the
+-- `left join period_price pp` added, and `coalesce(public.phx_factory_price(x.product_code,
+-- x.period), 0)` replaced by `coalesce(pp.period_price, 0)`. No filter, select list, group by,
+-- branch or function attribute differs; `proconfig`, volatility, security and the signature were
+-- read off production and match this file. The lemma therefore covers the whole of the delta. A
+-- second full-function comparison was NOT run instead, because a multi-second analytical query on
+-- production waits until after 17:00 Cairo (owner, 2026-10-19) and this was applied at 13:45.
+--
 -- PROVEN IDENTICAL ON PRODUCTION, 2026-10-23, against the live function: BOTH branches — the
 -- all-periods default (4,116 rows) and the period-scoped branch for 2026-09, 2026-10 and 2026-11
 -- (2,510 rows) — 6,626 rows out. Compared as TEXT, `(row)::text` through `EXCEPT ALL` in BOTH
