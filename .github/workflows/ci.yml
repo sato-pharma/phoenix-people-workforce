@@ -534,6 +534,30 @@ jobs:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: pnpm
 
+      # 🔴 THE ESLINT CACHE IS ONLY VALID UNDER THE EXACT NODE RUNTIME THAT WROTE IT (2026-10-23). ESLint
+      # stamps every cache entry with a fingerprint of its own version, `process.version` and the config
+      # (eslint/lib/cli-engine/lint-result-cache.js, hashOfConfigFor), so an entry written under Node
+      # v24.22.0 is discarded whole under v24.21.0. `CI_NODE_VERSION: "24"` floats to whichever 24.x the
+      # runner image carries, and GitHub serves two images at once during a rollout: measured 22 Oct, every
+      # one of 31 runs that restored a cache written under another patch re-linted all ~6,600 files
+      # (184-372 s) and every one of 59 same-patch, same-lockfile restores stayed warm (3-13 s). So the
+      # key and its restore prefix below carry THIS exact runtime. It is read from `process.version`, the
+      # very value ESLint hashes, not from setup-node's `node-version` output, which is an empty string
+      # whenever its own `node --version` call fails. An unreadable or malformed version keys the cache to
+      # this run alone: lint runs cold and correct, and it can never restore across runtimes or fail CI.
+      # Pinned by tests/ci-eslint-cache-node-runtime.test.ts.
+      - name: Read the exact Node runtime for the ESLint cache key
+        id: node-runtime
+        run: |
+          version="$(node -p 'process.version' 2>/dev/null || true)"
+          if [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Node runtime for the ESLint cache key: ${version}"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not read an exact Node version (got '${version}'); the ESLint cache is keyed to this run alone and lint runs cold"
+            echo "version=unverified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -625,12 +649,14 @@ jobs:
       # box's cache apart from the hosted one (a cache restored across the two matched not one path and
       # re-linted all 6,597 files while logging a hit). A hosted run's key string is unchanged by
       # dropping that, so the existing entries keep hitting.
+      # The exact Node runtime sits in BOTH the key and the restore prefix (2026-10-23), so a run only
+      # ever restores a cache written under its own runtime — see `Read the exact Node runtime` above.
       - name: Restore ESLint cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
-          key: eslintcache-hosted-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
-          restore-keys: eslintcache-hosted-content-
+          key: eslintcache-hosted-content-${{ steps.node-runtime.outputs.version }}-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: eslintcache-hosted-content-${{ steps.node-runtime.outputs.version }}-
 
       - name: Lint
         run: pnpm run lint

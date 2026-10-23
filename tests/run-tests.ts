@@ -1546,6 +1546,7 @@ import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
+import { runCiEslintCacheNodeRuntimeTests } from "./ci-eslint-cache-node-runtime.test.ts";
 import { runReleaseGateTests } from "./release-gate.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
@@ -5691,6 +5692,10 @@ await runTest("CI <-> package.json gate parity (a check:* in the gate must run i
 await runTest(
   "every CI job runs on a GitHub-hosted runner (owner, 2026-10-19): each runs-on in every workflow is the literal ubuntu-latest, nothing reads the retired CI_SELF_HOSTED or CI_RUNNER_LABEL variables, and no step branches on runner.environment == 'self-hosted', so deleting the Hetzner box cannot leave a job queued for ever",
   runCiRunnerSwitchTests,
+);
+await runTest(
+  "the ESLint cache is keyed to the exact Node runtime (2026-10-23): ci.yml reads process.version into the key AND the restore prefix, a bad or empty read keys the cache to the run alone and never fails the job, no runtime can restore another runtime's cache, and the lint keeps --cache-strategy content",
+  runCiEslintCacheNodeRuntimeTests,
 );
 await runTest(
   "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
