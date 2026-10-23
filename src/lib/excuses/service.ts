@@ -18,6 +18,7 @@ import {
 import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { conflictError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -445,7 +446,20 @@ async function notifyHrVisibilityRecipients(input: {
   );
 }
 
-async function notifyManagerOfExcuse(input: {
+/**
+ * The notices an excuse raises go out AFTER the reply has gone (2026-10-23 slow-buttons audit): an
+ * excuse decision took 8 s on production and a submit about the same, nearly all of it the manager's
+ * and HR's notices — profile and preference reads, event and audit rows, Telegram, the phone push and
+ * the templated email, one wave after another — awaited before the answer left. The request is already
+ * saved when these run, and the old code let a failed notice reject a saved submit; now a failed
+ * notice is logged and never changes the answer. Outside a request (the unit suite, a script)
+ * `afterResponse` awaits the task exactly as before.
+ */
+function notifyManagerOfExcuse(input: Parameters<typeof deliverManagerOfExcuseNotice>[0]) {
+  return afterResponse("excuse_notice:manager", () => deliverManagerOfExcuseNotice(input));
+}
+
+async function deliverManagerOfExcuseNotice(input: {
   directory: EmployeeDirectoryData;
   employee: EmployeeDirectoryRow;
   manager: EmployeeDirectoryRow;
@@ -526,7 +540,11 @@ async function notifyManagerOfExcuse(input: {
   });
 }
 
-async function notifyDecisionRecipients(input: {
+function notifyDecisionRecipients(input: Parameters<typeof deliverDecisionNotices>[0]) {
+  return afterResponse("excuse_notice:decision", () => deliverDecisionNotices(input));
+}
+
+async function deliverDecisionNotices(input: {
   directory: EmployeeDirectoryData;
   request: EmployeeExcuseRequest & { employeeWorkEmail?: string | null };
 }) {

@@ -15,6 +15,7 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
+import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
 import {
   probationDaysRemaining,
@@ -1480,7 +1481,11 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
   const record = mapEvaluation(data as ProbationEvaluationDbRow);
   await ensureProbationReminderEvents(employee, employees);
   await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
-  await notifyProbationWorkflow(record, employee, employees, employee.displayName, "Probation Evaluation Created", "warning");
+  // After the reply (afterResponse): the evaluation is saved, and the notice used to be awaited before the
+  // answer left — recipient lookups and a send per recipient. A failed notice is logged, never thrown.
+  await afterResponse("probation_notice:created", async () => {
+    await notifyProbationWorkflow(record, employee, employees, employee.displayName, "Probation Evaluation Created", "warning");
+  });
   invalidateExecutiveDashboardCache("probation evaluation created", ["probation"]);
   return record;
 }
@@ -1570,14 +1575,19 @@ export async function runProbationWorkflow(
     await applyDecisionSideEffects(updated);
   }
   await insertHistory(updated, action, actor, row.status, { decisionReason: cleanText(input.decisionReason), note });
-  await notifyProbationWorkflow(
-    updated,
-    employee,
-    employees,
-    employee.displayName,
-    action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
-    updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
-  );
+  // After the reply (afterResponse): the decision is saved and its side effects applied, and the notice
+  // used to be awaited before the answer left — recipient lookups and a send per recipient. A failed
+  // notice is logged, never thrown (it used to turn a saved decision into a false 500).
+  await afterResponse("probation_notice:workflow", async () => {
+    await notifyProbationWorkflow(
+      updated,
+      employee,
+      employees,
+      employee.displayName,
+      action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
+      updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
+    );
+  });
   invalidateEmployeeDirectoryCache();
   invalidateExecutiveDashboardCache("probation workflow updated", ["probation", "employees", "vacancies", "payroll"]);
   return updated;

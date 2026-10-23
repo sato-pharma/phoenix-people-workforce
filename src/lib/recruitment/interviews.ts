@@ -5,6 +5,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { afterResponse } from "@/lib/http/after-response";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { findInterviewClash, interviewClashMessage } from "@/lib/recruitment/interview-clash";
 import { getApplication, type ApplicationWithContext } from "@/lib/recruitment/applications";
@@ -145,7 +146,10 @@ export async function createInterview(
   // Rule 7 — a real scheduled interview (has a date) notifies all parties. The
   // cv/phone/hm scorecard records created via recordScreeningOutcome have no
   // scheduledAt, so they do not trigger a "scheduled" notification.
-  if (interview.scheduledAt) await notifyInterview(application, interview, "scheduled");
+  // After the reply (afterResponse): the interview is saved, and notifyInterview swallows its own failures.
+  if (interview.scheduledAt) {
+    await afterResponse("interview_notice:scheduled", () => notifyInterview(application, interview, "scheduled"));
+  }
   return interview;
 }
 
@@ -204,23 +208,27 @@ export async function recordInterviewOutcome(
   if (error) throw error;
   const updated = mapInterview(data as InterviewDbRow);
   // Rule 7 — a reschedule (new date/location/link) re-notifies all parties.
+  // Both notices go out after the reply (afterResponse): the write is saved, and each swallows its failures.
   if (input.scheduledAt !== undefined && updated.scheduledAt) {
-    await notifyInterview(application, updated, "rescheduled");
+    await afterResponse("interview_notice:rescheduled", () => notifyInterview(application, updated, "rescheduled"));
   }
   // When an outcome is recorded, send interview feedback to the hiring team
   // (best-effort; never block the write on a notification failure).
-  if (input.outcome !== undefined && updated.outcome) {
-    try {
-      await notifyInterviewFeedback({
-        candidateName: application.candidate?.fullName ?? "Candidate",
-        feedback: updated.notes ?? null,
-        interviewerHrId: updated.interviewerHrId,
-        jobTitle: application.requisition?.jobTitle ?? "",
-        outcome: updated.outcome,
-      });
-    } catch {
-      // Best-effort.
-    }
+  const recordedOutcome = updated.outcome;
+  if (input.outcome !== undefined && recordedOutcome) {
+    await afterResponse("interview_notice:feedback", async () => {
+      try {
+        await notifyInterviewFeedback({
+          candidateName: application.candidate?.fullName ?? "Candidate",
+          feedback: updated.notes ?? null,
+          interviewerHrId: updated.interviewerHrId,
+          jobTitle: application.requisition?.jobTitle ?? "",
+          outcome: recordedOutcome,
+        });
+      } catch {
+        // Best-effort.
+      }
+    });
   }
   return updated;
 }

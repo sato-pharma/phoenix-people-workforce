@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { conflictError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
 import type { CheckedDisputeImage } from "@/lib/dispute-center/attachment-rules.ts";
 import { storeDisputeCenterAttachments } from "@/lib/dispute-center/attachment-store.ts";
@@ -166,20 +167,24 @@ export async function submitPrivateCalendarDataDispute(
     summary: `Private calendar data dispute submitted for ${dispute.disputeDate}`,
   });
 
-  const recipients = await resolveSuperAdminRecipients();
-  await Promise.all(recipients.map((recipient) => createSystemNotification({
-    actionUrl: "/admin/private-calendar-disputes",
-    actorId: employeeHrId,
-    channels: ["email", "in_app", "push"],
-    eventType: "private_calendar_dispute_submitted",
-    message: `${input.employeeName ?? employeeHrId} flagged ${dispute.disputeDate} as inaccurate: "${claimText}"`,
-    metadata: { disputeId: dispute.id, employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:submitted` },
-    module: "private_calendar",
-    priority: "normal",
-    recipientHrId: recipient.hrId,
-    subjectHrId: employeeHrId,
-    title: `Calendar data dispute — ${dispute.disputeDate}`,
-  })));
+  // After the reply (afterResponse): the dispute is saved and audited, and the recipient lookup and the
+  // fan-out used to be awaited before the answer left. A failed notice is logged, never thrown.
+  await afterResponse("private_calendar_notice:dispute_submitted", async () => {
+    const recipients = await resolveSuperAdminRecipients();
+    await Promise.all(recipients.map((recipient) => createSystemNotification({
+      actionUrl: "/admin/private-calendar-disputes",
+      actorId: employeeHrId,
+      channels: ["email", "in_app", "push"],
+      eventType: "private_calendar_dispute_submitted",
+      message: `${input.employeeName ?? employeeHrId} flagged ${dispute.disputeDate} as inaccurate: "${claimText}"`,
+      metadata: { disputeId: dispute.id, employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:submitted` },
+      module: "private_calendar",
+      priority: "normal",
+      recipientHrId: recipient.hrId,
+      subjectHrId: employeeHrId,
+      title: `Calendar data dispute — ${dispute.disputeDate}`,
+    })));
+  });
 
   return dispute;
 }
@@ -283,19 +288,24 @@ export async function decidePrivateCalendarDataDispute(
     ref: dispute.id,
   }).catch(() => undefined);
 
-  await createSystemNotification({
-    actorId: adminHrId,
-    channels: ["email", "in_app", "push"],
-    eventType: "private_calendar_dispute_decided",
-    message: (nextStatus === "accepted"
-      ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction.`
-      : `Your dispute for ${dispute.disputeDate} was reviewed and rejected.`) + (note ? ` Note: ${note}` : ""),
-    metadata: { disputeId: dispute.id, employeeHrId: dispute.employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:decided:${now}` },
-    module: "private_calendar",
-    priority: "normal",
-    recipientHrId: dispute.employeeHrId,
-    subjectHrId: dispute.employeeHrId,
-    title: `Dispute ${nextStatus} — ${dispute.disputeDate}`,
+  // After the reply (afterResponse): the decision is saved, audited and in the case history, and the
+  // notice used to be awaited before the answer left. A failed notice is logged, never thrown (it used
+  // to turn a saved decision into a false 500).
+  await afterResponse("private_calendar_notice:dispute_decided", async () => {
+    await createSystemNotification({
+      actorId: adminHrId,
+      channels: ["email", "in_app", "push"],
+      eventType: "private_calendar_dispute_decided",
+      message: (nextStatus === "accepted"
+        ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction.`
+        : `Your dispute for ${dispute.disputeDate} was reviewed and rejected.`) + (note ? ` Note: ${note}` : ""),
+      metadata: { disputeId: dispute.id, employeeHrId: dispute.employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:decided:${now}` },
+      module: "private_calendar",
+      priority: "normal",
+      recipientHrId: dispute.employeeHrId,
+      subjectHrId: dispute.employeeHrId,
+      title: `Dispute ${nextStatus} — ${dispute.disputeDate}`,
+    });
   });
 
   return dispute;

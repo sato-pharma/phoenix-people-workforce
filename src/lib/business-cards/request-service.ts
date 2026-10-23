@@ -20,6 +20,7 @@ import { assertPermission, hrIdsMatch, normalizeHrId, type AccessContext } from 
 import { cardFieldsFor, CARD_FIELD_MAX_LENGTH } from "@/lib/business-cards/card-content";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { HR_GENERALIST_SEAT, onePerPerson, resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
 import { logError } from "@/lib/observability/log";
@@ -254,34 +255,40 @@ async function notifyBusinessCardRecipients(
   ];
   if (request.note) lines.push(`Note: ${request.note}`);
 
-  try {
-    await createSystemNotificationForRecipients(
-      {
-        actionUrl: BUSINESS_CARD_ADMIN_URL,
-        category: "general",
-        channels: ["in_app", "email", "telegram"],
-        eventType: "business_card_request_created",
-        message: lines.join("\n"),
-        metadata: {
-          businessCardRequestId: request.id,
-          idempotencyKey: `business_card_request:${request.id}:created`,
+  // The fan-out goes out AFTER the reply (afterResponse): the request is saved, and in-app + email +
+  // Telegram to every recipient used to be awaited before the answer left — 9.8 s at the median on
+  // production. The recipients are still resolved above, so `recipientCount` stays true (zero still
+  // means nobody was reachable); `errored` can no longer see the fan-out, which now finishes after the
+  // reply — a failure there is logged under business_card_request_notification_failed, as before.
+  await afterResponse("business_card_notice:created", async () => {
+    try {
+      await createSystemNotificationForRecipients(
+        {
+          actionUrl: BUSINESS_CARD_ADMIN_URL,
+          category: "general",
+          channels: ["in_app", "email", "telegram"],
+          eventType: "business_card_request_created",
+          message: lines.join("\n"),
+          metadata: {
+            businessCardRequestId: request.id,
+            idempotencyKey: `business_card_request:${request.id}:created`,
+          },
+          module: "business_card_requests",
+          priority: "normal",
+          recordId: request.id,
+          subjectHrId: request.hrId,
+          title: `New business card request: ${request.employeeName}`,
         },
-        module: "business_card_requests",
-        priority: "normal",
-        recordId: request.id,
-        subjectHrId: request.hrId,
-        title: `New business card request: ${request.employeeName}`,
-      },
-      [...recipients],
-    );
-    return { errored: false, recipientCount: recipients.length };
-  } catch (error) {
-    logError("Failed to notify HR of a business card request", {
-      labels: { event: "business_card_request_notification_failed", requestId: request.id, hrId: request.hrId },
-      error,
-    });
-    return { errored: true, recipientCount: recipients.length };
-  }
+        [...recipients],
+      );
+    } catch (error) {
+      logError("Failed to notify HR of a business card request", {
+        labels: { event: "business_card_request_notification_failed", requestId: request.id, hrId: request.hrId },
+        error,
+      });
+    }
+  });
+  return { errored: false, recipientCount: recipients.length };
 }
 
 /**

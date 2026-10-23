@@ -15,6 +15,7 @@ import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirec
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
+import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
@@ -1561,17 +1562,22 @@ async function createResignationForEmployee(
     workflowNotes: cleanText(input.workflowNotes),
   });
 
-  await notifyResignationWorkflow(
-    {
-      effectiveDate,
-      employeeHrId: employee.hrId,
-      employeeName: employee.displayName,
-      id: resignationId,
-      status: "submitted",
-    },
-    "Resignation Submitted",
-    "warning",
-  );
+  // After the reply (afterResponse): the resignation is saved, and the notice used to be awaited before
+  // the answer left — a directory read, the recipient lookup and the fan-out. A failed notice is logged,
+  // never thrown (it used to turn a saved resignation into a false 500).
+  await afterResponse("resignation_notice:submitted", async () => {
+    await notifyResignationWorkflow(
+      {
+        effectiveDate,
+        employeeHrId: employee.hrId,
+        employeeName: employee.displayName,
+        id: resignationId,
+        status: "submitted",
+      },
+      "Resignation Submitted",
+      "warning",
+    );
+  });
   invalidateExecutiveDashboardCache("resignation workflow created", ["resignations"]);
   return resignationId;
 }
@@ -2374,17 +2380,22 @@ export async function runResignationWorkflow(
     });
   }
 
-  await notifyResignationWorkflow(
-    record,
-    action === "approve"
-      ? "Resignation Approved"
-      : action === "reject"
-        ? "Resignation Rejected"
-        : action === "complete"
-          ? "Resignation Completed"
-          : "Resignation Workflow Updated",
-    action === "reject" || action === "cancel" ? "danger" : action === "approve" || action === "complete" ? "success" : "warning",
-  );
+  // After the reply (afterResponse): the decision is saved, and the notice used to be awaited before the
+  // answer left — a whole-directory read, the recipient lookup and the fan-out. A failed notice is logged,
+  // never thrown (it used to turn a saved decision into a false 500).
+  await afterResponse("resignation_notice:workflow", async () => {
+    await notifyResignationWorkflow(
+      record,
+      action === "approve"
+        ? "Resignation Approved"
+        : action === "reject"
+          ? "Resignation Rejected"
+          : action === "complete"
+            ? "Resignation Completed"
+            : "Resignation Workflow Updated",
+      action === "reject" || action === "cancel" ? "danger" : action === "approve" || action === "complete" ? "success" : "warning",
+    );
+  });
   invalidateExecutiveDashboardCache("resignation workflow updated", ["resignations", "employees", "vacancies"]);
   return record;
 }

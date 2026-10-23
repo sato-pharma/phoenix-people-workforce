@@ -80,8 +80,8 @@ export function runEmailTemplatesTriggersTests() {
   assert.doesNotMatch(vacationSource, /void dispatchVacationManagerReview/, "the dead `void` must be gone");
   assert.match(
     vacationSource,
-    /await dispatchVacationManagerReview\(\{/,
-    "the manager-stage hand-off email must actually be dispatched",
+    /task:\s*\(\)\s*=>\s*dispatchVacationManagerReview\(\{/,
+    "the manager-stage hand-off email must actually be dispatched (inside deferVacationNotice, after the reply)",
   );
 
   // --- Loud template history -------------------------------------------------------

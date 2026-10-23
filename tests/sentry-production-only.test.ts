@@ -199,6 +199,17 @@ function beyondErrorsTests() {
   assert.equal(scrubSentryPath("/auth/v1/user"), "/auth/v1/user");
   assert.equal(scrubSentryPath("/storage/v1/object/hiring/B-10"), "/storage/v1/object/hiring/:id");
   assert.equal(scrubSentryPath("/rest/B-10/employees"), "/rest/:id/employees", "a PostgREST shape needs the real /rest/v1/ prefix");
+  // Telegram's bot API carries the bot's credential as a path segment (`/bot<id>:<token>/sendMessage`). The colon kept it out of the
+  // long-word rule, so the production bot token left in every Telegram span's name and URL until 2026-10-23. The token below is made up.
+  const fakeBotToken = "1234567890:AAFakeFakeFakeFakeFakeFakeFakeFake_abc";
+  assert.equal(scrubSentryPath(`/bot${fakeBotToken}/sendMessage`), "/:id/sendMessage", "the bot path segment is masked");
+  assert.equal(
+    scrubSentryText(`POST https://api.telegram.org/bot${fakeBotToken}/sendMessage`),
+    "POST https://api.telegram.org/:id/sendMessage",
+    "a span name carrying the Telegram URL loses the token",
+  );
+  assert.equal(scrubSentryText(`fetch failed for ${fakeBotToken}`), "fetch failed for [token]", "the bare token is masked wherever it appears");
+  assert.ok(!JSON.stringify(scrubSentrySpan({ name: `POST https://api.telegram.org/bot${fakeBotToken}/sendMessage`, attributes: { "http.url": `https://api.telegram.org/bot${fakeBotToken}/sendMessage`, "url.full": `https://api.telegram.org/bot${fakeBotToken}/sendMessage` } })).includes("AAFake"), "no field of a Telegram span keeps the token");
   assert.equal(
     scrubSentryText("GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees?hr_id=eq.B-10"),
     "GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees",

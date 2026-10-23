@@ -33,6 +33,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { afterResponse } from "@/lib/http/after-response";
 import { isUuid } from "@/lib/http/uuid";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1524,6 +1525,38 @@ async function insertVacationEvent(input: {
     request_id: input.requestId,
   });
   if (error) throwVacationDatabaseError(error);
+}
+
+/**
+ * Raise the notice a decision causes AFTER the reply has gone, so the approver who pressed Approve is
+ * never kept waiting for it (2026-10-23 slow-buttons audit). A manager's Approve on production took
+ * 6.1 s, of which 0.8 s was the decision itself: the other 5.3 s were the notice to HR and the next
+ * approver — profiles, preferences, event and audit rows, Telegram, the phone push and the templated
+ * email — one wave after another, all awaited before the answer left. The decision is already saved
+ * when this runs, so a failed notice never changes the answer; it is recorded on the request's own
+ * timeline exactly as it was before. Outside a request (the unit suite, a script) `afterResponse`
+ * simply awaits the task, as every caller did before.
+ */
+function deferVacationNotice(input: {
+  actorHrId?: string | null;
+  actorLoginId?: string | null;
+  label: string;
+  requestId: string;
+  task: () => Promise<unknown>;
+}): Promise<void> {
+  return afterResponse(`vacation_notice:${input.label}`, async () => {
+    try {
+      await input.task();
+    } catch (error) {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: input.requestId,
+      }).catch(() => undefined);
+    }
+  });
 }
 
 function mapEvidenceReview(row: VacationEvidenceReviewDbRow): VacationEvidenceReview {
@@ -4716,18 +4749,14 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       }).catch(() => undefined);
     });
   } else if (nextStatus === "pending_hr") {
-    // All management steps done — notify HR and employee.
-    try {
-      await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated });
-    } catch (error) {
-      await insertVacationEvent({
-        actorHrId: input.actorHrId,
-        actorLoginId: input.actorLoginId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: updated.id,
-      }).catch(() => undefined);
-    }
+    // All management steps done — notify HR and employee, after the reply (deferVacationNotice).
+    await deferVacationNotice({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      label: "manager_review",
+      requestId: updated.id,
+      task: () => dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }),
+    });
   } else if (nextStatus === "pending_manager") {
     // A management step approved but another management step is still pending.
     // Notify the next approver it is their turn and notify the employee the request is progressing.
@@ -4735,22 +4764,19 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       (s) => s.stepOrder > step.stepOrder && s.stepKey !== "hr"
     );
     if (nextManagementStep) {
-      try {
-        await dispatchVacationNextManagerStep({
-          actingManagerHrId: step.approverHrId,
-          directory,
-          nextApproverHrId: nextManagementStep.approverHrId,
-          request: updated,
-        });
-      } catch (error) {
-        await insertVacationEvent({
-          actorHrId: input.actorHrId,
-          actorLoginId: input.actorLoginId,
-          eventType: "notification_failed",
-          message: vacationErrorMessage(error),
-          requestId: updated.id,
-        }).catch(() => undefined);
-      }
+      await deferVacationNotice({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        label: "next_manager_step",
+        requestId: updated.id,
+        task: () =>
+          dispatchVacationNextManagerStep({
+            actingManagerHrId: step.approverHrId,
+            directory,
+            nextApproverHrId: nextManagementStep.approverHrId,
+            request: updated,
+          }),
+      });
     }
   }
 
@@ -4959,18 +4985,15 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   } else if (input.decision === "approve" && step.stepKey === "direct_manager") {
     // Direct manager approved a NON-final step → hand off to HR final review. Previously
     // this fired no notification at all (dispatchVacationManagerReview was dead `void`
-    // code), so HR/the employee were never told the request had advanced. Best-effort.
-    try {
-      await dispatchVacationManagerReview({ decision: input.decision, directory, request: updated });
-    } catch (error) {
-      await insertVacationEvent({
-        actorHrId: input.actorHrId,
-        actorLoginId: input.actorLoginId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: updated.id,
-      }).catch(() => undefined);
-    }
+    // code), so HR/the employee were never told the request had advanced. Best-effort, and sent
+    // after the reply (deferVacationNotice).
+    await deferVacationNotice({
+      actorHrId: input.actorHrId,
+      actorLoginId: input.actorLoginId,
+      label: "manager_review",
+      requestId: updated.id,
+      task: () => dispatchVacationManagerReview({ decision: input.decision, directory, request: updated }),
+    });
   }
 
   invalidateExecutiveDashboardCache("leave request decision recorded", ["leave"]);

@@ -16,6 +16,7 @@
 // entry point resolves the caller and checks a right before it touches a row.
 
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { afterResponse } from "@/lib/http/after-response";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
@@ -422,8 +423,9 @@ export async function createInterviewRequest(
   if (itemError) throw itemError;
 
   const hydrated = await reloadRequest(request.id);
-  // Tell HR + the system admin — "Mina Masoud sent 2 CVs for Tuesday". Best-effort: never throws.
-  await notifyInterviewRequestCreated(hydrated);
+  // Tell HR + the system admin — "Mina Masoud sent 2 CVs for Tuesday". Best-effort: never throws, and it goes
+  // out AFTER the reply (afterResponse) — the request is saved, and the fan-out was awaited before the answer.
+  await afterResponse("interview_request_notice:created", () => notifyInterviewRequestCreated(hydrated));
   return hydrated;
 }
 
@@ -543,8 +545,9 @@ export async function scheduleInterviewRequestItem(
 
   const updated = await reloadRequest(request.id);
   // Tell the requester their interview is booked, and the interviewer they have one to conduct. The
-  // reminder job (interview-reminders.ts) then nags the interviewer until an outcome is recorded.
-  await notifyInterviewRequestScheduled(updated, booking);
+  // reminder job (interview-reminders.ts) then nags the interviewer until an outcome is recorded. After the
+  // reply (afterResponse): the booking is saved, and both notices swallow their own failures.
+  await afterResponse("interview_request_notice:scheduled", () => notifyInterviewRequestScheduled(updated, booking));
   return { booking, request: updated };
 }
 
