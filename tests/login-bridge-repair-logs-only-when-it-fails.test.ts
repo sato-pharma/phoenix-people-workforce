@@ -137,15 +137,18 @@ export function runLoginBridgeRepairLogsOnlyWhenItFailsTests() {
     "a plain AuthApiError must NOT read as a weak password — this classifier decides what goes unreported, so a loose match would silence real bridge failures",
   );
 
+  // Since the same evening the refusal never reaches the login route at all:
+  // provisionSupabaseAuthIdentity replaces a weak password with a random secret
+  // (tests/weak-password-bridge.test.ts). The unreported literal that used to answer it is gone,
+  // because the only weak refusal that could still land here is of the RANDOM SECRET — a password
+  // policy that changed under the bridge, which is a real failure and must be reported.
   const flatSource = source.replace(/\s+/g, " ");
   assert.ok(
-    /supabaseBridgeWarning = isSupabasePasswordRefusal\(repairError\) \? "Supabase auth bridge not repaired: Supabase refuses this account's password as too weak\./.test(
-      flatSource,
-    ),
-    "the weak-password branch must render a PLAIN LITERAL: clientSafeErrorMessage logs as a side effect, so routing this one through it is what wrote an app_error_events row for every successful login",
+    !/isSupabasePasswordRefusal|refuses this account's password as too weak/.test(flatSource),
+    "the login route must not special-case a weak refusal any more — the person's own weak password is replaced during provisioning, and a weak refusal of the replacement secret is a real failure that an unreported literal would hide",
   );
   assert.ok(
-    /: clientSafeErrorMessage\(repairError, "Failed to repair Supabase auth bridge\."\)/.test(flatSource),
-    "and every OTHER repair failure must keep reporting through clientSafeErrorMessage — that one really is the bridge being broken",
+    /supabaseBridgeWarning = clientSafeErrorMessage\(repairError, "Failed to repair Supabase auth bridge\."\)/.test(flatSource),
+    "every repair failure must report through clientSafeErrorMessage — that one really is the bridge being broken",
   );
 }

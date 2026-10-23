@@ -423,6 +423,9 @@ export async function completePasswordSetup(input: { password: string; token: st
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   let bridgeWarning: string | null = null;
+  // True when Supabase refused the new password as weak and holds a random secret instead
+  // (provisionSupabaseAuthIdentity) — kept on the audit row, where bridgeWarning no longer shows it.
+  let supabaseWeakPasswordReplaced = false;
 
   // THE LINK IS SPENT BEFORE THE PASSWORD IS WRITTEN, IN ONE CONDITIONAL UPDATE (technical audit,
   // 2026-10-23, F-12). The usability check above is a separate read, and the link used to be marked
@@ -492,6 +495,7 @@ export async function completePasswordSetup(input: { password: string; token: st
       password,
       role: String(currentUser.role ?? "Employee") as Parameters<typeof provisionSupabaseAuthIdentity>[0]["role"],
     });
+    supabaseWeakPasswordReplaced = identity.weakPasswordReplaced === true;
     await persistSupabaseAuthIdentityLink({
       authEmail: identity.authEmail,
       authUserId: identity.authUserId,
@@ -520,6 +524,7 @@ export async function completePasswordSetup(input: { password: string; token: st
       bridgeWarning,
       completedAt: now,
       purpose: tokenRow.purpose,
+      supabaseWeakPasswordReplaced,
     },
     oldValues: null,
     summary: `Completed password ${tokenRow.purpose} for ${tokenRow.login_id}`,
