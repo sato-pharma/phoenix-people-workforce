@@ -235,7 +235,20 @@ export function createAssuranceDirectoryReader(
   };
 }
 
-const productionAssuranceDirectoryReader = createAssuranceDirectoryReader();
+/**
+ * The production reader is built ON FIRST USE, never at import.
+ *
+ * It used to be constructed at module level, and that one eager call cost the MCP bundle its
+ * security guard: a top-level call is a side effect esbuild may not drop, so the statement was
+ * retained, and with it its default argument `loadAssuranceDirectoryFresh` -> the employee
+ * directory's private `supabaseRest` -> the service-role key and the PostgREST URL. The MCP's
+ * `build.mjs` assertion ("Administrative Phoenix IO survived bundling") then failed, and nothing
+ * on `main` blocked on it because that workflow only triggers on nine paths. Constructing it
+ * lazily keeps the whole administrative chain tree-shakeable while behaving identically: the
+ * reader is a per-process singleton either way, and `??=` resolves before any await, so two
+ * concurrent first sends still share one last-good copy.
+ */
+let productionAssuranceDirectoryReader: ReturnType<typeof createAssuranceDirectoryReader> | null = null;
 
 /**
  * Production directory: every address the system is allowed to reach, paired with its owner.
@@ -248,5 +261,6 @@ const productionAssuranceDirectoryReader = createAssuranceDirectoryReader();
  * Throws RecipientAssuranceUnavailableError when neither a fresh read nor a recent copy exists.
  */
 export async function resolveAssuranceDirectory(): Promise<AssuranceDirectoryEntry[]> {
+  productionAssuranceDirectoryReader ??= createAssuranceDirectoryReader();
   return productionAssuranceDirectoryReader();
 }

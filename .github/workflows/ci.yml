@@ -594,6 +594,26 @@ jobs:
       - name: Check both Dockerfiles parse and declare every variable they use
         run: pnpm run check:dockerfile
 
+      # 🔴 THE MCP READER'S OWN SECURITY ASSERTION, ON EVERY PR AND EVERY PUSH — BECAUSE ITS OWN
+      # WORKFLOW IS NOT. `.github/workflows/phoenix-mcp.yml` triggers on nine paths, and the reader's
+      # real import graph is most of `src/lib/`, so a change anywhere outside those nine breaks the
+      # bundle silently: on 23 Oct 2026 `origin/main` itself was red there, broken by #6297 on a path
+      # that workflow never watches, and `mcp-security` is not one of `main`'s required checks, so
+      # nothing blocked for days. `build.mjs`'s assertion ("Administrative Phoenix IO survived
+      # bundling") is what keeps the service-role key and the PostgREST URL out of a bundle that is
+      # supposed to reach the database through a read-only role and nothing else — it belongs in a
+      # check that cannot be skipped and that `checks` stands for.
+      #
+      # ~15 seconds, and deliberately NOT the whole `npm test`: the cold typecheck, the isolated
+      # PostgreSQL fixture and the dependency audit stay on phoenix-mcp.yml, where their cost is paid
+      # only when the MCP itself changes. This step is the bundle's tree-shaking contract alone.
+      # Its own lockfile and node_modules, so it cannot disturb the pnpm install above.
+      - name: Check no administrative Phoenix IO survives the MCP bundle
+        working-directory: infra/phoenix-mcp
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node build.mjs
+
       - name: Dependency audit (fail on high+ vulnerabilities)
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
         # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
