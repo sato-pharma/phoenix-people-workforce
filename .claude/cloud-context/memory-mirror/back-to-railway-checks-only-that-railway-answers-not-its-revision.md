@@ -1,12 +1,16 @@
 ---
 name: back-to-railway-checks-only-that-railway-answers-not-its-revision
-description: "emergency-host back-to-railway flips the domain to whatever Railway serves — it checks /api/healthz answers, never the revision. On 22 Oct 2026 Railway still served ed7797a85 (20 Oct, pre-rotation), so pressing it before Railway deploys main would roll production back. Owner's word ~05:30 Cairo: \"point production back at Railway when its deploys resume\"."
+description: "emergency-host back-to-railway flips the domain to whatever Railway serves — it checks /api/healthz answers, never the revision. On 22 Oct 2026 Railway still served ed7797a85 (20 Oct, pre-rotation), so pressing it before Railway deploys main would roll production back. Owner's word ~05:30 Cairo: \"point production back at Railway when its deploys resume\". DONE: domain on Railway 22 Oct 10:29 Cairo (run 39740337166, f34b4bea9); worker moved and Fly worker deleted 23 Oct 04:35."
 metadata:
   node_type: memory
   type: project
   originSessionId: 78db3fb8-43e6-42e4-9a0f-0a85819d1194
-  modified: 2026-10-22T02:34:41.111Z
+  modified: 2026-10-23T01:36:42.732Z
 ---
+
+✅ **DONE.** Domain back on Railway 22 Oct 10:29 Cairo (run 39740337166, revision f34b4bea9, readyz 200); the worker
+move and the Fly worker deletion finished 23 Oct 04:35 Cairo — see [[the-background-worker-runs-on-fly-while-railway-is-down]].
+The revision rule below still holds for any future flip.
 
 `scripts/emergency-host.mjs point --to railway` (the `back-to-railway` action) refuses only when
 `https://phoenix-people-workforce-production.up.railway.app/api/healthz` does not answer. It never compares the
