@@ -76,6 +76,12 @@ function runGuard(cwd: string, scratch: string, command: string, tool = "Bash"):
   command = fillPlaceholders(command, cwd, scratch);
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
+  // The hook seeds $TEMP/$TMP/$TMPDIR, so the test must OWN them: a CI runner has no $TEMP at all,
+  // and its `/tmp` is two segments deep, where this laptop's Temp is six. Pinning them to a folder
+  // inside the scratch whose last segment is `Temp` makes both rows deterministic on either
+  // platform — the Temp ROOT refused on its own last segment, a path under it placed.
+  const temp = join(scratch, "Temp").replace(/\\/g, "/");
+  Object.assign(env, { TEMP: temp, TMP: temp, TMPDIR: temp });
   const raw = execFileSync(process.execPath, [guardPath], {
     cwd,
     input: JSON.stringify({ tool_name: tool, cwd, tool_input: { command } }),
@@ -150,6 +156,7 @@ const ALLOWED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "a worktree glob with a literal path under it", command: 'cd "<SCRATCH>/Phoenix Workforce" && grep -rl "notification_backup" _wt-*/supabase/migrations/ 2>/dev/null' },
   // The six $TEMP refusals: it is set in every shell here, so the path CAN be placed.
   { what: "a folder under $TEMP", command: 'grep -rln "@Path" --include=*.java "$TEMP/hmdm-src"' },
+  { what: "a deep POSIX scratchpad path, as a CI runner sees it", command: 'grep -rn \'"salary_records"\' /tmp/claude/proj/sess/scratchpad/tree/src | head -30' },
   { what: "a variable built from $TEMP", command: 'T="$TEMP/hmdm-src/tree"; grep -rn \'"salary_records"\' "$T/src" "$T/app" | head -30' },
   { what: "the dot after a cd into a $TEMP folder", command: 'cd "$TEMP/hmdm-src/h-mdm-server" && grep -rln "@Path" --include=*.java .' },
   { what: "a non-recursive grep of a file", command: "grep -n x package.json" },
@@ -225,6 +232,7 @@ const REFUSED: Array<{ what: string; command: string; tool?: string }> = [
   { what: "the workspace folder, even with every exclude", command: `grep -rn x ${EXCLUDES} ..` },
   { what: "a cd to an unknown variable, then the dot", command: "cd \"$NOWHERE\" && grep -rn x ." },
   { what: "the Temp ROOT itself, even though $TEMP now resolves", command: "grep -rn x \"$TEMP\"" },
+  { what: "the POSIX temp root", command: "grep -rn x /tmp" },
   { what: "a variable that is genuinely unset", command: "grep -rn x \"$NO_SUCH_VAR_HERE\"" },
   { what: "the transcript store", command: "grep -rn x C:/Users/someone/.claude/projects" },
   { what: "the real transcript store, which the .claude allowance must not reach", command: "grep -rl 'AssertionError: 0' <HOME>/.claude/projects/" },
@@ -250,6 +258,7 @@ export function runBashGrepGuardTests(): void {
   mkdirSync(join(scratch, "somerepo", ".git"), { recursive: true });
   const fill = (text: string) => fillPlaceholders(text, cwd, scratch);
   mkdirSync(join(scratch, "Phoenix Workforce", "_wt-one", "supabase", "migrations"), { recursive: true });
+  mkdirSync(join(scratch, "Temp"), { recursive: true }); // what runGuard points $TEMP at
   try {
     for (const { what, command, tool } of ALLOWED) {
       const { decision, reason, command: rewritten } = runGuard(cwd, scratch, command, tool ?? "Bash");
