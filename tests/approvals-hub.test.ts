@@ -113,12 +113,12 @@ export function runApprovalsHubTests() {
   );
   assert.match(
     svc,
-    /logStructured\(forbidden \? "DEBUG" : "ERROR", message/,
-    "logLoadFailure downgrades forbidden failures to DEBUG and keeps everything else at ERROR",
+    /logStructured\(classification === "error" \? "ERROR" : "DEBUG", message/,
+    "logLoadFailure keeps genuine failures at ERROR and downgrades a refusal or an empty seat (no employee profile) to DEBUG",
   );
   assert.match(
     svc,
-    /classification: forbidden \? "forbidden" : "error"/,
+    /labels: \{ \.\.\.options\.labels, classification \}/,
     "downgraded failures stay searchable via a classification label",
   );
   assert.match(
