@@ -100,13 +100,23 @@ function flat(sql: string): string {
   return sql.replace(/\s+/g, " ").trim();
 }
 
-/** One `create or replace function public.<name>(` statement, through its closing `$$;`. */
+/**
+ * One `create or replace function public.<name>(` statement, through the terminator that closes its body.
+ *
+ * EITHER DOLLAR TAG. This directory uses `$$` and `$function$` about equally — 229 files and 163 on
+ * 23 October 2026 — and reading only `$$;` made this helper report "<name> is closed" as a FAILURE on a
+ * perfectly valid function. That is how it broke on the entry-days cache: not on anything about the rule
+ * it pins, but on the quoting of the file that happened to define it last.
+ */
 function functionSql(sql: string, name: string): string {
   const start = sql.indexOf(`create or replace function public.${name}(`);
   assert.ok(start >= 0, `${name} is defined`);
-  const end = sql.indexOf("\n$$;", start);
-  assert.ok(end > start, `${name} is closed`);
-  return sql.slice(start, end + "\n$$;".length);
+  const [end] = ["\n$$;", "\n$function$;"]
+    .map((tag) => ({ tag, at: sql.indexOf(tag, start) }))
+    .filter((candidate) => candidate.at > start)
+    .sort((a, b) => a.at - b.at);
+  assert.ok(end, `${name} is closed`);
+  return sql.slice(start, end.at + end.tag.length);
 }
 
 /** One `create or replace view public.<name>` statement, through the `;` that ends it. */
@@ -743,11 +753,20 @@ function runNoDoubleCountTests(code: string): void {
   // counted kind on one — the team's OWN seat is left out, so a district manager keeps both systems. Their two
   // lower bounds (a visit from its start, an activity from the earlier of the start and day_activities_from)
   // are what make the doors' split at Phoenix CRM's first day safe: loosen either and that bound must move too.
+  //
+  // THE RULE MOVED, IT DID NOT CHANGE (2026-10-23). `phoenix_crm_rep_entry_days()` now serves a cached
+  // table and `phoenix_crm_rep_entry_days_calc()` holds the ONE body every write path recomputes through,
+  // so these clauses are read from `_calc`. The reader is pinned below to serve the cache and never to
+  // carry a second copy of the rule — which is the property that keeps one definition of "Phoenix wins
+  // the day" after the cache.
   const entryDays = flat(
-    functionSql(lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days"), "phoenix_crm_rep_entry_days"),
+    functionSql(
+      lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days_calc\(/, "phoenix_crm_rep_entry_days_calc"),
+      "phoenix_crm_rep_entry_days_calc",
+    ),
   );
   for (const clause of [
-    "returns table (hr_key text, agent_crm_id bigint, entry_day date) language sql stable security definer set search_path to 'public'",
+    "returns table(hr_key text, agent_crm_id bigint, entry_day date) language sql stable security definer rows 400 set search_path to 'public'",
     "select lower(btrim(p.rep_hr_id)) as hr_key, p.visit_date as entry_day from public.phoenix_crm_countable_visits p join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on) where not p.is_test and nullif(btrim(p.rep_hr_id), '') is not null",
     "join public.phoenix_crm_started_team_seats() team on team.seat_id = a.seat_id",
     "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on))",
@@ -761,6 +780,16 @@ function runNoDoubleCountTests(code: string): void {
   const entryDaysSql = lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days");
   assert.match(entryDaysSql, /revoke execute on function public\.phoenix_crm_rep_entry_days\(\) from public, anon, authenticated;/);
   assert.match(entryDaysSql, /grant execute on function public\.phoenix_crm_rep_entry_days\(\) to service_role;/);
+  // ONE BODY (2026-10-23): the reader serves the cache, and the rule itself exists only in `_calc` above.
+  const entryDaysReader = flat(functionSql(entryDaysSql, "phoenix_crm_rep_entry_days"));
+  assert.ok(
+    entryDaysReader.includes("from public.phoenix_crm_rep_entry_days_cache c"),
+    "the entry-days reader serves the cached table",
+  );
+  assert.ok(
+    !entryDaysReader.includes("phoenix_crm_countable_visits") && !entryDaysReader.includes("phoenix_crm_day_activities"),
+    "and never recomputes the rule itself — that lives once, in phoenix_crm_rep_entry_days_calc",
+  );
   assert.ok(
     flat(visitBranch).includes(
       "join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)",

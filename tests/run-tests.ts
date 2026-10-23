@@ -1983,6 +1983,7 @@ import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
+import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
@@ -2703,6 +2704,7 @@ import {
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
+import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -7552,6 +7554,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM caches the entry days instead of recomputing them on every read (the \"Phoenix wins the day\" rule, owner 2026-10-16, was 35.2 ms and 4,509 buffers of a 79.4 ms read and was paid once per calendar day of the window): the rule still lives in exactly ONE body, phoenix_crm_rep_entry_days_calc, which is the only thing that reads the countable view or names an activity type — every write path recomputes through it, so the cache cannot drift into a second definition — the public reader reads the table and never falls back to the live computation, each of the four fact tables that decide a rep-day is triggered on insert, update AND delete with an update recomputing the OLD key as well as the new one, a team start rebuilds, the 5-minute reconcile repairs and warns rather than only reporting, and the migration refuses to commit a backfill that disagrees with the truth",
+  runPhoenixCrmRepEntryDaysCacheTests,
+);
+
+await runTest(
   "Phoenix CRM draws one brick in one colour everywhere (owner, 2026-09-26: \"every brick highlighted, the doctors in the same brick highlighted with the same colour\"; the palette the Reps List board and the List tab already used now also groups Add Visit, which is the moment a third copy would have been made — a brick that is teal on one screen and indigo on the next is no use as a landmark — so it lives in one module, its hues are assigned from the WHOLE list rather than the filtered one, and the visit form carries the brick's NAME because a screen shows names, never codes)",
   runPhoenixCrmBrickTintsTests,
 );
@@ -10712,6 +10719,10 @@ await runTest(
 await runTest(
   "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
   runNeedsYouDigestRunsOutsideTheFanoutTests,
+);
+await runTest(
+  "a structured ERROR's labels reach the stored app_error_events row: hrId/role/loginId/digest onto their own columns under both spellings, every remaining label into the stack's leading, redacted, capped label block, and a row with no labels byte-identical to before",
+  runStructuredLogLabelsReachTheRowTests,
 );
 await runTest(
   "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",

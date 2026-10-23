@@ -268,7 +268,7 @@ const nextConfig: NextConfig = {
   // WebAssembly core and a language file from disk at runtime, by path. Bundled, none of those paths
   // resolve. See src/lib/recruitment/cv-ocr.ts, which reads scanned CVs when the vision model is
   // unavailable.
-  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth", "tesseract.js", ...(isProduction ? [] : ["exceljs", "imapflow", "mailparser", "nodemailer", "pdf-lib", "jszip"])],
+  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth", "word-extractor", "tesseract.js", ...(isProduction ? [] : ["exceljs", "imapflow", "mailparser", "nodemailer", "pdf-lib", "jszip"])],
   // pdf-parse's local PDF text extraction (src/lib/recruitment/cv-extraction.ts) runs on
   // pdfjs-dist's "legacy" build. In Node, pdfjs-dist always disables real Worker threads and
   // instead dynamically `import()`s its own sibling "legacy/build/pdf.worker.mjs" file to run
