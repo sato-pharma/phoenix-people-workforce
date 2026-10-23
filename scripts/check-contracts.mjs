@@ -43,6 +43,7 @@ import {
   lintableChangedFiles,
   migrationDetail,
 } from './check-contracts-gates.mjs';
+import { clearContractsRecord, headState, writeContractsPass } from './lib/check-contracts-record.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -265,12 +266,22 @@ const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 const shardNote = total === 1 ? '1 shard' : `${total} shards`;
 const note = '\n  ' + TYPECHECK_NOTE;
 
+/**
+ * A run that did not end in a clean full pass must leave no record behind for this commit: the record
+ * is read before a push, and a stale pass is worse than none. Fails soft — bookkeeping, never a gate.
+ */
+function forgetAnyRecordedPass() {
+  const head = headState(ROOT);
+  if (head) clearContractsRecord(ROOT, head.sha);
+}
+
 if (problems.length > 0) {
   console.error(
     `\n[check-contracts] NO VERDICT after ${seconds}s (${shardNote}) — the run cannot be trusted:\n  ` +
       problems.join('\n  ') +
       '\n  Re-run it, or read the PR\'s own validate.',
   );
+  forgetAnyRecordedPass();
   process.exit(2);
 }
 if (failedGates > 0 || failedTools.length > 0) {
@@ -282,6 +293,7 @@ if (failedGates > 0 || failedTools.length > 0) {
       '\n  A contract gate is a whole-repo rule, not your feature — fix it here rather than in a red PR.' +
       note,
   );
+  forgetAnyRecordedPass();
   process.exit(1);
 }
 // 🔴 A SKIP IS NAMED IN THE SUMMARY, NEVER ROLLED INTO "clean". A gate that could not run is the
@@ -295,4 +307,18 @@ console.log(
     `${toolNote}.` +
     note,
 );
+// 🔴 A SKIPPED GATE IS NOT A PASS, SO IT IS NOT RECORDED EITHER — the record exists to quiet the
+// pre-push reminder, and quieting it on a run that could not read every gate is the one thing it
+// must not do. A clean full run records; anything else clears whatever this commit held.
+if (skippedTools.length === 0) {
+  const recorded = writeContractsPass(ROOT, { gates: CONTRACT_GATES.length, seconds: Number(seconds) });
+  console.log(
+    recorded
+      ? `  recorded for ${recorded.sha.slice(0, 9)} — the next \`git push\` of that commit says nothing about contracts.`
+      : '  not recorded: the working tree has uncommitted changes, so this pass describes no commit. ' +
+        'Commit, re-run it, and the push goes quiet.',
+  );
+} else {
+  forgetAnyRecordedPass();
+}
 process.exit(0);
