@@ -652,6 +652,14 @@ export async function getRepDoctorLists(input: {
    * Omitted, the whole company is read as before.
    */
   agents?: { crmIds: readonly number[]; hrIds: readonly string[] };
+  /**
+   * Opt-in, DISPLAY callers only: a whole-company window (no `agents`) may come from a copy up to a
+   * minute old, shared by every viewer of the same window (crm/reads.ts, "A dashboard may reuse a
+   * company window"). Each viewer's scope is still applied to those rows afterwards, so the copy holds
+   * company rows, never one viewer's board. Never for a read that decides money, a deduction, an
+   * approval or a notification. A read narrowed to `agents` always reads live.
+   */
+  reuseRecentWindow?: boolean;
 }): Promise<RepDoctorListsBoard> {
   const monthWindow = monthBounds(input.month);
   const from = input.window?.from ?? monthWindow.from;
@@ -675,6 +683,7 @@ export async function getRepDoctorLists(input: {
       // buildRepDoctorListsBoard. They are here so a rep who spent the month on campaign work is
       // shown as working rather than as a zero (owner's ruling 2026-08-21).
       visitTypes: [0, CAMPAIGN_TYPE],
+      reuseRecentWindow: input.reuseRecentWindow === true,
       // One read, in the visits door's id order — the same order the company-wide read is in.
       ...(agents ? { agentCrmOrHrIds: { crmIds: agents.crmIds, hrIds: agents.hrIds } } : {}),
     }),

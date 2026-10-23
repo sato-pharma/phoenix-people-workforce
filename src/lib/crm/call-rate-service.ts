@@ -56,6 +56,14 @@ export type CallRateInput = {
    * Omitted, the whole field force is read as before.
    */
   agents?: { crmIds: readonly number[]; hrIds: readonly string[] };
+  /**
+   * Opt-in, DISPLAY callers only: a whole-company window (no `agents`) may come from a copy up to a
+   * minute old, shared by every viewer of the same window (crm/reads.ts, "A dashboard may reuse a
+   * company window"). Each viewer's scope is still applied to those rows afterwards, so the copy holds
+   * company rows, never one viewer's board. Never for a read that decides money, a deduction, an
+   * approval or a notification. A read narrowed to `agents` always reads live.
+   */
+  reuseRecentWindow?: boolean;
 };
 
 /**
@@ -103,14 +111,22 @@ export async function loadCallRateReport(
   // visit of the SAME agent, so neither ever looks across reps: these reps' rows give these reps'
   // figures whether or not anyone else's month was read beside them.
   const narrowTo = input.agents ? { agentCrmOrHrIds: { crmIds: input.agents.crmIds, hrIds: input.agents.hrIds } } : {};
+  const reuseRecentWindow = input.reuseRecentWindow === true;
   const [rawVisits, checkins, holidays, cutover, startedWindows] = await Promise.all([
     queryVisits<VisitForCallRate & { crm_visit_id: number | null; double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       columns: VISIT_COLUMNS,
+      reuseRecentWindow,
       ...narrowTo,
     }),
-    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS, ...narrowTo }),
+    queryCheckins<CheckinRow>({
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      columns: CHECKIN_COLUMNS,
+      reuseRecentWindow,
+      ...narrowTo,
+    }),
     input.holidays ?? loadCallRateHolidays(input.dateFrom, input.dateTo),
     // Phase 6: from the CRM cutover every submitted regular visit counts. With no date set, or an
     // unreadable setting, this answers the old rule and nothing on any screen moves.

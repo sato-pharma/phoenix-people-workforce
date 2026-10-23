@@ -195,7 +195,7 @@ export async function runSharedReadCacheTests() {
       .sort();
     assert.deepEqual(
       optIns,
-      ["src/lib/crm/sfe-field-analytics.ts"],
+      ["src/components/crm/rep-visits-page.tsx", "src/lib/crm/kpis-board.ts", "src/lib/crm/sfe-field-analytics.ts"],
       "RED a new reader opted into the minute-old CRM copy — only a DISPLAY reader may, never one that decides money, a deduction, an approval or a notification. Classify it here first.",
     );
 
@@ -223,5 +223,30 @@ export async function runSharedReadCacheTests() {
     assert.match(poller, /rowsUpserted > 0 \|\| result\.checkinsUpserted > 0 \|\| result\.rowsDeleted > 0\) \{\s*refreshSharedCrmWindows\(/);
   }
 
-  console.log("shared read cache: 9 blocks passed");
+  // ── (10) The KPIs board's three company reads share the copy, and nothing else inherits it ──
+  // Every manager's Command Center, the KPIs pages, the trend and the business review build this
+  // board, and each load read the same company month again (23 Oct 2026). The loaders take the option
+  // and default it OFF, so a future caller that decides money reads live unless it says otherwise.
+  {
+    const board = code("src/lib/crm/kpis-board.ts");
+    assert.equal(
+      (board.match(/reuseRecentWindow: true/g) ?? []).length,
+      3,
+      "RED the KPIs board opts in on exactly its three company reads: call rate, doctor lists, rep KPI reports",
+    );
+    assert.match(board, /loadCallRateReport\(\{[^}]*reuseRecentWindow: true/, "RED the call rate shares the copy");
+    assert.match(board, /getRepDoctorLists\(\{[\s\S]{0,700}?reuseRecentWindow: true/, "RED the doctor lists share the copy");
+    assert.match(board, /loadRepKpiReports\(\{[\s\S]{0,700}?reuseRecentWindow: true/, "RED the rep KPI reports share the copy");
+
+    const rate = code("src/lib/crm/call-rate-service.ts");
+    assert.match(rate, /const reuseRecentWindow = input\.reuseRecentWindow === true;/, "RED the call rate defaults the copy OFF");
+    assert.equal((rate.match(/^\s*reuseRecentWindow,$/gm) ?? []).length, 2, "RED both its visits and its check-ins forward it");
+
+    const lists = code("src/lib/crm/rep-doctor-lists.ts");
+    assert.match(lists, /visitTypes: \[0, CAMPAIGN_TYPE\],\s*reuseRecentWindow: input\.reuseRecentWindow === true,/, "RED the doctor lists forward it, default OFF");
+    const reports = code("src/lib/crm/rep-kpi-reports-data.ts");
+    assert.match(reports, /collapseDoubleVisits: true,\s*reuseRecentWindow: input\.reuseRecentWindow === true,/, "RED the rep KPI reports forward it, default OFF");
+  }
+
+  console.log("shared read cache: 10 blocks passed");
 }

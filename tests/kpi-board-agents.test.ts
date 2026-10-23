@@ -289,7 +289,7 @@ export async function runKpiBoardAgentsTests() {
     /const agentsRead = input\.coverageDoctors\s*\?\s*Promise\.resolve\(null\)\s*:\s*resolveKpiBoardAgents\(scope, \{/,
     "the board resolves its reps once — and never for the Coverage tab, whose off-plan doctors are named from other reps' plans",
   );
-  assert.match(board, /loadCallRateReport\(\{ dateFrom: callRange\.dateFrom, dateTo: callRange\.dateTo, \.\.\.\(agents \? \{ agents \} : \{\}\) \}\)/, "the call rate reads only them");
+  assert.match(board, /loadCallRateReport\(\{\s*dateFrom: callRange\.dateFrom,\s*dateTo: callRange\.dateTo,\s*reuseRecentWindow: true,\s*\.\.\.\(agents \? \{ agents \} : \{\}\),?\s*\}\)/, "the call rate reads only them");
   assert.match(board, /getRepDoctorLists\(\{[\s\S]{0,700}?\.\.\.\(agents \? \{ agents \} : \{\}\),\s*\}\)/, "and so do the doctor lists");
   const rate = readFileSync("src/lib/crm/call-rate-service.ts", "utf8");
   assert.match(rate, /agentCrmOrHrIds: \{ crmIds: input\.agents\.crmIds, hrIds: input\.agents\.hrIds \}/, "the call rate narrows by either id");

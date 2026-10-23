@@ -175,5 +175,5 @@ export async function runPhoenixKpiNarrowingTests() {
   }
   const page = readFileSync(new URL("../src/components/crm/rep-visits-page.tsx", import.meta.url), "utf8");
   assert.match(page, /resolveRepKeyAgents\(repKey, \{ from: range\.dateFrom, to: range\.dateTo \}\)\.catch\(\(\) => null\)/, "a failed discovery reads the whole field force");
-  assert.match(page, /loadCallRateReport\(\{ dateFrom: range\.dateFrom, dateTo: range\.dateTo, holidays, \.\.\.\(agents \? \{ agents \} : \{\}\) \}\)/);
+  assert.match(page, /loadCallRateReport\(\{ dateFrom: range\.dateFrom, dateTo: range\.dateTo, holidays, reuseRecentWindow: true, \.\.\.\(agents \? \{ agents \} : \{\}\) \}\)/);
 }
