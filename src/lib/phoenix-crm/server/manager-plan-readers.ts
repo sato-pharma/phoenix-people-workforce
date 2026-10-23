@@ -213,7 +213,7 @@ export async function loadManagerPlanHalfDays(input: {
 export function managerHalfDayText(halfDay: Pick<ManagerPlanHalfDay, "kind" | "activityLabel" | "areaName">, repName: string | null): string {
   if (halfDay.kind === "with_rep") return `With ${repName ?? "a rep"}`;
   if (halfDay.kind === "admin") return halfDay.activityLabel ?? "Admin";
-  if (halfDay.kind === "with_dm") return `With a district manager · ${halfDay.areaName ?? "his areas"}`;
+  if (halfDay.kind === "with_dm") return `With a district manager · ${halfDay.areaName ?? "the district's areas"}`;
   return `Single visit · ${halfDay.areaName ?? "an area"}`;
 }
 

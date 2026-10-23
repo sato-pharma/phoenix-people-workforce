@@ -774,7 +774,7 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
   if (kind === "with_dm") {
     if (!scopeDmSeatId) return { ok: false, error: "Choose the district manager you go with." };
     if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one of the district manager's areas." };
-    if (customers.length > 0) return { ok: false, error: "With a district manager, you tick his areas, not customers." };
+    if (customers.length > 0) return { ok: false, error: "With a district manager, you tick the district manager's areas, not customers." };
     return { ok: true, value: { ...draft, areaSeatIds, scopeDmSeatId, scopeLineCode } };
   }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };

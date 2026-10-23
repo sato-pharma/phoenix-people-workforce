@@ -166,7 +166,7 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null
   }
   if (draft.kind === "with_dm") {
     if (!draft.scope?.startsWith("dm:")) return "choose the district manager you go with";
-    if (draft.areaSeatIds.length === 0) return "tick at least one of his areas";
+    if (draft.areaSeatIds.length === 0) return "tick at least one of the district manager's areas";
   }
   if (draft.kind === "admin" && !draft.activityType) return "choose the activity";
   if (draft.kind === "single_visit") {
