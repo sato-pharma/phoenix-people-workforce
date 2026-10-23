@@ -41,9 +41,10 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const deviceNumber = params.get("deviceNumber")?.trim();
     if (!deviceNumber) {
-      // The fleet read is also what lets a newly enrolled tablet add itself to the custody register,
-      // so it needs the person any such entry is written in the name of — see `fleet.ts`. The action
-      // catalogue rides along so the console can grey the actions this server cannot be sent yet.
+      // The fleet read NEVER adds a tablet to the custody register — a person confirms each one
+      // (`registerOneHeadwindTablet`, owner rule 2026-10-22); `getHeadwindFleet` keeps its actor
+      // argument for call-site compatibility only. The action catalogue rides along so the console can
+      // grey the actions this server cannot be sent yet.
       const actor =
         hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
       const fleet = await getHeadwindFleet(actor);

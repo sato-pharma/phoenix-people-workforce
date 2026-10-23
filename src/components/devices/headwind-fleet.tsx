@@ -30,18 +30,37 @@
 import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { ARM_WINDOW_MS } from "@/components/devices/headwind-panel-kit";
+import { useDisarmAfterWindow } from "@/components/devices/headwind-panel-kit";
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 
-/** Tailwind's `md` — the width where the desktop table shows and the phone cards hide. */
+/**
+ * Tailwind's `md` — the width where the desktop table shows and the phone cards hide. This project pins
+ * it to `768px` in `tailwind.config.ts` (loaded by `@config` in app/globals.css), so the px value here is
+ * the CSS's own; keep the two equal or an opened tablet mounts its panel in the hidden layout.
+ */
 const TABLE_QUERY = "(min-width: 768px)";
 
+/** One list for the page's life — `getSnapshot` runs on every render, and building one each time is waste. */
+let tableQueryList: MediaQueryList | undefined;
+function tableQuery(): MediaQueryList {
+  tableQueryList ??= window.matchMedia(TABLE_QUERY);
+  return tableQueryList;
+}
+
+function tableWidthSnapshot(): boolean {
+  return tableQuery().matches;
+}
+
+function tableWidthServerSnapshot(): boolean {
+  return true;
+}
+
 function subscribeToTableWidth(callback: () => void) {
-  const query = window.matchMedia(TABLE_QUERY);
+  const query = tableQuery();
   query.addEventListener("change", callback);
   return () => query.removeEventListener("change", callback);
 }
@@ -54,11 +73,7 @@ function subscribeToTableWidth(callback: () => void) {
  * first paint, so it never decides what the server renders.
  */
 function useTableLayout(): boolean {
-  return useSyncExternalStore(
-    subscribeToTableWidth,
-    () => window.matchMedia(TABLE_QUERY).matches,
-    () => true,
-  );
+  return useSyncExternalStore(subscribeToTableWidth, tableWidthSnapshot, tableWidthServerSnapshot);
 }
 
 const ACTION_BUTTON =
@@ -209,6 +224,9 @@ export function HeadwindFleet() {
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  // The panels' own disarm: the timer restarts on every re-arm and is dropped on a press-through, so an
+  // earlier arm's timer can never cut a fresh one short.
+  useDisarmAfterWindow(confirmKey, () => setConfirmKey(null));
   const [notices, setNotices] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [locations, setLocations] = useState<Record<string, string>>({});
@@ -281,7 +299,6 @@ export function HeadwindFleet() {
       const key = `${row.deviceNumber}:${command}`;
       if (destructive && confirmKey !== key) {
         setConfirmKey(key);
-        window.setTimeout(() => setConfirmKey((current) => (current === key ? null : current)), ARM_WINDOW_MS);
         return;
       }
       setConfirmKey(null);
@@ -846,6 +863,7 @@ function FleetRowBlock(props: BlockProps) {
                 placeholderName: row.placeholderName,
                 registerDeviceId: row.registerDeviceId,
                 registerStatus: row.registerStatus,
+                registerUnreadable: !row.unregistered && !row.registerDeviceId,
               }}
               deviceNumber={row.deviceNumber}
               onCustodyChanged={props.onRefresh}
@@ -886,6 +904,7 @@ function FleetRowBlock(props: BlockProps) {
                 placeholderName: row.placeholderName,
                 registerDeviceId: row.registerDeviceId,
                 registerStatus: row.registerStatus,
+                registerUnreadable: !row.unregistered && !row.registerDeviceId,
               }}
               deviceNumber={row.deviceNumber}
               onCustodyChanged={props.onRefresh}

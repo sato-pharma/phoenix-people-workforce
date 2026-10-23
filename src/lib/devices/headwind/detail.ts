@@ -88,10 +88,11 @@ export function humanizeHeadwindKey(key: string): string {
 /**
  * Whether a key names a moment. `lastContactAt` and `locatedAt` are camelCase with no underscore, so
  * the `…At` ending is matched on its own — the old pattern missed both, which is why the Check-in
- * section printed raw UTC.
+ * section printed raw UTC. `ts` and `…Ts` (the agent's `locationTs`, which `devices.ts` already reads
+ * as a moment) are matched too, or "Everything the tablet reports" prints them as a 13-digit number.
  */
 function isInstantKey(key: string): boolean {
-  return /(time|date|_at|seen|stamp|update)/i.test(key) || /At$/.test(key);
+  return /(time|date|_at|seen|stamp|update)/i.test(key) || /(At|Ts)$/.test(key) || key === "ts";
 }
 
 /** Whether a number is a millisecond epoch rather than a plain quantity. Both halves matter. */

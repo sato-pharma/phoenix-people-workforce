@@ -34,6 +34,7 @@ import {
   PANEL_ARMED,
   Panel,
   postJson,
+  useDisarmAfterWindow,
   useRead,
 } from "@/components/devices/headwind-panel-kit";
 import {
@@ -58,6 +59,17 @@ const TITLE_KINDS = [
   { label: "The tablet's description", value: "DESCRIPTION" },
   { label: "The title typed beside this", value: "TEMPLATE" },
 ] as const;
+
+/**
+ * 🔴 A VALUE PHOENIX DOES NOT OFFER IS STILL SHOWN, AND SAVED BACK AS IT IS. A set of rules whose title
+ * was set to one of Headwind's custom-field kinds in its own console holds a value outside
+ * `TITLE_KINDS`. Without its own option the dropdown showed a blank, and since the form sends its whole
+ * shape, every save of those rules — a colour, an icon size — was refused over a title nobody touched.
+ */
+function titleKindLabel(value: string): string {
+  const custom = /^CUSTOM([1-3])$/.exec(value);
+  return custom ? `Custom field ${custom[1]} (set in the Headwind console)` : "Set in the Headwind console";
+}
 
 type ConfigurationSummary = {
   id: number;
@@ -209,7 +221,10 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
                 onChange={(event) => set("desktopHeader", event.target.value)}
                 value={form.desktopHeader}
               >
-                <option value="">Leave it as the tablet has it</option>
+                <option value="">Not set — the launcher&rsquo;s own default</option>
+                {form.desktopHeader && !TITLE_KINDS.some((kind) => kind.value === form.desktopHeader) ? (
+                  <option value={form.desktopHeader}>{titleKindLabel(form.desktopHeader)}</option>
+                ) : null}
                 {TITLE_KINDS.map((kind) => (
                   <option key={kind.value} value={kind.value}>
                     {kind.label}
@@ -254,7 +269,7 @@ function BrandingPanel({ configurationId }: { configurationId: number }) {
                 onChange={(event) => set("iconSize", event.target.value)}
                 value={form.iconSize}
               >
-                <option value="">Leave it as the tablet has it</option>
+                <option value="">Not set — the launcher&rsquo;s own default</option>
                 {ICON_SIZES.map((size) => (
                   <option key={size} value={size}>
                     {size === "SMALL" ? "Small" : size === "MEDIUM" ? "Medium" : "Large"}
@@ -456,6 +471,8 @@ const NO_USER_PENDING: UsersState = {
 
 function UsersPanel() {
   const [state, setState] = useState<UsersState>(NO_USER_PENDING);
+  // Removing a console sign-in is a press-again control like the tablet panel's — it disarms the same way.
+  useDisarmAfterWindow(state.armed, () => setState((current) => ({ ...current, armed: null })));
   const read = useRead<{ users: ConsoleUser[]; roles: ConsoleRole[]; note: string }>(
     `/api/devices/headwind/users?round=${state.round}`,
   );

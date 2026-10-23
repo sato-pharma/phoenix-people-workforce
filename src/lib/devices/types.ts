@@ -32,6 +32,20 @@ export type DeviceStatus =
   | "reserved";
 
 /**
+ * A status as a person reads it — the ONE list, shared by the Device custody page and the Rep Tablets
+ * custody panel so one tablet never reads two ways on two pages. Client-safe: this module imports nothing.
+ */
+export const DEVICE_STATUS_LABEL: Readonly<Record<DeviceStatus, string>> = {
+  in_stock: "In stock",
+  reserved: "Reserved",
+  assigned: "With staff",
+  repair: "In repair",
+  lost: "Lost",
+  stolen: "Stolen",
+  retired: "Retired",
+};
+
+/**
  * `outstanding` — he holds it. The only state that owes anything.
  * `returned`    — محضر رد العهدة completed. البند (8): nothing else proves a return.
  * `written_off` — closed without the device coming back, carrying a reason.

@@ -72,6 +72,7 @@ import type {
   MarkableDeviceStatus,
   ReturnCondition,
 } from "@/lib/devices/types";
+import { DEVICE_STATUS_LABEL } from "@/lib/devices/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -93,15 +94,7 @@ const CATEGORY_LABEL: Record<DeviceCategory, string> = {
   other: "Other",
 };
 
-const STATUS_LABEL: Record<DeviceStatus, string> = {
-  in_stock: "In stock",
-  reserved: "Reserved",
-  assigned: "With staff",
-  repair: "In repair",
-  lost: "Lost",
-  stolen: "Stolen",
-  retired: "Retired",
-};
+const STATUS_LABEL = DEVICE_STATUS_LABEL;
 
 const MARK_OPTIONS: { value: MarkableDeviceStatus; label: string }[] = [
   { value: "repair", label: "Send to repair" },

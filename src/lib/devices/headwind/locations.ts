@@ -162,9 +162,16 @@ export async function getHeadwindLocationHistory(
     fixes = [];
   }
 
-  // The one that always arrives, kept even when the plugin answered, and labelled apart.
-  const latest = await getHeadwindLocation(number, fetchImpl, env);
-  if (latest.latitude !== null && latest.longitude !== null) {
+  // The one that always arrives, kept even when the plugin answered, and labelled apart. 🔴 Guarded like
+  // the plugin read above: the device list now refuses a reply it cannot read rather than calling it
+  // empty, and that refusal must not throw away a trail the plugin already answered with.
+  let latest: Awaited<ReturnType<typeof getHeadwindLocation>> | null = null;
+  try {
+    latest = await getHeadwindLocation(number, fetchImpl, env);
+  } catch (error) {
+    if (fixes.length === 0) throw error;
+  }
+  if (latest && latest.latitude !== null && latest.longitude !== null) {
     fixes.push({
       batteryLevel: null,
       latitude: latest.latitude,
