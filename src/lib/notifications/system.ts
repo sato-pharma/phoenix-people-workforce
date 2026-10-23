@@ -664,6 +664,26 @@ function emailDeliveryMetadata(
 /** Stored on the delivery row too, so the audit trail says WHY nothing was shown, not just that nothing was. */
 const NO_HR_ID_IN_APP_REASON = "Recipient has no HR ID, and the in-app bell is keyed on one — nothing could be shown.";
 
+/**
+ * The fallback `event_key` for a notification whose caller supplied no `idempotencyKey`.
+ *
+ * `notification_events` is upserted `onConflict: "event_key"`, so two notifications that hash to
+ * the same key are ONE row and the second write overwrites the first. The hash therefore has to
+ * carry everything that makes two notices genuinely different events.
+ *
+ * 🔴 **The ACTOR is part of that identity.** Until 2026-10-23 it was not in the hash, so when two
+ * different senders produced the same notice for the same recipient — the same `eventType`,
+ * `module`, `title` and `actionUrl`, which is exactly what a templated title does, since the
+ * sender's name usually lives in the MESSAGE and not the title — the second sender's write landed
+ * on the first sender's row. The recipient was left holding one notification where two people had
+ * acted, and the one that survived was whichever happened to be written last. Suffixing per
+ * recipient (see `createSystemNotificationForRecipients`) never covered this: the collision is
+ * between senders to ONE recipient, not between recipients.
+ *
+ * `recordId` and `subjectHrId` are deliberately still out. They identify what the notice is ABOUT
+ * rather than who raised it, and folding them in would split notices that are meant to collapse
+ * onto one row — the dedup these keys exist to provide.
+ */
 function eventKeyFor(input: CreateSystemNotificationInput) {
   const metadataKey = typeof input.metadata?.idempotencyKey === "string" ? cleanText(input.metadata.idempotencyKey) : "";
   if (metadataKey) return metadataKey;
@@ -672,6 +692,7 @@ function eventKeyFor(input: CreateSystemNotificationInput) {
     .createHash("sha256")
     .update(JSON.stringify({
       actionUrl: input.actionUrl ?? null,
+      actorId: cleanText(input.actorId),
       eventType: input.eventType,
       module: input.module,
       recipientHrId: cleanHrId(input.recipientHrId),
@@ -679,6 +700,14 @@ function eventKeyFor(input: CreateSystemNotificationInput) {
       title: input.title,
     }))
     .digest("hex");
+}
+
+/**
+ * The same key, exported for the regression test that pins the actor into it.
+ * Not for production callers — they go through {@link createSystemNotification}.
+ */
+export function systemNotificationEventKeyForTest(input: CreateSystemNotificationInput) {
+  return eventKeyFor(input);
 }
 
 async function loadRecipientProfile(input: CreateSystemNotificationInput): Promise<RecipientProfile> {
