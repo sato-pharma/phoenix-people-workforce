@@ -996,8 +996,15 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     );
     // The reserved pseudo-distributors must not be searchable either.
     assert.match(body, /DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES\.has\(distributorCode\.toLowerCase\(\)\)/);
-    // A pattern metacharacter in the query must not widen the match.
-    assert.match(body, /replace\(\/\[%_,\(\)\]\/g, " "\)/, "search input must be escaped before ilike");
+    // A pattern metacharacter in the query must not widen the match. The pattern leaves as its own
+    // URL-encoded parameter on `.ilike(column, pattern)`, so `%`, `_` and `*` are neutralised by the
+    // shared helper while `,` `(` `)` stay literal — stripping those lost "Pharmacy (Delta)" to a
+    // blank-for-paren match (MR-B04-C3, 2026-10-23).
+    assert.match(
+      body,
+      /ilikeContainsPattern\(search\)/,
+      "search input must be escaped before ilike, through the shared helper",
+    );
 
     // Verification is DERIVED from the catalogue, never taken from the client — a client flag
     // could be wrong or forged, and the catalogue is the only thing that knows.

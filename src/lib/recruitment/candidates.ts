@@ -23,6 +23,7 @@ import {
   resolveCanonicalMedicalRepArea,
 } from "@/lib/recruitment/candidate-folder";
 import { listCanonicalMedicalRepAreaNames } from "@/lib/recruitment/candidate-folder-options";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import {
   candidateManagerSeatTier,
   managerMayBeSentApplication,
@@ -983,10 +984,13 @@ export async function searchCandidates(filters: CandidateSearchFilters = {}): Pr
     if (status) query = query.eq("status", status);
     if (source) query = query.eq("source", source);
     if (q) {
-      const like = `%${q.replace(/[%_,()]/g, "")}%`;
-      query = query.or(
-        `full_name.ilike.${like},email.ilike.${like},phone.ilike.${like},national_id.ilike.${like}`,
-      );
+      // This one IS an `or(...)` expression, where `,` and `()` are structural — so the value is
+      // quoted by the shared helper rather than stripped. Stripping them made a candidate recorded
+      // as `Ahmed Ali (Pharmacist)` unfindable by name, and a phone typed as `(010) 1234` searched
+      // for as `0101234`. Audit finding B04-C3.
+      const filter = ilikeAnyFilter(["full_name", "email", "phone", "national_id"], q);
+      // `.or("")` is an HTTP 400: a term with nothing searchable left applies no filter.
+      if (filter) query = query.or(filter);
     }
     return query;
   });

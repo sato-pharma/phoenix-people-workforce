@@ -41,7 +41,12 @@ import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/acc
 import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
-import { ilikeAnyFilter, ilikeContainsValue, quotePostgrestValue } from "@/lib/supabase/search-filter";
+import {
+  ilikeAnyFilter,
+  ilikeContainsPattern,
+  ilikeContainsValue,
+  quotePostgrestValue,
+} from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   normalizeVenueType,
@@ -3739,9 +3744,13 @@ export async function searchDistributorCustomers(
 
   const search = String(input.query ?? "").trim();
   if (search) {
-    // Escape PostgREST's pattern metacharacters so a stray % cannot widen the match.
-    const escaped = search.replace(/[%_,()]/g, " ").trim();
-    if (escaped) query = query.ilike("customer_name", `%${escaped}%`);
+    // A stray `%` must not widen the match — but `,` `(` `)` were never dangerous here. This is
+    // `.ilike()`, the client's own method: the pattern is one URL-encoded query parameter, not an
+    // expression PostgREST parses. Blanking a parenthesis made this customer picker unable to find
+    // the 787 mapped customers whose name holds one (`ابن القيم(حسام حسن)` returned 0 rows on
+    // production), which is the same unfindable-row half of B04-01 seen from the other side.
+    const pattern = ilikeContainsPattern(search);
+    if (pattern) query = query.ilike("customer_name", pattern);
   }
 
   const { data, error } = await query.order("customer_name", { ascending: true }).limit(Math.min(input.limit ?? 50, 200));

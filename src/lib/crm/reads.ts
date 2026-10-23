@@ -32,7 +32,7 @@ import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
 import { CRM_CHECKIN_WINDOWS, CRM_VISIT_WINDOWS } from "@/lib/crm/shared-windows";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
-import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
+import { ilikeAnyFilter, ilikeContainsPattern } from "@/lib/supabase/search-filter";
 import type {
   VisitsReportData,
   VisitsReportExportResult,
@@ -1934,8 +1934,13 @@ export async function getUnstampedAgentAccounts(options: {
   dateTo: string;
   labelContains: string;
 }): Promise<Array<{ agentCrmId: number | string; agentName: string | null }>> {
-  const needle = options.labelContains.replace(/[%_]/g, "").trim();
-  if (!needle) return [];
+  // `.ilike()` below is the client's own method, so the pattern travels as its own query parameter
+  // and needs no quoting — only the wildcards neutralising. Stripping `_` as well (what shipped)
+  // silently rewrote the label being looked for: an account named `CNS_Cairo` was searched for as
+  // `CNSCairo` and matched nothing, so the leaver's inherited account read as absent. Audit
+  // finding B04-C3.
+  const pattern = ilikeContainsPattern(options.labelContains);
+  if (!pattern) return [];
   const supabase = getSupabaseAdmin();
   const accounts = new Map<string, { agentCrmId: number | string; agentName: string | null }>();
   const pageSize = 2000;
@@ -1947,7 +1952,7 @@ export async function getUnstampedAgentAccounts(options: {
       .is("agent_hr_id", null)
       .gte("visit_date", options.dateFrom)
       .lte("visit_date", options.dateTo)
-      .ilike("agent_name", `%${needle}%`)
+      .ilike("agent_name", pattern)
       .order("id", { ascending: true })
       .limit(pageSize);
     if (cursor) query = query.gt("id", cursor);
