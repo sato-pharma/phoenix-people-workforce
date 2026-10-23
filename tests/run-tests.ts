@@ -2741,6 +2741,7 @@ import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
+import { runErrorScreenPictureFilterTests } from "./error-screenshot-picture-filter.test.ts";
 import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
@@ -10853,6 +10854,10 @@ await runTest(
 await runTest(
   "the crash-screenshot door is bounded and fails closed: 2 MB a body, a tighter rate than the text report, WebP sniffed from its own magic bytes so a PNG or an HTML page is refused, one object per error row partitioned by Cairo day, and a two-minute signed ticket that cannot be forged, re-aimed at another row, replayed late, or minted at all without a signing secret",
   runErrorScreenshotIntakeTests,
+);
+await runTest(
+  "the error screenshot draws a scrolled page where the person was looking: an off-screen box is copied empty and keeps its size, never dropped, so nothing on screen moves up out of the picture (the first real refusal, 23 Oct 2026, came out blank)",
+  runErrorScreenPictureFilterTests,
 );
 await runTest(
   "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
