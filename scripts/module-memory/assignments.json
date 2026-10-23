@@ -183,6 +183,7 @@
   "a-third-of-target-carrying-territories-have-no-rep": "org",
   "a-timed-out-reconcile-refresh-is-never-retried-by-re-running-it": "sales-imports",
   "a-training-day-row-is-judged-by-when-its-customer-was-created": "org",
+  "a-two-column-price-join-plans-as-a-merge-join-on-period-alone": "sales-closing",
   "a-utc-timestamp-compared-against-cairo-manufactures-a-false-signal": "sessions",
   "a-utf8-em-dash-breaks-a-powershell-5-1-script": "sessions",
   "a-verdict-line-without-its-sha-matches-an-older-run": "engineering",
