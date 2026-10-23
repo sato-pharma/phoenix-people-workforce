@@ -137,6 +137,7 @@ const PINNED = [
   "scripts/probe-weekly-xlsx.ts",
   "scripts/provision-missing-employee-accounts.ts",
   "scripts/push-apps-script.mjs",
+  "scripts/railway-iac-preapply-check.mjs",
   "scripts/rebuild-a9-marketing-manager-account.ts",
   "scripts/rebuild-source-of-sales-rollups.ts",
   "scripts/reconcile-month-customer-map.ts",
