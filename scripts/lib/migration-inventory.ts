@@ -1294,6 +1294,23 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // restored it (1 back), and the reconcile then found 0 differences.
   // Pinned by tests/phoenix-crm-rep-entry-days-cache.test.ts.
   "20261023091035_phoenix_crm_rep_entry_days_cache.sql",
+  // ── 2026-10-23, written by the session that applied it: CI's narrow release-gate login (audit P6-02,
+  // owner's choice "Narrow login"). `mcp__supabase-staging__apply_migration` answered {"status":"declined"}
+  // (the file holds a `drop policy if exists`), so it went the standing route: `node scripts/apply-sql-file.mjs
+  // <file> staging`, then production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com. That
+  // route writes NO ledger row — zero rows named release_gate_writer_login on production, read in the same
+  // query as below. A NEW role has no older generation a probe could mistake for it, so it was read by shape
+  // on ozucdzovmcqvepbozvqf: role release_gate_writer exists, noinherit, not superuser, no createrole or
+  // createdb, no bypassrls, connection limit 5, member of no role; its ONLY table grants are INSERT and
+  // SELECT on public.release_gates (0 grants on any other table); policies on release_gates are
+  // phx_release_gates_service_role and phx_release_gates_writer. Its login and SCRAM verifier were then set on
+  // production only, never in git, and the URL went straight into the repository secret
+  // RELEASE_GATE_DATABASE_URL. Proved through the pooler as that login: current_user release_gate_writer, the
+  // newest gate row reads, a duplicate insert is a no-op, and reading employees or updating or deleting a gate
+  // row is refused 42501. On cifwmndunmlxjhyjugxa the role exists with NO login. Staging had been missing
+  // public.release_gates itself (20261019171347 is in this list for its production apply, and an entry here
+  // silences every project), so that file was applied to staging first, the same morning.
+  "20261023093100_release_gate_writer_login.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

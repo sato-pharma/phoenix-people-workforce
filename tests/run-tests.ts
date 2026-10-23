@@ -717,6 +717,19 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import {
+  runAddressCorrectionQueueTests,
+  runFinalizeRecoveryTests,
+  runMappingBackfillRebuildTests,
+  runOldSalesUploadNumberTests,
+  runPeriodLockReadTests,
+  runPublishSplitGateTests,
+  runUploadLimitTests,
+  runWeeklyCairoDayTests,
+  runWeeklyDateCellTests,
+  runWeeklyNumberCellTests,
+} from "./sales-imports-audit-fixes.test.ts";
+import { runCrmCheckinReconcileGuardTests, runCrmPlanPruneArchiveTests } from "./crm-reconcile-overlap-guard.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
 import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts";
@@ -880,6 +893,7 @@ import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-sch
 import { runMarketingRoiRefreshPeriodSkipTests } from "./marketing-roi-refresh-period-skip.test.ts";
 import { runCrmContactMasterRefreshSpeedTests } from "./crm-contact-master-refresh-speed.test.ts";
 import { runSosRollupRefreshBatchLockTests } from "./sos-rollup-refresh-batch-lock.test.ts";
+import { runServiceRoleStatementTimeoutTests } from "./service-role-statement-timeout.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -2593,6 +2607,7 @@ import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-pre
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
 import { runFallbackImageDeployTests } from "./fallback-image-deploy.test.ts";
+import { runDockerfileReproducibleTests } from "./dockerfile-reproducible.test.ts";
 import { runEmergencyHostTests } from "./emergency-host.test.ts";
 import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
@@ -2672,6 +2687,13 @@ import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-onc
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
+import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
+import { runJobLeaseTests } from "./job-lease.test.ts";
+import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
+import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
+import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
+import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
+import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
   runCsvFormulaNeutraliserTests,
@@ -2680,6 +2702,7 @@ import {
   runSatoEmailFinalSanitizeTests,
   runVacationDecisionFormTests,
 } from "./app-layer-audit.test.ts";
+import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4262,6 +4285,18 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
+await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
+await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);
+await runTest("weekly sales takes today from Cairo, not UTC (no manager gap 00:00-03:00 on a change day)", runWeeklyCairoDayTests);
+await runTest("monthly import period lock (an unreadable lock refuses with a 503)", runPeriodLockReadTests);
+await runTest("spreadsheet upload limits (the message is the limit enforced; a stored workbook gets the bucket's 20 MB)", runUploadLimitTests);
+await runTest("mapping save rebuilds through refreshBatchRollups and queues a file it could not rebuild", runMappingBackfillRebuildTests);
+await runTest("address corrections queue their files as each one lands", runAddressCorrectionQueueTests);
+await runTest("sales import finalize recovery (a finalize that committed after an error is treated as landed)", runFinalizeRecoveryTests);
+await runTest("closing publish refuses a stale city split and rebuilds it", runPublishSplitGateTests);
+await runTest("crm check-in reconcile guard (a check-in an overlapping sync wrote is never deleted)", runCrmCheckinReconcileGuardTests);
+await runTest("crm plan prune (guarded against an overlapping sync, every row recorded before delete)", runCrmPlanPruneArchiveTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
 await runTest("sos crosswalk pagination (keyset, never unordered offset)", runSosCrosswalkPaginationTests);
 await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-stable)", runSosCustomerMapKeysetTests);
@@ -4423,6 +4458,10 @@ await runTest(
 await runTest(
   "each per-batch Closing rollup rebuild (fact, channel, distributor-product) takes a transaction lock on its own name and the batch before its first delete, so two rebuilds of one batch run one after the other and never count it twice",
   runSosRollupRefreshBatchLockTests,
+);
+await runTest(
+  "service_role has the owner's 5-minute statement_timeout, and no function declares more time than that — a function's own SET cannot raise its caller's limit",
+  runServiceRoleStatementTimeoutTests,
 );
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
@@ -5716,7 +5755,7 @@ await runTest(
   runCiEslintCacheNodeRuntimeTests,
 );
 await runTest(
-  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
+  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
   runReleaseGateTests,
 );
 await runTest(
@@ -10238,6 +10277,7 @@ await runTest("phoenix crm: no save bar takes two presses to discard", runPhoeni
 await runTest("rollup branch name: unique across history, an unknown counts as taken", runRollupBranchNameTests);
 await runTest("urgent deploy: runs only off main, the guard hands over only when every urgent PR is live, probes read the marker", runUrgentDeployTests);
 await runTest("fallback image: bakes the Dockerfile's NEXT_PUBLIC values, stamps the commit so the release gate stays shut, needs a green release-gate, refuses staging, never runs on a push to main", runFallbackImageDeployTests);
+await runTest("the production image is built from pinned inputs (audit F-22, 2026-10-23): the base image is pinned by digest, sharp and puppeteer-core come from npm ci against the committed infra/runtime-extras lockfile with an integrity hash on every package, no npm install or hand-typed version is left in the Dockerfile, the two versions equal the ones pnpm-lock.yaml resolves, and the fallback route can still build a digest-pinned base from a mirror", runDockerfileReproducibleTests);
 await runTest("emergency host: the Fly.io standby is web-only (no scheduler, no CRM poller, no Railway identity), flips the domain only from a known state to a host that answers with a certificate, needs a green release-gate, and is started by hand only", runEmergencyHostTests);
 
 await runTest("rollup build: a member merging mid-build is survived, not a crash", runRollupBuildVerdictTests);
@@ -10621,6 +10661,34 @@ await runTest(
   runCrmCheckinFlagsCarriesMasterSelectTests,
 );
 await runTest(
+  "the background queues never loop and never send twice: an interrupted outbox send spends one attempt and the last one is terminal, each reap pinned to the lock it read; a background job left processing past an hour is re-queued, or failed once its attempts are spent, before new work is claimed; a Telegram or push retry is claimed by a compare-and-set on its attempt count BEFORE it is sent, so a second drain that read the same row sends nothing; and a failed outbox write is logged",
+  runBackgroundJobsRecoveryTests,
+);
+await runTest(
+  "one CRM poller across every process: each tick claims the crm-live-poll lease first and stands by while another live process holds it, a heartbeat renews it through a long run, a dead holder is replaced within three minutes, and a lease that cannot be read (the migration not yet applied, any error) never stops the poller",
+  runJobLeaseTests,
+);
+await runTest(
+  "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
+  runWorkerOnlyCronRoutesTests,
+);
+await runTest(
+  "every outside call in the background jobs has a deadline: the careers IMAP clients cut a silent host after 30 seconds and carry an error listener, a Headwind call that times out answers 504 saying it may have acted (never that it never reached a server), uploads get a longer deadline, and free OCR stops and terminates its worker at its whole-read deadline",
+  runIntegrationDeadlinesTests,
+);
+await runTest(
+  "the public doors are bounded: reCAPTCHA refuses when its secret is unset or Google is unreachable, the paid AI read of public CVs stops at a daily ceiling and falls back to the free read, /api/errors/client caps every field, the body and the rate, and /api/readyz answers booleans only",
+  runPublicIntakeLimitsTests,
+);
+await runTest(
+  "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
+  runCvTextIsolationTests,
+);
+await runTest(
+  "the reset-code and set-your-password-link emails are not mirrored to the admin Telegram, by the explicit credential stamp that rides the outbox payload, while every other email keeps its mirror; and the Recipient Assurance Guard fails closed — a day-old directory copy covers a short outage, past it the email is held back with a transient reason and retried",
+  runCredentialEmailMirrorTests,
+);
+await runTest(
   "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",
   runSatoEmailFinalSanitizeTests,
 );
@@ -10629,11 +10697,11 @@ await runTest(
   runProductionPlanningRequestSequenceTests,
 );
 await runTest(
-  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — never the outage screen and never a database sentence",
+  "the vacation decision page refuses a reject with no reason on the form, marks the reason required to match the service, and brings any refusal back to the same page in the service's own words — signed by the server, so a crafted link shows the fixed sentence and never its own — never the outage screen, never a database sentence, and never a claim that nothing was saved",
   runVacationDecisionFormTests,
 );
 await runTest(
-  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, raw error text in route files can only go down, and no public or share route carries any",
+  "a re-wrapped database error (throw new Error(error.message)) reaches the caller as the route's fallback, a wrapped timeout keeps its 503, our own prose is untouched, every redacted error is still logged once as api_error_redacted with its real text, raw error text in route files can only go down, and no public or share route carries any",
   runApiErrorWrappedDatabaseTextTests,
 );
 await runTest(
@@ -10643,6 +10711,10 @@ await runTest(
 await runTest(
   "the live-sheet CSV feeds neutralise a cell that starts with =, +, - or @ (candidate names come from public intake) while numbers, negative amounts, phone numbers and a lone dash stay exactly as they were",
   runCsvFormulaNeutraliserTests,
+);
+await runTest(
+  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  runNeedsYouDigestRunsOutsideTheFanoutTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

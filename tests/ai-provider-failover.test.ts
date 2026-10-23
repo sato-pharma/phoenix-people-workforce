@@ -654,8 +654,13 @@ function wiringTests() {
     /resolveAnthropicModel\(params\.anthropicModel\?\.trim\(\) \|\| requestedModel\)/,
     "a Claude model named by the caller is asked for by name, and ANTHROPIC_MODEL still overrides it",
   );
-  assert.match(entry, /runAnthropicResponse\(legParams, requestedModel\)/);
-  assert.match(entry, /runOpenAiResponse\(legParams, requestedModel\)/);
+  assert.match(entry, /runAnthropicResponse\(legParams, requestedModel, failoverTo\)/);
+  assert.match(entry, /runOpenAiResponse\(legParams, requestedModel, failoverTo\)/);
+  assert.match(
+    entry,
+    /const failoverTo = plan\[index \+ 1\];/,
+    "each leg is told which account follows it, so a failure the next one is asked to cover is not filed as an AI failure",
+  );
   assert.match(
     entry,
     /failoverLegTimeoutMs\(budgetMs, Date\.now\(\) - startedAt\)[\s\S]*legParams = \{ \.\.\.params, timeoutMs: leftMs \}/,
@@ -680,7 +685,39 @@ function wiringTests() {
 
   const anthropicRun = client.slice(client.indexOf("async function runAnthropicResponse"), client.indexOf("function normalizeAnthropicError"));
   assert.match(anthropicRun, /recordAiCall\(\{[\s\S]*status: "success"/, "an Anthropic success lands on the AI telemetry board");
-  assert.match(anthropicRun, /recordAiCall\(\{[\s\S]*status: "error"/, "an Anthropic failure raises the same alarm as an OpenAI one");
+  assert.match(
+    anthropicRun,
+    /recordAiCall\(\{[\s\S]*\.\.\.legOutcome\(normalized\.code, failoverTo\)/,
+    "an Anthropic failure raises the same alarm as an OpenAI one — and is reported as failed-over when OpenAI is asked next",
+  );
+
+  // 🔴 A RESCUED LEG IS LABELLED, NOT FILED AS A FAILURE (owner, 23 Oct 2026). Both halves of the
+  // mislabelling are pinned here: the telemetry row and the log line.
+  assert.match(
+    client,
+    /function rescuedBy\(code: PhoenixOpenAiErrorCode, failoverTo: AiProviderName \| undefined\) \{\s*return failoverTo && shouldFailOverToNextProvider\(code\) \? failoverTo : undefined;/,
+    "a leg counts as rescued only when there IS a next account AND the code is one that moves to it — a timeout stays a failure",
+  );
+  assert.match(
+    client,
+    /failedOverTo \? \{ failedOverTo, status: "failed_over" \} : \{ status: "error" \}/,
+    "the rescued leg reports failed_over; the leg nothing follows still reports error",
+  );
+  assert.match(
+    client,
+    /event: failedOverTo \? "openai_failed_over" : "openai_request_failed"/,
+    "the 520 openai_request_failed rows in the week to 23 Oct 2026 were the hourly by-design re-test: it gets its own event",
+  );
+  assert.match(
+    client,
+    /event: rescued \? "anthropic_failed_over" : "anthropic_request_failed"/,
+    "and the same on the Claude leg, which fails over to OpenAI on the signboard reads",
+  );
+  assert.match(
+    client,
+    /logOpenAiError\(context, error, rescuedBy\(failure\.code, failoverTo\)\)/,
+    "one log line per failure, written after the code is known — the wording depends on it",
+  );
   assert.match(anthropicRun, /reasoningEffort: params\.reasoning\?\.effort \?\? "low"/, "Claude is sent the effort OpenAI is sent");
   // A call stopped by its own caller writes no failure row, logs nothing and never fails over.
   assert.match(
@@ -708,6 +745,25 @@ function wiringTests() {
     /if \(leg\.kind === "chat" && leg\.provider\.name === "openai"\) noteOpenAiAvailable\(\);/,
     "a sales call that OpenAI answers ends the back-off too",
   );
+  assert.match(
+    salesProvider,
+    /attempt\(leg, \{ failoverTo: next \? salesAiLegProvider\(next\) : undefined \}\)/,
+    "the sales loop tells each leg which account follows it, like the shared client's",
+  );
+  // The three sales paths record their own rows, so each one must use the shared outcome helper or the
+  // board goes back to reading a rescued OpenAI leg as a sales AI outage.
+  for (const [file, body] of [
+    ["src/lib/sales/ai/provider.ts", salesProvider],
+    ["src/lib/sales/normalizer/ai-suggest.ts", readFileSync("src/lib/sales/normalizer/ai-suggest.ts", "utf8")],
+    ["src/lib/sales/weekly/ai-verify.ts", readFileSync("src/lib/sales/weekly/ai-verify.ts", "utf8")],
+  ] as const) {
+    assert.doesNotMatch(
+      body,
+      /recordAiCall\(\{[^}]*status: "error"/,
+      `${file} must report a failed leg through salesLegOutcome, never a bare status: "error"`,
+    );
+    assert.match(body, /salesLegOutcome\(/, `${file} must use the shared outcome helper`);
+  }
 
   const shapeRules = readFileSync("scripts/secret-shape-rules.mjs", "utf8");
   assert.match(shapeRules, /name: "ANTHROPIC_API_KEY"/, "the new key has a shape rule before any key is pasted");

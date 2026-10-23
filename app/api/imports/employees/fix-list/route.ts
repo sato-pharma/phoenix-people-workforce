@@ -13,7 +13,7 @@ import { salaryBlindImportRefusal } from "@/lib/imports/employee-import-salary-b
 import type { RawEmployeeImportRow } from "@/lib/imports/employee-import-types";
 import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_excel_file",
       emptyMessage: "Employee import file is empty.",
       tooLargeError: "employee_import_file_too_large",
-      tooLargeMessage: "Employee import file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("Employee import file"),
       unsupportedError: "unsupported_format",
       unsupportedMessage: "Upload an employee import Excel file in .xlsx format.",
     });

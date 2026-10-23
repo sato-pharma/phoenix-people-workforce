@@ -181,16 +181,8 @@ export function resolveSystemInboxes(): string[] {
   ]);
 }
 
-/**
- * Production directory: every address the system is allowed to reach, paired with its owner.
- *
- * Uses the 30-second cached, in-flight-deduped employee directory, so the guard adds no query
- * per email — every DB round trip here is a cross-region hop (Railway `europe-west4` ↔ Supabase
- * `eu-central-1`) and a per-send lookup would be felt. Inactive employees are included
- * deliberately: mail about a leaver (final settlement, resignation acknowledgement) is legitimate,
- * and excluding them would block exactly the workflow that must still run after someone leaves.
- */
-export async function resolveAssuranceDirectory(): Promise<AssuranceDirectoryEntry[]> {
+/** One fresh read of the directory (no fallback) — see resolveAssuranceDirectory. */
+async function loadAssuranceDirectoryFresh(): Promise<AssuranceDirectoryEntry[]> {
   const rows = await getEmployeeDirectoryRows({ includeInactive: true });
   const entries: AssuranceDirectoryEntry[] = [];
   for (const row of rows) {
@@ -199,4 +191,62 @@ export async function resolveAssuranceDirectory(): Promise<AssuranceDirectoryEnt
     entries.push({ email, hrId: normalizeHrId(row.hrId) });
   }
   return entries;
+}
+
+/**
+ * How old the last good copy of the directory may be and still stand in when a fresh read fails.
+ * The directory changes by hires and leavers — a day-old copy still knows every address that has
+ * existed for more than a day, and the guard's job is to recognise addresses, not to be up to the minute.
+ */
+export const ASSURANCE_DIRECTORY_MAX_STALE_MS = 24 * 60 * 60 * 1000;
+
+/** Thrown when the directory cannot be read AND there is no recent copy: the guard cannot run, so the email is not sent. */
+export class RecipientAssuranceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("The Recipient Assurance Guard could not read the employee directory and holds no recent copy of it.");
+    this.name = "RecipientAssuranceUnavailableError";
+    (this as { cause?: unknown }).cause = cause;
+  }
+}
+
+/**
+ * The directory the guard checks against, with a last-good copy for when the read fails.
+ *
+ * 23 Oct 2026 audit (Pass 5): on a directory read failure the guard used to send the email UNGUARDED.
+ * Now a failed read falls back to the last directory this process read successfully (up to
+ * ASSURANCE_DIRECTORY_MAX_STALE_MS old), and with no such copy it FAILS CLOSED — the caller does not
+ * send, and an outbox row is retried on its normal schedule (the skip reason is a transient one).
+ * `load` and `now` are injectable for the tests.
+ */
+export function createAssuranceDirectoryReader(
+  load: () => Promise<AssuranceDirectoryEntry[]> = loadAssuranceDirectoryFresh,
+  now: () => number = Date.now,
+) {
+  let lastGood: { at: number; entries: AssuranceDirectoryEntry[] } | null = null;
+  return async function readAssuranceDirectory(): Promise<AssuranceDirectoryEntry[]> {
+    try {
+      const entries = await load();
+      lastGood = { at: now(), entries };
+      return entries;
+    } catch (error) {
+      if (lastGood && now() - lastGood.at <= ASSURANCE_DIRECTORY_MAX_STALE_MS) return lastGood.entries;
+      throw new RecipientAssuranceUnavailableError(error);
+    }
+  };
+}
+
+const productionAssuranceDirectoryReader = createAssuranceDirectoryReader();
+
+/**
+ * Production directory: every address the system is allowed to reach, paired with its owner.
+ *
+ * Uses the 30-second cached, in-flight-deduped employee directory, so the guard adds no query
+ * per email — every DB round trip here is a cross-region hop (Railway `europe-west4` ↔ Supabase
+ * `eu-central-1`) and a per-send lookup would be felt. Inactive employees are included
+ * deliberately: mail about a leaver (final settlement, resignation acknowledgement) is legitimate,
+ * and excluding them would block exactly the workflow that must still run after someone leaves.
+ * Throws RecipientAssuranceUnavailableError when neither a fresh read nor a recent copy exists.
+ */
+export async function resolveAssuranceDirectory(): Promise<AssuranceDirectoryEntry[]> {
+  return productionAssuranceDirectoryReader();
 }

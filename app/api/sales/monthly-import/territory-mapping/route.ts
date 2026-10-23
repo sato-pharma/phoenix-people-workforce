@@ -5,7 +5,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { importSosTerritoryMappingWorkbook } from "@/lib/sales/sos-mapping-templates";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       emptyError: "invalid_mapping_file",
       emptyMessage: "The territory mapping file is empty.",
       tooLargeError: "mapping_file_too_large",
-      tooLargeMessage: "The territory mapping file exceeds the 10MB upload limit.",
+      tooLargeMessage: spreadsheetTooLargeMessage("The territory mapping file"),
       unsupportedError: "unsupported_mapping_file_type",
       unsupportedMessage: "Upload the territory mapping in .xlsx format.",
     });

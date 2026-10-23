@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 import { resolveChromiumPath } from "@/lib/offers/pdf";
 
+import { RUNTIME_EXTRAS_DIR, lockedImporterVersion } from "../scripts/sync-runtime-extras.mjs";
+
 /**
  * The two things that decide whether an offer arrives WITH its PDF attached in production.
  *
@@ -11,12 +13,12 @@ import { resolveChromiumPath } from "@/lib/offers/pdf";
  * runtime does not throw — it just quietly stops attaching the letter to offers of employment.
  * These assertions are the only place either mistake becomes visible before a candidate notices.
  *
- * 1. THE DRIVER VERSION. The Dockerfile hand-installs puppeteer-core into the runtime image
- *    (Next's standalone trace cannot follow the dynamic import that loads it) and its own comment
- *    says to keep that pin in sync with package.json. It had drifted two majors — 23.11.1 in the
- *    image against ^25.3.0 in the manifest — the whole time nothing called puppeteer. The moment
- *    this module started calling it, production would have run a driver this code was never once
- *    executed against.
+ * 1. THE DRIVER VERSION. The Dockerfile installs puppeteer-core into the runtime image (Next's
+ *    standalone trace cannot follow the dynamic import that loads it). It had drifted two majors —
+ *    23.11.1 in the image against ^25.3.0 in the manifest — the whole time nothing called puppeteer,
+ *    and on 2026-10-23 it was still 25.13.0 in the image against 25.15.0 in pnpm-lock.yaml (audit
+ *    F-22). Since that day the image installs it with `npm ci` from infra/runtime-extras, and the
+ *    version there must equal the one pnpm-lock.yaml resolves — the one every test here runs.
  *
  * 2. THE BROWSER PATH. `PUPPETEER_EXECUTABLE_PATH` is set to `/usr/bin/chromium-browser`, the name
  *    Alpine used up to 3.18. `apk add chromium` on the 3.2x that `node:24-alpine` is built from
@@ -47,14 +49,27 @@ export async function runOfferPdfRuntimeTests(): Promise<void> {
       + "test can pin the image against. Declare an exact version or a caret over one.",
   );
 
-  const pinned = /puppeteer-core@(\d+\.\d+\.\d+)/.exec(dockerfile)?.[1] ?? null;
-  assert.ok(pinned, "the Dockerfile no longer installs a pinned puppeteer-core into the runtime image.");
+  const extras = JSON.parse(readFileSync(`${RUNTIME_EXTRAS_DIR}/package.json`, "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  const pinned = extras.dependencies?.["puppeteer-core"] ?? null;
+  assert.ok(pinned, `${RUNTIME_EXTRAS_DIR} no longer installs a pinned puppeteer-core into the runtime image.`);
+  assert.match(dockerfile, /\bnpm ci\b/, "the Dockerfile no longer installs the runtime extras (puppeteer-core) with npm ci.");
+  const locked = lockedImporterVersion(readFileSync("pnpm-lock.yaml", "utf8"), "puppeteer-core");
   assert.equal(
     pinned,
-    expected,
-    `the Dockerfile installs puppeteer-core@${pinned} but package.json declares ${declared}. `
-      + "Production would render offer PDFs with a driver nobody ran this code against. Sync the "
-      + "Dockerfile to the manifest version.",
+    locked,
+    `the image installs puppeteer-core@${pinned} but pnpm-lock.yaml resolves ${locked}. `
+      + "Production would render offer PDFs with a driver nobody ran this code against. "
+      + "Run `node scripts/sync-runtime-extras.mjs`.",
+  );
+  // And it sits inside package.json's declared range (a caret over `expected`): same major, not below it.
+  const [pinnedMajor, pinnedMinor, pinnedPatch] = pinned.split(".").map(Number);
+  const [floorMajor, floorMinor, floorPatch] = expected.split(".").map(Number);
+  assert.ok(
+    pinnedMajor === floorMajor
+      && (pinnedMinor > floorMinor || (pinnedMinor === floorMinor && pinnedPatch >= floorPatch)),
+    `the image installs puppeteer-core@${pinned}, outside package.json's ${declared}.`,
   );
 
   // The path the resolver falls back FROM has to still be the one the image sets, or the fallback

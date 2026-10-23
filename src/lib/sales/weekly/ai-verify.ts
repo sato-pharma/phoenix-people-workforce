@@ -17,7 +17,7 @@
 
 import ExcelJS from "exceljs";
 
-import { anthropicJson, hasAiProvider, runWithSalesAiFailover, salesAiFailureCodeFor, SalesAiError } from "@/lib/sales/ai/provider";
+import { anthropicJson, hasAiProvider, runWithSalesAiFailover, salesAiFailureCodeFor, salesLegOutcome, SalesAiError } from "@/lib/sales/ai/provider";
 import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 import { type WeeklyContractSheet, type WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
@@ -91,10 +91,11 @@ export async function judgeWithAi(
     .join("\n");
   const user = `Distributor: ${distributorName}\n\nPinned columns (id | sheet | field | col | expected | found):\n${lines}\n\nReturn ONLY JSON of this exact shape: {"items":[{"id":<id>,"status":"match|drift|uncertain","note":"<short reason>"}],"summary":"<one plain-English sentence about whether the file lines up>"}`;
 
-  const text = await runWithSalesAiFailover(async (leg) => {
+  const text = await runWithSalesAiFailover(async (leg, { failoverTo }) => {
     if (leg.kind === "anthropic") {
       const reply = await anthropicJson({
         component: "sales_weekly_ai_verify",
+        failoverTo,
         maxTokens: 2000,
         model: leg.model,
         purpose: "weekly_verify_columns",
@@ -124,6 +125,7 @@ export async function judgeWithAi(
     if (!res.ok) {
       // Log upstream body server-side only — it can echo request details / key fragments on 401.
       const body = await res.text().catch(() => "");
+      const code = salesAiFailureCodeFor(res.status, body);
       logError("Weekly verify AI request failed", {
         labels: { event: "weekly_verify_ai_request_failed", httpStatus: res.status },
         context: { bodySnippet: body.slice(0, 300) },
@@ -135,9 +137,9 @@ export async function judgeWithAi(
         model: provider.model,
         provider: provider.name,
         purpose: "weekly_verify_columns",
-        status: "error",
+        ...salesLegOutcome(code, failoverTo),
       });
-      throw new SalesAiError(salesAiFailureCodeFor(res.status, body), `AI request failed (HTTP ${res.status}).`, res.status);
+      throw new SalesAiError(code, `AI request failed (HTTP ${res.status}).`, res.status);
     }
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];

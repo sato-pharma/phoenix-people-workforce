@@ -11,7 +11,7 @@ import {
   upsertBranchRegionRow,
   type WeeklyBranchFileType,
 } from "@/lib/sales/weekly/branch-region-map";
-import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       const validation = validateSpreadsheetFile(file, {
         ...xlsxSpreadsheetValidation,
         emptyError: "invalid_mapping_file",
-        tooLargeMessage: "Mapping workbook exceeds the 10MB upload limit.",
+        tooLargeMessage: spreadsheetTooLargeMessage("Mapping workbook"),
       });
       if (!validation.ok) {
         return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });

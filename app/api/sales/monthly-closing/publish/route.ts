@@ -8,6 +8,7 @@ import {
   unpublishClosing,
 } from "@/lib/sales/monthly-closing-publication";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { SalesWorkflowError } from "@/lib/sales/contracts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,11 @@ function forbidNonAdmin(access: Awaited<ReturnType<typeof resolveAccessContext>>
 }
 
 function mapError(error: unknown) {
+  // A refusal with its own status — the stale city split (409, rebuilt, publish again) or a check
+  // that could not run (503) — reaches the screen as written, never as a generic 500.
+  if (error instanceof SalesWorkflowError) {
+    return NextResponse.json({ success: false, code: error.code, error: error.message }, { status: error.status });
+  }
   if (isForbiddenError(error)) {
     return NextResponse.json(
       { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
