@@ -3,7 +3,13 @@
 import { useState } from "react";
 
 import { MODULE_META } from "@/lib/admin/data-backup";
-import { RESET_GROUPS, type ResetKeptNote, type ResetScope, type ResetTableResult } from "@/lib/admin/data-reset";
+import {
+  RESET_GROUPS,
+  RESET_SWITCHED_OFF_REASON,
+  type ResetKeptNote,
+  type ResetScope,
+  type ResetTableResult,
+} from "@/lib/admin/data-reset";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +31,8 @@ type ResetState =
   | { status: "error"; message: string };
 
 export function DataBackupResetSection() {
+  // Switched off by the owner (see RESET_SWITCHED_OFF_REASON); the route and executeReset refuse too.
+  const switchedOff = RESET_SWITCHED_OFF_REASON !== null;
   const [state, setState] = useState<ResetState>({ status: "idle" });
   const [confirmText, setConfirmText] = useState("");
 
@@ -84,6 +92,12 @@ export function DataBackupResetSection() {
 
   return (
     <div className="space-y-4">
+      {switchedOff && (
+        <div className="border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800">
+          <p className="font-semibold">Reset is switched off</p>
+          <p className="mt-1">{RESET_SWITCHED_OFF_REASON}</p>
+        </div>
+      )}
       <div className="flex items-start gap-3 border border-amber-300 bg-amber-50 p-4">
         <span className="mt-0.5 text-lg leading-none text-amber-600">⚠</span>
         <div className="space-y-1 text-sm text-amber-800">
@@ -128,7 +142,7 @@ export function DataBackupResetSection() {
                 {!isConfirming ? (
                   <button
                     className="w-full border border-red-300 px-3 py-2 text-xs font-semibold text-red-600 hover:border-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={state.status === "loading"}
+                    disabled={switchedOff || state.status === "loading"}
                     onClick={() => startConfirm(mod)}
                     type="button"
                   >
@@ -187,7 +201,7 @@ export function DataBackupResetSection() {
         {confirmingScope !== "all" ? (
           <button
             className="border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={state.status === "loading"}
+            disabled={switchedOff || state.status === "loading"}
             onClick={() => startConfirm("all")}
             type="button"
           >

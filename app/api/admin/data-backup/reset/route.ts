@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { executeReset, type ResetScope } from "@/lib/admin/data-reset";
+import {
+  RESET_SWITCHED_OFF_REASON,
+  ResetSwitchedOffError,
+  executeReset,
+  type ResetScope,
+} from "@/lib/admin/data-reset";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -24,6 +29,12 @@ export async function POST(request: NextRequest) {
     }
 
     assertSystemAdministratorWorkspaceAccess(access, "data-reset");
+
+    // Switched off by the owner (see RESET_SWITCHED_OFF_REASON). executeReset refuses too; this
+    // answers before the body is even read, with the reason the page shows him.
+    if (RESET_SWITCHED_OFF_REASON) {
+      return NextResponse.json({ error: "switched_off", message: RESET_SWITCHED_OFF_REASON }, { status: 423 });
+    }
 
     const body: unknown = await request.json();
     if (!body || typeof body !== "object") {
@@ -50,6 +61,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, result }, { status: 200 });
   } catch (error) {
+    if (error instanceof ResetSwitchedOffError) {
+      return NextResponse.json({ error: "switched_off", message: error.message }, { status: 423 });
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") },

@@ -29,8 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Auth-bridge error rows are a repair that SUCCEEDED](the-auth-bridge-error-rows-are-a-repair-that-succeeded.md) — 19/19 followed by a successful login, 0/89 attempts failed; not an outage.
-- [Never lower the compact window or the default effort](never-lower-the-compact-window-or-the-default-effort.md) — 200000/medium made compaction 7x more frequent on 2026-10-23; keep 400000/high.
 
 
 

@@ -29,8 +29,14 @@
  *
  * `_` is deliberately NOT neutralised. It matches any single character, so a term containing one
  * yields a superset that still includes the literal row — a search for `AB_12` finds `AB_12`.
- * Blanking it would break every identifier that legitimately contains an underscore. */
-const WILDCARD_CHARS = /[%*]/g;
+ * Blanking it would break every identifier that legitimately contains an underscore.
+ *
+ * `\` is blanked too. It is LIKE's escape character, so a term ENDING in one leaves the pattern
+ * ending in an escape — Postgres refuses it ("LIKE pattern must not end with escape character") and
+ * the whole read fails; the WhatsApp inbox swallowed that error, so its employee suggestions just
+ * vanished (review of #6357, 23 Oct 2026). Mid-term it silently escaped the next character instead.
+ * No name, code or email is searched for by a backslash. */
+const WILDCARD_CHARS = /[%*\\]/g;
 
 /** Escape a value for use inside a double-quoted PostgREST filter, and wrap it in those quotes.
  * Backslash first, then the quote — reversing the order would re-escape the backslashes just added. */

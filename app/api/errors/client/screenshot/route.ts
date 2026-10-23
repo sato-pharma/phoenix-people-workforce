@@ -20,10 +20,11 @@ export const dynamic = "force-dynamic";
 /**
  * The picture of what the employee was looking at when it broke.
  *
- * Unauthenticated, exactly like its sibling `/api/errors/client` and for the same reason — the
- * person it happened to is often not signed in — but it accepts BYTES, so it is bounded harder:
+ * It reads no cookie: the ticket is the whole authorisation. It accepts BYTES, so it is bounded hard:
  *
- *   - a signed ticket is required, and only the report response mints one, for the row it wrote;
+ *   - a signed ticket is required, and only the report response mints one, for the row it wrote —
+ *     and since 23 Oct 2026 only for a SIGNED-IN reporter (owner's decision, after a review found a
+ *     guest ticket let anyone on the internet store images in the Super Admin's error drawer);
  *   - the ticket expires in two minutes and names ONE row, so bytes cannot be aimed anywhere else;
  *   - 2 MB hard ceiling, checked on the header AND on the read;
  *   - WebP only, sniffed from the container's own magic bytes rather than the caller's header;
@@ -57,9 +58,11 @@ export async function POST(request: Request) {
           { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
         );
       }
-      // The limiter could not be read. The ticket already bounds this far harder than the limiter
-      // does, so let the picture through rather than lose it to an outage of the limiter's table.
+      // The limiter could not be read: refuse. This is the one public door that stores BYTES, and the
+      // picture is a nicety on top of a report already filed — losing it in a limiter outage costs
+      // nothing, letting uploads through unmetered does (review of #6358, 23 Oct 2026).
       console.error("Error-screenshot rate limit unavailable:", error);
+      return NextResponse.json({ ok: false }, { status: 503 });
     }
 
     const bytes = new Uint8Array(await request.arrayBuffer());

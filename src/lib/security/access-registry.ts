@@ -2502,10 +2502,10 @@ export const accessRegistry = [
   // (a guest gets 401), same-origin checked, 40 an hour per person; read back only by the Super Admin.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/screen", permission: null, guard: "domain-helper", csrfRequired: true }),
   // The picture of the screen the crash report above was filed from. A TOKEN route, not a session
-  // one: it reads no cookie and resolves no identity, because the ticket is the whole authorisation
-  // — and a session guard here would be theatre, since the employee whose page broke is often not
-  // signed in at all.
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/errors/client/screenshot", reason: "Fire-and-forget crash screenshot, open to guests too. Admitted only by a two-minute HMAC ticket that /api/errors/client mints for the row it just wrote, so a caller must already have filed a real error and can only ever write that one row's object; the body is capped at 2 MB, must sniff as WebP from its own magic bytes, and nothing is read back out." }),
+  // one: it reads no cookie and resolves no identity, because the ticket is the whole authorisation.
+  // The SESSION check happens where the ticket is minted: /api/errors/client hands one only to a
+  // signed-in reporter (owner, 23 Oct 2026), so a guest's crash is filed without a picture.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/errors/client/screenshot", reason: "Fire-and-forget crash screenshot. Admitted only by a two-minute HMAC ticket that /api/errors/client mints, for a SIGNED-IN reporter only (owner, 23 Oct 2026), for the row it just wrote, so a caller must already have filed a real error and can only ever write that one row's object; the body is capped at 2 MB, must sniff as WebP from its own magic bytes, and nothing is read back out." }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/pending-count", permission: { resource: "leave", action: "read" } }),
   // Batched replacement for the pending-count polls below plus
   // /api/marketing-requests/pending-count (covered by the /api/marketing-requests/** entry, whose

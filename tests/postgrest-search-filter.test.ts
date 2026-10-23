@@ -7,6 +7,7 @@ import {
   ilikeAnyFilter,
   ilikeContainsPattern,
   ilikeContainsValue,
+  ilikeExactValue,
   quotePostgrestValue,
   quotedInList,
   quotedOrClause,
@@ -87,12 +88,12 @@ import { stripComments } from "./support/comment-strip.ts";
 //             names and rewriting `CNS_Cairo` to `CNSCairo`.
 //
 //   And one that is neither: `employees?col=ilike.VALUE` built by hand.
-//     B04-03  src/lib/employees/employee-directory.ts — `encodeURIComponent` was doing duty as a
-//             filter guard, which it is not: it leaves `*`, `(`, `)` and `'` untouched and
-//             round-trips `%` to `%`. Both uniqueness checks now quote the value first. Their
-//             wildcards are deliberately NOT blanked — see the comment at each site: over-matching
-//             is corrected by the exact comparison that follows, under-matching would admit the
-//             duplicate the function exists to refuse.
+//     B04-03  src/lib/employees/employee-directory.ts — a plain `col=ilike.VALUE` query
+//             parameter, where nothing is structural and double quotes are matched literally. So
+//             the value is percent-encoded and NEVER quoted: quoting it (#6350) made both
+//             uniqueness checks find no holder. Their wildcards are deliberately NOT blanked — see
+//             the comment at each site: over-matching is corrected by the exact comparison that
+//             follows, under-matching would admit the duplicate the function exists to refuse.
 //
 // This still does NOT prove the whole class is covered. The 20 other sites that build a LIKE
 // pattern by hand are unproven by anything here; whether each one's input can carry a comma is a
@@ -132,6 +133,12 @@ export function runPostgrestSearchFilterTests() {
   assert.equal(ilikeAnyFilter(["a"], "%"), "", "a term that is nothing but a wildcard filters nothing");
   assert.equal(ilikeAnyFilter(["a"], "*"), "", "`*` is translated to `%` by PostgREST, so it goes too");
   assert.equal(ilikeAnyFilter(["a"], "B*12"), 'a.ilike."%B 12%"', "an interior wildcard becomes a space");
+  // `\` is LIKE's escape character. A term ending in one used to leave the pattern ending in an
+  // escape, which Postgres refuses outright ("LIKE pattern must not end with escape character") —
+  // the WhatsApp inbox swallowed that error and its employee suggestions vanished (23 Oct 2026).
+  assert.equal(ilikeExactValue("ahmed\\"), '"ahmed"', "a trailing backslash never reaches the pattern");
+  assert.equal(ilikeContainsValue("El\\Salam"), '"%El Salam%"', "an interior backslash becomes a space");
+  assert.equal(ilikeExactValue("\\"), null, "a term that is nothing but a backslash searches nothing");
 
   // `_` is deliberately kept: it matches any single character, so the result is a superset that
   // still contains the literal row. Blanking it would break identifiers containing underscores.
@@ -598,12 +605,15 @@ export function runPostgrestSearchFilterTests() {
     "an audience with nothing in it must return null rather than the empty string",
   );
 
-  // B04-03 · a hand-built `col=ilike.VALUE` path. Repo-wide, because the shape is unambiguous and
-  // measured: `encodeURIComponent` escapes none of PostgREST's structural characters, so the value
-  // inside it must be quoted first. Two matches in the tree on 2026-10-23, both in the employee
-  // directory's uniqueness checks, both now quoted.
-  const unquotedIlikePath: string[] = [];
-  let quotedIlikePaths = 0;
+  // B04-03 · a hand-built `col=ilike.VALUE` path is a PLAIN query parameter, and it must NOT be
+  // quoted. PostgREST reads everything after `ilike.` as the pattern; double quotes are an escape
+  // only inside `in.(…)` lists and `or`/`and` groups, so a quoted value is matched as two literal
+  // `"` characters and finds nothing. #6350 quoted both employee-directory uniqueness checks on
+  // 2026-10-23 and so disabled them — measured on production the same day, the CRM-username read
+  // found 1 holder unquoted and 0 quoted, and a taken username reached the unique index as a raw
+  // 23505. Same transport as supabase-js's `.ilike()`; see ilikeContainsPattern's note.
+  const quotedIlikePath: string[] = [];
+  let plainIlikePaths = 0;
   for (const file of listed) {
     const raw = readTracked(file);
     if (!raw) continue;
@@ -611,20 +621,20 @@ export function runPostgrestSearchFilterTests() {
       .split("\n")
       .forEach((line, i) => {
         if (!/=ilike\.\$\{encodeURIComponent\(/.test(line)) return;
-        if (/=ilike\.\$\{encodeURIComponent\(quotePostgrestValue\(/.test(line)) {
-          quotedIlikePaths += 1;
+        if (/=ilike\.\$\{encodeURIComponent\((quotePostgrestValue|quotedOrClause|quotedInList)\(/.test(line)) {
+          quotedIlikePath.push(`${file}:${i + 1}`);
           return;
         }
-        unquotedIlikePath.push(`${file}:${i + 1}`);
+        plainIlikePaths += 1;
       });
   }
   assert.deepEqual(
-    unquotedIlikePath,
+    quotedIlikePath,
     [],
-    `an ilike value percent-encoded but not quoted — encodeURIComponent leaves *, (, ) and ' ` +
-      `untouched and round-trips %; wrap it in quotePostgrestValue():\n  ${unquotedIlikePath.join("\n  ")}`,
+    `a plain \`col=ilike.VALUE\` query parameter was quoted — PostgREST then matches the quote ` +
+      `marks literally and the read finds nothing; percent-encode the raw value:\n  ${quotedIlikePath.join("\n  ")}`,
   );
-  assert.equal(quotedIlikePaths, 2, "both employee-directory uniqueness checks must still make this read");
+  assert.equal(plainIlikePaths, 2, "both employee-directory uniqueness checks must still make this read");
 
   // ── MR-B04 · the identity sites · one pin per site, naming the call that must be there ───────
   //
@@ -1192,5 +1202,45 @@ export function runPostgrestSearchFilterTests() {
     inListsExempt,
     17,
     "the written-down in-list exemptions must all still be reached, and no more of them",
+  );
+
+  // ── a PLAIN ilike parameter is never quoted (review of #6350, 23 Oct 2026) ─────────────────────
+  // `col=ilike.VALUE` and `.ilike(col, value)` send the value as a bare query parameter, where
+  // nothing is structure and double quotes are two literal characters — so a quoted value matches
+  // NOTHING. #6350 quoted the CRM-username and work-email duplicate checks that way: on production
+  // the unquoted read found 1 row, the quoted one 0, and a taken username reached the unique index.
+  // The quoting helpers belong inside an `or(…)`/`and(…)` group or an `in.(…)` list only.
+  const QUOTING_HELPER = /\b(quotePostgrestValue|ilikeExactValue|ilikeContainsValue|quotedOrClause)\(/;
+  const PLAIN_ILIKE = /(?:[?&`][A-Za-z_]+=i?like\.|\.i?like\()/;
+  const quotedPlainIlike: string[] = [];
+  let plainIlikesInspected = 0;
+  for (const file of listed) {
+    const raw = readTracked(file);
+    if (!raw || !PLAIN_ILIKE.test(raw)) continue;
+    const code = stripComments(raw);
+    // A value quoted on one line and spliced on another is the same defect.
+    const quotedNames = new Set(
+      [...code.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:quotePostgrestValue|ilikeExactValue|ilikeContainsValue|quotedOrClause)\(/g)]
+        .map((m) => m[1]),
+    );
+    code.split("\n").forEach((line, i) => {
+      if (!PLAIN_ILIKE.test(line)) return;
+      plainIlikesInspected += 1;
+      const fedByName = [...quotedNames].some((name) =>
+        new RegExp(`(?:=i?like\\.\\$\\{[^}]*\\b${name}\\b|\\.i?like\\([^)]*,\\s*${name}\\s*\\))`).test(line),
+      );
+      if (QUOTING_HELPER.test(line) || fedByName) quotedPlainIlike.push(`${file}:${i + 1}`);
+    });
+  }
+  assert.ok(
+    plainIlikesInspected > 20,
+    `the plain-ilike sweep must actually be reading the tree — it inspected only ${plainIlikesInspected} lines`,
+  );
+  assert.deepEqual(
+    quotedPlainIlike,
+    [],
+    "a QUOTED value is sent as a plain `ilike` parameter. Outside an or/and group or an in-list the " +
+      "quotes are literal characters, so the read silently matches nothing. Percent-encode the value " +
+      `instead (searchableTerm() if wildcards must be blanked):\n  ${quotedPlainIlike.join("\n  ")}`,
   );
 }

@@ -3,6 +3,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { getCurrentReleaseTag, shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
+import { ERROR_SCREENSHOT_BUCKET } from "@/lib/error-monitor/screenshot-intake";
 import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 import { logError } from "@/lib/observability/log";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -12,6 +13,10 @@ export type ErrorEventSource = "server" | "client";
 const MAX_TEXT_LENGTH = 4000;
 const MAX_USER_AGENT_LENGTH = 500;
 const DEFAULT_ERROR_EVENT_RETENTION_DAYS = 90;
+/** Crash pictures removed per run, at most — exactly the 1,000 rows one PostgREST read returns. */
+const ERROR_SCREENSHOT_PRUNE_BATCH = 1_000;
+/** Paths per Storage call, and ids per row delete: both travel in the request. */
+const ERROR_SCREENSHOT_REMOVE_CHUNK = 100;
 
 /**
  * Retention/cleanup for app_error_events so the table cannot grow unbounded on Cloud Run.
@@ -24,14 +29,53 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
     const configured = Number(process.env.PHOENIX_ERROR_EVENT_RETENTION_DAYS);
     const retentionDays = Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : DEFAULT_ERROR_EVENT_RETENTION_DAYS;
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const supabase = getSupabaseAdmin();
 
-    const { error, count } = await getSupabaseAdmin()
+    // PICTURES FIRST (review of #6358, 23 Oct 2026). A crash picture is an unmasked screenshot of an
+    // employee's screen — a payslip, a bank form — and until this its row was deleted here and its
+    // file never was: from day 91 it sat in the bucket for ever, with nothing pointing at it and no
+    // screen able to show it. Each file goes through the Storage API (a delete on storage.objects is
+    // refused by storage.protect_delete), and a row that has a picture is deleted only once its
+    // picture is gone; one that will not go keeps its row, and is tried again the next day.
+    const { data: shots, error: shotsError } = await supabase
+      .from("app_error_events")
+      .select("id, screenshot_path")
+      .lt("created_at", cutoff)
+      .not("screenshot_path", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(ERROR_SCREENSHOT_PRUNE_BATCH);
+    if (shotsError) return { deleted: null, error: shotsError.message };
+
+    const removedIds: string[] = [];
+    const withPictures = (shots ?? []) as Array<{ id: string; screenshot_path: string }>;
+    for (let start = 0; start < withPictures.length; start += ERROR_SCREENSHOT_REMOVE_CHUNK) {
+      const chunk = withPictures.slice(start, start + ERROR_SCREENSHOT_REMOVE_CHUNK);
+      const { error: removeError } = await supabase.storage
+        .from(ERROR_SCREENSHOT_BUCKET)
+        .remove(chunk.map((row) => row.screenshot_path));
+      if (removeError) break;
+      removedIds.push(...chunk.map((row) => row.id));
+    }
+
+    // Rows with no picture, then the rows whose picture is now gone. A row whose picture is still
+    // there (over the batch, or a removal that failed) is left for the next run.
+    const { error, count } = await supabase
       .from("app_error_events")
       .delete({ count: "exact" })
-      .lt("created_at", cutoff);
-
+      .lt("created_at", cutoff)
+      .is("screenshot_path", null);
     if (error) return { deleted: null, error: error.message };
-    return { deleted: count ?? null };
+
+    let deleted = count ?? 0;
+    for (let start = 0; start < removedIds.length; start += ERROR_SCREENSHOT_REMOVE_CHUNK) {
+      const { error: idsError, count: idsCount } = await supabase
+        .from("app_error_events")
+        .delete({ count: "exact" })
+        .in("id", removedIds.slice(start, start + ERROR_SCREENSHOT_REMOVE_CHUNK));
+      if (idsError) return { deleted, error: idsError.message };
+      deleted += idsCount ?? 0;
+    }
+    return { deleted };
   } catch (error) {
     return { deleted: null, error: error instanceof Error ? error.message : "prune failed" };
   }

@@ -98,7 +98,11 @@ export async function POST(request: Request) {
 
       // Only a browser gets the offer. instrumentation.ts forwards server-side request errors
       // through this same route, and there is no screen behind one of those to photograph.
-      if (eventId && report.source === "client") {
+      // Signed-in reporters only (owner, 23 Oct 2026). A ticket is the whole authorisation of the
+      // picture upload, and this route takes reports from anyone — so a guest ticket let anybody on
+      // the internet file a fake report and store a 2 MB image in the Super Admin's error drawer,
+      // ten a minute per address, never deleted. A guest's report is still filed; it gets no picture.
+      if (eventId && report.source === "client" && (access.hrId || access.loginId)) {
         screenshotTicket = issueErrorScreenshotTicket(eventId);
       }
     }

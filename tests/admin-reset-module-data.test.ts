@@ -9,6 +9,9 @@ import {
 } from "./function-bodies-need-a-where-clause.test.ts";
 import {
   RESET_GROUPS,
+  RESET_SWITCHED_OFF_REASON,
+  ResetSwitchedOffError,
+  executeReset,
   executeResetWith,
   type ResetRpcCall,
 } from "../src/lib/admin/data-reset.ts";
@@ -253,5 +256,36 @@ export async function runAdminResetModuleDataTests() {
     /^Error: Reset failed: permission denied for table source_of_sales_import_rows$/,
     "a failed RPC must throw: swallowing it would render the success card over a reset that deleted " +
       "nothing, which is the exact failure this whole change exists to end",
+  );
+
+  // ── 9 · THE RESET IS SWITCHED OFF (owner, 23 Oct 2026) ──────────────────────
+  // #6356 made it really delete, on production, guarded only by a closing LOCK (not a
+  // publication), with nothing guarding Weekly Sales or Marketing Requests, no backup first and no
+  // audit row. He chose "switch it off until safe". Every layer refuses, and the domain refuses
+  // BEFORE any database client exists, so not even a local dev server (which points at the
+  // production database) can reach the function.
+  assert.ok(
+    RESET_SWITCHED_OFF_REASON,
+    "the reset stays switched off until a PR builds the published-month guard, a backup before " +
+      "deleting and an audit row — turning it back on is that PR's job, never a drive-by",
+  );
+  await assert.rejects(
+    () => executeReset("sales", "B-10"),
+    (error: unknown) => error instanceof ResetSwitchedOffError,
+    "executeReset must refuse before it creates a database client",
+  );
+  const root = join(import.meta.dirname ?? ".", "..");
+  const route = readFileSync(join(root, "app", "api", "admin", "data-backup", "reset", "route.ts"), "utf8");
+  const refusal = route.indexOf("if (RESET_SWITCHED_OFF_REASON)");
+  assert.ok(refusal > 0, "the reset route must answer the switched-off reason itself");
+  assert.ok(
+    refusal < route.indexOf("await request.json()") && refusal < route.indexOf("executeReset("),
+    "and it must do so before it reads the body or calls executeReset",
+  );
+  const card = readFileSync(join(root, "src", "components", "admin", "data-backup-reset-section.tsx"), "utf8");
+  assert.equal(
+    card.split('disabled={switchedOff || state.status === "loading"}').length - 1,
+    2,
+    "both buttons that open a reset confirmation are disabled while it is switched off",
   );
 }
