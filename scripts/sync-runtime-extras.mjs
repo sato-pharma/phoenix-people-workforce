@@ -18,6 +18,16 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs): a
+// mistyped `--chek` would otherwise REWRITE the lockfile instead of only checking it.
+refuseUnknownFlags({
+  name: "sync-runtime-extras",
+  entry: import.meta.url,
+  known: ["--check"],
+});
+
 export const RUNTIME_EXTRAS_DIR = "infra/runtime-extras";
 /** The packages the Dockerfile installs into the runtime image, in the order package.json lists them. */
 export const RUNTIME_EXTRAS = Object.freeze(["puppeteer-core", "sharp"]);
