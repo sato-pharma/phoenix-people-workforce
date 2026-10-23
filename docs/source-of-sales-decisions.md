@@ -164,7 +164,7 @@ attribution freshness sweep.
 
 The same night, the 30 customers behind the 55 still-held changes were switched to unmapped
 (`active = false`, brick and area untouched) and all 55 holds were refused; the pre-image is
-`sos_map_unmap_preimage_20261010`. He maps them again when he next uploads. Sales rows and published
+`sos_map_unmap_preimage_20261010` (in schema `sos_backup_20261010` since 23 Oct 2026). He maps them again when he next uploads. Sales rows and published
 closings were not touched, and the un-map re-stamps nothing until the next upload or a reconcile.
 
 ## A brick move finishes on a clock (2026-10-13)
