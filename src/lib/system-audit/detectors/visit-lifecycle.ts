@@ -1184,9 +1184,11 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       // `tiebreak` is each table's own key, so the page order is total.
       const besides: Array<{ table: string; column: string; tiebreak: string }> = [
         { table: "phoenix_crm_unplanned_visits", column: "updated_at", tiebreak: "visit_id" },
-        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "id" },
-        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "id" },
+        // phoenix_crm_visit_recordings is keyed by `path` (PRIMARY KEY (path)) and has no `id` column
+        // at all, so ordering by one made the whole read fail 42703 and the detector with it.
+        { table: "phoenix_crm_visit_recordings", column: "claimed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "path" },
+        { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_edits", column: "edited_at", tiebreak: "id" },
       ];
       for (const { table, column, tiebreak } of besides) {
@@ -1268,9 +1270,9 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
             (from, to) =>
               supabase
                 .from("phoenix_crm_visit_recordings")
-                .select("id,visit_id,review_status,claimed_at,reviewed_at,deleted_at")
+                .select("visit_id,review_status,claimed_at,reviewed_at,deleted_at")
                 .in("visit_id", chunk)
-                .order("id")
+                .order("path")
                 .range(from, to),
           ),
           readPaged<{ visit_id: string; removed_at: string }>("phoenix_crm_removed_visits", (from, to) =>

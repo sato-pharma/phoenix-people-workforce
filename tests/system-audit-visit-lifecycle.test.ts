@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 import {
@@ -499,6 +501,40 @@ export async function runSystemAuditVisitLifecycleTests() {
     );
     assert.deepEqual(cursor.kpiQueue, ["b-200|2026-11"], "the judged rep-day's month waits in the queue for the next run");
     assert.deepEqual(result.watermarkTo, { touchedAfter: cursor.touchedAfter, kpiQueued: 1 }, "the run reports the watermark it wrote");
+  }
+
+  // Every column these reads name must be one the table actually has.
+  //
+  // phoenix_crm_visit_recordings is keyed by `path` — PRIMARY KEY (path) — and carries no `id`
+  // column at all. A PostgREST read that orders by a column that does not exist fails the WHOLE
+  // read with 42703, not one field, and that took this detector down on production on 23 Oct 2026
+  // ("System audit detector failed: visit_lifecycle", one row, release c4f997aed). Neither the
+  // compiler nor a behaviour test can see it, because a select is a string and the ports are faked,
+  // so the spelling is pinned here. Comments are stripped first: a source assertion is otherwise
+  // satisfied by the very comment that explains the call.
+  {
+    const source = stripComments(
+      readFileSync(new URL("../src/lib/system-audit/detectors/visit-lifecycle.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n"),
+    );
+    const lines = source.split("\n");
+    const recordings = lines.filter((line) => line.includes("phoenix_crm_visit_recordings"));
+    assert.ok(recordings.length >= 4, "the pin is reading the detector's own phoenix_crm_visit_recordings reads");
+    for (const line of recordings) {
+      assert.ok(
+        !line.includes('tiebreak: "id"'),
+        `phoenix_crm_visit_recordings has no id column — page it by path: ${line.trim()}`,
+      );
+    }
+    assert.equal(
+      recordings.filter((line) => line.includes('tiebreak: "path"')).length,
+      3,
+      "all three claimed_at/reviewed_at/deleted_at reads page by path, the table's real key",
+    );
+    assert.ok(source.includes('.order("path")'), "the chunked recordings read orders by path, the table's real key");
+    for (const line of lines) {
+      if (!line.includes(".select(") || !line.includes("review_status")) continue;
+      assert.ok(!line.includes('"id,'), `phoenix_crm_visit_recordings has no id column to select: ${line.trim()}`);
+    }
   }
 
   console.log("system-audit-visit-lifecycle: PASS");
