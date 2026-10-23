@@ -45,7 +45,6 @@ import { resolve } from "node:path";
  */
 const ALARMS = [
   "deploy-drift-check.yml",
-  "migration-drift-check.yml",
   "origin-certificate-check.yml",
   "security-scan.yml",
   "synthetic-journeys.yml",
@@ -78,6 +77,23 @@ const DISPATCH_ONLY = new Set(["synthetic-journeys.yml"]);
  */
 const EXCLUDED = "attendance-weekly-digest.yml";
 
+/**
+ * Scheduled detectors that report every leg AND then go red on a finding (owner, 2026-10-23: "make the
+ * Migration Drift Check go red again when its checks fail").
+ *
+ * The premise of ALARMS above was Railway's Wait-for-CI: a red suite on `main` HEAD withheld that
+ * commit's production deploy. Wait-for-CI is OFF on every service since 2026-10-19/20 — the release
+ * gate in ci.yml holds a deploy on `validate` + `checks` only — and the red Dependabot run on 12e535485
+ * and the red Emergency host run on 68522a1bc both reached production `success` afterwards. Kept green
+ * on purpose, migration-drift-check.yml showed 23 green nights in a row while every one had failing legs.
+ *
+ * So these keep the per-leg `continue-on-error` (every leg runs; the alert is gated on step outcomes)
+ * and END with a step that fails the job. That is only safe while Wait-for-CI stays off, so the
+ * precondition is pinned below: switch `checkSuites` back on and this test goes red until each of these
+ * goes back into ALARMS.
+ */
+const REDS_ON_A_FINDING = ["migration-drift-check.yml"];
+
 function workflow(file: string): string {
   return readFileSync(resolve(".github/workflows", file), "utf8");
 }
@@ -99,7 +115,51 @@ function step(source: string, file: string, name: string): string {
   return nextAt === -1 ? rest : rest.slice(0, nextAt);
 }
 
+function assertRedsOnAFinding(): void {
+  // The precondition. Every Railway source in the config-as-code must have Wait-for-CI OFF, or a red
+  // run here withholds whatever commit is main HEAD again.
+  const railway = readFileSync(resolve(".railway/railway.ts"), "utf8");
+  const sources = railway.match(/checkSuites:\s*(true|false)/g) ?? [];
+  assert.ok(sources.length >= 2, `expected to read checkSuites on the Railway services, found ${sources.length}`);
+  assert.ok(
+    sources.every((m) => /false$/.test(m)),
+    "🔴 .railway/railway.ts turns Railway's Wait-for-CI (`checkSuites: true`) back on, so a red " +
+      `scheduled run withholds main HEAD's production deploy again. Move ${REDS_ON_A_FINDING.join(", ")} ` +
+      "back into ALARMS and restore its finish-green shape before switching it on.",
+  );
+
+  for (const file of REDS_ON_A_FINDING) {
+    const source = workflow(file);
+    assert.ok(!ALARMS.includes(file), `${file} is in both ALARMS and REDS_ON_A_FINDING`);
+    assert.match(source, /^\s*schedule:\s*$/m, `${file} is no longer scheduled; remove it from REDS_ON_A_FINDING`);
+
+    // Every leg still runs and reports: continue-on-error + an id, and the alert gated on outcomes.
+    assert.match(source, /^\s*continue-on-error:\s*true\s*$/m, `🔴 ${file}: its legs lost continue-on-error, so the first red leg skips every later one`);
+    const telegram = step(source, file, "Notify Telegram on failure");
+    assert.match(
+      telegram,
+      /steps\.[A-Za-z0-9_-]+\.outcome\s*==\s*'failure'/,
+      `🔴 ${file}: the Telegram alert is no longer gated on the legs' outcomes, so a finding can reach nobody`,
+    );
+
+    // The verdict: a step AFTER the alert, gated on the same outcomes, that exits non-zero, with no
+    // continue-on-error of its own (that would make it green again).
+    const verdict = step(source, file, "Fail the run when a check found something");
+    assert.ok(
+      source.indexOf("      - name: Fail the run when a check found something") > source.indexOf("      - name: Notify Telegram on failure"),
+      `🔴 ${file}: the failing step must come AFTER the Telegram alert, or a finding fails the job before anyone is told`,
+    );
+    assert.match(verdict, /steps\.[A-Za-z0-9_-]+\.outcome\s*==\s*'failure'/, `🔴 ${file}: the failing step is not gated on the legs' outcomes`);
+    assert.doesNotMatch(verdict, /test_alert/, `🔴 ${file}: a Telegram self-test is not a finding and must not fail the run`);
+    assert.doesNotMatch(verdict, /continue-on-error:\s*true/, `🔴 ${file}: the failing step has continue-on-error, so the run is green on a finding again`);
+    assert.match(verdict, /^\s*exit 1\s*$/m, `🔴 ${file}: the failing step no longer exits 1`);
+    assert.match(verdict, /timeout-minutes:\s*\d+/, `🔴 ${file}: the failing step needs its own budget`);
+  }
+}
+
 export function runScheduledAlarmsNeverWithholdTests() {
+  assertRedsOnAFinding();
+
   for (const file of ALARMS) {
     const source = workflow(file);
 
@@ -262,7 +322,7 @@ export function runScheduledAlarmsNeverWithholdTests() {
   //     file is loadable. There is no YAML parser in this repo's dependency tree, so this cheap
   //     structural rule stands in for one. The fix is the style the file already used everywhere
   //     else: build multi-line strings with `printf` and `\n`.
-  for (const file of [...ALARMS, EXCLUDED]) {
+  for (const file of [...ALARMS, ...REDS_ON_A_FINDING, EXCLUDED]) {
     const source = workflow(file);
     const offenders = source
       .split(/\r?\n/)
@@ -303,7 +363,7 @@ export function runScheduledAlarmsNeverWithholdTests() {
   //     the assertion inspected nothing while reporting success. It was caught only by planting an
   //     invalid scope and watching nothing happen. That is the dead-assertion defect this file's own
   //     header warns about, reproduced by the person who wrote the warning.
-  for (const file of [...ALARMS, EXCLUDED]) {
+  for (const file of [...ALARMS, ...REDS_ON_A_FINDING, EXCLUDED]) {
     const lines = workflow(file).split(/\r?\n/);
     const indentOf = (line: string): number => line.length - line.trimStart().length;
 
