@@ -21,6 +21,7 @@ import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, resolveStoredHrId } f
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
+import { afterResponse } from "@/lib/http/after-response";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
@@ -4455,9 +4456,12 @@ export async function decideMarketingRequestWorkflow(
   const decidedStep = mapApprovalStep(rpcData.step);
   request = mapRequest(rpcData.request);
 
-  // Load the request type name for notification messages (separate read, non-mutating).
-  const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
-
+  // Every notice below goes out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the
+  // decision is saved by now, so the approver who pressed the button never waits for the notice to the
+  // next approver and the requester (profiles, preferences, event and audit rows, Telegram, the phone
+  // push, the templated email). The request type's name is read only to word that notice, so it is
+  // read inside the deferred task too. Outside a request (the unit suite, a script) `afterResponse`
+  // simply awaits the task, as before.
   if (decision === "reject" || decision === "return") {
     await auditMarketingDecision({
       actorHrId,
@@ -4470,21 +4474,24 @@ export async function decideMarketingRequestWorkflow(
           : ""
       }`,
     });
-    await notifyMarketingWorkflow({
-      actorHrId,
-      eventType: decision === "reject" ? "request_rejected" : "request_returned",
-      message: `${request.requestCode} was ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.`,
-      metadata: {
-        decision,
-        decisionAt: decidedAt,
-        decisionByHrId: actorHrId,
-        returnNote: comment,
-        returnedByName: employeeNameByHrId(employeeRows, actorHrId),
-        ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
-      },
-      priority: "high",
-      request,
-      title: decision === "reject" ? "Marketing request rejected" : "Marketing request returned",
+    await afterResponse(`marketing_notice:${decision === "reject" ? "request_rejected" : "request_returned"}`, async () => {
+      const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
+      await notifyMarketingWorkflow({
+        actorHrId,
+        eventType: decision === "reject" ? "request_rejected" : "request_returned",
+        message: `${request.requestCode} was ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.`,
+        metadata: {
+          decision,
+          decisionAt: decidedAt,
+          decisionByHrId: actorHrId,
+          returnNote: comment,
+          returnedByName: employeeNameByHrId(employeeRows, actorHrId),
+          ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
+        },
+        priority: "high",
+        request,
+        title: decision === "reject" ? "Marketing request rejected" : "Marketing request returned",
+      });
     });
     return { decision, request, step: decidedStep };
   }
@@ -4502,28 +4509,31 @@ export async function decideMarketingRequestWorkflow(
       step: decidedStep,
       summary: `Marketing request ${request.requestCode} approved at ${decidedStep.stepName}; moved to ${currentNextStep.stepName}.`,
     });
-    // A rung that opens for the second time - a chain restarted by a resubmit, or a request reopened
-    // after a reject - must key its notice on that reopening, or the approver is never told again
-    // (the delivery key is unique per rung). Read AFTER the decision committed: the step_opened event
-    // is written by the trigger inside the RPC's own transaction. Same epoch the daily backfill
-    // computes, so the two paths can never both send for one opening.
-    const nextStepEpoch = await resolveMarketingStepReopenEpoch(supabase, request.id, currentNextStep.sequence);
-    await notifyMarketingWorkflow({
-      actorHrId,
-      ccHrIds,
-      eventType: "request_assigned",
-      message: `${request.requestCode} is waiting for ${currentNextStep.stepName}.`,
-      metadata: {
-        assignedApproverHrId: currentNextStep.assignedHrId,
-        currentStepId: currentNextStep.id,
-        currentStepName: currentNextStep.stepName,
-        ...(nextStepEpoch ? { idempotencyEpoch: nextStepEpoch } : {}),
-        workflowApproverHrId: currentNextStep.assignedHrId,
-        ...marketingNotificationVariables({ currentStep: currentNextStep, employeeRows, request, requestTypeName }),
-      },
-      priority: "high",
-      request,
-      title: "Marketing request assigned",
+    await afterResponse("marketing_notice:request_assigned", async () => {
+      const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
+      // A rung that opens for the second time - a chain restarted by a resubmit, or a request reopened
+      // after a reject - must key its notice on that reopening, or the approver is never told again
+      // (the delivery key is unique per rung). Read AFTER the decision committed: the step_opened event
+      // is written by the trigger inside the RPC's own transaction. Same epoch the daily backfill
+      // computes, so the two paths can never both send for one opening.
+      const nextStepEpoch = await resolveMarketingStepReopenEpoch(supabase, request.id, currentNextStep.sequence);
+      await notifyMarketingWorkflow({
+        actorHrId,
+        ccHrIds,
+        eventType: "request_assigned",
+        message: `${request.requestCode} is waiting for ${currentNextStep.stepName}.`,
+        metadata: {
+          assignedApproverHrId: currentNextStep.assignedHrId,
+          currentStepId: currentNextStep.id,
+          currentStepName: currentNextStep.stepName,
+          ...(nextStepEpoch ? { idempotencyEpoch: nextStepEpoch } : {}),
+          workflowApproverHrId: currentNextStep.assignedHrId,
+          ...marketingNotificationVariables({ currentStep: currentNextStep, employeeRows, request, requestTypeName }),
+        },
+        priority: "high",
+        request,
+        title: "Marketing request assigned",
+      });
     });
     return { decision, nextStep: currentNextStep, request, step: decidedStep };
   }
@@ -4539,23 +4549,26 @@ export async function decideMarketingRequestWorkflow(
       ? `Marketing request ${request.requestCode} executed by finance and is now active.`
       : `Marketing request ${request.requestCode} fully approved.`,
   });
-  await notifyMarketingWorkflow({
-    actorHrId,
-    eventType: "request_approved",
-    message: isExecution
-      ? `${request.requestCode} has been executed by finance and is now active.`
-      : `${request.requestCode} has been fully approved.`,
-    metadata: {
-      decision,
-      decisionAt: decidedAt,
-      decisionByHrId: actorHrId,
-      executed: isExecution,
-      workflowParticipantHrIds: steps.map((step) => step.assignedHrId).filter(Boolean),
-      ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
-    },
-    priority: "high",
-    request,
-    title: isExecution ? "Marketing request executed" : "Marketing request approved",
+  await afterResponse("marketing_notice:request_approved", async () => {
+    const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
+    await notifyMarketingWorkflow({
+      actorHrId,
+      eventType: "request_approved",
+      message: isExecution
+        ? `${request.requestCode} has been executed by finance and is now active.`
+        : `${request.requestCode} has been fully approved.`,
+      metadata: {
+        decision,
+        decisionAt: decidedAt,
+        decisionByHrId: actorHrId,
+        executed: isExecution,
+        workflowParticipantHrIds: steps.map((step) => step.assignedHrId).filter(Boolean),
+        ...marketingNotificationVariables({ currentStep: decidedStep, employeeRows, request, requestTypeName }),
+      },
+      priority: "high",
+      request,
+      title: isExecution ? "Marketing request executed" : "Marketing request approved",
+    });
   });
   // After the decision has committed, so the ping cannot sit between the approval and the money.
   pingMarketingRequestSheet("request_decided");
@@ -8357,43 +8370,52 @@ export async function createMarketingRequestDraft(
     };
     const requestType = requestTypeResult.data as MarketingRequestTypeDbRow;
     const currentStep = steps.find((step) => step.status === "current");
+    // Both notices go out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the request is
+    // saved by now, so the person who pressed Submit never waits for the approver's and HR's notices.
+    // Two tasks, not one, so a failure in the first can never stop the second, and a failed notice can
+    // no longer fall into the catch below and delete a request that was saved. Outside a request (the
+    // unit suite, a script) `afterResponse` awaits each in turn, as before.
     if (currentStep) {
-      await notifyMarketingWorkflow({
-        actorHrId: request.requesterHrId,
-        eventType: "request_assigned",
-        message: `${request.requestCode} is waiting for ${currentStep.stepName}.`,
-        metadata: {
-          assignedApproverHrId: currentStep.assignedHrId,
-          currentStepId: currentStep.id,
-          currentStepName: currentStep.stepName,
-          customerId: request.customerId,
-          requestType: requestType.name,
-          workflowApproverHrId: currentStep.assignedHrId,
-        },
-        request,
-        title: "Marketing request assigned",
-      });
+      await afterResponse("marketing_notice:request_assigned", () =>
+        notifyMarketingWorkflow({
+          actorHrId: request.requesterHrId,
+          eventType: "request_assigned",
+          message: `${request.requestCode} is waiting for ${currentStep.stepName}.`,
+          metadata: {
+            assignedApproverHrId: currentStep.assignedHrId,
+            currentStepId: currentStep.id,
+            currentStepName: currentStep.stepName,
+            customerId: request.customerId,
+            requestType: requestType.name,
+            workflowApproverHrId: currentStep.assignedHrId,
+          },
+          request,
+          title: "Marketing request assigned",
+        }),
+      );
     }
-    const requesterDisplayName = employeeNameByHrId(employeeRows, request.requesterHrId) || request.requesterHrId;
-    await createSystemNotification({
-      actionUrl: marketingActionUrl(request.id),
-      actorId: request.requesterHrId,
-      channels: ["in_app", "telegram", "push"],
-      eventType: "request_submitted",
-      message: `${request.requestCode} was submitted by ${requesterDisplayName}.`,
-      metadata: {
-        customerId: request.customerId,
-        idempotencyKey: `marketing-request-submitted:${request.id}`,
-        requestOwnerHrId: request.requesterHrId,
-        workflowApproverHrId: currentStep?.assignedHrId ?? null,
-        ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName: requestType.name }),
-      },
-      module: "marketing_requests",
-      priority: "high",
-      recordId: request.id,
-      subjectHrId: request.requesterHrId,
-      title: "Marketing request submitted",
-    }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
+    await afterResponse("marketing_notice:request_submitted", async () => {
+      const requesterDisplayName = employeeNameByHrId(employeeRows, request.requesterHrId) || request.requesterHrId;
+      await createSystemNotification({
+        actionUrl: marketingActionUrl(request.id),
+        actorId: request.requesterHrId,
+        channels: ["in_app", "telegram", "push"],
+        eventType: "request_submitted",
+        message: `${request.requestCode} was submitted by ${requesterDisplayName}.`,
+        metadata: {
+          customerId: request.customerId,
+          idempotencyKey: `marketing-request-submitted:${request.id}`,
+          requestOwnerHrId: request.requesterHrId,
+          workflowApproverHrId: currentStep?.assignedHrId ?? null,
+          ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName: requestType.name }),
+        },
+        module: "marketing_requests",
+        priority: "high",
+        recordId: request.id,
+        subjectHrId: request.requesterHrId,
+        title: "Marketing request submitted",
+      }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
+    });
 
     pingMarketingRequestSheet("request_submitted");
     return draftDetail;
@@ -8635,28 +8657,33 @@ export async function resubmitReturnedMarketingRequest(
     .filter((step) => step.isCc && step.stepCode === openedStep.stepCode)
     .map((step) => step.assignedHrId)
     .filter((hrId): hrId is string => Boolean(hrId));
-  // The same epoch the decision path and the daily backfill compute from the rung's recorded
-  // openings - a clock instant of this call's own would never match theirs, and the approver would
-  // be told twice. `now` only stands in when the rung has opened just once.
-  const reopenEpoch = (await resolveMarketingStepReopenEpoch(supabase, requestId, openedStep.sequence)) ?? now;
-  await notifyMarketingWorkflow({
-    actorHrId: requester.hrId,
-    ccHrIds,
-    eventType: "request_assigned",
-    message: restartApprovals
-      ? `${request.requestCode} was resubmitted with a changed ${basisChanges.join(", ")} and restarts at ${openedStep.stepName}.`
-      : `${request.requestCode} was resubmitted and is waiting for ${openedStep.stepName}.`,
-    metadata: {
-      assignedApproverHrId: openedStep.assignedHrId,
-      currentStepId: openedStep.id,
-      currentStepName: openedStep.stepName,
-      idempotencyEpoch: reopenEpoch,
-      workflowApproverHrId: openedStep.assignedHrId,
-      ...marketingNotificationVariables({ currentStep: openedStep, employeeRows, request, requestTypeName }),
-    },
-    priority: "high",
-    request,
-    title: "Marketing request resubmitted",
+  // The notice goes out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the resubmit is
+  // one committed transaction by now, so the requester never waits for the approver's notice. Outside a
+  // request (the unit suite, a script) `afterResponse` simply awaits the task, as before.
+  await afterResponse("marketing_notice:request_resubmitted", async () => {
+    // The same epoch the decision path and the daily backfill compute from the rung's recorded
+    // openings - a clock instant of this call's own would never match theirs, and the approver would
+    // be told twice. `now` only stands in when the rung has opened just once.
+    const reopenEpoch = (await resolveMarketingStepReopenEpoch(supabase, requestId, openedStep.sequence)) ?? now;
+    await notifyMarketingWorkflow({
+      actorHrId: requester.hrId,
+      ccHrIds,
+      eventType: "request_assigned",
+      message: restartApprovals
+        ? `${request.requestCode} was resubmitted with a changed ${basisChanges.join(", ")} and restarts at ${openedStep.stepName}.`
+        : `${request.requestCode} was resubmitted and is waiting for ${openedStep.stepName}.`,
+      metadata: {
+        assignedApproverHrId: openedStep.assignedHrId,
+        currentStepId: openedStep.id,
+        currentStepName: openedStep.stepName,
+        idempotencyEpoch: reopenEpoch,
+        workflowApproverHrId: openedStep.assignedHrId,
+        ...marketingNotificationVariables({ currentStep: openedStep, employeeRows, request, requestTypeName }),
+      },
+      priority: "high",
+      request,
+      title: "Marketing request resubmitted",
+    });
   });
 
   const resubmitted = {
@@ -9694,12 +9721,17 @@ export async function postMarketingAdvisoryComment(
     summary: `Advisory comment posted on ${cleanRequestId}`,
   });
 
-  await notifyAdvisoryComment({
-    actorHrId,
-    comment: text,
-    requestId: cleanRequestId,
-    steps,
-  });
+  // The mail goes out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the comment is
+  // stored by now and `notifyAdvisoryComment` already swallows its own failures, so the reviewer who
+  // pressed Post never waits for it. Outside a request (the unit suite, a script) it is awaited, as before.
+  await afterResponse("marketing_notice:advisory_comment", () =>
+    notifyAdvisoryComment({
+      actorHrId,
+      comment: text,
+      requestId: cleanRequestId,
+      steps,
+    }),
+  );
 
   return { requestId: cleanRequestId };
 }
@@ -9875,7 +9907,12 @@ export async function postMarketingRequestConversationComment(
     recordId: String(requestRow.id),
   });
 
-  await notifyMarketingRequestConversation({ comment, requestRow, steps });
+  // The fan-out goes out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the message is
+  // stored by now and `notifyMarketingRequestConversation` already swallows its own failures, so the
+  // sender never waits for everyone on the request to be told. Outside a request it is awaited, as before.
+  await afterResponse("marketing_notice:conversation_message", () =>
+    notifyMarketingRequestConversation({ comment, requestRow, steps }),
+  );
   return comment;
 }
 

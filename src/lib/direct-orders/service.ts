@@ -59,6 +59,7 @@ import {
 } from "@/lib/venues/venue-type";
 import { resolveSubmittedCampaignId } from "@/lib/direct-orders/campaign-link";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
+import { afterResponse } from "@/lib/http/after-response";
 import { loadOffsetTotalForOrder } from "@/lib/direct-orders/marketing-offset-service";
 import { deriveRemainingWhenCollectionCleared } from "@/lib/direct-orders/offset-rules";
 import {
@@ -1940,20 +1941,25 @@ async function moveHeldDirectOrdersIntoChain(
       message: opts.eventMessage,
     });
 
-    const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
-    const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
-    const firstStep = chain[0];
-    const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
-    // The requester already knows their order moved (they either just passed pharmacy validation
-    // or asked the Held Desk to release it) — only the approver who must now act needs telling.
-    await notifyDirectOrder({
-      recipients: firstApprovers,
-      title: opts.noticeTitle,
-      message: `${buildDirectOrderNotificationLine(notifyContext)} ${opts.noticeSuffix}`,
-      metrics: buildDirectOrderNotificationMetrics(notifyContext),
-      eventType: opts.eventType,
-      requestId: request.id,
-      subjectHrId: request.requesterHrId,
+    // After the reply (afterResponse): every caller is a button (pharmacy validation, the Held Desk
+    // release, the cleanup), the order has already moved, and a failed notice must not turn a moved
+    // order into a reported "could not be revived".
+    await afterResponse("direct_order_notice:held_released", async () => {
+      const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
+      const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+      const firstStep = chain[0];
+      const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+      // The requester already knows their order moved (they either just passed pharmacy validation
+      // or asked the Held Desk to release it) — only the approver who must now act needs telling.
+      await notifyDirectOrder({
+        recipients: firstApprovers,
+        title: opts.noticeTitle,
+        message: `${buildDirectOrderNotificationLine(notifyContext)} ${opts.noticeSuffix}`,
+        metrics: buildDirectOrderNotificationMetrics(notifyContext),
+        eventType: opts.eventType,
+        requestId: request.id,
+        subjectHrId: request.requesterHrId,
+      });
     });
     } catch (reviveError) {
       failures.push({ requestId: request.id, error: reviveError });
@@ -2552,24 +2558,28 @@ export async function cancelHeldDirectOrder(
   // their behalf is the case that matters, and one rule covers both. In-app and Telegram still
   // reach requester + SFE + Super Admin; email is dropped entirely — withdrawing one's own
   // duplicate is not news worth an inbox entry.
-  const resolveName = await nameLookup();
-  const requesterDisplayName = resolveName(detail.request.requesterHrId) ?? detail.request.requesterHrId;
-  // getDirectOrderRequest returns { request, steps } — it does not carry the pharmacy, so it is
-  // loaded here the same way every other notification in this file does it.
-  const pharmacy =
-    (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
-  const notifyContext = await buildNotifyContext(detail.request, requesterDisplayName, pharmacy);
-  await notifyDirectOrder({
-    recipients: [detail.request.requesterHrId, ...(await ccRecipients())],
-    channels: ["in_app", "telegram"],
-    title: "Direct order cancelled while held",
-    message:
-      `${buildDirectOrderNotificationLine(notifyContext)} ` +
-      `It was withdrawn from the held lane by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
-    metrics: buildDirectOrderNotificationMetrics(notifyContext),
-    eventType: "cancelled",
-    requestId: detail.request.id,
-    subjectHrId: detail.request.requesterHrId,
+  // After the reply (afterResponse): the order is saved, and this notice's reads and fan-out used to be
+  // awaited before the answer left — seconds on production. A failed notice is logged, never thrown.
+  await afterResponse("direct_order_notice:cancelled_held", async () => {
+    const resolveName = await nameLookup();
+    const requesterDisplayName = resolveName(detail.request.requesterHrId) ?? detail.request.requesterHrId;
+    // getDirectOrderRequest returns { request, steps } — it does not carry the pharmacy, so it is
+    // loaded here the same way every other notification in this file does it.
+    const pharmacy =
+      (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
+    const notifyContext = await buildNotifyContext(detail.request, requesterDisplayName, pharmacy);
+    await notifyDirectOrder({
+      recipients: [detail.request.requesterHrId, ...(await ccRecipients())],
+      channels: ["in_app", "telegram"],
+      title: "Direct order cancelled while held",
+      message:
+        `${buildDirectOrderNotificationLine(notifyContext)} ` +
+        `It was withdrawn from the held lane by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "cancelled",
+      requestId: detail.request.id,
+      subjectHrId: detail.request.requesterHrId,
+    });
   });
 
   pingDirectOrderSheet("held_cancelled");
@@ -2952,22 +2962,25 @@ export async function closeOrphanedDirectOrder(
   // The SFE Manager is told, and nobody else. The requester has left — a notification addressed to
   // a disabled login reaches no one — and the person who closed it does not need telling they did.
   // In-app and Telegram only, never email: this is a queue being tidied, not news for an inbox.
-  const resolveName = await nameLookup();
-  const pharmacy =
-    (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
-  const notifyContext = await buildNotifyContext(detail.request, requesterLabel, pharmacy);
-  await notifyDirectOrder({
-    recipients: await hrIdsForRole("SFE Manager"),
-    channels: ["in_app", "telegram"],
-    title: "Direct order closed — its requester had left",
-    message:
-      `${buildDirectOrderNotificationLine(notifyContext)} ` +
-      `${requesterLabel} raised it and has since left the company, so the return could never be ` +
-      `answered. Closed by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
-    metrics: buildDirectOrderNotificationMetrics(notifyContext),
-    eventType: "cancelled",
-    requestId: detail.request.id,
-    subjectHrId: detail.request.requesterHrId,
+  // After the reply (afterResponse): the order is closed; telling the SFE Manager follows.
+  await afterResponse("direct_order_notice:closed_orphaned", async () => {
+    const resolveName = await nameLookup();
+    const pharmacy =
+      (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
+    const notifyContext = await buildNotifyContext(detail.request, requesterLabel, pharmacy);
+    await notifyDirectOrder({
+      recipients: await hrIdsForRole("SFE Manager"),
+      channels: ["in_app", "telegram"],
+      title: "Direct order closed — its requester had left",
+      message:
+        `${buildDirectOrderNotificationLine(notifyContext)} ` +
+        `${requesterLabel} raised it and has since left the company, so the return could never be ` +
+        `answered. Closed by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "cancelled",
+      requestId: detail.request.id,
+      subjectHrId: detail.request.requesterHrId,
+    });
   });
 
   pingDirectOrderSheet("stranded_closed");
@@ -4511,48 +4524,58 @@ export async function submitDirectOrder(
       })
     : null;
 
-  const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
-  const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
-
+  // The notice goes out AFTER the reply (afterResponse): on production a decision took 7.8 s at the
+  // median and 22 s at the 95th percentile, of which the decision itself was 0.8 s — the rest was this
+  // notice's reads and its fan-out to every recipient, awaited before the answer left. The order is
+  // already saved; a failed notice is logged and never changes the answer.
   if (submitAsHeld) {
-    // Nobody is asked to approve a held order — that is the point. The requester learns the
-    // state and the way out; the Held Desk (and its bulk notice button) is the pressure valve.
+    await afterResponse("direct_order_notice:submitted_held", async () => {
+      const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
+      const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+
+      // Nobody is asked to approve a held order — that is the point. The requester learns the
+      // state and the way out; the Held Desk (and its bulk notice button) is the pressure valve.
+      await notifyDirectOrder({
+        recipients: [actorHrId],
+        title: "Direct order held — venue not in the master database",
+        message:
+          `${buildDirectOrderNotificationLine(notifyContext)} ` +
+          "This request is HELD and has not entered the approval flow. It will move only after the " +
+          "pharmacy passes validation; an untouched held request expires after 14 days.",
+        metrics: buildDirectOrderNotificationMetrics(notifyContext),
+        eventType: "submitted",
+        requestId: request.id,
+        subjectHrId: actorHrId,
+      });
+    });
+    return { ...request, invoiceNote };
+  }
+  await afterResponse("direct_order_notice:submitted", async () => {
+    const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
+    const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+
+    const firstStep = chain[0];
+    const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+    // Tags compose — an over-cap order on a product with no pharmacy price must show BOTH.
+    const tags = [
+      overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
+      dealType === "bonus" && pharmacyPrice == null ? "[No pharmacy price]" : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const capNote = overCap ? ` This ${dealType} exceeds the cap — flagged, not blocked.` : "";
+    // Only whoever must actually act — SFE Manager and Super Admin no longer ride along by
+    // default. When the first rung IS the SFE Manager (the common case), they still appear here,
+    // because they ARE firstApprovers; this only drops the blanket copy to people who aren't.
     await notifyDirectOrder({
-      recipients: [actorHrId],
-      title: "Direct order held — venue not in the master database",
-      message:
-        `${buildDirectOrderNotificationLine(notifyContext)} ` +
-        "This request is HELD and has not entered the approval flow. It will move only after the " +
-        "pharmacy passes validation; an untouched held request expires after 14 days.",
+      recipients: firstApprovers,
+      title: `${tags ? `${tags} ` : ""}Direct order awaiting your approval`,
+      message: `${buildDirectOrderNotificationLine(notifyContext)}${capNote}`,
       metrics: buildDirectOrderNotificationMetrics(notifyContext),
       eventType: "submitted",
       requestId: request.id,
       subjectHrId: actorHrId,
     });
-    return { ...request, invoiceNote };
-  }
-
-  const firstStep = chain[0];
-  const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
-  // Tags compose — an over-cap order on a product with no pharmacy price must show BOTH.
-  const tags = [
-    overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
-    dealType === "bonus" && pharmacyPrice == null ? "[No pharmacy price]" : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const capNote = overCap ? ` This ${dealType} exceeds the cap — flagged, not blocked.` : "";
-  // Only whoever must actually act — SFE Manager and Super Admin no longer ride along by
-  // default. When the first rung IS the SFE Manager (the common case), they still appear here,
-  // because they ARE firstApprovers; this only drops the blanket copy to people who aren't.
-  await notifyDirectOrder({
-    recipients: firstApprovers,
-    title: `${tags ? `${tags} ` : ""}Direct order awaiting your approval`,
-    message: `${buildDirectOrderNotificationLine(notifyContext)}${capNote}`,
-    metrics: buildDirectOrderNotificationMetrics(notifyContext),
-    eventType: "submitted",
-    requestId: request.id,
-    subjectHrId: actorHrId,
   });
 
   pingDirectOrderSheet("order_submitted");
@@ -4834,26 +4857,30 @@ export async function reviseDirectOrder(
     },
   });
 
-  // Straight back to the rung that returned it — not to the front of the chain.
-  const pharmacy = (await loadPharmaciesByIds([after.pharmacyId])).get(after.pharmacyId) ?? null;
-  const requesterDisplayName = (await nameLookup())(before.requesterHrId) ?? before.requesterHrId;
-  const notifyContext = await buildNotifyContext(after, requesterDisplayName, pharmacy);
-  const approvers = activeStep.kind === "role" && activeStep.role
-    ? await hrIdsForRole(activeStep.role)
-    : [activeStep.approverHrId];
-  const tags = [
-    overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  await notifyDirectOrder({
-    recipients: [...approvers.filter((id): id is string => Boolean(id)), ...(await ccRecipients())],
-    title: `${tags ? `${tags} ` : ""}Corrected direct order back for your approval`,
-    message: `${buildDirectOrderNotificationLine(notifyContext)} The requester says: ${correctionNote}`,
-    metrics: buildDirectOrderNotificationMetrics(notifyContext),
-    eventType: "resubmitted",
-    requestId: after.id,
-    subjectHrId: before.requesterHrId,
+  // After the reply (afterResponse): the order is saved, and this notice's reads and fan-out used to be
+  // awaited before the answer left — seconds on production. A failed notice is logged, never thrown.
+  await afterResponse("direct_order_notice:resubmitted", async () => {
+    // Straight back to the rung that returned it — not to the front of the chain.
+    const pharmacy = (await loadPharmaciesByIds([after.pharmacyId])).get(after.pharmacyId) ?? null;
+    const requesterDisplayName = (await nameLookup())(before.requesterHrId) ?? before.requesterHrId;
+    const notifyContext = await buildNotifyContext(after, requesterDisplayName, pharmacy);
+    const approvers = activeStep.kind === "role" && activeStep.role
+      ? await hrIdsForRole(activeStep.role)
+      : [activeStep.approverHrId];
+    const tags = [
+      overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    await notifyDirectOrder({
+      recipients: [...approvers.filter((id): id is string => Boolean(id)), ...(await ccRecipients())],
+      title: `${tags ? `${tags} ` : ""}Corrected direct order back for your approval`,
+      message: `${buildDirectOrderNotificationLine(notifyContext)} The requester says: ${correctionNote}`,
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "resubmitted",
+      requestId: after.id,
+      subjectHrId: before.requesterHrId,
+    });
   });
 
   pingDirectOrderSheet("order_resubmitted");
@@ -5053,44 +5080,50 @@ export async function decideDirectOrder(
   // told exactly as before. An approve notifies only whoever is next in the chain — or nobody
   // through this path when it was the final step, since nothing is left to act on and the
   // separate Finance/CEO notice (dispatchDirectOrderApprovedEmail, below) covers that case.
-  const recipients: Array<string | null | undefined> =
-    input.decision === "approve" ? [] : [request.requesterHrId, ...(await ccRecipients())];
-  let nextLabel: string | null = null;
-  if (result.status === "pending_approval") {
-    const nextSteps = await loadSteps(request.id);
-    const next = resolveActiveStep(nextSteps);
-    if (next) {
-      const nextApprovers = next.kind === "role" && next.role ? await hrIdsForRole(next.role) : [next.approverHrId];
-      recipients.push(...nextApprovers);
-      nextLabel = next.label;
+  // The notice goes out AFTER the reply (afterResponse): on production a decision took 7.8 s at the
+  // median and 22 s at the 95th percentile, of which the decision itself was 0.8 s — the rest was this
+  // notice's reads and its fan-out to every recipient, awaited before the answer left. The order is
+  // already saved; a failed notice is logged and never changes the answer.
+  await afterResponse("direct_order_notice:decision", async () => {
+    const recipients: Array<string | null | undefined> =
+      input.decision === "approve" ? [] : [request.requesterHrId, ...(await ccRecipients())];
+    let nextLabel: string | null = null;
+    if (result.status === "pending_approval") {
+      const nextSteps = await loadSteps(request.id);
+      const next = resolveActiveStep(nextSteps);
+      if (next) {
+        const nextApprovers = next.kind === "role" && next.role ? await hrIdsForRole(next.role) : [next.approverHrId];
+        recipients.push(...nextApprovers);
+        nextLabel = next.label;
+      }
     }
-  }
 
-  const nameOf = await nameLookup();
-  const pharmacyForNotice = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
-  const decisionContext = await buildNotifyContext(
-    request,
-    nameOf(request.requesterHrId) ?? request.requesterHrId,
-    pharmacyForNotice,
-  );
-  // Third person, deliberately: who this reaches varies by decision (reject/return: requester +
-  // CC; a continuing approve: only the next approver) — "Your direct order …" would be wrong for
-  // whichever of those audiences it was not written for.
-  const actorName = nameOf(access.hrId) ?? access.hrId ?? access.role;
-  const decisionSentence =
-    `${decisionContext.requesterName}'s direct order for ` +
-    `${codeNameLabel(decisionContext.pharmacyName, decisionContext.pharmacyCode)} — ` +
-    `${request.productName} × ${request.qty} — was ${input.decision}d by ${actorName}` +
-    `${comment ? `: ${comment}` : "."}` +
-    `${nextLabel ? ` Now awaiting ${nextLabel}.` : ""}`;
-  await notifyDirectOrder({
-    recipients,
-    title: `Direct order ${result.status.replace("_", " ")}`,
-    message: decisionSentence,
-    metrics: buildDirectOrderNotificationMetrics(decisionContext),
-    eventType: input.decision,
-    requestId: request.id,
-    subjectHrId: request.requesterHrId,
+    const nameOf = await nameLookup();
+    const pharmacyForNotice = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    const decisionContext = await buildNotifyContext(
+      request,
+      nameOf(request.requesterHrId) ?? request.requesterHrId,
+      pharmacyForNotice,
+    );
+    // Third person, deliberately: who this reaches varies by decision (reject/return: requester +
+    // CC; a continuing approve: only the next approver) — "Your direct order …" would be wrong for
+    // whichever of those audiences it was not written for.
+    const actorName = nameOf(access.hrId) ?? access.hrId ?? access.role;
+    const decisionSentence =
+      `${decisionContext.requesterName}'s direct order for ` +
+      `${codeNameLabel(decisionContext.pharmacyName, decisionContext.pharmacyCode)} — ` +
+      `${request.productName} × ${request.qty} — was ${input.decision}d by ${actorName}` +
+      `${comment ? `: ${comment}` : "."}` +
+      `${nextLabel ? ` Now awaiting ${nextLabel}.` : ""}`;
+    await notifyDirectOrder({
+      recipients,
+      title: `Direct order ${result.status.replace("_", " ")}`,
+      message: decisionSentence,
+      metrics: buildDirectOrderNotificationMetrics(decisionContext),
+      eventType: input.decision,
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+    });
   });
 
   // On FINAL approval of a normal order, the polished "approved" email (To Ahmed, CC
@@ -5373,18 +5406,22 @@ export async function reverseDirectOrder(
   // reversal's first approver was addressed as a single recipient who does not exist. It went
   // unnoticed because the opening rung is SFE Manager, who is also in the CC set below; the
   // moment the chain opens with anyone else, nobody would be told at all. Mirrors submit.
-  const reversalFirstStep = chain[0];
-  const reversalFirstApprovers =
-    reversalFirstStep.kind === "role" && reversalFirstStep.role
-      ? await hrIdsForRole(reversalFirstStep.role)
-      : [reversalFirstStep.approverHrId];
-  await notifyDirectOrder({
-    recipients: [...reversalFirstApprovers, ...(await ccRecipients())],
-    title: "Direct order reversal awaiting approval",
-    message: `A reversal of a direct order (${original.productName} × ${original.qty}) needs approval.`,
-    eventType: "reversal_submitted",
-    requestId: reversal.id,
-    subjectHrId: actorHrId,
+  // After the reply (afterResponse): the order is saved, and this notice's reads and fan-out used to be
+  // awaited before the answer left — seconds on production. A failed notice is logged, never thrown.
+  await afterResponse("direct_order_notice:reversal_submitted", async () => {
+    const reversalFirstStep = chain[0];
+    const reversalFirstApprovers =
+      reversalFirstStep.kind === "role" && reversalFirstStep.role
+        ? await hrIdsForRole(reversalFirstStep.role)
+        : [reversalFirstStep.approverHrId];
+    await notifyDirectOrder({
+      recipients: [...reversalFirstApprovers, ...(await ccRecipients())],
+      title: "Direct order reversal awaiting approval",
+      message: `A reversal of a direct order (${original.productName} × ${original.qty}) needs approval.`,
+      eventType: "reversal_submitted",
+      requestId: reversal.id,
+      subjectHrId: actorHrId,
+    });
   });
 
   pingDirectOrderSheet("order_reversed");
@@ -5498,7 +5535,8 @@ export async function postDirectOrderConversationComment(
     recordId: request.id,
   });
 
-  await notifyDirectOrderConversation({ comment, request, steps });
+  // The message is stored; fanning it out to the thread happens after the reply (afterResponse).
+  await afterResponse("direct_order_notice:conversation", () => notifyDirectOrderConversation({ comment, request, steps }));
   return comment;
 }
 
@@ -9002,21 +9040,23 @@ export async function repairDirectOrderApprovalRung(
   });
 
   // The new approver has inherited a queue item they never saw arrive, and the requester has been
-  // waiting without being told why. Both are told.
-  await notifyDirectOrder({
-    requestId: request.id,
-    subjectHrId: request.requesterHrId,
-    eventType: "approval_rung_repaired",
-    recipients: [nextApprover.hrId, request.requesterHrId],
-    title: "A direct order is now waiting on you",
-    message:
-      `${request.productName} × ${request.qty} for ${requesterName} was stuck: its next approval was ` +
-      "addressed to an employee record that no longer exists. It is now with you.",
-    metrics: [
-      { label: "Reason", value: reason },
-      { label: "Previously addressed to", value: currentApproverHrId },
-    ],
-  });
+  // waiting without being told why. Both are told — after the reply (afterResponse): the rung is repaired.
+  await afterResponse("direct_order_notice:rung_repaired", () =>
+    notifyDirectOrder({
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+      eventType: "approval_rung_repaired",
+      recipients: [nextApprover.hrId, request.requesterHrId],
+      title: "A direct order is now waiting on you",
+      message:
+        `${request.productName} × ${request.qty} for ${requesterName} was stuck: its next approval was ` +
+        "addressed to an employee record that no longer exists. It is now with you.",
+      metrics: [
+        { label: "Reason", value: reason },
+        { label: "Previously addressed to", value: currentApproverHrId },
+      ],
+    }),
+  );
 
   return { stepId: String(step.id), approverHrId: nextApprover.hrId, label };
 }

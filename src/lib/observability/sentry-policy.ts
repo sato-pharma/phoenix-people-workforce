@@ -213,7 +213,12 @@ export function sentryTracesSampler(
 
 // Path segments that name ONE thing: an HR id (B-10), a bare number, or a long token (a 36-character uuid is one). Phoenix puts
 // all of them in URLs (/admin/employees/B-10, /payroll/2026-10/…), and a span name is a URL.
-const IDENTIFYING_SEGMENT = /^(?:[A-Za-z]{1,3}-?\d{1,8}|\d+|[A-Za-z0-9_-]{24,})$/i;
+// `bot<id>:<token>` is Telegram's bot API path segment — the credential itself, in the URL of every `sendMessage`. The colon keeps
+// it out of the long-word branch, so until 2026-10-23 the production bot token left in every Telegram span's name and URL.
+const TELEGRAM_BOT_SEGMENT = String.raw`bot\d{5,}:[A-Za-z0-9_-]{20,}`;
+const IDENTIFYING_SEGMENT = new RegExp(String.raw`^(?:[A-Za-z]{1,3}-?\d{1,8}|\d+|[A-Za-z0-9_-]{24,}|${TELEGRAM_BOT_SEGMENT})$`, "i");
+// The same token with no `bot` and no slash in front of it (a log line, an error message that quotes the URL's tail).
+const TELEGRAM_TOKEN_IN_TEXT = /\b\d{5,}:[A-Za-z0-9_-]{30,}/g;
 const HR_ID_IN_TEXT = /\b[A-Z]-\d{1,6}\b/g;
 const EMAIL_IN_TEXT = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
@@ -248,6 +253,7 @@ export function scrubSentryText(text: string): string {
       const host = match.slice(0, match.length - path.length);
       return `${host}${scrubSentryPath(path)}`;
     })
+    .replace(TELEGRAM_TOKEN_IN_TEXT, "[token]")
     .replace(EMAIL_IN_TEXT, "[email]")
     .replace(HR_ID_IN_TEXT, ":id");
 }

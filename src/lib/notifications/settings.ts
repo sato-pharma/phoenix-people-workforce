@@ -2,6 +2,7 @@ import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { afterResponse } from "@/lib/http/after-response";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteOneSignalSubscription, onesignalAppId, onesignalRestApiKey } from "@/lib/notifications/push";
@@ -404,11 +405,14 @@ export async function linkTelegramConnection(input: {
 
   // Security alert: tell the employee (in-app + email, NEVER telegram) that their
   // account was just linked, so a leaked-connect-link hijack is detectable. Best-effort
-  // — a notification failure must not break linking.
-  await notifyTelegramConnectionLinked({
-    hrId: row.hr_id ? String(row.hr_id) : null,
-    userId: String(row.user_id ?? ""),
-  });
+  // — a notification failure must not break linking. After the reply (afterResponse): the link is
+  // saved, and the webhook's "connected" answer in Telegram used to wait for this fan-out.
+  await afterResponse("telegram_notice:connection_linked", () =>
+    notifyTelegramConnectionLinked({
+      hrId: row.hr_id ? String(row.hr_id) : null,
+      userId: String(row.user_id ?? ""),
+    }),
+  );
 
   return { ok: true };
 }

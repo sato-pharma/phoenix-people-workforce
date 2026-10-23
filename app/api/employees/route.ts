@@ -8,6 +8,7 @@ import {
   isSalaryRedactedForViewer,
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
@@ -285,20 +286,26 @@ export async function POST(request: Request) {
     // instruction 2026-09-07, narrowed to field roles 2026-09-08). It swallows its own failures:
     // the employee is already saved by this point, and a notification that could 500 the save
     // would mean an unreachable recipient stops HR hiring anybody.
+    //
+    // Both follow-ups run AFTER the reply (afterResponse): the employee is saved, and they used to be
+    // awaited before the answer left — each re-reads the whole directory, then opens its task and
+    // notifies, seconds on production. The response carries neither result; a failure is logged.
     if (isNewEmployee) {
-      await openAndAnnounceCrmAccountSetup({
-        actorId: access.loginId ?? access.hrId ?? access.role,
-        hrIds: [newEmployeeHrId],
-        source: "manual_add",
-      });
-      // Every new hire's company email, too (owner instruction 2026-09-18): open the task that
-      // proposes their address and tell whoever creates mailboxes, in-app and on Telegram. The app
-      // password pasted there connects the hire's My email before their first day. Swallows its own
-      // failures, like the call above.
-      await openAndAnnounceNewHireMailboxes({
-        actorId: access.loginId ?? access.hrId ?? access.role,
-        hrIds: [newEmployeeHrId],
-        source: "manual_add",
+      await afterResponse("employee_notice:new_hire_followups", async () => {
+        await openAndAnnounceCrmAccountSetup({
+          actorId: access.loginId ?? access.hrId ?? access.role,
+          hrIds: [newEmployeeHrId],
+          source: "manual_add",
+        });
+        // Every new hire's company email, too (owner instruction 2026-09-18): open the task that
+        // proposes their address and tell whoever creates mailboxes, in-app and on Telegram. The app
+        // password pasted there connects the hire's My email before their first day. Swallows its own
+        // failures, like the call above.
+        await openAndAnnounceNewHireMailboxes({
+          actorId: access.loginId ?? access.hrId ?? access.role,
+          hrIds: [newEmployeeHrId],
+          source: "manual_add",
+        });
       });
     }
 

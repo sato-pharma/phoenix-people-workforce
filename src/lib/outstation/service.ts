@@ -160,6 +160,7 @@ import {
   type OutstationGateBlocker,
 } from "@/lib/outstation/expense-gate";
 import { forbiddenError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import {
   resolveOutstationRecipientAddresses,
   resolveOutstationSubmitRouting,
@@ -2439,10 +2440,11 @@ export async function submitOutstationRequest(
   // which is what makes the evidence gate, the workload gate and the CRM claim checks worth
   // reading. The submit-time rejection email is gone with the submit-time rejection: the only
   // rejection notice an employee can now receive is one a Super Admin actually chose to send.
-  await notifyOutstationSubmitted(submitted, {
-    heldForReview: !noHoldRole,
-    reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,
-  });
+  //
+  // The two notices (this one and the departure-photo reminder, further down) go out AFTER the reply
+  // (afterResponse), in that order, in ONE deferred task: on production this submit took 14.8 s at the
+  // median, and the claim was already saved while they were awaited. Both swallow their own failures,
+  // so the answer never depended on them.
 
   /**
    * Owner rule (2026-08-28), the second half of it: "once submitted, once accepted".
@@ -2490,17 +2492,23 @@ export async function submitOutstationRequest(
   // Deliberately AFTER notifyOutstationSubmitted and deliberately swallowed: a reminder that
   // fails must never fail the submission the employee just made. The shared idempotency key means
   // the daily job will not repeat whatever this raises.
-  try {
-    await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
-  } catch (reminderError) {
-    logError("Outstation departure-photo reminder on submit failed", {
-      error: reminderError,
-      labels: {
-        event: "outstation_departure_reminder_on_submit_failed",
-        requestId,
-      },
+  await afterResponse("outstation_notice:submitted", async () => {
+    await notifyOutstationSubmitted(submitted, {
+      heldForReview: !noHoldRole,
+      reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,
     });
-  }
+    try {
+      await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
+    } catch (reminderError) {
+      logError("Outstation departure-photo reminder on submit failed", {
+        error: reminderError,
+        labels: {
+          event: "outstation_departure_reminder_on_submit_failed",
+          requestId,
+        },
+      });
+    }
+  });
 
   return submitted;
 }
@@ -3305,7 +3313,10 @@ export async function submitMedicalRepSimpleExpenseRequest(
     // inserted as `submitted`, so simply not approving it here is what leaves it in the queue —
     // and the alert that used to fire from inside the approval is raised directly instead, so
     // removing the auto-approval does not silently stop the mail.
-    await notifyOutstationSubmitted(submitted, { heldForReview: true });
+    // After the reply (afterResponse): the claim is saved, and the notice swallows its own failures.
+    await afterResponse("outstation_notice:submitted_simple", () =>
+      notifyOutstationSubmitted(submitted, { heldForReview: true }),
+    );
     return submitted;
   } catch (error) {
     await deleteOutstationTicketAttachments(
@@ -3582,7 +3593,7 @@ export async function approveOutstationRequestForPayroll(
   // first and only one. Approving an ordinary pending claim stays silent, which is what the
   // owner's standing rule already says approval should be.
   if (existing.status.startsWith("rejected")) {
-    await notifyOutstationSubmitted(request);
+    await afterResponse("outstation_notice:override", () => notifyOutstationSubmitted(request));
   }
 
   return {
@@ -4144,7 +4155,10 @@ export async function createManagerExpenseAsAdmin(
   // either. Leaving this path out would have meant his claim was instant when he filed it and
   // queued when an admin filed it for him — the same money treated two ways for a reason that
   // has nothing to do with him.
-  await notifyOutstationSubmitted(created, { heldForReview: !noHoldRole });
+  // After the reply (afterResponse): the claim is saved, and the notice swallows its own failures.
+  await afterResponse("outstation_notice:admin_created", () =>
+    notifyOutstationSubmitted(created, { heldForReview: !noHoldRole }),
+  );
 
   // Runs as the SYSTEM for the same reason the submit path does: the payroll write asserts a
   // manual-approval permission, and it was the rule that accepted this claim rather than the
@@ -4627,7 +4641,11 @@ export async function rejectOutstationRequestAsAdmin(
     summary: `Admin rejected outstation request ${rejected.id}.`,
   });
 
-  await notifyOutstationDecision({ comment, decision: "reject", request: rejected });
+  // After the reply (afterResponse): the rejection is saved and audited, and the notice used to be
+  // awaited before the answer left. It swallows its own failures, so the answer never depended on it.
+  await afterResponse("outstation_notice:rejected", () =>
+    notifyOutstationDecision({ comment, decision: "reject", request: rejected }),
+  );
   return rejected;
 }
 

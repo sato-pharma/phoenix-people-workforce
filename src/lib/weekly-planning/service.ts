@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -104,6 +105,7 @@ import {
 } from "@/lib/weekly-planning/marketing-double-visit";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
+import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { viewerMayEditPlan } from "@/lib/weekly-planning/plan-editor-state";
@@ -1467,6 +1469,28 @@ async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>)
   return output;
 }
 
+// The notices of one batch decision, collected so they go out one plan after another once the reply has
+// gone (bulkDecideEmployeePlans) instead of all at once.
+const batchedPlanNotices = new AsyncLocalStorage<Array<{ label: string; task: () => Promise<unknown> }>>();
+
+/**
+ * Send a plan notice AFTER the reply has gone, so the person who pressed Approve, Return, Submit or
+ * Send is never kept waiting for it (2026-10-23 slow-buttons audit). The plan is already saved when a
+ * notice runs: its recipient reads, event and audit rows, Telegram, phone push and templated email were
+ * awaited one wave after another before the answer left, seconds on production, although every notice
+ * helper below already swallows its own failure. Inside a batch decision the notice is queued and sent
+ * in order after the reply (see bulkDecideEmployeePlans); outside a request (the unit suite, a script)
+ * `afterResponse` simply awaits the task, as every caller did before.
+ */
+function deferPlanNotice(label: string, task: () => Promise<unknown>): Promise<void> {
+  const batch = batchedPlanNotices.getStore();
+  if (batch) {
+    batch.push({ label, task });
+    return Promise.resolve();
+  }
+  return afterResponse(`weekly_plan_notice:${label}`, task);
+}
+
 async function notifyRecipients(input: {
   actionUrl: string;
   additionalMetadata?: Record<string, unknown>;
@@ -1904,17 +1928,20 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
 async function notifyManagerPlanCancelled(plan: PlanHeaderRow, comment: string | null): Promise<void> {
   if (!plan.manager_hr_id) return;
   const reason = comment?.trim();
-  await notifyRecipients({
-    actionUrl: `/admin/approvals/plan/${plan.id}`,
-    eventType: "plan_cancelled",
-    message:
-      `${plan.employee_name} cancelled their ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
-      + (reason ? ` Reason: ${reason}` : "")
-      + " No review is needed.",
-    plan,
-    recipients: [{ hrId: plan.manager_hr_id }],
-    title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was cancelled`,
-  });
+  // After the reply (deferPlanNotice): the plan is already cancelled when the manager is told.
+  await deferPlanNotice("cancelled", () =>
+    notifyRecipients({
+      actionUrl: `/admin/approvals/plan/${plan.id}`,
+      eventType: "plan_cancelled",
+      message:
+        `${plan.employee_name} cancelled their ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
+        + (reason ? ` Reason: ${reason}` : "")
+        + " No review is needed.",
+      plan,
+      recipients: [{ hrId: plan.manager_hr_id }],
+      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was cancelled`,
+    }),
+  );
 }
 
 // Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
@@ -1922,10 +1949,13 @@ async function notifyManagerPlanCancelled(plan: PlanHeaderRow, comment: string |
 // National Sales Manager's "direct manager" is the CEO (see notifyManager's NSM fallback) —
 // the CEO still gets a real "needs manager review" alert and must make a real decision; the
 // double-click for the same person is avoided in decideEmployeePlan, not by skipping the review.
+// Sent after the reply (deferPlanNotice): the plan is saved, and nothing here changes the answer.
 async function notifyPlanSubmitted(plan: PlanHeaderRow) {
-  const hrRecipients = (await hrAcknowledgementRecipients())
-    .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
-  await Promise.allSettled([notifyManager(plan, hrRecipients), notifyHrOnSubmit(plan, hrRecipients)]);
+  await deferPlanNotice("submitted", async () => {
+    const hrRecipients = (await hrAcknowledgementRecipients())
+      .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
+    await Promise.allSettled([notifyManager(plan, hrRecipients), notifyHrOnSubmit(plan, hrRecipients)]);
+  });
 }
 
 // ===========================================================================
@@ -2156,37 +2186,40 @@ async function reconcileOneMonth(
  * hunting for which three.
  */
 async function notifyMonthlyResynced(weeklyPlan: PlanHeaderRow, outcome: MonthlyReconcileOutcome) {
-  try {
-    const monthly = await loadPlanRow(outcome.monthlyPlanId);
-    const dateList = outcome.changedDates.join(", ");
-    const message = outcome.rewritten
-      ? `The monthly plan for ${monthly.period_key} was updated to match the weekly plan just submitted for ${weeklyPlan.period_key}. Days changed: ${dateList}.`
-      : `The weekly plan submitted for ${weeklyPlan.period_key} disagrees with the already-approved monthly plan for ${monthly.period_key} on: ${dateList}. The weekly plan governs those days; the monthly plan could not be rewritten because it is already approved.`;
-    await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${monthly.id}`,
-      additionalMetadata: {
-        changedDates: outcome.changedDates,
-        rewritten: outcome.rewritten,
-        sourceWeeklyPlanId: weeklyPlan.id,
-      },
-      emailCcRecipients: monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : [],
-      eventType: outcome.rewritten ? "plan_monthly_resynced" : "plan_monthly_conflict",
-      message,
-      plan: monthly,
-      recipients: [
-        { hrId: monthly.employee_hr_id },
-        ...(monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : []),
-      ],
-      title: outcome.rewritten
-        ? `Monthly plan ${monthly.period_key} updated from your weekly plan`
-        : `Monthly plan ${monthly.period_key} disagrees with your submitted weekly plan`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify of the monthly re-sync", {
-      labels: { event: "weekly_plan_notify_monthly_resync_failed", planId: weeklyPlan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice): the month is already rewritten, and this is only the receipt.
+  await deferPlanNotice("monthly_resynced", async () => {
+    try {
+      const monthly = await loadPlanRow(outcome.monthlyPlanId);
+      const dateList = outcome.changedDates.join(", ");
+      const message = outcome.rewritten
+        ? `The monthly plan for ${monthly.period_key} was updated to match the weekly plan just submitted for ${weeklyPlan.period_key}. Days changed: ${dateList}.`
+        : `The weekly plan submitted for ${weeklyPlan.period_key} disagrees with the already-approved monthly plan for ${monthly.period_key} on: ${dateList}. The weekly plan governs those days; the monthly plan could not be rewritten because it is already approved.`;
+      await notifyRecipients({
+        actionUrl: `/employee-portals/plans?plan=${monthly.id}`,
+        additionalMetadata: {
+          changedDates: outcome.changedDates,
+          rewritten: outcome.rewritten,
+          sourceWeeklyPlanId: weeklyPlan.id,
+        },
+        emailCcRecipients: monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : [],
+        eventType: outcome.rewritten ? "plan_monthly_resynced" : "plan_monthly_conflict",
+        message,
+        plan: monthly,
+        recipients: [
+          { hrId: monthly.employee_hr_id },
+          ...(monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : []),
+        ],
+        title: outcome.rewritten
+          ? `Monthly plan ${monthly.period_key} updated from your weekly plan`
+          : `Monthly plan ${monthly.period_key} disagrees with your submitted weekly plan`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify of the monthly re-sync", {
+        labels: { event: "weekly_plan_notify_monthly_resync_failed", planId: weeklyPlan.id },
+        error,
+      });
+    }
+  });
 }
 
 /**
@@ -2203,47 +2236,52 @@ async function afterPlanSubmitted(access: AccessContext, plan: PlanHeaderRow) {
 
 
 // Best-effort — a failure to notify must never mask a decision that already
-// committed via rpcDecidePlan (see decideEmployeePlan).
+// committed via rpcDecidePlan (see decideEmployeePlan). Sent after the reply (deferPlanNotice).
 async function notifyCeo(plan: PlanHeaderRow) {
-  try {
-    const ceos = await authUsersByRole("CEO");
-    await notifyRecipients({
-      actionUrl: `/admin/approvals/plan/${plan.id}`,
-      eventType: "plan_manager_approved",
-      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
-      plan,
-      recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
-      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs CEO approval`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify CEO", {
-      labels: { event: "weekly_plan_notify_ceo_failed", planId: plan.id },
-      error,
-    });
-  }
+  await deferPlanNotice("manager_approved_ceo", async () => {
+    try {
+      const ceos = await authUsersByRole("CEO");
+      await notifyRecipients({
+        actionUrl: `/admin/approvals/plan/${plan.id}`,
+        eventType: "plan_manager_approved",
+        message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        plan,
+        recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
+        title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs CEO approval`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify CEO", {
+        labels: { event: "weekly_plan_notify_ceo_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 // The manager's approval of a plan that takes the second stage goes to the named second approver,
 // never the CEO. Same eventType as the CEO's copy so the in-app bell treats it as actionable and
 // archives it once the plan leaves manager_approved.
 async function notifySecondApprover(plan: PlanHeaderRow) {
-  try {
-    const approverHrId = secondApproverHrIdForManager(plan.manager_hr_id);
-    if (!approverHrId) return;
-    await notifyRecipients({
-      actionUrl: await planReviewActionUrl(approverHrId, plan.id),
-      eventType: "plan_manager_approved",
-      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It now needs your approval.`,
-      plan,
-      recipients: [{ hrId: approverHrId }],
-      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs your approval`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify the second approver", {
-      labels: { event: "weekly_plan_notify_second_approver_failed", planId: plan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice), like every decision notice.
+  await deferPlanNotice("manager_approved_second_approver", async () => {
+    try {
+      const approverHrId = secondApproverHrIdForManager(plan.manager_hr_id);
+      if (!approverHrId) return;
+      await notifyRecipients({
+        actionUrl: await planReviewActionUrl(approverHrId, plan.id),
+        eventType: "plan_manager_approved",
+        message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It now needs your approval.`,
+        plan,
+        recipients: [{ hrId: approverHrId }],
+        title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs your approval`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify the second approver", {
+        labels: { event: "weekly_plan_notify_second_approver_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 // Called AFTER autoAcknowledgeFinalApprovedPlan, so `plan` is normally already hr_acknowledged
@@ -2260,26 +2298,29 @@ async function notifyHr(plan: PlanHeaderRow, deciderLabel: string | null = null)
   // "CEO" unless the last approval was the second approver's (second-approver.ts) — HR reads who
   // actually approved.
   const approver = deciderLabel ?? "CEO";
-  try {
-    await notifyRecipients({
-      actionUrl: `/admin/approvals/plan/${plan.id}`,
-      ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
-      eventType: "plan_ceo_approved",
-      message: autoAcknowledged
-        ? `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It was acknowledged automatically — no action needed.`
-        : `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please review and acknowledge.`,
-      plan,
-      recipients: await hrAcknowledgementRecipients(),
-      title: autoAcknowledged
-        ? `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was approved and acknowledged`
-        : `${plan.employee_name}'s approved ${planNounLabel(plan.plan_kind)} needs HR acknowledgement`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify HR", {
-      labels: { event: "weekly_plan_notify_hr_failed", planId: plan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice): the status above is read now, from the row as it stands.
+  await deferPlanNotice("final_approved_hr", async () => {
+    try {
+      await notifyRecipients({
+        actionUrl: `/admin/approvals/plan/${plan.id}`,
+        ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
+        eventType: "plan_ceo_approved",
+        message: autoAcknowledged
+          ? `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It was acknowledged automatically — no action needed.`
+          : `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please review and acknowledge.`,
+        plan,
+        recipients: await hrAcknowledgementRecipients(),
+        title: autoAcknowledged
+          ? `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was approved and acknowledged`
+          : `${plan.employee_name}'s approved ${planNounLabel(plan.plan_kind)} needs HR acknowledgement`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify HR", {
+        labels: { event: "weekly_plan_notify_hr_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 // Returning a plan IS a conversation - the owner named it in the same breath as the comment
@@ -2293,22 +2334,25 @@ async function notifyEmployeeReturnedOrRejected(
   comment: string | null,
   actorHrId: string | null,
 ) {
-  try {
-    await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-      emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
-      eventType: action,
-      message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
-      plan,
-      recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${planNounLabel(plan.plan_kind)} was ${action.includes("reject") ? "rejected" : "returned"}`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify employee of return/reject", {
-      labels: { event: "weekly_plan_notify_employee_return_or_reject_failed", planId: plan.id, action },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice): the decision is saved, the employee's notice follows.
+  await deferPlanNotice("returned_or_rejected_employee", async () => {
+    try {
+      await notifyRecipients({
+        actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+        emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
+        eventType: action,
+        message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
+        plan,
+        recipients: [{ hrId: plan.employee_hr_id }],
+        title: `Your ${planNounLabel(plan.plan_kind)} was ${action.includes("reject") ? "rejected" : "returned"}`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify employee of return/reject", {
+        labels: { event: "weekly_plan_notify_employee_return_or_reject_failed", planId: plan.id, action },
+        error,
+      });
+    }
+  });
 }
 
 // The submitter previously heard nothing between submit and the final HR-acknowledge (or a
@@ -2318,22 +2362,25 @@ async function notifyEmployeeReturnedOrRejected(
 // (src/lib/notifications/in-app.ts); reusing it here would get this FYI copy auto-archived the
 // instant the plan moves past manager_approved, same instant it's created.
 async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
-  try {
-    await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-      emailMode: "none",
-      eventType: "manager_approve",
-      message: `${plan.manager_name ?? "Your manager"} approved your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
-      plan,
-      recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${planNounLabel(plan.plan_kind)} was approved by your manager`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify employee of manager approval", {
-      labels: { event: "weekly_plan_notify_employee_manager_approved_failed", planId: plan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice), like every decision notice.
+  await deferPlanNotice("manager_approved_employee", async () => {
+    try {
+      await notifyRecipients({
+        actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+        emailMode: "none",
+        eventType: "manager_approve",
+        message: `${plan.manager_name ?? "Your manager"} approved your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        plan,
+        recipients: [{ hrId: plan.employee_hr_id }],
+        title: `Your ${planNounLabel(plan.plan_kind)} was approved by your manager`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify employee of manager approval", {
+        labels: { event: "weekly_plan_notify_employee_manager_approved_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 // ===========================================================================
@@ -2424,82 +2471,85 @@ export async function listPlanComments(
 // the owner asked for. Role-aware deep links reuse planReviewActionUrl so each recipient lands in
 // their own shell. Best-effort: a notification failure never blocks the comment itself.
 async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComment) {
-  try {
-    // participantKeys is a Set of normalizeHrId() comparison keys (hyphens/case stripped) so
-    // duplicates collapse correctly - but that stripped form must never reach the database: it
-    // silently failed the FK to employees.hr_id (stored as "B-10") for every hyphenated id, so
-    // no plan-comment notification has ever reached anyone but the CEO ("AA", no hyphen).
-    // canonicalHrIds keeps the first properly-cased form seen for each key, for actual storage.
-    const participantKeys = new Set<string>();
-    const canonicalHrIds = new Map<string, string>();
-    const addParticipant = (rawHrId: string | null | undefined) => {
-      const key = normalizeHrId(rawHrId);
-      if (!key) return;
-      participantKeys.add(key);
-      if (!canonicalHrIds.has(key)) {
-        const canonical = hrIdForStorage(rawHrId);
-        if (canonical) canonicalHrIds.set(key, canonical);
+  // After the reply (deferPlanNotice): the comment is saved, and the thread is told once it has gone.
+  await deferPlanNotice("comment", async () => {
+    try {
+      // participantKeys is a Set of normalizeHrId() comparison keys (hyphens/case stripped) so
+      // duplicates collapse correctly - but that stripped form must never reach the database: it
+      // silently failed the FK to employees.hr_id (stored as "B-10") for every hyphenated id, so
+      // no plan-comment notification has ever reached anyone but the CEO ("AA", no hyphen).
+      // canonicalHrIds keeps the first properly-cased form seen for each key, for actual storage.
+      const participantKeys = new Set<string>();
+      const canonicalHrIds = new Map<string, string>();
+      const addParticipant = (rawHrId: string | null | undefined) => {
+        const key = normalizeHrId(rawHrId);
+        if (!key) return;
+        participantKeys.add(key);
+        if (!canonicalHrIds.has(key)) {
+          const canonical = hrIdForStorage(rawHrId);
+          if (canonical) canonicalHrIds.set(key, canonical);
+        }
+      };
+
+      addParticipant(plan.employee_hr_id);
+      addParticipant(plan.manager_hr_id);
+      for (const decision of plan.employee_plan_decisions ?? []) {
+        addParticipant(decision.actor_hr_id);
       }
-    };
+      const { data: priorAuthors } = await getSupabaseAdmin()
+        .from("employee_plan_comments")
+        .select("author_hr_id")
+        .eq("plan_id", plan.id);
+      for (const row of (priorAuthors ?? []) as Array<{ author_hr_id: string }>) {
+        addParticipant(row.author_hr_id);
+      }
+      addParticipant(comment.authorHrId);
 
-    addParticipant(plan.employee_hr_id);
-    addParticipant(plan.manager_hr_id);
-    for (const decision of plan.employee_plan_decisions ?? []) {
-      addParticipant(decision.actor_hr_id);
+      const submitterKey = normalizeHrId(plan.employee_hr_id);
+      const authorKey = normalizeHrId(comment.authorHrId);
+      const toCanonicalHrId = (key: string) => canonicalHrIds.get(key) ?? null;
+
+      // In-app / Telegram / push audience: the submitter first (they are the email's To, and
+      // notifyRecipients attaches the email to whichever recipient matches the primary), then every
+      // other participant except the author.
+      const notifyKeys = [
+        ...(submitterKey ? [submitterKey] : []),
+        ...Array.from(participantKeys).filter((key) => key !== submitterKey && key !== authorKey),
+      ];
+      // Everyone copied on the email: the author (the owner's "CC the sender") and every other
+      // participant. The submitter is excluded because they are the To, not a cc.
+      const ccKeys = new Set(participantKeys);
+      if (authorKey) ccKeys.add(authorKey);
+      ccKeys.delete(submitterKey);
+
+      if (notifyKeys.length === 0 && ccKeys.size === 0) return;
+
+      const actionUrl = submitterKey
+        ? `/employee-portals/plans?plan=${plan.id}`
+        : await planReviewActionUrl(toCanonicalHrId(notifyKeys[0] ?? "") ?? "", plan.id);
+      await notifyRecipients({
+        actionUrl,
+        emailCcRecipients: Array.from(ccKeys).map((key) => ({ hrId: toCanonicalHrId(key) })),
+        eventType: "plan_comment",
+        // The full comment, never trimmed to a preview: the owner's standing rule is that text is
+        // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
+        // back into the app to find out what was actually said.
+        message: `${comment.authorName ?? comment.authorHrId} commented on the ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}: "${comment.body}"`,
+        // The comment's own id — without it a second comment on the same plan collapses onto the
+        // first one's notification event, because the title and actionUrl above never change between
+        // messages on the same thread.
+        messageKey: comment.id,
+        plan,
+        recipients: notifyKeys.map((key) => ({ hrId: toCanonicalHrId(key) })),
+        title: `New comment on ${planNounLabel(plan.plan_kind)}`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify participants of a new comment", {
+        labels: { event: "weekly_plan_notify_comment_participants_failed", planId: plan.id },
+        error,
+      });
     }
-    const { data: priorAuthors } = await getSupabaseAdmin()
-      .from("employee_plan_comments")
-      .select("author_hr_id")
-      .eq("plan_id", plan.id);
-    for (const row of (priorAuthors ?? []) as Array<{ author_hr_id: string }>) {
-      addParticipant(row.author_hr_id);
-    }
-    addParticipant(comment.authorHrId);
-
-    const submitterKey = normalizeHrId(plan.employee_hr_id);
-    const authorKey = normalizeHrId(comment.authorHrId);
-    const toCanonicalHrId = (key: string) => canonicalHrIds.get(key) ?? null;
-
-    // In-app / Telegram / push audience: the submitter first (they are the email's To, and
-    // notifyRecipients attaches the email to whichever recipient matches the primary), then every
-    // other participant except the author.
-    const notifyKeys = [
-      ...(submitterKey ? [submitterKey] : []),
-      ...Array.from(participantKeys).filter((key) => key !== submitterKey && key !== authorKey),
-    ];
-    // Everyone copied on the email: the author (the owner's "CC the sender") and every other
-    // participant. The submitter is excluded because they are the To, not a cc.
-    const ccKeys = new Set(participantKeys);
-    if (authorKey) ccKeys.add(authorKey);
-    ccKeys.delete(submitterKey);
-
-    if (notifyKeys.length === 0 && ccKeys.size === 0) return;
-
-    const actionUrl = submitterKey
-      ? `/employee-portals/plans?plan=${plan.id}`
-      : await planReviewActionUrl(toCanonicalHrId(notifyKeys[0] ?? "") ?? "", plan.id);
-    await notifyRecipients({
-      actionUrl,
-      emailCcRecipients: Array.from(ccKeys).map((key) => ({ hrId: toCanonicalHrId(key) })),
-      eventType: "plan_comment",
-      // The full comment, never trimmed to a preview: the owner's standing rule is that text is
-      // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
-      // back into the app to find out what was actually said.
-      message: `${comment.authorName ?? comment.authorHrId} commented on the ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}: "${comment.body}"`,
-      // The comment's own id — without it a second comment on the same plan collapses onto the
-      // first one's notification event, because the title and actionUrl above never change between
-      // messages on the same thread.
-      messageKey: comment.id,
-      plan,
-      recipients: notifyKeys.map((key) => ({ hrId: toCanonicalHrId(key) })),
-      title: `New comment on ${planNounLabel(plan.plan_kind)}`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify participants of a new comment", {
-      labels: { event: "weekly_plan_notify_comment_participants_failed", planId: plan.id },
-      error,
-    });
-  }
+  });
 }
 
 export async function addPlanComment(access: AccessContext, planId: string, input: {
@@ -4158,12 +4208,15 @@ export async function reassignWeeklyPlanManager(
 
   const updated = await loadPlanRow(plan.id);
   // Retarget the standard manager-stage alert to the newly-assigned manager (best-effort;
-  // notifyManager reads the freshly-updated manager_hr_id off `updated`).
-  await notifyManager(updated).catch((err) =>
-    logError("Weekly plan reassign notify failed", {
-      labels: { event: "weekly_plan_reassign_notify_failed", planId: plan.id },
-      error: err,
-    }),
+  // notifyManager reads the freshly-updated manager_hr_id off `updated`). Sent after the reply
+  // (deferPlanNotice); a failure is logged there and never changes the answer.
+  await deferPlanNotice("reassigned", () =>
+    notifyManager(updated).catch((err) =>
+      logError("Weekly plan reassign notify failed", {
+        labels: { event: "weekly_plan_reassign_notify_failed", planId: plan.id },
+        error: err,
+      }),
+    ),
   );
   return mapPlan(updated);
 }
@@ -4419,41 +4472,47 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
 }
 
 async function notifyEmployeeAcknowledged(plan: PlanHeaderRow) {
-  try {
-    await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-      emailMode: "none",
-      eventType: "hr_acknowledge",
-      message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} has been acknowledged by HR.`,
-      plan,
-      recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${planNounLabel(plan.plan_kind)} was acknowledged by HR`,
-    });
-  } catch (error) {
-    logError("Weekly plan HR-acknowledgement notify failed", {
-      labels: { event: "weekly_plan_ack_notify_failed", planId: plan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice): both the manual and the automatic acknowledgement are saved first.
+  await deferPlanNotice("hr_acknowledged_employee", async () => {
+    try {
+      await notifyRecipients({
+        actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+        emailMode: "none",
+        eventType: "hr_acknowledge",
+        message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} has been acknowledged by HR.`,
+        plan,
+        recipients: [{ hrId: plan.employee_hr_id }],
+        title: `Your ${planNounLabel(plan.plan_kind)} was acknowledged by HR`,
+      });
+    } catch (error) {
+      logError("Weekly plan HR-acknowledgement notify failed", {
+        labels: { event: "weekly_plan_ack_notify_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
-  try {
-    const portalPlanUrl = `/employee-portals/plans?plan=${plan.id}`;
-    await notifyRecipients({
-      actionUrl: portalPlanUrl,
-      eventType: "plan_details_requested",
-      message: `Your manager has requested visit details for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please fill in the doctor information before resubmitting.`,
-      plan,
-      recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Visit details required for your ${planNounLabel(plan.plan_kind)}`,
-    });
-  } catch (error) {
-    logError("Weekly plan failed to notify employee for visit details request", {
-      labels: { event: "weekly_plan_notify_visit_details_requested_failed", planId: plan.id },
-      error,
-    });
-  }
+  // After the reply (deferPlanNotice): the request is saved, the employee is told once it has gone.
+  await deferPlanNotice("visit_details_requested", async () => {
+    try {
+      const portalPlanUrl = `/employee-portals/plans?plan=${plan.id}`;
+      await notifyRecipients({
+        actionUrl: portalPlanUrl,
+        eventType: "plan_details_requested",
+        message: `Your manager has requested visit details for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please fill in the doctor information before resubmitting.`,
+        plan,
+        recipients: [{ hrId: plan.employee_hr_id }],
+        title: `Visit details required for your ${planNounLabel(plan.plan_kind)}`,
+      });
+    } catch (error) {
+      logError("Weekly plan failed to notify employee for visit details request", {
+        labels: { event: "weekly_plan_notify_visit_details_requested_failed", planId: plan.id },
+        error,
+      });
+    }
+  });
 }
 
 export async function requestVisitDetails(access: AccessContext, planId: string) {
@@ -4511,7 +4570,8 @@ export async function submitVisitDetails(access: AccessContext, planId: string, 
     summary: `${plan.plan_kind} plan visit details submitted`,
   });
   const updated = await loadPlanRow(planId);
-  await notifyManager(updated);
+  // After the reply (deferPlanNotice): the details are saved, and the manager's alert changes no answer.
+  await deferPlanNotice("visit_details_submitted", () => notifyManager(updated));
   return mapPlan(updated);
 }
 
@@ -4546,18 +4606,35 @@ export async function bulkDecideEmployeePlans(
   action: "manager_approve",
 ): Promise<Array<{ planId: string; ok: boolean; message?: string }>> {
   const results: Array<{ planId: string; ok: boolean; message?: string }> = [];
-  for (const planId of planIds) {
-    try {
-      await decideEmployeePlan(access, planId, { action });
-      results.push({ ok: true, planId });
-    } catch (error) {
-      results.push({
-        message: error instanceof Error ? error.message : String(error),
-        ok: false,
-        planId,
-      });
+  // Each plan's notices are collected while the decisions run and sent ONE AFTER ANOTHER once the reply
+  // has gone, as they were before — never all at once, which a long selection would turn into a burst.
+  const notices: Array<{ label: string; task: () => Promise<unknown> }> = [];
+  await batchedPlanNotices.run(notices, async () => {
+    for (const planId of planIds) {
+      try {
+        await decideEmployeePlan(access, planId, { action });
+        results.push({ ok: true, planId });
+      } catch (error) {
+        results.push({
+          message: error instanceof Error ? error.message : String(error),
+          ok: false,
+          planId,
+        });
+      }
     }
-  }
+  });
+  await afterResponse("weekly_plan_notice:batch_decision", async () => {
+    for (const notice of notices) {
+      try {
+        await notice.task();
+      } catch (error) {
+        logError("Weekly plan notice after a batch decision failed", {
+          labels: { event: "weekly_plan_batch_notice_failed", label: notice.label },
+          error,
+        });
+      }
+    }
+  });
   return results;
 }
 
@@ -4571,22 +4648,26 @@ async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
     });
     return;
   }
-  try {
-    const actionUrl = await planReviewActionUrl(plan.manager_hr_id, plan.id);
-    await notifyRecipients({
-      actionUrl,
-      eventType: "plan_edit_requested",
-      message: `${plan.employee_name} requested to edit their submitted ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
-      plan,
-      recipients: [{ hrId: plan.manager_hr_id }],
-      title: `${plan.employee_name} requested to edit their ${planNounLabel(plan.plan_kind)}`,
-    });
-  } catch (notifyError) {
-    logError("Weekly plan failed to notify manager of edit request", {
-      labels: { event: "weekly_plan_notify_manager_edit_request_failed", planId: plan.id },
-      error: notifyError,
-    });
-  }
+  // Sent after the reply (deferPlanNotice): the request is saved, the manager is told once it has gone.
+  const managerHrId = plan.manager_hr_id;
+  await deferPlanNotice("edit_requested", async () => {
+    try {
+      const actionUrl = await planReviewActionUrl(managerHrId, plan.id);
+      await notifyRecipients({
+        actionUrl,
+        eventType: "plan_edit_requested",
+        message: `${plan.employee_name} requested to edit their submitted ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        plan,
+        recipients: [{ hrId: managerHrId }],
+        title: `${plan.employee_name} requested to edit their ${planNounLabel(plan.plan_kind)}`,
+      });
+    } catch (notifyError) {
+      logError("Weekly plan failed to notify manager of edit request", {
+        labels: { event: "weekly_plan_notify_manager_edit_request_failed", planId: plan.id },
+        error: notifyError,
+      });
+    }
+  });
 }
 
 // Mirrors notifyEmployeeReturnedOrRejected — the employee otherwise has no way to know
@@ -4597,29 +4678,32 @@ async function notifyEmployeeEditRequestDecision(
   comment: string | null,
   actorHrId: string | null,
 ): Promise<void> {
-  try {
-    await notifyRecipients({
-      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-      // Same addressing rule as every other conversation: the decider is copied so the employee can
-      // reply to the person who actually decided.
-      emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
-      // Approval is good news with nothing left to act on; rejection needs the employee's
-      // attention, so only that branch keeps email.
-      emailMode: decision === "approve" ? "none" : "primary_to_cc",
-      eventType: decision === "approve" ? "plan_edit_request_approved" : "plan_edit_request_rejected",
-      message: decision === "approve"
-        ? `Your manager approved your edit request. You can now edit and resubmit your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
-        : `Your manager rejected your edit request for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.${comment ? ` Comment: ${comment}` : ""}`,
-      plan,
-      recipients: [{ hrId: plan.employee_hr_id }],
-      title: decision === "approve" ? "Your edit request was approved" : "Your edit request was rejected",
-    });
-  } catch (notifyError) {
-    logError("Weekly plan failed to notify employee of edit request decision", {
-      labels: { event: "weekly_plan_notify_employee_edit_request_decision_failed", planId: plan.id },
-      error: notifyError,
-    });
-  }
+  // After the reply (deferPlanNotice): the decision is saved, the employee is told once it has gone.
+  await deferPlanNotice("edit_request_decided", async () => {
+    try {
+      await notifyRecipients({
+        actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+        // Same addressing rule as every other conversation: the decider is copied so the employee can
+        // reply to the person who actually decided.
+        emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
+        // Approval is good news with nothing left to act on; rejection needs the employee's
+        // attention, so only that branch keeps email.
+        emailMode: decision === "approve" ? "none" : "primary_to_cc",
+        eventType: decision === "approve" ? "plan_edit_request_approved" : "plan_edit_request_rejected",
+        message: decision === "approve"
+          ? `Your manager approved your edit request. You can now edit and resubmit your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
+          : `Your manager rejected your edit request for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.${comment ? ` Comment: ${comment}` : ""}`,
+        plan,
+        recipients: [{ hrId: plan.employee_hr_id }],
+        title: decision === "approve" ? "Your edit request was approved" : "Your edit request was rejected",
+      });
+    } catch (notifyError) {
+      logError("Weekly plan failed to notify employee of edit request decision", {
+        labels: { event: "weekly_plan_notify_employee_edit_request_decision_failed", planId: plan.id },
+        error: notifyError,
+      });
+    }
+  });
 }
 
 export async function requestEditEmployeePlan(access: AccessContext, planId: string) {

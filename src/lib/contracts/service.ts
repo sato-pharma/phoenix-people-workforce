@@ -10,6 +10,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { daysUntilLifecycleDate } from "@/lib/lifecycle-risk/metrics";
+import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -473,7 +474,11 @@ export async function createContractRenewalRequest(
 
   if (error) throw new ContractRenewalValidationError(error.message);
   const record = mapRenewalRequest(data as RenewalRequestDbRow);
-  await notifyContractWorkflow(record, "Contract Renewal Request Created", "warning");
+  // After the reply (afterResponse): the request is saved, and the notice used to be awaited before the
+  // answer left. A failed notice is logged, never thrown (it used to turn a saved request into a false 500).
+  await afterResponse("contract_notice:created", async () => {
+    await notifyContractWorkflow(record, "Contract Renewal Request Created", "warning");
+  });
   invalidateExecutiveDashboardCache("contract renewal created", ["contracts"]);
   return record;
 }
@@ -679,11 +684,15 @@ export async function runContractRenewalWorkflow(
     await maybeRunNonRenewalTerminalLifecycle(updated, input.access, actor);
   }
 
-  await notifyContractWorkflow(
-    updated,
-    action === "not_renew" ? "Contract Not Renewed" : action === "renew" ? "Contract Renewed" : "Contract Renewal Updated",
-    action === "not_renew" ? "danger" : action === "renew" ? "success" : "warning",
-  );
+  // After the reply (afterResponse): the decision is saved, and the notice used to be awaited before the
+  // answer left. A failed notice is logged, never thrown (it used to turn a saved decision into a false 500).
+  await afterResponse("contract_notice:workflow", async () => {
+    await notifyContractWorkflow(
+      updated,
+      action === "not_renew" ? "Contract Not Renewed" : action === "renew" ? "Contract Renewed" : "Contract Renewal Updated",
+      action === "not_renew" ? "danger" : action === "renew" ? "success" : "warning",
+    );
+  });
   invalidateExecutiveDashboardCache("contract renewal workflow updated", ["contracts", "employees", "vacancies"]);
 
   return updated;
