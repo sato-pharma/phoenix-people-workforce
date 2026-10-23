@@ -30,6 +30,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { filterProbationScorableHrIds, isProbationSchemaMissing } from "@/lib/probation/service";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assertCaseAcceptsSubmissions } from "./cases";
@@ -147,10 +148,12 @@ async function loadEmployeeFacts(hrIds: string[]): Promise<Map<string, EmployeeF
  * national manager which team he is scoring for.
  */
 async function loadLineNames(): Promise<Map<number, string>> {
-  const { data } = await getSupabaseAdmin().from("lines").select("id, name");
+  // From the shared one-minute copy (src/lib/reference/reference-lists.ts). A failed read left the
+  // map empty before — the scorecard then showed the probationer without a line — and still does.
+  const rows = await loadReferenceLines().catch(() => []);
   const byId = new Map<number, string>();
-  for (const row of (data ?? []) as Array<{ id: number; name: string | null }>) {
-    if (row.name) byId.set(row.id, row.name);
+  for (const row of rows) {
+    if (row.id != null && row.name) byId.set(row.id, row.name);
   }
   return byId;
 }

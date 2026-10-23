@@ -32,6 +32,10 @@ import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-re
 import { logError } from "@/lib/observability/log";
 import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
+import {
+  forgetReferenceDepartments,
+  forgetReferenceLines,
+} from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -232,6 +236,11 @@ async function upsertDepartments(
     throw new Error(error.message);
   }
 
+  // A department this import just created must be visible to the next reader at once, not in up to
+  // a minute: this same request goes on to resolve lines and employees against it, and the pages
+  // that read the department list are refreshed the moment the import finishes.
+  forgetReferenceDepartments("employee import upserted departments");
+
   return {
     created: entities.filter((entity) => !existingCodes.has(entity.code))
       .length,
@@ -268,6 +277,10 @@ async function upsertLines(
   if (error) {
     throw new Error(error.message);
   }
+
+  // Same reason as the departments upsert above: this request resolves employees against the line
+  // it has just written.
+  forgetReferenceLines("employee import upserted lines");
 
   return {
     created: importable.filter((entity) => !existingCodes.has(entity.code))

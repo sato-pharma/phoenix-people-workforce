@@ -104,6 +104,7 @@
 
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import { loadReferenceAreas, type ReferenceArea } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -328,20 +329,32 @@ export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
 
   const declaredContacts = await loadDeclaredVenueContacts();
 
-  const [pharmacies, orders, customers, requests, crmLinks, areas] = await Promise.all([
+  const [pharmacies, orders, customers, requests, crmLinks, areasResult] = await Promise.all([
     supabase.from("direct_order_pharmacies").select("id, pharmacy_name, area_code"),
     supabase.from("direct_order_requests").select("pharmacy_id, status"),
     supabase.from("marketing_customers").select("id, display_name, area_id"),
     supabase.from("marketing_requests").select("customer_id, status").eq("origin", "phoenix"),
     supabase.from("marketing_customer_contacts").select("customer_id, crm_code"),
-    supabase.from("areas").select("id, code"),
+    // The 143 areas come from the shared one-minute copy (src/lib/reference/reference-lists.ts)
+    // rather than a read of their own on every board. That accessor THROWS where the five reads
+    // beside it report `result.error`, so its failure is caught into the same shape and judged by
+    // the same two rules, two statements below — never silently swallowed into an empty area map.
+    loadReferenceAreas().then(
+      (rows) => ({ error: null as unknown, rows }),
+      (error: unknown) => ({ error: error ?? new Error("unknown"), rows: [] as ReferenceArea[] }),
+    ),
   ]);
 
-  for (const result of [pharmacies, orders, customers, requests, crmLinks, areas]) {
+  for (const result of [pharmacies, orders, customers, requests, crmLinks]) {
     // Before the direct-order or marketing migrations reach an environment these tables are absent.
     // A board with no trade badges is correct there; a 500 on the whole contact list is not.
     if (result.error && isCrmSchemaMissingError(result.error)) return [];
     if (result.error) throw new Error(`Could not read trade counterparties: ${result.error.message}`);
+  }
+  if (areasResult.error && isCrmSchemaMissingError(areasResult.error)) return [];
+  if (areasResult.error) {
+    const message = areasResult.error instanceof Error ? areasResult.error.message : String(areasResult.error);
+    throw new Error(`Could not read trade counterparties: ${message}`);
   }
 
   const orderCounts = new Map<string, { approved: number; total: number }>();
@@ -369,9 +382,14 @@ export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
     });
   }
 
+  // 🔴 BOTH SIDES THROUGH `String()`. `areas.id` is a NUMBER, and `marketing_customers.area_id` is
+  // declared `string | null` on `MarketingCustomerRow` while holding a number at runtime — so the
+  // old map (keyed by a row cast to `string`) and the old lookup agreed only because both were
+  // numbers. With the typed reference row the key would be a real string and the lookup a number,
+  // and every area code would silently come back undefined. Keyed and looked up as strings now.
   const areaCodeById = new Map<string, string>();
-  for (const row of (areas.data ?? []) as { code: string | null; id: string }[]) {
-    if (row.code) areaCodeById.set(row.id, row.code);
+  for (const row of areasResult.rows) {
+    if (row.code && row.id != null) areaCodeById.set(String(row.id), row.code);
   }
 
   // A customer's contacts can carry a CRM id; the REQUEST cannot (`customer_contact_id` is null on
@@ -397,7 +415,7 @@ export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
   for (const row of (customers.data ?? []) as MarketingCustomerRow[]) {
     const counted = requestCounts.get(row.id);
     if (!counted || !row.display_name) continue;
-    const areaCode = row.area_id ? (areaCodeById.get(row.area_id) ?? null) : null;
+    const areaCode = row.area_id ? (areaCodeById.get(String(row.area_id)) ?? null) : null;
     const linked = crmIdsByCustomer.get(row.id) ?? [];
     if (linked.length > 0) {
       // One counterparty per linked CRM id, so rule 1 binds each without a name test. A customer

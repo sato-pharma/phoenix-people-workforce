@@ -40,8 +40,11 @@ import {
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { fetchAllRows } from "@/lib/supabase/paginated";
+import {
+  loadReferenceEmployees,
+  loadReferenceLines,
+  type ReferenceEmployee,
+} from "@/lib/reference/reference-lists";
 
 import { hrKey, type AttributionMap } from "./attribution";
 import { isResignedStatus } from "../employment-status";
@@ -208,19 +211,13 @@ const ROLE_ORDER = [
 ];
 
 export async function loadReviewDirectory(): Promise<ReviewDirectory> {
-  const supabase = getSupabaseAdmin();
   const directory: ReviewDirectory = new Map();
-  let rows: Record<string, unknown>[] = [];
+  let rows: ReferenceEmployee[] = [];
   try {
-    rows = await fetchAllRows<Record<string, unknown>>(
-      () =>
-        supabase
-          .from("employees")
-          .select(
-            "hr_id, full_name, nickname, job_title, line_id, employment_status, hire_date, last_working_date",
-          ),
-      "hr_id",
-    );
+    // The whole employee list from the shared one-minute copy (src/lib/reference/reference-lists.ts):
+    // every pack in the review reads this directory, and the copy is read once for all of them. The
+    // superset carries no compensation column, and nothing here ever wanted one.
+    rows = await loadReferenceEmployees();
   } catch {
     return directory;
   }
@@ -260,12 +257,9 @@ const LINE_CODE_BY_DB_NAME: Record<string, string> = {
  * guessed one: a wrong headcount is worse than an absent one, because "visits per head" divides by it.
  */
 export async function loadLineIdByCode(): Promise<Record<string, number>> {
-  const supabase = getSupabaseAdmin();
   const out: Record<string, number> = {};
   try {
-    const { data, error } = await supabase.from("lines").select("id,name");
-    if (error || !data) return out;
-    for (const row of data as { id: number | null; name: string | null }[]) {
+    for (const row of await loadReferenceLines()) {
       const code = LINE_CODE_BY_DB_NAME[String(row.name ?? "").trim()];
       if (code && row.id != null) out[code] = Number(row.id);
     }

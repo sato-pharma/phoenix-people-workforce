@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { loadReferenceEmployees } from "@/lib/reference/reference-lists";
 
 /**
  * Area-scoped medical-rep options for the outstation submit wizard.
@@ -109,10 +110,12 @@ export async function getManagerAreaRepOptions(
   }
   if (repSeats.length === 0) return [];
 
-  // Resolve rep display names from the employee master (best-effort).
-  const { data: empData } = await supabase.from("employees").select("hr_id, full_name");
+  // Resolve rep display names from the employee master, through the shared one-minute copy
+  // (src/lib/reference/reference-lists.ts) — best-effort as before: a failed read leaves the map
+  // empty and each option falls back to the rep's HR id, never breaking the wizard.
+  const empData = await loadReferenceEmployees().catch(() => []);
   const nameByHrId = new Map<string, string>();
-  for (const emp of (empData ?? []) as Array<{ hr_id: string | null; full_name: string | null }>) {
+  for (const emp of empData) {
     const key = normalizeHrId(emp.hr_id);
     if (key) nameByHrId.set(key, emp.full_name ?? emp.hr_id ?? key);
   }

@@ -43,6 +43,7 @@ import {
 } from "@/lib/sales/customer-geography";
 import { loadClosedMonths, loadClosingRowsForPairs } from "@/lib/customer-360/server/sales";
 import { hubLineLabel, normalisePair, pairCanBeRead } from "@/lib/customer-360/hub";
+import { loadReferenceAreas, loadReferenceEmployees, loadReferenceLines } from "@/lib/reference/reference-lists";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -147,37 +148,40 @@ async function loadNameMaps(): Promise<{
   lines: Map<number, string>;
 }> {
   const supabase = getSupabaseAdmin();
+  // Areas, lines and the employee directory come from the shared one-minute copies
+  // (src/lib/reference/reference-lists.ts) — three whole-table reads this page used to repeat on
+  // every render. The distributor read stays here: it is this module's own, and not a reference list.
+  // The maps below ignored a failed read before (`.data ?? []` left the map empty, so a name fell
+  // back to its code) and still do — hence `.catch(() => [])` rather than a throw.
   const [areaRows, lineRows, employeeRows, distributorRows] = await Promise.all([
-    supabase.from("areas").select("id, name, code, line_id"),
-    supabase.from("lines").select("id, name"),
-    supabase.from("employees").select("hr_id, full_name"),
+    loadReferenceAreas().catch(() => []),
+    loadReferenceLines().catch(() => []),
+    loadReferenceEmployees().catch(() => []),
     supabase.from("marketing_distributors").select("id, display_name, distributor_code"),
   ]);
 
   const lines = new Map<number, string>();
-  for (const row of lineRows.data ?? []) {
-    const name = text((row as Record<string, unknown>).name);
-    if (name) lines.set(Number((row as Record<string, unknown>).id), name);
+  for (const row of lineRows) {
+    const name = text(row.name);
+    if (name) lines.set(Number(row.id), name);
   }
 
   const areas = new Map<number, { code: string | null; line: string | null; name: string }>();
-  for (const row of areaRows.data ?? []) {
-    const record = row as Record<string, unknown>;
-    const name = text(record.name);
+  for (const row of areaRows) {
+    const name = text(row.name);
     if (!name) continue;
-    const lineId = record.line_id == null ? null : Number(record.line_id);
-    areas.set(Number(record.id), {
-      code: text(record.code),
+    const lineId = row.line_id == null ? null : Number(row.line_id);
+    areas.set(Number(row.id), {
+      code: text(row.code),
       line: lineId == null ? null : lines.get(lineId) ?? null,
       name,
     });
   }
 
   const employees = new Map<string, string>();
-  for (const row of employeeRows.data ?? []) {
-    const record = row as Record<string, unknown>;
-    const hrId = text(record.hr_id);
-    const name = text(record.full_name);
+  for (const row of employeeRows) {
+    const hrId = text(row.hr_id);
+    const name = text(row.full_name);
     if (hrId && name) employees.set(hrId.toLowerCase(), name);
   }
 

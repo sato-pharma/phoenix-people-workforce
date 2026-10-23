@@ -37,6 +37,7 @@ import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit, REGULAR_TYPE } from "@/lib/crm/visit-types";
 import { loadActuals, roiValueBucket } from "@/lib/marketing-requests/roi-report-service";
+import { loadReferenceAreas, loadReferenceLines } from "@/lib/reference/reference-lists";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -636,13 +637,17 @@ async function loadMarketingRequests(
   );
   if (rows.length === 0) return [];
 
+  // The four lines and the 143 areas come from the shared one-minute copy, so every pack, board and
+  // page that needs them pays at most one round trip between them (src/lib/reference/reference-lists.ts).
+  // Both reads ignored their own error here and that posture is kept in the open, at the call site:
+  // a pack that cannot name a line shows no field link, exactly as before.
   const [lineRows, areaRows, typeRows] = await Promise.all([
-    db.from("lines").select("id, name"),
-    db.from("areas").select("id, code"),
+    loadReferenceLines().catch(() => []),
+    loadReferenceAreas().catch(() => []),
     db.from("marketing_request_types").select("id, name"),
   ]);
-  const lineName = new Map(((lineRows.data ?? []) as { id: number; name: string | null }[]).map((r) => [Number(r.id), text(r.name)]));
-  const areaCode = new Map(((areaRows.data ?? []) as { id: number; code: string | null }[]).map((r) => [Number(r.id), up(r.code)]));
+  const lineName = new Map(lineRows.map((r) => [Number(r.id), text(r.name)]));
+  const areaCode = new Map(areaRows.map((r) => [Number(r.id), up(r.code)]));
   const typeName = new Map(((typeRows.data ?? []) as { id: number; name: string | null }[]).map((r) => [Number(r.id), text(r.name)]));
 
   // Every request for the pack's lines in the pack's areas, whoever raised it — a medical rep's pack

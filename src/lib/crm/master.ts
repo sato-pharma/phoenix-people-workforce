@@ -30,6 +30,7 @@ import {
   CRM_VISITS_UNIFIED_VIEW,
 } from "@/lib/crm/tables";
 import { addDaysIso } from "@/lib/crm/dates";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
@@ -1369,12 +1370,14 @@ function attachRecognitionScore(rows: CrmMasterRow[]): void {
   }
 }
 
-/** Distinct product-line names for the "Line" filter dropdown (small `lines` table). */
+/** Distinct product-line names for the "Line" filter dropdown, from the shared one-minute copy
+ *  (src/lib/reference/reference-lists.ts) — four rows the whole app now reads once between them.
+ *  Sorted here rather than by the database, which is the same four names in the same order. The
+ *  dropdown ignored a read error before and still does: no options, never a 500 on the board. */
 async function loadLineOptions(): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin().from("lines").select("name").order("name", { ascending: true });
-  if (error || !data) return [];
-  const names = (data as Array<{ name: string | null }>).map((r) => r.name).filter((v): v is string => Boolean(v && v.trim()));
-  return Array.from(new Set(names));
+  const rows = await loadReferenceLines().catch(() => []);
+  const names = rows.map((r) => r.name).filter((v): v is string => Boolean(v && v.trim()));
+  return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
 }
 
 /** Resolve the employee HR ids matching the Line and/or Hiring-date-range filters. Returns null when
