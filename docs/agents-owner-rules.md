@@ -8907,7 +8907,10 @@ scrolling finger merely crossed, queued in front of one rep's real tap on Visits
   `MedicalRepCommandCenter` awaits nothing: each of its six cards is an `async` component under its
   own `<Suspense>`, drawn in the real tile's frame while it loads. The honour strip streams with no
   placeholder, because most reps never get one. Every other role still awaits the snapshot as before.
-- **Sign-in runs its checks side by side** and does its tidy-up after the response.
+- **Sign-in runs its checks side by side** and does its tidy-up (the success attempt row and the
+  lockout reset) after the response. The "Login succeeded" audit row is NOT tidy-up: it is written
+  before the reply (owner, 23 Oct 2026), because a deploy that stops the process between the reply
+  and a deferred task lost it. Pinned by `tests/login-success-audit-before-reply.test.ts`.
 - **Short per-person caches** for the excluded-agents list and calendar access (2 minutes).
 - **Phoenix CRM waits less.** The planners mint a seat's carried-over customers at most once in five
   minutes (a failed mint is never remembered, and a seat move forgets both seats). The visit day
