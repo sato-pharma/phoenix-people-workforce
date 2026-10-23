@@ -30,9 +30,9 @@
       "why": "FIXED 2026-09-30, and held at a hard floor of ZERO. All ten were pinned to `public, pg_temp` in 20260929215727_phase4_schema_hygiene.sql. Zero is the right number: a function with no pinned search_path resolves unqualified names through the CALLER's path. Gating the LIVE count at 0 is stronger than a check over migration text, because it also catches a function created through execute_sql — which is how most of this schema actually arrived, and the exact blind spot that let check:sql-backups stay green over the pre-image tables. Excludes pg_trgm's 31, which are the extension's."
     },
     "extension_in_public": {
-      "accepted": 1,
+      "accepted": 0,
       "severity": "warn",
-      "why": "pg_trgm. Moving it to `extensions` is the known fix; 2 indexes depend on its opclasses and must be confirmed indisvalid afterwards, so it is a deliberate separate change. Absent from the 2026-07-19 baseline entirely."
+      "why": "FIXED 2026-10-23, held at a floor of ZERO. pg_trgm moved to the extensions schema in 20261023043536_move_pg_trgm_to_extensions_and_pin_scratch_search_path.sql, in the same transaction that rewrote public.phx_suggest_direct_order_pharmacies (search_path=\"\") from public.similarity to extensions.similarity, the coupling that stopped the move on 2026-09-30. Proved on production after applying: both trigram indexes on source_of_sales_customer_map indisvalid, and the suggester returned byte-identical results for two probes measured before the move. Before: 1 (pg_trgm), absent from the 2026-07-19 baseline entirely."
     },
     "authenticated_security_definer_function_executable": {
       "accepted": 11,

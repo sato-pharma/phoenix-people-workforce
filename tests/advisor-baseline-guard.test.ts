@@ -84,7 +84,8 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // tables. None grants anon or authenticated anything (0 of all 260, read live that day).
   { category: "rls_enabled_no_policy", current_count: 260 },
   { category: "function_search_path_mutable", current_count: 0 },
-  { category: "extension_in_public", current_count: 1 },
+  // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
+  { category: "extension_in_public", current_count: 0 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
   // 842 = the highest daily reading to 2026-10-23 (the drift run that day; 833 an hour later);
   // raised from 722, which was itself the highest reading 1-9 October.
@@ -127,6 +128,16 @@ export function runAdvisorBaselineGuardTests() {
   assert.equal(exceeded!.severity, "error");
   assert.match(exceeded!.message, /261/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
+  // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
+  // `public` is growth, and fails.
+  const backInPublic = evaluateAdvisorCounts(
+    REAL_BASELINE,
+    PRODUCTION_TODAY.map((r) => (r.category === "extension_in_public" ? { ...r, current_count: 1 } : r)),
+  );
+  assert.ok(
+    backInPublic.some((f) => f.code === "advisor_baseline_exceeded" && /extension_in_public/.test(f.message)),
+    "an extension back in public fails the check — the floor is zero since pg_trgm moved",
+  );
 
   // ── a fall is NOT an error ───────────────────────────────────────────────
   // Fixing something must never turn the build red, or the next person stops fixing things.

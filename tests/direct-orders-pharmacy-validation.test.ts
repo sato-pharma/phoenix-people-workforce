@@ -188,6 +188,17 @@ export function runDirectOrdersPharmacyValidationTests() {
     /create extension if not exists pg_trgm/,
     "suggestions use trigram similarity — deterministic, so the record reproduces identically later",
   );
+  // 🔴 pg_trgm moved to `extensions` on 2026-10-23. The suggester runs with search_path="" and must
+  // name the schema the extension lives in: a body still calling public.similarity fails at call time.
+  const trgmMove = readFileSync(
+    new URL("../supabase/migrations/20261023043536_move_pg_trgm_to_extensions_and_pin_scratch_search_path.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(trgmMove, /alter extension pg_trgm set schema extensions;/, "pg_trgm lives in `extensions`, not `public`");
+  const newSuggester = trgmMove.slice(trgmMove.indexOf("create or replace function public.phx_suggest_direct_order_pharmacies"));
+  assert.match(newSuggester, /set search_path = ''/, "the suggester keeps its empty search_path");
+  assert.equal((newSuggester.match(/extensions\.similarity\(/g) ?? []).length, 2, "both similarity calls name `extensions`");
+  assert.ok(!/public\.similarity\(/.test(newSuggester.split("$$;")[0]), "and neither still names `public`, which no longer holds it");
   assert.match(
     suggestMigration,
     /phx_normalize_arabic\(m\.customer_name\)/,
