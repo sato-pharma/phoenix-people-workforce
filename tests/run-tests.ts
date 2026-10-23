@@ -2695,6 +2695,7 @@ import { runWeeklyReviewReadonlyPinTests } from "./weekly-review-readonly-pin.te
 import { runSecretDrift404MatcherTests } from "./secret-drift-404-matcher.test.ts";
 import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.test.ts";
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
+import { runMcpBundleIoGuardTests } from "./mcp-bundle-io-guard.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
 import { runRecruitmentManagerRecallStatusTests } from "./recruitment-manager-recall-status.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
@@ -2734,10 +2735,12 @@ import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
 import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
+import { createShardDeal } from "./shard-deal.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
- * SHARDING — `PHX_TEST_SHARD=<i>/<n>` runs only every nth `runTest` call, starting at the ith.
+ * SHARDING — `PHX_TEST_SHARD=<i>/<n>` runs only the `runTest` calls the deal in `tests/shard-deal.ts`
+ * hands shard i of n.
  *
  * Unset — which is every local run, every `node tests/run-tests.ts` by hand, and
  * `scripts/remote-check.mjs test` on the box — changes NOTHING: the condition below is skipped
@@ -2752,9 +2755,11 @@ const testDurationsMs: { name: string; durationMs: number }[] = [];
  * serial run's; what differs is only which `execute()` bodies are awaited. It costs ~8s of import
  * per shard, which is why the shard count is the CPU count and not something larger.
  *
- * ROUND-ROBIN, NOT CONTIGUOUS BLOCKS: adjacent tests in this file are adjacent by subject, so a
- * contiguous split puts every slow hook-pin test (each spawns one node process per case — the
- * slowest is 15s) in one shard and leaves the others idle. Interleaving spreads them.
+ * BALANCED BY ESTIMATED TIME, NOT CONTIGUOUS BLOCKS: adjacent tests in this file are adjacent by
+ * subject, so a contiguous split puts every slow hook-pin test (each spawns one node process per
+ * case) in one shard and leaves the others idle. Since 2026-10-23 the deal is no longer plain
+ * round-robin either: the known slow tests are placed first and the rest fill the least-loaded shard
+ * (`tests/shard-deal.ts`), so the ~109 s unknown-flag test no longer makes its shard the long pole.
  *
  * 🔴 THE COUNTS BELOW ARE WHAT MAKES A SHARD SAFE. `seen` is every call this file makes and is
  * therefore identical in every shard; `ran` is this shard's share. A dropped test — a bad divisor, a
@@ -2782,8 +2787,11 @@ process.on("exit", () => {
   console.log(`PHX_SHARD_RESULT shard=${shardIndex}/${shardTotal} seen=${seenCount} ran=${ranCount}`);
 });
 
+const dealShard = createShardDeal(shardTotal);
+
 async function runTest(name: string, execute: () => void | Promise<void>) {
-  const mine = seenCount++ % shardTotal === shardIndex - 1;
+  seenCount += 1;
+  const mine = dealShard(execute.name) === shardIndex - 1;
   if (!mine) return;
   ranCount += 1;
   const startedAt = performance.now();
@@ -10601,6 +10609,11 @@ await runTest(
 await runTest(
   "the unit suite runs on EVERY event, in exactly one of the two REQUIRED jobs — `validate` on a pull request, `checks` on a push, a dispatch and a schedule, conditions that are exact complements: one home too many only wastes a runner, one too few leaves an event whose merge gate (or, on main, whose production deploy gate) goes green with the tests never run, which is the 2026-09-17 shape (#3950) that let a red suite merge for a day; and both homes must run the SHARDED runner, which is what proves every test ran exactly once",
   runCiSuitePlacementTests,
+);
+
+await runTest(
+  "the MCP reader's bundle carries no administrative Phoenix IO, and the assertion that proves it is gated on every pull request: nothing constructs the production recipient-assurance reader at MODULE level (a top-level call is a side effect esbuild cannot drop, and it retained the employee directory's PRIVATE supabaseRest - the service-role key and the PostgREST URL - in dist/main.mjs, which is how `origin/main` sat red on infra/phoenix-mcp/build.mjs's own security assertion for days in Oct 2026), the guard it protects still fails closed with its 24-hour last-good window, `node build.mjs` runs in ci.yml's `static` job, which carries no paths filter and which the required `checks` status needs - because phoenix-mcp.yml's nine trigger paths are NOT the bundle's import graph and `mcp-security` is not a required check - and build.mjs still looks for all four administrative spellings",
+  runMcpBundleIoGuardTests,
 );
 
 await runTest(
