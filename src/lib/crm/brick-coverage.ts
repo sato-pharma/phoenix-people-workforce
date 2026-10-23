@@ -298,6 +298,9 @@ async function loadVisitedBricks(
       // a started Phoenix CRM team's visits count as its check-ins here (owner, 2026-10-02;
       // src/lib/crm/phoenix-team-starts.ts lists every reader that asks).
       includePhoenixVisits: true,
+      // A display board: the company-wide month may come from the shared copy up to a minute old
+      // (crm/reads.ts, "A dashboard may reuse a company window"). A scope of named reps reads live.
+      reuseRecentWindow: true,
       ...(agentHrIds ? { agentHrIds } : {}),
     }),
   ]);

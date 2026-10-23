@@ -195,7 +195,7 @@ export async function runSharedReadCacheTests() {
       .sort();
     assert.deepEqual(
       optIns,
-      ["src/components/crm/rep-visits-page.tsx", "src/lib/crm/kpis-board.ts", "src/lib/crm/sfe-field-analytics.ts"],
+      ["src/components/crm/rep-visits-page.tsx", "src/lib/crm/brick-coverage.ts", "src/lib/crm/kpis-board.ts", "src/lib/crm/sfe-field-analytics.ts"],
       "RED a new reader opted into the minute-old CRM copy — only a DISPLAY reader may, never one that decides money, a deduction, an approval or a notification. Classify it here first.",
     );
 
@@ -231,12 +231,13 @@ export async function runSharedReadCacheTests() {
     const board = code("src/lib/crm/kpis-board.ts");
     assert.equal(
       (board.match(/reuseRecentWindow: true/g) ?? []).length,
-      3,
-      "RED the KPIs board opts in on exactly its three company reads: call rate, doctor lists, rep KPI reports",
+      4,
+      "RED the KPIs board opts in on exactly its four company reads: call rate, doctor lists, rep KPI reports, the Phoenix half",
     );
     assert.match(board, /loadCallRateReport\(\{[^}]*reuseRecentWindow: true/, "RED the call rate shares the copy");
     assert.match(board, /getRepDoctorLists\(\{[\s\S]{0,700}?reuseRecentWindow: true/, "RED the doctor lists share the copy");
     assert.match(board, /loadRepKpiReports\(\{[\s\S]{0,700}?reuseRecentWindow: true/, "RED the rep KPI reports share the copy");
+    assert.match(board, /loadPhoenixRepKpis\(\{[\s\S]{0,1200}?reuseRecentWindow: true/, "RED the Phoenix half shares the copy");
 
     const rate = code("src/lib/crm/call-rate-service.ts");
     assert.match(rate, /const reuseRecentWindow = input\.reuseRecentWindow === true;/, "RED the call rate defaults the copy OFF");
@@ -248,5 +249,20 @@ export async function runSharedReadCacheTests() {
     assert.match(reports, /collapseDoubleVisits: true,\s*reuseRecentWindow: input\.reuseRecentWindow === true,/, "RED the rep KPI reports forward it, default OFF");
   }
 
-  console.log("shared read cache: 10 blocks passed");
+  // ── (11) The Phoenix KPI half and the brick-coverage board share the copy; the audit does not ──
+  // The Phoenix half read the company month's visits and check-ins on every Coverage-tab load, and the
+  // brick-coverage board read the company's check-in month on every page view (23 Oct 2026). Both
+  // loaders default the option OFF, so the system audit's narrowed Phoenix read and any reader that
+  // decides money stay live.
+  {
+    const phoenix = code("src/lib/crm/phoenix-kpi-data.ts");
+    assert.match(phoenix, /const reuseRecentWindow = input\.reuseRecentWindow === true;/, "RED the Phoenix half defaults the copy OFF");
+    assert.equal((phoenix.match(/^\s*reuseRecentWindow,$/gm) ?? []).length, 2, "RED both its visits and its check-ins forward it");
+    const audit = code("src/lib/system-audit/detectors/visit-lifecycle.ts");
+    assert.ok(!/reuseRecentWindow/.test(audit), "RED the system audit must read live");
+    const bricks = code("src/lib/crm/brick-coverage.ts");
+    assert.match(bricks, /includePhoenixVisits: true,\s*reuseRecentWindow: true,/, "RED the brick-coverage check-ins share the copy");
+  }
+
+  console.log("shared read cache: 11 blocks passed");
 }

@@ -148,7 +148,12 @@ export async function loadPhoenixRepKpis(input: {
   /** Read only the scope's reps when it is a few people (see above). The KPIs board passes false for
    * its Coverage tab, which keeps the company-wide read exactly as its doctor-list half does. */
   narrowToScope?: boolean;
+  /** Opt-in, DISPLAY readers only: the company-wide visits and check-ins may come from the shared copy up
+   * to a minute old (crm/reads.ts, "A dashboard may reuse a company window"). Defaults OFF, so the system
+   * audit and any future reader that decides money read live; a narrowed read names people and never shares. */
+  reuseRecentWindow?: boolean;
 }): Promise<PhoenixKpiLoad> {
+  const reuseRecentWindow = input.reuseRecentWindow === true;
   const hasWindow = input.window.dateTo >= input.month.start;
   const [panelRows, holidays] = await Promise.all([
     loadPanelRows(),
@@ -177,6 +182,7 @@ export async function loadPhoenixRepKpis(input: {
           dateTo: input.window.dateTo,
           columns: VISIT_COLUMNS,
           collapseDoubleVisits: true,
+          reuseRecentWindow,
           ...people,
         })
       : Promise.resolve([] as VisitRecord[]),
@@ -188,6 +194,7 @@ export async function loadPhoenixRepKpis(input: {
           dateFrom: input.month.start,
           dateTo: input.window.dateTo,
           columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
+          reuseRecentWindow,
           ...people,
         })
       : Promise.resolve([] as CheckinRecord[]),
