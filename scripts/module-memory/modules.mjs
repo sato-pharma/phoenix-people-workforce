@@ -862,6 +862,7 @@ export const MODULES = [
     globs: [
       "src/lib/outstation/**",
       "src/components/outstation/**",
+      "src/components/employee-portal/personal-expense-workload-dashboard*.tsx",
       "app/**/{outstation,outstation-expenses,outstation-review,expenses,expense-dashboard,expense-submissions,submit-expense,team-expenses}/**",
       "tests/*{expense,outstation,per-diem,trip}*",
       "supabase/migrations/*{expense,outstation}*",
