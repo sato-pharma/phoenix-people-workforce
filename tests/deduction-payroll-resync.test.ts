@@ -263,6 +263,7 @@ export async function runDeductionPayrollResyncTests() {
         return {} as unknown as StepState;
       },
       listLatestCellWrites: async () => new Map(),
+      holdRun: async (_input, work) => work(),
     };
 
     const outcome = await resyncPayrollDeductionSteps(
@@ -321,6 +322,7 @@ export async function runDeductionPayrollResyncTests() {
         return {} as unknown as StepState;
       },
       listLatestCellWrites: async () => new Map(),
+      holdRun: async (_input, work) => work(),
     };
 
     const outcome = await resyncPayrollDeductionSteps(
@@ -376,6 +378,7 @@ export async function runDeductionPayrollResyncTests() {
         return {} as unknown as StepState;
       },
       listLatestCellWrites: async () => new Map(),
+      holdRun: async (_input, work) => work(),
     };
 
     const outcome = await resyncPayrollDeductionSteps(

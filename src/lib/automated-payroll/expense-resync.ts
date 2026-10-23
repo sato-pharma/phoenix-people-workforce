@@ -3,6 +3,8 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 
 import { clearDraftExpenses, findActiveRun, listStepStates, upsertStepState } from "./draft-store.ts";
+import { holdRun } from "./run-hold.ts";
+import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import type { MonthlySalaryRun } from "./types.ts";
 
@@ -219,22 +221,54 @@ export async function resyncPayrollExpenseStep(
         continue;
       }
 
-      const clearedHrIds = await clearDraftExpenses(run.id, period.hrIds);
+      // Under the run's hold (audit 2026-10-23, S-PAY-06): a Part 2 confirm landing between the check
+      // above and these writes used to have the clear arrive after its stamp. The hold re-checks the
+      // phase as it is taken; a run that reached `ready` meanwhile is reported as the skip below.
+      let held: { clearedHrIds: string[]; reopenedStep: boolean };
+      try {
+        held = await holdRun({
+            runId: run.id,
+            expected: ["part1", "part2"],
+            action: RUN_HOLD_ACTIONS.expenseResync,
+            // A decision that has been saved must still reach payroll: wait briefly, then go ahead.
+            waitMs: 5_000,
+            whenWaitRunsOut: "proceed",
+          }, async () => {
+          const clearedHrIds = await clearDraftExpenses(run.id, period.hrIds);
 
-      // Re-open only a step that was actually confirmed. Writing "pending" over a step that is
-      // already pending would create a step_state row for a step HR has never opened.
-      const states = await listStepStates(run.id);
-      const expensesStep = states.find((state) => state.stepKey === "p2_expenses");
-      const reopenedStep = expensesStep?.status === "confirmed";
-      if (reopenedStep) {
-        await upsertStepState({
-          runId: run.id,
-          stepKey: "p2_expenses",
-          status: "pending",
-          confirmedAt: null,
-          confirmedBy: null,
+          // Re-open only a step that was actually confirmed. Writing "pending" over a step that is
+          // already pending would create a step_state row for a step HR has never opened.
+          const states = await listStepStates(run.id);
+          const expensesStep = states.find((state) => state.stepKey === "p2_expenses");
+          const reopenedStep = expensesStep?.status === "confirmed";
+          if (reopenedStep) {
+            await upsertStepState({
+              runId: run.id,
+              stepKey: "p2_expenses",
+              status: "pending",
+              confirmedAt: null,
+              confirmedBy: null,
+            });
+          }
+          return { clearedHrIds, reopenedStep };
         });
+      } catch (holdError) {
+        const after = await findActiveRun(period.month, period.year).catch(() => null);
+        if (!after?.part2ConfirmedAt) throw holdError;
+        logError("Automated payroll: an expense decision changed after Part 2 was confirmed and did not reach payroll", {
+          labels: {
+            event: "automated_payroll_expense_resync_skipped_part2_confirmed",
+            runId: after.id,
+            month: period.month,
+            year: period.year,
+            employees: period.hrIds.length,
+            hrIds: period.hrIds.join(","),
+          },
+        });
+        outcomes.push({ action: "skip", month: period.month, year: period.year, reason: "part2_already_confirmed" });
+        continue;
       }
+      const { clearedHrIds, reopenedStep } = held;
 
       outcomes.push({
         action: "resync",

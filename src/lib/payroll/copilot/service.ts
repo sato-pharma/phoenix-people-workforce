@@ -533,6 +533,34 @@ export async function startRun(period: CopilotPeriod, actor: string | null): Pro
     );
   }
 
+  // NOT WHILE AUTOMATED PAYROLL HAS THIS MONTH OPEN (audit 2026-10-23, F-11). Automated Payroll refuses
+  // to start while a Copilot run is active, because both write the same expense and vacation decision
+  // tables; this is the other half, which was missing. Fails closed, as that one does: not being able
+  // to look is not the same as finding nothing.
+  const { data: automatedRuns, error: automatedRunsError } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("id")
+    .eq("month", period.month)
+    .eq("year", period.year)
+    .in("phase", ["part1", "part2", "ready"])
+    .limit(1);
+  if (automatedRunsError) {
+    logError("Payroll Copilot: could not check for an active Automated Payroll run", {
+      labels: { event: "payroll_copilot_automated_exclusion_read_failed", month: String(period.month), year: String(period.year) },
+      error: automatedRunsError,
+    });
+    throw new CopilotError(
+      "Could not confirm that no Automated Payroll run is open for this month, so nothing was started. Try again in a moment.",
+      503,
+    );
+  }
+  if (automatedRuns && automatedRuns.length > 0) {
+    throw new CopilotError(
+      `Automated Payroll has ${MONTH_NAMES[period.month - 1]} ${period.year} open. Cancel that run before using Payroll Copilot (they share deduction and expense decisions).`,
+      409,
+    );
+  }
+
   const draft = await assembleDraft(period, []);
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

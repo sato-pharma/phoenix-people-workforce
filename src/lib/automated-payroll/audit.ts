@@ -52,3 +52,33 @@ export async function writeAutomatedPayrollAudit(input: {
     });
   }
 }
+
+/**
+ * The same row, but REQUIRED: a failed insert throws instead of being logged and forgotten.
+ *
+ * Only for a row something later depends on. The Part 2 totals stamp is the one: publish and every
+ * Part-2 bank file refuse without it, so writing it best-effort meant a lost insert silently turned
+ * that check off (audit 2026-10-23, S-PAY-08). Written inside the confirm's claim, before its phase
+ * write, so a run never reaches `ready` without the stamp it will be checked against.
+ */
+export async function writeRequiredAutomatedPayrollAudit(input: {
+  runId: string;
+  actorHrId: string;
+  action: string;
+  stepKey?: StepKey | null;
+  detail?: Record<string, unknown>;
+}, client?: AuditClient): Promise<void> {
+  const writer = client ?? getSupabaseAdmin();
+  const { error } = await writer.from("automated_payroll_audit").insert({
+    run_id: input.runId,
+    actor_hr_id: input.actorHrId,
+    action: input.action,
+    step_key: input.stepKey ?? null,
+    detail: input.detail ?? {},
+  });
+  if (error) {
+    throw new Error(
+      `Could not record "${input.action}" on this payroll run, so nothing was confirmed. Try again in a moment. (${error.message})`,
+    );
+  }
+}

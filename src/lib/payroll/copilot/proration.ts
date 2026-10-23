@@ -325,7 +325,10 @@ export function applyResignationPartsSplit(input: {
   totalPayable: number;
   basicSalary: number;
 }): ResignationPartsSplit {
-  const firstPart = roundCurrency(Math.min(input.basicSalary, input.totalPayable));
+  // A settlement below zero pays nothing in either instalment — the same floor the one-part branch in
+  // assemble.ts already applies. Without it Math.min handed the negative total straight to Part 1, so a
+  // leaver who owed 800 showed a First Part of -800 (audit 2026-10-23, S-PAY-01).
+  const firstPart = roundCurrency(Math.max(0, Math.min(input.basicSalary, input.totalPayable)));
   const secondPart = roundCurrency(Math.max(0, input.totalPayable - firstPart));
   return { firstPart, secondPart };
 }

@@ -117,15 +117,87 @@ const LABELS: Record<keyof ConfirmedTotals, string> = {
   net: "total net salary",
 };
 
-/** What the person clicking Publish reads. Names the figures, because the fix is to look at them. */
-export function describeTotalsDrift(drift: TotalsDrift[]): string {
+/**
+ * Where a comparison against the Part 2 stamp is being made. Publish writes payslips; a bank-file
+ * download hands finance a transfer file. The refusal says which one it stopped.
+ */
+export type ConfirmCheckContext = "publish" | "bank_file";
+
+/** What the person clicking Publish (or downloading a bank file) reads. Names the figures, because the fix is to look at them. */
+export function describeTotalsDrift(drift: TotalsDrift[], context: ConfirmCheckContext = "publish"): string {
   const listed = drift
     .map((one) => `${LABELS[one.field]} ${one.confirmed.toLocaleString()} → ${one.atPublish.toLocaleString()}`)
     .join("; ");
+  const consequence =
+    context === "bank_file"
+      ? "This bank file is rebuilt from today's data, so downloading it now would send the bank figures " +
+        "nobody confirmed. No file was produced."
+      : "Finance may already have executed the bank files built from the confirmed figures, so " +
+        "publishing now would write payslips that disagree with what was paid.";
   return (
-    `This month has changed since Part 2 was confirmed: ${listed}. ` +
-    "Finance may already have executed the bank files built from the confirmed figures, so " +
-    "publishing now would write payslips that disagree with what was paid. Reopen Part 2, look at " +
+    `This month has changed since Part 2 was confirmed: ${listed}. ${consequence} Reopen Part 2, look at ` +
     "what moved, and confirm again."
   );
+}
+
+/**
+ * A run in `ready` with no stamp at all. Before 2026-10-23 publish let this through and recorded
+ * only that it could not compare; the stamp is now written inside the confirm's own claim, so a
+ * confirmed run without one means the confirm predates the stamp or its write was lost. Either way
+ * nothing proves the figures are the confirmed ones, and re-confirming Part 2 writes a fresh stamp.
+ */
+export function describeMissingPart2Stamp(context: ConfirmCheckContext = "publish"): string {
+  const what = context === "bank_file" ? "build this bank file" : "publish";
+  return (
+    `There is no record of the totals Part 2 confirmed for this run, so it is not possible to ${what} ` +
+    "and prove the figures are the ones that were confirmed. Reopen Part 2 and confirm it again — that " +
+    "records the totals — then try again. Nothing was changed."
+  );
+}
+
+/**
+ * When the stamp started being written: #3706 merged 2026-09-11 20:18 Cairo. A run whose Part 2 was
+ * confirmed before then never had one, and refusing it for that would block a month that did nothing
+ * wrong — it keeps the old behaviour (compared when a stamp exists, recorded as uncompared otherwise).
+ * Every confirm since has one, and from 2026-10-23 one written inside its claim.
+ */
+export const PART2_STAMP_FIRST_WRITTEN_AT = "2026-09-11T17:18:30Z";
+
+/** Whether a run's Part 2 confirm is older than the stamp itself, so a missing stamp is expected. */
+export function confirmedBeforeStampExisted(part2ConfirmedAt: string | null | undefined): boolean {
+  if (!part2ConfirmedAt) return false;
+  const at = Date.parse(part2ConfirmedAt);
+  return Number.isFinite(at) && at < Date.parse(PART2_STAMP_FIRST_WRITTEN_AT);
+}
+
+/**
+ * Whether a downloaded Part 2 file — the full finance sheet, the Part 2 FAB and CIB files — matches the
+ * stamp. Held only while the run is `ready`, the window in which finance is handed these files to
+ * execute. A PUBLISHED month is not: its payslips are the record of what was paid, a re-download
+ * rebuilt from today's data is a copy, and the only remedy a refusal could name (reopen Part 2) is not
+ * open to a published run — so July and August, published before the stamp existed, would otherwise
+ * never download again, and September would stop the first time a salary is edited.
+ */
+export function assertPart2FileMatchesStamp(
+  run: { phase: string; part2ConfirmedAt?: string | null },
+  stamp: ConfirmedTotals | null,
+  current: ConfirmedTotals,
+): void {
+  if (run.phase !== "ready") return;
+  if (!stamp && confirmedBeforeStampExisted(run.part2ConfirmedAt)) return;
+  assertMatchesPart2Confirm(stamp, current, "bank_file");
+}
+
+/**
+ * THE ONE CHECK publish and every Part-2-scoped bank file run against the stamp. Throws a Conflict
+ * when the stamp is missing or the month has moved; returns quietly only when the figures match.
+ */
+export function assertMatchesPart2Confirm(
+  confirmed: ConfirmedTotals | null,
+  current: ConfirmedTotals,
+  context: ConfirmCheckContext,
+): void {
+  if (!confirmed) throw new Error(`Conflict: ${describeMissingPart2Stamp(context)}`);
+  const drift = compareConfirmedTotals(confirmed, current);
+  if (drift.length > 0) throw new Error(`Conflict: ${describeTotalsDrift(drift, context)}`);
 }

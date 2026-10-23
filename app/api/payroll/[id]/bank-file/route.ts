@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -60,10 +61,26 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const buffer = await workbook.xlsx.writeBuffer();
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;
+    // A FILE OF EVERY EMPLOYEE'S ACCOUNT AND PAY LEAVES A RECORD (audit 2026-10-23, F-21). Who took the
+    // month's bank transfer file, and how much it carried. Best-effort: a failed audit write is logged
+    // loudly and never blocks finance from the file.
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: exportData.batch.id,
+      entityType: "payroll_batch",
+      newValues: {
+        rows: rows.length,
+        missingBank: rows.filter((row) => row.missingBank).length,
+        total: Math.round(rows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100,
+      },
+      summary: `Bank transfer file downloaded for ${exportData.batch.month}/${exportData.batch.year} (${rows.length} rows).`,
+    });
     return new Response(buffer, {
       headers: {
         "Content-Disposition": `attachment; filename="phoenix-bank-transfer-${period}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        // Never kept by a browser or proxy cache: it holds every employee's account number and pay.
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {

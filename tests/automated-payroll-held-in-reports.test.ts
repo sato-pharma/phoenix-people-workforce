@@ -103,7 +103,7 @@ export async function runAutomatedPayrollHeldInReportsTests() {
   assert.match(route, /extraNotes: heldNote \? \[heldNote\] : \[\]/, "and passes the note into the filing");
 
   const runService = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
-  const publish = bodyOf(runService, "export async function publishToPayslips(");
+  const publish = bodyOf(runService, "export async function publishToPayslips(", 20000);
   assert.match(publish, /socialInsurance: roundCurrency\(entry\.row\.socialInsurance\)/, "publish now records a held person's filing figures");
   assert.match(publish, /employmentIncomeTax: roundCurrency\(entry\.row\.employmentIncomeTax\)/);
 
