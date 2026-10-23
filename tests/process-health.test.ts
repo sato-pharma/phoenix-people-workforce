@@ -106,7 +106,7 @@ export function runProcessHealthTests() {
 
   // The two P1 paths of the 2026-10-04 review report their time, so their fixes can be read in the logs.
   assert.match(
-    read("app/api/approvals/badge-counts/route.ts"),
+    read("src/lib/approvals-hub/badge-counts-payload.ts"),
     /recordTiming\("badge_counts", Date\.now\(\) - startedAt\)/,
     "the badge poll must record its time into the process_health line",
   );

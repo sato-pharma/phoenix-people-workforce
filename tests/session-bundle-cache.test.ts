@@ -175,6 +175,9 @@ export function runSessionBundleCacheTests() {
     "src/lib/auth/session.ts",
     "src/lib/activity/service.ts",
     "app/api/auth/heartbeat/route.ts",
+    "app/api/auth/pulse/route.ts",
+    "src/lib/auth/session-heartbeat.ts",
+    "src/lib/approvals-hub/badge-counts-payload.ts",
     "app/api/auth/logout/route.ts",
   ].filter((file) => read(file).includes("recallRememberedBundle"));
   assert.deepEqual(recallers, [], "no other auth path may serve a remembered bundle");

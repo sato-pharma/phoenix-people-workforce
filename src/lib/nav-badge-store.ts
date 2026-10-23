@@ -11,10 +11,19 @@
  *
  * The approval badge srcs are additionally BATCHED: they keep their own
  * channels (per-src counts, listeners, and notification-on-increase behavior are
- * unchanged), but share ONE polling loop against /api/approvals/badge-counts —
- * one HTTP request per 30s cycle instead of one per badge. Any other `src` keeps
- * the original per-src fetch path.
+ * unchanged), but read their counts from the SESSION PULSE (session-pulse-store.ts) —
+ * the one 30 s request an open tab sends for the badges, the notification bell and the
+ * session heartbeat together. Any other `src` keeps the original per-src fetch path.
  */
+
+import {
+  PULSE_RETURN_GAP_MS,
+  pulseBadgesSnapshot,
+  requestPulseBadges,
+  subscribePulseBadges,
+  _resetSessionPulse,
+  type PulseBadges,
+} from "@/lib/session-pulse-store";
 
 type Listener = (count: number | null, overdue: boolean) => void;
 
@@ -32,6 +41,7 @@ const channels = new Map<string, Channel>();
 
 // ── Batched approval badge polling ───────────────────────────────────────────
 
+/** The standalone batched endpoint. It stays live for other consumers; the badges no longer poll it (they ride /api/auth/pulse). */
 export const BADGE_COUNTS_ENDPOINT = "/api/approvals/badge-counts";
 
 type BatchKey =
@@ -80,26 +90,14 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
 };
 
 /**
- * The least time between two batched fetches when the trigger is a tab coming BACK into view
- * (2026-10-23, every page change under 1 second). Production, 2026-10-23, about 27 minutes: the
- * badge-counts endpoint answered 141 calls for 226 s of server time, about 1.6 s each, and a large
- * share were visibility returns — an alt-tab to the mail and back, a phone screen woken for a second
- * — each one a full eleven-domain recount seconds after the last. The bell already rations its own
- * return refetch the same way (BELL_RETURN_GAP_MS in in-app-notifications-bell.tsx). Measured from
- * when the last fetch STARTED, so a slow answer does not stretch the gap. Only the visibility return
- * is rationed: a badge mounting for the first time still fetches at once, and the 30 s poll is
- * untouched, so a returning viewer reads a count at most 15 s old and never a blank one.
+ * The least time between two fetches when the trigger is a tab coming BACK into view (2026-10-23,
+ * every page change under 1 second). The rule now lives in the pulse store, which owns the loop and
+ * its `visibilitychange` listener; the value is the same 15 s the bell and the badges each used.
  */
-export const BADGE_RETURN_GAP_MS = 15_000;
+export const BADGE_RETURN_GAP_MS = PULSE_RETURN_GAP_MS;
 
-/** Shared polling infrastructure for every batched channel (one poll serves all). */
-const batch: {
-  inFlight: Promise<void> | null;
-  intervalId: ReturnType<typeof setInterval> | null;
-  onVisible: (() => void) | null;
-  /** When the last batched fetch actually started (Date.now()); 0 = never. See BADGE_RETURN_GAP_MS. */
-  lastFetchStartedAt: number;
-} = { inFlight: null, intervalId: null, onVisible: null, lastFetchStartedAt: 0 };
+/** The one subscription every batched channel shares to the session pulse; null while none is mounted. */
+const batch: { unsubscribe: (() => void) | null } = { unsubscribe: null };
 
 function isBatchedSrc(src: string): boolean {
   return Object.prototype.hasOwnProperty.call(BATCH_KEY_BY_SRC, src);
@@ -151,46 +149,26 @@ function tabIsHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
-/** One batched fetch distributes counts to every subscribed badge channel. */
-function fetchAndBroadcastBatch(): void {
-  // inFlight guard: if a batched request is already running, reuse it.
-  if (batch.inFlight) return;
-
-  batch.lastFetchStartedAt = Date.now();
-  batch.inFlight = globalThis
-    .fetch(BADGE_COUNTS_ENDPOINT)
-    .then((r) => r.json())
-    .then((d: Partial<Record<BatchKey, { count?: number; overdue?: boolean }>>) => {
-      for (const [src, key] of Object.entries(BATCH_KEY_BY_SRC)) {
-        const slot = d?.[key];
-        if (!slot || typeof slot.count !== "number") continue;
-        applyCount(src, slot.count, slot.overdue === true);
-      }
-    })
-    .catch(() => {})
-    .finally(() => {
-      batch.inFlight = null;
-    });
+/** Distribute one pulse's badge payload to the batched channels (only `onlySrc` when given). */
+function applyBatch(d: PulseBadges | null | undefined, onlySrc?: string): void {
+  for (const [src, key] of Object.entries(BATCH_KEY_BY_SRC)) {
+    if (onlySrc !== undefined && src !== onlySrc) continue;
+    const slot = d?.[key];
+    if (!slot || typeof slot.count !== "number") continue;
+    applyCount(src, slot.count, slot.overdue === true);
+  }
 }
 
 function teardownBatchIfIdle(): void {
   if (hasBatchedChannels()) return;
-  if (batch.intervalId !== null) clearInterval(batch.intervalId);
-  batch.intervalId = null;
-  if (batch.onVisible && typeof document !== "undefined") {
-    document.removeEventListener("visibilitychange", batch.onVisible);
-  }
-  batch.onVisible = null;
+  batch.unsubscribe?.();
+  batch.unsubscribe = null;
 }
 
 // ── Per-src fetch (non-batched srcs only) ────────────────────────────────────
 
 function fetchAndBroadcast(src: string): void {
-  if (isBatchedSrc(src)) {
-    fetchAndBroadcastBatch();
-    return;
-  }
-
+  // Batched srcs never come here: they are served by the pulse (see subscribeNavBadge).
   const ch = channels.get(src);
   if (!ch) return;
   // inFlight guard: if a request is already running for this src, reuse it —
@@ -248,25 +226,16 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
 
   if (isBatchedSrc(src)) {
     if (isNewChannel) {
-      // Fetch now so a late-mounting badge gets its count promptly; the shared
-      // inFlight guard dedupes when another badge's request is already running
-      // (its response covers this channel too, now that it exists).
-      fetchAndBroadcastBatch();
-      if (batch.intervalId === null) {
-        batch.intervalId = setInterval(() => {
-          if (!tabIsHidden()) fetchAndBroadcastBatch();
-        }, 30_000);
-      }
-      if (batch.onVisible === null && typeof document !== "undefined") {
-        // A return inside BADGE_RETURN_GAP_MS of the last fetch's start keeps the count it already
-        // shows (2026-10-23, every page change under 1 second); the next 30 s tick refreshes it.
-        const onVisible = () => {
-          if (document.visibilityState !== "visible") return;
-          if (Date.now() - batch.lastFetchStartedAt < BADGE_RETURN_GAP_MS) return;
-          fetchAndBroadcastBatch();
-        };
-        batch.onVisible = onVisible;
-        document.addEventListener("visibilitychange", onVisible);
+      if (batch.unsubscribe === null) {
+        // The first batched channel joins the pulse; its cached payload, or its first answer, reaches
+        // every channel through applyBatch. The pulse owns the 30 s poll, the in-flight guard and the
+        // 15 s rule for a tab shown again.
+        batch.unsubscribe = subscribePulseBadges((badges) => applyBatch(badges));
+      } else {
+        // A badge mounting later reads its slot from the last answer, or asks for one now.
+        const cached = pulseBadgesSnapshot();
+        if (cached) applyBatch(cached, src);
+        else requestPulseBadges();
       }
     }
   } else if (ch.listeners.size === 1) {
@@ -312,16 +281,6 @@ export function _resetNavBadgeChannels(): void {
     }
   });
   channels.clear();
-  if (batch.intervalId !== null) clearInterval(batch.intervalId);
-  batch.intervalId = null;
-  if (batch.onVisible && typeof document !== "undefined") {
-    try {
-      document.removeEventListener("visibilitychange", batch.onVisible);
-    } catch {
-      // ignore — document may be a test stub
-    }
-  }
-  batch.onVisible = null;
-  batch.inFlight = null;
-  batch.lastFetchStartedAt = 0;
+  batch.unsubscribe = null;
+  _resetSessionPulse();
 }

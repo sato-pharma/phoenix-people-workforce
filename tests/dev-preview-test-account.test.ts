@@ -69,7 +69,7 @@ export function runDevPreviewTestAccountTests(): void {
 
   // ── A refresh keeps it a test account ──────────────────────────────────────────────────────────
   assert.match(
-    source("app/api/auth/heartbeat/route.ts"),
+    source("src/lib/auth/session-heartbeat.ts"),
     /testPersona: Boolean\(devPreview\.testPersona\)/,
     "the heartbeat re-issues the cookie WITH the marker — without it the session turns into the real person minutes in",
   );

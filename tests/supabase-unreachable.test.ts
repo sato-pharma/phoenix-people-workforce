@@ -165,7 +165,7 @@ function sinkWiringTests() {
   assert.match(service, /message: truncate\(message, MAX_TEXT_LENGTH\)/, "the insert uses the renamed message, not input.message");
 
   // The heartbeat answers 503 for the outage page instead of rethrowing it as an unhandled 500.
-  const heartbeat = code("app/api/auth/heartbeat/route.ts");
+  const heartbeat = code("src/lib/auth/session-heartbeat.ts");
   const branch = heartbeat.slice(heartbeat.indexOf("isSupabaseTimeout(error)"));
   const body = branch.slice(0, branch.indexOf("throw error"));
   assert.match(body, /classifySupabaseUnreachable\(describeThrown\(error\)\)/, "the heartbeat recognises the Cloudflare page");

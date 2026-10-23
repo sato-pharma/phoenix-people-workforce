@@ -111,7 +111,7 @@ export async function runSessionUnavailableKeepsSessionTests() {
     "that audit summary described a rejection that no longer happens",
   );
 
-  const heartbeatSource = stripComments(readFileSync("app/api/auth/heartbeat/route.ts", "utf8"));
+  const heartbeatSource = stripComments(readFileSync("src/lib/auth/session-heartbeat.ts", "utf8"));
   assert.match(
     heartbeatSource,
     /isSessionVerificationUnavailable\(error\)/,

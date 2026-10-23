@@ -270,7 +270,7 @@ export function runMarketingApprovalInboxNavBadgeTests() {
     /"\/api\/marketing-requests\/pending-count": "marketing"/,
     "11: the marketing src must be batched, or it costs an extra HTTP request every 30s per tab",
   );
-  const badgeCountsRoute = readFileSync("app/api/approvals/badge-counts/route.ts", "utf8");
+  const badgeCountsRoute = readFileSync("src/lib/approvals-hub/badge-counts-payload.ts", "utf8");
   assert.match(
     badgeCountsRoute,
     /getMarketingApproverBadge\(access\)/,

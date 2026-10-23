@@ -117,7 +117,7 @@ export function runBadgePollStaysLightTests() {
     );
   }
 
-  for (const route of ["app/api/approvals/badge-counts/route.ts", "app/api/approvals-hub/pending-count/route.ts"]) {
+  for (const route of ["src/lib/approvals-hub/badge-counts-payload.ts", "app/api/approvals-hub/pending-count/route.ts"]) {
     const source = read(route);
     assert.match(source, /countAwaitingMyActionItems\(access, audience\)/, `${route} must count, not list, the hub inbox`);
     assert.doesNotMatch(source, /getAwaitingMyActionItems\(/, `${route} must not build the seven-source inbox list just to take its length`);

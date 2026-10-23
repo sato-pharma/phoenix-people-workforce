@@ -189,19 +189,23 @@ export async function runNavBadgeStoreTests() {
     setupFetch(0);
   }
 
-  // ── 8. Approval badge srcs share ONE batched fetch (per-src counts intact) ──
+  // ── 8. Approval badge srcs share ONE pulse request (per-src counts intact) ──
+  // The badges ride /api/auth/pulse (session-pulse-store.ts): the answer nests them under `badges`.
   {
     _resetNavBadgeChannels();
     const fetchedUrls: string[] = [];
     (globalThis as unknown as Record<string, unknown>)["fetch"] = (url: string) => {
       fetchedUrls.push(url);
       return Promise.resolve({
+        status: 200,
         json: () =>
           Promise.resolve({
-            plan: { count: 2, overdue: false },
-            vacation: { count: 5, overdue: true },
-            excuse: { count: 0, overdue: false },
-            hub: { count: 9 },
+            badges: {
+              plan: { count: 2, overdue: false },
+              vacation: { count: 5, overdue: true },
+              excuse: { count: 0, overdue: false },
+              hub: { count: 9 },
+            },
           }),
       });
     };
@@ -218,16 +222,21 @@ export async function runNavBadgeStoreTests() {
 
     assert.deepEqual(
       fetchedUrls,
-      [BADGE_COUNTS_ENDPOINT],
-      "8: two badge srcs must share exactly one batched fetch to the badge-counts endpoint",
+      ["/api/auth/pulse?badges=1"],
+      "8: two badge srcs must share exactly one pulse request, asking for the badges only",
+    );
+    assert.notEqual(
+      fetchedUrls[0],
+      BADGE_COUNTS_ENDPOINT,
+      "8: the batched badges must no longer poll the standalone badge-counts endpoint",
     );
     assert.deepEqual(
-      vacationReceived,
+      vacationReceived.filter((r) => r.count !== null).slice(-1),
       [{ count: 5, overdue: true }],
-      "8: the vacation channel must receive its own slot from the batched response",
+      "8: the vacation channel must receive its own slot from the pulse's badges",
     );
     assert.deepEqual(
-      hubReceived,
+      hubReceived.filter((r) => r.count !== null).slice(-1),
       [{ count: 9, overdue: false }],
       "8: the hub channel must receive its own slot (no overdue flag → false)",
     );
@@ -277,16 +286,24 @@ export async function runNavBadgeStoreTests() {
     }
   }
 
-  // ── 10. A tab shown again within 15 s of the last batched fetch keeps its count ──
+  // ── 10. A tab shown again within 15 s of the last pulse keeps its count ──
   // 2026-10-23, every page change under 1 second: the badge-counts endpoint cost 226 s of server time
   // in 27 minutes of production, much of it visibility returns seconds after the last recount. The
-  // return is rationed; a badge mounting for the first time is not. Date.now is driven by hand.
+  // return is rationed; a badge mounting while the pulse already holds an answer is served from it,
+  // with no request at all. Date.now is driven by hand.
   {
     const realNow = Date.now;
     let now = 1_000_000;
     Date.now = () => now;
     try {
-      setupFetch(1);
+      fetchCallCount = 0;
+      (globalThis as unknown as Record<string, unknown>)["fetch"] = () => {
+        fetchCallCount++;
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ badges: { vacation: { count: 1 }, hub: { count: 4 } } }),
+        });
+      };
       _resetNavBadgeChannels();
       const unsubVacation = subscribeNavBadge("/api/approvals/vacation/pending-count", () => {});
       await flush();
@@ -298,22 +315,29 @@ export async function runNavBadgeStoreTests() {
       assert.equal(
         fetchCallCount,
         1,
-        "10: a tab shown again inside 15 s of the last batched fetch must keep its count, not recount",
+        "10: a tab shown again inside 15 s of the last pulse must keep its count, not recount",
       );
 
-      const unsubHub = subscribeNavBadge("/api/approvals-hub/pending-count", () => {});
+      const hubReceived: Array<number | null> = [];
+      const unsubHub = subscribeNavBadge("/api/approvals-hub/pending-count", (c) => hubReceived.push(c));
       await flush();
-      assert.equal(fetchCallCount, 2, "10: a batched badge mounting for the first time must still fetch at once, gap or not");
-
-      now += BADGE_RETURN_GAP_MS - 1;
-      visibilityListeners.forEach((fn) => fn());
-      await flush();
-      assert.equal(fetchCallCount, 2, "10: the gap must be measured from the LAST fetch's start, not the first");
+      assert.equal(fetchCallCount, 1, "10: a batched badge mounting after an answer must be served from it, with no new request");
+      assert.ok(hubReceived.includes(4), "10: the late badge must receive its own slot from the cached answer");
 
       now += 1;
       visibilityListeners.forEach((fn) => fn());
       await flush();
-      assert.equal(fetchCallCount, 3, "10: a tab shown again 15 s after the last fetch started must recount");
+      assert.equal(fetchCallCount, 2, "10: a tab shown again 15 s after the last request started must recount");
+
+      now += BADGE_RETURN_GAP_MS - 1;
+      visibilityListeners.forEach((fn) => fn());
+      await flush();
+      assert.equal(fetchCallCount, 2, "10: the gap must be measured from the LAST request's start, not the first");
+
+      now += 1;
+      visibilityListeners.forEach((fn) => fn());
+      await flush();
+      assert.equal(fetchCallCount, 3, "10: the next return, 15 s after that request started, must recount");
       unsubVacation();
       unsubHub();
     } finally {

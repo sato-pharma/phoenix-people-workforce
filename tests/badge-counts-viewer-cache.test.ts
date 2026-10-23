@@ -375,7 +375,7 @@ function inboxEarlyZeroIsWiredBeforeTheReads() {
 }
 
 function routeServesThroughTheMemory() {
-  const route = stripComments(readFileSync(new URL("../app/api/approvals/badge-counts/route.ts", import.meta.url), "utf8"));
+  const route = stripComments(readFileSync(new URL("../src/lib/approvals-hub/badge-counts-payload.ts", import.meta.url), "utf8"));
   assert.match(
     route,
     /serveViewerBadgeCounts\(badgeCountsViewerKey\(access\), async \(\) => \{/,

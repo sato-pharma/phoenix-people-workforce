@@ -129,7 +129,7 @@ export function runDirectOrderBadgeFastPathTests() {
   // ── 4. Every badge consumer uses it ────────────────────────────────────────
   const consumers = [
     ["the dedicated endpoint", "../app/api/direct-orders/needs-action-count/route.ts"],
-    ["the batched poll", "../app/api/approvals/badge-counts/route.ts"],
+    ["the batched poll", "../src/lib/approvals-hub/badge-counts-payload.ts"],
     ["the legacy per-src endpoint", "../app/api/approvals/direct-orders/pending-count/route.ts"],
   ] as const;
   for (const [label, path] of consumers) {

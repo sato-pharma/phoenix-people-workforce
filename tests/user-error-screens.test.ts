@@ -72,6 +72,10 @@ function rulesTests() {
     "/api/errors/screen",
     "/api/errors/client",
     "/api/auth/heartbeat",
+    // The folded poll that carries the heartbeat, the badges and the notices. Covered by the
+    // /api/auth prefix, pinned by name because it is now the ONE request a visible tab sends on a
+    // timer — a photograph of every refusal on it would be a picture nobody asked for, every tick.
+    "/api/auth/pulse",
     "/api/auth/login",
     "/api/activity/track",
     "/api/notifications/in-app",

@@ -45,7 +45,7 @@ export const MAX_REFUSAL_BODY_BYTES = 64 * 1024;
  */
 export const SCREEN_CAPTURE_SKIP_LIST: ReadonlyArray<{ match: "prefix" | "exact" | "suffix"; path: string; why: string }> = [
   { match: "prefix", path: "/api/errors", why: "The error reporters themselves, this capture's own endpoint included" },
-  { match: "prefix", path: "/api/auth", why: "Sign-in, sign-out and the idle-session heartbeat" },
+  { match: "prefix", path: "/api/auth", why: "Sign-in, sign-out, the idle-session heartbeat and the session pulse that carries it" },
   { match: "prefix", path: "/api/activity", why: "Page-view tracking, sent from every page" },
   { match: "exact", path: "/api/admin/activity/live", why: "Activity Control's live poll" },
   { match: "exact", path: "/api/notifications/in-app", why: "The notification bell's poll" },

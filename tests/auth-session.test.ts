@@ -477,7 +477,7 @@ export async function runAuthSessionTests() {
     "utf8",
   );
   const heartbeatRouteSource = readFileSync(
-    new URL("../app/api/auth/heartbeat/route.ts", import.meta.url),
+    new URL("../src/lib/auth/session-heartbeat.ts", import.meta.url),
     "utf8",
   );
   const logoutRouteSource = readFileSync(

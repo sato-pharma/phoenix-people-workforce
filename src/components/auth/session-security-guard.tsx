@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/client-session";
 import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
+import { notePulseActivity, subscribePulseSessionEnded } from "@/lib/session-pulse-store";
 
 // No client-side inactivity clock (owner decision 2026-07-23): a session used to be
 // force-logged-out after 15 minutes of no clicks/keys/scrolls on this tab, purely on a
@@ -18,33 +19,27 @@ import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 // reports to the server on activity/resume, and a 401 response (session actually
 // revoked, absolute-expired, or role changed) is still an authoritative, immediate
 // logout — that check is unaffected by this change.
+//
+// The heartbeat is a POST on the session pulse (src/lib/session-pulse-store.ts), the one request an
+// open tab sends for the sidebar badges, the notification bell and this keep-alive together. This
+// component only reports activity to it and acts on a 401 — the 60 s floor between heartbeats, the
+// in-flight guard and the tab-visibility rules all live in the store.
 export function SessionSecurityGuard() {
   const loggingOutRef = useRef(false);
-  const lastHeartbeatRef = useRef(0);
 
   useEffect(() => {
-    const sendHeartbeat = async () => {
-      const now = Date.now();
-      if (now - lastHeartbeatRef.current < 60 * 1000) return;
-      lastHeartbeatRef.current = now;
-
-      try {
-        const response = await fetch("/api/auth/heartbeat", { method: "POST" });
-        if (response.status === 401) {
-          markSessionInvalidated("heartbeat_401");
-          if (!loggingOutRef.current) {
-            loggingOutRef.current = true;
-            logoutOneSignal();
-            clearSessionActivity();
-            hardNavigate(`/login?reason=${phoenixSessionTimeoutReason}`);
-          }
-        }
-      } catch {
-        // Transient network hiccup — the next activity/resume event will retry.
+    const unsubscribe = subscribePulseSessionEnded(() => {
+      markSessionInvalidated("heartbeat_401");
+      if (!loggingOutRef.current) {
+        loggingOutRef.current = true;
+        logoutOneSignal();
+        clearSessionActivity();
+        hardNavigate(`/login?reason=${phoenixSessionTimeoutReason}`);
       }
-    };
+    });
 
-    void sendHeartbeat();
+    const reportActivity = () => notePulseActivity();
+    reportActivity();
 
     const activityEvents: Array<keyof WindowEventMap> = [
       "click",
@@ -54,17 +49,18 @@ export function SessionSecurityGuard() {
       "touchstart",
     ];
     activityEvents.forEach((eventName) => {
-      window.addEventListener(eventName, sendHeartbeat, { passive: true });
+      window.addEventListener(eventName, reportActivity, { passive: true });
     });
-    window.addEventListener("focus", sendHeartbeat);
-    document.addEventListener("visibilitychange", sendHeartbeat);
+    window.addEventListener("focus", reportActivity);
+    document.addEventListener("visibilitychange", reportActivity);
 
     return () => {
+      unsubscribe();
       activityEvents.forEach((eventName) => {
-        window.removeEventListener(eventName, sendHeartbeat);
+        window.removeEventListener(eventName, reportActivity);
       });
-      window.removeEventListener("focus", sendHeartbeat);
-      document.removeEventListener("visibilitychange", sendHeartbeat);
+      window.removeEventListener("focus", reportActivity);
+      document.removeEventListener("visibilitychange", reportActivity);
     };
   }, []);
 

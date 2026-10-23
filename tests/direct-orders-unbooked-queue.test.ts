@@ -34,7 +34,7 @@ const SERVICE_PATH = "src/lib/direct-orders/service.ts";
 const NAVIGATION_PATH = "src/config/system-navigation.ts";
 const NAV_BADGE_PATH = "src/components/layout/nav-badge.tsx";
 const BADGE_STORE_PATH = "src/lib/nav-badge-store.ts";
-const BADGE_COUNTS_ROUTE_PATH = "app/api/approvals/badge-counts/route.ts";
+const BADGE_COUNTS_ROUTE_PATH = "src/lib/approvals-hub/badge-counts-payload.ts";
 const DASHBOARD_PATH = "src/components/admin/finance-command-center.tsx";
 const DASHBOARD_SERVICE_PATH = "src/lib/finance/command-center.ts";
 // Under (desks)/ since 2026-08-12 — a ROUTE GROUP, so the URL is unchanged and only the file
