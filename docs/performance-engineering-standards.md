@@ -69,6 +69,28 @@ shape, not just its two specific symptoms.
     caching fix has already nearly been duplicated once because it had already landed on
     `origin/main` from a parallel session before another session went looking for it.
 
+## A filter argument is resolved once per call, never once per row
+
+15. **Never test a scalar against an array argument with a bare sublink — wrap it in `ARRAY( )`.**
+    `v <> ALL (select … from unnest(p_codes) as c)` is planned as an uncorrelated `SubPlan`, and
+    Postgres re-executes it for EVERY candidate row rather than once. `v <> ALL (ARRAY(select …))`
+    is an uncorrelated scalar the planner lifts to an `InitPlan`. The edit is seven bytes per site.
+    Measured on production 2026-10-23 against `phx_exec_customers` over one line-month, the
+    `Function Scan on unnest` went from loops=295,418 and 1,322 ms to loops=1 and 357 ms — both read
+    WARM at `shared hit=8,304` with zero disk reads, because the first old-form reading came off disk
+    and would have overstated the gain. A cold reading must never be the "before". End to end the
+    same call is 970 ms cold and **377 ms warm for 13,100 rows** at `shared hit=7,873`. The row counts
+    are identical on both plans (61,875 kept per worker, 36,598 removed), which is the equivalence at
+    plan level; the behavioural proof sits in each migration's header.
+
+16. 🔴 **`array_agg` is NOT the same fix and must never be substituted for `ARRAY(subquery)`.**
+    `ARRAY(subquery)` over an empty input yields an EMPTY array, so `v <> all ('{}')` is TRUE and
+    nothing is filtered out. `array_agg` over an empty set yields NULL, `v <> all (NULL::text[])` is
+    NULL rather than TRUE, and every row is dropped in silence. That is also why no `coalesce` is
+    needed here, and why routing the hoist through an aggregate would reintroduce the need for one.
+    A short-circuit guard in front of the test — `p_codes is null or …`, or `cardinality(p_codes) = 0
+    or …` — is a cheap exit, not the correctness: a site carrying no guard at all is still correct.
+
 ## Related documentation
 
 - [Database](database.md) - schema and migration conventions

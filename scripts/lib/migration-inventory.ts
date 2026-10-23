@@ -1500,6 +1500,46 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // included, on both sides of its boundary.
   // Pinned by tests/sales-reads-price-each-pair-once.test.ts.
   "20261023171200_phx_refresh_sos_channel_rollup_prices_each_product_once.sql",
+
+  // 2026-10-23. phx_marketing_roi_customer_dashboard resolves p_exclude_codes ONCE per call instead
+  // of once per candidate row — `<> all (select …)` wrapped as `<> all (array(select …))`, which the
+  // planner lifts from a SubPlan to an InitPlan. Its eight siblings in the same change each carry a
+  // schema_migrations row (versions 20261023120808–20261023121004, applied through the Supabase MCP);
+  // this one does NOT. The file is 44 KB and hand-transcribing a body that size into a tool call is
+  // itself a corruption hazard, so it went the standing route — scripts/apply-sql-file.mjs
+  // (AGENTS.md §8), which writes NO schema_migrations row while the body is live.
+  //
+  // 🔴 NOT taken on existence — a `create or replace` is satisfied by an older body. Digested on
+  // production after applying: md5(prosrc) c8daa831ed0ee35ffcc10310de2dc4ae, length 42,979 — EQUAL to
+  // the md5 of this file's own dollar-quoted body, so the live body is reproducible from the committed
+  // text — and `pg_get_functiondef` is byte-identical to this file's `CREATE OR REPLACE … $function$;`
+  // block. prosecdef true, proconfig {search_path=public, statement_timeout=45s}, ACL exactly
+  // `postgres=X/postgres | service_role=X/postgres`, so no browser key reaches it. The body carries
+  // exactly 1 wrapped site and 0 bare ones.
+  //
+  // The `revoke execute … from public, anon, authenticated` / `grant execute … to service_role` pair
+  // at the foot of the file was NOT run on production and deliberately so: it is the whole-repo
+  // SECURITY DEFINER rule that `check:migrations` enforces, and it is a provable NO-OP against the ACL
+  // read above — PUBLIC, anon and authenticated hold no entry to revoke, and service_role already
+  // holds EXECUTE. It makes the file state its own ACL instead of relying on this note; a replay
+  // reaches the same two-entry ACL either way.
+  //
+  // 🔴 APPLIED TWICE, on purpose. The first apply carried CRLF into prosrc: this was the one file of
+  // the nine written with CRLF line endings (895 of them), while .gitattributes (`* text=auto eol=lf`)
+  // commits LF — so the committed text and the live body would have differed by 895 bytes and digested
+  // unequal, and the digest above is the whole point of this entry. Normalized to LF (46,660 → 45,765
+  // bytes, exactly 895 CR removed) and re-applied; prosrc now holds no CR at all.
+  //
+  // SPEED ONLY, and proven so BEFORE the migration was written. The change is SEVEN BYTES — a
+  // normalized diff against the pre-change `pg_get_functiondef` dump shows one line gaining `array(`
+  // and one gaining `)`, and nothing else. The verdicts the dashboard returns are token-for-token
+  // identical across the swap: awaiting_data 1/1, no_data 27/27, on_track 22/22, behind 29/29,
+  // roi_duration_months 6/6, latest_validated_period 1/1 — so the `awaiting_data` arm that the
+  // marketing-roi module memory protects is untouched. This read is the one of the nine with NO
+  // short-circuit guard, which is correct and must not be "fixed": unnest(NULL) yields no rows,
+  // ARRAY() over no rows yields an EMPTY array rather than NULL, and `v <> all ('{}')` is TRUE.
+  // Pinned by tests/sales-reads-exclude-codes-once.test.ts.
+  "20261023180800_phx_marketing_roi_customer_dashboard_resolves_the_excluded_codes_once.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
