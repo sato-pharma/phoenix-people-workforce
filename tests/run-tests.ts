@@ -2710,6 +2710,7 @@ import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
 import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
 import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
 import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
+import { runSalesReadsPriceEachPairOnceTests } from "./sales-reads-price-each-pair-once.test.ts";
 import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
@@ -10677,6 +10678,10 @@ await runTest(
 await runTest(
   "the Monthly Closing's brick and distributor-product reads price each product ONCE through phx_factory_price with the period they were asked for, keep every join, filter and the confidential exclusion they had, keep a priceless product at zero, carry no comment that would change the live body's digest, and stay executable by the service role alone",
   runClosingFunctionsPriceOnceTests,
+);
+await runTest(
+  "thirteen more sales and closing reads resolve each product period price ONCE through phx_factory_price instead of once per row — the resolver is called only over the distinct key set, the lookup joins back LEFT so a product with no price is zero and never a dropped row, the four whose period varies join on the single concatenated key the planner can hash, the direct arms still take their stored value, the resolved column is named period_price, the bodies carry no comment that would change the live digest, and every one stays SECURITY DEFINER with its search_path pinned and execute granted to the service role alone",
+  runSalesReadsPriceEachPairOnceTests,
 );
 await runTest(
   "the notifications drain reads the email-policy table ONCE per run instead of once per email — five emails resolved inside one run make one select, outside a run every delivery still reads fresh, a failed read is never remembered, a held copy expires at ten seconds, two runs never see each other's copy, a disabled policy still blocks every email, and the cron wraps its whole run in the snapshot while the admin read and the save stay unwrapped",
