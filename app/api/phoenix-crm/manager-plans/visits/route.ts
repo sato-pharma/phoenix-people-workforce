@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
-import { loadManagerToday, logManagerVisit } from "@/lib/phoenix-crm/server/manager-visits";
+import { loadManagerToday, logManagerVisit, saveManagerVisitDetail } from "@/lib/phoenix-crm/server/manager-visits";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -42,5 +42,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ today, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not save the visit.");
+  }
+}
+
+// PATCH = the write-up he comes back and adds to a visit he already logged (owner, 2026-10-23). `read`,
+// the same permission as logging one, narrowed twice in the service: `assertManagerPlanWriter` for the
+// kind of viewer, then the visit's own `manager_hr_id` for this visit — it moves `detail_comment` and
+// nothing else, so the door comment, the products and the location stay as they were recorded.
+export async function PATCH(request: Request) {
+  try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "phoenix_crm", "read");
+    const viewer = await resolvePhoenixCrmViewer(access);
+    const body = (await request.json()) as unknown;
+    const today = await saveManagerVisitDetail(viewer, body);
+    return NextResponse.json({ today, success: true });
+  } catch (error) {
+    return phoenixCrmFailure(error, "Could not save the write-up.");
   }
 }

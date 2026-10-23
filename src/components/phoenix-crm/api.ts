@@ -67,6 +67,20 @@ export function crmPost<T>(path: string, payload: unknown, key: string, options:
   );
 }
 
+/**
+ * A PATCH, answered like a save. It carries a body and it is for an edit of something already saved —
+ * a manager's write-up on a visit he logged — so the route can keep that apart from the POST that
+ * created it without a discriminator in the payload.
+ */
+export function crmPatch<T>(path: string, payload: unknown, key: string): Promise<T> {
+  return request<T>(
+    path,
+    { body: JSON.stringify(payload), headers: { "content-type": "application/json" }, method: "PATCH" },
+    key,
+    "Phoenix could not save this. Try again.",
+  );
+}
+
 /** A DELETE, answered like a save: the value under `key`, or a refusal with the server's sentence. */
 export function crmDelete<T>(url: string, key: string): Promise<T> {
   return request<T>(url, { method: "DELETE" }, key, "Phoenix could not delete this. Try again.");
