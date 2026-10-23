@@ -2733,6 +2733,7 @@ import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-r
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
 import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
+import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10803,6 +10804,10 @@ await runTest(
 await runTest(
   "the published-closing snapshot resolves each product's period price ONCE from a distinct-product CTE, never once per rollup row — 18,558 SECURITY DEFINER invocations the planner cannot inline cost 1,645 ms and 38,963 buffers per line, and timed the Needs You drift source out on 12 of 15 mornings",
   runClosingSnapshotPricesOnceTests,
+);
+await runTest(
+  "the fallback notification event key carries the ACTOR, so two senders raising the same templated notice for one recipient get two rows instead of the second overwriting the first on onConflict: event_key",
+  runNotificationEventKeyIncludesTheActorTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
