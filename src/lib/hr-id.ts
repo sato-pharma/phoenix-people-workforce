@@ -9,6 +9,16 @@ export function canonicalHrIdKey(value: string | null | undefined) {
   return hrIdAliases[normalized] ?? normalized;
 }
 
+/** Every legacy alias that canonicalises to the same person as `value` (`AA` → `["aaa"]`), so a read
+ * filtered by hr id can also find the rows stored under an old spelling. Empty for most ids. */
+export function hrIdAliasSources(value: string | null | undefined): string[] {
+  const canonical = canonicalHrIdKey(value);
+  if (!canonical) return [];
+  return Object.entries(hrIdAliases)
+    .filter(([, target]) => target === canonical)
+    .map(([source]) => source);
+}
+
 export function canonicalHrIdForDisplay(value: string | null | undefined) {
   return canonicalHrIdKey(value)?.toUpperCase() ?? null;
 }
