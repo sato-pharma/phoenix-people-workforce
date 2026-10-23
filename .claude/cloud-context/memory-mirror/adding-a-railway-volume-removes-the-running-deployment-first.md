@@ -17,6 +17,8 @@ volume gets no overlap, so the old container is stopped FIRST to free the mount.
 longer than expected", status page 07:11 UTC). `mdm.satopharma.com` and `mdm-console` answered Railway's
 edge 404 "Application not found" — every tablet sync and Phoenix's fleet view down until the queue moved.
 
+**How long:** down from 10:16:50 to about 11:17 Cairo (~1 hour); the 11:17 start mounted the disk and tablets resumed (PHX-TAB-0008 checked in 16:02).
+
 **Why it was missed:** the check before acting looked at the queue (step-6 deploy `3dbb756c` already
 QUEUED since 10:07) and still treated the volume as "takes effect at the next start". A queued deploy
 plus a volume attach = no server.

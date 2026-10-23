@@ -1,12 +1,17 @@
 ---
 name: all-deployments-through-fly-until-railway-is-back
-description: "🔴 GOLDEN RULE (owner, 22 Oct 2026): until Railway is back, EVERY deployment goes through Fly.io — do not wait for Railway, do not deploy to Railway. Ship 6.41 launcher to Fly. Covers the tablet launcher, the rep apps, the background worker (already on Fly) and production."
+description: "RETIRED 23 Oct 2026 ~04:33 Cairo on the owner's word \"Railway is back — retire the all-deployments-through-Fly rule\": deployments go through Railway again (website and worker back on Railway). History only: from 22 Oct the rule sent every deployment through Fly.io while Railway was paused."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: d36b05eb-2113-46dd-a685-dfc52e3baf52
-  modified: 2026-10-22T04:46:50.231Z
+  modified: 2026-10-23T01:33:10.946Z
 ---
+
+✅ **RETIRED — owner, 23 Oct 2026 ~04:33 Cairo: "Railway is back — retire the all-deployments-through-Fly rule".**
+Production deploys through Railway again: the domain answers from Railway since 22 Oct 10:29 Cairo, and the
+background worker moved back to Railway on 23 Oct. The Fly website standby `phoenix-hr-standby` stays at zero
+machines as the Emergency host button's app. Everything below is history — never act on it.
 
 🔴 **GOLDEN RULE — owner's own words, 22 Oct 2026 Cairo: "ship 6.41 instead of 6.40 TO FLY.IO AND
 PUT A GOLDEN RULE UNTIL RAILWAY IS BACK ALL DEPLOYMENTS THROUGH FLY.IO".**

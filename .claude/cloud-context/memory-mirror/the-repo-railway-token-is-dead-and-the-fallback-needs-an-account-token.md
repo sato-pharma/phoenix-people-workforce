@@ -1,12 +1,19 @@
 ---
 name: the-repo-railway-token-is-dead-and-the-fallback-needs-an-account-token
-description: "2026-10-21 fallback route (PR 6224, merged 16:18 Cairo): the old repo secret RAILWAY_TOKEN was refused as account AND project token (replaced by a workspace token stored as RAILWAY_API_TOKEN, which works), but the rehearsal's last step still fails because Railway answers \"Deploys have been paused temporarily\", so the fallback cannot deploy during a platform-wide deploy pause and is UNPROVEN end to end; production was never switched."
+description: "Fallback image route (PR 6224) PROVEN end to end 23 Oct 2026 04:45 Cairo: rehearsal run 39885039493 on e1f9375ae — gate, image and rehearsal green; a throwaway staging service pulled the private ghcr image with RAILWAY_API_TOKEN (the old RAILWAY_TOKEN is dead), its container started, it was deleted, nothing left over. It still cannot help during a platform-wide deploy pause (21-22 Oct). Production was never switched and need not be while Railway builds."
 metadata:
   node_type: memory
   type: project
   originSessionId: 8c96a3de-85df-41cb-a725-a72d45953b97
-  modified: 2026-10-22T01:01:28.440Z
+  modified: 2026-10-23T01:46:25.340Z
 ---
+
+✅ **PROVEN 23 Oct 2026 04:45 Cairo** (owner: "rerun the fallback-image rehearsal now that Railway deploys again").
+Run 39885039493, ref e1f9375ae (main, release gate green): gate ✓, image ✓, rehearsal ✓ — service
+`fallback-rehearsal-e1f9375a` in STAGING pulled `ghcr.io/gawish-1997/phoenix-people-workforce:e1f9375ae…` (deployment
+be9e4158), its container started, the service was deleted, cleanup found nothing left. The "if it passes, run
+`deploy=production`" step below was for a Railway that could not BUILD; Railway builds again, so production stays on
+git and nothing was switched. Use `deploy=production` only on a future day Railway's builder is down but deploys work.
 
 The fallback route (`.github/workflows/fallback-image.yml` + `scripts/fallback-image-deploy.mjs`, PR 6224) builds the production image on GitHub into ghcr.io and points Railway at it when Railway cannot build. Rehearsal = a throwaway staging service pulls the image, then is deleted.
 

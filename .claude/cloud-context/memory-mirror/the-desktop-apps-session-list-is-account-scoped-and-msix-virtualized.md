@@ -5,10 +5,12 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: 896a9c28-5d3e-4111-a2d1-4fe0a680f223
-  modified: 2026-10-19T19:03:57.945Z
+  modified: 2026-10-23T00:46:17.202Z
 ---
 
 The desktop app's session list is **per account**: `%APPDATA%\Claude\claude-code-sessions\<accountUuid>\<organizationUuid>\local_<id>.json`, one small record per session. The **conversation** is not account-scoped at all — it is `~/.claude/projects/<cwd-slug>/<cliSessionId>.jsonl`, shared by every account on the machine. So a session left unfinished on one account is sitting on this disk fully resumable and simply not listed under the other; copying its record into the signed-in account's folder lists it and it opens on the same conversation. The accounts are named in `~/.claude/relay/accounts.json` (Omar — oagaweesh@gmail.com `87292b52…`, Gawish — phoenixx.oag@gmail.com `9b516841…`, plus old free ones whose `.jsonl` files have aged out, so their records would open empty).
+
+🔴 **MOVED ~22 Oct 2026: the store is now `%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\claude-code-sessions\<account>\<org>\`** — neither path below exists any more, and the hourly import failed every run until `storeCandidates` learned it on 23 Oct 03:40 Cairo. A window close only hides the app to the tray: the process (start time is the proof) keeps running and the imported records stay invisible until a real Quit.
 
 🔴 **The running app holds that list in MEMORY and never re-reads the folder** — a record copied in while it runs is invisible to the sidebar, to `mcp__ccd_session_mgmt__list_sessions` and to `get_session` ("not found"), and appears at the app's next start. Never report an import as visible without checking which of the two you measured.
 
