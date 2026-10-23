@@ -104,6 +104,35 @@ export function logStructured(severity: LogSeverity, message: string, options: L
  */
 let persistingErrorEvent = false;
 
+/**
+ * What goes in the row's `stack` column — the CAUSE, whatever shape it was thrown in.
+ *
+ * 🔴 A SUPABASE REJECTION IS NOT AN `Error`. PostgREST rethrows a plain
+ * `{ message, details, hint, code }`, so `error instanceof Error` is false, `error.stack` is
+ * undefined, and this column used to land EMPTY — the headline and nothing else. That is exactly how
+ * `Failed to read a closing publication drift status` reached `app_error_events` at 06:36 Cairo on
+ * 2026-10-23: the real answer was `57014 canceling statement due to statement timeout`, and the row
+ * the table kept could not say so. Finding it again took the Postgres log, which keeps days where
+ * this table keeps months. `describeThrown` is the same reader `serializeError` already uses for
+ * stderr, so the two halves of one ERROR no longer disagree about what happened.
+ *
+ * The call site's own labels lead, minus the two every line carries (`service`, and `event`, which
+ * is already the row's `route`). A label is non-sensitive by this module's contract, and it is
+ * usually the thing that says WHICH line, period or job — the part a headline cannot carry.
+ */
+export function persistedStack(labels: Record<string, string> | undefined, error: unknown): string | null {
+  const parts: string[] = [];
+  const extra = labels ? Object.entries(labels).filter(([key]) => key !== "service" && key !== "event") : [];
+  if (extra.length > 0) parts.push(extra.map(([key, value]) => `${key}=${value}`).join(" "));
+  if (error instanceof Error) {
+    parts.push(error.stack ?? error.message);
+  } else if (error != null) {
+    parts.push(describeThrown(error));
+  }
+  const joined = parts.filter((part) => part != null && part.trim() !== "").join("\n");
+  return joined === "" ? null : joined;
+}
+
 function persistErrorEvent(message: string, labels: Record<string, string> | undefined, error: unknown) {
   // While one persist is in flight, every ERROR it logs about itself stays on stderr only. That is
   // the right trade: the line is never lost, and the alternative is an unbounded loop.
@@ -118,7 +147,7 @@ function persistErrorEvent(message: string, labels: Record<string, string> | und
         // `event` is always there by convention, so this is rarely null.
         route: labels?.route ?? labels?.job ?? labels?.event ?? null,
         routeType: "structured-log",
-        stack: error instanceof Error ? (error.stack ?? null) : null,
+        stack: persistedStack(labels, error),
       }),
     )
     .catch(() => {

@@ -1294,6 +1294,30 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // restored it (1 back), and the reconcile then found 0 differences.
   // Pinned by tests/phoenix-crm-rep-entry-days-cache.test.ts.
   "20261023091035_phoenix_crm_rep_entry_days_cache.sql",
+  // ── PRODUCTION leg only, 2026-10-23, same shape as the three above. STAGING is NOT drifted and
+  // needs no exception: it carries an exact ledger row, version 20261023140000 / name job_leases,
+  // recorded by `mcp__supabase-staging__apply_migration`. PRODUCTION has ZERO rows matching either
+  // `20261023140%` or name `%job_lease%` — the MCP answered {"status":"declined"} for this file, so
+  // it was applied with `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node
+  // scripts/apply-sql-file.mjs <file> production`, the standing route (.claude/rules/database.md),
+  // which writes NO ledger row. This set is global, so one entry covers both legs of the check.
+  //
+  // Verified by digest and by catalog, never from schema_migrations. md5(pg_proc.prosrc) for
+  // public.claim_job_lease is 74aee73622004b3e59c564a10b1e5a70, length 782, IDENTICAL on
+  // ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa — the production copy is byte-for-byte the
+  // staging copy applied from the same file. proconfig {search_path=pg_catalog, public} and
+  // prosecdef false (security invoker, as the file specifies) on both.
+  //
+  // Production catalog after the apply: public.job_leases present (pg_class.relkind='r'),
+  // relrowsecurity true, exactly 1 policy (phx_job_leases_service_role), claim_job_lease present;
+  // execute held by service_role only — anon execute false, anon select on the table false. The
+  // pre-image is the apply's own NOTICE: `policy "phx_job_leases_service_role" ... does not exist,
+  // skipping`, so production genuinely had nothing of this file before it ran. The migration adds
+  // one table and one function and changes no existing data.
+  //
+  // Safe in both orders by design, per the file's own header: the shipping code treats a missing
+  // claim_job_lease() as "held", which is the behaviour that was already live.
+  "20261023140000_job_leases.sql",
   // ── 2026-10-23, written by the session that applied it: CI's narrow release-gate login (audit P6-02,
   // owner's choice "Narrow login"). `mcp__supabase-staging__apply_migration` answered {"status":"declined"}
   // (the file holds a `drop policy if exists`), so it went the standing route: `node scripts/apply-sql-file.mjs
