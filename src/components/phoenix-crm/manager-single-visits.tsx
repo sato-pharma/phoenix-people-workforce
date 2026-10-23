@@ -27,11 +27,11 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmPatch, crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
 import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
-import { countText } from "@/components/phoenix-crm/format";
+import { cairoStamp, countText } from "@/components/phoenix-crm/format";
 import {
   CrmBlock,
   CrmButton,
@@ -53,6 +53,10 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { dmSingleVisitLimitLine, MANAGER_CUSTOMER_ADDRESS_MAX, VACANT_AREA_NOTE, VACANT_LIST_LABEL, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_VISIT_DETAIL_MAX } from "@/lib/phoenix-crm/manager-visit-detail-rules";
+// The rep's own words for the same act, imported rather than retyped: one wording for "write up the
+// visit afterwards", on his screen and on the manager's (owner, 2026-10-15 and 2026-10-23).
+import { VISIT_DETAIL_EDIT_AGAIN, VISIT_DETAIL_EDIT_PROMPT, visitDetailEditedLine } from "@/lib/phoenix-crm/visit-detail-edit-rules";
 import type {
   AreaCustomer,
   AreaCustomersView,
@@ -139,6 +143,8 @@ function areaLogging(customer: AreaCustomer, areaSeatId: string | null): Logging
 export function ManagerSingleVisits({ test }: { test: boolean }) {
   const today = useCrmGet<ManagerTodayView>(crmUrl(VISITS, { test }), "today");
   const [logging, setLogging] = useState<Logging | null>(null);
+  /** The logged visit whose write-up box is open — one at a time, as one Log form is. */
+  const [writingUp, setWritingUp] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
   const view = today.data;
   // The form opens at the top of the panel, and on a phone the Log he pressed can sit a screen or more
@@ -208,6 +214,21 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     }
                   >
                     {customer.place ? <VisitPlace place={customer.place} /> : null}
+                    {customer.logged ? (
+                      <VisitWriteUp
+                        customer={customer}
+                        // A fresh box after each save: the text starts from what the visit now holds.
+                        key={`${customer.visitId}|${customer.detailEditedAt ?? ""}`}
+                        onCancel={() => setWritingUp(null)}
+                        onOpen={() => setWritingUp(customer.visitId)}
+                        onSaved={(next) => {
+                          today.replace(next);
+                          setWritingUp(null);
+                        }}
+                        open={writingUp === customer.visitId}
+                        test={test}
+                      />
+                    ) : null}
                   </CrmCard>
                 ))}
               </div>
@@ -242,6 +263,18 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     }
                   >
                     {customer.place ? <VisitPlace place={customer.place} /> : null}
+                    <VisitWriteUp
+                      customer={customer}
+                      key={`${customer.visitId}|${customer.detailEditedAt ?? ""}`}
+                      onCancel={() => setWritingUp(null)}
+                      onOpen={() => setWritingUp(customer.visitId)}
+                      onSaved={(next) => {
+                        today.replace(next);
+                        setWritingUp(null);
+                      }}
+                      open={writingUp === customer.visitId}
+                      test={test}
+                    />
                   </CrmCard>
                 ))}
               </div>
@@ -278,6 +311,110 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
         </>
       ) : null}
     </CrmPanel>
+  );
+}
+
+/**
+ * The write-up he adds to a visit he already logged (owner, 2026-10-23: *"let a district manager write
+ * up his own logged single visit afterwards"*).
+ *
+ * 🔴 IT SITS BESIDE THE DOOR COMMENT, IT DOES NOT REPLACE IT. Logging stays one tap with everything
+ * optional, and this is the longer account the door had no time for — the same thing the rep has on his
+ * own visit, in the same words, so the two screens cannot drift apart. The products, the location and a
+ * vacant area's recorded address are what his report reads, and none of them is offered here.
+ */
+function VisitWriteUp({
+  customer,
+  onCancel,
+  onOpen,
+  onSaved,
+  open,
+  test,
+}: {
+  customer: ManagerTodayCustomer;
+  onCancel: () => void;
+  onOpen: () => void;
+  onSaved: (next: ManagerTodayView) => void;
+  open: boolean;
+  test: boolean;
+}) {
+  const [text, setText] = useState(customer.detailComment ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fieldId = useId();
+  if (!customer.visitId) return null;
+  const edited = visitDetailEditedLine(customer.detailEditedAt, cairoStamp);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await crmPatch<ManagerTodayView>(VISITS, { visitId: customer.visitId, detailComment: text, test }, "today"));
+    } catch (failure) {
+      setError(messageOf(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-1 grid min-w-0 gap-1">
+        {customer.detailComment ? (
+          <p className="break-words text-xs font-semibold leading-5 text-slate-600" dir="auto">
+            {customer.detailComment}
+          </p>
+        ) : null}
+        {edited ? <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{edited}</p> : null}
+        <div>
+          <CrmButton onClick={onOpen} size="sm">
+            {customer.detailComment ? VISIT_DETAIL_EDIT_AGAIN : VISIT_DETAIL_EDIT_PROMPT}
+          </CrmButton>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 grid min-w-0 gap-2 border border-slate-200 p-3">
+      <CrmField
+        hint={`${MANAGER_VISIT_DETAIL_MAX - text.length} characters left.`}
+        htmlFor={fieldId}
+        label="What came out of the visit"
+      >
+        <textarea
+          className={crmTextareaClassName}
+          dir="auto"
+          disabled={busy}
+          id={fieldId}
+          maxLength={MANAGER_VISIT_DETAIL_MAX}
+          onChange={(event) => {
+            setError(null);
+            setText(event.target.value);
+          }}
+          placeholder="What came of the visit, written up in full."
+          rows={4}
+          value={text}
+        />
+      </CrmField>
+      {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      <div className="flex flex-wrap gap-2">
+        <CrmButton busy={busy} disabled={busy} onClick={save} size="sm" variant="primary">
+          Save the write-up
+        </CrmButton>
+        <CrmButton
+          disabled={busy}
+          onClick={() => {
+            setText(customer.detailComment ?? "");
+            setError(null);
+            onCancel();
+          }}
+          size="sm"
+        >
+          Cancel
+        </CrmButton>
+      </div>
+    </div>
   );
 }
 
