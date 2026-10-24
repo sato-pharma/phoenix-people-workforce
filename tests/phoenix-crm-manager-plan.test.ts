@@ -1279,6 +1279,41 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(singleVisitsScreen, /logging \? null : view\.singleVisitLimit\?\.unplannedFitsNow === false \? \(/, "a full week offers no unplanned log to be refused after the form");
   assert.match(singleVisitsScreen, /<CrmNote tone="warn">\s*Log an unplanned customer is closed for now/, "and says so where the button would be, so it never reads as a missing button (owner, 2026-10-20)");
 
+  // ── A save whose answer was lost (production, 24 Oct 2026, Osama Mohamed) ───────────────────────
+  //
+  // His phone's connection dropped the answers of two saves that had LANDED, so the board kept the old
+  // version and the next save was refused as "changed on another screen" — raised against his own save.
+
+  const saveFlow = functionBody(planBoard, "  async function saveWaiting(");
+  assert.match(planBoard, /const MAY_HAVE_SAVED = new Set\(\["offline", "failed", "internal_error", "statement_timeout"\]\);/, "the answers a landed save can get, the rep board's own list");
+  assert.match(
+    saveFlow,
+    /if \(code !== null && MAY_HAVE_SAVED\.has\(code\)\) versionUnknown\.current = true;/,
+    "a save that may have landed leaves the week's version unknown",
+  );
+  assert.match(
+    saveFlow,
+    /if \(options\.keepalive\) \{\s*versionUnknown\.current = true;\s*continue;\s*\}\s*viewRef\.current = next;/,
+    "so does a save flushed as the page hides, whose answer is never read",
+  );
+  assert.match(
+    saveFlow,
+    /if \(versionUnknown\.current && !options\.keepalive\) \{[\s\S]*?await crmGet<ManagerPlanBoardView>\(crmUrl\(BOARD,[\s\S]*?versionUnknown\.current = false;\s*viewRef\.current = fresh;/,
+    "the next save reads the week first, so it carries the version the week is at now",
+  );
+  assert.ok(
+    saveFlow.indexOf("versionUnknown.current && !options.keepalive") < saveFlow.indexOf("await crmPost<ManagerPlanBoardView>("),
+    "and it reads before it sends, never after the refusal",
+  );
+  assert.match(saveFlow, /savesNothing\(waitingDate, waitingHalf, waiting, savedSlot,/, "a half-day the lost save already wrote is not sent again");
+  const sendFlow = functionBody(planBoard, "function SendStep(");
+  assert.match(
+    sendFlow,
+    /const current = latestPlan\(\) \?\? plan;[\s\S]*?\{ planId: current\.planId, version: current\.version, test \}/,
+    "Send carries the week as the save it just made left it, never the version drawn before that save",
+  );
+  assert.equal(/\{ planId: plan\.planId, version: plan\.version, test \}/.test(sendFlow), false, "never the stale one");
+
   // ── The second and third day: his managers approve one named date (owner, 2026-10-20) ──────────
 
   assert.equal(DM_SINGLE_VISIT_EXTRA_DAYS_MAX, 2, "the second and the third day, at most");
