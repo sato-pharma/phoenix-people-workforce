@@ -332,7 +332,7 @@ export function PlanningCalendar({
       id: conflict.id,
       medicalRep: conflict.medicalRepName || conflict.medicalRepHrId || "-",
       notes: conflict.lineName ? `Line: ${conflict.lineName}` : "-",
-      regionLocation: conflict.regionNames.join(", ") || conflict.lineName || "-",
+      regionLocation: conflict.regionNames.join(", ") || "-",
       status: "Chain visit",
       time: "Full day",
       tone: "conflict" as const,
@@ -366,7 +366,7 @@ export function PlanningCalendar({
       id: item.id,
       medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
       notes: item.notes || "-",
-      regionLocation: item.region || item.lineName || "-",
+      regionLocation: item.region || "-",
       status: planStatusLabels[item.status] ?? item.status,
       time: item.time || "Full day",
       tone: "plan" as const,
@@ -821,7 +821,7 @@ function AgendaDayBlock({
                 </div>
               );
             }
-            const meta = [item.employeeDisplayName || item.employeeName, item.region || item.lineName, item.area, item.medicalRepDisplayName || item.medicalRepName, item.time].filter(
+            const meta = [item.employeeDisplayName || item.employeeName, item.region, item.area, item.medicalRepDisplayName || item.medicalRepName, item.time].filter(
               (value) => value && value !== "-",
             ) as string[];
             return (
