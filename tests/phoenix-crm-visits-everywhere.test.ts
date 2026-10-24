@@ -720,37 +720,54 @@ function runNoDoubleCountTests(code: string): void {
   assert.ok(vendorBranch && visitBranch && activityBranch, "three branches: iReports360, Phoenix visits, Phoenix day activities");
 
   const vendor = flat(vendorBranch);
-  // THE ENTRY DAYS ARE BUILT ONCE PER READ (2026-10-19). The function rebuilds every Phoenix entry day from all
-  // of Phoenix CRM's history, and calling it once per check made every read of this door pay for it twice —
-  // 47% of the database's time on 19 October, with the Approvals hub's queue timing out behind it.
-  assert.ok(
-    vendor.includes("with entry_days as materialized ( select e.hr_key, e.agent_crm_id, e.entry_day from public.phoenix_crm_rep_entry_days() e )"),
-    "the entry days are one materialized set per read",
+  // ONE SCAN, AND THE ENTRY DAY IS AN INDEX LOOKUP (speed, 2026-10-23). Until 20261024005000 the vendor rows
+  // were read in TWO union-all runs split at Phoenix CRM's first day, so one read scanned ireports360_visits
+  // twice; and both checks asked a MATERIALIZED CTE over phoenix_crm_rep_entry_days(), which a function scan
+  // left the planner no way to index — all 542 entry days were walked once per vendor row (4,052 join-filter
+  // evaluations thrown away on one October day). Measured on production, nine interleaved runs of each shape:
+  // a day 17.0 -> 7.8 ms, a month straddling that first day 563 -> 320 ms, every row byte-identical.
+  assert.equal(
+    view.split("phoenix_crm_rep_entry_days()").length - 1,
+    0,
+    "the door does not call phoenix_crm_rep_entry_days() at all any more — a function scan carries no index",
   );
-  assert.equal(view.split("phoenix_crm_rep_entry_days()").length - 1, 1, "and the function is named once in the whole door, never once per check");
-  // BEFORE PHOENIX CRM'S FIRST DAY no rep can have an entry, so that run of vendor rows asks nothing: the bound
-  // is the earliest team start, or its earlier day_activities_from, and no entry day precedes it (the
-  // entry-day clauses pinned below). The run from that day on keeps both checks, with the same bound.
+  assert.doesNotMatch(vendor, /entry_days as materialized/, "and there is no materialized CTE left to walk per row");
+  // THE RULE DID NOT MOVE, THE READ DID. phoenix_crm_rep_entry_days_calc() is still the one body that computes
+  // an entry day; the door reads the table that body writes, so it gets the cache's PRIMARY KEY
+  // (hr_key, entry_day) and its partial (agent_crm_id, entry_day) index. Both are granted to postgres and
+  // service_role alone — the door's own two grantees, both BYPASSRLS — so the reach is unchanged.
+  assert.equal(
+    view.split("public.phoenix_crm_rep_entry_days_cache").length - 1,
+    2,
+    "it reads the cache table directly, once per check and no more",
+  );
+  // BEFORE PHOENIX CRM'S FIRST DAY no rep can have an entry, so a vendor row dated earlier asks nothing: the
+  // bound is the earliest team start, or its earlier day_activities_from, and no entry day precedes it (the
+  // entry-day clauses pinned below). That bound is now an arm of ONE scan, not a second branch.
   const firstDay =
     "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date) from public.phoenix_crm_team_starts t )";
   const cutover = "x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date)";
-  assert.ok(
-    vendor.includes(
-      `from ( select x.* from public.ireports360_visits x where ${cutover} and x.visit_date < ${firstDay} union all ` +
-        `select x.* from public.ireports360_visits x where ${cutover} and x.visit_date >= ${firstDay} and not exists`,
-    ),
-    "the vendor rows are read in two runs split at Phoenix CRM's first day, the same bound on both sides, and only the second asks",
+  assert.equal(
+    vendor.split("from public.ireports360_visits x").length - 1,
+    1,
+    "the vendor table is scanned ONCE, not once per side of the split",
   );
   assert.ok(
-    vendor.includes("and not exists ( select 1 from entry_days e where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = x.visit_date )"),
+    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ( x.visit_date < ${firstDay} or ( not exists`),
+    "one scan, the cutover bound on it, and the first-day bound as the first arm of the choice",
+  );
+  assert.ok(
+    vendor.includes(
+      "not exists ( select 1 from public.phoenix_crm_rep_entry_days_cache e where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = x.visit_date )",
+    ),
     "PHOENIX WINS THE DAY: an iReports360 row leaves the branch only on a day its rep has a Phoenix entry",
   );
   assert.ok(
     vendor.includes(
-      "and not exists ( select 1 from entry_days e where nullif(btrim(x.agent_hr_id), '') is null " +
-        "and e.agent_crm_id = x.agent_crm_id and e.entry_day = x.visit_date ) ) v",
+      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days_cache e where nullif(btrim(x.agent_hr_id), '') is null " +
+        "and e.agent_crm_id = x.agent_crm_id and e.entry_day = x.visit_date ) ) ) ) v",
     ),
-    "a vendor row with no hr id is still his, by his CRM id",
+    "a vendor row with no hr id is still his, by his CRM id, and the choice closes before the scan does",
   );
   assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "and no longer from the start's window: a day with no Phoenix entry keeps its iReports360 rows");
 
@@ -1169,9 +1186,9 @@ function runRowShapeTests(code: string): void {
   }
   assert.ok(
     flat(vendorBranch).includes(
-      "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and x.visit_date < (",
+      "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and ( x.visit_date < (",
     ),
-    "the iReports360 branch keeps its source and its cutover clause, on both of its runs",
+    "the iReports360 branch keeps its source and its cutover clause on its one scan (20261024005000)",
   );
 
   const expected: Record<string, string> = {
