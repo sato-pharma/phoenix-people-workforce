@@ -24,6 +24,12 @@
 export const SENTRY_API_BASE = "https://de.sentry.io/api/0";
 // The organisation next.config.ts uploads releases to (withSentryConfig({ org })).
 export const SENTRY_ORG_SLUG = "phoenix-crm";
+// One Discover read is tried up to SENTRY_TRIES times, each cut off after SENTRY_TRY_MS. On 24 Oct 2026 two deploy
+// checks in a row lost Sentry to one undici "fetch failed" while the same read answered in 200 ms a minute later, so a
+// dropped connection, a stall, a 429 or a 5xx is tried again. A 401 or 403 is the token's answer and is never retried.
+export const SENTRY_TRIES = 3;
+export const SENTRY_TRY_MS = 15_000;
+export const SENTRY_PAUSE_MS = 2_000;
 export const DEFAULT_WINDOW_MINUTES = 15;
 export const BASELINE_DAYS = 7;
 export const ROW_FIELDS = "created_at,source,route,module_label,message,digest,release";
@@ -222,21 +228,52 @@ export function sentryEventParams({ releases, issueIds = null }) {
   ]);
 }
 
-export async function readSentryIssues({ token, releases, fetchImpl = fetch, base = SENTRY_API_BASE, org = SENTRY_ORG_SLUG }) {
+// "fetch failed" alone names nothing; undici puts the real reason (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ENOTFOUND) in
+// the error's cause, and a timeout says it is one.
+function describeFetchError(error) {
+  if (!(error instanceof Error)) return String(error);
+  if (error.name === "TimeoutError") return "no answer in time";
+  const cause = error.cause;
+  const detail = cause && typeof cause === "object" ? cause.code ?? cause.message : cause;
+  return detail && !error.message.includes(String(detail)) ? `${error.message}: ${detail}` : error.message;
+}
+
+export async function readSentryIssues({
+  token,
+  releases,
+  fetchImpl = fetch,
+  base = SENTRY_API_BASE,
+  org = SENTRY_ORG_SLUG,
+  tries = SENTRY_TRIES,
+  tryMs = SENTRY_TRY_MS,
+  pauseMs = SENTRY_PAUSE_MS,
+}) {
   if (!token) return { read: false, reason: "no SENTRY_READ_TOKEN, so Sentry was NOT read" };
   async function discover(params, what) {
-    let res;
-    try {
-      res = await fetchImpl(`${base}/organizations/${org}/events/?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (error) {
-      return { failed: `Sentry did not answer the ${what} read (${error instanceof Error ? error.message : String(error)})` };
+    let failed = null;
+    for (let attempt = 1; attempt <= tries; attempt += 1) {
+      if (attempt > 1 && pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs));
+      const after = attempt > 1 ? `, after ${attempt} tries` : "";
+      try {
+        const res = await fetchImpl(`${base}/organizations/${org}/events/?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(tryMs),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { failed: `Sentry answered HTTP ${res.status} to the ${what} read: the token cannot read events in ${org}` };
+        }
+        if (!res.ok) {
+          failed = `Sentry answered HTTP ${res.status} to the ${what} read${after}`;
+          if (res.status === 429 || res.status >= 500) continue;
+          return { failed };
+        }
+        const body = await res.json();
+        return { rows: Array.isArray(body?.data) ? body.data : [] };
+      } catch (error) {
+        failed = `Sentry did not answer the ${what} read (${describeFetchError(error)})${after}`;
+      }
     }
-    if (!res.ok) {
-      const refused = res.status === 401 || res.status === 403 ? `: the token cannot read events in ${org}` : "";
-      return { failed: `Sentry answered HTTP ${res.status} to the ${what} read${refused}` };
-    }
-    const body = await res.json();
-    return { rows: Array.isArray(body?.data) ? body.data : [] };
+    return { failed };
   }
   const examined = await discover(sentryEventParams({ releases }), "release");
   if (examined.failed) return { read: false, reason: examined.failed };
