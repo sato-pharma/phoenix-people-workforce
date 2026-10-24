@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { groupPlanItemsByRegion, planningGroupKey, resolvePlanItemRegion } from "../src/lib/weekly-planning/calendar.ts";
+import { buildPlanningCalendarDetailRows } from "../src/lib/weekly-planning/calendar-export.ts";
 
 /**
  * Owner, 2026-10-24: "in the planning calendar tile group them by region and when press on the tile in
@@ -48,6 +49,16 @@ export async function runPlanningCalendarRegionGroupsTests() {
   assert.match(ui, /const dayRegions = groupPlanItemsByRegion\(dayPlans\)/, "the month tile groups each day's people by region");
   assert.doesNotMatch(ui, /planGroupFor|"Field Visits"/, "the tile no longer groups by Office / Field Visits / Other");
   assert.match(ui, /groupPlanItemsByRegion\(\s*rows\.filter/, "the selected day's details group by region, then area");
+
+  // Owner, 2026-10-24: "Region / Location should see regions only, now it's showing lines". A row with no
+  // region shows "-", never the person's line, on the screen and in the export.
+  assert.doesNotMatch(ui, /regionLocation:[^\n]*lineName/, "the Region / Location column never falls back to the line");
+  assert.doesNotMatch(ui, /item\.region \|\| item\.lineName/, "the month tile's meta never shows a line where the region goes");
+  const lineless = buildPlanningCalendarDetailRows([
+    { activityTitle: "Single Visit", activityType: "single_visit", area: null, conflictKey: null, conflictWarning: null, employeeHrId: "X-1", employeeJobTitle: "District Sales Manager", employeeName: "Someone", employeeDisplayName: "Someone", endDate: "2026-10-12", id: "plan-1", lineName: "CNS", medicalRepHrId: null, medicalRepName: null, medicalRepDisplayName: null, notes: null, planId: "p1", planKind: "weekly", region: null, source: "plan", startDate: "2026-10-12", status: "approved", time: null, title: "Someone" } as unknown as Parameters<typeof buildPlanningCalendarDetailRows>[0][number],
+  ]);
+  assert.equal(lineless[0]?.location, "-", "the export's Region / Location column shows no line either");
+  assert.equal(lineless[0]?.line, "CNS", "the line keeps its own column");
 
   const service = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
   assert.match(service, /resolvePlanItemRegion\(row\.location_text, medicalRepEmployee\?\.regionName, employee\.regionName\)/, "a legacy plan row never has an empty region when the directory knows one");
