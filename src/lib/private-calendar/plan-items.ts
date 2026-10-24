@@ -210,13 +210,13 @@ export function mapPlanRowToPrivateCalendarItem(
  */
 export function mapManagerHalfDayToPrivateCalendarItem(
   halfDay: ManagerPlanHalfDay,
-  names: { rep: string | null; approver: string | null },
+  names: { rep: string | null; approver: string | null; senior?: string | null },
 ): PrivateCalendarItem {
   const activityType = halfDay.legacyType;
-  const title = managerHalfDayText(halfDay, names.rep);
+  const title = managerHalfDayText(halfDay, names.rep, names.senior ?? null);
   const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(activityType);
   const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
-  if (halfDay.kind === "single_visit" && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
+  if ((halfDay.kind === "single_visit" || halfDay.kind === "with_senior") && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
   if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
   detailLines.push(`Week: ${halfDay.weekStart}`);
   if (names.approver) detailLines.push(`Approved by: ${names.approver}`);
@@ -255,11 +255,12 @@ export function mapManagerHalfDayToPrivateCalendarItem(
 async function loadManagerPlanPrivateCalendarItems(employeeHrIds: string[], start: string, end: string): Promise<PrivateCalendarItem[]> {
   const halfDays = await loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: employeeHrIds, statuses: ["first_approved", "approved"] });
   if (halfDays.length === 0) return [];
-  const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.decidedByHrId]));
+  const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.decidedByHrId, halfDay.seniorHrId]));
   return halfDays.map((halfDay) =>
     mapManagerHalfDayToPrivateCalendarItem(halfDay, {
       rep: halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null,
       approver: halfDay.decidedByHrId ? nameOf(names, halfDay.decidedByHrId, "") || null : null,
+      senior: halfDay.seniorHrId ? nameOf(names, halfDay.seniorHrId, "") || null : null,
     }),
   );
 }

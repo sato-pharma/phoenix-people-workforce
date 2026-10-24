@@ -206,6 +206,9 @@ export type CalendarViewerContext = {
 //     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
   if (!isAllowedCalendarOwner(item, viewer)) return false;
+  // The person a district manager picked for a half-day with him always sees it (owner, 2026-10-24) — the
+  // CNS Marketing Manager, for one, is otherwise shown no district manager's plan at all.
+  if (item.withHrId && hrIdsMatch(item.withHrId, viewer.hrId)) return true;
 
   const role = normalizeLowerText(viewer.role);
   if (role === "ceo" || role === "super admin") return true;
@@ -445,7 +448,9 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const medicalRepHrId = halfDay.kind === "with_rep" ? halfDay.repHrId : null;
     const medicalRepName = medicalRepHrId ? (rep?.fullName ?? null) : null;
     const medicalRepDisplayName = medicalRepHrId ? (rep?.displayName || medicalRepName) : null;
-    const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName);
+    const senior = halfDay.seniorHrId ? directoryByHrId.get(normalizeHrId(halfDay.seniorHrId)) : undefined;
+    const seniorDisplayName = senior ? (senior.displayName || senior.fullName) : null;
+    const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
     const area = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" ? halfDay.areaName : null;
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
@@ -472,6 +477,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
       startDate: halfDay.date,
       status: managerPlanLegacyStatus(halfDay.status),
       time: halfDay.half,
+      withHrId: halfDay.seniorHrId,
       title: planningCalendarTitle(employeeDisplayName, null, area, activityTitle),
     };
     return [item];

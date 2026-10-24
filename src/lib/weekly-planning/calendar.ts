@@ -54,6 +54,12 @@ export type PlanningCalendarPlanItem = {
   startDate: string;
   status: EmployeePlanStatus;
   time: string | null;
+  /**
+   * The manager a district manager picked for a With my manager or product manager half-day (owner,
+   * 2026-10-24): it shows on THAT person's calendar whatever the role rules below would hide. Absent or
+   * null on every other plan item.
+   */
+  withHrId?: string | null;
   // Rendered UI label ("Employee - Region - Area"), shown as agenda-list text
   // and a hover tooltip in planning-calendar.tsx — built from
   // employeeDisplayName (nickname-aware), not the raw employeeName.
