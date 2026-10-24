@@ -442,7 +442,8 @@ export type ManagerPlanNotice = {
     | "removal_decided"
     | "single_visit_day_waiting"
     | "single_visit_day_decided"
-    | "single_visit_day_expired";
+    | "single_visit_day_expired"
+    | "with_you";
   recipientHrId: string;
   managerHrId: string;
   /** Who took the step — null for the system (an expired ask). */
@@ -465,7 +466,15 @@ export type ManagerPlanNotice = {
   secondStep?: boolean;
   /** The date an ask for another day of single visits names (owner, 2026-10-20). */
   visitDate?: string | null;
+  /**
+   * `with_you`: the half-days of an approved district manager's week that name the recipient as the manager
+   * or product manager he goes with (owner, 2026-10-24: "calendar + notice"), in date order.
+   */
+  withYou?: ReadonlyArray<{ date: string; half: "AM" | "PM"; areaName: string | null }>;
 };
+
+/** The planning calendar a picked manager opens to see the half-days planned with him. */
+export const MANAGER_PLAN_WITH_YOU_PATH = "/employee-portals/plans/calendar";
 
 /** The Approvals Hub page a waiting district-manager step opens on. */
 export function managerPlanHubPath(recordId: string): string {
@@ -619,6 +628,26 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
             : `${actor} refused ${visitDay} as another day of single visits.${note}`,
         },
       ];
+    case "with_you": {
+      const halves = notice.withYou ?? [];
+      if (halves.length === 0) return [];
+      const list = halves
+        .map((entry) => `${formatPhoenixLongDate(entry.date)} ${entry.half === "AM" ? "morning" : "afternoon"}${entry.areaName ? ` in ${bidiIsolate(entry.areaName)}` : ""}`)
+        .join("; ");
+      const theWeek = notice.weekStart ? `the week starting ${formatPhoenixLongDate(notice.weekStart)}` : "this week";
+      return [
+        {
+          ...base,
+          recordId: notice.recordId,
+          tab: "plan",
+          path: MANAGER_PLAN_WITH_YOU_PATH,
+          eventType: "manager_plan_with_you",
+          title: halves.length === 1 ? `${manager} planned a half-day with you` : `${manager} planned ${halves.length} half-days with you`,
+          message: `${manager}'s plan for ${theWeek} is approved, and you are planned to join: ${list}. It is on your planning calendar.`,
+          metadata: planMeta,
+        },
+      ];
+    }
     case "single_visit_day_expired":
       return [
         {
