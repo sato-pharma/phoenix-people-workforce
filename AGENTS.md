@@ -80,7 +80,7 @@ cost, the deploy path or the region.
 - **Merged-branch checks must be squash-aware:** `gh pr list --head <branch> --state merged`, never `git branch --merged` — 🔴 **but that asks about a NAME, so a REUSED name returns the OLD merged PR while yours is still open**: before deleting a branch ask for the PR by NUMBER and check its files are byte-identical on `main`. `a-reused-branch-name-finds-the-old-merged-pr`
 - **A regression test counts only if you break the fix and see its own headline assertion fire.**
 - **`list_migrations` reports the ledger, not reality** — query `pg_class`/`pg_proc`.
-- **Commit, push and open the PR WITHOUT asking; ALWAYS ask before merge** (owner rule, 2026-09-16 — supersedes the old auto-git ban). Branch first, stage only the task's files, never `--auto`.
+- **Commit, push and open the PR WITHOUT asking; the scheduled PR merger merges it (§6, owner 2026-10-24) — a session never merges on its own** (owner rule, 2026-09-16 — supersedes the old auto-git ban). Branch first, stage only the task's files, never `--auto`.
 
 ### 2.1 Session-level traps
 
@@ -304,6 +304,15 @@ If a task requires no protected action, complete it without asking.
 2. Running or applying any database migration against the production database/environment — **except through the Supabase MCP servers or CLI, which §8 pre-authorizes.**
 
 **Both are pre-approved while §6.1 AUTORUN is armed.**
+
+🔴 **HE NO LONGER MERGES BY HAND — THE SCHEDULED "PR MERGER" DOES, EVERY 30 MINUTES, ON SONNET** (owner,
+2026-10-24 ~15:25 Cairo: *"I will not merge again manually … it will roll up them, and it will merge"*).
+The Claude desktop task `pr-merger` (`~/.claude/scheduled-tasks/pr-merger/SKILL.md`, worktree
+`_wt-pr-merger`) rolls up the small green PRs with `scripts/rollup-prs.mjs`, merges green wide PRs and
+roll-ups, settles carried members and proves each deploy. A session opens its PR and STOPS: never
+merge it yourself and never put a merge in his `Next step:` box. Mark a PR draft to hold it back. The
+merger never merges a PR carrying a migration, a protected file or a frozen path — those still need
+his word, by number.
 
 🔴 **"LIVE IN FIVE MINUTES" IS THE ONLY KEY TO THE URGENT ROUTE** (owner, 2026-10-18). When HIS OWN
 message says those words about one PR, run `node scripts/urgent-deploy.mjs launch <pr>` — it uploads
