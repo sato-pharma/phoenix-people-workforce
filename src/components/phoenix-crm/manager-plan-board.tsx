@@ -38,7 +38,7 @@
 import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
-import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
 import { CustomerCard, CustomerGroupBar, CustomerMarks, groupLook, useCustomerInsight } from "@/components/phoenix-crm/manager-customer-marks";
@@ -216,6 +216,19 @@ function sameDraft(left: HalfDraft, right: HalfDraft): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * Answers a save can get when it LANDED and only its answer was lost — the phone's connection dropped on
+ * the way back, or the server's reply never parsed. The rep's board reads them the same way (plan-board.tsx).
+ */
+const MAY_HAVE_SAVED = new Set(["offline", "failed", "internal_error", "statement_timeout"]);
+
+/** Would saving this half-day send exactly what the week already holds? Names and customer order aside. */
+function savesNothing(date: string, half: ManagerHalf, draft: HalfDraft, slot: ManagerBoardSlot | undefined, scopes: ReadonlyArray<ManagerBoardScope>): boolean {
+  const shape = (payload: ReturnType<typeof draftPayload>) =>
+    JSON.stringify({ ...payload, customers: payload.customers.map((entry) => JSON.stringify(entry)).sort() });
+  return shape(draftPayload(date, half, draft, scopes)) === shape(draftPayload(date, half, draftFromSlot(slot), scopes));
+}
+
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { kind: "failed"; message: string };
 
 const REP_WEEK: Record<ManagerBoardRepHalf["weekState"], { label: string; tone: PillTone }> = {
@@ -257,6 +270,11 @@ export function ManagerPlanBoard({
   const [dayScopes, setDayScopes] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const saving = useRef(false);
+  // 🔴 A SAVE WHOSE ANSWER NEVER CAME BACK MAY STILL HAVE LANDED (production, 24 Oct 2026: Osama Mohamed's
+  // phone lost two answers in ten minutes). Each landed save moves the week's version, so the next save,
+  // sent with the version the screen still held, was refused as "changed on another screen" — raised
+  // against his own save. Until the week is read again, the board's version is not known.
+  const versionUnknown = useRef(false);
   // The board a save is checked against — the one on screen, or the one the last save answered with.
   const viewRef = useRef<ManagerPlanBoardView | null>(null);
   useEffect(() => {
@@ -356,12 +374,28 @@ export function ManagerPlanBoard({
     saving.current = true;
     let allSaved = true;
     try {
+      // The last save's answer was lost: read the week first, so this save carries the version it is now.
+      if (versionUnknown.current && !options.keepalive) {
+        const shown = viewRef.current;
+        try {
+          const fresh = await crmGet<ManagerPlanBoardView>(crmUrl(BOARD, { week: shown?.weekStart ?? week, scope: scopeRef.current, test }), "board");
+          versionUnknown.current = false;
+          viewRef.current = fresh;
+          if (fresh.weekStart === shown?.weekStart && (fresh.scope ?? null) === (scopeRef.current ?? null)) board.replace(fresh);
+          else board.reload();
+        } catch (failure) {
+          setSaveState({ kind: "failed", message: messageOf(failure) });
+          return false;
+        }
+      }
       for (const [waitingKey, waiting] of Object.entries(drafts)) {
         const [waitingDate, waitingHalf] = waitingKey.split("|") as [string, ManagerHalf];
         const savedSlot = viewRef.current?.days.find((entry) => entry.date === waitingDate)?.slots.find((entry) => entry.half === waitingHalf);
-        if (waiting.kind === null && !savedSlot?.kind) {
-          // Cleared before it was ever saved: nothing to send.
+        // Cleared before it was ever saved, or already exactly what the week holds (a save whose answer
+        // was lost that landed after all): nothing to send.
+        if ((waiting.kind === null && !savedSlot?.kind) || (savedSlot?.kind && savesNothing(waitingDate, waitingHalf, waiting, savedSlot, viewRef.current?.scopes ?? []))) {
           setDrafts((previous) => {
+            if (!previous[waitingKey] || !sameDraft(previous[waitingKey], waiting)) return previous;
             const { [waitingKey]: _gone, ...rest } = previous;
             return rest;
           });
@@ -385,7 +419,11 @@ export function ManagerPlanBoard({
             "board",
             { keepalive: options.keepalive },
           );
-          if (options.keepalive) continue;
+          // A save flushed as the page hides is never read back, so the version it made is not known here.
+          if (options.keepalive) {
+            versionUnknown.current = true;
+            continue;
+          }
           viewRef.current = next;
           // The answer is in the scope on screen; if he moved to another while it saved, read that one.
           if ((next.scope ?? null) === (scopeRef.current ?? null)) board.replace(next);
@@ -397,9 +435,15 @@ export function ManagerPlanBoard({
           });
         } catch (failure) {
           allSaved = false;
+          if (options.keepalive) {
+            versionUnknown.current = true;
+            continue;
+          }
           setSaveState({ kind: "failed", message: messageOf(failure) });
+          const code = errorCodeOf(failure);
+          if (code !== null && MAY_HAVE_SAVED.has(code)) versionUnknown.current = true;
           // Another screen moved the week first: read it again, and his edit stays on the page.
-          if (errorCodeOf(failure)?.includes("version") || errorCodeOf(failure) === "conflict") board.reload();
+          if (code?.includes("version") || code === "conflict") board.reload();
           return false;
         }
       }
@@ -606,6 +650,7 @@ export function ManagerPlanBoard({
                 board.reload();
                 onChanged?.();
               }}
+              latestPlan={() => viewRef.current?.plan ?? null}
               saveWaiting={saveWaiting}
               test={test}
               view={view}
@@ -1510,6 +1555,7 @@ function SendStep({
   days,
   drafts,
   idPrefix,
+  latestPlan,
   onChanged,
   saveWaiting,
   test,
@@ -1519,6 +1565,8 @@ function SendStep({
   days: ManagerBoardDay[];
   drafts: Record<string, HalfDraft>;
   idPrefix: string;
+  /** The week as the last save or read left it — newer than `view` the moment Send saves what was waiting. */
+  latestPlan: () => ManagerPlanBoardView["plan"];
   onChanged: () => void;
   saveWaiting: () => Promise<boolean>;
   test: boolean;
@@ -1548,12 +1596,16 @@ function SendStep({
         setBusy(false);
         return;
       }
-      if (!plan?.planId) {
+      // Saving what was waiting moved the week's version (and may have made the week), so the send carries
+      // the week as that save answered — never the one drawn before it, which the server refuses as
+      // "changed on another screen".
+      const current = latestPlan() ?? plan;
+      if (!current?.planId) {
         setError("Plan at least one half-day first.");
         setBusy(false);
         return;
       }
-      await crmPost<ManagerPlanTransitionResult>("/api/phoenix-crm/manager-plans/submit", { planId: plan.planId, version: plan.version, test }, "plan");
+      await crmPost<ManagerPlanTransitionResult>("/api/phoenix-crm/manager-plans/submit", { planId: current.planId, version: current.version, test }, "plan");
       setConfirming(false);
       setBusy(false);
       onChanged();
