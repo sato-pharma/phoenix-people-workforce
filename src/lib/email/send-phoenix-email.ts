@@ -481,6 +481,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   let reviewId: string | null = null;
   if (!input.bypassConfidenceGate) {
     const gate = await evaluateAndRecordNotificationSend({
+      attachments: prepared.attachments,
       bcc: prepared.bcc,
       cc: prepared.cc,
       html: prepared.html,

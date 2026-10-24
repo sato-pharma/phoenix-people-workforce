@@ -1135,6 +1135,7 @@ import { runSatoEmailTypedRecipientsTests } from "./sato-email-typed-recipients.
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runSatoEmailToolboxTests } from "./sato-email-toolbox.test.ts";
 import { runSatoEmailAttachmentTests } from "./sato-email-attachments.test.ts";
+import { runHeldNotificationAttachmentTests } from "./held-notification-attachments.test.ts";
 import { runSatoEmailDocumentTests } from "./sato-email-document.test.ts";
 import {
   runCeoComposerVariantTests,
@@ -9508,6 +9509,11 @@ await runTest(
 await runTest(
   "a Sato email carries files without leaking them - an over-budget attachment is REFUSED rather than silently dropped, only a picture can ever be served from the public token route, and a filename cannot smuggle a path or another extension",
   runSatoEmailAttachmentTests,
+);
+
+await runTest(
+  "a held email keeps its attachments - approving it sends every file it carried, byte for byte under its own name, and a file that could not be kept or read back REFUSES the approval rather than send the email without it (owner, 2026-10-24)",
+  runHeldNotificationAttachmentTests,
 );
 
 await runTest(

@@ -1776,6 +1776,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // "join public.phoenix_crm_customers" is a substring of it and the single includes() it replaced went
   // green on either word. Account: docs/crm-visits-door-one-scan.md.
   "20261024180000_the_visits_door_stops_joining_customers_it_never_reads.sql",
+  // Applied 24 Oct 2026 through scripts/apply-sql-file.mjs (the standing route) on STAGING and PRODUCTION,
+  // after the Supabase MCP's apply_migration came back {status: declined} on both, three times, the third
+  // right after the owner chose "apply via MCP again". The route writes no ledger row, hence this entry.
+  // The file is additive and defines no function, so there is no prosrc digest to compare; the evidence is
+  // the three objects it creates, read live on BOTH projects after the apply, identical on each:
+  // notification_send_reviews.held_attachments = jsonb, nullable YES; storage.buckets
+  // 'notification-held-attachments' = public false, file_size_limit 41943040, allowed_mime_types null;
+  // pg_policy notification_held_attachments_service_role = roles {service_role}, cmd * (ALL).
+  "20261025003000_held_notifications_keep_their_attachments.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
