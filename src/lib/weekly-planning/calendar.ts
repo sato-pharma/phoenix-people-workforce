@@ -258,9 +258,13 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
     const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
     const lineName = conflictLineNames.length === 1 ? (conflictLineNames[0] || "Unassigned line") : conflictLineNames.join(" / ");
+    // Two managers on one rep's day is a Phoenix CRM chain visit — the rep out with their District
+    // Manager AND a senior manager on the same visit — not a clash. The note reads as a plain
+    // statement of who is out together, never an alarm (owner, 2026-10-24: "show as chain visit,
+    // not a warning"). `warning` keeps its internal name; the text it carries no longer warns.
     const warning = conflictLineNames.length > 1
-      ? `${employeeNames.join(", ")} are each planned with ${medicalRepName} on the same day (across lines: ${lineName}).`
-      : `${employeeNames.join(", ")} are planned with ${medicalRepName} on the same day in ${lineName}.`;
+      ? `Chain visit — ${employeeNames.join(", ")} are out with ${medicalRepName} on the same day (across lines: ${lineName}).`
+      : `Chain visit — ${employeeNames.join(", ")} are out with ${medicalRepName} on the same day in ${lineName}.`;
     conflicts.push({
       areaNames: uniqueSorted(group.map((item) => item.area)),
       date: first.startDate,

@@ -46,7 +46,7 @@ export const PLANNING_DETAIL_COLUMNS: ExportColumn[] = [
   { key: "time", label: "Time" },
   { key: "status", label: "Plan Status" },
   { key: "planKind", label: "Plan Kind" },
-  { key: "conflict", label: "Conflict Warning" },
+  { key: "conflict", label: "Chain Visit" },
   { key: "notes", label: "Notes" },
 ];
 
@@ -60,7 +60,7 @@ export const PLANNING_SUMMARY_COLUMNS: ExportColumn[] = [
   { key: "planEntries", label: "Plan Entries", numeric: true },
   { key: "weekly", label: "Weekly", numeric: true },
   { key: "monthly", label: "Monthly", numeric: true },
-  { key: "conflicts", label: "Conflict Warnings", numeric: true },
+  { key: "conflicts", label: "Chain Visits", numeric: true },
 ];
 
 export function buildPlanningCalendarDetailRows(items: PlanningCalendarPlanItem[]): ExportRow[] {
