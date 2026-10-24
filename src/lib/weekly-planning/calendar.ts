@@ -153,11 +153,27 @@ export function planSlotLabel(startTime: string | null | undefined, endTime: str
 
 /**
  * The Planning Calendar shows where people WORK in the field, so a day (or half-day) planned as
- * "Office" is not drawn at all (owner, 2026-10-24: a National Sales Manager planning Sunday and
- * Monday Office, Tuesday Behira 1 and Wednesday Alex Center shows Tuesday and Wednesday only).
+ * "Office" or as "Admin" work is not drawn at all (owner, 2026-10-24: a National Sales Manager
+ * planning Sunday and Monday Office, Tuesday Behira 1 and Wednesday Alex Center shows Tuesday and
+ * Wednesday only; the same evening, admin work is hidden the same way).
  */
+const planningCalendarHiddenActivityTypes: ReadonlySet<string> = new Set(["Office", "Admin"]);
+
 export function withoutOfficeDays<T extends { activityType: string }>(items: T[]): T[] {
-  return items.filter((item) => item.activityType !== "Office");
+  return items.filter((item) => !planningCalendarHiddenActivityTypes.has(item.activityType));
+}
+
+/**
+ * An item is never drawn with an empty area when the people on it have one (owner, 2026-10-24: "grab
+ * area from the rep name, do not leave it empty"). The stored area wins; otherwise the rep it is
+ * planned WITH (a double visit, or a manager's half-day with a rep), otherwise the planner's own.
+ */
+export function resolvePlanItemArea(
+  storedArea: string | null | undefined,
+  repAreaName: string | null | undefined,
+  ownerAreaName: string | null | undefined,
+): string | null {
+  return cleanText(storedArea) || cleanText(repAreaName) || cleanText(ownerAreaName) || null;
 }
 
 export function planningConflictKey(date: string, _lineName: string | null, medicalRepHrId: string | null) {

@@ -16,6 +16,7 @@ import {
   planningCalendarTitle,
   planningConflictKey,
   planSlotLabel,
+  resolvePlanItemArea,
   sharedPlanningCalendarStatuses,
   withoutOfficeDays,
   type PlanningCalendarHolidayItem,
@@ -368,12 +369,12 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     if (!employee) return [];
     const lineName = employee?.lineName ?? null;
     const region = cleanText(row.location_text) || null;
-    const area = cleanText(row.area) || null;
     const activityTitle = activityDisplayLabel(row.activity_type, row.activity_title);
     const medicalRepHrId = cleanText(row.double_visit_medical_rep_hr_id) || null;
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
+    const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName);
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const employeeDisplayName = employee?.displayName || header.employee_name;
     const item: PlanningCalendarPlanItem = {
@@ -452,7 +453,8 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const senior = halfDay.seniorHrId ? directoryByHrId.get(normalizeHrId(halfDay.seniorHrId)) : undefined;
     const seniorDisplayName = senior ? (senior.displayName || senior.fullName) : null;
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
-    const area = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" ? halfDay.areaName : null;
+    const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" ? halfDay.areaName : null;
+    const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName);
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
       activityTitle,
