@@ -22,8 +22,9 @@ name: Production Deploy Failure Alert
 #   - which change failed to ship (the commit subject, not just an id);
 #   - whether it had gone live before failing (a crash after going live is worse than a build that
 #     never produced an image);
-#   - what production is serving RIGHT NOW and whether that already contains the failed change, so a
-#     failure that a later deploy has already covered reads as "no action" instead of an emergency;
+#   - what production is serving and whether that already contains the failed change, read REPEATEDLY
+#     for four minutes (see below), so a failure a later deploy has already covered reads as "no
+#     action" instead of an emergency - and, when the deployment never went live, as NOTHING AT ALL;
 #   - the three CI results on that commit (validate, checks, release-gate), because a red or
 #     unfinished gate is the usual reason a deploy is withheld.
 #
@@ -32,6 +33,17 @@ name: Production Deploy Failure Alert
 # deployment alerts; later ones find it in the status list and stay quiet. If the list cannot be
 # read, or does not yet show the current status, the alert is sent — a duplicate is cheaper than a
 # silent failure.
+#
+# ONE READING OF HEALTHZ IS A FALSE-ALARM MACHINE, AND IT SENT ONE. Railway posts `failure` for the
+# deployment it is in the middle of replacing, so the live revision is still the OLD one for the
+# seconds either side of that event. Measured 2026-10-24 on #6432: the status arrived 17:49:33 Cairo,
+# this workflow read `ad825ca8f` eight seconds later and sent "it does NOT contain this change. It is
+# not live", and the container answered with the merge's own `8e930a891` twenty-eight seconds after
+# that. So healthz is read every 20 s for up to four minutes, and a deployment that NEVER WENT LIVE
+# whose commit production is serving by the end of it is CARRIED (AGENTS.md 2.3, and verify-shipped.mjs
+# calls it "NOT an incident"): benign, nothing to do, so NOTHING IS SENT and the reason stays on the
+# run page. One that went live and THEN failed still alerts even when its commit is serving - that is
+# a crash or a failed health check, which is worse than a build that never produced an image.
 #
 # 🔴 IT NEVER FAILS RED, FOR THE SAME REASON AS THE SCHEDULED ALARMS (tests/scheduled-alarms-never-withhold.test.ts).
 # A `deployment_status` run attaches its check suite to the DEPLOYMENT'S COMMIT, and a red suite on a
@@ -68,12 +80,12 @@ jobs:
     # stopped, and a name that merely CONTAINS `production` is the only shape that has ever been seen.
     if: ${{ github.event_name == 'workflow_dispatch' || ((github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error') && contains(github.event.deployment.environment, 'production')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 14
     steps:
       - name: Read what failed and where production stands
         id: facts
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 8
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -130,17 +142,52 @@ jobs:
           SUBJECT=$(gh api "repos/${REPO}/commits/${DEPLOY_SHA}" --jq '.commit.message | split("\n")[0]' 2>/dev/null || true)
           [ -z "$SUBJECT" ] && SUBJECT="(commit subject unreadable)"
 
-          # ── WHERE PRODUCTION STANDS NOW ──────────────────────────────────────────────────────────
-          LIVE_SHA=$(curl -fsS --max-time 10 https://phoenix-hr.satopharma.com/api/healthz 2>/dev/null | jq -r '.revision // empty' 2>/dev/null || true)
+          # ── WHERE PRODUCTION STANDS - READ IT UNTIL IT SETTLES, NEVER ONCE ───────────────────────
+          # Railway posts this failure while it is replacing the container, so a single reading taken
+          # here is the OLD revision: that is exactly what sent the false alarm on 2026-10-24, where the
+          # flip took 28 seconds. Four minutes of readings, stopping the moment production carries it.
+          READINGS=12
+          LIVE_SHA=""
+          CMP=""
+          CARRIED="no"
+          i=1
+          while [ "$i" -le "$READINGS" ]; do
+            LIVE_SHA=$(curl -fsS --max-time 10 https://phoenix-hr.satopharma.com/api/healthz 2>/dev/null | jq -r '.revision // empty' 2>/dev/null || true)
+            if [ -n "$LIVE_SHA" ]; then
+              CMP=$(gh api "repos/${REPO}/compare/${DEPLOY_SHA}...${LIVE_SHA}" --jq '.status' 2>/dev/null || true)
+              case "$CMP" in
+                identical | ahead) CARRIED="yes" ;;
+              esac
+            fi
+            echo "healthz reading ${i}/${READINGS}: serving ${LIVE_SHA:-(unreadable)}, compare ${CMP:-(unreadable)}, carries this commit: ${CARRIED}"
+            [ "$CARRIED" = "yes" ] && break
+            i=$((i + 1))
+            if [ "$i" -le "$READINGS" ]; then
+              sleep 20
+            fi
+          done
+
+          # ── CARRIED BY A LATER DEPLOY: BENIGN, SO NOTHING IS SENT ────────────────────────────────
+          # It never went live under its own deployment, but its commit IS what production serves, so a
+          # later deployment carried it - AGENTS.md 2.3 and verify-shipped.mjs both call that CARRIED and
+          # "never a reason to redeploy". Nothing is down, nothing is behind, and there is nothing for the
+          # owner to do, so his phone stays quiet and the reason stays on the run page. This SEND
+          # overrides the "yes" written above (the runner reads GITHUB_ENV in order, so the last value
+          # wins) - the "yes" is written first deliberately, so a crash anywhere in here still alerts.
+          if [ "$CARRIED" = "yes" ] && [ "${WENT_LIVE:-0}" = "0" ]; then
+            echo "Deployment ${DEPLOY_ID} (${DEPLOY_SHA:0:9}) never went live, but production serves ${LIVE_SHA:0:9}, which contains it: carried by a later deployment. Staying quiet."
+            emit SEND "no"
+            exit 0
+          fi
+
           if [ -z "$LIVE_SHA" ]; then
             STAND_LINE="Production is not answering /api/healthz, so what it is serving could not be read. Look at it first."
           else
-            CMP=$(gh api "repos/${REPO}/compare/${DEPLOY_SHA}...${LIVE_SHA}" --jq '.status' 2>/dev/null || true)
             case "$CMP" in
               identical | ahead)
-                STAND_LINE="Production now serves ${LIVE_SHA:0:9}, which already contains this change. No action: a later deployment covered it." ;;
+                STAND_LINE="Production now serves ${LIVE_SHA:0:9}, which already contains this change. It is live: a later deployment covered it." ;;
               behind | diverged)
-                STAND_LINE="Production serves ${LIVE_SHA:0:9}, which does NOT contain this change. It is not live." ;;
+                STAND_LINE="Production serves ${LIVE_SHA:0:9}, which did NOT contain this change in the four minutes after the failure. It is not live." ;;
               *)
                 STAND_LINE="Production serves ${LIVE_SHA:0:9}; whether that contains this change could not be read." ;;
             esac
