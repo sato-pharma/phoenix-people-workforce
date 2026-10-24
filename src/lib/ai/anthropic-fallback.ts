@@ -24,6 +24,16 @@
 // is what was refused; that model + format pair keeps the shape that answered for the life of the
 // process, so the worst case is the old behaviour. JSON is still asked for in the prompt whenever the
 // format is dropped, and still cleaned on the way out.
+//
+// 🔴 TWO ANTHROPIC ACCOUNTS, ASKED IN ORDER (owner, 2026-10-24: "If no credit, then fall back to the first
+// Anthropic account. If no credit in … the first Anthropic account, then fall back to the second"). The
+// first account's key is ANTHROPIC_API_KEY and the second's ANTHROPIC_API_KEY_2. Every Messages call goes to
+// the first and moves to the second ONLY when the first is out of credit or its key is refused — the same
+// two codes that move a call off OpenAI (`shouldFailOverToNextProvider`); a timeout, a rate limit or a bad
+// request stays with the account that gave it. An account that refused is asked LAST for the next ten
+// minutes (never skipped: it is still the last resort), and asked first again once it answers. Each
+// account is billed separately, so every reply and every failure names the account it came from, and the
+// out-of-credit alarm pages for each by name.
 
 type AnthropicEnv = Record<string, string | undefined>;
 
@@ -41,23 +51,86 @@ const RETRY_DELAY_MS = 500;
 
 export type AnthropicFailureCode = "auth_failed" | "failed" | "quota_exceeded" | "rate_limited" | "timeout";
 
+/**
+ * The Anthropic account a call was billed to. The names are the AI board's provider names
+ * (`AiCallProvider` in ai-metrics.ts), so a caller records the account without a table.
+ */
+export type AnthropicAccount = "anthropic" | "anthropic_backup";
+
+// In the order they are asked. The first keeps the name it has always had, so nothing already set moves.
+export const ANTHROPIC_ACCOUNT_KEYS: readonly { account: AnthropicAccount; envName: string }[] = [
+  { account: "anthropic", envName: "ANTHROPIC_API_KEY" },
+  { account: "anthropic_backup", envName: "ANTHROPIC_API_KEY_2" },
+];
+
 // Same spellings as PhoenixOpenAiErrorCode, so openai-client.ts maps one onto the other without a table.
 export class AnthropicRequestError extends Error {
+  /** The account that refused, so the failure row and the alarm name the account to top up. */
+  account?: AnthropicAccount;
   code: AnthropicFailureCode;
   requestId?: string;
   status?: number;
 
-  constructor(code: AnthropicFailureCode, message: string, options: { requestId?: string; status?: number } = {}) {
+  constructor(
+    code: AnthropicFailureCode,
+    message: string,
+    options: { account?: AnthropicAccount; requestId?: string; status?: number } = {},
+  ) {
     super(message);
     this.name = "AnthropicRequestError";
+    this.account = options.account;
     this.code = code;
     this.requestId = options.requestId;
     this.status = options.status;
   }
 }
 
+/** Whether ANY Anthropic account has a key — the first, the second, or both. */
 export function hasAnthropicApiKey(env: AnthropicEnv = process.env) {
-  return Boolean(env.ANTHROPIC_API_KEY?.trim());
+  return ANTHROPIC_ACCOUNT_KEYS.some(({ envName }) => Boolean(env[envName]?.trim()));
+}
+
+// The two failures that mean the ACCOUNT is dead, so the next account is asked. The same pair as
+// `shouldFailOverToNextProvider` in openai-client.ts, kept here because that module imports this one.
+export function shouldTryNextAnthropicAccount(code: AnthropicFailureCode) {
+  return code === "quota_exceeded" || code === "auth_failed";
+}
+
+// An account that refused for credit or its key is asked last for this long, then first again.
+export const ANTHROPIC_ACCOUNT_BENCH_MS = 10 * 60_000;
+const accountBenchedUntil = new Map<AnthropicAccount, number>();
+
+export function noteAnthropicAccountUnavailable(account: AnthropicAccount, nowMs = Date.now()) {
+  accountBenchedUntil.set(account, nowMs + ANTHROPIC_ACCOUNT_BENCH_MS);
+}
+
+export function noteAnthropicAccountAvailable(account: AnthropicAccount) {
+  accountBenchedUntil.delete(account);
+}
+
+export function resetAnthropicAccountMemory() {
+  accountBenchedUntil.clear();
+}
+
+/**
+ * The accounts to ask, in order: every account with a key, the first before the second, except that one
+ * which refused in the last ten minutes goes to the back. The same key pasted under both names is one
+ * account, asked once.
+ */
+export function planAnthropicAccounts(
+  env: AnthropicEnv = process.env,
+  nowMs = Date.now(),
+): { account: AnthropicAccount; apiKey: string }[] {
+  const seen = new Set<string>();
+  const accounts: { account: AnthropicAccount; apiKey: string }[] = [];
+  for (const { account, envName } of ANTHROPIC_ACCOUNT_KEYS) {
+    const apiKey = env[envName]?.trim();
+    if (!apiKey || seen.has(apiKey)) continue;
+    seen.add(apiKey);
+    accounts.push({ account, apiKey });
+  }
+  const benched = (account: AnthropicAccount) => nowMs < (accountBenchedUntil.get(account) ?? 0);
+  return [...accounts.filter((entry) => !benched(entry.account)), ...accounts.filter((entry) => benched(entry.account))];
 }
 
 /**
@@ -435,6 +508,8 @@ function isTimeout(error: unknown) {
 }
 
 export type AnthropicReply = {
+  /** The account that answered — the one the call is billed to. */
+  account: AnthropicAccount;
   inputTokens?: number;
   model: string;
   outputText: string;
@@ -445,15 +520,7 @@ export type AnthropicReply = {
 // The plain resend gets what is left of the call's own timeout, never a fresh one, but never under this.
 const PLAIN_RESEND_MIN_MS = 1_000;
 
-/**
- * One Messages API round trip, with the same retry budget shape as the OpenAI client (`maxRetries`
- * extra tries on a 429 / 5xx / 529, never on a timeout). A 400 naming `output_config` is answered by
- * at most two resends in smaller shapes (`resendShapesFor`), which are not retries and spend none of
- * `maxRetries`. Throws
- * `AnthropicRequestError` — also for a refusal, a JSON answer cut off at max_tokens, and a schema
- * repeated back instead of filled in; never logs, and never puts the key in a message.
- */
-export async function callAnthropicMessages(params: {
+export type AnthropicCallParams = {
   apiKey?: string;
   fetchImpl?: typeof fetch;
   format?: unknown;
@@ -467,10 +534,67 @@ export async function callAnthropicMessages(params: {
   /** The caller's own way to stop the call once its answer is no longer needed (the signboard door). */
   signal?: AbortSignal;
   timeoutMs: number;
-}): Promise<AnthropicReply> {
-  const apiKey = (params.apiKey ?? process.env.ANTHROPIC_API_KEY)?.trim();
-  if (!apiKey) throw new AnthropicRequestError("failed", "ANTHROPIC_API_KEY is not configured.");
+  /**
+   * Told each time an account refuses for credit or its key and the next account is asked, so the caller
+   * records that account's refusal (the out-of-credit alarm reads it) although the call itself succeeds.
+   */
+  onAccountFailedOver?: (refusal: {
+    account: AnthropicAccount;
+    code: AnthropicFailureCode;
+    latencyMs: number;
+    nextAccount: AnthropicAccount;
+  }) => void;
+};
 
+/**
+ * One Messages call, asked of each Anthropic account in turn (see the header): the next account only when
+ * this one is out of credit or its key is refused, with what is left of `timeoutMs`. `apiKey` pins one key
+ * and asks nothing else. Throws the last account's `AnthropicRequestError`, which names that account.
+ */
+export async function callAnthropicMessages(params: AnthropicCallParams, env: AnthropicEnv = process.env): Promise<AnthropicReply> {
+  const pinned = params.apiKey?.trim();
+  const accounts = pinned ? [{ account: "anthropic" as const, apiKey: pinned }] : planAnthropicAccounts(env);
+  if (accounts.length === 0) throw new AnthropicRequestError("failed", "ANTHROPIC_API_KEY is not configured.");
+
+  const startedAt = Date.now();
+  for (const [index, { account, apiKey }] of accounts.entries()) {
+    const legStartedAt = Date.now();
+    const timeoutMs = index === 0 ? params.timeoutMs : Math.max(PLAIN_RESEND_MIN_MS, params.timeoutMs - (legStartedAt - startedAt));
+    try {
+      const reply = await callOneAnthropicAccount(params, account, apiKey, timeoutMs);
+      noteAnthropicAccountAvailable(account);
+      return reply;
+    } catch (error) {
+      if (!(error instanceof AnthropicRequestError) || params.signal?.aborted || !shouldTryNextAnthropicAccount(error.code)) {
+        throw error;
+      }
+      // Benched only when another account can be asked instead: alone, it stays first and is asked again.
+      if (accounts.length > 1) noteAnthropicAccountUnavailable(account);
+      const next = accounts[index + 1];
+      // Under a second left is not a call worth making; the refusal is the answer.
+      if (!next || params.timeoutMs - (Date.now() - startedAt) < PLAIN_RESEND_MIN_MS) throw error;
+      params.onAccountFailedOver?.({ account, code: error.code, latencyMs: Date.now() - legStartedAt, nextAccount: next.account });
+    }
+  }
+
+  // Unreachable: `accounts` is never empty here, and its last entry always returns or throws above.
+  throw new AnthropicRequestError("failed", "No Anthropic account was asked.");
+}
+
+/**
+ * One Messages API round trip to ONE account, with the same retry budget shape as the OpenAI client
+ * (`maxRetries` extra tries on a 429 / 5xx / 529, never on a timeout). A 400 naming `output_config` is
+ * answered by at most two resends in smaller shapes (`resendShapesFor`), which are not retries and spend
+ * none of `maxRetries`. Throws `AnthropicRequestError` naming the account — also for a refusal, a JSON
+ * answer cut off at max_tokens, and a schema repeated back instead of filled in; never logs, and never
+ * puts the key in a message.
+ */
+async function callOneAnthropicAccount(
+  params: AnthropicCallParams,
+  account: AnthropicAccount,
+  apiKey: string,
+  timeoutMs: number,
+): Promise<AnthropicReply> {
   const shape = {
     format: params.format,
     input: params.input,
@@ -481,7 +605,7 @@ export async function callAnthropicMessages(params: {
   let request = buildAnthropicRequest(shape, params.model);
   const doFetch = params.fetchImpl ?? fetch;
 
-  const post = async (body: AnthropicRequestBody, timeoutMs: number) => {
+  const post = async (body: AnthropicRequestBody, budgetMs: number) => {
     try {
       return await doFetch(ANTHROPIC_MESSAGES_URL, {
         body: JSON.stringify(body),
@@ -491,19 +615,19 @@ export async function callAnthropicMessages(params: {
           "x-api-key": apiKey,
         },
         method: "POST",
-        signal: params.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), params.signal]) : AbortSignal.timeout(timeoutMs),
+        signal: params.signal ? AbortSignal.any([AbortSignal.timeout(budgetMs), params.signal]) : AbortSignal.timeout(budgetMs),
       });
     } catch (error) {
       // Stopped by the caller, not timed out: the caller already has its answer and records nothing for this one.
-      if (params.signal?.aborted) throw new AnthropicRequestError("failed", "The Anthropic request was cancelled by its caller.");
-      if (isTimeout(error)) throw new AnthropicRequestError("timeout", "The Anthropic request timed out.");
-      throw new AnthropicRequestError("failed", error instanceof Error ? error.message : "The Anthropic request failed.");
+      if (params.signal?.aborted) throw new AnthropicRequestError("failed", "The Anthropic request was cancelled by its caller.", { account });
+      if (isTimeout(error)) throw new AnthropicRequestError("timeout", "The Anthropic request timed out.", { account });
+      throw new AnthropicRequestError("failed", error instanceof Error ? error.message : "The Anthropic request failed.", { account });
     }
   };
 
   for (let attempt = 0; ; attempt += 1) {
     const sentAt = Date.now();
-    let response = await post(request, params.timeoutMs);
+    let response = await post(request, timeoutMs);
     let rawBody = response.ok ? "" : await response.text().catch(() => "");
 
     if (!response.ok && request.output_config && isOptionalFieldRefusal(response.status, rawBody)) {
@@ -511,7 +635,7 @@ export async function callAnthropicMessages(params: {
       // refusal is about it, then plain (see `degradedRequests`).
       for (const resend of resendShapesFor(rawBody, request.output_config)) {
         request = buildAnthropicRequest(shape, params.model, resend === "plain" ? { plain: true } : { withoutFormat: true });
-        response = await post(request, Math.max(PLAIN_RESEND_MIN_MS, params.timeoutMs - (Date.now() - sentAt)));
+        response = await post(request, Math.max(PLAIN_RESEND_MIN_MS, timeoutMs - (Date.now() - sentAt)));
         rawBody = response.ok ? "" : await response.text().catch(() => "");
         // Remembered only when a smaller shape is what worked: a request the API refuses every way is
         // broken for another reason, and must not switch the optional fields off for the whole process.
@@ -536,7 +660,7 @@ export async function callAnthropicMessages(params: {
       throw new AnthropicRequestError(
         anthropicErrorCodeFor(response.status, rawBody),
         `Anthropic answered HTTP ${response.status}: ${errorMessageFrom(rawBody)}`,
-        { requestId, status: response.status },
+        { account, requestId, status: response.status },
       );
     }
 
@@ -556,22 +680,25 @@ export async function callAnthropicMessages(params: {
     // Each of these used to come back as an ordinary answer — an empty string, half an object, or the
     // schema — which every caller then misread as "the model found nothing". A named failure instead.
     if (json.stop_reason === "refusal") {
-      throw new AnthropicRequestError("failed", "Claude declined to answer this request.", { requestId, status: response.status });
+      throw new AnthropicRequestError("failed", "Claude declined to answer this request.", { account, requestId, status: response.status });
     }
     if (wantsJson && json.stop_reason === "max_tokens") {
       throw new AnthropicRequestError("failed", "Claude ran out of room before it finished the JSON answer (max_tokens).", {
+        account,
         requestId,
         status: response.status,
       });
     }
     if (isEchoedSchema(outputText, params.format)) {
       throw new AnthropicRequestError("failed", "Claude repeated the JSON Schema instead of answering it.", {
+        account,
         requestId,
         status: response.status,
       });
     }
 
     return {
+      account,
       inputTokens: json.usage?.input_tokens,
       model: json.model || params.model,
       outputText,

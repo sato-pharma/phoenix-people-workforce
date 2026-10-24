@@ -66,7 +66,7 @@ export type AiCallStatus = "success" | "error" | "failed_over";
  * client and the sales paths the other way round — so a Claude account out of credit paged him to top up
  * OpenAI. Every call site says which leg it ran.
  */
-export type AiCallProvider = "anthropic" | "generic" | "groq" | "openai" | "openrouter";
+export type AiCallProvider = "anthropic" | "anthropic_backup" | "generic" | "groq" | "openai" | "openrouter";
 
 export type AiCallRecord = {
   component: AiCallComponent;
@@ -90,6 +90,7 @@ export type AiCallRecord = {
  */
 const PROVIDER_LABELS: Record<AiCallProvider, string> = {
   anthropic: "Anthropic",
+  anthropic_backup: "Anthropic backup",
   generic: "The AI provider",
   groq: "Groq",
   openai: "OpenAI",

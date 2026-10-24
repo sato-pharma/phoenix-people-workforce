@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  ANTHROPIC_ACCOUNT_BENCH_MS,
   ANTHROPIC_FAST_MODEL,
   ANTHROPIC_MESSAGES_URL,
   ANTHROPIC_STRONG_MODEL,
@@ -12,10 +13,14 @@ import {
   buildAnthropicRequest,
   callAnthropicMessages,
   cleanJsonReply,
+  hasAnthropicApiKey,
   isEchoedSchema,
   isOptionalFieldRefusal,
   jsonInstructionFor,
+  noteAnthropicAccountUnavailable,
+  planAnthropicAccounts,
   resendShapesFor,
+  resetAnthropicAccountMemory,
   resetAnthropicPlainOnlyMemory,
   resolveAnthropicModel,
   schemaForAnthropic,
@@ -767,6 +772,138 @@ function wiringTests() {
 
   const shapeRules = readFileSync("scripts/secret-shape-rules.mjs", "utf8");
   assert.match(shapeRules, /name: "ANTHROPIC_API_KEY"/, "the new key has a shape rule before any key is pasted");
+  assert.match(shapeRules, /name: "ANTHROPIC_API_KEY_2"/, "and so does the second Anthropic account's key");
+
+  // Both callers of the Messages adapter record the first account's refusal and name the account that answered.
+  for (const file of ["src/lib/ai/openai-client.ts", "src/lib/sales/ai/provider.ts"]) {
+    const body = readFileSync(file, "utf8");
+    assert.match(body, /onAccountFailedOver: \(refusal\) =>/, `${file} must record an account that refused and was passed over`);
+    assert.match(body, /provider: refusal\.account,[\s\S]{0,80}status: "failed_over"/, `${file} must record it as failed_over, under that account`);
+    assert.match(body, /provider: reply\.account,/, `${file} must bill the success row to the account that answered`);
+  }
+}
+
+// 🔴 TWO ANTHROPIC ACCOUNTS (owner, 2026-10-24): OpenAI → the first Anthropic account → the second. The env
+// is passed in, never read from the process, because the suite runs with production credentials.
+const FIRST_KEY = "sk-ant-test-first-account-key-0001";
+const BACKUP_KEY = "sk-ant-test-backup-account-key-0002";
+const BOTH_ACCOUNTS = { ANTHROPIC_API_KEY: FIRST_KEY, ANTHROPIC_API_KEY_2: BACKUP_KEY };
+const CREDIT_REFUSAL = { error: { message: "Your credit balance is too low to access the Anthropic API.", type: "invalid_request_error" }, type: "error" };
+
+function accountFetch(answers: Record<string, () => Response>) {
+  const asked: string[] = [];
+  const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+    const key = (init?.headers as Record<string, string>)["x-api-key"];
+    asked.push(key === FIRST_KEY ? "first" : key === BACKUP_KEY ? "backup" : "other");
+    const answer = answers[key];
+    if (!answer) throw new Error("a key the test did not configure was sent");
+    return answer();
+  }) as typeof fetch;
+  return { asked, fetchImpl };
+}
+
+const claudeAnswers = () =>
+  jsonResponse({ content: [{ text: "answered", type: "text" }], model: "claude-haiku-5-5", usage: { input_tokens: 3, output_tokens: 2 } });
+
+function accountCall(fetchImpl: typeof fetch, extra: Partial<Parameters<typeof callAnthropicMessages>[0]> = {}) {
+  return {
+    fetchImpl,
+    input: "hello",
+    instructions: "Be brief.",
+    maxOutputTokens: 50,
+    maxRetries: 0,
+    model: "claude-haiku-5-5",
+    timeoutMs: 5_000,
+    ...extra,
+  };
+}
+
+async function secondAccountTests() {
+  resetAnthropicPlainOnlyMemory();
+  resetAnthropicAccountMemory();
+  const names = (env: Record<string, string | undefined>, nowMs?: number) =>
+    planAnthropicAccounts(env, nowMs).map((entry) => entry.account);
+
+  assert.deepEqual(names(BOTH_ACCOUNTS), ["anthropic", "anthropic_backup"], "the first account is asked first, the second next");
+  assert.deepEqual(names({ ANTHROPIC_API_KEY_2: BACKUP_KEY }), ["anthropic_backup"], "the second key alone is still an account");
+  assert.equal(hasAnthropicApiKey({ ANTHROPIC_API_KEY_2: BACKUP_KEY }), true, "so Claude counts as configured with only the second key");
+  assert.equal(hasAnthropicApiKey({}), false);
+  assert.deepEqual(
+    names({ ANTHROPIC_API_KEY: FIRST_KEY, ANTHROPIC_API_KEY_2: ` ${FIRST_KEY} ` }),
+    ["anthropic"],
+    "the same key pasted under both names is one account, asked once",
+  );
+
+  noteAnthropicAccountUnavailable("anthropic", 1_000);
+  assert.deepEqual(names(BOTH_ACCOUNTS, 1_000), ["anthropic_backup", "anthropic"], "a refused account is asked last, never skipped");
+  assert.deepEqual(
+    names(BOTH_ACCOUNTS, 1_000 + ANTHROPIC_ACCOUNT_BENCH_MS),
+    ["anthropic", "anthropic_backup"],
+    "and first again once the bench window has passed",
+  );
+  resetAnthropicAccountMemory();
+
+  // The first account out of credit: the second answers, the refusal is told once, and the next call starts there.
+  for (const [status, label] of [[400, "out of credit"], [401, "a refused key"]] as const) {
+    resetAnthropicAccountMemory();
+    const net = accountFetch({
+      [BACKUP_KEY]: claudeAnswers,
+      [FIRST_KEY]: () => jsonResponse(status === 400 ? CREDIT_REFUSAL : { error: { message: "invalid x-api-key", type: "authentication_error" } }, status),
+    });
+    const told: unknown[] = [];
+    const reply = await callAnthropicMessages(
+      accountCall(net.fetchImpl, { onAccountFailedOver: ({ account, code, nextAccount }) => told.push({ account, code, nextAccount }) }),
+      BOTH_ACCOUNTS,
+    );
+    assert.equal(reply.outputText, "answered", `${label} on the first account: the second account answers`);
+    assert.equal(reply.account, "anthropic_backup", "and the reply names the account it is billed to");
+    assert.deepEqual(net.asked, ["first", "backup"]);
+    assert.deepEqual(
+      told,
+      [{ account: "anthropic", code: status === 400 ? "quota_exceeded" : "auth_failed", nextAccount: "anthropic_backup" }],
+      "the first account's refusal is told once, so its own row and alarm are written",
+    );
+    assert.deepEqual(names(BOTH_ACCOUNTS), ["anthropic_backup", "anthropic"], "the next call goes to the second account first");
+  }
+
+  // A rate limit is not a dead account: it stays with the first, and the second is never billed for it.
+  resetAnthropicAccountMemory();
+  let net = accountFetch({
+    [BACKUP_KEY]: claudeAnswers,
+    [FIRST_KEY]: () => jsonResponse({ error: { message: "Number of requests has exceeded your rate limit", type: "rate_limit_error" } }, 429),
+  });
+  await assert.rejects(callAnthropicMessages(accountCall(net.fetchImpl), BOTH_ACCOUNTS), (error: unknown) => {
+    assert.ok(error instanceof AnthropicRequestError);
+    assert.equal(error.code, "rate_limited");
+    assert.equal(error.account, "anthropic");
+    return true;
+  });
+  assert.deepEqual(net.asked, ["first"], "a rate limit never moves the call to the second account");
+
+  // Both accounts out of credit: the failure names the second account, the last one asked.
+  resetAnthropicAccountMemory();
+  net = accountFetch({ [BACKUP_KEY]: () => jsonResponse(CREDIT_REFUSAL, 400), [FIRST_KEY]: () => jsonResponse(CREDIT_REFUSAL, 400) });
+  await assert.rejects(callAnthropicMessages(accountCall(net.fetchImpl), BOTH_ACCOUNTS), (error: unknown) => {
+    assert.ok(error instanceof AnthropicRequestError);
+    assert.equal(error.code, "quota_exceeded");
+    assert.equal(error.account, "anthropic_backup", "the last refusal names the second account");
+    assert.doesNotMatch(error.message, /sk-ant-/, "a key must never appear in an error message");
+    return true;
+  });
+  assert.deepEqual(net.asked, ["first", "backup"]);
+
+  // A pinned key asks that key and nothing else.
+  resetAnthropicAccountMemory();
+  net = accountFetch({ [BACKUP_KEY]: claudeAnswers, [FIRST_KEY]: () => jsonResponse(CREDIT_REFUSAL, 400) });
+  await assert.rejects(callAnthropicMessages(accountCall(net.fetchImpl, { apiKey: FIRST_KEY }), BOTH_ACCOUNTS));
+  assert.deepEqual(net.asked, ["first"], "a caller that pins a key is never moved to another account");
+
+  // One account alone is never benched: with nothing to move to, it stays first.
+  resetAnthropicAccountMemory();
+  net = accountFetch({ [FIRST_KEY]: () => jsonResponse(CREDIT_REFUSAL, 400) });
+  await assert.rejects(callAnthropicMessages(accountCall(net.fetchImpl), { ANTHROPIC_API_KEY: FIRST_KEY }));
+  assert.deepEqual(names(BOTH_ACCOUNTS), ["anthropic", "anthropic_backup"], "a lone account that refused is not sent to the back");
+  resetAnthropicAccountMemory();
 }
 
 export async function runAiProviderFailoverTests() {
@@ -776,5 +913,6 @@ export async function runAiProviderFailoverTests() {
   replyCleaningTests();
   errorCodeTests();
   await callTests();
+  await secondAccountTests();
   wiringTests();
 }

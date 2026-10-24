@@ -84,8 +84,8 @@ export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
   const affected =
     record.component === "groq_transcription"
       ? "Speech to text for CRM spoken visit comments is failing until it is topped up — on a browser with no speech engine of its own, that is the only way a rep can dictate one."
-      : record.provider === "anthropic"
-        ? "Every call Claude answers is refused until it is topped up. The Phoenix CRM signboard reads, which ask Claude first, fall back to OpenAI, and no AI feature has a stand-in if OpenAI goes down too."
+      : record.provider === "anthropic" || record.provider === "anthropic_backup"
+        ? `${record.provider === "anthropic" ? "The first Anthropic account" : "The backup Anthropic account"} refuses every call until it is topped up. Claude's calls move to the ${record.provider === "anthropic" ? "backup" : "first"} Anthropic account while that one has credit and a key, and the Phoenix CRM signboard reads, which ask Claude first, fall back to OpenAI; if both Anthropic accounts and OpenAI are out, no AI feature has a stand-in.`
         : record.provider === "openai"
           ? "Every OpenAI feature is failing until it is topped up: CV extraction, the Sales normalizer's AI suggest, CRM campaign notes, the coach, expense notes, email assist and the What Needs You summary."
           : "Every Sales AI feature it answers is failing until it is topped up.";
@@ -95,7 +95,7 @@ export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
   // either an empty balance or the workspace's own spend limit, and that ruling was made for the OpenAI
   // account, not this one — so its line says what ends either.
   const fix =
-    record.provider === "anthropic"
+    record.provider === "anthropic" || record.provider === "anthropic_backup"
       ? `Add credit, or raise the workspace spend limit, on ${billingPage} and the features resume on their own.`
       : `Waiting will not fix it — the account has no auto-recharge. Add credit on ${billingPage} and the features resume on their own.`;
   return [

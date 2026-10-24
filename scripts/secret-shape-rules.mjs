@@ -43,6 +43,13 @@ export const KEY_SHAPES = [
     describe: 'must look like sk-ant-… — letters, digits, "_" and "-" only, with no spaces, dots or line breaks',
   },
   {
+    // The second Anthropic account (2026-10-24): src/lib/ai/anthropic-fallback.ts moves a call here
+    // when the first account is out of credit or refuses its key. Same shape, same reason: pasted by hand.
+    name: "ANTHROPIC_API_KEY_2",
+    pattern: /^sk-ant-[A-Za-z0-9_-]{20,}$/,
+    describe: 'must look like sk-ant-… — letters, digits, "_" and "-" only, with no spaces, dots or line breaks',
+  },
+  {
     // Groq, for the CRM spoken visit comment on a browser with no speech engine of its own (Firefox).
     // Registered on 2026-09-25 with the feature and BEFORE any key was pasted, for one reason:
     // OPENAI_API_KEY's masked paste was found only after every AI feature had been silently dead for

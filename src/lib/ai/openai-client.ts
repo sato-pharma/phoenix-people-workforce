@@ -473,6 +473,19 @@ async function runAnthropicResponse(
       reasoningEffort: params.reasoning?.effort ?? "low",
       signal: params.signal,
       timeoutMs: params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS,
+      // The first Anthropic account refused for credit or its key and the second is being asked: its own
+      // row, so the out-of-credit alarm still pages for the first although the call is answered.
+      onAccountFailedOver: (refusal) =>
+        recordAiCall({
+          component,
+          errorCode: refusal.code,
+          failedOverTo: refusal.nextAccount,
+          latencyMs: refusal.latencyMs,
+          model,
+          provider: refusal.account,
+          purpose: params.purpose,
+          status: "failed_over",
+        }),
     });
 
     recordAiCall({
@@ -481,7 +494,7 @@ async function runAnthropicResponse(
       latencyMs: Date.now() - startedAt,
       model: reply.model,
       outputTokens: reply.outputTokens,
-      provider: "anthropic",
+      provider: reply.account,
       purpose: params.purpose,
       status: "success",
     });
@@ -495,7 +508,8 @@ async function runAnthropicResponse(
       errorCode: normalized.code,
       latencyMs: Date.now() - startedAt,
       model,
-      provider: "anthropic",
+      // The account that gave the last refusal: the second, when the first was out of credit too.
+      provider: error instanceof AnthropicRequestError ? (error.account ?? "anthropic") : "anthropic",
       purpose: params.purpose,
       ...legOutcome(normalized.code, failoverTo),
     });
