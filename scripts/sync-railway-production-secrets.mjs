@@ -73,7 +73,10 @@ const variables = [
     { railway: "PHOENIX_AUTH_SECRET", github: ["PHOENIX_AUTH_SECRET"], required: true },
     { railway: "RESEND_API_KEY", github: ["RESEND_API_KEY"], required: true },
     { railway: "RESEND_WEBHOOK_SECRET", github: ["RESEND_WEBHOOK_SECRET"], required: true },
-    { railway: "OPENAI_API_KEY", github: ["OPENAI_API_KEY"], required: true },
+    // Demoted from required:true on 2026-10-24, in lockstep with secret-policy.mjs: Claude answers
+    // first and OpenAI is only the last resort, so a sync must not abort when OpenAI's key is absent.
+    // The validator's checkAiKeyPresent still fails a production holding none of the AI keys.
+    { railway: "OPENAI_API_KEY", github: ["OPENAI_API_KEY"], required: false },
     { railway: "TELEGRAM_BOT_TOKEN", github: ["TELEGRAM_BOT_TOKEN"], required: true },
     { railway: "NOTIFICATION_WEBHOOK_SECRET", github: ["NOTIFICATION_WEBHOOK_SECRET"], required: true },
     { railway: "CRON_SECRET", github: ["CRON_SECRET"], required: true },

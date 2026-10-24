@@ -206,6 +206,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - **One production deployment per task.** Bundle all phases into one PR.
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
 - Before wiring any email recipients, **ask who receives it**.
+- 🔴 **EVERY AI CALL, IN EVERY MODULE, GOES THROUGH ONE DOOR — OpenAI, then Anthropic account 1, then account 2** (owner, 2026-10-24). Use `createOpenAiResponseText` (`src/lib/ai/`) or the sales chain (`runWithSalesAiFailover`); ask `hasAiApiKey()`, never read a key or post to a provider yourself. `tests/ai-one-door.test.ts` refuses a second door. Rule: `.claude/rules/platform.md`, "AI providers".
 
 **Product rules that must not be "fixed" back** — **each one lives in its module's memory**
 (§2.2) and loads with that module. Kept here: the one live web-side gate the mobile freeze leaves

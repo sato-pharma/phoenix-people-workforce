@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { hasAiApiKey } from "@/lib/ai/openai-client";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { defaultCvPositionKey, LEGACY_CV_POSITION_KEYS } from "@/lib/recruitment/cv-field-schemas";
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
@@ -153,7 +154,8 @@ async function main(): Promise<void> {
   });
 
   console.log(`Supabase project : ${requireEnv("NEXT_PUBLIC_SUPABASE_URL")}`);
-  console.log(`OpenAI key       : ${process.env.OPENAI_API_KEY ? "present" : "MISSING"}`);
+  // Any one of the AI keys reads a CV: the shared door tries OpenAI, then each Anthropic account.
+  console.log(`AI key           : ${hasAiApiKey() ? "present" : "MISSING"}`);
   console.log(`Re-reading with  : ${defaultCvPositionKey}`);
 
   // Newest extraction per candidate. Ordered newest-first and taken once per candidate, so a

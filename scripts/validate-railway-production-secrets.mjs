@@ -9,6 +9,7 @@ import {
   FORBIDDEN_VARIABLES,
   RAILWAY_CLI_PACKAGE,
   REQUIRED_VARIABLES,
+  checkAiKeyPresent,
   checkCanonicalOrigins,
   checkExpectedValues,
   checkForbiddenVariables,
@@ -219,6 +220,8 @@ failures.push(...checkExpectedValues(valuesByName, railEnv));
 // values and is in no workflow, no ci.yml step and no npm script, so it exits 1 with nothing set.
 // This is the one place that HAS the values.
 failures.push(...checkCanonicalOrigins(valuesByName, railEnv));
+// At least ONE of the three AI keys (2026-10-24). None is required on its own any more.
+failures.push(...checkAiKeyPresent(valuesByName, railEnv));
 
 // Added 2026-08-08, after CLOUDFLARE_API_TOKEN and NOTIFICATION_WEBHOOK_SECRET were found on
 // Railway with a second, unrelated KEY=VALUE pair glued onto the end of the real value with no

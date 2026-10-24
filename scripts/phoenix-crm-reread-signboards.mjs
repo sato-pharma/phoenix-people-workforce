@@ -78,8 +78,8 @@ const APPLY = argv.includes("--apply");
 const UNREADABLE = argv.includes("--unreadable");
 const REJUDGE = argv.includes("--rejudge");
 // The re-judge reads no photo, so it needs no key.
-if (!REJUDGE && !process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
-  console.error("No ANTHROPIC_API_KEY or OPENAI_API_KEY in .env.local: the reader would answer `unjudged` for every place.");
+if (!REJUDGE && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY_2 && !process.env.OPENAI_API_KEY) {
+  console.error("No ANTHROPIC_API_KEY, ANTHROPIC_API_KEY_2 or OPENAI_API_KEY in .env.local: the reader would answer `unjudged` for every place.");
   process.exit(9);
 }
 const valueOf = (flag) => argv.flatMap((arg, index) => (arg === flag ? [argv[index + 1]] : [])).filter(Boolean);

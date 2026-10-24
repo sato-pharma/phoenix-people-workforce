@@ -1256,6 +1256,7 @@ import { runApprovalsBadgeEmptySeatTests } from "./approvals-badge-empty-seat.te
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
 import { runApprovePlansPageSpeedTests } from "./approve-plans-page-speed.test.ts";
+import { runAiOneDoorTests } from "./ai-one-door.test.ts";
 import { runPhoenixPerformanceAccelerationTests } from "./phoenix-performance-acceleration.test.ts";
 import { runDecidedForMeRowCapTests } from "./decided-for-me-row-caps.test.ts";
 import { runPortalHomeNoDeadApprovalsFetchTests } from "./portal-home-no-dead-approvals-fetch.test.ts";
@@ -5356,6 +5357,7 @@ await runTest("Approvals Hub badge: an empty seat is nobody to count for, never 
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
 await runTest("the approve-plans page reads only the plan module, own plan headers and one role batch (6-13 s on production)", runApprovePlansPageSpeedTests);
+await runTest("every AI call goes through the one door that reaches OpenAI and both Anthropic accounts", runAiOneDoorTests);
 await runTest("signed-out pages go straight to sign-in, the exclusion function reads base tables, and independent page reads run together (performance brief, 2026-10-23)", runPhoenixPerformanceAccelerationTests);
 await runTest("decided-for-me is paged, totally ordered, and raises a failed read instead of showing a quiet week", runDecidedForMeRowCapTests);
 await runTest("portal home does not fetch the approvals feed for a number nobody renders", runPortalHomeNoDeadApprovalsFetchTests);
