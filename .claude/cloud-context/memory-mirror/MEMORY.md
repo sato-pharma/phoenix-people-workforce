@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [A CRM migration reaches production before its PR merges](a-crm-migration-reaches-production-before-its-pr-merges.md) — the live function carried an OPEN, RED PR's wider version on both databases; read `md5(prosrc)` and the grants, never the migration file or `main`.
 
 
 
