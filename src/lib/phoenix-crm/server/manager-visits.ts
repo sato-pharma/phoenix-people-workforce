@@ -205,7 +205,7 @@ async function lineProductNames(lineName: string | null | undefined): Promise<st
  * The product families a planner may name: his seat's line, or — a product manager, who sits on no seat —
  * every line he plans in (Pedia and Anti Infective).
  */
-async function writerProductNames(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<string[]> {
+export async function writerProductNames(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<string[]> {
   const lineNames = writer.seat
     ? [writer.seat.lineName]
     : writer.lineCodes.map((code) => viewer.org.territories.find((seat) => seat.lineCode === code && seat.lineName)?.lineName ?? null);

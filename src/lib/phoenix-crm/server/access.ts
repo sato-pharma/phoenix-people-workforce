@@ -537,6 +537,14 @@ export function ownDaySeat(viewer: PhoenixCrmViewer, seat: OrgSeat): OrgSeat | n
 const OWN_DAY_MANAGER_TIERS = new Set(["DM", "ACTING_DM", "RSM"]);
 
 /**
+ * Whether a manager seat records a day of its own — the district and regional tiers, never an NSM (owner,
+ * 2026-10-20). The Super Admin's missed day for a manager (2026-10-24) is filed on exactly these seats.
+ */
+export function recordsOwnDayOn(seat: Pick<OrgSeat, "tier"> | null | undefined): boolean {
+  return Boolean(seat) && OWN_DAY_MANAGER_TIERS.has(String(seat?.tier));
+}
+
+/**
  * Writing a day activity: the territory's own rep on his territory, or a district manager on his own
  * seat. `seat` is the seat the row lands on, `own` says whose day it is.
  */

@@ -49,7 +49,13 @@ export type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/server/day-detail";
 /** The rep's own open commitments, and his prep for the next day a plan can hold. Both read-only. */
 export type { RepCommitmentsView } from "@/lib/phoenix-crm/server/commitments";
 export type { CallPrepView } from "@/lib/phoenix-crm/server/call-prep";
-export type { EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/server/missed-records";
+export type { EnteredMissedVisit, MissedRecordChainManager, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/server/missed-records";
+export type {
+  EnteredManagerMissedVisit,
+  ManagerMissedRecordCustomer,
+  ManagerMissedRecordForm,
+  ManagerMissedRecordList,
+} from "@/lib/phoenix-crm/server/manager-missed-records";
 export type { SavedVisitEdit, VisitEditForm, VisitEditPerson } from "@/lib/phoenix-crm/server/visit-edit";
 export type { SavedVisitDetail, VisitDetailForm } from "@/lib/phoenix-crm/server/visit-detail-edit";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";

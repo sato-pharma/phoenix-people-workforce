@@ -24,7 +24,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
-import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
+import { MISSED_RECORD_MARK, MISSED_VISIT_KIND_LABELS, type MissedVisitKind } from "@/lib/phoenix-crm/missed-records";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
@@ -178,6 +178,10 @@ function MissedVisitForm({
   const idRef = useRef<string | null>(null);
   const [customer, setCustomer] = useState<MissedRecordCustomer | null>(null);
   const [planned, setPlanned] = useState<"planned" | "unplanned" | null>(null);
+  // Single, double or chain — his choice (owner, 2026-10-24); the people are the territory's own chain.
+  const [kind, setKind] = useState<MissedVisitKind>("single");
+  const [managerHrId, setManagerHrId] = useState<string | null>(form.chain[0]?.hrId ?? null);
+  const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
   const [time, setTime] = useState("");
   const [products, setProducts] = useState<string[]>([]);
   const [comment, setComment] = useState("");
@@ -185,11 +189,15 @@ function MissedVisitForm({
   const busy = action.busy !== null;
 
   const reasonLength = reason.trim().replace(/\s+/g, " ").length;
+  const chosenManager = form.chain.find((member) => member.hrId === managerHrId) ?? null;
+  // A chain's senior manager stands ABOVE the one chosen — the same rule the server checks.
+  const seniors = chosenManager ? form.chain.filter((member) => member.position > chosenManager.position) : [];
+  const peopleReady = kind === "single" || (chosenManager !== null && (kind === "double" || seniors.some((member) => member.hrId === seniorHrId)));
+  // 🔴 Products and comment are OPTIONAL on his entry, and only on his (owner, 2026-10-24).
   const ready =
     customer !== null &&
     planned !== null &&
-    products.length > 0 &&
-    comment.trim().length > 0 &&
+    peopleReady &&
     (planned === "planned" || (reasonLength >= UNPLANNED_REASON_MIN && reasonLength <= UNPLANNED_REASON_MAX));
 
   function pick(next: MissedRecordCustomer) {
@@ -216,6 +224,9 @@ function MissedVisitForm({
       visitDate: form.date,
       visitTime: time,
       planned: planned === "planned",
+      kind,
+      managerHrId: kind === "single" ? null : managerHrId,
+      seniorHrId: kind === "chain" ? seniorHrId : null,
       products,
       comment,
       reason: planned === "unplanned" ? reason : null,
@@ -274,6 +285,52 @@ function MissedVisitForm({
             />
           </CrmField>
 
+          <CrmField label="Single, double or chain">
+            <CrmChoice<MissedVisitKind>
+              columns={3}
+              label="Single, double or chain"
+              onChange={(next) => {
+                setKind(next);
+                setSeniorHrId(null);
+              }}
+              options={[
+                { label: MISSED_VISIT_KIND_LABELS.single, note: "The rep alone", value: "single" },
+                { disabled: form.chain.length === 0, label: MISSED_VISIT_KIND_LABELS.double, note: "With a manager", value: "double" },
+                { disabled: form.chain.length < 2, label: MISSED_VISIT_KIND_LABELS.chain, note: "With a manager and a senior manager", value: "chain" },
+              ]}
+              value={kind}
+            />
+          </CrmField>
+
+          {kind !== "single" ? (
+            <CrmField label="The manager on the visit">
+              <CrmChoice<string>
+                columns={2}
+                label="The manager on the visit"
+                onChange={(next) => {
+                  setManagerHrId(next);
+                  setSeniorHrId(null);
+                }}
+                options={form.chain
+                  .filter((member) => kind === "double" || form.chain.some((other) => other.position > member.position))
+                  .map((member) => ({ label: member.name, note: member.title, value: member.hrId }))}
+                value={managerHrId}
+              />
+            </CrmField>
+          ) : null}
+
+          {kind === "chain" && chosenManager ? (
+            <CrmField label="The senior manager on the visit">
+              <CrmChoice<string>
+                columns={2}
+                label="The senior manager on the visit"
+                onChange={(next) => setSeniorHrId(next)}
+                options={seniors.map((member) => ({ label: member.name, note: member.title, value: member.hrId }))}
+                value={seniorHrId}
+              />
+            </CrmField>
+          ) : null}
+
           {planned === "unplanned" ? (
             <CrmField
               hint={`${reasonLength} of ${UNPLANNED_REASON_MAX} characters · at least ${UNPLANNED_REASON_MIN}`}
@@ -311,7 +368,7 @@ function MissedVisitForm({
             />
           </CrmField>
 
-          <CrmField hint={`${products.length} chosen · at most ${VISIT_PRODUCTS_MAX}`} label="Products discussed">
+          <CrmField hint={`Optional · ${products.length} chosen · at most ${VISIT_PRODUCTS_MAX}`} label="Products discussed">
             <div className="grid min-w-0 gap-1.5 sm:grid-cols-2">
               {form.products.map((product) => (
                 <CrmCheck
@@ -326,7 +383,7 @@ function MissedVisitForm({
             </div>
           </CrmField>
 
-          <CrmField hint={`${comment.trim().length} of ${VISIT_COMMENT_MAX} characters`} htmlFor="phoenix-crm-missed-visit-comment" label="What happened on the visit">
+          <CrmField hint={`Optional · ${comment.trim().length} of ${VISIT_COMMENT_MAX} characters`} htmlFor="phoenix-crm-missed-visit-comment" label="What happened on the visit">
             <textarea
               className={crmTextareaClassName}
               dir="auto"

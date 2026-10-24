@@ -9,6 +9,7 @@ import {
   managerVisitHalfLabel,
   type ManagerDayVisit,
 } from "@/lib/phoenix-crm/manager-visit-detail";
+import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { cn } from "@/lib/utils";
 
 /**
@@ -164,6 +165,7 @@ function StatusCell({ row }: { row: PlanVsActualRow }) {
       <div className="flex flex-wrap items-center gap-1.5">
         <Chip className={style.chip}>{row.outcomeLabel}</Chip>
         {visit ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
+        {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
       </div>
       {sentence ? <Muted>{sentence}</Muted> : null}
       {visit ? (

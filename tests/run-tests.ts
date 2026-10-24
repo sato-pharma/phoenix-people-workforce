@@ -1893,6 +1893,7 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmAddPathNameRowTests } from "./phoenix-crm-add-path-name-row.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmAdminDayPageTests } from "./phoenix-crm-admin-day-page.test.ts";
+import { runPhoenixCrmManagerMissedRecordsTests } from "./phoenix-crm-manager-missed-records.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmNoticeBadgeTests } from "./phoenix-crm-notice-badges.test.ts";
@@ -6896,6 +6897,10 @@ await runTest(
 await runTest(
   "Phoenix CRM admin day page (the admin calendar opens the admin day with a route map, a portal viewer is forwarded to the portal day, and only the Super Admin and the SFE Manager get the route)",
   runPhoenixCrmAdminDayPageTests,
+);
+await runTest(
+  "Phoenix CRM manager missed records (the Super Admin enters a manager's missed single visit and day from the manager's day page, behind the same gate and marked as entered by him; his entry of a rep's visit takes single, double or chain, and needs neither products nor a comment)",
+  runPhoenixCrmManagerMissedRecordsTests,
 );
 
 await runTest(

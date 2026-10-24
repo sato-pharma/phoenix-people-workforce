@@ -85,6 +85,11 @@ export type ManagerDayVisit = {
   /** A ride-along whose customer is not validated yet counts in no figure, exactly as on the rep's own row. */
   awaitingValidation: boolean;
   inVacantTerritory: boolean;
+  /**
+   * His own visit was entered for him by the Super Admin — a record he missed (owner, 2026-10-24). Read from who
+   * entered it (`isManagerVisitEnteredForHim`); absent on a ride-along, whose own mark is the rep visit's.
+   */
+  enteredByAdmin?: boolean;
 };
 
 export const MANAGER_VISIT_KIND_LABELS: Record<ManagerDayVisitKind, string> = {
