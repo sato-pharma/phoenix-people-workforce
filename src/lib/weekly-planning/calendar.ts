@@ -164,16 +164,70 @@ export function withoutOfficeDays<T extends { activityType: string }>(items: T[]
 }
 
 /**
- * An item is never drawn with an empty area when the people on it have one (owner, 2026-10-24: "grab
- * area from the rep name, do not leave it empty"). The stored area wins; otherwise the rep it is
- * planned WITH (a double visit, or a manager's half-day with a rep), otherwise the planner's own.
+ * An item is never drawn with an empty area when something knows it (owner, 2026-10-24: "grab area
+ * from the rep name, do not leave it empty", then "check his CRM visits or his expenses, where was
+ * he"). The stored area wins; otherwise the rep it is planned WITH (a double visit, or a manager's
+ * half-day with a rep); otherwise where he actually was that day (`buildPlaceEvidence`); otherwise
+ * the planner's own area.
  */
 export function resolvePlanItemArea(
   storedArea: string | null | undefined,
   repAreaName: string | null | undefined,
   ownerAreaName: string | null | undefined,
+  evidenceAreaName?: string | null,
 ): string | null {
-  return cleanText(storedArea) || cleanText(repAreaName) || cleanText(ownerAreaName) || null;
+  return cleanText(storedArea) || cleanText(repAreaName) || cleanText(evidenceAreaName) || cleanText(ownerAreaName) || null;
+}
+
+export type PlaceEvidenceVisit = { areaName: string | null; date: string; hrId: string };
+export type PlaceEvidenceClaim = { areaName: string | null; endDate: string; hrId: string; startDate: string };
+
+/** Longest trip the evidence reads day by day; a claim spanning more is not a place on any one day. */
+const PLACE_EVIDENCE_MAX_TRIP_DAYS = 31;
+
+export function placeEvidenceKey(hrId: string | null | undefined, date: string | null | undefined) {
+  return `${cleanText(hrId).toUpperCase()}|${cleanText(date)}`;
+}
+
+function datesBetween(startDate: string, endDate: string): string[] {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return [];
+  const days = Math.round((end - start) / 86_400_000) + 1;
+  if (days > PLACE_EVIDENCE_MAX_TRIP_DAYS) return [];
+  return Array.from({ length: days }, (_, index) => new Date(start + index * 86_400_000).toISOString().slice(0, 10));
+}
+
+/**
+ * Where a person was on a date, from what happened rather than what was planned: the area of the
+ * customers he visited in Phoenix CRM that day (the most visited area when there are several), and
+ * otherwise the area on an expense trip that covers the date. A visit outranks a claim: the visit is
+ * captured on the spot, the claim is written afterwards. Keyed by `placeEvidenceKey`.
+ */
+export function buildPlaceEvidence(visits: PlaceEvidenceVisit[], claims: PlaceEvidenceClaim[]): Map<string, string> {
+  const evidence = new Map<string, string>();
+  const visitCounts = new Map<string, Map<string, number>>();
+  for (const visit of visits) {
+    const area = cleanText(visit.areaName);
+    if (!area || !visit.date || !cleanText(visit.hrId)) continue;
+    const key = placeEvidenceKey(visit.hrId, visit.date);
+    const counts = visitCounts.get(key) ?? new Map<string, number>();
+    counts.set(area, (counts.get(area) ?? 0) + 1);
+    visitCounts.set(key, counts);
+  }
+  for (const [key, counts] of visitCounts) {
+    const [top] = [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+    if (top) evidence.set(key, top[0]);
+  }
+  for (const claim of claims) {
+    const area = cleanText(claim.areaName);
+    if (!area || !cleanText(claim.hrId)) continue;
+    for (const date of datesBetween(claim.startDate, claim.endDate)) {
+      const key = placeEvidenceKey(claim.hrId, date);
+      if (!evidence.has(key)) evidence.set(key, area);
+    }
+  }
+  return evidence;
 }
 
 export function planningConflictKey(date: string, _lineName: string | null, medicalRepHrId: string | null) {

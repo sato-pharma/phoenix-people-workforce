@@ -4,7 +4,8 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { loadManagerPlanHalfDays, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { cairoDateKey } from "@/lib/activity/working-baseline";
+import { loadManagerPlanHalfDays, loadManagerVisitAreas, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -12,9 +13,11 @@ import type { EmployeePlanActivityType, EmployeePlanKind, EmployeePlanStatus } f
 import {
   activityDisplayLabel,
   attachPlanningConflictWarnings,
+  buildPlaceEvidence,
   buildPlanningCalendarConflicts,
   planningCalendarTitle,
   planningConflictKey,
+  placeEvidenceKey,
   planSlotLabel,
   resolvePlanItemArea,
   sharedPlanningCalendarStatuses,
@@ -288,10 +291,45 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
   }
 }
 
+/**
+ * Where people actually were in the window (owner, 2026-10-24: "check his CRM visits or his expenses,
+ * where was he"): the area of the customers a manager visited in Phoenix CRM, and the area on an expense
+ * trip that is not rejected. It only fills an area nothing else names, so a failed read leaves the
+ * calendar as it was rather than failing the month.
+ */
+async function loadPlaceEvidence(start: string, end: string): Promise<Map<string, string>> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const [visits, claimsResult] = await Promise.all([
+      loadManagerVisitAreas({ end, start }),
+      supabase
+        .from("expense_claims")
+        .select("employee_hr_id,trip_start_date,trip_end_date,area_name")
+        .lte("trip_start_date", `${end}T23:59:59Z`)
+        .gte("trip_end_date", `${start}T00:00:00Z`)
+        .neq("status", "rejected")
+        .not("area_name", "is", null)
+        .limit(5000),
+    ]);
+    if (claimsResult.error) throw claimsResult.error;
+    return buildPlaceEvidence(
+      visits,
+      (claimsResult.data ?? []).flatMap((row) => {
+        const startDate = cairoDateKey(row.trip_start_date);
+        const endDate = cairoDateKey(row.trip_end_date) ?? startDate;
+        return startDate && endDate ? [{ areaName: row.area_name, endDate, hrId: row.employee_hr_id, startDate }] : [];
+      }),
+    );
+  } catch (error) {
+    console.warn("planning calendar: place evidence unavailable", error instanceof Error ? error.message : error);
+    return new Map();
+  }
+}
+
 /** The legacy plans' items and the district managers' Phoenix CRM half-days, read side by side. */
 async function loadSubmittedPlanItems(start: string, end: string): ReturnType<typeof loadLegacySubmittedPlanItems> {
   const [legacy, halfDays] = await Promise.all([loadLegacySubmittedPlanItems(start, end), readManagerPlanHalfDays(start, end)]);
-  return { ...legacy, items: [...legacy.items, ...managerPlanCalendarItems(halfDays, legacy.directoryByHrId)] };
+  return { ...legacy, items: [...legacy.items, ...managerPlanCalendarItems(halfDays, legacy.directoryByHrId, legacy.placeEvidence)] };
 }
 
 async function loadLegacySubmittedPlanItems(start: string, end: string): Promise<{
@@ -301,10 +339,12 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
   items: PlanningCalendarPlanItem[];
   loadedHeaderCount: number;
   loadedItemCount: number;
+  placeEvidence: Map<string, string>;
 }> {
   const supabase = getSupabaseAdmin();
-  const [directoryRows, headersResult] = await Promise.all([
+  const [directoryRows, placeEvidence, headersResult] = await Promise.all([
     getEmployeeDirectoryRows(),
+    loadPlaceEvidence(start, end),
     supabase
       .from("employee_plan_headers")
       .select("id,employee_hr_id,employee_name,employee_job_title,plan_kind,status,period_start_date,period_end_date,parent_plan_id")
@@ -332,6 +372,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
       items: [],
       loadedHeaderCount: headers.length,
       loadedItemCount: 0,
+      placeEvidence,
     };
   }
 
@@ -374,7 +415,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
-    const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName);
+    const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(header.employee_hr_id, row.activity_date)));
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const employeeDisplayName = employee?.displayName || header.employee_name;
     const item: PlanningCalendarPlanItem = {
@@ -416,6 +457,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     items,
     loadedHeaderCount: headers.length,
     loadedItemCount: rows.length,
+    placeEvidence,
   };
 }
 
@@ -440,7 +482,7 @@ async function readManagerPlanHalfDays(start: string, end: string): Promise<Mana
   }
 }
 
-function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Map<string, EmployeeDirectoryRow>): PlanningCalendarPlanItem[] {
+function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Map<string, EmployeeDirectoryRow>, placeEvidence: Map<string, string>): PlanningCalendarPlanItem[] {
   return halfDays.flatMap((halfDay) => {
     const employee = directoryByHrId.get(normalizeHrId(halfDay.managerHrId));
     // Same rule as the legacy rows: someone no longer in the directory drops off the shared calendar.
@@ -454,7 +496,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const seniorDisplayName = senior ? (senior.displayName || senior.fullName) : null;
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
     const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" || halfDay.kind === "with_area" ? halfDay.areaName : null;
-    const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName);
+    const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(halfDay.managerHrId, halfDay.date)));
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
       activityTitle,
