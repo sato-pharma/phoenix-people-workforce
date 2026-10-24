@@ -857,7 +857,9 @@ export function resolveEmployeePortalNavVisibility(
     // stays to READ the plans he filed on this form before (owner, 2026-10-17: "make it unhidden, but
     // make them not able to submit … only able to see their historical plans"). The page shows him
     // that history only, and the form refuses him a new plan, an edit ask, a cancel and visit details.
-    showPlansTab: showPlansTab && !isPortalHrOfficeStaff,
+    // The Training Manager no longer sees the Weekly / Monthly Plan form (owner, 2026-10-24: "from
+    // training manager account"); he keeps the Planning Calendar, which is derived above.
+    showPlansTab: showPlansTab && !isPortalHrOfficeStaff && !isTrainingManager,
     // Regional Manager included: canReadProbationEmployee already has an RM branch that walks the
     // full management subtree (probation/service.ts), so an RM sees every med rep under every DSM
     // in their region — the tab was the only thing missing.
@@ -923,8 +925,9 @@ export function resolveEmployeePortalNavVisibility(
         isRegionalManager ||
         isProductManager ||
         isGroupProductManager ||
-        isMarketingManager ||
-        isTrainingManager) &&
+        isMarketingManager) &&
+      // The Training Manager's row was removed again 2026-10-24 (owner: "also remove vacancies report").
+      !isTrainingManager &&
       resolvedRole !== "Manager",
     // Mirrors the roles that actually hold `hiring_interviews: ["read","update"]` in
     // defaultPermissionMatrix (the page's own canAccess gate is the enforcing check), and the same
@@ -946,7 +949,8 @@ export function resolveEmployeePortalNavVisibility(
     showManagerEngagementTab: isNationalSalesManager,
     // Shared with them by the calendar's owner — see hasInterviewCalendarAccess in
     // src/lib/recruitment/interview-calendar.ts, which the page itself also asks.
-    showInterviewCalendarTab: hasInterviewCalendarAccess === true,
+    // Hidden for the Training Manager seat (owner, 2026-10-24), whether or not a share row exists.
+    showInterviewCalendarTab: hasInterviewCalendarAccess === true && !isTrainingManager,
     // Personally device-tracked employees see their own punch history; a head-of-department
     // Marketing Manager also gets the tab to review their team's attendance (self + her subtree,
     // gated server-side by assertCanViewEmployeeAttendance on /employee-portals/fingerprint-analytics).

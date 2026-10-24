@@ -309,7 +309,7 @@ export function runPortalNavChromeBehaviourTests() {
   // (b) The Training Manager gets the two rows he could already open.
   const trainingManager = visibilityFor("Training Manager");
   assert.equal(trainingManager.showProbationTab, true, "Training Manager: canViewAllProbation admits him, so the row must exist.");
-  assert.equal(trainingManager.showVacanciesTab, true, "Training Manager: he holds vacancies:read and sees the whole company.");
+  assert.equal(trainingManager.showVacanciesTab, false, "Training Manager: the Vacancies row was removed from his seat 2026-10-24 (owner).");
 
   // (c) Report It reaches every portal role, as one row or the other, never both.
   for (const role of [
@@ -355,7 +355,8 @@ export function runPortalNavChromeBehaviourTests() {
     "Product Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
     "Group Product Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
     "Marketing Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
-    "Training Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/report-it", "/employee-portals/expense-dashboard"],
+    // The Training Manager lost the Weekly / Monthly Plan tab on 2026-10-24 (owner); the Planning Calendar stays.
+    "Training Manager": ["/employee-portals/plans/calendar", "/employee-portals/report-it", "/employee-portals/expense-dashboard"],
   };
   for (const [role, middle] of Object.entries(UNCHANGED_DEFAULT_BARS)) {
     assert.deepEqual(
