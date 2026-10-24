@@ -49,6 +49,7 @@ import { runSystemAuditAppErrorFoldTests } from "./system-audit-app-error-fold.t
 import { runSystemAuditFileSinkTests } from "./system-audit-file-sink.test.ts";
 import { runSystemAuditVisitLifecycleTests } from "./system-audit-visit-lifecycle.test.ts";
 import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
+import { runClientErrorNetworkBurstTests } from "./client-error-network-burst.test.ts";
 import { runForbiddenErrorAndNullRecipientTests } from "./forbidden-error-and-null-recipient.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorThirdPartyAttributionTests } from "./error-monitor-third-party-attribution.test.ts";
@@ -2942,6 +2943,10 @@ await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests)
 await runTest(
   "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
   runClientErrorCrossOriginNoiseTests,
+);
+await runTest(
+  "client error network bursts (a rep's dropped connection wrote up to 69 bare 'Load failed' rows a second — one row per burst with its count, a framed or other error still reported alone)",
+  runClientErrorNetworkBurstTests,
 );
 await runTest(
   "a 403 carrying its status and a login carrying no hr_id (552 routes answered 500; a NULL became the string \"NULL\")",
