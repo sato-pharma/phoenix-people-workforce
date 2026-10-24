@@ -153,7 +153,8 @@ export function runAutoloadFootprintBudgetTests() {
 
   // And the gate must be measuring something. A test that passes because it read an empty file, or
   // resolved a path that does not exist, is the failure mode source-pinning tests keep repeating.
-  assert.ok(liveBytes > 50_000, "the live files must actually have been read, not silently resolved to nothing");
+  // The floor was 50,000 until the owner had AGENTS.md shrunk to ~28 KB on 2026-10-24 (weekly usage).
+  assert.ok(liveBytes > 25_000,"the live files must actually have been read, not silently resolved to nothing");
 
   // 8. THE GATE SCORES THE COMMIT, NOT THE CHECKOUT THAT RAN IT. CRLF and LF forms of identical
   // content must produce the identical figure, or the same commit passes on one machine and fails
