@@ -273,6 +273,12 @@ was already happening before the merge never reads as this merge's doing. It rea
 `--window <minutes>`) or a new error shows, whichever comes first. 30 minutes past the window it gives up and
 says the last reading is NOT a pass.
 
+The window is timed from Railway's first production `success` for a release that carries the merge. When there
+is none (a row that reads `failure` while its own commit serves is CARRIED, as #6432's was on 24 Oct 2026), it is
+timed from the first reading of this run that saw production serving the merge, so a single reading says too
+early and only `--wait` can close the window. The health probe gets three tries per reading, because one stalled
+DNS lookup on the laptop used to make a whole reading CANNOT TELL.
+
 Exit codes: `0` clean · `1` new errors · `2` too early, NOT a pass · `3` not live · `4` not merged · `5` cannot
 tell.
 

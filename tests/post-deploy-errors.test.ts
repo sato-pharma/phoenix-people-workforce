@@ -13,6 +13,7 @@ import {
   errorRowFilters,
   errorSignature,
   goLiveFrom,
+  hasProductionSuccess,
   noiseReason,
   normalizeMessage,
   postDeployVerdict,
@@ -250,6 +251,31 @@ function goLiveAndVerdictTests() {
     "the earliest production success, never staging, never a failure",
   );
   assert.equal(goLiveFrom([{ environment: "Phoenix-HR-Workforce / production", statuses: [{ state: "in_progress", created_at: "x" }] }]), null);
+
+  // #6432, 24 Oct 2026: the merge's only production row read `failure` (17:49:33 Cairo) while production served that
+  // very commit from 17:50:03. With success rows alone there was no go-live time and the whole watch read CANNOT TELL.
+  const carried = [{ environment: "Phoenix-HR-Workforce / production", statuses: [{ state: "failure", created_at: "2026-10-24T14:49:33Z" }, { state: "in_progress", created_at: "2026-10-24T14:43:20Z" }] }];
+  assert.equal(hasProductionSuccess(carried), false, "a carried row has no success");
+  assert.equal(
+    goLiveFrom(carried, "2026-10-24T14:52:10Z"),
+    "2026-10-24T14:52:10Z",
+    "a carried merge is timed from the first reading that saw production serving it",
+  );
+  assert.notEqual(goLiveFrom(carried, "2026-10-24T14:52:10Z"), "2026-10-24T14:49:33Z", "never from the failure row's own time, which came before the container went live");
+  assert.equal(
+    goLiveFrom([{ environment: "Phoenix-HR-Workforce / production", statuses: [{ state: "success", created_at: "2026-10-24T15:31:00Z" }] }, ...carried], "2026-10-24T14:52:10Z"),
+    "2026-10-24T14:52:10Z",
+    "a later release's success never pushes the go-live past the moment the merge was already seen serving",
+  );
+  assert.equal(
+    goLiveFrom([{ environment: "Phoenix-HR-Workforce / production", statuses: [{ state: "success", created_at: "2026-10-24T14:50:30Z" }] }], "2026-10-24T14:52:10Z"),
+    "2026-10-24T14:50:30Z",
+    "an earlier success still wins over a later observation",
+  );
+  assert.equal(hasProductionSuccess([{ environment: "Phoenix-HR-Workforce / staging", statuses: [{ state: "success", created_at: "x" }] }]), false, "staging's success is not production's");
+  const probe = readFileSync(resolve(REPO_ROOT, "scripts/post-deploy-errors.mjs"), "utf8");
+  assert.match(probe, /goLiveFrom\(deployments, firstSeenServingAt\)/, "the script must hand its first serving observation to goLiveFrom, or a carried merge has no go-live time again");
+  assert.match(probe, /HEALTHZ_TRIES = [2-9]/, "the health probe must retry: one stalled lookup on the laptop made a whole reading CANNOT TELL");
 
   const unread = { read: false, reason: "no SENTRY_READ_TOKEN, so Sentry was NOT read" };
   const clean = { read: true, fresh: [], recurring: [], capped: false };

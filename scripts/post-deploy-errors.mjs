@@ -29,6 +29,7 @@ import {
   classifyErrors,
   errorRowFilters,
   goLiveFrom,
+  hasProductionSuccess,
   postDeployVerdict,
   readErrorRows,
   readSentryIssues,
@@ -48,6 +49,11 @@ const REPO = "Gawish-1997/phoenix-people-workforce";
 const HEALTHZ = "https://phoenix-hr.satopharma.com/api/healthz";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const POLL_MS = 90_000;
+// This laptop's resolver stalls on about one lookup of the production domain in seven (measured 24 Oct 2026: the
+// failing probes never connected, while the ones that did answered in a quarter of a second). One stall used to
+// turn a whole reading into CANNOT TELL, so the probe gets three short tries before it gives up.
+const HEALTHZ_TRIES = 3;
+const HEALTHZ_TRY_MS = 8_000;
 const WAIT_SLACK_MINUTES = 30;
 
 const argv = process.argv.slice(2);
@@ -121,6 +127,24 @@ const cairo = (iso) =>
     : "unknown";
 const short = (sha) => String(sha ?? "").slice(0, 9);
 
+async function readLiveRevision() {
+  for (let attempt = 1; attempt <= HEALTHZ_TRIES; attempt += 1) {
+    try {
+      const res = await fetch(HEALTHZ, { signal: AbortSignal.timeout(HEALTHZ_TRY_MS), headers: { "cache-control": "no-cache" } });
+      const revision = (await res.json())?.revision ?? null;
+      if (revision) return revision;
+    } catch {
+      // a stalled lookup or a refused connection: try again
+    }
+    if (attempt < HEALTHZ_TRIES) await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  return null;
+}
+
+// The first moment THIS run saw production serving something that carries the merge. goLiveFrom takes it when
+// Railway never posted a success for any of those releases (see its comment).
+let firstSeenServingAt = null;
+
 async function readOnce(classifierLoad) {
   const out = { pr: prArg ? Number(prArg) : null, windowMinutes, readAt: new Date().toISOString(), notes: [] };
   if (classifierLoad.note) out.notes.push(classifierLoad.note);
@@ -143,12 +167,7 @@ async function readOnce(classifierLoad) {
   }
 
   // 2 · what production serves, and whether it carries the merge
-  try {
-    const res = await fetch(HEALTHZ, { signal: AbortSignal.timeout(15_000), headers: { "cache-control": "no-cache" } });
-    out.liveRevision = (await res.json())?.revision ?? null;
-  } catch {
-    out.liveRevision = null;
-  }
+  out.liveRevision = await readLiveRevision();
   if (!out.liveRevision) return { ...out, verdict: { code: EXIT.CANNOT_TELL, label: "CANNOT TELL", note: "the production health probe gave no revision" } };
   let releases = [out.mergeSha];
   if (out.liveRevision !== out.mergeSha) {
@@ -158,6 +177,7 @@ async function readOnce(classifierLoad) {
     releases = [out.mergeSha, ...(compare.commits ?? []).map((c) => c.sha)];
   }
   out.releases = [...new Set(releases)];
+  firstSeenServingAt ??= out.readAt;
 
   // 3 · since when the merge has served: the first production `success` of any release that carries it
   const deployments = [];
@@ -166,7 +186,13 @@ async function readOnce(classifierLoad) {
       deployments.push({ environment: d.environment, statuses: gh(["api", `repos/${REPO}/deployments/${d.id}/statuses`]) ?? [] });
     }
   }
-  out.liveSince = goLiveFrom(deployments);
+  out.liveSince = goLiveFrom(deployments, firstSeenServingAt);
+  if (!hasProductionSuccess(deployments)) {
+    out.notes.push(
+      `Railway posted no production success for any release carrying the merge (a row that reads failure while its commit serves is CARRIED), so the time is this run's first reading that saw production serving it, ${cairo(firstSeenServingAt)}` +
+        (wait ? "" : "; one reading cannot time it, so run it with --wait"),
+    );
+  }
   out.liveMinutes = out.liveSince ? Math.max(0, Math.floor((Date.now() - Date.parse(out.liveSince)) / 60_000)) : null;
 
   // 4 · the app's own error table
