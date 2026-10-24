@@ -31,6 +31,7 @@ import {
   SATO_EMAIL_MEDIA_MAX_FILES,
   formatBytes,
 } from "@/lib/sato-email/media-limits";
+import { promisesAnAttachment } from "@/lib/sato-email/attachment-promise";
 import { SATO_EMAIL_DOCUMENT_ACCEPT } from "@/lib/sato-email/source-document";
 import {
   SATO_EMAIL_MAX_TYPED_ADDRESSES,
@@ -327,6 +328,10 @@ export function SatoEmailComposer({
   const canCompose = Boolean(
     subject.trim() && bodyHtml.trim() && (listKeys.length > 0 || people.length > 0 || emails.length > 0),
   );
+  // The second net behind the body editor handing a dropped PDF to the attachments row: whatever
+  // gesture lost the file, an email whose words promise one and whose preview carries none is
+  // flagged, and the confirmation has to say "without an attachment" (owner, 2026-10-24).
+  const promisedButEmpty = Boolean(preview) && (preview?.attachments.length ?? 0) === 0 && promisesAnAttachment(subject, bodyHtml);
   const needsReason = emails.filter((email) => isOutsideCompanyAddress(email) || serverOutside.includes(email));
 
   /**
@@ -767,6 +772,7 @@ export function SatoEmailComposer({
             <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">Body</span>
             <div className="mt-2">
               <EmailBodyEditor
+                attachFiles={(files) => void attachFiles(files)}
                 hiddenActions={["Action button"]}
                 imageAccept={SATO_EMAIL_INLINE_ACCEPT}
                 onChange={(next) => {
@@ -783,7 +789,8 @@ export function SatoEmailComposer({
               Paste a photo or a screenshot straight into the message, drag one in from a folder, or use the
               picture button in the toolbar. A picture in the body has to be fetched from the web when
               somebody opens the email, so anyone who has the link can see it &mdash; put a company document
-              in the attachments below instead.
+              in the attachments below instead. A PDF or any other file dropped or pasted into the message
+              is attached below, not placed in the text.
             </p>
           </div>
 
@@ -1427,6 +1434,13 @@ export function SatoEmailComposer({
               </div>
             ) : null}
 
+            {promisedButEmpty ? (
+              <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
+                <AlertTriangle className="mr-1.5 inline h-4 w-4" />
+                This email says a file is attached, but nothing is attached. Attach it above before you send.
+              </p>
+            ) : null}
+
             {preview.attachmentProblem ? (
               <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
                 <AlertTriangle className="mr-1.5 inline h-4 w-4" />
@@ -1479,10 +1493,16 @@ export function SatoEmailComposer({
                   Send &ldquo;{subject}&rdquo; to {preview.recipientCount} recipient
                   {preview.recipientCount === 1 ? "" : "s"} now? A sent email cannot be recalled.
                 </p>
+                {promisedButEmpty ? (
+                  <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
+                    <AlertTriangle className="mr-1.5 inline h-4 w-4" />
+                    Nothing is attached. Press &ldquo;Not yet&rdquo; and attach the file above, or send it without one.
+                  </p>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button className={DARK_BUTTON} disabled={busy !== null || polishing !== null || uploading} onClick={() => void send()} type="button">
                     {busy === "send" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                    Yes, send it
+                    {promisedButEmpty ? "Send it without an attachment" : "Yes, send it"}
                   </button>
                   <button className={PALE_BUTTON} disabled={busy !== null} onClick={() => setConfirming(false)} type="button">
                     Not yet
