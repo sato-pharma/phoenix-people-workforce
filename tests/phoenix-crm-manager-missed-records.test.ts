@@ -97,4 +97,14 @@ export async function runPhoenixCrmManagerMissedRecordsTests(): Promise<void> {
   const panel = source("src/components/phoenix-crm/missed-record-panel.tsx");
   assert.match(panel, /label="Single, double or chain"/, "the form offers the choice");
   assert.doesNotMatch(panel, /products\.length > 0 &&\s*comment\.trim\(\)\.length > 0/, "neither is required to save");
+
+  // ── 6 · The rep's out-of-plan cap does not apply to a visit the admin enters ──────────────────
+  const cap = readFileSync(new URL("../supabase/migrations/20261024223000_phoenix_crm_admin_entry_skips_the_offplan_cap.sql", import.meta.url), "utf8");
+  const gate = cap.indexOf("if new.capture_source = 'admin' then\n    return new;");
+  assert.ok(gate > 0, "an admin-entered visit returns before the cap is counted");
+  assert.ok(gate < cap.indexOf("phoenix_crm_offplan_exempt(new.seat_id"), "…and before the named exemptions, which stamp the row");
+  assert.ok(gate < cap.indexOf("raise exception 'phoenix_crm:offplan_day_full'"), "…and before the day's refusal");
+  assert.ok(gate < cap.indexOf("raise exception 'phoenix_crm:offplan_week_full'"), "…and before the week's");
+  assert.match(cap, /select s\.offplan_daily_cap, s\.offplan_weekly_cap into v_daily, v_weekly/, "a rep's own visit is still held to the settings' numbers");
+  assert.match(cap, /revoke execute on function public\.phoenix_crm_offplan_visit_cap\(\) from public, anon, authenticated;/, "the function stays closed to the browser roles");
 }
