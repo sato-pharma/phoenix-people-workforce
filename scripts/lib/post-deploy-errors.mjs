@@ -266,13 +266,24 @@ export async function readSentryIssues({ token, releases, fetchImpl = fetch, bas
 }
 
 /**
- * The earliest moment a release carrying the merge served production: the first `success` status of its production
- * deployment. That status can trail the real serving moment (once by 17 minutes,
+ * The earliest moment a release carrying the merge is KNOWN to have served production: the first `success` status of
+ * its production deployment, or the first reading of this run that saw production serving it (`observedServingAt`).
+ * Both can only trail the real serving moment (the status once by 17 minutes,
  * `a-slow-railway-day-is-measured-from-the-build-log-not-the-github-status`), so the window can only close late,
  * never early.
+ *
+ * The observation is there because Railway does not always post a `success`. #6432's merge (24 Oct 2026) got one
+ * production row, `failure` at 17:49:33 Cairo, and production served that very commit from 17:50:03: a CARRIED row
+ * (AGENTS.md 2.3). With success rows alone there was no go-live time, and the whole 30-minute watch read CANNOT TELL.
+ * A failure row's own time is NOT used: it landed 30 s BEFORE the container went live, and a real failure later
+ * carried by another deploy would date the merge from a moment nothing of it was serving.
+ *
+ * @param {Array<{ environment?: unknown, statuses?: Array<{ state?: string, created_at?: string }> }>} deploymentsWithStatuses
+ * @param {string | null} [observedServingAt]
+ * @returns {string | null}
  */
-export function goLiveFrom(deploymentsWithStatuses) {
-  let earliest = null;
+export function goLiveFrom(deploymentsWithStatuses, observedServingAt = null) {
+  let earliest = observedServingAt ?? null;
   for (const { environment, statuses } of deploymentsWithStatuses) {
     if (!/production/i.test(String(environment ?? "")) || /staging/i.test(String(environment ?? ""))) continue;
     for (const status of statuses ?? []) {
@@ -281,6 +292,16 @@ export function goLiveFrom(deploymentsWithStatuses) {
     }
   }
   return earliest;
+}
+
+/** True when some production deployment of these releases posted a `success`, so the go-live time is Railway's. */
+export function hasProductionSuccess(deploymentsWithStatuses) {
+  return deploymentsWithStatuses.some(
+    ({ environment, statuses }) =>
+      /production/i.test(String(environment ?? "")) &&
+      !/staging/i.test(String(environment ?? "")) &&
+      (statuses ?? []).some((status) => status.state === "success" && status.created_at),
+  );
 }
 
 /**
