@@ -17,7 +17,7 @@
 // With no key configured planSalesAi returns [] and callers degrade to a no-op (aiUsed=false).
 
 import { callAnthropicMessages, AnthropicRequestError, hasAnthropicApiKey, resolveAnthropicModel } from "@/lib/ai/anthropic-fallback";
-import { isOpenAiUnavailable, noteOpenAiAvailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
+import { failoverLegTimeoutMs, isOpenAiUnavailable, noteOpenAiAvailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
 import {
   aiErrorCodeForResponse,
   isQuotaExhaustedBody,
@@ -62,9 +62,12 @@ export function salesAiLegProvider(leg: SalesAiLeg): AiCallProvider {
 /**
  * What the failover loop tells each leg about what follows it. `failoverTo` is the next planned account, or
  * undefined on the last leg — the leg uses it to report a rescued failure as `failed_over` rather than as an
- * AI failure (see `legOutcome` and the account in ai-metrics.ts).
+ * AI failure (see `legOutcome` and the account in ai-metrics.ts). `timeoutMs` is what this leg may spend:
+ * the whole budget on the first leg, only what is left of it on a later one (undefined when the caller gave
+ * no budget) — the same rule the shared call keeps (`failoverLegTimeoutMs`), so a failover never doubles
+ * the wait the user sits through.
  */
-export type SalesAiLegContext = { failoverTo?: AiCallProvider };
+export type SalesAiLegContext = { failoverTo?: AiCallProvider; timeoutMs?: number };
 
 /** The outcome fields `recordAiCall` takes for a failed sales leg. A rescued one is never `error`. */
 export function salesLegOutcome(
@@ -142,18 +145,30 @@ export function salesAiFailureCodeFor(status: number, rawBody: string): SalesAiF
  * Runs `attempt` against each planned provider in turn. It moves to the next ONLY when the ACCOUNT is dead
  * (out of credit, key rejected) — a timeout, a rate limit or any other failure stays with the provider that
  * gave it and is thrown as it was. Throws not_configured when no provider is configured at all.
+ *
+ * `budgetMs` is the whole wait the caller allows across every leg: a later leg gets only what is left of it,
+ * and when less than a second is left the earlier account's refusal is thrown instead of asking the next one.
  */
 export async function runWithSalesAiFailover<T>(
   attempt: (leg: SalesAiLeg, context: SalesAiLegContext) => Promise<T>,
   models: AiModelDefaults = DEFAULT_AI_MODELS,
+  budgetMs?: number,
 ): Promise<T> {
   const plan = planSalesAi(models);
   if (plan.length === 0) throw new SalesAiError("not_configured", "No AI provider is configured.");
 
+  const startedAt = Date.now();
+  let refusal: unknown;
   for (const [index, leg] of plan.entries()) {
+    let timeoutMs = budgetMs;
+    if (index > 0 && budgetMs !== undefined) {
+      const leftMs = failoverLegTimeoutMs(budgetMs, Date.now() - startedAt);
+      if (leftMs === null) throw refusal;
+      timeoutMs = leftMs;
+    }
     try {
       const next = plan[index + 1];
-      const result = await attempt(leg, { failoverTo: next ? salesAiLegProvider(next) : undefined });
+      const result = await attempt(leg, { failoverTo: next ? salesAiLegProvider(next) : undefined, timeoutMs });
       // OpenAI answered, so its account is alive: the shared wait starts from ten minutes again.
       if (leg.kind === "chat" && leg.provider.name === "openai") noteOpenAiAvailable();
       return result;
@@ -164,6 +179,7 @@ export async function runWithSalesAiFailover<T>(
         noteOpenAiUnavailable();
       }
       if (!failOver || index === plan.length - 1) throw error;
+      refusal = error;
     }
   }
 
@@ -252,9 +268,9 @@ export async function aiChatJson(
   const timeoutMs = opts?.timeoutMs ?? 45_000;
   const maxTokens = opts?.maxTokens ?? 1500;
 
-  return runWithSalesAiFailover(async (leg, { failoverTo }) => {
+  return runWithSalesAiFailover(async (leg, { failoverTo, timeoutMs: legTimeoutMs = timeoutMs }) => {
     if (leg.kind === "anthropic") {
-      const reply = await anthropicJson({ component: "sales_ai_provider", failoverTo, maxTokens, model: leg.model, purpose, system, timeoutMs, user });
+      const reply = await anthropicJson({ component: "sales_ai_provider", failoverTo, maxTokens, model: leg.model, purpose, system, timeoutMs: legTimeoutMs, user });
       return reply.text;
     }
 
@@ -279,7 +295,7 @@ export async function aiChatJson(
         }),
         headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
         method: "POST",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(legTimeoutMs),
       });
       if (!res.ok) {
         upstreamStatus = res.status;
@@ -318,5 +334,5 @@ export async function aiChatJson(
       });
       throw error;
     }
-  });
+  }, DEFAULT_AI_MODELS, timeoutMs);
 }

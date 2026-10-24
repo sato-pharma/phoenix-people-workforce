@@ -5,15 +5,20 @@ import {
   failureThrottleKey,
   shouldReportFailure,
   aiErrorCodeForResponse,
+  isKeyRejectedRecord,
   isQuotaExhaustedRecord,
   AI_QUOTA_EXHAUSTED_CODE,
   FAILURE_THROTTLE_MS,
   type AiCallRecord,
 } from "../src/lib/observability/ai-metrics.ts";
 import {
+  aiKeyAlertIdempotencyKey,
+  aiKeyAlertTitle,
+  aiProviderKeyVariable,
   aiQuotaAlertEnabled,
   aiQuotaAlertTitle,
   aiQuotaIdempotencyKey,
+  buildAiKeyRejectedMessage,
   buildAiQuotaExhaustedMessage,
   takeAiQuotaAlertSlot,
 } from "../src/lib/notifications/ai-quota-alert.ts";
@@ -247,6 +252,10 @@ export function runAiFailureVisibilityTests() {
       "during an outage, being pointed at the wrong account costs more than the outage",
   );
   assert.doesNotMatch(groqAlert, /CV extraction|Sales normalizer/, "the Groq alert must not list OpenAI's features");
+  // Since the two Anthropic accounts stand behind OpenAI (24 Oct 2026), an empty OpenAI account no longer
+  // means every feature is down — the alarm says where the calls went, and when nothing is left.
+  assert.doesNotMatch(openAiAlert, /Every OpenAI feature is failing/, "the pre-failover wording claimed an outage that no longer happens");
+  assert.match(openAiAlert, /first Anthropic account, then the backup one/, "the OpenAI alarm names the stand-in accounts");
   // 🔴 THE ALARM NAMES THE ACCOUNT THE CALL WAS BILLED TO, NEVER ONE GUESSED FROM THE FEATURE (code review,
   // 19 Oct 2026). Since the Anthropic failover one feature reaches two accounts: a Claude account out of
   // credit on the shared client's fallback leg sent him to top up OpenAI.
@@ -273,6 +282,33 @@ export function runAiFailureVisibilityTests() {
     aiQuotaIdempotencyKey("anthropic_backup", "2026-10-24", "E-100"),
     aiQuotaIdempotencyKey("anthropic", "2026-10-24", "E-100"),
     "both Anthropic accounts running dry the same day are two alarms, not one",
+  );
+  // 🔴 A REFUSED KEY PAGES TOO (24 Oct 2026). The production OpenAI key was refused for days with every call
+  // quietly moving to Claude, and nobody was told: the alarm listened for out of credit alone. A rescued leg
+  // pages as well, because the stand-in hiding the outage is exactly how it went unseen.
+  for (const code of ["auth_failed", "401", "403"]) {
+    assert.equal(isKeyRejectedRecord(record({ errorCode: code })), true, `${code} is a refused key and must page`);
+    assert.equal(isKeyRejectedRecord(record({ errorCode: code, status: "failed_over" })), true, `a rescued ${code} still pages`);
+  }
+  assert.equal(isKeyRejectedRecord(record({ errorCode: "auth_failed", status: "success" })), false, "a success never pages");
+  assert.equal(isKeyRejectedRecord(record({ errorCode: "429" })), false, "a rate limit clears by itself and must not page");
+  assert.equal(isKeyRejectedRecord(record({ errorCode: AI_QUOTA_EXHAUSTED_CODE })), false, "out of credit keeps its own alarm");
+  assert.equal(aiKeyAlertTitle("openai"), "OpenAI refuses its API key");
+  assert.equal(aiProviderKeyVariable("anthropic_backup"), "ANTHROPIC_API_KEY_2");
+  const keyAlert = buildAiKeyRejectedMessage(record({ component: "openai_client", errorCode: "auth_failed" }));
+  assert.match(keyAlert, /^🔑 OpenAI refuses the API key/, "the refused-key alarm names the account");
+  assert.match(keyAlert, /put it in OPENAI_API_KEY on Railway/, "and the exact variable to replace");
+  assert.match(keyAlert, /first Anthropic account, then the backup one/, "and where the calls went meanwhile");
+  assert.doesNotMatch(keyAlert, /out of credit|top(ped)? up/i, "a refused key is never described as an empty account");
+  assert.match(
+    buildAiKeyRejectedMessage(record({ component: "openai_client", errorCode: "401", provider: "anthropic_backup" })),
+    /ANTHROPIC_API_KEY_2/,
+    "the backup account's alarm names the backup account's variable",
+  );
+  assert.notEqual(
+    aiKeyAlertIdempotencyKey("openai", "2026-10-24", "E-100"),
+    aiQuotaIdempotencyKey("openai", "2026-10-24", "E-100"),
+    "a refused key and an empty account on one day are two alarms, not one",
   );
   assert.match(
     buildAiQuotaExhaustedMessage(record({ component: "sales_weekly_ai_verify", provider: "openrouter" })),

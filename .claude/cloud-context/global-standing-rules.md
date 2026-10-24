@@ -77,6 +77,9 @@ lead, decide, automate, never hand back manual steps or theory.
   then quotes a non-money action (`next-step-capture.mjs`, `isMoneyMove`).
 - **Commit, push and open the PR automatically; ALWAYS ask before merge** (owner, 2026-09-16). Branch first
   (never commit onto `main`), stage only the task's files, never `gh pr merge --auto`.
+  🔴 **He no longer merges by hand** (owner, 2026-10-24): the scheduled task `pr-merger` (every 30 min, Sonnet)
+  rolls up and merges the green PRs. A session opens its PR and stops — never merges it, never puts a merge in
+  his box. Only a PR carrying a migration, protected file or frozen path still needs his word, by number.
 - **Never fire bulk emails, test sends, or any real outbound email** from a business system.
 - **Never publish or announce** a month, closing, or dataset without his explicit confirmation first.
 - **One production deployment per task** — bundle the phases into one PR.

@@ -511,7 +511,48 @@ async function loopTests() {
     assert.equal(answer, "from claude");
     assert.deepEqual(visited, ["chat", "anthropic"]);
     assert.equal(isOpenAiUnavailable(), true);
+
+    // 🔴 CLAUDE GETS ONLY THE TIME LEFT (24 Oct 2026). Each sales path handed its Claude leg a fresh full
+    // timeout, so a failover could double the wait a manager sat through; the shared call never did.
+    resetOpenAiAvailability();
+    const budgets: (number | undefined)[] = [];
+    await runWithSalesAiFailover(async (leg, { timeoutMs }) => {
+      budgets.push(timeoutMs);
+      if (leg.kind === "chat") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        throw new SalesAiError("auth_failed", "refused");
+      }
+      return "from claude";
+    }, undefined, 10_000);
+    assert.equal(budgets[0], 10_000, "the first account gets the whole budget");
+    assert.ok(
+      budgets[1] !== undefined && budgets[1] < 10_000 - 150 && budgets[1] > 10_000 - 2_000,
+      `Claude gets only what is left of the budget, never a fresh one: got ${budgets[1]}`,
+    );
+
+    resetOpenAiAvailability();
+    visited.length = 0;
+    await assert.rejects(
+      () => runWithSalesAiFailover(async (leg) => {
+        visited.push(leg.kind);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        throw new SalesAiError("quota_exceeded", "the first account is empty");
+      }, undefined, 1_200),
+      /the first account is empty/,
+      "under a second left, the first refusal is the answer",
+    );
+    assert.deepEqual(visited, ["chat"], "and Claude is never asked with no time to answer");
+
+    resetOpenAiAvailability();
+    budgets.length = 0;
+    await runWithSalesAiFailover(async (leg, { timeoutMs }) => {
+      budgets.push(timeoutMs);
+      if (leg.kind === "chat") throw new SalesAiError("quota_exceeded", "empty");
+      return "ok";
+    });
+    assert.deepEqual(budgets, [undefined, undefined], "with no budget each leg keeps its own timeout");
   } finally {
+    resetOpenAiAvailability();
     restoreEnv();
   }
 }

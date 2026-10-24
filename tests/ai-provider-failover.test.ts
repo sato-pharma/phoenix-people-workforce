@@ -9,6 +9,7 @@ import {
   AnthropicRequestError,
   anthropicEffortFor,
   anthropicErrorCodeFor,
+  anthropicImageMediaType,
   anthropicOutputFormatFor,
   buildAnthropicRequest,
   callAnthropicMessages,
@@ -320,6 +321,30 @@ function requestShapeTests() {
     "m",
   );
   assert.deepEqual(remoteImage.messages[0].content, [{ source: { type: "url", url: "https://example.com/a.png" }, type: "image" }]);
+
+  // Claude reads JPEG, PNG, GIF and WebP only, and refuses a whole request whose label is anything else — so the
+  // label a phone or a browser gave the upload is corrected from the image's own first bytes.
+  const b64 = (bytes: number[] | string) => Buffer.from(typeof bytes === "string" ? bytes : Uint8Array.from(bytes)).toString("base64");
+  const jpeg = b64([0xff, 0xd8, 0xff, 0xe0, 0, 16]);
+  const png = b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+  const webp = b64("RIFF\u0000\u0000\u0000\u0000WEBPVP8 ");
+  assert.equal(anthropicImageMediaType("image/jpg", jpeg), "image/jpeg", "a phone's image/jpg goes as image/jpeg");
+  assert.equal(anthropicImageMediaType("image/png", jpeg), "image/jpeg", "a JPEG labelled PNG goes as what it is");
+  assert.equal(anthropicImageMediaType("image/heic", png), "image/png", "the bytes win over the label");
+  assert.equal(anthropicImageMediaType("application/octet-stream", b64("GIF89a")), "image/gif");
+  assert.equal(anthropicImageMediaType("image/jpeg", webp), "image/webp");
+  assert.equal(anthropicImageMediaType("image/pjpeg", "AAAA"), "image/jpeg", "unreadable bytes fall back to the corrected label");
+  assert.equal(anthropicImageMediaType("image/heic", b64("\u0000\u0000\u0000\u0018ftypheic")), null, "HEIC cannot be sent to Claude");
+  const relabelled = buildAnthropicRequest(
+    { input: [{ content: [{ image_url: `data:image/jpg;base64,${jpeg}`, type: "input_image" }], role: "user" }], instructions: "i", maxOutputTokens: 1 },
+    "m",
+  );
+  assert.deepEqual(relabelled.messages[0].content, [{ source: { data: jpeg, media_type: "image/jpeg", type: "base64" }, type: "image" }]);
+  assert.throws(
+    () => buildAnthropicRequest({ input: [{ content: [{ image_url: `data:image/heic;base64,${b64("\u0000\u0000\u0000\u0018ftypheic")}`, type: "input_image" }], role: "user" }], instructions: "i", maxOutputTokens: 1 }, "m"),
+    /image\/heic image \(Claude reads JPEG, PNG, GIF and WebP only\)/,
+    "a HEIC photo is refused with a plain reason, never sent for Claude to reject",
+  );
 
   assert.throws(
     () => buildAnthropicRequest({ input: [{ content: [{ type: "input_audio" }], role: "user" }], instructions: "i", maxOutputTokens: 1 }, "m"),
@@ -752,8 +777,8 @@ function wiringTests() {
   );
   assert.match(
     salesProvider,
-    /attempt\(leg, \{ failoverTo: next \? salesAiLegProvider\(next\) : undefined \}\)/,
-    "the sales loop tells each leg which account follows it, like the shared client's",
+    /attempt\(leg, \{ failoverTo: next \? salesAiLegProvider\(next\) : undefined, timeoutMs \}\)/,
+    "the sales loop tells each leg which account follows it, like the shared client's, and the time its budget has left",
   );
   // The three sales paths record their own rows, so each one must use the shared outcome helper or the
   // board goes back to reading a rescued OpenAI leg as a sales AI outage.

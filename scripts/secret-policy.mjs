@@ -60,7 +60,9 @@ export const REQUIRED_VARIABLES = [
   "PHOENIX_AUTH_SECRET",
   "RESEND_API_KEY",
   "RESEND_WEBHOOK_SECRET",
-  "OPENAI_API_KEY",
+  // OPENAI_API_KEY left this list on 2026-10-24: every AI call goes to Claude first and OpenAI is
+  // only the last resort, so production runs with any ONE of the three AI keys. checkAiKeyPresent
+  // below is the rule that replaced it. Demoted in BOTH scripts in the same change.
   "TELEGRAM_BOT_TOKEN",
   "NOTIFICATION_WEBHOOK_SECRET",
   "CRON_SECRET",
@@ -199,6 +201,32 @@ export function checkExpectedValues(valuesByName, environment = "production") {
     }
   }
   return failures;
+}
+
+/**
+ * The three AI account keys, in the order every AI call tries them: the first Claude account, the
+ * second Claude account, then OpenAI as the last resort (src/lib/ai/anthropic-fallback.ts).
+ */
+export const AI_KEY_VARIABLES = ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2", "OPENAI_API_KEY"];
+
+/**
+ * One failure when production holds none of the three AI keys — then every AI feature is dead.
+ *
+ * None of the three is required on its own (2026-10-24): demanding OPENAI_API_KEY made the setup
+ * scripts refuse a production that runs on Claude alone, which is the normal state now. Only the
+ * names are ever printed, never a value.
+ */
+export function checkAiKeyPresent(valuesByName, environment = "production") {
+  if (!isProductionEnvironment(environment)) return [];
+  const values = asMap(valuesByName);
+  const present = AI_KEY_VARIABLES.some((name) => {
+    const value = values.get(name);
+    return value !== undefined && value !== null && String(value).trim() !== "";
+  });
+  if (present) return [];
+  return [
+    `none of the AI keys is set on production (${AI_KEY_VARIABLES.join(", ")}) — every AI feature answers "not configured" until at least one is`,
+  ];
 }
 
 /**

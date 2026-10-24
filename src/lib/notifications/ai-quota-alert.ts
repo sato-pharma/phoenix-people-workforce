@@ -3,11 +3,12 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { aiProviderLabel, type AiCallProvider, type AiCallRecord } from "@/lib/observability/ai-metrics";
+import { aiProviderLabel, isKeyRejectedRecord, type AiCallProvider, type AiCallRecord } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 
 /**
- * Tells a human, in-app + Telegram, the moment the AI provider says the account is OUT OF CREDIT.
+ * Tells a human, in-app + Telegram, the moment the AI provider says the account is OUT OF CREDIT — or, since
+ * 24 Oct 2026, that it REFUSES THE KEY (its own alarm, its own slot for the day, `buildAiKeyRejectedMessage`).
  *
  * Why: on 2026-09-18 at 09:55 OpenAI refused the Sales normalizer with `insufficient_quota`. The
  * failure reached app_error_events and nothing else — found by the next morning's error check. The
@@ -25,9 +26,12 @@ import { logError } from "@/lib/observability/log";
 
 const AUDIENCE_KEY = "weekly_system_health_digest" as const;
 const EVENT_TYPE = "ai_quota_exhausted";
+const KEY_EVENT_TYPE = "ai_key_rejected";
 const ACTOR = "ai-quota-alert";
 
 const lastAlertedDay = new Map<AiCallProvider, string>();
+// A refused key is its own alarm for the day: an account can lose its key and run out of credit on one day.
+const lastKeyAlertedDay = new Map<AiCallProvider, string>();
 
 function cairoDayKey(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
@@ -87,7 +91,7 @@ export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
       : record.provider === "anthropic" || record.provider === "anthropic_backup"
         ? `${record.provider === "anthropic" ? "The first Anthropic account" : "The backup Anthropic account"} refuses every call until it is topped up. Claude's calls move to the ${record.provider === "anthropic" ? "backup" : "first"} Anthropic account while that one has credit and a key, and the Phoenix CRM signboard reads, which ask Claude first, fall back to OpenAI; if both Anthropic accounts and OpenAI are out, no AI feature has a stand-in.`
         : record.provider === "openai"
-          ? "Every OpenAI feature is failing until it is topped up: CV extraction, the Sales normalizer's AI suggest, CRM campaign notes, the coach, expense notes, email assist and the What Needs You summary."
+          ? "OpenAI refuses every call until it is topped up. Every AI feature (CV extraction, invoice reading, the Sales normalizer's AI suggest, CRM notes, the coach, expense notes, email assist and the What Needs You summary) moves to the first Anthropic account, then the backup one, while they have credit and a key; if all three are out, no AI feature has a stand-in."
           : "Every Sales AI feature it answers is failing until it is topped up.";
   const billingPage = record.provider === "generic" ? "that provider's billing page" : `the ${provider} billing page`;
   // "No auto-recharge" is the owner's standing rule, never to be turned on — so "waiting will not fix it" is
@@ -107,6 +111,61 @@ export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
   ].join("\n");
 }
 
+/** The variable on Railway that holds each account's key, so a refused-key alarm says which one to replace. */
+export function aiProviderKeyVariable(provider: AiCallProvider): string {
+  switch (provider) {
+    case "anthropic":
+      return "ANTHROPIC_API_KEY";
+    case "anthropic_backup":
+      return "ANTHROPIC_API_KEY_2";
+    case "groq":
+      return "GROQ_API_KEY";
+    case "openrouter":
+      return "OPENROUTER_API_KEY";
+    case "generic":
+      return "AI_API_KEY";
+    default:
+      return "OPENAI_API_KEY";
+  }
+}
+
+/** The refused-key alarm's title, naming the account. */
+export function aiKeyAlertTitle(provider: AiCallProvider): string {
+  return `${aiQuotaProviderLabel(provider)} refuses its API key`;
+}
+
+/** The per-recipient key that sends one refused-key alarm a day for each account, apart from out of credit. */
+export function aiKeyAlertIdempotencyKey(provider: AiCallProvider, day: string, hrId: string): string {
+  return `ai-key-rejected:${provider}:${day}:${hrId}`;
+}
+
+/**
+ * Pure message builder for a refused key (401/403 or `auth_failed`). 🔴 Until 24 Oct 2026 only out of credit
+ * paged anyone, and the production OpenAI key was refused for days with every call quietly moving to Claude:
+ * the stand-in hid the outage, and the stand-in is the next thing to run dry. Names the account, where its calls
+ * went, and the exact variable to replace.
+ */
+export function buildAiKeyRejectedMessage(record: AiCallRecord): string {
+  const provider = aiQuotaProviderLabel(record.provider);
+  const affected =
+    record.component === "groq_transcription"
+      ? "Speech to text for CRM spoken visit comments is failing until the key is replaced — on a browser with no speech engine of its own, that is the only way a rep can dictate one."
+      : record.provider === "openai"
+        ? "Every AI feature (CV extraction, invoice reading, the Sales normalizer's AI suggest, CRM notes, the coach, expense notes, email assist and the What Needs You summary) moves to the first Anthropic account, then the backup one, while they have credit and a working key; if all three are out, no AI feature has a stand-in."
+        : record.provider === "anthropic"
+          ? "Claude's calls move to the backup Anthropic account while it has credit and a working key, and the Phoenix CRM signboard reads fall back to OpenAI."
+          : record.provider === "anthropic_backup"
+            ? "The backup Anthropic account can no longer stand in when the first one is out of credit or refused."
+            : "Every Sales AI feature it answers is failing over or failing until the key is replaced.";
+  return [
+    `🔑 ${provider} refuses the API key Phoenix holds for it.`,
+    "",
+    affected,
+    "",
+    `Waiting will not fix it. Make a new key in the ${provider} console and put it in ${aiProviderKeyVariable(record.provider)} on Railway, on every service that holds it; the features resume on their own.`,
+  ].join("\n");
+}
+
 /** Whether this process may page anyone: the real production app only — never staging, a laptop or the suite. */
 export function aiQuotaAlertEnabled(): boolean {
   if (process.env.PHOENIX_TEST_SUITE === "1") return false;
@@ -118,31 +177,36 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
   try {
     if (!aiQuotaAlertEnabled()) return;
     const day = cairoDayKey();
-    if (!takeAiQuotaAlertSlot(lastAlertedDay, record.provider, day)) return;
+    const keyRejected = isKeyRejectedRecord(record);
+    const what = keyRejected ? "refused-key" : "out-of-credit";
+    const entityId = keyRejected ? "ai.key_rejected" : "ai.quota_exhausted";
+    if (!takeAiQuotaAlertSlot(keyRejected ? lastKeyAlertedDay : lastAlertedDay, record.provider, day)) return;
 
-    const { recipients, warnings } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "AI out-of-credit alert recipients");
+    const { recipients, warnings } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, `AI ${what} alert recipients`);
     if (recipients.length === 0) {
       await writeAuditLog({
         actorLoginId: ACTOR,
-        entityId: "ai.quota_exhausted",
+        entityId,
         entityType: "notification",
         newValues: { failClosed: true, provider: record.provider, warnings },
-        summary: "AI out-of-credit alert skipped — no active recipient resolved for the configured audience.",
+        summary: `AI ${what} alert skipped — no active recipient resolved for the configured audience.`,
       });
       return;
     }
 
-    const message = buildAiQuotaExhaustedMessage(record);
+    const message = keyRejected ? buildAiKeyRejectedMessage(record) : buildAiQuotaExhaustedMessage(record);
     await Promise.all(
       recipients.map((recipient) =>
         createSystemNotification({
           actionUrl: "/admin/system-audit",
           actorId: ACTOR,
           channels: ["in_app", "telegram", "push"],
-          eventType: EVENT_TYPE,
+          eventType: keyRejected ? KEY_EVENT_TYPE : EVENT_TYPE,
           message,
           metadata: {
-            idempotencyKey: aiQuotaIdempotencyKey(record.provider, day, recipient.hrId),
+            idempotencyKey: keyRejected
+              ? aiKeyAlertIdempotencyKey(record.provider, day, recipient.hrId)
+              : aiQuotaIdempotencyKey(record.provider, day, recipient.hrId),
             model: record.model,
             provider: record.provider,
             purpose: record.purpose,
@@ -153,19 +217,19 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
           telegram: { ctaLabel: "Open the System Audit", ctaUrl: "/admin/system-audit" },
-          title: aiQuotaAlertTitle(record.provider),
+          title: keyRejected ? aiKeyAlertTitle(record.provider) : aiQuotaAlertTitle(record.provider),
         }),
       ),
     );
 
     await writeAuditLog({
       actorLoginId: ACTOR,
-      entityId: "ai.quota_exhausted",
+      entityId,
       entityType: "notification",
       newValues: { delivered: recipients.length, provider: record.provider, purpose: record.purpose, warnings },
-      summary: `AI out-of-credit alert delivered to ${recipients.length} recipient(s).`,
+      summary: `AI ${what} alert delivered to ${recipients.length} recipient(s).`,
     });
   } catch (error) {
-    logError("AI out-of-credit alert failed to dispatch", { error, labels: { event: "ai_quota_alert_failed" } });
+    logError("AI account alert failed to dispatch", { error, labels: { event: "ai_quota_alert_failed" } });
   }
 }

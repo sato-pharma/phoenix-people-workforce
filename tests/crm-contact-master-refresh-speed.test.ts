@@ -164,6 +164,81 @@ export function runCrmContactMasterRefreshSpeedTests() {
     );
   }
 
+  // ── 3c. THE FOUR THINGS THE 24 OCTOBER PASS TOOK OUT ───────────────────────────────────────
+  // Timed on production the same day, the pending row settled first so each run is the quiet tick the cron
+  // pays about 96 times a day, old and new alternating four times each: 1,338 ms median -> 794 ms. Both
+  // bodies wrote the same single assignment row and left an identical checksum of every column of
+  // crm_contacts, so none of the four is a behaviour change — and each one is silent if it is put back.
+
+  // 1. The vendor handover joins on ONE text key. An OR of two equalities is not an equijoin, so no join
+  // method could hash it: a Nested Loop over the open vendor rows by the 73 list rows, 156,074 of them
+  // thrown away in the join filter, 316 ms a run to hand over nothing on a quiet tick. The lookup emits
+  // BOTH keys per rep because the two arms of the old OR were mutually exclusive by construction.
+  assert.match(
+    code,
+    /from \(select distinct match_key, counted_from from \(select l0\.hr_key as match_key, l0\.counted_from from pg_temp\.crm_refresh_phoenix_lists l0 where l0\.status in \('active', 'pending'\) union all select 'crm:' \|\| l0\.agent_crm_id::text, l0\.counted_from from pg_temp\.crm_refresh_phoenix_lists l0 where l0\.status in \('active', 'pending'\) and l0\.agent_crm_id is not null\) k\) l where a\.effective_to is null and a\.source = 'ireports360' and l\.match_key = coalesce\(nullif\(lower\(btrim\(a\.agent_hr_id\)\), ''\), 'crm:' \|\| a\.agent_crm_id::text\);/,
+    `${file}: the vendor handover matches a rep on one text key — the hr key, or crm:<id> for a row with no hr id`,
+  );
+  assert.doesNotMatch(
+    code,
+    /l\.agent_crm_id = a\.agent_crm_id/,
+    `${file}: the handover must never match the list on the CRM id as a second OR arm again — that is the un-hashable shape`,
+  );
+
+  // 2. The doctor-list door is a 48 ms Function Scan (1,053 buffers for 93 rows) and was read twice.
+  assert.equal(
+    (code.match(/public\.phoenix_crm_doctor_list_reps\(\)/g) ?? []).length,
+    1,
+    `${file}: the doctor-list door is read ONCE into pg_temp.crm_refresh_doctor_list_reps — the four vendor passes and the fifth pass then read the same snapshot, which is also strictly more consistent`,
+  );
+  assert.match(
+    code,
+    /create temporary table crm_refresh_doctor_list_reps on commit drop as select distinct s\.seat_id, s\.hr_key, s\.hr_id, s\.agent_crm_id, s\.counted_from from public\.phoenix_crm_doctor_list_reps\(\) s where v_today >= s\.counted_from and \(s\.counted_until is null or v_today < s\.counted_until\);/,
+    `${file}: the snapshot carries every column both readers need, filtered to today's live spell exactly as both reads were`,
+  );
+  assert.match(
+    code,
+    /create temporary table crm_refresh_started_reps on commit drop as select distinct s\.hr_key, s\.agent_crm_id from pg_temp\.crm_refresh_doctor_list_reps s;/,
+    `${file}: the started-reps table is built from the snapshot, not from a second call of the door`,
+  );
+
+  // 3. The two big temp tables analyze only the columns something joins, filters or sorts by. Timed on
+  // production on freshly built tables so no page was warm: customers 14 columns 168 ms vs these 7 at
+  // 53 ms, truth 5 columns 80 ms vs contact_crm_id alone at 3 ms.
+  assert.match(
+    code,
+    /analyze pg_temp\.crm_refresh_phoenix_customers \(seat_id, is_test, status, reference_contact_crm_id, own_contact_crm_id, validated_at, updated_at\);/,
+    `${file}: the customers temp table analyzes its seven read columns, not all fourteen`,
+  );
+  assert.match(
+    code,
+    /analyze pg_temp\.crm_refresh_phoenix_truth \(contact_crm_id\);/,
+    `${file}: contact_crm_id is the only column anything compares on the truth table; the rest are projected`,
+  );
+  assert.doesNotMatch(
+    code,
+    /analyze pg_temp\.crm_refresh_phoenix_(customers|truth);/,
+    `${file}: a bare analyze builds histograms for columns nothing reads — 115 ms + 77 ms a run, 96 times a day`,
+  );
+
+  // 4. The A+ fold is inline at its five call sites. public.crm_contact_fold_grade carries
+  // `set search_path to 'public'`, and a SQL function with any SET clause cannot be inlined by the planner,
+  // so each call was a real call per row — about 110 ms of the list build alone. The expression below is
+  // that function's own body, character for character (20260913150000), and the function is neither changed
+  // nor dropped: its other callers keep it, and removing its SET clause would raise a
+  // function_search_path_mutable advisor finding that scripts/check-advisor-baseline.ts fails on.
+  assert.equal(
+    (code.match(/case when upper\(btrim\(([a-z]\.[a-z_]+)\)\) = 'A\+' then 'A' else nullif\(upper\(btrim\(\1\)\), ''\) end/g) ?? [])
+      .length,
+    5,
+    `${file}: the A+ fold is written out at all five sites, each over the same column twice`,
+  );
+  assert.doesNotMatch(
+    code,
+    /crm_contact_fold_grade\(/,
+    `${file}: the fold must not go back to a function call — it cannot inline, and the body is the one in 20260913150000`,
+  );
+
   // ── 4. EVERYTHING ELSE ABOUT THE FUNCTION IS WHAT 20261015215500 LEFT ──────────────────────────
   assert.equal(
     (code.match(/pg_advisory_xact_lock\(hashtext\('public\.crm_contact_master_refresh'\)\)/g) ?? []).length,
@@ -181,7 +256,7 @@ export function runCrmContactMasterRefreshSpeedTests() {
     1,
     `${file}: one function per file — several guards resolve "the newest migration that defines X" and read the whole file`,
   );
-  for (const door of ["phoenix_crm_doctor_list_reps()", "crm_contact_fold_grade(", "crm_refresh_phoenix_customers"]) {
+  for (const door of ["phoenix_crm_doctor_list_reps()", "crm_refresh_phoenix_customers"]) {
     assert.ok(code.includes(door), `${file}: the body must still use ${door}`);
   }
   for (const key of ["startedRepsFrozen", "assignmentsFrozen", "regionsFromName", "listContactsChanged"]) {

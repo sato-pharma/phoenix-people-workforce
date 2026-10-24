@@ -160,22 +160,26 @@ async function generate(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandi
   const system = systemPrompt(kind);
   const user = userPrompt(unknowns, candidates, kind, referenceAliases);
   return runWithSalesAiFailover(
-    (leg, { failoverTo }) =>
+    (leg, { failoverTo, timeoutMs }) =>
       leg.kind === "anthropic"
-        ? askClaude(leg.model, kind, system, user, failoverTo)
+        ? askClaude(leg.model, kind, system, user, failoverTo, timeoutMs)
         : askChatProvider(leg.provider, kind, system, user, failoverTo),
     SUGGEST_MODELS,
+    CLAUDE_BATCH_BUDGET_MS,
   );
 }
 
 // One batch of up to 60 rows: ~1.5k tokens of answer, so 4k is headroom, and a generous timeout because
-// the chat leg has none of its own.
+// the chat leg has none of its own. When Claude stands in for a dead account it gets only what is left of it.
+const CLAUDE_BATCH_BUDGET_MS = 120_000;
+
 async function askClaude(
   model: string,
   kind: AiKind,
   system: string,
   user: string,
   failoverTo?: AiCallProvider,
+  timeoutMs = CLAUDE_BATCH_BUDGET_MS,
 ): Promise<string> {
   try {
     const reply = await anthropicJson({
@@ -186,7 +190,7 @@ async function askClaude(
       model,
       purpose: `ai_suggest_${kind}`,
       system,
-      timeoutMs: 120_000,
+      timeoutMs,
       user,
     });
     return reply.text;
