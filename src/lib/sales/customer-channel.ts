@@ -112,15 +112,59 @@ export function normalizeCustomerName(value: string | null | undefined): string 
   return folded.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** A keyword with its stem already folded, both spaced and squashed. */
+type PreparedKeyword = { readonly label: string; readonly spaced: string; readonly squashed: string };
+
+/*
+ * Each list's stems, folded ONCE per list rather than once per stem per name.
+ *
+ * Folding a stem on every call was the cost of a classification: ~58 stems folded for every name,
+ * ~0.35 ms each, so the Master Map's ~74,000 shops spent ~25 s of the web server's one thread just
+ * re-folding the same 58 words (measured 24 Oct 2026). The folded stem is a pure function of the
+ * stem, so caching it changes no answer. Keyed by the list itself: every list here is a readonly
+ * module constant, and a caller that passes its own array simply gets its own entry.
+ */
+const PREPARED_KEYWORDS = new WeakMap<readonly ChannelNameKeyword[], readonly PreparedKeyword[]>();
+
+function prepareKeywords(entries: readonly ChannelNameKeyword[]): readonly PreparedKeyword[] {
+  let prepared = PREPARED_KEYWORDS.get(entries);
+  if (!prepared) {
+    prepared = entries.map((entry) => {
+      const spaced = normalizeCustomerName(entry.stem);
+      return { label: entry.label, spaced, squashed: spaced.replace(/\s+/g, "") };
+    });
+    PREPARED_KEYWORDS.set(entries, prepared);
+  }
+  return prepared;
+}
+
+/** The name folded once, in the two forms every matcher compares against. */
+type FoldedName = { readonly spaced: string; readonly squashed: string };
+
+function foldName(name: string | null | undefined): FoldedName {
+  const spaced = normalizeCustomerName(name);
+  return { spaced, squashed: spaced.replace(/\s+/g, "") };
+}
+
+function matchFoldedKeywords(folded: FoldedName, keywords: readonly ChannelNameKeyword[]): string[] {
+  if (!folded.spaced) return [];
+  return prepareKeywords(keywords)
+    .filter((keyword) => folded.spaced.includes(keyword.spaced))
+    .map((keyword) => keyword.label);
+}
+
 function matchKeywords(
   name: string | null | undefined,
   keywords: readonly ChannelNameKeyword[],
 ): string[] {
-  const normalized = normalizeCustomerName(name);
-  if (!normalized) return [];
-  return keywords
-    .filter((keyword) => normalized.includes(normalizeCustomerName(keyword.stem)))
-    .map((keyword) => keyword.label);
+  return matchFoldedKeywords(foldName(name), keywords);
+}
+
+function matchFoldedPrefixes(folded: FoldedName): string[] {
+  if (!folded.spaced) return [];
+  return prepareKeywords(STORE_NAME_PREFIXES)
+    .filter((entry) => folded.spaced.startsWith(entry.spaced))
+    .map((entry) => entry.label);
 }
 
 /**
@@ -137,11 +181,7 @@ export function matchedStoreKeywords(name: string | null | undefined): string[] 
  * doc on STORE_NAME_PREFIXES for the 590-vs-40 measurement that makes the distinction load-bearing.
  */
 export function matchedStorePrefixes(name: string | null | undefined): string[] {
-  const normalized = normalizeCustomerName(name);
-  if (!normalized) return [];
-  return STORE_NAME_PREFIXES
-    .filter((entry) => normalized.startsWith(normalizeCustomerName(entry.stem)))
-    .map((entry) => entry.label);
+  return matchFoldedPrefixes(foldName(name));
 }
 
 /** Which hospital words appear in this customer's name. Same purpose as the store version. */
@@ -628,7 +668,10 @@ function squashCustomerName(value: string | null | undefined): string {
  * and the owner ruled both warehouses.
  */
 export function matchesTradePhrase(name: string | null | undefined): boolean {
-  const squashed = squashCustomerName(name);
+  return foldedMatchesTradePhrase(squashCustomerName(name));
+}
+
+function foldedMatchesTradePhrase(squashed: string): boolean {
   if (!squashed) return false;
   const business = TRADE_BUSINESS_STEMS.filter((stem) => squashed.includes(stem));
   if (business.length === 0) return false;
@@ -638,13 +681,23 @@ export function matchesTradePhrase(name: string | null | undefined): boolean {
 
 /** True when a "never a store" word appears — checked on both the spaced and squashed forms. */
 export function matchedNeverStoreKeywords(name: string | null | undefined): string[] {
-  const spaced = normalizeCustomerName(name);
-  const squashed = squashCustomerName(name);
-  if (!spaced) return [];
-  return NEVER_STORE_KEYWORDS.filter((keyword) => {
-    const stem = normalizeCustomerName(keyword.stem);
-    return spaced.includes(stem) || squashed.includes(stem.replace(/\s+/g, ""));
-  }).map((keyword) => keyword.label);
+  return foldedNeverStoreKeywords(foldName(name));
+}
+
+function foldedNeverStoreKeywords(folded: FoldedName): string[] {
+  if (!folded.spaced) return [];
+  return prepareKeywords(NEVER_STORE_KEYWORDS)
+    .filter((keyword) => folded.spaced.includes(keyword.spaced) || folded.squashed.includes(keyword.squashed))
+    .map((keyword) => keyword.label);
+}
+
+/** The first matching entry's label against an already-folded name, or null. */
+function foldedMatchesAnyKeyword(folded: FoldedName, entries: readonly ChannelNameKeyword[]): string | null {
+  if (!folded.spaced) return null;
+  for (const entry of prepareKeywords(entries)) {
+    if (folded.spaced.includes(entry.spaced) || folded.squashed.includes(entry.squashed)) return entry.label;
+  }
+  return null;
 }
 
 /**
@@ -659,14 +712,7 @@ export function nameMatchesAnyKeyword(
   name: string | null | undefined,
   entries: readonly ChannelNameKeyword[],
 ): string | null {
-  const spaced = normalizeCustomerName(name);
-  const squashed = squashCustomerName(name);
-  if (!spaced) return null;
-  for (const entry of entries) {
-    const stem = normalizeCustomerName(entry.stem);
-    if (spaced.includes(stem) || squashed.includes(stem.replace(/\s+/g, ""))) return entry.label;
-  }
-  return null;
+  return foldedMatchesAnyKeyword(foldName(name), entries);
 }
 
 /** Codes arrive with distributor-specific zero padding, so compare on the digits alone. */
@@ -719,11 +765,12 @@ export function classifyCustomerChannel(
   clientCode?: string | null,
   distributorCode?: string | null,
 ): CustomerChannel {
-  if (matchedHospitalKeywords(name).length > 0) return "hospital";
+  const folded = foldName(name);
+  if (matchFoldedKeywords(folded, HOSPITAL_NAME_KEYWORDS).length > 0) return "hospital";
   // Delegated so the screen and the closing can never disagree about who is a warehouse. Before
   // 2026-09-06 this repeated the override checks inline, which was already a second copy of the
   // rule; with the trade phrase and four override lists it would have been a fifth.
-  return isStoreCustomer(name, clientCode, distributorCode) ? "store" : "pharmacy";
+  return foldedIsStoreCustomer(folded, clientCode, distributorCode) ? "store" : "pharmacy";
 }
 
 /**
@@ -737,6 +784,15 @@ export function classifyCustomerChannel(
  */
 export function isStoreCustomer(
   name: string | null | undefined,
+  clientCode?: string | null,
+  distributorCode?: string | null,
+): boolean {
+  return foldedIsStoreCustomer(foldName(name), clientCode, distributorCode);
+}
+
+/** `isStoreCustomer` against a name folded once, so each step below does not fold it again. */
+function foldedIsStoreCustomer(
+  folded: FoldedName,
   clientCode?: string | null,
   distributorCode?: string | null,
 ): boolean {
@@ -757,14 +813,14 @@ export function isStoreCustomer(
   // does the same thing in reverse — both are the exact error the override lists exist to stop.
   if (isPharmacyOverride(clientCode)) return false;
   if (isStoreOverride(clientCode, distributorCode)) return true;
-  if (nameMatchesAnyKeyword(name, STORE_OVERRIDE_NAMES)) return true;
-  if (nameMatchesAnyKeyword(name, PHARMACY_OVERRIDE_NAMES)) return false;
-  if (nameMatchesAnyKeyword(name, PHARMACY_OVERRIDE_CHAINS)) return false;
-  if (matchedNeverStoreKeywords(name).length > 0) return false;
+  if (foldedMatchesAnyKeyword(folded, STORE_OVERRIDE_NAMES)) return true;
+  if (foldedMatchesAnyKeyword(folded, PHARMACY_OVERRIDE_NAMES)) return false;
+  if (foldedMatchesAnyKeyword(folded, PHARMACY_OVERRIDE_CHAINS)) return false;
+  if (foldedNeverStoreKeywords(folded).length > 0) return false;
   if (isWholesaleOnlyDistributor(distributorCode)) return true;
-  return matchedStoreKeywords(name).length > 0
-    || matchedStorePrefixes(name).length > 0
-    || matchesTradePhrase(name);
+  return matchFoldedKeywords(folded, STORE_NAME_KEYWORDS).length > 0
+    || matchFoldedPrefixes(folded).length > 0
+    || foldedMatchesTradePhrase(folded.squashed);
 }
 
 /**
