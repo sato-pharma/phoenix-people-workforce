@@ -153,13 +153,23 @@ export type CoachingTopScoreEntry = {
  * Rank the highest-scoring completed coaching reports (highest score first) and
  * return the top `limit`. Feed it a single month's reports to get that month's
  * leaderboard; the caller decides the window (e.g. the previous calendar month).
+ *
+ * `excludeHrIds` removes reps BEFORE the slice, so a leaver's slot is filled by the next
+ * score down and the board still shows `limit` names (owner, 2026-10-24: Stars of the Month
+ * skips a resigned rep and takes the one after him).
  */
 export function buildTopCoachingScores(
   reports: CoachingReportSummaryRow[],
   limit = 5,
+  excludeHrIds: ReadonlySet<string> = new Set(),
 ): CoachingTopScoreEntry[] {
   return reports
-    .filter((report) => completedStatuses.has(report.status) && report.finalScorePercent > 0)
+    .filter(
+      (report) =>
+        completedStatuses.has(report.status) &&
+        report.finalScorePercent > 0 &&
+        !excludeHrIds.has(report.medicalRepHrId.toUpperCase()),
+    )
     .sort(
       (a, b) =>
         b.finalScorePercent - a.finalScorePercent ||

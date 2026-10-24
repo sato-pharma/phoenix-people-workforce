@@ -11,7 +11,7 @@ function achievementColor(pct: number): string {
 
 /**
  * "Top Achievers · Per Line" — the top medical reps by sales achievement for
- * each line, snapshotted from the Medical Reps Performance data. Server
+ * each line in that line's latest PUBLISHED monthly closing, with the month printed on the line. Server
  * component (static), framed in the portal's premium design language. Renders
  * nothing when there is no achievement data.
  */
@@ -33,9 +33,14 @@ export function LineTopAchieversCard({
       <div className="divide-y divide-slate-200">
         {groups.map((group) => (
           <div key={group.lineName} className="px-4 py-3 sm:px-5">
-            <p className="mb-2 whitespace-nowrap text-phx-xs font-bold uppercase tracking-wider text-orange-600">
-              {group.lineName}
-            </p>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <p className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-wider text-orange-600">
+                {group.lineName}
+              </p>
+              <p className="whitespace-nowrap text-phx-xs font-semibold text-slate-500">
+                {group.periodLabel} closing
+              </p>
+            </div>
             <ol className="divide-y divide-slate-100">
               {group.achievers.map((achiever, index) => (
                 <li key={achiever.hrId} className="flex items-center gap-3 py-2">

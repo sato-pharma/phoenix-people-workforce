@@ -40,6 +40,10 @@ import {
   type SosCompanyLineMeta,
 } from "@/lib/employee-portal/sos-team-performance";
 import { SALES_LINES, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { periodLabel } from "@/lib/business-review/period-format";
+import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
+import { SALES_VS_TARGET_FLOOR, loadAchievementRange, loadPublishedPeriodKeys, salesVsTargetPeriods } from "@/lib/sales/vs-target";
+import { latestPublishedPeriodForLine, rankLineAchieversForPeriod } from "@/lib/employee-portal/line-top-achievers";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   isDateWithinLifecycleRiskWindow,
@@ -4507,6 +4511,10 @@ export type LineTopAchiever = {
 export type LineTopAchieversGroup = {
   achievers: LineTopAchiever[];
   lineName: string;
+  /** The published closing month the figures come from, "2026-09". */
+  period: string;
+  /** The same month for the screen, "Sep 2026". */
+  periodLabel: string;
 };
 
 // Roles allowed to see the cross-line medical-rep achievement leaderboard. Kept
@@ -4521,11 +4529,10 @@ const LINE_TOP_ACHIEVER_ROLES = new Set<AccessContext["role"]>([
 ]);
 
 /**
- * Top `perLine` medical reps by sales achievement (sales ÷ target, all periods)
- * for every line, reusing the same per-rep achievement math as the Medical Reps
- * Performance page. Fetches per line to stay at that page's query scale rather
- * than pulling every rep company-wide in one call. Returns [] for roles outside
- * the allowlist, and never throws (empty on any failure).
+ * Top `perLine` medical reps by achievement for every line, in the latest month whose Monthly
+ * Closing is PUBLISHED for that line (owner, 2026-10-24: match the rep's monthly closing and show
+ * the period). Returns [] for roles outside the allowlist, and never throws (empty on any failure).
+ * The ranking is `rankLineAchieversForPeriod`; a line with no published month shows no block.
  */
 export async function getCompanyLineTopAchievers(
   access: AccessContext,
@@ -4551,97 +4558,32 @@ export async function getCompanyLineTopAchievers(
     }
     if (repsByLine.size === 0) return [];
 
+    const { current } = salesVsTargetPeriods();
+    const publishedKeys = await loadPublishedPeriodKeys(SALES_VS_TARGET_FLOOR, current);
+
     const groups = await Promise.all(
-      Array.from(repsByLine.entries()).map(async ([lineName, reps]) => ({
-        achievers: await computeLineTopAchievers(lineName, reps, perLine),
-        lineName,
-      })),
+      Array.from(repsByLine.entries()).map(async ([lineName, reps]): Promise<LineTopAchieversGroup | null> => {
+        const lineCode = resolveTargetLineCode(lineName);
+        const period = lineCode ? latestPublishedPeriodForLine(lineCode, publishedKeys) : null;
+        if (!lineCode || !period) return null;
+        // One month, cached per month by the loader, so the lines share it.
+        const rows = applyAchievementAreaMerges(await loadAchievementRange(period, period)).filter(
+          (row) => row.lineCode === lineCode,
+        );
+        const achievers = rankLineAchieversForPeriod(rows, period, reps, perLine).map((rep) => ({
+          ...rep,
+          lineName,
+        }));
+        return { achievers, lineName, period, periodLabel: periodLabel(period) };
+      }),
     );
 
     return groups
-      .filter((group) => group.achievers.length > 0)
+      .filter((group): group is LineTopAchieversGroup => group !== null && group.achievers.length > 0)
       .sort((a, b) => a.lineName.localeCompare(b.lineName));
   } catch {
     return [];
   }
-}
-
-async function computeLineTopAchievers(
-  lineName: string,
-  reps: Array<{ areaName: string | null; displayName: string; hrId: string }>,
-  perLine: number,
-): Promise<LineTopAchiever[]> {
-  const hrIdToCanonical = new Map<string, string>();
-  const meta = new Map<string, { areaName: string | null; name: string }>();
-  for (const emp of reps) {
-    const canonical = toCanonicalPortalHrId(emp.hrId);
-    if (!canonical) continue;
-    const normalized = normalizeHrId(emp.hrId);
-    if (normalized) hrIdToCanonical.set(normalized, canonical);
-    hrIdToCanonical.set(canonical, canonical);
-    meta.set(canonical, { areaName: emp.areaName, name: emp.displayName });
-  }
-
-  const repHrIds = reps.map((emp) => emp.hrId).filter(Boolean) as string[];
-  if (repHrIds.length === 0) return [];
-
-  const records = await fetchPortalSalesRecords(repHrIds, {});
-
-  // Same per-rep achievement math as getDsmTeamPerformance:
-  // sum sales per (rep::product); sum DISTINCT targets per (rep::territory::period::product).
-  const salesByRepProduct = new Map<string, number>();
-  const targetSetByKey = new Map<string, Set<number>>();
-  const targetKeyToRep = new Map<string, string>();
-
-  for (const record of records) {
-    const normalized = normalizeHrId(record.hrId);
-    if (!normalized) continue;
-    const canonical = hrIdToCanonical.get(normalized);
-    if (!canonical) continue;
-
-    const product = record.product || "Unknown";
-    const territory = record.territory || "Unassigned";
-    const period = record.period || "unknown";
-
-    const rpKey = `${canonical}::${product}`;
-    salesByRepProduct.set(rpKey, (salesByRepProduct.get(rpKey) ?? 0) + record.salesValue);
-
-    const targetKey = `${canonical}::${territory}::${period}::${product}`;
-    addDistinctTargetValue(targetSetByKey, targetKey, record.targetValue);
-    targetKeyToRep.set(targetKey, canonical);
-  }
-
-  const salesByRep = new Map<string, number>();
-  salesByRepProduct.forEach((sales, key) => {
-    const repId = key.split("::")[0];
-    salesByRep.set(repId, (salesByRep.get(repId) ?? 0) + sales);
-  });
-
-  const targetByRep = new Map<string, number>();
-  targetSetByKey.forEach((set, key) => {
-    const repId = targetKeyToRep.get(key);
-    if (!repId) return;
-    targetByRep.set(repId, (targetByRep.get(repId) ?? 0) + sumDistinctTargetValues(set));
-  });
-
-  const achievers: LineTopAchiever[] = [];
-  for (const [repId, target] of targetByRep.entries()) {
-    if (target <= 0) continue;
-    const info = meta.get(repId);
-    if (!info) continue;
-    const sales = salesByRep.get(repId) ?? 0;
-    achievers.push({
-      achievementPercent: (sales / target) * 100,
-      areaName: info.areaName,
-      hrId: repId,
-      lineName,
-      name: info.name,
-    });
-  }
-
-  return achievers
-    .sort((a, b) => b.achievementPercent - a.achievementPercent)
-    .slice(0, perLine);
 }
 
 // ---------------------------------------------------------------------------
