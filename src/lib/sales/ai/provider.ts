@@ -198,6 +198,19 @@ export async function anthropicJson(params: {
       maxRetries: params.maxRetries ?? 1,
       model: params.model,
       timeoutMs: params.timeoutMs,
+      // The first Anthropic account refused for credit or its key and the second is being asked: its own
+      // row, so the out-of-credit alarm still pages for the first although the call is answered.
+      onAccountFailedOver: (refusal) =>
+        recordAiCall({
+          component: params.component,
+          errorCode: refusal.code,
+          failedOverTo: refusal.nextAccount,
+          latencyMs: refusal.latencyMs,
+          model: params.model,
+          provider: refusal.account,
+          purpose: params.purpose,
+          status: "failed_over",
+        }),
     });
     recordAiCall({
       component: params.component,
@@ -205,7 +218,7 @@ export async function anthropicJson(params: {
       latencyMs: Date.now() - startedAt,
       model: reply.model,
       outputTokens: reply.outputTokens,
-      provider: "anthropic",
+      provider: reply.account,
       purpose: params.purpose,
       status: "success",
     });
@@ -218,7 +231,8 @@ export async function anthropicJson(params: {
       errorCode: code,
       latencyMs: Date.now() - startedAt,
       model: params.model,
-      provider: "anthropic",
+      // The account that gave the last refusal: the second, when the first was out of credit too.
+      provider: failure?.account ?? "anthropic",
       purpose: params.purpose,
       ...salesLegOutcome(code, params.failoverTo),
     });

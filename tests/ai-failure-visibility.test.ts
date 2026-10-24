@@ -260,6 +260,20 @@ export function runAiFailureVisibilityTests() {
   }
   assert.equal(aiQuotaAlertTitle("anthropic"), "Anthropic account is out of credit");
   assert.equal(aiQuotaAlertTitle("openai"), "OpenAI account is out of credit", "the OpenAI title reads as it always has");
+  // The second Anthropic account (2026-10-24) is billed separately, so its alarm names it and is its own for the day.
+  const backupAlert = buildAiQuotaExhaustedMessage(
+    record({ component: "openai_client", model: "claude-haiku-5-5", provider: "anthropic_backup" }),
+  );
+  assert.equal(aiQuotaAlertTitle("anthropic_backup"), "Anthropic backup account is out of credit");
+  assert.match(backupAlert, /The backup Anthropic account refuses every call/, "the backup alarm names the backup account");
+  assert.match(backupAlert, /Add credit, or raise the workspace spend limit/, "and says what ends either refusal");
+  assert.doesNotMatch(backupAlert, /OpenAI billing page|no auto-recharge/, "it never sends him to OpenAI's billing page");
+  assert.match(anthropicAlert, /The first Anthropic account refuses every call/, "the first account's alarm names the first account");
+  assert.notEqual(
+    aiQuotaIdempotencyKey("anthropic_backup", "2026-10-24", "E-100"),
+    aiQuotaIdempotencyKey("anthropic", "2026-10-24", "E-100"),
+    "both Anthropic accounts running dry the same day are two alarms, not one",
+  );
   assert.match(
     buildAiQuotaExhaustedMessage(record({ component: "sales_weekly_ai_verify", provider: "openrouter" })),
     /OpenRouter billing page/,
