@@ -151,6 +151,15 @@ export function planSlotLabel(startTime: string | null | undefined, endTime: str
   return "Full day";
 }
 
+/**
+ * The Planning Calendar shows where people WORK in the field, so a day (or half-day) planned as
+ * "Office" is not drawn at all (owner, 2026-10-24: a National Sales Manager planning Sunday and
+ * Monday Office, Tuesday Behira 1 and Wednesday Alex Center shows Tuesday and Wednesday only).
+ */
+export function withoutOfficeDays<T extends { activityType: string }>(items: T[]): T[] {
+  return items.filter((item) => item.activityType !== "Office");
+}
+
 export function planningConflictKey(date: string, _lineName: string | null, medicalRepHrId: string | null) {
   const rep = normalizedPlanningCalendarKey(medicalRepHrId);
   if (!date || !rep) return null;
