@@ -7,7 +7,13 @@ import {
 } from "@/lib/notifications/role-recipients";
 import { createSystemNotification, type SystemNotificationResult } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { loadAlertCandidates, markIssuesAlerted, type AlertCandidate } from "@/lib/system-audit/repository";
+import {
+  loadAlertCandidates,
+  loadAlertDetails,
+  markIssuesAlerted,
+  type AlertCandidate,
+  type AlertDetail,
+} from "@/lib/system-audit/repository";
 
 /**
  * THE ONE DAILY MESSAGE — everything the System Audit found overnight that a human has not been told
@@ -48,6 +54,8 @@ export type SystemAuditDailyMessageResult = {
 export type SystemAuditDailyMessageDeps = {
   loadCandidates: () => Promise<AlertCandidate[]>;
   markAlerted: (issueIds: string[]) => Promise<number>;
+  /** Who, where and in whose words for the issues the message names. A failure sends the title-only line. */
+  loadDetails: (issueIds: string[]) => Promise<Map<string, AlertDetail>>;
   audienceEnabled: () => Promise<boolean>;
   recipients: () => Promise<{ recipients: Recipient[]; warnings: string[] }>;
   /** true = today's message already reached this person; null = could not tell (then send as before). */
@@ -60,6 +68,7 @@ export type SystemAuditDailyMessageDeps = {
 const defaultDeps: SystemAuditDailyMessageDeps = {
   loadCandidates: () => loadAlertCandidates(),
   markAlerted: (issueIds) => markIssuesAlerted(issueIds),
+  loadDetails: (issueIds) => loadAlertDetails(issueIds),
   audienceEnabled: () => resolveNotificationRoleEnabled(AUDIENCE_KEY),
   recipients: () => resolveNotificationPersonRecipients(AUDIENCE_KEY, "System audit daily message recipients"),
   alreadyToldToday: async (day, hrId) => {
@@ -110,18 +119,39 @@ function peopleWords(people: number): string {
   return people > 0 ? plural(people, "person", "people") : "system, no employee";
 }
 
+/** Up to two names are written out; more are counted, never cut in silence. */
+const NAMED_PEOPLE = 2;
+
+function whoWords(candidate: AlertCandidate, detail: AlertDetail | undefined): string {
+  if (!detail || detail.people.length === 0) return peopleWords(candidate.people);
+  const named = detail.people.slice(0, NAMED_PEOPLE).map((person) => (person.role ? `${person.name}, ${person.role}` : person.name));
+  const more = Math.max(candidate.people, detail.people.length) - named.length;
+  return more > 0 ? `${named.join("; ")}; and ${plural(more, "other person", "other people")}` : named.join("; ");
+}
+
+/** The words the person saw, whole; the stored title only when the ledger holds nothing better. */
+function whatWords(candidate: AlertCandidate, detail: AlertDetail | undefined): string {
+  return detail?.text ?? candidate.title;
+}
+
 /**
- * Pure: the title and body. Counts by reason first, then up to ten issues by name, then how many
- * more wait on the page — never a silent cut.
+ * Pure: the title and body. Counts by reason first, then up to ten issues — WHO met it, in WHICH
+ * module, WHAT they saw, how often and when — then how many more wait on the page, never a silent cut.
+ * `details` comes from the ledger's occurrences; an issue without one keeps the title-only line.
  */
-export function buildSystemAuditDailyMessage(candidates: readonly AlertCandidate[]): { title: string; message: string } {
+export function buildSystemAuditDailyMessage(
+  candidates: readonly AlertCandidate[],
+  details: ReadonlyMap<string, AlertDetail> = new Map(),
+): { title: string; message: string } {
   const count = (reason: AlertCandidate["reason"]) => candidates.filter((candidate) => candidate.reason === reason).length;
   const lines: string[] = [];
   lines.push(`${count("new")} new · ${count("newly_shared")} newly shared · ${count("reopened")} reopened`);
   lines.push("");
   for (const candidate of candidates.slice(0, SYSTEM_AUDIT_MESSAGE_LINES)) {
+    const detail = details.get(candidate.issueId);
+    const where = detail?.module ? ` · ${detail.module}` : "";
     lines.push(
-      `• ${candidate.title} — ${peopleWords(candidate.people)}, ${plural(candidate.operations, "time", "times")}, last ${cairoDateTime(candidate.lastOccurredAt)}`,
+      `• ${whoWords(candidate, detail)}${where} — ${whatWords(candidate, detail)} — ${plural(candidate.operations, "time", "times")}, last ${cairoDateTime(candidate.lastOccurredAt)}`,
     );
   }
   const rest = candidates.length - SYSTEM_AUDIT_MESSAGE_LINES;
@@ -197,7 +227,11 @@ export async function sendSystemAuditDailyMessage(
       return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "already sent today" };
     }
 
-    const { title, message } = buildSystemAuditDailyMessage(candidates);
+    // A detail read that fails sends the title-only line: a plainer message beats none.
+    const details = await deps
+      .loadDetails(candidates.slice(0, SYSTEM_AUDIT_MESSAGE_LINES).map((candidate) => candidate.issueId))
+      .catch(() => new Map<string, AlertDetail>());
+    const { title, message } = buildSystemAuditDailyMessage(candidates, details);
     let delivered = 0;
     let told = false;
     await Promise.all(
