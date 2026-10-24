@@ -857,6 +857,21 @@ alerts. Both steps are `continue-on-error` with their own timeouts — the run's
 commit, so it must never go red. Self-test: dispatch the workflow with `test_alert` ticked. Pinned by
 `tests/deploy-failure-alert.test.ts`.
 
+🔴 **One reading of `/api/healthz` made it cry wolf, and it only reads the revision being replaced**
+(found and fixed 2026-10-24). Railway posts the `failure` status for the deployment it is in the middle of
+replacing, so for the seconds either side of that event production still answers with the OLD commit.
+Measured on #6432: the status landed **17:49:33 Cairo**, the workflow read `ad825ca8f` eight seconds later and
+sent *"Production serves ad825ca8f, which does NOT contain this change. It is not live"*, and the container
+answered with the merge's own `8e930a891` **twenty-eight seconds after that**. Nothing was wrong with the
+deploy and nothing needed doing, which is the worst thing an alarm can say. It now reads healthz **every 20
+seconds for up to four minutes**, stopping the moment `compare/<deployed>...<live>` reads `identical` or
+`ahead` — and a deployment that **never went live** whose commit production is serving by the end of that
+window is **CARRIED** (AGENTS.md §2.3; `verify-shipped.mjs` prints the same word and calls it *"NOT an
+incident, and never a reason to redeploy"*), so **nothing is sent at all** and the reason goes on the run
+page instead of his phone. A deployment that went live and **then** failed still alerts even when its commit
+is serving: that is a crash or a failed health check, not a build. The facts step's budget grew 3 → 8 minutes
+and the job ceiling 10 → 14, because the test asserts the ceiling sits above the sum of the step budgets.
+
 ## The urgent route — "live in five minutes"
 
 Built 2026-10-18 at the owner's instruction: *"an extra route that you don't ever use except with a

@@ -9,6 +9,9 @@
 //   - the trigger and the filter (a wrong state or environment test makes the alarm silent, or makes
 //     it page for staging and for every in-progress status);
 //   - one alert per deployment (Railway sends several `failure` statuses for one deployment);
+//   - the live revision is read REPEATEDLY, and a deployment a later one carried stays quiet: one
+//     reading taken at the failure is the revision being replaced, which paged him for a shipped
+//     change on 2026-10-24 (clause 7);
 //   - both working steps are `continue-on-error` with their own timeout, because the run's check
 //     suite attaches to the DEPLOYMENT'S COMMIT and a red or cancelled suite there is what makes a
 //     release gate refuse that commit (tests/scheduled-alarms-never-withhold.test.ts, same rule);
@@ -86,4 +89,25 @@ export function runDeployFailureAlertTests() {
   for (const body of scriptBodies) {
     assert.doesNotMatch(body, /\$\{\{/, "an expression inside a run block interpolates event data into shell source; pass it through env: instead");
   }
+
+  // 7 — the live revision is read until it settles, and a deploy a later one carried is not an alarm.
+  //
+  // WHY. Railway posts `failure` for the deployment it is in the middle of replacing, so for the
+  // seconds either side of that event /api/healthz still answers with the OLD revision. Measured
+  // 2026-10-24 on #6432: the status arrived 17:49:33 Cairo, the one reading taken eight seconds later
+  // sent "does NOT contain this change. It is not live", and the container answered with the merge's
+  // own commit twenty-eight seconds after that. The owner was paged for a change that had shipped.
+  const readings = Number(/^\s*READINGS=(\d+)\s*$/m.exec(source)?.[1] ?? "0");
+  assert.ok(readings >= 6, `healthz must be read repeatedly — at least six readings; found READINGS=${readings}`);
+  assert.match(source, /while \[ "\$i" -le "\$READINGS" \]; do/, "the readings must be a loop over READINGS, not a single curl taken at the moment the container is being replaced");
+  assert.match(source, /^\s*sleep 20\s*$/m, "the readings must be spaced, or all of them land inside the same second and prove nothing");
+  assert.match(source, /\[ "\$CARRIED" = "yes" \] && break/, "the loop must stop the moment production carries the commit, so a real failure is not delayed by four minutes of waiting");
+  assert.match(
+    source,
+    /if \[ "\$CARRIED" = "yes" \] && \[ "\$\{WENT_LIVE:-0\}" = "0" \]; then/,
+    "a deployment that never went live whose commit production is now serving was CARRIED by a later deploy — benign (AGENTS.md §2.3), and it must not reach the owner; the WENT_LIVE half is what keeps a crash AFTER going live loud",
+  );
+  const carried = /if \[ "\$CARRIED" = "yes" \] && \[ "\$\{WENT_LIVE:-0\}" = "0" \]; then[\s\S]*?\n {10}fi\n/.exec(source)?.[0] ?? "";
+  assert.match(carried, /emit SEND "no"/, "the carried case must silence the alert, not merely reword it");
+  assert.match(carried, /exit 0/, "the carried case must stop there rather than fall through and build a message it has already explained");
 }
