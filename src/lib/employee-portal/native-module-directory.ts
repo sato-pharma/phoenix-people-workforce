@@ -71,6 +71,8 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/training-manager/coaching": { icon: "easel-outline", section: "Training Manager" },
   "/employee-portals/training-manager/create-coaching-report": { icon: "create-outline", section: "Training Manager" },
   "/employee-portals/training-manager/field-coaching": { icon: "walk-outline", section: "Training Manager" },
+  // Her Phoenix CRM weekly plan sits in her own section, since the Phoenix CRM row is never hers.
+  "/employee-portals/field-crm/plan": { icon: "calendar-outline", section: "Training Manager" },
   // ── Phoenix CRM ───────────────────────────────────────────────────────────────────────────────
   // Its own band above My Workspace on the sidebar (owner, 2026-09-30), so its own section here too,
   // or the drift test fails on the mismatch.
