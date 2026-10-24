@@ -17,6 +17,7 @@ import {
   planningConflictKey,
   planSlotLabel,
   sharedPlanningCalendarStatuses,
+  withoutOfficeDays,
   type PlanningCalendarHolidayItem,
   type PlanningCalendarPlanItem,
   type PlanningCalendarWorkspace,
@@ -523,10 +524,12 @@ export async function getSharedPlanningCalendarWorkspace(
       directReportHrIds,
       districtManagerHrIds,
     };
-    const planItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
+    const visiblePlanItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
+    // Office days are not drawn, but the person still counts as having submitted a plan.
+    const planItems = withoutOfficeDays(visiblePlanItems);
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
-    const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
+    const submittedOwners = new Set(visiblePlanItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
     return {
       conflicts,
       hasMoreHeaders,
