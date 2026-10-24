@@ -1673,6 +1673,32 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // manager refused (manager_plan_bad_kind); no areas, naming himself, and senior_visit on an admin half-day
   // refused (bad_input).
   "20261023233002_phoenix_crm_manager_plan_with_senior.sql",
+
+  // (5) THE VISITS DOOR'S ONE SCAN — applied 2026-10-23, staging first then production, through
+  // `scripts/apply-sql-file.mjs`, the standing route of AGENTS.md §8 for a shape the Supabase MCP
+  // declines. That route writes NO ledger row, hence this entry rather than a ledger write. The file
+  // holds ONE statement, `create or replace view public.crm_visits_unified` — it adds nothing, drops
+  // nothing and alters no table, and Postgres itself refuses a replace that would change a column's
+  // name, type or position, so the 63 columns cannot have moved.
+  //
+  // VERIFIED BY DIGEST ON BOTH PROJECTS, not by the view merely existing. `md5(pg_get_viewdef(...))`
+  // is d2c30e87b6e678076a86859594ec0323 at 13,373 bytes on production (ozucdzovmcqvepbozvqf) AND on
+  // staging (cifwmndunmlxjhyjugxa) — the same generation on both, which is this file's. The door still
+  // reads `security_invoker=true` with postgres and service_role as its only grantees, names
+  // ireports360_visits ONCE (it was twice) and phoenix_crm_rep_entry_days() not at all (it was once).
+  // Production's ledger holds 0 rows matching `20261023170%`, the expected consequence of that route. The file was applied
+  // under the stamp 20261023170000 and renamed to 20261024005000 before merging, because the closing matrix
+  // migration took 20261023170000 on main first; the SQL is byte-identical and idempotent (create or replace).
+  //
+  // Effect proved on production, not asserted. OUTPUT: the md5 of every row of the door over the whole
+  // of its history is unchanged from the pre-apply reading — 87,709 rows before 2026-07-01
+  // (7d9f712a27c26501bd8785cec0e66b4b) and 35,736 rows in July–August
+  // (dd3d6aaf643c0828a8e6e3217d046053), both re-read after applying and both identical, with the
+  // 25,039-row window from September on proved identical against a probe copy of the new body before
+  // the swap. SPEED, nine interleaved runs of each shape against the same moment: one day 17.0 -> 7.8 ms,
+  // a month straddling the first team start 563.1 -> 320.5 ms, a month entirely before it unchanged.
+  // Pinned by tests/phoenix-crm-visits-everywhere.test.ts. Account: docs/crm-visits-door-one-scan.md.
+  "20261024005000_crm_visits_unified_one_scan.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
