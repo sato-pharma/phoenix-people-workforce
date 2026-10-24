@@ -509,6 +509,30 @@ export async function loadManagerOwnVisitDays(input: {
 }
 
 /**
+ * The area of the customers a manager visited, one entry per visit (owner, 2026-10-24: "check his CRM
+ * visits, where was he"). The Planning Calendar reads it to fill a plan day that names no area. Real
+ * visits only, and a visit with no area says nothing.
+ */
+export async function loadManagerVisitAreas(input: { start: string; end: string }): Promise<Array<{ areaName: string; date: string; hrId: string }>> {
+  if (input.end < input.start) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_manager_visits")
+    .select("manager_hr_id,visit_date,area_name")
+    .gte("visit_date", input.start)
+    .lte("visit_date", input.end)
+    .eq("is_test", false)
+    .not("area_name", "is", null)
+    .limit(5000);
+  if (error) throw error;
+  return (data ?? []).flatMap((row) => {
+    const hrId = textOrNull(row.manager_hr_id);
+    const date = (textOrNull(row.visit_date) ?? "").slice(0, 10);
+    const areaName = textOrNull(row.area_name);
+    return hrId && date.length === 10 && areaName ? [{ areaName, date, hrId }] : [];
+  });
+}
+
+/**
  * The bucket one of his own visits counts in: the rep customer's list when he visited one (a pharmacy is
  * Pharmacies whatever the hour), else — a customer of Manager's own list, which has no list — the half.
  * Pure, exported for its test.
