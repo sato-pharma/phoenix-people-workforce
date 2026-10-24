@@ -67,6 +67,7 @@ import {
   parseManagerSlotDraft,
   vacantVisitPlaceError,
   visitPlaceText,
+  managerPlanWithYou,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import {
   MANAGER_VISIT_DETAIL_FIXED_OTHER,
@@ -100,7 +101,7 @@ import {
   readsManagerPlanOf,
   resolveManagerPlanReader,
 } from "../src/lib/phoenix-crm/server/manager-plan-reach.ts";
-import { managerHalfLegacyType } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
+import { managerHalfDayText, managerHalfLegacyType } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { managerPlanDeliveries } from "../src/lib/phoenix-crm/server/notifications.ts";
 import { VISIT_REPORT_FIELDS } from "../src/lib/phoenix-crm/visit-report-fields.ts";
 
@@ -587,7 +588,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_plan_edit_expired"), "the expired ask goes in-app and by Telegram only");
   const policy = source("src/lib/notifications/policy.ts");
   const managerPolicies = policy.split("\n").filter((line) => /"phoenix_crm\.manager_(plan|list)_[a-z_]+":/.test(line));
-  assert.equal(managerPolicies.length, 9, "nine manager-plan notices are registered");
+  assert.equal(managerPolicies.length, 10, "ten manager-plan notices are registered");
   for (const line of managerPolicies) assert.equal(line.includes("\"email\""), false, `never email: ${line.trim().slice(0, 60)}`);
   const inApp = source("src/lib/notifications/in-app.ts");
   for (const key of ["manager_plan_waiting", "manager_plan_edit_waiting", "manager_list_removal_waiting"]) {
@@ -2084,4 +2085,62 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   ).replace(/\r\n/g, "\n");
   assert.match(withSeniorMigration, /kind = 'with_senior' and scope_dm_seat_id is null and scope_line_code is null/, "the database holds a with-senior half-day in his own district");
   assert.match(withSeniorMigration, /elsif v_kind = 'with_senior' then\s+if v_planner <> 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refuses one from anyone but a district manager");
+
+  // The picked person's side (owner, 2026-10-24: "calendar + notice"). Who an approved week names, grouped
+  // per person in date order, never the district manager himself and never another kind.
+  const area = (name: string) => ({ seatId: `SEAT-${name}`, areaCode: name, areaName: name, seatIds: [`SEAT-${name}`] });
+  const picked = managerPlanWithYou("PD-0012", [
+    { kind: "with_senior", date: "2026-11-02", half: "PM", areaName: "Behira 1", seniorVisit: { seniorHrId: "PD-0001", role: "manager", title: "Regional sales manager", areas: [area("Behira 1")] } },
+    { kind: "with_senior", date: "2026-10-31", half: "AM", areaName: "Alex Center", seniorVisit: { seniorHrId: "pd-0001", role: "manager", title: "Regional sales manager", areas: [area("Alex Center")] } },
+    { kind: "with_senior", date: "2026-11-01", half: "AM", areaName: "Alex West", seniorVisit: { seniorHrId: "A-8", role: "product_manager", title: "Group Product Manager", areas: [area("Alex West")] } },
+    { kind: "with_senior", date: "2026-11-01", half: "PM", areaName: "Alex East", seniorVisit: { seniorHrId: "PD-0012", role: "manager", title: null, areas: [area("Alex East")] } },
+    { kind: "with_rep", date: "2026-11-03", half: "AM", areaName: null, seniorVisit: null },
+  ]);
+  assert.deepEqual(
+    picked,
+    [
+      { recipientHrId: "PD-0001", halves: [{ date: "2026-10-31", half: "AM", areaName: "Alex Center" }, { date: "2026-11-02", half: "PM", areaName: "Behira 1" }] },
+      { recipientHrId: "A-8", halves: [{ date: "2026-11-01", half: "AM", areaName: "Alex West" }] },
+    ],
+    "one notice per picked person, his half-days in date order, never the district manager himself",
+  );
+
+  const withYouNames = new Map<string, string>([["PD-0012", "Mohamed Alaa"], ["PD-0001", "Hany Saad"]]);
+  const withYouNotice = {
+    kind: "manager_plan" as const,
+    seat: PDM,
+    managerHrId: "PD-0012",
+    recordId: UUID_A,
+    planId: UUID_B,
+    weekStart: "2026-10-31",
+    note: null,
+    customerName: null,
+    byAdministrator: false,
+    step: "with_you" as const,
+    recipientHrId: "PD-0001",
+    actorHrId: "PD-0001",
+    version: 3,
+    withYou: picked[0].halves,
+  };
+  const [toPicked] = managerPlanDeliveries(withYouNotice, withYouNames);
+  assert.ok(toPicked, "the picked manager is told");
+  assert.equal(toPicked.eventType, "manager_plan_with_you");
+  assert.deepEqual(toPicked.recipients, ["PD-0001"], "the notice goes to the picked person alone");
+  assert.equal(toPicked.title, "Mohamed Alaa planned 2 half-days with you");
+  assert.ok(toPicked.message.includes("morning in"), "it names the morning");
+  assert.ok(toPicked.message.includes("afternoon in"), "and the afternoon");
+  assert.ok(toPicked.message.includes("Alex Center") && toPicked.message.includes("Behira 1"), "and each area");
+  assert.equal(toPicked.path, "/employee-portals/plans/calendar", "it opens the planning calendar the half-day is on");
+  const [toOther] = managerPlanDeliveries({ ...withYouNotice, recipientHrId: "A-8", withYou: picked[1].halves }, withYouNames);
+  assert.notEqual(toPicked.idempotencyKey, toOther?.idempotencyKey, "two picked people are two notices, never one swallowed as a repeat");
+  assert.deepEqual(managerPlanDeliveries({ ...withYouNotice, withYou: [] }, withYouNames), [], "a week that names nobody tells nobody");
+  assert.match(
+    functionBody(plans, "export async function transitionManagerPlan("),
+    /status === "approved"[\s\S]*plan\.plannerKind === "dm"[\s\S]*managerPlanWithYou\(plan\.managerHrId, await loadManagerSlotRows\(\[plan\.planId\]\)\)[\s\S]*step: "with_you"/,
+    "the picked people are told when the district manager's week is approved",
+  );
+
+  // Calendars name the person: the district manager's own line and the planning calendar read "With Hany Saad".
+  assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null, "Hany Saad"), "With Hany Saad · Alex Center");
+  assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null), "With a manager or product manager · Alex Center");
 }

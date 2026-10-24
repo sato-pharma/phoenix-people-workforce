@@ -54,6 +54,7 @@ import {
   managerDmVisitTitle,
   managerSeniorTitle,
   managerSeniorVisitTitle,
+  managerPlanWithYou,
   managerSlotScopeError,
   managerWeekDays,
   managerWeekState,
@@ -1254,6 +1255,17 @@ export async function transitionManagerPlan(
       { step: "approved", recipientHrId: plan.managerHrId, actorHrId: viewer.hrId, recordId: plan.planId, version, note, customerName: null, byAdministrator },
       isTest,
     );
+    // Each manager or product manager a district manager's approved week goes WITH is told (owner, 2026-10-24).
+    if (plan.plannerKind === "dm") {
+      for (const pick of managerPlanWithYou(plan.managerHrId, await loadManagerSlotRows([plan.planId]))) {
+        await tellManagerPlan(
+          viewer,
+          plan,
+          { step: "with_you", recipientHrId: pick.recipientHrId, actorHrId: viewer.hrId, recordId: plan.planId, version, note: null, customerName: null, byAdministrator, withYou: pick.halves },
+          isTest,
+        );
+      }
+    }
   } else if (status === "returned") {
     await tellManagerPlan(
       viewer,
