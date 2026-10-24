@@ -8,6 +8,7 @@ import {
   Search,
   Sparkles,
   TriangleAlert,
+  Users,
 } from "lucide-react";
 
 import {
@@ -101,9 +102,9 @@ function planSearchText(item: PlanningCalendarPlanItem) {
 // just keyed by employee instead of by data source. Colors are assigned by
 // order of first appearance WITHIN a single day's item list, never by hashing
 // the HR ID — a hash can (and did) collide two unrelated employees onto the
-// same bucket. Red stays reserved for conflict warnings and emerald for
-// national vacations, matching how this calendar already used those two
-// colors before per-employee coding existed.
+// same bucket. Sky marks a chain visit (a neutral co-visit note, not an alarm)
+// and emerald national vacations, matching how this calendar reserves those two
+// colors for those two meanings.
 type EmployeeHue = { border: string; chip: string; dot: string };
 
 const employeeHues: EmployeeHue[] = [
@@ -145,7 +146,10 @@ function employeeHueFor(map: Map<string, EmployeeHue>, employeeHrId: string) {
 }
 
 function planChipTone(item: PlanningCalendarPlanItem, hue: EmployeeHue) {
-  return item.conflictWarning ? "bg-red-100 text-red-700" : hue.chip;
+  // A chain-visit day keeps the person's own colour; a thin sky ring marks the co-visit without the
+  // alarm of a red fill (owner, 2026-10-24: show it as a chain visit, not a warning). conflictWarning
+  // keeps its internal name but now carries a neutral "Chain visit" note, never a clash.
+  return item.conflictWarning ? `${hue.chip} ring-1 ring-inset ring-sky-400` : hue.chip;
 }
 
 // The three activity groupings the month grid buckets each day's plans into.
@@ -171,11 +175,11 @@ function PlanningMetric({
   value,
 }: {
   label: string;
-  tone?: "neutral" | "warning";
+  tone?: "neutral" | "info";
   value: number;
 }) {
   return (
-    <div className={`rounded-sm border p-4 ${tone === "warning" ? "border-red-100 bg-red-50/60" : "border-slate-200 bg-slate-50/60"}`}>
+    <div className={`rounded-sm border p-4 ${tone === "info" ? "border-sky-100 bg-sky-50/60" : "border-slate-200 bg-slate-50/60"}`}>
       <p className="text-3xl font-black text-slate-950">{value}</p>
       <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
@@ -324,7 +328,7 @@ export function PlanningCalendar({
   const selectedDayHues = useMemo(() => assignDailyEmployeeHues(selectedPlans), [selectedPlans]);
   const selectedDetailRows: PlanningCalendarDetailRow[] = [
     ...selectedConflicts.map((conflict) => ({
-      activity: "Conflict warning",
+      activity: "Chain visit",
       area: conflict.areaNames.join(", ") || "-",
       conflictWarning: conflict.warning,
       date: conflict.date,
@@ -334,7 +338,7 @@ export function PlanningCalendar({
       medicalRep: conflict.medicalRepName || conflict.medicalRepHrId || "-",
       notes: conflict.lineName ? `Line: ${conflict.lineName}` : "-",
       regionLocation: conflict.regionNames.join(", ") || conflict.lineName || "-",
-      status: "Conflict",
+      status: "Chain visit",
       time: "Full day",
       tone: "conflict" as const,
     })),
@@ -443,15 +447,15 @@ export function PlanningCalendar({
                   Shared Planning Calendar
                 </span>
                 {summary.conflictCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-danger/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-danger-bg ring-1 ring-phx-danger-line/30">
-                    <TriangleAlert className="h-3.5 w-3.5" />
-                    {summary.conflictCount} warnings
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-400/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-sky-100 ring-1 ring-sky-300/30">
+                    <Users className="h-3.5 w-3.5" />
+                    {summary.conflictCount} chain {summary.conflictCount === 1 ? "visit" : "visits"}
                   </span>
                 ) : null}
               </div>
               <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
               <p className="mt-1 text-sm font-semibold text-slate-300">
-                Submitted plan activity, national vacations, and same-line Medical Rep warnings
+                Submitted plan activity, national vacations, and chain visits
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -512,7 +516,7 @@ export function PlanningCalendar({
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
           <PlanningMetric label="Plan entries" value={summary.planCount} />
           <PlanningMetric label="Planning owners" value={summary.submittedOwnerCount} />
-          <PlanningMetric label="Same-line warnings" tone={summary.conflictCount > 0 ? "warning" : "neutral"} value={summary.conflictCount} />
+          <PlanningMetric label="Chain visits" tone={summary.conflictCount > 0 ? "info" : "neutral"} value={summary.conflictCount} />
           <PlanningMetric label="National vacations" value={summary.holidayCount} />
         </div>
       </section>
@@ -575,14 +579,14 @@ export function PlanningCalendar({
           <button
             className={`inline-flex h-10 items-center gap-2 rounded-sm px-3 text-sm font-black ring-1 transition ${
               conflictsOnly
-                ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
+                ? "bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100"
                 : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200"
             }`}
             onClick={() => setConflictsOnly((value) => !value)}
             type="button"
           >
-            <TriangleAlert className="h-4 w-4" />
-            Conflicts
+            <Users className="h-4 w-4" />
+            Chain visits
           </button>
           <button
             className="h-10 rounded-sm bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200"
@@ -595,10 +599,10 @@ export function PlanningCalendar({
       </section>
 
       {conflicts.length > 0 ? (
-        <section className="overflow-hidden rounded-sm border-l-4 border-l-red-500 bg-white shadow-md ring-1 ring-slate-200/60">
+        <section className="overflow-hidden rounded-sm border-l-4 border-l-sky-500 bg-white shadow-md ring-1 ring-slate-200/60">
           <div className="border-b border-slate-100 px-5 py-3">
-            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-red-700">
-              {conflicts.length} Same-line Medical Rep Warning{conflicts.length === 1 ? "" : "s"}
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-sky-700">
+              {conflicts.length} Chain Visit{conflicts.length === 1 ? "" : "s"}
             </span>
           </div>
           <div className="divide-y divide-slate-100">
@@ -609,7 +613,7 @@ export function PlanningCalendar({
                 onClick={() => setSelectedDate(conflict.date)}
                 type="button"
               >
-                <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-wide text-red-700">{dayLabel(conflict.date)}</span>
+                <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-wide text-sky-700">{dayLabel(conflict.date)}</span>
                 <span className="text-sm font-semibold text-slate-800">{conflict.warning}</span>
               </button>
             ))}
@@ -691,7 +695,7 @@ export function PlanningCalendar({
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-black text-phx-danger">
+                      <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-phx-2xs font-black text-sky-700">
                         {dayConflicts.length}
                       </span>
                     ) : null}
@@ -827,7 +831,7 @@ function AgendaDayBlock({
               <div className="px-4 py-3" key={item.id}>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : employeeHueFor(dayHues, item.employeeHrId).dot}`}
+                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
                   <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">
@@ -847,7 +851,7 @@ function AgendaDayBlock({
                   </div>
                 ) : null}
                 {item.conflictWarning ? (
-                  <p className="mt-1.5 pl-[18px] text-xs font-bold text-red-600">{item.conflictWarning}</p>
+                  <p className="mt-1.5 pl-[18px] text-xs font-bold text-sky-700">{item.conflictWarning}</p>
                 ) : null}
               </div>
             );
@@ -859,19 +863,19 @@ function AgendaDayBlock({
 }
 
 function detailToneClass(tone: PlanningCalendarDetailRow["tone"]) {
-  if (tone === "conflict") return "bg-red-50/60 text-red-900";
+  if (tone === "conflict") return "bg-sky-50/60 text-sky-900";
   if (tone === "holiday") return "bg-emerald-50/60 text-emerald-900";
   return "bg-white text-slate-800";
 }
 
 function statusToneClass(tone: PlanningCalendarDetailRow["tone"]) {
-  if (tone === "conflict") return "border-red-200 bg-red-100 text-red-800";
+  if (tone === "conflict") return "border-sky-200 bg-sky-100 text-sky-800";
   if (tone === "holiday") return "border-emerald-200 bg-emerald-100 text-emerald-800";
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
 function detailAccent(tone: PlanningCalendarDetailRow["tone"]) {
-  if (tone === "conflict") return "rose";
+  if (tone === "conflict") return "sky";
   if (tone === "holiday") return "emerald";
   return "slate";
 }
@@ -887,7 +891,7 @@ function PlanningCalendarDetailsTable({
     <div className="p-4">
       {rows.length === 0 ? (
         <PortalEmptyState
-          message="Submitted planning activity, national vacation, and conflict warnings for the selected day will appear here."
+          message="Submitted planning activity, national vacation, and chain visits for the selected day will appear here."
           title="No detail rows for this day"
         />
       ) : (
@@ -913,7 +917,7 @@ function PlanningCalendarDetailsTable({
                 ]}
               />
               {row.conflictWarning !== "-" ? (
-                <p className="mt-2 rounded border border-red-100 bg-red-50 px-2.5 py-2 text-xs font-semibold leading-5 text-red-800">
+                <p className="mt-2 rounded border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
                   {row.conflictWarning}
                 </p>
               ) : null}
@@ -946,7 +950,7 @@ function PlanningCalendarDetailsTable({
         >
           <thead>
             <tr className="border-b-2 border-orange-500 bg-slate-950">
-              {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning"].map((column) => (
+              {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Chain Visit"].map((column) => (
                 <th
                   className="border-r border-slate-800 px-3 py-3 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
@@ -976,7 +980,7 @@ function PlanningCalendarDetailsTable({
                       {row.status}
                     </span>
                   </td>
-                  <td className="max-w-[260px] px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-red-800">
+                  <td className="max-w-[260px] px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-sky-800">
                     <span className="whitespace-nowrap">{row.conflictWarning}</span>
                   </td>
                 </tr>
