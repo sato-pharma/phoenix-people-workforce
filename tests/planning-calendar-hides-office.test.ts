@@ -57,7 +57,7 @@ export async function runPlanningCalendarHidesOfficeTests() {
   const service = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
   assert.match(
     service,
-    /const planItems = withoutOfficeDays\(visiblePlanItems\)/,
+    /const planItems = mergeFullDayPlanItems\(withoutOfficeDays\(visiblePlanItems\)\)/,
     "the shared loader drops Office before conflicts, counts and the returned items",
   );
   assert.match(
