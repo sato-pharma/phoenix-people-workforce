@@ -532,6 +532,12 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(trainingManager.showTrainingManagerDashboardTab, true, "Training Manager should see Coaching Dashboard");
   assert.equal(trainingManager.showTrainingManagerCreateCoachingTab, true, "Training Manager should see Create Coaching Report");
   assert.equal(trainingManager.showTrainingManagerFieldCoachingTab, true, "Training Manager should see Field Coaching");
+  assert.equal(
+    trainingManager.showTrainingManagerWeeklyPlanTab,
+    true,
+    "Training Manager should see her Phoenix CRM Weekly Plan — she holds no territory, so the Phoenix CRM row never shows",
+  );
+  assert.equal(resolveEmployeePortalNavVisibility("Medical Rep").showTrainingManagerWeeklyPlanTab, false, "Only the Training Manager gets her Weekly Plan tab");
   assert.equal(trainingManager.showMyCoachingTab, false, "Training Manager should not see My Coaching Reports");
   assert.equal(trainingManager.showTeamCoachingTab, false, "Training Manager should not see Team Coaching Reports");
   assert.equal(

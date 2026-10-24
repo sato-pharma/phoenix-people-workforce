@@ -27,6 +27,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", section: "Training Manager" },
   { href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", section: "Training Manager" },
   { href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", section: "Training Manager" },
+  { href: "/employee-portals/field-crm/plan", label: "Weekly Plan", section: "Training Manager" },
 
   { href: "/employee-portals/field-crm", label: "Phoenix CRM", section: "Phoenix CRM" },
   { href: "/employee-portals/place-checks", label: "Place checks", section: "Phoenix CRM" },

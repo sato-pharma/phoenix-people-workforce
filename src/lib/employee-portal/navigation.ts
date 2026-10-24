@@ -108,6 +108,7 @@ export type EmployeePortalNavVisibility = {
   showTrainingManagerCreateCoachingTab?: boolean;
   showTrainingManagerDashboardTab?: boolean;
   showTrainingManagerFieldCoachingTab?: boolean;
+  showTrainingManagerWeeklyPlanTab?: boolean;
   showReportItTab?: boolean;
   showReportItDashboardTab?: boolean;
   showFingerprintReportTab?: boolean;
@@ -895,6 +896,9 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
+    // Her Phoenix CRM weekly plan, inside her own section (owner, 2026-10-24) — she has no territory,
+    // so the Phoenix CRM row is never hers.
+    showTrainingManagerWeeklyPlanTab: isTrainingManager,
     // Regional Manager included: getEmployeePortalVacancies already has an RM branch that bounds
     // open seats to the RM's own line AND the regions in their management subtree, so the data was
     // there — the missing `vacancies` grant (added to defaultPermissionMatrix) and this flag were

@@ -228,6 +228,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "TM coach", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
+  { label: "Plan", fullLabel: "Weekly Plan", href: "/employee-portals/field-crm/plan", icon: CalendarRange, flags: ["showTrainingManagerWeeklyPlanTab"] },
   // Market Awareness
   { label: "Awr Appr", fullLabel: "Awareness Approvals", href: "/employee-portals/market-awareness/inbox", icon: Inbox, flags: ["showMarketAwarenessInboxTab"], permission: { resource: "market_awareness", action: "read" }, navBadge: "market-awareness-approvals-pending" },
   { label: "Awareness", fullLabel: "Market Awareness", href: "/employee-portals/market-awareness", icon: Sparkles, flags: ["showMarketAwarenessTab"], permission: { resource: "market_awareness", action: "read" } },
