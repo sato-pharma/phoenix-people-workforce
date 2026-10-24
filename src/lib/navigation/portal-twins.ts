@@ -134,6 +134,14 @@ const TWIN_RULES: readonly TwinRule[] = [
   // Phoenix CRM, the clean module (the owner, 2026-09-16): customer lists, weekly plans, visits and
   // reports. Only the tab crosses, as the admin page's own preservedQuery does.
   { from: "/admin/field-crm", to: "/employee-portals/field-crm", carryQuery: ["tab"] },
+  // A team-calendar square opens the day in the shell the calendar was read in (owner, 2026-10-24); a
+  // portal-mode viewer handed an admin day address lands on the same day in the portal, test mode kept.
+  { from: "/admin/field-crm/day/:seatId/:date", to: "/employee-portals/field-crm/day/:seatId/:date", carryQuery: ["test"] },
+  {
+    from: "/admin/field-crm/manager-day/:seatId/:date",
+    to: "/employee-portals/field-crm/manager-day/:seatId/:date",
+    carryQuery: ["test"],
+  },
   // Plan verification (audit, 2026-09-21). The roles that hold `crm_plans:approve` — District and
   // Regional Manager — are PORTAL seats, and the plan notification links straight to the admin page.
   // The (admin) layout bounced them to the portal home, so the only screen their grant unlocks was

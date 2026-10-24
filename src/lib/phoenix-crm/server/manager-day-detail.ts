@@ -7,6 +7,7 @@ import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecords, readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { dayRouteVisitOf, loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -203,21 +204,33 @@ async function resolveSubject(
 }
 
 export type PhoenixCrmManagerDayLoad =
-  | { kind: "ready"; view: PhoenixCrmManagerDayDetail }
+  | ({ kind: "ready"; view: PhoenixCrmManagerDayDetail } & DayRouteLoad)
   | { kind: "refused"; message: string }
   | { kind: "failed"; error: unknown };
 
-/** The page's own load, tagged — a REFUSAL and a FAILURE read differently to whoever followed the link. */
+/**
+ * The page's own load, tagged — a REFUSAL and a FAILURE read differently to whoever followed the link.
+ *
+ * `withRoute` is the ADMIN day page's (owner, 2026-10-24: "Admin tab plus a map"); the portal page never asks, so
+ * its answer is unchanged. Whether a route comes back at all is still `loadDayRoute`'s own gate.
+ */
 export async function loadPhoenixCrmManagerDayPage(
   access: AccessContext,
   raw: { seatId: unknown; date: unknown; test: unknown },
+  options: { withRoute?: boolean } = {},
 ): Promise<PhoenixCrmManagerDayLoad> {
   try {
     // Gate one first, as the day page does: a per-account module lock closes the permission, and the organogram
     // (gate two) knows nothing of it.
     if (!(await canAccess(access, "phoenix_crm", "read"))) return { kind: "refused", message: REFUSED };
     const viewer = await resolvePhoenixCrmViewer(access);
-    return { kind: "ready", view: await loadPhoenixCrmManagerDayDetail(viewer, raw) };
+    const view = await loadPhoenixCrmManagerDayDetail(viewer, raw);
+    if (!options.withRoute) return { kind: "ready", view, route: null, routeUnread: false };
+    const visits = view.visits.flatMap((visit) => {
+      const located = dayRouteVisitOf(visit.id);
+      return located ? [{ ...located, customerName: visit.customerName, address: visit.address }] : [];
+    });
+    return { kind: "ready", view, ...(await loadDayRouteSafely(viewer, visits)) };
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500;
     if (status === 400 || status === 403 || status === 404) {

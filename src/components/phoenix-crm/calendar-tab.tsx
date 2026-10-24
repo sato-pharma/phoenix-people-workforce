@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { useCrmSurface, type CrmSurface } from "@/components/phoenix-crm/surface";
 import { CrmBlock, CrmEmpty, CrmField, CrmLoadError, CrmLoading, CrmNote, CrmPanel, CrmSelect, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
 import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
-import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { phoenixCrmDayPath } from "@/lib/phoenix-crm/modules";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import type { DayShape, TeamCalendarDay, TeamCalendarRow } from "@/lib/phoenix-crm/team-calendar";
 import { emptyVisitCountSplit, mergeVisitCountSplits, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
@@ -174,9 +175,9 @@ function opensForEntry(entrySeats: ReadonlySet<string>, through: string | null, 
  * details"). A manager's seat is no territory, so `/day/<seat>` would refuse it; `/manager-day/<seat>` lists
  * his own single visits and the visits he rode with a rep, card by card.
  */
-function dayHref(row: { seatId: string; kind?: "rep" | "manager" }, day: string, test: boolean): string {
-  const page = row.kind === "manager" ? "manager-day" : "day";
-  return `${PHOENIX_CRM_PORTAL_BASE}/${page}/${encodeURIComponent(row.seatId)}/${day}${test ? "?test=1" : ""}`;
+function dayHref(surface: CrmSurface, row: { seatId: string; kind?: "rep" | "manager" }, day: string, test: boolean): string {
+  // The shell the calendar is read in is the shell the day opens in (owner, 2026-10-24) — `phoenixCrmDayPath`.
+  return phoenixCrmDayPath(surface, row.kind === "manager" ? "manager" : "rep", row.seatId, day, test);
 }
 
 /**
@@ -224,6 +225,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   //    cannot know which month has work until something has been read — and would flash an empty
   //    current month on the way. Once an arrow is pressed this holds a real month and the server
   //    stops choosing.
+  // Which shell this calendar is read in: the admin calendar opens the admin day (owner, 2026-10-24).
+  const surface = useCrmSurface();
   const [picked, setPicked] = useState<string | null>(null);
   const [open, setOpen] = useState<{ seatId: string; day: string } | null>(null);
   // The rep whose calendar is the only one drawn; empty is everyone. It is a SEAT, because a person
@@ -457,7 +460,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                             <a
                               aria-label={dayTitle(row.person, day, true)}
                               className={face}
-                              href={dayHref(row, day.day, test)}
+                              href={dayHref(surface, row, day.day, test)}
                               rel="noopener noreferrer"
                               target="_blank"
                               title={dayTitle(row.person, day, true)}
@@ -532,7 +535,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                         <a
                           aria-label={dayTitle(row.person, day, true)}
                           className={face}
-                          href={dayHref(row, day.day, test)}
+                          href={dayHref(surface, row, day.day, test)}
                           key={day.day}
                           rel="noopener noreferrer"
                           target="_blank"

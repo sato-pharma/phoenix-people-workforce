@@ -24,6 +24,30 @@
  */
 export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
 
+/** Where the admin shell's Phoenix CRM lives. `server/page.ts` names the same address PHOENIX_CRM_ADMIN_PATH. */
+export const PHOENIX_CRM_ADMIN_BASE = "/admin/field-crm";
+
+/**
+ * The address a team-calendar square opens: one person's day in full, a rep's (`day`) or a manager's
+ * (`manager-day`), in the SHELL the calendar was read in.
+ *
+ * 🔴 THE ADMIN CALENDAR OPENS THE ADMIN DAY (owner, 2026-10-24: a square on the admin calendar "redirects me to
+ * an employee portal" — he chose "Admin tab plus a map"). Both shells render the same day views; the admin twin
+ * adds the route map, and a portal-mode viewer who reaches an admin address is forwarded to the portal twin by
+ * `portal-twins.ts`. `test` rides along so a test-mode calendar opens the test-mode day.
+ */
+export function phoenixCrmDayPath(
+  surface: "admin" | "portal",
+  kind: "rep" | "manager",
+  seatId: string,
+  day: string,
+  test: boolean,
+): string {
+  const base = surface === "admin" ? PHOENIX_CRM_ADMIN_BASE : PHOENIX_CRM_PORTAL_BASE;
+  const page = kind === "manager" ? "manager-day" : "day";
+  return `${base}/${page}/${encodeURIComponent(seatId)}/${day}${test ? "?test=1" : ""}`;
+}
+
 /**
  * 🔴 WRITTEN OUT, NOT DERIVED FROM `PhoenixCrmTabs`. The boundary test keeps every rule module under
  * `src/lib/phoenix-crm/` free of `server/` imports so the rules stay usable without a database — and
