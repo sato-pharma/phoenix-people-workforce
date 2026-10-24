@@ -19,6 +19,7 @@ import {
   type LoadedComposition,
   type LoadedMaterial,
   type ProductionPlanningData,
+  withProductSampleDefault,
 } from "../src/lib/production-planning/service.ts";
 import {
   measureUnitLabelsAr,
@@ -64,6 +65,8 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION = "supabase/migrations/20261020200000_production_planning_royanoxicam.sql";
 const FACTORY_MOVE = "supabase/migrations/20261021004800_production_planning_royanoxicam_egyphar.sql";
+const NO_SAMPLES = "supabase/migrations/20261024150548_prodplan_products_default_sample_units.sql";
+const WORKSPACE_SCREEN = "src/components/production-planning/production-planning-workspace.tsx";
 
 const EGYPHAR = "loc-egyphar";
 const SATO_STORE = "loc-sato";
@@ -160,6 +163,7 @@ function planningData(): ProductionPlanningData {
     products: [
       {
         code: "ROYANOXICAM",
+        defaultSampleUnits: BigInt(0),
         factoryLocationId: EGYPHAR,
         geometry: ROYANOXICAM,
         id: "prod-royanoxicam",
@@ -491,5 +495,75 @@ export async function runProductionPlanningRoyanoxicamTests() {
     seededLines.every((row) => row.supplier === "sato" || row.supplier === "factory"),
     true,
     "every composition line names a ROLE, never a company — that is what made this move free",
+  );
+
+  // ── Royanoxicam gives no free samples, so the planner must not open on Ivyronc's 10,000 ─────────
+  //
+  // The owner, 2026-10-24: "when we chose the run counts in royanoxicam and press calculate" — and
+  // what he saw was 3 runs reading 590,000 tablets and 10,000 samples. The screen sent one module-wide
+  // 10,000 on every product's first read and kept it in the form. The count is now the PRODUCT's
+  // (`default_sample_units`), filled in by the server only when the read names none.
+  const noSamplesData = planningData();
+  const firstRead = withProductSampleDefault(
+    { mode: "runs", productId: "prod-royanoxicam", requestedQty: "3" },
+    noSamplesData,
+  );
+  assert.equal(firstRead.sampleUnits, "0", "a read naming no samples takes Royanoxicam's own 0, not 10,000");
+  const threeRuns = computePlan(noSamplesData, firstRead);
+  assert.equal(threeRuns.sampleUnits, "0");
+  assert.equal(threeRuns.goodUnits, "600000", "3 runs are 600,000 saleable tablets, not 590,000");
+  assert.equal(threeRuns.totalBoxes, "30000");
+
+  // Only an ABSENT count is filled in. A count he typed is his answer — an empty field included,
+  // which still means zero, and a deliberate 10,000 still comes out of the run.
+  const typed = withProductSampleDefault(
+    { mode: "runs", productId: "prod-royanoxicam", requestedQty: "3", sampleUnits: "10000" },
+    noSamplesData,
+  );
+  assert.equal(typed.sampleUnits, "10000", "a typed sample count is never overwritten by the default");
+  assert.equal(computePlan(noSamplesData, typed).goodUnits, "590000");
+  assert.equal(
+    withProductSampleDefault({ productId: "prod-royanoxicam", requestedQty: "3", sampleUnits: "" }, noSamplesData)
+      .sampleUnits,
+    "",
+    "an emptied field is his zero, not a request for the default",
+  );
+
+  // The default follows the product the read is FOR, including the first read that names none.
+  const twoProducts: ProductionPlanningData = {
+    ...noSamplesData,
+    products: [
+      { ...noSamplesData.products[0], code: "IVYRONC", defaultSampleUnits: BigInt(10_000), id: "prod-ivyronc" },
+      ...noSamplesData.products,
+    ],
+  };
+  assert.equal(withProductSampleDefault({ requestedQty: "1" }, twoProducts).sampleUnits, "10000");
+  assert.equal(
+    withProductSampleDefault({ productId: "prod-royanoxicam", requestedQty: "1" }, twoProducts).sampleUnits,
+    "0",
+  );
+
+  // The row the default comes from, and the screen that must stop sending its own.
+  const noSamplesSql = stripSqlComments(readFileSync(NO_SAMPLES, "utf8").replace(/\r\n/g, "\n"));
+  assert.match(
+    noSamplesSql,
+    /add column if not exists default_sample_units integer not null default 10000/,
+    "Ivyronc and Guamusin keep the 10,000 the screen always opened on",
+  );
+  assert.match(
+    noSamplesSql,
+    /set default_sample_units = 0,[\s\S]*?where code = 'ROYANOXICAM'/,
+    "Royanoxicam opens on no samples",
+  );
+  const screen = readFileSync(WORKSPACE_SCREEN, "utf8");
+  assert.equal(
+    /sampleUnits:\s*DEFAULT_SAMPLE_UNITS/.test(screen),
+    false,
+    "the first read sends no module-wide sample count — the server answers with the product's own",
+  );
+  assert.match(
+    screen,
+    /setSampleUnits\(workspace\.plan\.sampleUnits\)/,
+    "the form takes its samples from the plan it is showing, so a product switch cannot carry them over",
   );
 }
