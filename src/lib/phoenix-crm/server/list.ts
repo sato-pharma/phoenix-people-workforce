@@ -31,7 +31,7 @@ import { loadBrickNames } from "@/lib/crm/brick-geo";
 import type { SharedWith } from "@/lib/crm/location-confidence";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
-import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
@@ -3288,12 +3288,27 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, decided_by_hr_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
   const request = data as Row | null;
   if (!request) throw notFoundError("This request is no longer there. Reload the page.");
+  // 🔴 A DECIDED REQUEST IS ANSWERED BEFORE ANY STEP IS READ FROM IT. Its stage is cleared once it is
+  // final, and a null stage is how a GRADE change reads — so a second press of Approve (or a retry whose
+  // first answer was lost) reached the grade gate and told the SFE Manager "Only the territory's
+  // reviewing manager decides this." about a request he had just approved himself (production,
+  // 2026-10-24: three presses for two decisions). The same person's same decision again is the answer
+  // he already has; anything else is decided and says so, as the database would.
+  const settled = text(request.status);
+  if (settled !== "pending") {
+    const decidedBy = personKey(text(request.decided_by_hr_id));
+    const sameDecision = settled === (decision === "approve" ? "approved" : "refused");
+    if (sameDecision && decidedBy !== null && decidedBy === personKey(viewer.hrId)) {
+      return { requestId, status: decision === "approve" ? "approved" : "refused", stage: null, final: true };
+    }
+    throw conflictError("This request was already decided. Reload the page.");
+  }
   const seat = viewer.org.seats.get(String(request.seat_id));
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const isTest = request.is_test === true;
