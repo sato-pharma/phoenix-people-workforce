@@ -262,19 +262,30 @@ async function loadPlanItems(access: AccessContext, start: string, end: string):
 /**
  * His own Phoenix CRM weekly plan, half-day by half-day — a district manager's week REPLACES his legacy
  * plan once his team is live (owner, 2026-10-16), so his calendar keeps showing what he planned. His own
- * items only, like the legacy read above.
+ * items only, like the legacy read above — plus each half-day a district manager sent with HIM as the
+ * manager or product manager he picked (owner, 2026-10-24: it appears on the picked person's calendar).
  */
 async function loadManagerPlanItems(access: AccessContext, start: string, end: string): Promise<CalendarItem[]> {
   const viewerHrId = normalizeHrId(access.hrId);
   if (!viewerHrId) return [];
   try {
-    const halfDays = await loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: [String(access.hrId)], sentOnly: false });
+    const [own, picked] = await Promise.all([
+      loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: [String(access.hrId)], sentOnly: false }),
+      loadManagerPlanHalfDays({ from: start, to: end, plannerKinds: ["dm"], customerCounts: false }).then((halfDays) =>
+        halfDays.filter((halfDay) => halfDay.seniorHrId !== null && normalizeHrId(halfDay.seniorHrId) === viewerHrId),
+      ),
+    ]);
+    const halfDays = [...own, ...picked];
     if (halfDays.length === 0) return [];
-    const names = await loadPeopleNames(halfDays.map((halfDay) => halfDay.repHrId));
+    const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.seniorHrId, halfDay.managerHrId]));
+    const titleOf = (halfDay: (typeof halfDays)[number]) =>
+      normalizeHrId(halfDay.managerHrId) === viewerHrId
+        ? managerHalfDayText(halfDay, halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null, halfDay.seniorHrId ? nameOf(names, halfDay.seniorHrId, "") || null : null)
+        : `With ${nameOf(names, halfDay.managerHrId, "a district manager")} (district manager) · ${halfDay.areaName ?? "the district's areas"}`;
     return halfDays.map((halfDay) => ({
       id: `crm-plan-${halfDay.slotId}`,
       source: "plan" as const,
-      title: `Plan: ${halfDay.half} · ${managerHalfDayText(halfDay, halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null)}`,
+      title: `Plan: ${halfDay.half} · ${titleOf(halfDay)}`,
       startDate: halfDay.date,
       endDate: halfDay.date,
       category: "other" as const,

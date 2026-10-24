@@ -1151,6 +1151,30 @@ export function countsAsDmsVisitWithSenior(
 /** A "with my manager or product manager" half-day's own content: who goes with the district manager, and the areas ticked. */
 export type ManagerSeniorVisit = { seniorHrId: string; role: "manager" | "product_manager"; title: string | null; areas: ManagerDmVisitArea[] };
 
+/**
+ * Who an approved district manager's week names as the manager or product manager he goes with, and on which
+ * half-days (owner, 2026-10-24: the picked person is told). One entry per person, half-days in date order,
+ * never the district manager himself.
+ */
+export function managerPlanWithYou(
+  managerHrId: string,
+  slots: ReadonlyArray<{ kind: ManagerSlotKind; date: string; half: ManagerHalf; areaName: string | null; seniorVisit: ManagerSeniorVisit | null }>,
+): Array<{ recipientHrId: string; halves: Array<{ date: string; half: ManagerHalf; areaName: string | null }> }> {
+  const self = personKey(managerHrId);
+  const byPerson = new Map<string, Array<{ date: string; half: ManagerHalf; areaName: string | null }>>();
+  for (const slot of slots) {
+    const who = slot.kind === "with_senior" ? personKey(slot.seniorVisit?.seniorHrId) : null;
+    if (!who || who === self) continue;
+    const halves = byPerson.get(who) ?? [];
+    halves.push({ date: slot.date, half: slot.half, areaName: slot.areaName });
+    byPerson.set(who, halves);
+  }
+  return [...byPerson.entries()].map(([recipientHrId, halves]) => ({
+    recipientHrId,
+    halves: halves.sort((left, right) => left.date.localeCompare(right.date) || left.half.localeCompare(right.half)),
+  }));
+}
+
 /** The `senior_visit` column read strictly; null when it names nobody or holds no area. */
 export function parseManagerSeniorVisit(raw: unknown): ManagerSeniorVisit | null {
   const body = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null) as Record<string, unknown> | null;

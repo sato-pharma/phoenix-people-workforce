@@ -367,4 +367,26 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     false,
     "a peer District Manager still never sees another District Manager's plan",
   );
+
+  // A district manager's half-day WITH a manager or product manager (owner, 2026-10-24: "calendar + notice"):
+  // the person he picked sees it whatever the role rules say — the CNS Marketing Manager sees no district
+  // manager's plan otherwise — and nobody else gains anything from the pick.
+  const withMarketing = planItem({ employeeHrId: "B-118", employeeJobTitle: "District Manager", lineName: "CNS", withHrId: "A-9" });
+  const marketingManager = viewer({ hrId: "A-9", role: "Marketing Manager", lineName: "CNS" });
+  assert.equal(isPlanItemVisibleToViewer(withMarketing, marketingManager), true, "the Marketing Manager the district manager picked sees that half-day");
+  assert.equal(
+    isPlanItemVisibleToViewer({ ...withMarketing, withHrId: null }, marketingManager),
+    false,
+    "without the pick the Marketing Manager still sees no district manager's plan",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(withMarketing, viewer({ hrId: "MM-2", role: "Marketing Manager", lineName: "CNS" })),
+    false,
+    "another Marketing Manager gains nothing from someone else's pick",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(withMarketing, viewer({ hrId: "DM-2", role: "District Manager", lineName: "CNS" })),
+    false,
+    "a peer District Manager still never sees it",
+  );
 }

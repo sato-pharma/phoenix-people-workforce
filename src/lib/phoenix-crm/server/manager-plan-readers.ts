@@ -107,6 +107,11 @@ export type ManagerPlanHalfDay = {
   /** "Training", "Admin work" — null unless the half-day is Admin. */
   activityLabel: string | null;
   areaName: string | null;
+  /**
+   * A district manager's With my manager or product manager: the person he picked (owner, 2026-10-24: their
+   * calendar shows it and they are told). Null for every other kind.
+   */
+  seniorHrId: string | null;
   note: string | null;
   /** Null when the caller asked for no customer counts (`customerCounts: false`) — never a zero it did not read. */
   customerCount: number | null;
@@ -198,6 +203,7 @@ export async function loadManagerPlanHalfDays(input: {
       activityType: slot.activityType,
       activityLabel: slot.kind === "admin" ? (managerAdminActivityLabel(slot.activityType) ?? "Admin") : null,
       areaName: slot.areaName,
+      seniorHrId: slot.kind === "with_senior" ? (slot.seniorVisit?.seniorHrId ?? null) : null,
       note: slot.note,
       customerCount: input.customerCounts === false ? null : (countBySlot.get(slot.slotId) ?? 0),
       legacyType: managerHalfLegacyType(slot.kind, slot.activityType),
@@ -210,11 +216,11 @@ export async function loadManagerPlanHalfDays(input: {
 }
 
 /** A half-day in a line of text: "With Ahmed Ali", "Training", "Single visit · Nasr City". */
-export function managerHalfDayText(halfDay: Pick<ManagerPlanHalfDay, "kind" | "activityLabel" | "areaName">, repName: string | null): string {
+export function managerHalfDayText(halfDay: Pick<ManagerPlanHalfDay, "kind" | "activityLabel" | "areaName">, repName: string | null, seniorName: string | null = null): string {
   if (halfDay.kind === "with_rep") return `With ${repName ?? "a rep"}`;
   if (halfDay.kind === "admin") return halfDay.activityLabel ?? "Admin";
   if (halfDay.kind === "with_dm") return `With a district manager · ${halfDay.areaName ?? "the district's areas"}`;
-  if (halfDay.kind === "with_senior") return `With a manager or product manager · ${halfDay.areaName ?? "the district's areas"}`;
+  if (halfDay.kind === "with_senior") return `With ${seniorName ?? "a manager or product manager"} · ${halfDay.areaName ?? "the district's areas"}`;
   return `Single visit · ${halfDay.areaName ?? "an area"}`;
 }
 
