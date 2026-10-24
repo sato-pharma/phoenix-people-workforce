@@ -10,7 +10,7 @@ import {
   type SystemAuditDailyMessageDeps,
 } from "../src/lib/system-audit/daily-message.ts";
 import type { SystemNotificationResult } from "../src/lib/notifications/system.ts";
-import type { AlertCandidate } from "../src/lib/system-audit/repository.ts";
+import type { AlertCandidate, AlertDetail } from "../src/lib/system-audit/repository.ts";
 
 /**
  * The one daily message. Nothing new → nothing sent (a daily "all clear" trains everyone to stop
@@ -56,6 +56,7 @@ function harness(overrides: Partial<SystemAuditDailyMessageDeps> = {}) {
       marked.push(ids);
       return ids.length;
     },
+    loadDetails: async () => new Map(),
     audienceEnabled: async () => true,
     recipients: async () => ({ recipients: [{ hrId: "B-10", userId: "user-10" }], warnings: [] }),
     alreadyToldToday: async () => false,
@@ -86,12 +87,55 @@ function testMessageText() {
   const bullets = lines.filter((line) => line.startsWith("• "));
   assert.equal(bullets.length, SYSTEM_AUDIT_MESSAGE_LINES, "At most ten issues are named");
   assert.equal(lines.at(-1), "and 2 more on the page", "The rest are counted, never cut in silence");
-  assert.match(bullets[1], /^• Problem 2 — 1 person, 1 time, last /);
-  assert.match(bullets[2], /— system, no employee, 5 times/, "A row with no person never reads as '0 people'");
+  assert.match(bullets[1], /^• 1 person — Problem 2 — 1 time, last /, "Without ledger detail the line keeps the title");
+  assert.match(bullets[2], /^• system, no employee — Problem 3 — 5 times/, "A row with no person never reads as '0 people'");
   assert.match(bullets[0], /last 22.*12:15/, "Times are Cairo local");
 
   assert.equal(buildSystemAuditDailyMessage([candidate(1)]).title, "System Audit — 1 issue needs a look");
   assert.equal(cairoDayKey(new Date("2026-10-22T22:30:00.000Z")), "2026-10-23", "The day is the owner's Cairo day, not UTC's");
+}
+
+/**
+ * 24 Oct 2026: the first message said "1 person" and never the name or the module, cut one sentence
+ * at "singl" (the stored title is short) and printed <n>/<hr> where the signature masks numbers.
+ * Each line now leads with who, in which module, and the whole words the person saw.
+ */
+function testNamesModuleAndWholeWords() {
+  const whole =
+    "A district manager has one day of single visits a week without approval, which is two half-days. Your week already holds two, so this half-day cannot be a single visit until your managers approve another day.";
+  const details = new Map<string, AlertDetail>([
+    [
+      "issue-1",
+      { people: [{ name: "Khaled Mohamed Ali Bedair", role: "SFE Manager" }], module: "Phoenix CRM", text: whole },
+    ],
+    [
+      "issue-2",
+      {
+        people: [
+          { name: "Hany Saad Mohamed Omar", role: "District Sales Manager" },
+          { name: "Osama Mohamed El-said Mahmoud Ahmed", role: null },
+          { name: "Third Person", role: null },
+        ],
+        module: "Phoenix CRM",
+        text: "No answer",
+      },
+    ],
+    ["issue-3", { people: [], module: null, text: "OpenAI said account out of credit (model gpt-5.1-nano, 412ms)" }],
+  ]);
+  const { message } = buildSystemAuditDailyMessage(
+    [candidate(1, { people: 1, title: "short title cut at singl" }), candidate(2, { people: 3 }), candidate(3, { people: 0 })],
+    details,
+  );
+  const bullets = message.split("\n").filter((line) => line.startsWith("• "));
+  assert.match(bullets[0], /^• Khaled Mohamed Ali Bedair, SFE Manager · Phoenix CRM — A district manager/, "Who and which module lead the line");
+  assert.ok(bullets[0].includes("approve another day."), "The sentence the person saw is whole, not the cut title");
+  assert.ok(!bullets[0].includes("cut at singl"), "The stored title is not used when the ledger holds the words");
+  assert.match(
+    bullets[1],
+    /^• Hany Saad Mohamed Omar, District Sales Manager; Osama Mohamed El-said Mahmoud Ahmed; and 1 other person · Phoenix CRM — No answer/,
+    "Two people are named, the rest counted — never cut in silence",
+  );
+  assert.match(bullets[2], /^• system, no employee — OpenAI said account out of credit \(model gpt-5.1-nano, 412ms\)/, "Masks are filled from the real event; a system row names no one");
 }
 
 async function testSends() {
@@ -136,6 +180,14 @@ async function testSendsNothing() {
 
   const pending = harness({ notify: async () => delivered("pending") });
   assert.equal((await sendSystemAuditDailyMessage(pending.deps)).sent, true, "A delivery on its way counts as told");
+
+  const noDetail = harness({
+    loadDetails: async () => {
+      throw new Error("detail read failed");
+    },
+  });
+  assert.equal((await sendSystemAuditDailyMessage(noDetail.deps)).sent, true, "A failed detail read still sends the plainer message");
+  assert.match(String(noDetail.notified[0].message), /Problem 1/);
 
   const broken = harness({
     loadCandidates: async () => {
@@ -197,6 +249,7 @@ async function testAlreadyToldToday() {
 
 export async function runSystemAuditDailyMessageTests() {
   testMessageText();
+  testNamesModuleAndWholeWords();
   await testSends();
   await testSendsNothing();
   await testAlreadyToldToday();
