@@ -15,6 +15,7 @@ import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import { getCoachingReports } from "@/lib/coaching/service";
 import {
   buildCoachingQualityRadar,
@@ -22,6 +23,7 @@ import {
   buildTopCoachingScores,
 } from "@/lib/coaching/landing-insights";
 import { getCompanyLineTopAchievers } from "@/lib/employee-portal/service";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getEmployeePhotoMap, resolveEmployeePhotoSrc } from "@/lib/employees/employee-photo";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -94,8 +96,18 @@ export default async function TrainingManagerOverviewPage() {
   const qualityRadar = buildCoachingQualityRadar(coachingReports);
   // Stars of the month: the previous month's top 3 coaching-report scores, shown
   // with the reps' photos (uploaded photo → bundled static → initials fallback).
-  const topScoresLastMonth = buildTopCoachingScores(previousMonthReports, 3);
-  const photoMap = await getEmployeePhotoMap();
+  // A rep who has since resigned is skipped and the next score fills the slot (owner, 2026-10-24),
+  // so the directory is read WITH inactive rows — the default read drops exactly those people.
+  const [photoMap, fullDirectory] = await Promise.all([
+    getEmployeePhotoMap(),
+    getEmployeeDirectoryRows({ includeInactive: true }).catch(() => []),
+  ]);
+  const departedHrIds = new Set(
+    fullDirectory
+      .filter((employee) => hasDepartedEmployment(employee.employmentStatus))
+      .map((employee) => employee.hrId.toUpperCase()),
+  );
+  const topScoresLastMonth = buildTopCoachingScores(previousMonthReports, 3, departedHrIds);
   const starsOfMonth = topScoresLastMonth.map((entry) => ({
     hrId: entry.medicalRepHrId,
     name: entry.medicalRepName,
