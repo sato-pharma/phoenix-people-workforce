@@ -129,6 +129,9 @@ export async function loadPhoenixCrmDayDetail(
   try {
     visitsInFull = await loadRepVisitDetails({
       end: day.date,
+      // The off-plan visits still waiting for their approvals are listed too, marked, so a record entered for the rep
+      // (owner, 2026-10-24: "show as waiting") is on the page and not only a count underneath it.
+      includeWaiting: true,
       isTest: day.isTest,
       seatIds: [day.territory.seatId],
       start: day.date,

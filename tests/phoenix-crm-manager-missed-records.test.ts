@@ -107,4 +107,14 @@ export async function runPhoenixCrmManagerMissedRecordsTests(): Promise<void> {
   assert.ok(gate < cap.indexOf("raise exception 'phoenix_crm:offplan_week_full'"), "…and before the week's");
   assert.match(cap, /select s\.offplan_daily_cap, s\.offplan_weekly_cap into v_daily, v_weekly/, "a rep's own visit is still held to the settings' numbers");
   assert.match(cap, /revoke execute on function public\.phoenix_crm_offplan_visit_cap\(\) from public, anon, authenticated;/, "the function stays closed to the browser roles");
+
+  // ── 7 · A visit still waiting for its approvals is LISTED on the rep's day, marked, and counted nowhere ──
+  const repDetails = source("src/lib/phoenix-crm/server/manager-visit-details.ts");
+  assert.match(repDetails, /const WAITING_STATUSES = \["admin_pending", "manager_pending", "sfe_pending"\];/, "exactly the statuses the countable view holds out");
+  assert.match(repDetails, /\.from\("phoenix_crm_unplanned_visits"\)[\s\S]*?\.in\("status", WAITING_STATUSES\)/, "found through the approval table's own status");
+  assert.match(repDetails, /awaitingApproval: true, awaitingValidation: false/, "marked waiting, and not 'not scored' for a reason it does not have");
+  assert.match(repDetails, /input\.includeWaiting \? await loadWaitingOffPlanRows\(/, "read only when the caller asks");
+  assert.match(source("src/lib/phoenix-crm/server/day-detail.ts"), /includeWaiting: true,/, "the rep's day page asks");
+  assert.doesNotMatch(source("src/lib/private-calendar/visit-detail-items.ts"), /includeWaiting/, "the private calendar's figures are untouched");
+  assert.match(table, /visit\.awaitingApproval \? <Chip[^>]*>Waiting for approval/, "the table says what the visit waits for");
 }

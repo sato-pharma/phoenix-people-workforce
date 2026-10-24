@@ -401,6 +401,11 @@ export type RepVisitDetailInput = {
   start: string;
   end: string;
   isTest?: boolean;
+  /**
+   * Also list the visits that were not on the plan and are still waiting for their approvals, marked `awaitingApproval`.
+   * They are read from the visits table — the countable view holds them out until approved — so they join no figure.
+   */
+  includeWaiting?: boolean;
   territoryNameOf?: (seatId: string) => string | null;
 };
 
@@ -438,10 +443,11 @@ export async function loadRepVisitDetails(input: RepVisitDetailInput): Promise<M
       for (const row of rows) byId.set(String(row.id), row);
     }
   }
-  if (byId.size === 0) return [];
+  const waiting = input.includeWaiting ? await loadWaitingOffPlanRows({ end: input.end, isTest, repKeys: reps, seatKeys: seats, start: input.start }) : [];
+  if (byId.size === 0 && waiting.length === 0) return [];
 
   const rows = [...byId.values()];
-  const facts = await loadCountableVisitFacts(rows);
+  const facts = await loadCountableVisitFacts([...rows, ...waiting]);
   const out: ManagerDayVisit[] = [];
   for (const row of rows) {
     const rep = personKey(textOrNull(row.rep_hr_id));
@@ -449,7 +455,60 @@ export async function loadRepVisitDetails(input: RepVisitDetailInput): Promise<M
     const record = countableVisitRecord(row, rep, "rep", facts, input.territoryNameOf);
     if (record) out.push(record);
   }
+  for (const row of waiting) {
+    if (byId.has(String(row.id))) continue;
+    const rep = personKey(textOrNull(row.rep_hr_id));
+    if (!rep) continue;
+    const record = countableVisitRecord(row, rep, "rep", facts, input.territoryNameOf);
+    // Held out of every figure until approved; what it waits on is the approval, never the customer's validation.
+    if (record) out.push({ ...record, awaitingApproval: true, awaitingValidation: false });
+  }
   return sortManagerDayVisits(out);
+}
+
+/** The visits table has no `customer_validated` (the countable view's own column); a waiting visit does not wait on it. */
+const WAITING_COLUMNS =
+  "id, seat_id, visit_date, captured_at, created_at, customer_id, place_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, products, comment, pharmacy_name, is_unplanned, lat";
+
+const WAITING_STATUSES = ["admin_pending", "manager_pending", "sfe_pending"];
+
+/**
+ * The off-plan visits of these reps or territories that are still waiting for their approvals — exactly what the
+ * countable view holds out. Found through the approval table's own status, then read by id, so an approved or a
+ * refused one is never listed here.
+ */
+async function loadWaitingOffPlanRows(input: { start: string; end: string; isTest: boolean; repKeys: string[]; seatKeys: string[] }): Promise<Row[]> {
+  const ids = new Set<string>();
+  const reads: Array<{ column: "rep_hr_id" | "seat_id"; keys: string[] }> = [
+    { column: "rep_hr_id", keys: input.repKeys },
+    { column: "seat_id", keys: input.seatKeys },
+  ];
+  for (const { column, keys } of reads) {
+    for (const part of chunk(keys, 100)) {
+      const found = await fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_unplanned_visits")
+            .select("visit_id")
+            .eq("is_test", input.isTest)
+            .in("status", WAITING_STATUSES)
+            .gte("visit_date", input.start)
+            .lte("visit_date", input.end)
+            .in(column, part),
+        { cursorColumn: "visit_id", cursorOf: (row) => String(row.visit_id) },
+      );
+      for (const row of found) ids.add(String(row.visit_id));
+    }
+  }
+  const out: Row[] = [];
+  for (const part of chunk([...ids], 100)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () => getSupabaseAdmin().from("phoenix_crm_visits").select(WAITING_COLUMNS).in("id", part),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    out.push(...rows);
+  }
+  return out;
 }
 
 /** Who was on a ride-along beside the manager whose day it is: the rep first, then the others, each with their part. */
