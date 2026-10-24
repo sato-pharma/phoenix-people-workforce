@@ -19,7 +19,7 @@
  * cell wraps and nothing is ever cut with an ellipsis.
  */
 
-import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmUrl, type CrmResource, useCrmGet } from "@/components/phoenix-crm/api";
 import { dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import {
@@ -134,8 +134,16 @@ function PrepTable({ lines }: { lines: ReadonlyArray<CallPrepLine> }) {
   );
 }
 
-export function CallPrepPanel({ seatId, test }: { seatId: string; test: boolean }) {
-  const prep = useCrmGet<CallPrepView>(crmUrl("/api/phoenix-crm/call-prep", { seatId, test }), "prep");
+/** Handed in by the Visits tab, which starts it beside the day's own read (see `useCommitments`). */
+export function useCallPrep(url: string | null): CrmResource<CallPrepView> {
+  return useCrmGet<CallPrepView>(url, "prep");
+}
+
+export function callPrepUrl(seatId: string, test: boolean): string {
+  return crmUrl("/api/phoenix-crm/call-prep", { seatId, test });
+}
+
+export function CallPrepPanel({ prep }: { prep: CrmResource<CallPrepView> }) {
   const view = prep.data;
 
   return (

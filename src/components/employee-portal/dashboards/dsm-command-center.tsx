@@ -30,7 +30,7 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
-import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -114,7 +114,7 @@ function DistrictPerformanceCard({ dsmTeam }: { dsmTeam: PortalHomeSnapshot["dsm
 }
 
 export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, dvFocus, earlyBirdStars } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, earlyBirdStars } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   // The team read is the slow one; the identity band, pending actions, CV folders and dashboards
   // paint without it, and each section below that needs it fills under its own Suspense.
@@ -181,7 +181,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         </Suspense>
       ) : null}
 
-      <DoubleVisitFocusSection focus={dvFocus} />
+      <StreamedDoubleVisitFocus snapshot={snapshot} />
     </div>
   );
 }

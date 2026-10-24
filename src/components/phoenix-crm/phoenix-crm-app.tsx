@@ -938,6 +938,7 @@ export function PhoenixCrmApp({
             onAddHandled={() => setAddVisitNonce(0)}
             openingDay={overview.visitDay}
             key={`${seatId}|${test}`}
+            ownSeat={overview.ownSeatIds.includes(seatId)}
             onOpenList={() => openTab("list")}
             onOwnSingleVisitSaved={() => setOwnSingleVisitNonce((current) => current + 1)}
             onPendingVisitDone={pendingVisitDone}

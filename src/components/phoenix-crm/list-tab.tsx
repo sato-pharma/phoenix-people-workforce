@@ -274,8 +274,14 @@ export function ListTab({
   // screen and kept for the life of the tab. Nothing it shows goes stale by that: the board is the
   // iReports360 mirror, and the rows join to `view.customers` at render time, so a save that reloads
   // the list still reaches the board's buttons at once.
+  //
+  // And it is asked for WITH the list, not after it (performance work, 24 Oct 2026): the board is where
+  // the list opens unless something is waiting on him (`homeSectionFor`), so a tab opening on its home
+  // starts both reads together instead of waiting out the list (p50 1,211 ms on production) before even
+  // asking for the board. Only the REQUEST moves — what is drawn is still decided by `boardOnScreen`.
+  // A tab opened on a Validate hand-off is not on its home, so it waits for the board to be shown.
   const boardOnScreen = view !== null && current.name === "home" && homeSectionFor(view, section) === "board";
-  const [boardWanted, setBoardWanted] = useState(false);
+  const [boardWanted, setBoardWanted] = useState(() => validateHandoff === null);
   // State derived while rendering, never in an effect — the same shape the page uses for its address.
   if (boardOnScreen && !boardWanted) setBoardWanted(true);
   const board = useCrmGet<RepsListBoard | null>(boardWanted ? listBoardUrl(seatId, test) : null, "board");

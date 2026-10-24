@@ -646,9 +646,15 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const closedNow = functionBody(source("src/lib/phoenix-crm/server/manager-plan-switch.ts"), "export async function managerOwnVisitClosedNow(");
   assert.match(closedNow, /if \(!managerOwnVisitClosed\(viewer\.org, viewer\.hrId\)\) return false;/, "the seat test comes first");
   assert.match(closedNow, /return dmPlansInPhoenixCrm\(viewer\.hrId, \{[^}]*\}\)\.catch\(\(\) => false\);/, "then the switch, and an unreadable answer keeps the option open");
+  // The form reads the same switch the save does — once, on the form's one wave (2026-10-24).
+  assert.match(
+    functionBody(source("src/lib/phoenix-crm/server/visits.ts"), "export async function loadVisitForm("),
+    /enteredAs === "manager" \? managerOwnVisitClosedNow\(viewer\) : Promise\.resolve\(false\),/,
+    "the form asks the switch the save asks",
+  );
   assert.match(
     source("src/lib/phoenix-crm/server/visits.ts"),
-    /ownVisitClosed: enteredAs === "manager" && \(await managerOwnVisitClosedNow\(viewer\)\)/,
+    /ownVisitClosed: enteredAs === "manager" && managerOwnVisitClosed,/,
     "the form shows the option closed only where the save would refuse it",
   );
   assert.match(source("src/components/phoenix-crm/visit-log-form.tsx"), /form\.ownVisitClosed/, "the form shows the option closed");
@@ -1849,7 +1855,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   assert.match(
     visits,
-    /ownVisitVacant: enteredAs === "manager" && isVacantTerritory\(seat\) && \(await managerOwnVisitClosedNow\(viewer\)\)/,
+    /ownVisitVacant: enteredAs === "manager" && isVacantTerritory\(seat\) && managerOwnVisitClosed,/,
     "the option re-opens only where nobody holds the seat, and only where it was closed in the first place",
   );
   const saveBody = functionBody(visits, "export async function saveVisit(");

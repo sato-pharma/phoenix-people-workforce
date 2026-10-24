@@ -40,7 +40,7 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
-import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -243,7 +243,6 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     leaveDaysRemaining,
     plansAwaitingManagerApproval,
     plansCountAvailable,
-    dvFocus,
     earlyBirdStars,
   } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
@@ -343,7 +342,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         </Suspense>
       ) : null}
 
-      <DoubleVisitFocusSection focus={dvFocus} />
+      <StreamedDoubleVisitFocus snapshot={snapshot} />
 
       <ActionStrip items={ACTIONS} />
 

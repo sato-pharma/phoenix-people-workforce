@@ -8,17 +8,31 @@
 // A job is registered for the whole window it was active in, not only when the report fires: the job
 // that froze the loop has usually finished by the time the minute's line is written.
 
-const active = new Map<number, string>();
-let nextId = 1;
-let windowNames = new Set<string>();
+//
+// Held on `globalThis`, like timings.ts: the jobs are started from bundles other than the one
+// instrumentation.ts drains from, and a module-level register gave each bundle its own empty copy.
+
+type JobRegister = { active: Map<number, string>; nextId: number; windowNames: Set<string> };
+
+const REGISTER_KEY = Symbol.for("phoenix.runningJobs");
+
+function register(): JobRegister {
+  const holder = globalThis as unknown as Record<symbol, JobRegister | undefined>;
+  const existing = holder[REGISTER_KEY];
+  if (existing) return existing;
+  const created: JobRegister = { active: new Map(), nextId: 1, windowNames: new Set() };
+  holder[REGISTER_KEY] = created;
+  return created;
+}
 
 /** Marks a job as running until the returned function is called. Safe to call the end twice. */
 export function beginJob(name: string): () => void {
-  const id = nextId++;
-  active.set(id, name);
-  windowNames.add(name);
+  const jobs = register();
+  const id = jobs.nextId++;
+  jobs.active.set(id, name);
+  jobs.windowNames.add(name);
   return () => {
-    active.delete(id);
+    jobs.active.delete(id);
   };
 }
 
@@ -37,7 +51,8 @@ export async function trackJob<T>(name: string, run: () => Promise<T>): Promise<
  * with the jobs still running now (so a job spanning two minutes is named in both).
  */
 export function drainJobWindow(): string[] {
-  const names = [...windowNames].sort();
-  windowNames = new Set(active.values());
+  const jobs = register();
+  const names = [...jobs.windowNames].sort();
+  jobs.windowNames = new Set(jobs.active.values());
   return names;
 }

@@ -121,6 +121,35 @@ export async function buildOrganogramSeatReport(
   const asOfMonth = options.asOfMonth ?? null;
   const supabase = getSupabaseAdmin();
 
+  // THE INDEPENDENT READS START TOGETHER (2026-10-24, the 3.9 s organogram). The seat tree, the
+  // offers out, the employee master, the team names and the open Head Office seats never needed
+  // each other's answers, yet they were five round trips to Frankfurt, one after another. Each is
+  // started here and still awaited at the place that reads it, with its own error handling
+  // unchanged. A Supabase query is lazy until something calls `then`, so `Promise.resolve` is what
+  // actually starts it. None of these rejects: the queries answer `{ error }` and the offers read
+  // swallows its own failures, so a tree read that throws below leaves nothing unhandled. The Head
+  // Office seats are read for the live chart only, because a past month returns before using them.
+  const offerLoad: Promise<Awaited<ReturnType<typeof loadOfferOutBySeat>>> = asOfMonth
+    ? Promise.resolve(new Map())
+    : loadOfferOutBySeat();
+  const employeeLoad = Promise.resolve(
+    supabase
+      .from("employees")
+      .select(
+        "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, line_id, manager_hr_id, organogram_visible",
+      ),
+  );
+  const teamLoad = Promise.resolve(supabase.from("teams").select("id, name"));
+  const vacancyLoad = asOfMonth
+    ? null
+    : Promise.resolve(
+        supabase
+          .from("position_vacancies")
+          .select("id, job_title, line_id, manager_hr_id, status")
+          .eq("line_id", HEAD_OFFICE_LINE_ID)
+          .eq("status", "open"),
+      );
+
   const { data: treeData, error } = asOfMonth
     ? await supabase.rpc("au_f_org_tree_as_of", { p_date: organogramAsOfMonthEnd(asOfMonth) })
     : await supabase
@@ -136,9 +165,7 @@ export async function buildOrganogramSeatReport(
   // failures into an empty map, so a vacant seat simply loses its label rather than the chart
   // failing to draw — this decorates the organogram, it never decides what is on it. A past month
   // has no letters out: an offer is a fact about today's empty chair.
-  const offerOutBySeat: Awaited<ReturnType<typeof loadOfferOutBySeat>> = asOfMonth
-    ? new Map()
-    : await loadOfferOutBySeat();
+  const offerOutBySeat: Awaited<ReturnType<typeof loadOfferOutBySeat>> = await offerLoad;
 
   // Resolve occupant display names, hire dates and the WORK-ONLY employee fields from
   // the employee master (best-effort). The seat model itself carries no tenure or
@@ -160,11 +187,7 @@ export async function buildOrganogramSeatReport(
   // field. So the moment that column went, this select returned nothing and every occupied seat on
   // the organogram lost its occupant's name, hire date and work fields at once. The error was
   // discarded here, which is why it was silent; it is logged now.
-  const { data: empData, error: empError } = await supabase
-    .from("employees")
-    .select(
-      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, line_id, manager_hr_id, organogram_visible",
-    );
+  const { data: empData, error: empError } = await employeeLoad;
   if (empError) {
     // Not thrown: the chart still draws from the seat model, as it did while this was broken. But a
     // read that takes every name off the organogram must never again do it without saying so.
@@ -185,7 +208,7 @@ export async function buildOrganogramSeatReport(
   // rows and there is nothing to fold it into. It FAILS SOFT — a failed read leaves the map empty
   // and a seat shows no team, rather than taking the whole chart down for a label.
   const teamNameById = new Map<number, string>();
-  const { data: teamData, error: teamError } = await supabase.from("teams").select("id, name");
+  const { data: teamData, error: teamError } = await teamLoad;
   if (teamError) {
     console.warn(
       `organogram: team names could not be read (${teamError.message}); seats show no team this render`,
@@ -402,11 +425,10 @@ export async function buildOrganogramSeatReport(
   // `position_vacancies` is a different table, the filter returns a handful of rows, and the
   // alternative is a department that renders as a manager with nobody under him. A failure
   // here degrades to "no open seats drawn" rather than taking the whole chart down with it.
-  const { data: vacancyData, error: vacancyError } = await supabase
-    .from("position_vacancies")
-    .select("id, job_title, line_id, manager_hr_id, status")
-    .eq("line_id", HEAD_OFFICE_LINE_ID)
-    .eq("status", "open");
+  // Started at the top with the other reads; only a past month (returned above) leaves it unstarted.
+  const { data: vacancyData, error: vacancyError } = vacancyLoad
+    ? await vacancyLoad
+    : { data: null, error: null };
   if (vacancyError) {
     console.warn(
       `organogram: open Head Office seats could not be read (${vacancyError.message}); the chart is drawn without them`,

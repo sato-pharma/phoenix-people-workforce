@@ -142,6 +142,15 @@ export async function loadTeamCalendar(
   const asked = /^\d{4}-\d{2}$/.test(String(raw.month ?? "")) ? String(raw.month) : null;
   const thisMonth = viewer.cairoToday.slice(0, 7);
   const seatIds = seats.map((seat) => seat.seatId);
+  // The lines' product managers (see below) depend on the territories alone, never on the month, so
+  // their read starts HERE, beside the newest-worked-month lookup, instead of after it and before
+  // everything else (performance work, 24 Oct 2026: two waves the Calendar paid one after the other).
+  // The legs that need them chain off this promise; the rest of the month's reads never wait for it.
+  // The `catch` only keeps a refusal from going unhandled when the month lookup fails first — awaiting
+  // the promise itself still throws, exactly as the old `await` did.
+  const productManagersRead: Promise<ScopeProductManager[]> =
+    isTest || viewer.basis !== "all" || seats.length === 0 ? Promise.resolve([]) : loadScopeProductManagers(viewer, seats);
+  productManagersRead.catch(() => undefined);
   const month = asked ?? (seats.length === 0 ? thisMonth : ((await latestWorkedMonth(seatIds, isTest, thisMonth)) ?? thisMonth));
 
   const bounds = monthBounds(month);
@@ -165,10 +174,7 @@ export async function loadTeamCalendar(
   //    Calendar stays field force only"), though his per-manager board does carry them. The test world draws none,
   //    as it draws no seat manager. A person who also holds a seat keeps the seat's row.
   const seatHolders = new Set(managers.map((member) => member.hrId));
-  const productManagers =
-    isTest || viewer.basis !== "all"
-      ? []
-      : (await loadScopeProductManagers(viewer, seats)).filter((manager) => !seatHolders.has(manager.hrId));
+  const productManagersOnGrid = productManagersRead.then((read) => read.filter((manager) => !seatHolders.has(manager.hrId)));
 
   const [visits, activities, people, leave, managerPeople, productManagerPeople, managerVisits] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
@@ -178,17 +184,19 @@ export async function loadTeamCalendar(
     //    blank on his own row. A product manager holds no seat and records none here.
     loadActivityDays([...seatIds, ...managers.map((member) => member.seat.seatId)], isTest, bounds),
     describePeople(viewer, seats),
-    loadLeaveDays(
-      [
-        ...seats,
-        ...managers.map((member) => member.seat),
-        ...productManagers.map((manager) => ({ occupantHrId: manager.hrId, seatId: productManagerRowKey(manager.hrId) })),
-      ],
-      bounds,
+    productManagersOnGrid.then((productManagers) =>
+      loadLeaveDays(
+        [
+          ...seats,
+          ...managers.map((member) => member.seat),
+          ...productManagers.map((manager) => ({ occupantHrId: manager.hrId, seatId: productManagerRowKey(manager.hrId) })),
+        ],
+        bounds,
+      ),
     ),
     describeManagers(viewer, managers),
-    describeProductManagers(viewer, productManagers),
-    loadManagerDays(managers, productManagers, new Set(seatIds), isTest, bounds),
+    productManagersOnGrid.then((productManagers) => describeProductManagers(viewer, productManagers)),
+    productManagersOnGrid.then((productManagers) => loadManagerDays(managers, productManagers, new Set(seatIds), isTest, bounds)),
   ]);
 
   const rows = buildTeamCalendar(month, [...managerPeople, ...productManagerPeople, ...people], {

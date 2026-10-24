@@ -217,8 +217,13 @@ export async function runOrganogramVacancyHireLinkTests() {
     const source = fs.readFileSync(path.join(process.cwd(), page), "utf8");
     // employees:create, not update (2026-10-20): the HR Operations Specialist edits the master and
     // does not add to it, so an update gate offered her "Add employee to this seat" and a refusal.
+    // The portal organogram asks beside its report (2026-10-24) and awaits the same answer below.
+    const asksCreate =
+      source.includes('const canAddEmployee = await canAccess(access, "employees", "create")') ||
+      (source.includes('const canAddEmployeeLoad = canAccess(access, "employees", "create")') &&
+        source.includes("const canAddEmployee = await canAddEmployeeLoad"));
     assert.ok(
-      source.includes('const canAddEmployee = await canAccess(access, "employees", "create")'),
+      asksCreate,
       `${page} must resolve canAddEmployee server-side from employees:create — the grant POST /api/employees asserts on an add — never client-side`,
     );
     assert.ok(

@@ -27,7 +27,7 @@ import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { RepKpiMonthPicker } from "@/components/employee-portal/rep-kpi-month-picker";
 import { RepHonourStrip } from "@/components/employee-portal/rep-honour-strip";
 import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
-import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
 import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-command-center";
@@ -787,7 +787,6 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
     pmMarketing,
     plansAwaitingManagerApproval,
     plansCountAvailable,
-    dvFocus,
   } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -843,7 +842,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
       <ActionStrip items={PM_GPM_ACTIONS} />
 
-      <DoubleVisitFocusSection focus={dvFocus} />
+      <StreamedDoubleVisitFocus snapshot={snapshot} />
     </div>
   );
 }
