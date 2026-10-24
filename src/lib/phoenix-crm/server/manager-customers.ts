@@ -24,6 +24,7 @@ import { loadBrickCentroids } from "@/lib/crm/brick-geo";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { parseCapturedFix, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import {
+  isSeatlessPlannerKind,
   managerAskStage,
   matchCustomerName,
   missingManagerCustomerField,
@@ -710,7 +711,7 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
       is_test: isTest,
     },
   });
-  if (approverHrId && (writer.seat || writer.kind === "pm")) {
+  if (approverHrId && (writer.seat || isSeatlessPlannerKind(writer.kind))) {
     await notifyPhoenixCrm(
       {
         kind: "manager_plan",
@@ -781,7 +782,7 @@ export async function decideManagerCustomerRemoval(
   // The seat the notice is filed on: the manager's own (none for a product manager, who still is told).
   const owner = managerPlanWriterFor(viewer, row.managerHrId);
   const seat = owner?.seat ?? null;
-  const tells = owner !== null && (seat !== null || owner.kind === "pm");
+  const tells = owner !== null && (seat !== null || isSeatlessPlannerKind(owner.kind));
   const passedOn = result.status === "removal_first_approved";
   if (owner && tells && passedOn && row.secondApproverHrId) {
     // The first approver agreed: the second decides next. The customer stays on the list, and the

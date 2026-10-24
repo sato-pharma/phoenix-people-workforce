@@ -60,6 +60,7 @@ import {
   VISIT_ASK_ASKABLE_ROLES,
   VISIT_ASK_KIND_LABELS,
   VISIT_ASK_KINDS,
+  VISIT_ASK_TRAINING_MANAGER_ROLE,
   visitAskDayChoices,
   visitAskLastDay,
   visitAskPartOf,
@@ -141,6 +142,11 @@ const cachedProductManagerReach = unstable_cache(
     for (const holder of holders) {
       const hrId = personKey(holder.hrId);
       if (!hrId || !current.has(hrId)) continue;
+      // The Training Manager owns no products: she is offered on every line by her role (visit-ask-rules.ts).
+      if (holder.role === VISIT_ASK_TRAINING_MANAGER_ROLE) {
+        reach.push({ hrId, role: holder.role, families: null });
+        continue;
+      }
       const access: AccessContext = { hrId, loginId: holder.loginId, role: holder.role, scope: scopeForRole(holder.role), source: "system" };
       try {
         const products = await productOwnerFamilies({ access });
@@ -154,7 +160,8 @@ const cachedProductManagerReach = unstable_cache(
     }
     return reach;
   },
-  ["phoenix-crm-visit-ask-product-managers-v2"],
+  // v3: the Training Manager joined the list (owner, 2026-10-24); v2 the CNS rule.
+  ["phoenix-crm-visit-ask-product-managers-v3"],
   { revalidate: 300 },
 );
 

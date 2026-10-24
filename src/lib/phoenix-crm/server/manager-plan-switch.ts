@@ -21,6 +21,7 @@ import { hrIdLookupKeys } from "@/lib/hr-id";
 import { seatHasLiveTeamBelow, seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import {
   dmPlansInPhoenixCrmFor,
+  isSeatlessPlannerKind,
   managerOwnVisitClosed,
   managerPlanSeats,
   managerPlanWriterOf,
@@ -86,10 +87,16 @@ async function seniorPlansInPhoenixCrm(org: OrgIndex, hrId: string, cairoToday: 
  * 2026-10-17), so his board opens beside the legacy form instead of replacing it, and the legacy form's
  * refusal, which asks `dmPlansInPhoenixCrm`, never reaches him.
  */
-export async function plansManagerWeekHere(viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "cairoToday" | "plansAsProductManager">): Promise<boolean> {
-  const writer = managerPlanWriterOf(viewer.org, viewer.hrId, { productManager: viewer.plansAsProductManager === true });
+export async function plansManagerWeekHere(
+  viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "cairoToday" | "plansAsProductManager"> & Partial<Pick<PhoenixCrmViewer, "plansAsTrainingManager">>,
+): Promise<boolean> {
+  const writer = managerPlanWriterOf(viewer.org, viewer.hrId, {
+    productManager: viewer.plansAsProductManager === true,
+    trainingManager: viewer.plansAsTrainingManager === true,
+  });
   if (!writer) return false;
-  if (writer.kind === "pm") return true;
+  // A product manager and the Training Manager (owner, 2026-10-24) always plan here, beside the legacy form.
+  if (isSeatlessPlannerKind(writer.kind)) return true;
   return dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday });
 }
 

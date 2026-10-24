@@ -34,6 +34,7 @@ import {
   managerPlanScopes,
   managerWriterTerritories,
   PRODUCT_MANAGER_PLAN_ROLES,
+  TRAINING_MANAGER_PLAN_ROLES,
   type ManagerApproverPair,
   type ManagerPlanScope,
   type ManagerPlanWriter,
@@ -49,13 +50,13 @@ export type ProductManagerPlanner = { hrId: string; managerHrId: string | null }
 
 type Row = Record<string, unknown>;
 
-async function readProductManagerRoster(): Promise<ProductManagerPlanner[]> {
+async function readRoleRoster(roles: ReadonlySet<string>, purpose: string): Promise<ProductManagerPlanner[]> {
   // The role holders come through the shared resolver, as the SFE Managers do (`notifications.ts`): Phoenix
   // CRM's services read no login table of their own. It swallows a failed read into a warning, so any
   // warning is thrown here — the cache never keeps a degraded roster for five minutes.
   const holders: string[] = [];
-  for (const role of PRODUCT_MANAGER_PLAN_ROLES) {
-    const { hrIds, warnings } = await resolveHrIdsForRole(role as PhoenixRole, "Phoenix CRM — product managers who plan a week");
+  for (const role of roles) {
+    const { hrIds, warnings } = await resolveHrIdsForRole(role as PhoenixRole, purpose);
     if (warnings.length > 0) throw new Error(warnings.join("; "));
     holders.push(...hrIds);
   }
@@ -79,7 +80,18 @@ async function readProductManagerRoster(): Promise<ProductManagerPlanner[]> {
   return [...byPerson.values()].sort((left, right) => left.hrId.localeCompare(right.hrId));
 }
 
-const cachedProductManagerRoster = unstable_cache(readProductManagerRoster, ["phoenix-crm-product-manager-planners-v1"], { revalidate: 300 });
+const cachedProductManagerRoster = unstable_cache(
+  () => readRoleRoster(PRODUCT_MANAGER_PLAN_ROLES, "Phoenix CRM — product managers who plan a week"),
+  ["phoenix-crm-product-manager-planners-v1"],
+  { revalidate: 300 },
+);
+
+/** The Training Manager's roster (owner, 2026-10-24) — read the same way, under its own key. */
+const cachedTrainingManagerRoster = unstable_cache(
+  () => readRoleRoster(TRAINING_MANAGER_PLAN_ROLES, "Phoenix CRM — the Training Manager who plans a week"),
+  ["phoenix-crm-training-manager-planners-v1"],
+  { revalidate: 300 },
+);
 
 /**
  * How long the last roster read stands in for one that cannot be read. Past it the answer is nobody, as
@@ -104,6 +116,24 @@ export async function loadProductManagerRoster(): Promise<ProductManagerPlanner[
     });
   }
   const lastGood = lastGoodProductManagerRoster;
+  return lastGood && Date.now() - lastGood.readAt <= LAST_GOOD_ROSTER_MAX_AGE_MS ? lastGood.roster : [];
+}
+
+let lastGoodTrainingManagerRoster: { roster: ProductManagerPlanner[]; readAt: number } | null = null;
+
+/** Every Training Manager who plans a week here (Salma Labib, 2026-10-24), with the same fifteen-minute fallback. */
+export async function loadTrainingManagerRoster(): Promise<ProductManagerPlanner[]> {
+  try {
+    const roster = await cachedTrainingManagerRoster();
+    lastGoodTrainingManagerRoster = { roster, readAt: Date.now() };
+    return roster;
+  } catch (error) {
+    logWarning("Phoenix CRM could not read the Training Manager who plans a week", {
+      labels: { event: "phoenix_crm_training_manager_roster_failed" },
+      error,
+    });
+  }
+  const lastGood = lastGoodTrainingManagerRoster;
   return lastGood && Date.now() - lastGood.readAt <= LAST_GOOD_ROSTER_MAX_AGE_MS ? lastGood.roster : [];
 }
 

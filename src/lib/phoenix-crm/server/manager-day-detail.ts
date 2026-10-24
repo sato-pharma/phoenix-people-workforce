@@ -194,7 +194,7 @@ async function resolveSubject(
     if (holdsSeat) return null;
     const found = (await loadScopeProductManagers(viewer, seats)).find((manager) => manager.hrId === productManagerHrId);
     if (!found) return null;
-    const roster = viewer.productManagers.find((entry) => personKey(entry.hrId) === found.hrId);
+    const roster = [...viewer.productManagers, ...(viewer.trainingManagers ?? [])].find((entry) => personKey(entry.hrId) === found.hrId);
     return {
       aboveHrId: personKey(roster?.managerHrId ?? null),
       hrId: found.hrId,

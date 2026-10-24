@@ -35,6 +35,12 @@ export type OrgSeat = {
    */
   areaCode?: string | null;
   areaName: string | null;
+  /**
+   * The region's code, shared by every line (CA Cairo, GZ Giza, AB Alex-BHR …) — the Training Manager
+   * picks a region first (2026-10-24). OPTIONAL so every seat a test builds by hand keeps compiling;
+   * the organogram read in server/org.ts always fills it.
+   */
+  regionCode?: string | null;
   regionName: string | null;
   seatLabel: string | null;
   /**

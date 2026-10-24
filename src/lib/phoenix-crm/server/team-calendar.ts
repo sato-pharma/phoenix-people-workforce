@@ -384,7 +384,8 @@ async function describeProductManagers(viewer: PhoenixCrmViewer, productManagers
   if (productManagers.length === 0) return [];
   const above = new Map<string, string | null>();
   for (const manager of productManagers) {
-    const roster = viewer.productManagers.find((entry) => personKey(entry.hrId) === manager.hrId);
+    // The Training Manager rides on these rows too (owner, 2026-10-24); her manager is on her own roster.
+    const roster = [...viewer.productManagers, ...(viewer.trainingManagers ?? [])].find((entry) => personKey(entry.hrId) === manager.hrId);
     above.set(manager.hrId, personKey(roster?.managerHrId ?? null));
   }
   const names = await loadPeopleNames([...productManagers.map((manager) => manager.hrId), ...above.values()]);

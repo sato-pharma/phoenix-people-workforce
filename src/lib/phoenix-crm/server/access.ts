@@ -47,8 +47,8 @@ import {
 } from "@/lib/phoenix-crm/scope";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PHOENIX_CRM_TEST_TAB_LABEL } from "@/lib/phoenix-crm/modules";
-import { PRODUCT_MANAGER_PLAN_ROLES } from "@/lib/phoenix-crm/manager-plan-rules";
-import { loadProductManagerRoster, type ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
+import { PRODUCT_MANAGER_PLAN_ROLES, TRAINING_MANAGER_PLAN_ROLES } from "@/lib/phoenix-crm/manager-plan-rules";
+import { loadProductManagerRoster, loadTrainingManagerRoster, type ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, type PlanEditStage } from "@/lib/phoenix-crm/plan-edit-rules";
 import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -101,6 +101,13 @@ export type PhoenixCrmViewer = {
   plansAsProductManager: boolean;
   /** Every product manager who plans a week here, with the manager his HR record names — the readers' half. */
   productManagers: ReadonlyArray<ProductManagerPlanner>;
+  /**
+   * She plans a manager's week as the Training Manager (owner, 2026-10-24): the Training Manager role, held by
+   * a current employee. Like a product manager she sits on no seat.
+   */
+  plansAsTrainingManager: boolean;
+  /** Every Training Manager who plans a week here, with the manager her HR record names. */
+  trainingManagers: ReadonlyArray<ProductManagerPlanner>;
 };
 
 const COMPANY_ROLES = new Set<PhoenixRole>(["Super Admin", "CEO", "SFE Manager"]);
@@ -117,13 +124,14 @@ export const resolvePhoenixCrmViewer = cache(buildPhoenixCrmViewer);
 async function buildPhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmViewer> {
   const hrId = personKey(access.hrId);
   if (!hrId) throw forbiddenError("Your account is not linked to an HR record.");
-  const [org, config, canCreate, canApprove, canUpdate, productManagers] = await Promise.all([
+  const [org, config, canCreate, canApprove, canUpdate, productManagers, trainingManagers] = await Promise.all([
     loadPhoenixCrmOrg(),
     loadPhoenixCrmConfig(),
     canAccess(access, "phoenix_crm", "create"),
     canAccess(access, "phoenix_crm", "approve"),
     canAccess(access, "phoenix_crm", "update"),
     loadProductManagerRoster(),
+    loadTrainingManagerRoster(),
   ]);
   const cairoToday = currentCairoDateOnlyIso();
   const openLines = openLineCodes(config.lineRollout, cairoToday);
@@ -159,6 +167,9 @@ async function buildPhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmV
     plansAsProductManager:
       PRODUCT_MANAGER_PLAN_ROLES.has(access.role) && (Boolean(access.testPersona) || productManagers.some((entry) => entry.hrId === hrId)),
     productManagers,
+    plansAsTrainingManager:
+      TRAINING_MANAGER_PLAN_ROLES.has(access.role) && (Boolean(access.testPersona) || trainingManagers.some((entry) => entry.hrId === hrId)),
+    trainingManagers,
   };
 }
 

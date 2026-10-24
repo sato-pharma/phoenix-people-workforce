@@ -350,7 +350,7 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
       view.companions,
       [
         { role: "Manager", name: "Nermeen Salah" },
-        { role: "Product manager", name: "Mahmoud Fathy" },
+        { role: "Product or training manager", name: "Mahmoud Fathy" },
       ],
       "the companions are NAMED, in role order, and a null column drops out rather than printing a blank",
     );

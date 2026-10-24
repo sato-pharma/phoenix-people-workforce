@@ -417,7 +417,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   assert.equal(managerPlanReach(rep), null, "a rep never reaches a district manager's plan");
   assert.throws(() => resolveManagerPlanReader(rep, null), /manager's weekly plan is read by/, "a rep is refused by name");
-  assert.throws(() => assertManagerPlanWriter(rep), /Only a district, regional, national or product manager plans/);
+  assert.throws(() => assertManagerPlanWriter(rep), /Only a district, regional, national or product manager, or the Training Manager, plans/);
 
   assert.deepEqual(managerPlanReach(dm), { mode: "own", canWrite: true, managers: [] }, "the district manager plans his own week");
   assert.equal(assertManagerPlanWriter(dm).seat?.seatId, DM1.seatId);
@@ -1061,7 +1061,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     /const present = rows\.length > 0 && !rows\.some\(/,
     "a manager of record who has left, or who has no employees row at all, is skipped and the week goes on to the CEO",
   );
-  assert.match(functionBody(writers, "async function readProductManagerRoster("), /byPerson\.get\(hrId\)/, "two spellings of one product manager's id plan once");
+  assert.match(functionBody(writers, "async function readRoleRoster("), /byPerson\.get\(hrId\)/, "two spellings of one product or training manager's id plan once");
   assert.match(writers, /Date\.now\(\) - lastGood\.readAt <= LAST_GOOD_ROSTER_MAX_AGE_MS \? lastGood\.roster : \[\]/, "the last good roster stands in for a short failure only, never for ever");
   for (const [name, text] of [
     ["the week", functionBody(plans, "export async function transitionManagerPlan(")],
@@ -1109,7 +1109,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(readsManagerPlanOf(ahmed, "B-155"), false, "Ahmed never reads Rasha's");
   assert.equal(readsManagerPlanOf(hossam, "B-155"), true, "Hossam reads Rasha's");
   assert.equal(managerPlanReach(hossam)?.canWrite, false, "and plans none of his own");
-  assert.throws(() => assertManagerPlanWriter(hossam), /Only a district, regional, national or product manager plans/);
+  assert.throws(() => assertManagerPlanWriter(hossam), /Only a district, regional, national or product manager, or the Training Manager, plans/);
   assert.equal(managerPlanDeciderRole(ceo, { stage: "second", firstApproverHrId: "A-12", secondApproverHrId: personKey("B-2"), isTest: false }), "second", "the CEO decides the step stored on the week, with read alone");
   assert.match(
     functionBody(source("src/lib/phoenix-crm/server/manager-plan-reach.ts"), "export function assertManagerPlanWriter("),
@@ -1132,7 +1132,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The switch: a regional or national seat switches with the first live team below it; a product
   // manager never does, and plans here beside his legacy form.
   const weekHere = functionBody(switchSource, "export async function plansManagerWeekHere(");
-  assert.match(weekHere, /if \(writer\.kind === "pm"\) return true;\s*return dmPlansInPhoenixCrm\(/, "a product manager's board always opens; everyone else's with the switch");
+  assert.match(weekHere, /if \(isSeatlessPlannerKind\(writer\.kind\)\) return true;\s*return dmPlansInPhoenixCrm\(/, "a product manager's and the Training Manager's board always opens; everyone else's with the switch");
   assert.match(
     functionBody(switchSource, "async function seniorPlansInPhoenixCrm("),
     /seats\.some\(\(seat\) => seatHasLiveTeamBelow\(org\.seats, seat\.seatId, live\)\)/,
@@ -1244,7 +1244,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // The board: the scope picker, the half-day override, and the HR line on a non-district manager's send.
   assert.match(board, /function ScopePicker\(/, "the board picks the district manager first");
-  assert.match(board, /Another district manager for this half/, "once per day, a half on request");
+  assert.match(board, /const word = byRegion \? "region" : "district manager";[\s\S]*\{`Another \$\{word\} for this half`\}/, "once per day, a half on request");
   assert.match(board, /Once it is approved, HR acknowledges it automatically\./, "the send step names HR's automatic acknowledgement");
 
   // ── A district manager's single visits: one day a week, two half-days (owner, 2026-10-19) ─────

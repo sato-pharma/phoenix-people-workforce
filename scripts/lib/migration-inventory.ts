@@ -1776,6 +1776,24 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // "join public.phoenix_crm_customers" is a substring of it and the single includes() it replaced went
   // green on either word. Account: docs/crm-visits-door-one-scan.md.
   "20261024180000_the_visits_door_stops_joining_customers_it_never_reads.sql",
+
+  // (8) THE TRAINING MANAGER PLANS A WEEK — applied 2026-10-24, staging first then production, through
+  // `scripts/apply-sql-file.mjs`, the standing route of AGENTS.md §8: the staging Supabase MCP answered
+  // {"status":"declined"} three times on the file's body (the replaced function CONTAINS a `delete from` and
+  // the file a `revoke`). Production (ozucdzovmcqvepbozvqf) returned {"applied":true,"count":0} and holds NO
+  // ledger row for 20261024233000, hence this entry rather than a ledger write; staging
+  // (cifwmndunmlxjhyjugxa) carries one, inserted inside the same transaction as the body.
+  //
+  // VERIFIED BY DIGEST ON BOTH PROJECTS: md5(pg_proc.prosrc) of phoenix_crm_save_manager_plan_slot =
+  // fb531b177a38cfbdc9bebc95e9204de3 on production AND staging (production read 1aab131d78c5b6f86c04f7002a4d7bda
+  // before), prosecdef true, proacl {postgres=X/postgres,service_role=X/postgres}. The five checks read back
+  // in their new form — planner_kind admits tm, seat_unless_pm is planner_kind in (pm, tm), slots_kind holds
+  // with_area, dm_visit is kind in (with_dm, with_area), and slots_region exists — and scope_region_code is a
+  // nullable text column. No row is written: production held 30 plans and 262 half-days before and after.
+  // Pinned by tests/phoenix-crm-training-manager-plan.test.ts. Account: docs/phoenix-crm-manager-plan.md,
+  // "The Training Manager".
+  "20261024233000_phoenix_crm_manager_plan_training_manager.sql",
+
   // Applied 24 Oct 2026 through scripts/apply-sql-file.mjs (the standing route) on STAGING and PRODUCTION,
   // after the Supabase MCP's apply_migration came back {status: declined} on both, three times, the third
   // right after the owner chose "apply via MCP again". The route writes no ledger row, hence this entry.

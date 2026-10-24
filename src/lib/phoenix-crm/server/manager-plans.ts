@@ -47,6 +47,7 @@ import {
   managerPlanStatusLine,
   managerPlanWeekName,
   managerPlanWeeks,
+  isSeatlessPlannerKind,
   managerScopeKey,
   managerScopeTerritories,
   managerSlotKindLabel,
@@ -362,6 +363,8 @@ export type ManagerBoardScope = {
   place: string | null;
   /** The heading it sits under: the line (a product manager), the regional manager's region (an NSM), or none. */
   group: string | null;
+  /** The Training Manager's region (owner, 2026-10-24); null for every other scope. */
+  regionCode: string | null;
 };
 
 export type ManagerBoardDay = {
@@ -453,10 +456,14 @@ function slotSummary(input: {
   seniorName?: string | null;
   seniorTitle?: string | null;
   count: number;
+  regionScoped?: boolean;
 }): string {
   const customers = `${input.count} customer${input.count === 1 ? "" : "s"}`;
   const scope = input.scopeName ? ` · ${input.scopeName}` : "";
+  // The Training Manager's With a rep names the rep and the region, never customers (owner, 2026-10-24).
+  if (input.kind === "with_rep" && input.regionScoped) return `With ${input.repName ?? "a rep"}${scope}`;
   if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"} · ${customers}${scope}`;
+  if (input.kind === "with_area") return `Area · ${input.areaName ?? "an area"}${scope}`;
   if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
   if (input.kind === "with_senior") return managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName);
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
@@ -528,7 +535,12 @@ function scopeFromParam(scopes: ReadonlyArray<ManagerPlanScope>, raw: unknown): 
 }
 
 /** "Delta (1) · Pedia — Nermeen Adel", "Cairo · Pedia — no district manager", "Any rep in Pedia (no district manager)". */
-function scopeName(viewer: Pick<PhoenixCrmViewer, "org">, scope: { dmSeatId: string | null; lineCode: string | null }, names: PeopleNames): string {
+function scopeName(
+  viewer: Pick<PhoenixCrmViewer, "org">,
+  scope: { dmSeatId: string | null; lineCode: string | null; regionCode?: string | null },
+  names: PeopleNames,
+): string {
+  if (scope.regionCode) return regionNameOf(viewer.org, scope.regionCode);
   const seat = scope.dmSeatId ? viewer.org.seats.get(scope.dmSeatId) : undefined;
   if (seat) {
     const dm = personKey(seat.occupantHrId);
@@ -536,6 +548,11 @@ function scopeName(viewer: Pick<PhoenixCrmViewer, "org">, scope: { dmSeatId: str
   }
   const lineName = [...viewer.org.seats.values()].find((entry) => entry.lineCode === scope.lineCode && entry.lineName)?.lineName ?? "the line";
   return `Any rep in ${lineName} (no district manager)`;
+}
+
+/** A region's name as the organogram spells it (the Training Manager's scope). */
+function regionNameOf(org: PhoenixCrmViewer["org"], regionCode: string): string {
+  return org.territories.find((seat) => seat.regionCode === regionCode && seat.regionName)?.regionName ?? regionCode;
 }
 
 /** The planner's scopes as the picker shows them, grouped under the line or the regional manager's region. */
@@ -557,6 +574,7 @@ function scopeChoices(
       dmName: dm ? nameOf(names, dm) : null,
       place: seat ? managerPlace(seat) : null,
       group: writer.kind === "pm" ? scope.lineName : scope.regionHrId ? `${nameOf(names, scope.regionHrId)}'s region` : null,
+      regionCode: scope.regionCode ?? null,
     };
   });
 }
@@ -775,8 +793,8 @@ async function buildBoard(
       });
       const repName = slot.repHrId ? nameOf(names, slot.repHrId) : slot.repSeatId ? "No rep in this territory" : null;
       const activityLabel = managerAdminActivityLabel(slot.activityType);
-      const hasScope = slot.scopeLineCode !== null;
-      const slotScopeName = hasScope ? scopeName(viewer, { dmSeatId: slot.scopeDmSeatId, lineCode: slot.scopeLineCode }, names) : null;
+      const hasScope = slot.scopeLineCode !== null || slot.scopeRegionCode !== null;
+      const slotScopeName = hasScope ? scopeName(viewer, { dmSeatId: slot.scopeDmSeatId, lineCode: slot.scopeLineCode, regionCode: slot.scopeRegionCode }, names) : null;
       const dmName = slot.dmVisit?.dmHrId ? nameOf(names, slot.dmVisit.dmHrId) : null;
       const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
       const seniorName = seniorHrId ? nameOf(names, seniorHrId) : null;
@@ -785,7 +803,18 @@ async function buildBoard(
         half,
         kind: slot.kind,
         kindLabel: managerSlotKindLabel(slot.kind),
-        summary: slotSummary({ kind: slot.kind, repName, activityLabel, areaName: slot.areaName, scopeName: slotScopeName, dmName, seniorName, seniorTitle, count: customers.length }),
+        summary: slotSummary({
+          kind: slot.kind,
+          repName,
+          activityLabel,
+          areaName: slot.areaName,
+          scopeName: slotScopeName,
+          dmName,
+          seniorName,
+          seniorTitle,
+          count: customers.length,
+          regionScoped: slot.scopeRegionCode !== null,
+        }),
         repSeatId: slot.repSeatId,
         repName,
         activityType: slot.activityType,
@@ -803,7 +832,7 @@ async function buildBoard(
           name: area.areaName,
           vacant: area.seatIds.every((seatId) => !personKey(viewer.org.seats.get(seatId)?.occupantHrId)),
         })),
-        scopeKey: hasScope ? managerScopeKey(slot.scopeDmSeatId, slot.scopeLineCode ?? "") : null,
+        scopeKey: hasScope ? managerScopeKey(slot.scopeDmSeatId, slot.scopeLineCode ?? "", slot.scopeRegionCode) : null,
         scopeName: slotScopeName,
         note: slot.note,
         customers,
@@ -859,7 +888,8 @@ export async function loadManagerPlanBoardFor(viewer: PhoenixCrmViewer, managerH
  * keeps its whole world, as everywhere in the module.
  */
 async function assertPlansHere(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter): Promise<void> {
-  if (viewer.isTestPersona || writer.kind === "pm") return;
+  // The Training Manager files both too (owner, 2026-10-24) — her legacy form is the one the deduction reads.
+  if (viewer.isTestPersona || isSeatlessPlannerKind(writer.kind)) return;
   if (await dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday })) return;
   throw forbiddenError("Your team has not started in Phoenix CRM yet, so your week is still planned on the Weekly Plan form.");
 }
@@ -954,7 +984,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   const scopes = await managerWriterScopes(viewer, writer);
   const scopeError = managerSlotScopeError(writer.kind, draft, scopes);
   if (scopeError) throw validationError(scopeError);
-  const scope = findManagerPlanScope(scopes, { dmSeatId: draft.scopeDmSeatId, lineCode: draft.scopeLineCode });
+  const scope = findManagerPlanScope(scopes, { dmSeatId: draft.scopeDmSeatId, lineCode: draft.scopeLineCode, regionCode: draft.scopeRegionCode });
   const own = writer.kind === "dm";
 
   const holidays = await loadPlanHolidays(draft.date, draft.date);
@@ -968,7 +998,11 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   let areaSeat: OrgSeat | null = null;
   if (draft.kind === "with_rep") {
     repSeat = district.find((entry) => entry.seatId === draft.repSeatId && Boolean(personKey(entry.occupantHrId))) ?? null;
-    if (!repSeat) throw forbiddenError(own ? "Choose one of the reps of your own team." : "Choose one of the reps of the district manager you chose.");
+    if (!repSeat) {
+      throw forbiddenError(
+        own ? "Choose one of the reps of your own team." : writer.kind === "tm" ? "Choose one of the reps of the region you chose." : "Choose one of the reps of the district manager you chose.",
+      );
+    }
     await assertOnTheRepsHalf({
       managerHrId: viewer.hrId,
       repSeatId: repSeat.seatId,
@@ -1029,7 +1063,26 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     });
     seniorVisit = { senior_hr_id: offer.hrId, role: offer.role, title: offer.title, areas };
   }
-  const tickedAreas = dmVisit?.areas ?? seniorVisit?.areas ?? null;
+  // An area (owner, 2026-10-24): the Training Manager's half-day in one area of her region — every rep territory
+  // of that area, in every line, kept with it, so a visit with her on any of them answers the area.
+  if (draft.kind === "with_area") {
+    const areaKey = (seat: OrgSeat) => seat.areaCode ?? seat.areaName ?? seat.seatId;
+    areaSeat = district.find((entry) => entry.seatId === draft.areaSeatId) ?? null;
+    if (!areaSeat) throw forbiddenError("Choose an area of the region you chose.");
+    const picked = areaSeat;
+    dmVisit = {
+      dm_hr_id: null,
+      areas: [
+        {
+          seat_id: picked.seatId,
+          area_code: picked.areaCode ?? null,
+          area_name: picked.areaName ?? territoryName(picked),
+          seat_ids: district.filter((entry) => areaKey(entry) === areaKey(picked)).map((entry) => entry.seatId),
+        },
+      ],
+    };
+  }
+  const tickedAreas = draft.kind === "with_area" ? null : (dmVisit?.areas ?? seniorVisit?.areas ?? null);
 
   // A district manager's single visits are one day a week at most — two half-days (owner, 2026-10-19).
   if (draft.kind === "single_visit" && own) {
@@ -1041,7 +1094,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       manager_hr_id: viewer.hrId,
       manager_seat_id: writer.seat?.seatId ?? null,
       planner_kind: writer.kind,
-      line_code: writer.kind === "pm" ? null : (writer.seat?.lineCode ?? null),
+      line_code: isSeatlessPlannerKind(writer.kind) ? null : (writer.seat?.lineCode ?? null),
       actor_hr_id: viewer.hrId,
       plan_date: draft.date,
       half: draft.half,
@@ -1054,8 +1107,10 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       area_name: areaSeat ? (areaSeat.areaName ?? territoryName(areaSeat)) : tickedAreas ? tickedAreas.map((area) => area.area_name).join(", ") : null,
       dm_visit: dmVisit,
       senior_visit: seniorVisit,
-      scope_dm_seat_id: own ? null : (scope?.dmSeatId ?? null),
-      scope_line_code: own ? null : (scope?.lineCode ?? null),
+      scope_dm_seat_id: own || writer.kind === "tm" ? null : (scope?.dmSeatId ?? null),
+      scope_line_code: own || writer.kind === "tm" ? null : (scope?.lineCode ?? null),
+      // The Training Manager's region rides only on her With a rep and An area (the database refuses it elsewhere).
+      scope_region_code: writer.kind === "tm" && (draft.kind === "with_rep" || draft.kind === "with_area") ? (scope?.regionCode ?? null) : null,
       note: draft.note,
       customers: draft.customers.map((entry) => ("customerId" in entry ? { customer_id: entry.customerId } : { manager_customer_id: entry.managerCustomerId })),
       expected_version: expectedVersionOf(body.expectedVersion),
@@ -1122,7 +1177,7 @@ function noteOf(value: unknown): string | null {
  * product manager's week has none — he sits on no seat — and its notices go out without one.
  */
 function noticeSeat(viewer: Pick<PhoenixCrmViewer, "org">, plan: Pick<ManagerPlanRow, "managerSeatId" | "managerHrId" | "plannerKind">): OrgSeat | null {
-  if (plan.plannerKind === "pm") return null;
+  if (isSeatlessPlannerKind(plan.plannerKind)) return null;
   const filed = plan.managerSeatId ? viewer.org.seats.get(plan.managerSeatId) : undefined;
   if (filed) return filed;
   return plan.plannerKind === "dm" ? managerPlanSeatOf(viewer, plan.managerHrId) : seniorPlanSeatOf(viewer, plan.managerHrId);
@@ -1130,7 +1185,7 @@ function noticeSeat(viewer: Pick<PhoenixCrmViewer, "org">, plan: Pick<ManagerPla
 
 async function tellManagerPlan(viewer: Pick<PhoenixCrmViewer, "org">, plan: ManagerPlanRow, notice: Omit<ManagerPlanNotice, "kind" | "seat" | "managerHrId" | "weekStart" | "planId" | "plannerKind">, isTest: boolean): Promise<void> {
   const seat = noticeSeat(viewer, plan);
-  if (!seat && plan.plannerKind !== "pm") return;
+  if (!seat && !isSeatlessPlannerKind(plan.plannerKind)) return;
   await notifyPhoenixCrm(
     { kind: "manager_plan", seat, plannerKind: plan.plannerKind, managerHrId: plan.managerHrId, weekStart: plan.weekStart, planId: plan.planId, ...notice },
     isTest,

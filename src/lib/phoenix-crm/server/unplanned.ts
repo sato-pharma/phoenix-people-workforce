@@ -59,7 +59,8 @@ const UNPLANNED_COLUMNS =
 const COMPANION_ROLES = [
   { column: "manager_hr_id", label: "Manager" },
   { column: "senior_hr_id", label: "Senior" },
-  { column: "product_manager_hr_id", label: "Product manager" },
+  // The Training Manager rides in this column too (owner, 2026-10-24).
+  { column: "product_manager_hr_id", label: "Product or training manager" },
 ] as const;
 
 /** The companion hr ids on one row, read off the joined visit. */

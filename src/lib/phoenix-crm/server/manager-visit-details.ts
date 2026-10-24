@@ -519,7 +519,8 @@ function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Arra
     ["rep_hr_id", "Medical rep"],
     ["manager_hr_id", "Manager"],
     ["senior_hr_id", "Senior manager"],
-    ["product_manager_hr_id", "Product manager"],
+    // The Training Manager rides in this column too (owner, 2026-10-24).
+    ["product_manager_hr_id", "Product or training manager"],
   ] as const) {
     const hrId = personKey(textOrNull(row[column]));
     if (!hrId || seen.has(hrId)) continue;

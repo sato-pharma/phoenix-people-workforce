@@ -21,6 +21,7 @@ import {
   type VisitAskGateRow,
 } from "../src/lib/phoenix-crm/server/visit-asks.ts";
 import {
+  companionGroupTitle,
   isVisitAskAskableRole,
   isVisitAskOpen,
   productManagersOfLine,
@@ -317,12 +318,22 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     assert.deepEqual([...VISIT_ASK_PRODUCT_MANAGER_ROLES], ["Product Manager", "Group Product Manager"], "two app roles are a product manager on every line");
     // The owner's CNS rule, by APP ROLE and line code — never a person.
     assert.deepEqual([...VISIT_ASK_MARKETING_MANAGER_LINE_CODES], ["cns"], "the Marketing Manager is offered on CNS alone");
-    assert.deepEqual([...visitAskProductManagerRolesOfLine("cns")], ["Product Manager", "Group Product Manager", "Marketing Manager"], "on CNS he is offered beside them");
+    assert.deepEqual([...visitAskProductManagerRolesOfLine("cns")], ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"], "on CNS he is offered beside them");
     assert.deepEqual([...visitAskProductManagerRolesOfLine(" CNS ")], [...visitAskProductManagerRolesOfLine("cns")], "a line code is read loosely");
     for (const line of ["pedia", "anti_infective", "", null, undefined]) {
-      assert.deepEqual([...visitAskProductManagerRolesOfLine(line)], ["Product Manager", "Group Product Manager"], `${String(line)}: never the Marketing Manager outside CNS`);
+      assert.deepEqual([...visitAskProductManagerRolesOfLine(line)], ["Product Manager", "Group Product Manager", "Training Manager"], `${String(line)}: never the Marketing Manager outside CNS, and the Training Manager on every line`);
     }
-    assert.deepEqual([...VISIT_ASK_ASKABLE_ROLES], ["Product Manager", "Group Product Manager", "Marketing Manager"], "everyone an ask can reach on some line");
+    assert.deepEqual([...VISIT_ASK_ASKABLE_ROLES], ["Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"], "everyone an ask can reach on some line");
+    // 🔒 The Training Manager is offered on every line (owner, 2026-10-24): she owns no products, so her
+    // reach carries no families and the products test never drops her.
+    assert.deepEqual(
+      productManagersOfLine([{ hrId: "TM-1", role: "Training Manager", families: null }], ["NoSuchFamily"], "pedia"),
+      [{ hrId: "TM-1", role: "Training Manager" }],
+      "the Training Manager is offered whatever the line sells",
+    );
+    assert.equal(companionGroupTitle([{ title: "Product Manager" }]), "Product managers");
+    assert.equal(companionGroupTitle([{ title: "Product Manager" }, { title: "Training Manager" }]), "Product and training managers");
+    assert.equal(companionGroupTitle([{ title: "Training Manager" }]), "Training manager");
 
     assert.deepEqual(
       productManagersOfLine(REACH, LINE_FAMILIES.Pedia, "pedia"),
@@ -510,7 +521,8 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     assert.deepEqual(visitAskInboxReach(hossam, false), { mode: "own", canAnswer: true }, "the Marketing Manager reads and answers the asks made of him");
     assert.equal(visitAskInboxReach(hossam, true), null, "in the real world only");
     assert.equal(isVisitAskAskableRole("Marketing Manager"), true);
-    for (const role of ["Medical Rep", "District Manager", "SFE Manager", "Training Manager", "CEO", null]) {
+    assert.equal(isVisitAskAskableRole("Training Manager"), true, "the Training Manager reads and answers the asks made of her");
+    for (const role of ["Medical Rep", "District Manager", "SFE Manager", "CEO", null]) {
       assert.equal(isVisitAskAskableRole(role), false, `${String(role)} is not asked by app role`);
     }
     assert.equal(visitAskInboxReach(rep, false), null, "a rep reads his asks on his customer's page, never here");

@@ -6,6 +6,7 @@ import { dayLabel } from "@/components/phoenix-crm/format";
 import type { CompanyPerson } from "@/components/phoenix-crm/visit-company-picker";
 import { CrmChoice, CrmNote, type CrmChoiceOption } from "@/components/phoenix-crm/ui";
 import { DOUBLE_VISIT_MAX_DAYS, toggleDoubleVisitDay, toggleDoubleVisitPerson } from "@/lib/phoenix-crm/double-visit-request-rules";
+import { companionGroupTitle } from "@/lib/phoenix-crm/visit-ask-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -104,7 +105,7 @@ export function DoubleVisitQuestion({
             ) : null}
             {productManagers.length > 0 ? (
               <div className="grid min-w-0 gap-1.5">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Product managers</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
                 {productManagers.map(person)}
               </div>
             ) : null}

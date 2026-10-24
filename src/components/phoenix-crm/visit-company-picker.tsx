@@ -10,6 +10,7 @@ import {
   type CompanyOffer,
   type VisitCompanyChoice,
 } from "@/lib/phoenix-crm/visit-company";
+import { companionGroupTitle } from "@/lib/phoenix-crm/visit-ask-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -82,7 +83,7 @@ export function CompanyPicker({
       ) : null}
       {productManagers.length > 0 ? (
         <div className="grid min-w-0 gap-1.5">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Product managers</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
           {productManagers.map(row)}
           {choice === "chain" && productManagerChosen ? <p className="text-xs font-semibold text-slate-500">{ONE_PRODUCT_MANAGER_ON_A_CHAIN}</p> : null}
         </div>

@@ -216,7 +216,7 @@ export function mapManagerHalfDayToPrivateCalendarItem(
   const title = managerHalfDayText(halfDay, names.rep, names.senior ?? null);
   const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(activityType);
   const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
-  if ((halfDay.kind === "single_visit" || halfDay.kind === "with_senior") && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
+  if ((halfDay.kind === "single_visit" || halfDay.kind === "with_senior" || halfDay.kind === "with_area") && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
   if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
   detailLines.push(`Week: ${halfDay.weekStart}`);
   if (names.approver) detailLines.push(`Approved by: ${names.approver}`);

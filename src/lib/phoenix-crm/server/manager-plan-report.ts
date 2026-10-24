@@ -37,6 +37,7 @@ import {
   managerDmVisitTitle,
   managerSeniorVisitTitle,
   countsAsDmsVisitWithSenior,
+  isSeatlessPlannerKind,
   managerVisitWindow,
   type ManagerCountRow,
   type ManagerHalf,
@@ -232,11 +233,12 @@ export async function computeManagerReports(
     loadWithRepDone(
       managers,
       slots.flatMap((slot) =>
-        slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : slot.kind === "with_dm" ? (slot.dmVisit?.areas.flatMap((area) => area.seatIds) ?? []) : slot.kind === "with_senior" ? (slot.seniorVisit?.areas.flatMap((area) => area.seatIds) ?? []) : [],
+        slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : slot.kind === "with_dm" || slot.kind === "with_area" ? (slot.dmVisit?.areas.flatMap((area) => area.seatIds) ?? []) : slot.kind === "with_senior" ? (slot.seniorVisit?.areas.flatMap((area) => area.seatIds) ?? []) : [],
       ),
       weekStart,
       isTest,
-      planRows.filter((plan) => plan.plannerKind === "pm").map((plan) => plan.managerHrId),
+      // The Training Manager is on a rep's visit in the same slot as a product manager (owner, 2026-10-24).
+      planRows.filter((plan) => isSeatlessPlannerKind(plan.plannerKind)).map((plan) => plan.managerHrId),
     ),
   ]);
   const customersBySlot = new Map<string, typeof slotCustomers>();
@@ -293,6 +295,42 @@ export async function computeManagerReports(
         });
         const halves = daysByDate.get(slot.date) ?? [];
         halves.push({ half: slot.half, kind: slot.kind, kindLabel: managerSlotKindLabel(slot.kind), title: managerDmVisitTitle(dmName, slot.areaName), note: slot.note, customers: areaRows });
+        daysByDate.set(slot.date, halves);
+        continue;
+      }
+      if (slot.kind === "with_area") {
+        // The Training Manager's An area (owner, 2026-10-24): done when any rep of the area logged a visit with her that day.
+        const keys = withRepDone.get(managerHrId);
+        const areaRows = (slot.dmVisit?.areas ?? []).map((area): ManagerReportCustomer => {
+          const done = area.seatIds.some((seatId) => keys?.has(`dmany|${seatId}|${slot.date}`) ?? false);
+          const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
+          countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: area.seatId }) });
+          return { key: null, name: area.areaName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null };
+        });
+        const halves = daysByDate.get(slot.date) ?? [];
+        halves.push({ half: slot.half, kind: slot.kind, kindLabel: managerSlotKindLabel(slot.kind), title: `Area · ${slot.areaName ?? "an area"}`, note: slot.note, customers: areaRows });
+        daysByDate.set(slot.date, halves);
+        continue;
+      }
+      if (slot.kind === "with_rep" && slot.scopeRegionCode) {
+        // The Training Manager's With a rep names the rep, never a customer: one visit of his with her that day answers it.
+        const repName = slot.repHrId ? nameOf(repNames, slot.repHrId) : "a vacant territory";
+        const done = Boolean(slot.repSeatId) && (withRepDone.get(managerHrId)?.has(`dmany|${slot.repSeatId}|${slot.date}`) ?? false);
+        const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
+        countRows.push({
+          outcome,
+          gone: false,
+          evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: slot.repSeatId, date: slot.date, customerId: null, managerCustomerId: null, trainingManager: true }),
+        });
+        const halves = daysByDate.get(slot.date) ?? [];
+        halves.push({
+          half: slot.half,
+          kind: slot.kind,
+          kindLabel: managerSlotKindLabel(slot.kind),
+          title: `With ${repName}`,
+          note: slot.note,
+          customers: [{ key: null, name: repName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null }],
+        });
         daysByDate.set(slot.date, halves);
         continue;
       }
