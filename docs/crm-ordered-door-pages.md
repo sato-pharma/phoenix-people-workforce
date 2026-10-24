@@ -84,3 +84,56 @@ exceeds the 8 ms it costs to execute. Whether production pays that per request o
 depends on PostgREST's prepared statements, and `pg_stat_statements.track_planning` is off on this
 project, so it was not measurable from here and no claim is made about it. Reducing it would mean
 simplifying the door itself — fewer union branches and fewer InitPlans — not changing how it is paged.
+
+## Why the two iReports360 branches stay as they are
+
+The follow-on from "What is still slow": the check-ins door's iReports360 half is two union branches
+that differ only in the team-start bound, and merging them was the obvious way to cut the planning
+cost. It was built and measured on production on 23 October 2026, and **it is a loss** — recorded
+here so the next session does not pay for the same measurement.
+
+### The merge is correct
+
+Branch A is `check_date < team_start_bound`; branch B is `>= team_start_bound` plus two entry-day
+anti-joins. Merging means dropping the bound and keeping the anti-joins, which is valid because
+**no entry day can precede that bound**:
+
+- both arms of `phoenix_crm_rep_entry_days_calc` join `phoenix_crm_started_team_seats()` and bound
+  the day at `team.starts_on` — the activities arm at
+  `least(team.starts_on, coalesce(run.day_activities_from, team.starts_on))`;
+- that is the same expression the door takes the global `min` of, and `phoenix_crm_started_team_seats`
+  reads `starts_on` and `stops_on` straight from `phoenix_crm_team_starts`;
+- so every entry day is `>=` the bound, an A-row's day is strictly below it, and an A-row can never
+  match one. Empirically the two are exactly equal today: earliest entry day **2026-10-03**, global
+  team-start bound **2026-10-03**.
+
+Proved rather than assumed: the merged body and the live view each returned **137,709 rows, with 0
+only-in-live and 0 only-in-merged** (`except` both ways on `id, source, check_date, crm_checkin_id,
+contact_name`).
+
+### And it costs more
+
+Warm against warm, same 2026-01-01 → 2026-10-23 export page, same 142,363 rows out of the Append:
+
+| | Live view (two branches) | Merged (one branch) |
+| --- | --- | --- |
+| Execution | **1,361 ms** | 1,429 ms |
+| Planning | **16.8 ms** | **39.3 ms** |
+| Buffers, iReports half | ~83,300 | **10,964** |
+
+The buffer column is the trap. One `NOT EXISTS` pair over the whole window lets Postgres switch to a
+**Bitmap Heap Scan**, which visits each of the 10,112 heap blocks once instead of an index scan
+revisiting pages in index order — 7.6× fewer page touches. But those touches were cache *hits*, so
+they were nearly free, and the saving is spent probing the anti-joins **137,709** times instead of
+6,962. Net: execution is a wash and **planning more than doubles**, which is the one thing the merge
+was supposed to reduce.
+
+Fewer page touches is not less time. The two branches stay.
+
+### The one unsliced ordered read left is unreachable
+
+`queryCheckins` in `src/lib/crm/reads.ts` has a second path for `options.limit != null` that orders by
+`check_date` and never day-slices. **No caller passes `limit`** — `brick-coverage.ts`,
+`call-rate-service.ts`, `phoenix-kpi-data.ts` and both `master.ts` call sites all go through the
+keyset path — so that branch cannot be reached today and its missing day-slicing has never cost
+anything. Worth knowing before anyone "fixes" it.
