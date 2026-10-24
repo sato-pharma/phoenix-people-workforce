@@ -18,11 +18,13 @@ import {
   PortalRecordFields,
 } from "@/components/employee-portal/portal-primitives";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
-import type {
-  PlanningCalendarConflict,
-  PlanningCalendarItem,
-  PlanningCalendarPlanItem,
-  PlanningCalendarWorkspace,
+import {
+  groupPlanItemsByRegion,
+  planningGroupKey,
+  type PlanningCalendarConflict,
+  type PlanningCalendarItem,
+  type PlanningCalendarPlanItem,
+  type PlanningCalendarWorkspace,
 } from "@/lib/weekly-planning/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -152,23 +154,6 @@ function planChipTone(item: PlanningCalendarPlanItem, hue: EmployeeHue) {
   return item.conflictWarning ? `${hue.chip} ring-1 ring-inset ring-sky-400` : hue.chip;
 }
 
-// The three activity groupings the month grid buckets each day's plans into.
-// "Field Visits" covers every field-facing activity type — Single Visit
-// (activityType "Field"), Double Visit, and Coaching (activityType "Other"
-// with activityDisplayLabel normalizing the raw title to "Coaching") — so a
-// manager scanning the day sees who's out in the field together, regardless
-// of which specific visit type it is. Everything else (Training, Meeting,
-// Event, Travel, Admin, Remote, Vacation, Excuse, Other) falls into "Other".
-const planGroups = ["Office", "Field Visits", "Other"] as const;
-type PlanGroup = (typeof planGroups)[number];
-
-function planGroupFor(item: PlanningCalendarPlanItem): PlanGroup {
-  if (item.activityType === "Office") return "Office";
-  if (item.activityType === "Field" || item.activityType === "Double Visit") return "Field Visits";
-  if (item.activityTitle === "Coaching") return "Field Visits";
-  return "Other";
-}
-
 function PlanningMetric({
   label,
   tone = "neutral",
@@ -197,6 +182,9 @@ type PlanningCalendarDetailRow = {
   date: string;
   employee: string;
   employeeHrId: string;
+  // What the details group by (region, then area inside it); the shown Region / Area text can list more.
+  groupArea: string | null;
+  groupRegion: string | null;
   id: string;
   medicalRep: string;
   notes: string;
@@ -253,13 +241,18 @@ export function PlanningCalendar({
   const planItems = useMemo(() => items.filter(isPlanItem), [items]);
   const holidayItems = useMemo(() => items.filter((item) => item.source === "holiday"), [items]);
   const activityOptions = useMemo(() => uniqueSorted(planItems.map((item) => item.activityTitle)), [planItems]);
-  const regionOptions = useMemo(() => uniqueSorted(planItems.map((item) => item.region)), [planItems]);
+  // One option per region however it was typed ("Delta 1" and "Delta (1)" are one region), matching the
+  // region groups the tile and the details draw.
+  const regionOptions = useMemo(
+    () => groupPlanItemsByRegion(planItems).filter((region) => region.key).map(({ key, label }) => ({ key, label })),
+    [planItems],
+  );
 
   const filteredPlanItems = useMemo(() => {
     const search = query.trim().toLowerCase();
     return planItems.filter((item) => {
       if (activityFilter !== allValue && item.activityTitle !== activityFilter) return false;
-      if (regionFilter !== allValue && item.region !== regionFilter) return false;
+      if (regionFilter !== allValue && planningGroupKey(item.region) !== regionFilter) return false;
       if (conflictsOnly && !item.conflictWarning) return false;
       if (search && !planSearchText(item).includes(search)) return false;
       return true;
@@ -334,6 +327,8 @@ export function PlanningCalendar({
       date: conflict.date,
       employee: conflict.employeeNames.join(", ") || "-",
       employeeHrId: "",
+      groupArea: conflict.areaNames[0] ?? null,
+      groupRegion: conflict.regionNames[0] ?? null,
       id: conflict.id,
       medicalRep: conflict.medicalRepName || conflict.medicalRepHrId || "-",
       notes: conflict.lineName ? `Line: ${conflict.lineName}` : "-",
@@ -349,6 +344,8 @@ export function PlanningCalendar({
       date: selectedDate,
       employee: "Company calendar",
       employeeHrId: "",
+      groupArea: null,
+      groupRegion: null,
       id: holiday.id,
       medicalRep: "-",
       notes: holiday.description || "-",
@@ -364,6 +361,8 @@ export function PlanningCalendar({
       date: item.startDate,
       employee: item.employeeDisplayName || item.employeeName,
       employeeHrId: item.employeeHrId,
+      groupArea: item.area,
+      groupRegion: item.region,
       id: item.id,
       medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
       notes: item.notes || "-",
@@ -570,8 +569,8 @@ export function PlanningCalendar({
             >
               <option value={allValue}>All regions</option>
               {regionOptions.map((region) => (
-                <option key={region} value={region}>
-                  {region}
+                <option key={region.key} value={region.key}>
+                  {region.label}
                 </option>
               ))}
             </SearchableSelect>
@@ -671,9 +670,7 @@ export function PlanningCalendar({
               const dayHolidays = dayItems.filter((item) => item.source === "holiday");
               const dayConflicts = date ? conflictForDay(conflicts, date) : [];
               const dayHues = assignDailyEmployeeHues(dayPlans);
-              const dayPlanGroups = planGroups
-                .map((group) => ({ group, plans: dayPlans.filter((item) => planGroupFor(item) === group) }))
-                .filter((entry) => entry.plans.length > 0);
+              const dayRegions = groupPlanItemsByRegion(dayPlans);
               const isSelected = date === selectedDate;
               const isToday = date === today;
               return (
@@ -710,11 +707,11 @@ export function PlanningCalendar({
                         {holiday.title}
                       </span>
                     ))}
-                    {dayPlanGroups.map(({ group, plans }) => (
-                      <span className="block" key={group}>
-                        <span className="block rounded bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-slate-300">{group}</span>
+                    {dayRegions.map((region) => (
+                      <span className="block" key={region.key || "no-region"}>
+                        <span className="block bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-slate-300">{region.label}</span>
                         <span className="mt-0.5 block space-y-1">
-                          {plans.map((item) => {
+                          {region.items.map((item) => {
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
@@ -880,6 +877,37 @@ function detailAccent(tone: PlanningCalendarDetailRow["tone"]) {
   return "slate";
 }
 
+// The selected day's rows in the order the details draw them (owner, 2026-10-24: "group them by region
+// the area"): national vacations first as their own block, then each region with its areas inside it.
+// A chain visit sits in its area ahead of that area's plans.
+type DetailRowSection = {
+  areas: { key: string; label: string; rows: PlanningCalendarDetailRow[] }[];
+  count: number;
+  key: string;
+  label: string;
+  tone: "holiday" | "region";
+};
+
+function detailRowSections(rows: PlanningCalendarDetailRow[]): DetailRowSection[] {
+  const holidays = rows.filter((row) => row.tone === "holiday");
+  const sections: DetailRowSection[] = holidays.length
+    ? [{ areas: [{ key: "holiday", label: "", rows: holidays }], count: holidays.length, key: "national-vacation", label: "National vacation", tone: "holiday" }]
+    : [];
+  const regions = groupPlanItemsByRegion(
+    rows.filter((row) => row.tone !== "holiday").map((row) => ({ area: row.groupArea, region: row.groupRegion, row })),
+  );
+  for (const region of regions) {
+    sections.push({
+      areas: region.areas.map((area) => ({ key: area.key || "no-area", label: area.label, rows: area.items.map((entry) => entry.row) })),
+      count: region.items.length,
+      key: `region-${region.key || "none"}`,
+      label: region.label,
+      tone: "region",
+    });
+  }
+  return sections;
+}
+
 function PlanningCalendarDetailsTable({
   hues,
   rows,
@@ -887,6 +915,7 @@ function PlanningCalendarDetailsTable({
   hues: Map<string, EmployeeHue>;
   rows: PlanningCalendarDetailRow[];
 }) {
+  const sections = detailRowSections(rows);
   return (
     <div className="p-4">
       {rows.length === 0 ? (
@@ -895,38 +924,61 @@ function PlanningCalendarDetailsTable({
           title="No detail rows for this day"
         />
       ) : (
-        <div className={`divide-y divide-slate-100 border border-slate-200 bg-white lg:hidden ${adminSoftDepthClassName}`}>
-          {rows.map((row) => (
-            <PortalRecordCard
-              accent={detailAccent(row.tone)}
-              key={`${row.id}-mobile`}
-              meta={`${row.date} · ${row.employee}`}
-              status={
-                <span className={`inline-flex border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
-                  {row.status}
-                </span>
-              }
-              title={row.activity}
-            >
-              <PortalRecordFields
-                fields={[
-                  { label: "Location", value: row.regionLocation },
-                  { label: "Area", value: row.area },
-                  { label: "Medical rep", value: row.medicalRep },
-                  { label: "Time", value: row.time },
-                ]}
-              />
-              {row.conflictWarning !== "-" ? (
-                <p className="mt-2 rounded border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
-                  {row.conflictWarning}
-                </p>
-              ) : null}
-              {row.notes !== "-" ? (
-                <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
-                  {row.notes}
-                </p>
-              ) : null}
-            </PortalRecordCard>
+        <div className={`border border-slate-200 bg-white lg:hidden ${adminSoftDepthClassName}`}>
+          {sections.map((section) => (
+            <div key={`${section.key}-mobile`}>
+              <p
+                className={`flex items-center justify-between gap-2 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.14em] ${
+                  section.tone === "holiday" ? "bg-emerald-50 text-emerald-800" : "bg-slate-900 text-white"
+                }`}
+              >
+                <span>{section.label}</span>
+                <span className={section.tone === "holiday" ? "text-emerald-700" : "text-slate-300"}>{section.count}</span>
+              </p>
+              {section.areas.map((area) => (
+                <div key={`${section.key}-${area.key}-mobile`}>
+                  {area.label ? (
+                    <p className="border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600">
+                      {area.label}
+                    </p>
+                  ) : null}
+                  <div className="divide-y divide-slate-100">
+                    {area.rows.map((row) => (
+                      <PortalRecordCard
+                        accent={detailAccent(row.tone)}
+                        key={`${row.id}-mobile`}
+                        meta={`${row.date} · ${row.employee}`}
+                        status={
+                          <span className={`inline-flex border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                            {row.status}
+                          </span>
+                        }
+                        title={row.activity}
+                      >
+                        <PortalRecordFields
+                          fields={[
+                            { label: "Location", value: row.regionLocation },
+                            { label: "Area", value: row.area },
+                            { label: "Medical rep", value: row.medicalRep },
+                            { label: "Time", value: row.time },
+                          ]}
+                        />
+                        {row.conflictWarning !== "-" ? (
+                          <p className="mt-2 rounded border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
+                            {row.conflictWarning}
+                          </p>
+                        ) : null}
+                        {row.notes !== "-" ? (
+                          <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+                            {row.notes}
+                          </p>
+                        ) : null}
+                      </PortalRecordCard>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -961,7 +1013,34 @@ function PlanningCalendarDetailsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map((row) => (
+            {sections.flatMap((section) => [
+              <tr
+                className={section.tone === "holiday" ? "bg-emerald-50" : "bg-slate-900"}
+                key={`${section.key}-header`}
+              >
+                <td
+                  className={`px-3 py-2 text-phx-xs font-black uppercase tracking-[0.14em] ${
+                    section.tone === "holiday" ? "text-emerald-800" : "text-white"
+                  }`}
+                  colSpan={9}
+                >
+                  {section.label}
+                  <span className={`ml-2 font-bold ${section.tone === "holiday" ? "text-emerald-700" : "text-slate-300"}`}>
+                    {section.count} row{section.count === 1 ? "" : "s"}
+                  </span>
+                </td>
+              </tr>,
+              ...section.areas.flatMap((area) => [
+                ...(area.label
+                  ? [
+                      <tr className="bg-slate-100" key={`${section.key}-${area.key}-header`}>
+                        <td className="px-3 py-1.5 pl-6 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600" colSpan={9}>
+                          {area.label}
+                        </td>
+                      </tr>,
+                    ]
+                  : []),
+                ...area.rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-xs font-semibold text-slate-500">{row.date}</td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
@@ -984,7 +1063,9 @@ function PlanningCalendarDetailsTable({
                     <span className="whitespace-nowrap">{row.conflictWarning}</span>
                   </td>
                 </tr>
-              ))}
+                )),
+              ]),
+            ])}
           </tbody>
         </PortalDesktopTable>
       </div>

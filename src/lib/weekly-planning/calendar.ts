@@ -219,6 +219,83 @@ export function resolvePlanItemArea(
   return cleanText(storedArea) || cleanText(repAreaName) || cleanText(evidenceAreaName) || cleanText(ownerAreaName) || null;
 }
 
+/**
+ * The same never-empty rule for the region the calendar groups by (owner, 2026-10-24: "group them by
+ * region"): the region typed on the plan wins; otherwise the rep it is planned WITH; otherwise the
+ * planner's own region. A Phoenix CRM manager half-day stores no region at all, so it always resolves
+ * through the directory.
+ */
+export function resolvePlanItemRegion(
+  storedRegion: string | null | undefined,
+  repRegionName: string | null | undefined,
+  ownerRegionName: string | null | undefined,
+): string | null {
+  return cleanText(storedRegion) || cleanText(repRegionName) || cleanText(ownerRegionName) || null;
+}
+
+/**
+ * One group per region however it was typed: a plan says "Delta 1" or "ALEX-BHR" where the employee
+ * file says "Delta (1)" or "Alex-BHR", so the key drops case, brackets and punctuation.
+ */
+export function planningGroupKey(value: string | null | undefined) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[()]/g, " ")
+    .replace(/[^a-z0-9؀-ۿ]+/g, " ")
+    .trim();
+}
+
+const NO_REGION_LABEL = "No region";
+const NO_AREA_LABEL = "No area";
+
+function isAllCaps(value: string) {
+  return /[A-Z]/.test(value) && value === value.toUpperCase();
+}
+
+/** The spelling a group header shows: brackets dropped for a region ("Delta (1)" reads "Delta 1"), and a
+ * mixed-case spelling preferred over an all-caps one. */
+function groupLabel(spellings: string[], dropBrackets: boolean) {
+  const cleaned = spellings.map((spelling) => {
+    const text = dropBrackets ? spelling.replace(/[()]/g, " ") : spelling;
+    return text.replace(/\s+/g, " ").trim();
+  });
+  return cleaned.find((spelling) => !isAllCaps(spelling)) ?? cleaned[0];
+}
+
+export type PlanningAreaGroup<T> = { items: T[]; key: string; label: string };
+export type PlanningRegionGroup<T> = { areas: PlanningAreaGroup<T>[]; items: T[]; key: string; label: string };
+
+function groupBy<T>(items: T[], valueOf: (item: T) => string | null | undefined, dropBrackets: boolean, emptyLabel: string) {
+  const groups = new Map<string, { items: T[]; spellings: string[] }>();
+  for (const item of items) {
+    const key = planningGroupKey(valueOf(item));
+    const group = groups.get(key) ?? { items: [], spellings: [] };
+    group.items.push(item);
+    const spelling = cleanText(valueOf(item));
+    if (spelling) group.spellings.push(spelling);
+    groups.set(key, group);
+  }
+  return [...groups.entries()]
+    .map(([key, group]) => ({ items: group.items, key, label: key ? groupLabel(group.spellings, dropBrackets) : emptyLabel }))
+    .sort((left, right) => {
+      if (!left.key !== !right.key) return left.key ? -1 : 1;
+      return left.label.localeCompare(right.label, "en", { numeric: true, sensitivity: "base" });
+    });
+}
+
+/**
+ * The month tile and the selected day's details group by region, then by area inside it (owner,
+ * 2026-10-24: "in the planning calendar tile group them by region and when press on the tile in the
+ * details group them by region the area"). Regions and areas sort by name, "No region" and "No area"
+ * last; items keep their order inside a group.
+ */
+export function groupPlanItemsByRegion<T extends { area: string | null; region: string | null }>(items: T[]): PlanningRegionGroup<T>[] {
+  return groupBy(items, (item) => item.region, true, NO_REGION_LABEL).map((region) => ({
+    ...region,
+    areas: groupBy(region.items, (item) => item.area, false, NO_AREA_LABEL),
+  }));
+}
+
 export type PlaceEvidenceVisit = { areaName: string | null; date: string; hrId: string };
 export type PlaceEvidenceClaim = { areaName: string | null; endDate: string; hrId: string; startDate: string };
 
