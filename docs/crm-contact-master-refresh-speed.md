@@ -103,3 +103,77 @@ The first production runs on the new body are the 06:00 Cairo poller slices on 1
 taken at 20:44 Cairo on 16 October is the comparison point (the scheduled read-only comparison at 09:00
 on 17 October reports against it); cumulative statistics still carry the pre-fix calls, so read the
 delta, not the mean.
+
+## The 24 October pass: four shapes the planner could not rescue
+
+The owner's words, 2026-10-24: *"fix the crm contact master refresh"*. The 16 October pass above had
+already taken the call from 2,951 ms to under two seconds; this one takes it to **794 ms**, and every
+one of its four causes is a shape, not a missing index.
+`supabase/migrations/20261024160000_the_contact_refresh_hashes_its_handover_and_reads_the_rep_door_once.sql`.
+
+**1 · An `OR` of two equalities is not an equijoin.** The vendor handover matched a rep either by hr key
+or by CRM id — `(hr id present and l.hr_key = …) or (hr id blank and l.agent_crm_id = …)`. No join method
+can hash that, so it ran as a Nested Loop over the 2,138 open vendor rows by the 73 list rows and threw
+**156,074** of them away in the join filter: **316 ms a run**, the single most expensive statement in the
+function, to hand over **0 rows** on a quiet tick. The two arms are mutually exclusive by construction —
+the first needs an hr id, the second needs it blank — so the lookup now emits **both** keys per rep (the
+hr key, and `crm:<id>`) and the join compares one expression,
+`l.match_key = coalesce(nullif(lower(btrim(a.agent_hr_id)), ''), 'crm:' || a.agent_crm_id::text)`. Proved
+on production to select the same **21,481** rows, 0 either way. `crm:` cannot collide with an hr key: hr
+ids are the `b-10` shape and carry no colon — a prefix is only safe where the other key's alphabet
+excludes it.
+
+**2 · The rep door was read twice.** `public.phoenix_crm_doctor_list_reps()` is a 48 ms Function Scan
+(1,053 buffers for 93 rows) and the body called it once for the four vendor passes and again 450 lines
+later for the fifth pass's list. One `pg_temp` snapshot now serves both, which is also strictly more
+consistent: the started set the vendor passes skip is the same set, to the row, as the one the fifth pass
+writes.
+
+**3 · `analyze pg_temp.<table>` names its columns, or it builds histograms nothing reads.** Timed on
+production on tables built fresh so no page was warm: `crm_refresh_phoenix_customers` all 14 columns
+**168 ms** against the 7 its three readers join, filter or sort by **53 ms**; `crm_refresh_phoenix_truth`
+all 5 **80 ms** against `contact_crm_id` alone **3 ms**. The rest are projected into the two upserts and
+never compared — 192 ms a run, about 96 runs a day, read never.
+
+**4 · A SQL function with a `SET` clause cannot be inlined.** `public.crm_contact_fold_grade` carries
+`set search_path to 'public'`, so each of its five call sites was a real function call per row — about
+**110 ms** of the list build alone. The expression is inlined at all five, character for character from
+the function's own body (`20260913150000`). The function is **not** changed and **not** dropped: its other
+callers keep it, and taking its `SET` clause off to win the inlining would raise a
+`function_search_path_mutable` advisor finding that `scripts/check-advisor-baseline.ts` fails `validate`
+on. That trade — inline the expression, leave the helper alone — is the rule the module memory carries.
+
+### Measured
+
+On production `ozucdzovmcqvepbozvqf`, inside one rolled-back transaction with the pending row settled
+first so every timed run is the quiet tick the cron actually pays, old and new alternating four times
+each:
+
+| | 1 | 2 | 3 | 4 | median |
+| --- | --- | --- | --- | --- | --- |
+| old body | 1,320 ms | 1,300 ms | 1,357 ms | 1,435 ms | **1,338 ms** |
+| new body | 770 ms | 769 ms | 831 ms | 818 ms | **794 ms** |
+
+41% off the whole call, about 545 ms a tick, roughly **52 seconds of database time a day** at ~96 ticks.
+Live committed runs after the apply: **1,052 · 814 · 783 · 1,065 ms** (`contactsTotal 22242`,
+`assignmentsFrozen 10204`, every other counter 0).
+
+### Proof the answer did not change
+
+From the same committed production state, each body run once in its own rolled-back transaction, twice
+each. Both wrote exactly one assignment row and the same one — agent PD-0018, contact 1000049049,
+Pharmacy, no grade, source `phoenix_crm`, open from 2026-10-24 — and the full-row checksum of
+`crm_contacts` was `e3044c1025dc165bef1258ad931c4af4` on all four runs. The returned jsonb was equal field
+for field, the per-statement `ms` map aside. The assignments checksum differs between runs only by the
+serial `id` the rolled-back sequence had already advanced, which is why the row-level diff, not the
+checksum, is the proof for that table.
+
+Applied to staging `cifwmndunmlxjhyjugxa` and production `ozucdzovmcqvepbozvqf` through
+`scripts/apply-sql-file.mjs` (the standing route when the MCP refuses a body containing `delete` /
+`drop table pg_temp.…` — AGENTS.md §8), which writes no ledger row: the apply is proved by the digest the
+header states, `md5(prosrc) = a6dc9541576a7a474ad6a49c60013f34`, 36,805 chars, on **both** databases,
+with `prosecdef false` and `proconfig search_path=public` unchanged.
+
+Every one of the ten new assertions in `tests/crm-contact-master-refresh-speed.test.ts` section `3c` was
+proved by reverting the fix it pins and watching its own headline message fire — eight realistic reverts,
+plus five runs with the first-throwing assert neutralised to reach the four it shadowed.

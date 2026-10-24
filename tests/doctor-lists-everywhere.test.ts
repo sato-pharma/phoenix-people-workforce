@@ -62,10 +62,28 @@ export function runDoctorListsEverywhereTests() {
   );
 
   // ── 2. The window is half-open, exactly as the TypeScript rule is ─────────────────────────────────
+  // 20261024160000 reads the doctor-list reps ONCE, into crm_refresh_doctor_list_reps, for the vendor
+  // passes and the fifth alike — so the window lives on that one read, and the fifth pass must build its
+  // set from it rather than from a second, unwindowed call to the function.
+  const repsRead = (() => {
+    const at = REFRESH.indexOf("create temporary table crm_refresh_doctor_list_reps");
+    assert.ok(at > 0, "the doctor-list reps are read once, into crm_refresh_doctor_list_reps");
+    return REFRESH.slice(at, REFRESH.indexOf(";", at));
+  })();
   assert.match(
-    FIFTH,
+    repsRead,
     /v_today >= s\.counted_from\s*\n\s*and \(s\.counted_until is null or v_today < s\.counted_until\)/,
     "inclusive of counted_from, exclusive of counted_until — the same test startedWindowCovers makes",
+  );
+  assert.match(
+    FIFTH,
+    /from pg_temp\.crm_refresh_doctor_list_reps r\b/,
+    "the fifth pass builds its set from the one windowed read of the reps",
+  );
+  assert.doesNotMatch(
+    FIFTH,
+    /phoenix_crm_doctor_list_reps\(\)/,
+    "the fifth pass must not call the reps function again — a second read carries no window",
   );
 
   // ── 3. WHAT IS ON THE LIST ────────────────────────────────────────────────────────────────────────
@@ -89,10 +107,21 @@ export function runDoctorListsEverywhereTests() {
   // doctors and Mahmoud ElHassanin's 1. A hand-over keyed on the STARTED SET instead of on the LIST
   // would take all three to zero, which is this very defect in reverse.
   const handover = fifthStatement("vendor hand-over", "update public.crm_contact_assignments a\n     set effective_to = greatest(a.effective_from, l.counted_from - 1)");
+  // 20261024160000 made the lookup ONE text key (the hr key, or `crm:<id>` for a row with none) so the
+  // join can hash; it reads the list twice, once per key. EVERY read of it must still be the live list.
+  const listReads = handover.match(/from pg_temp\.crm_refresh_\w+ \w+\s*\n\s*where [^\n]*/g) ?? [];
+  assert.equal(listReads.length, 2, "the hand-over's key lookup reads the list once per key — the hr key and the CRM id");
+  for (const read of listReads) {
+    assert.match(
+      read,
+      /^from pg_temp\.crm_refresh_phoenix_lists l0\s*\n\s*where l0\.status in \('active', 'pending'\)$/,
+      "the hand-over is driven by the PHOENIX LIST, never by the started-rep set — a rep with no list is never in it",
+    );
+  }
   assert.match(
     handover,
-    /from \(select distinct hr_key, agent_crm_id, counted_from\s*\n\s*from pg_temp\.crm_refresh_phoenix_lists\s*\n\s*where status in \('active', 'pending'\)\) l/,
-    "the hand-over is driven by the PHOENIX LIST, never by the started-rep set — a rep with no list is never in it",
+    /and l\.match_key = coalesce\(nullif\(lower\(btrim\(a\.agent_hr_id\)\), ''\), 'crm:' \|\| a\.agent_crm_id::text\)/,
+    "a vendor row matches by its hr id, and by its CRM id only when it has no hr id",
   );
   assert.match(
     handover,
