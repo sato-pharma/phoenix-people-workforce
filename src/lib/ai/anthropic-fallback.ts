@@ -302,6 +302,27 @@ function unsupported(what: string): never {
   throw new AnthropicRequestError("failed", `The Anthropic fallback cannot send ${what}.`);
 }
 
+/** The only image types Claude reads. OpenAI takes more, so an upload OpenAI answered can be refused here. */
+const ANTHROPIC_IMAGE_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * The media type an inline image goes to Claude under: what its own first bytes say, never only the label it
+ * arrived with. A phone's `image/jpg`, an old browser's `image/pjpeg` or a renamed file sent under the wrong
+ * label is refused whole by Claude with a 400, while OpenAI answered it — so a CV photo or an invoice that read
+ * fine on the first account failed on the second. A HEIC/HEIF photo cannot be sent at all: it says so plainly
+ * rather than letting Claude refuse it. Returns null for a type Claude does not read.
+ */
+export function anthropicImageMediaType(declared: string, base64: string): string | null {
+  const head = Buffer.from(base64.slice(0, 24), "base64");
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  if (head.length >= 4 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
+  if (head.length >= 3 && head.toString("latin1", 0, 3) === "GIF") return "image/gif";
+  if (head.length >= 12 && head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+  const label = declared.trim().toLowerCase();
+  const normalized = label === "image/jpg" || label === "image/pjpeg" ? "image/jpeg" : label;
+  return ANTHROPIC_IMAGE_TYPES.has(normalized) ? normalized : null;
+}
+
 function blockFromPart(part: unknown): AnthropicContentBlock {
   const item = (part ?? {}) as Record<string, unknown>;
   switch (item.type) {
@@ -312,7 +333,11 @@ function blockFromPart(part: unknown): AnthropicContentBlock {
     case "input_image": {
       const url = String(item.image_url ?? "");
       const data = DATA_URL.exec(url);
-      if (data) return { source: { data: data[2], media_type: data[1], type: "base64" }, type: "image" };
+      if (data) {
+        const mediaType = anthropicImageMediaType(data[1], data[2]);
+        if (!mediaType) return unsupported(`a ${data[1]} image (Claude reads JPEG, PNG, GIF and WebP only)`);
+        return { source: { data: data[2], media_type: mediaType, type: "base64" }, type: "image" };
+      }
       if (/^https?:\/\//i.test(url)) return { source: { type: "url", url }, type: "image" };
       return unsupported("an image that is neither a data URL nor an http(s) address");
     }

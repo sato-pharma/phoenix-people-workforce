@@ -17,7 +17,7 @@
 
 import ExcelJS from "exceljs";
 
-import { anthropicJson, hasAiProvider, runWithSalesAiFailover, salesAiFailureCodeFor, salesLegOutcome, SalesAiError } from "@/lib/sales/ai/provider";
+import { anthropicJson, DEFAULT_AI_MODELS, hasAiProvider, runWithSalesAiFailover, salesAiFailureCodeFor, salesLegOutcome, SalesAiError } from "@/lib/sales/ai/provider";
 import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 import { type WeeklyContractSheet, type WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
@@ -28,7 +28,10 @@ import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from 
 import type { WeeklyVerifyAiState } from "@/lib/sales/weekly/verify-ai-state";
 
 // ── AI provider planning (shared with src/lib/sales/ai/provider.ts) ────────────────────────────────
-// ai-verify uses the shared "mini" model defaults exactly, so it passes none.
+// ai-verify uses the shared "mini" model defaults exactly.
+
+// The whole wait for one column check: the first account gets all of it, Claude standing in only what is left.
+const VERIFY_BUDGET_MS = 45_000;
 
 /** True when an AI key is configured (either provider) — the route surfaces this so the UI can label the mode. */
 export function hasWeeklyVerifyAi(): boolean {
@@ -91,7 +94,7 @@ export async function judgeWithAi(
     .join("\n");
   const user = `Distributor: ${distributorName}\n\nPinned columns (id | sheet | field | col | expected | found):\n${lines}\n\nReturn ONLY JSON of this exact shape: {"items":[{"id":<id>,"status":"match|drift|uncertain","note":"<short reason>"}],"summary":"<one plain-English sentence about whether the file lines up>"}`;
 
-  const text = await runWithSalesAiFailover(async (leg, { failoverTo }) => {
+  const text = await runWithSalesAiFailover(async (leg, { failoverTo, timeoutMs = VERIFY_BUDGET_MS }) => {
     if (leg.kind === "anthropic") {
       const reply = await anthropicJson({
         component: "sales_weekly_ai_verify",
@@ -100,7 +103,7 @@ export async function judgeWithAi(
         model: leg.model,
         purpose: "weekly_verify_columns",
         system,
-        timeoutMs: 45_000,
+        timeoutMs,
         user,
       });
       return reply.text;
@@ -120,7 +123,7 @@ export async function judgeWithAi(
       }),
       headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
       method: "POST",
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       // Log upstream body server-side only — it can echo request details / key fragments on 401.
@@ -156,7 +159,7 @@ export async function judgeWithAi(
       status: "success",
     });
     return json.choices?.[0]?.message?.content ?? "{}";
-  });
+  }, DEFAULT_AI_MODELS, VERIFY_BUDGET_MS);
   const parsed = JSON.parse(text) as { items?: AiJudgement[]; summary?: string };
   return { judgements: Array.isArray(parsed.items) ? parsed.items : [], summary: String(parsed.summary ?? "") };
 }

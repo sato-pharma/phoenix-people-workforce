@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { hasAiApiKey } from "@/lib/ai/openai-client";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { candidateAppliedFor } from "@/lib/recruitment/applied-for";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
@@ -315,7 +316,8 @@ async function main(): Promise<void> {
   });
 
   console.log(`Supabase project : ${requireEnv("NEXT_PUBLIC_SUPABASE_URL")}`);
-  console.log(`OpenAI key       : ${process.env.OPENAI_API_KEY ? "present" : "MISSING"}`);
+  // Any one of the AI keys reads a CV: the shared door tries OpenAI, then each Anthropic account.
+  console.log(`AI key           : ${hasAiApiKey() ? "present" : "MISSING"}`);
 
   // Truth set: every candidate with no extraction row at all — EXCEPT that a free rules-only read
   // does not count as read.

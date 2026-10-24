@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 
 import { checkSecretShape, KEY_SHAPES } from "../scripts/secret-shape-rules.mjs";
 import {
+  AI_KEY_VARIABLES,
   CANONICAL_ORIGIN_VARIABLE,
   EXPECTED_VALUES,
   FORBIDDEN_VARIABLES,
   RAILWAY_CLI_PACKAGE,
   REQUIRED_VARIABLES,
   canonicalProductionOrigin,
+  checkAiKeyPresent,
   checkCanonicalOrigins,
   checkExpectedValues,
   checkForbiddenVariables,
@@ -211,6 +213,39 @@ export function runRailwaySecretPolicyTests() {
   const publishable = syncedVariables.find((entry) => entry.railway === "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   assert.ok(publishable, "the sync script must still SYNC the publishable key, just not require it");
   assert.equal(publishable.required, false, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be optional in the sync script too");
+
+  // --- 6b. no single AI key is required; at least one of the three is ----------------------
+  // 2026-10-24: Claude answers first and OpenAI is the last resort, so production may run on
+  // Claude alone. Requiring OPENAI_API_KEY made both setup scripts refuse that healthy state.
+  for (const name of AI_KEY_VARIABLES) {
+    assert.ok(!REQUIRED_VARIABLES.includes(name), `${name} must not be required on its own — any one AI key is enough`);
+    const synced = syncedVariables.find((entry) => entry.railway === name);
+    if (synced) assert.equal(synced.required, false, `${name} must be optional in the sync script too`);
+  }
+  assert.deepEqual(
+    AI_KEY_VARIABLES,
+    ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2", "OPENAI_API_KEY"],
+    "the AI keys are the two Claude accounts and OpenAI, in the order every AI call tries them",
+  );
+  for (const name of AI_KEY_VARIABLES) {
+    assert.deepEqual(
+      checkAiKeyPresent(new Map([[name, "configured-value"]]), "production"),
+      [],
+      `${name} alone is a working production`,
+    );
+  }
+  const noAiKey = checkAiKeyPresent(new Map([["OPENAI_API_KEY", "  "], ["APP_URL", "https://phoenix-hr.satopharma.com"]]), "production");
+  assert.equal(noAiKey.length, 1, "a production with none of the AI keys (an empty one counts as none) must fail once");
+  assert.ok(
+    AI_KEY_VARIABLES.every((name) => noAiKey[0].includes(name)),
+    "the failure must name all three keys, so the reader knows any one of them fixes it",
+  );
+  assert.ok(!noAiKey[0].includes("configured-value"), "the failure must never print a value");
+  assert.deepEqual(checkAiKeyPresent(new Map(), "staging"), [], "the AI-key rule is production-only, like the rest of the policy");
+  assert.ok(
+    validatorSource.includes("failures.push(...checkAiKeyPresent(valuesByName, railEnv));"),
+    "the validator must actually run the AI-key rule",
+  );
 
   // --- 7. the canonical origin, folded in from validate-env.mjs -----------------------------
   const canonical = canonicalProductionOrigin();

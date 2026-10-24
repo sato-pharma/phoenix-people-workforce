@@ -195,6 +195,19 @@ export function isQuotaExhaustedRecord(record: AiCallRecord): boolean {
   return record.status !== "success" && record.errorCode === AI_QUOTA_EXHAUSTED_CODE;
 }
 
+/**
+ * The codes a call records when the provider refused the KEY itself: the clients' own `auth_failed`, and the
+ * bare 401/403 the sales chat leg records. Like out of credit, only a human ends it (a new key), and on
+ * 24 Oct 2026 the production OpenAI key had been refused for days with nobody told, because the alarm
+ * listened for out of credit alone.
+ */
+const AI_KEY_REJECTED_CODES = new Set(["auth_failed", "401", "403"]);
+
+/** Whether this call means the provider refused the account's key. Pages like out of credit does. */
+export function isKeyRejectedRecord(record: AiCallRecord): boolean {
+  return record.status !== "success" && record.errorCode !== undefined && AI_KEY_REJECTED_CODES.has(record.errorCode);
+}
+
 function describeCode(errorCode: string | undefined): string {
   if (errorCode === AI_QUOTA_EXHAUSTED_CODE) return "account out of credit (quota exhausted)";
   if (!errorCode) return "no error code reported";
@@ -262,10 +275,10 @@ export function recordAiCall(record: AiCallRecord): void {
   const event = buildAiFailureEvent(record);
   if (!event) return;
   if (!failureReportingEnabled()) return;
-  // Out of credit is the one AI failure only a human can end, and on 2026-09-18 it sat in this
-  // table unread. Page the owner too (in-app + Telegram, once a day — ai-quota-alert.ts). Loaded
+  // Out of credit and a refused key are the AI failures only a human can end, and on 2026-09-18 the
+  // first sat in this table unread. Page the owner too (in-app + Telegram, once a day — ai-quota-alert.ts). Loaded
   // lazily so this light module does not pull the notification stack into every AI call site.
-  if (isQuotaExhaustedRecord(record)) {
+  if (isQuotaExhaustedRecord(record) || isKeyRejectedRecord(record)) {
     void import("@/lib/notifications/ai-quota-alert")
       .then((alert) => alert.notifyAiQuotaExhausted(record))
       .catch(() => {
