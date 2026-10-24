@@ -514,6 +514,12 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The Super Admin's delete (owner, 2026-10-23) takes ONE of his visits out by id, with a copy kept. It counts,
   // sums and reports nothing: its only function is that delete, and the table is named in exactly two places.
   const deletesOwnVisitsOnly = new Set(["20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql"]);
+  // Planner and autovacuum tuning (2026-10-24) touches the table's STORAGE, never its rows: an
+  // `alter table … set (...)` of storage parameters reads nothing, counts nothing and reaches no KPI. Named one
+  // by one, and each may name the table in that one statement and nowhere else.
+  const tunesOwnVisitsStorageOnly = new Set([
+    "20261024200000_every_table_with_data_and_no_statistics_gets_them.sql",
+  ]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
@@ -529,6 +535,17 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
         .replace(/from public\.phoenix_crm_manager_visits x where x\.id = v_id and x\.is_test = v_is_test for update;/g, "")
         .replace(/delete from public\.phoenix_crm_manager_visits where id = v_id;/g, "");
       assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to lock one row and delete it`);
+      continue;
+    }
+    if (tunesOwnVisitsStorageOnly.has(file)) {
+      const body = stripSqlComments(text);
+      assert.equal(
+        /\b(from|join)\s+(public\.)?phoenix_crm_manager_visits\b|create\s+(or\s+replace\s+)?(view|function|materialized)/i.test(body),
+        false,
+        `${file} may tune his own visits' storage, never read the table into a view, a function or a KPI`,
+      );
+      const leftover = body.replace(/alter\s+table\s+if\s+exists\s+public\.phoenix_crm_manager_visits\s+set\s*\([^)]*\);/gi, "");
+      assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to set its storage parameters`);
       continue;
     }
     if (widensOwnVisitsOnly.has(file)) {
