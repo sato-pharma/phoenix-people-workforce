@@ -94,7 +94,8 @@ export async function runOrganogramAsOfMonthTests() {
   const source = stripComments(readFileSync("src/lib/reports/organogram-au-source.ts", "utf8"));
   assert.match(source, /supabase\.rpc\("au_f_org_tree_as_of", \{ p_date: organogramAsOfMonthEnd\(asOfMonth\) \}\)/, "a month is read through the dated function");
   assert.match(source, /: await supabase\s*\.from\("au_v_org_tree"\)/, "the live chart still reads the live view");
-  assert.match(source, /asOfMonth\s*\? new Map\(\)\s*: await loadOfferOutBySeat\(\)/, "no open offers on a past month's empty chairs");
+  assert.match(source, /const offerLoad[^;]*= asOfMonth\s*\? Promise\.resolve\(new Map\(\)\)\s*: loadOfferOutBySeat\(\)/, "no open offers on a past month's empty chairs");
+  assert.match(source, /const vacancyLoad = asOfMonth\s*\? null/, "nor a read of today's open Head Office seats for a past month");
   assert.match(source, /getMergedAreaName\(s\.line_code, s\.area_code \?\? "", asOfMonth\)/, "area merges follow the month shown, like the closings do");
   const asOfExit = source.indexOf("if (asOfMonth) {");
   const headOffice = source.indexOf("buildHeadOfficeOrganogramRows(");

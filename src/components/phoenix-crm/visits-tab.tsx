@@ -23,9 +23,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
-import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
-import { CallPrepPanel } from "@/components/phoenix-crm/call-prep-panel";
-import { CommitmentsPanel } from "@/components/phoenix-crm/commitments-panel";
+import { crmUrl, type CrmResource, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
+import { CallPrepPanel, callPrepUrl, useCallPrep } from "@/components/phoenix-crm/call-prep-panel";
+import { CommitmentsPanel, commitmentsUrl, useCommitments } from "@/components/phoenix-crm/commitments-panel";
 import { DayStartBlock } from "@/components/phoenix-crm/day-start-button";
 import { canStartDay } from "@/lib/phoenix-crm/day-start-rules";
 import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
@@ -734,6 +734,7 @@ function AddFlow({
   onClose,
   onSaved,
   onStep,
+  resource,
   seatId,
   step,
   test,
@@ -745,11 +746,12 @@ function AddFlow({
   onClose: () => void;
   onSaved: (visit: SavedVisit, customerName: string) => void;
   onStep: (next: AddStep) => void;
+  /** The form's read — the Visits tab's, which starts it before Add visit is pressed (see `formWanted`). */
+  resource: CrmResource<VisitFormView>;
   seatId: string;
   step: AddStep;
   test: boolean;
 }) {
-  const resource = useCrmGet<VisitFormView>(crmUrl("/api/phoenix-crm/visits/form", { seatId, test }), "form");
   const form = resource.data;
   // The visit recording a chosen rep sends before logging (owner, 2026-10-16), kept until the visit saves.
   const sent = useSentVisitRecording(seatId, test);
@@ -1055,6 +1057,7 @@ export function VisitsTab({
   onPendingVisitDone,
   onWorkChange,
   openingDay,
+  ownSeat,
   pendingVisit,
   seatId,
   test,
@@ -1084,6 +1087,12 @@ export function VisitsTab({
    * midnight and 02:00. Shown only until this tab's own day has answered.
    */
   openingDay: string;
+  /**
+   * This territory is one of the viewer's own (the overview's `ownSeatIds`) — the page's guess, before
+   * the day answers, that the rep's own reads below will be wanted. Only a guess: once the day has
+   * answered, the server's own flags decide, and the guess never renders anything.
+   */
+  ownSeat?: boolean;
   pendingVisit: PendingVisit | null;
   seatId: string;
   test: boolean;
@@ -1097,6 +1106,24 @@ export function VisitsTab({
   const day = useCrmGet<VisitDayView>(crmUrl("/api/phoenix-crm/visits", { date, seatId, test }), "day");
   const view = day.data;
 
+  // 🔴 THE REP'S OWN READS START WITH THE DAY'S, NOT AFTER IT (performance work, 24 Oct 2026). The
+  // commitments and the call prep used to mount only once the day had answered `canSetDayActivity`, so
+  // a rep waited for the day (p50 807 ms on production, 24 Oct) and THEN for each of them (call prep
+  // p50 723 ms). On his own live territory they now start in the same breath as the day. The guess is
+  // `ownSeat` and the live world only — a test-mode territory waits for the server, as before — and the
+  // moment the day answers, its own flag takes over: a guess the server overrules drops the read
+  // (`url` null) and nothing of it is ever drawn, because the panels still render on `ownDay` alone.
+  const guessOwn = ownSeat === true && !test;
+  const ownToday = date === null && (view ? view.canSetDayActivity : guessOwn);
+  const commitments = useCommitments(ownToday ? commitmentsUrl(seatId, test) : null);
+  const prep = useCallPrep(ownToday ? callPrepUrl(seatId, test) : null);
+  // The Add visit form, read ahead on a day he can add to, so pressing Add visit opens on it (p50
+  // 1,034 ms on production, 24 Oct, every time the button was pressed). Opening Add visit still reads
+  // it AGAIN when it was read ahead (`form.reload()` beside each `setStep` below), because the form is
+  // what he picks today's customers from and it must be the one as of now, not as of the tab opening.
+  const formWanted = step !== null || (date === null && (view ? view.canAdd : guessOwn));
+  const form = useCrmGet<VisitFormView>(formWanted ? crmUrl("/api/phoenix-crm/visits/form", { seatId, test }) : null, "form");
+
   // The visit day, learned from the server's own answer rather than from the phone's clock.
   if (date === null && view && view.date !== visitDay) setVisitDay(view.date);
 
@@ -1109,6 +1136,7 @@ export function VisitsTab({
       setSaved(null);
       setDate(null);
       setStep({ name: "open", customerId: handoff.customerId, customerName: handoff.customerName });
+      if (form.data) form.reload();
     }
   }
 
@@ -1122,6 +1150,7 @@ export function VisitsTab({
       setSaved(null);
       setDate(null);
       setStep({ name: "start" });
+      if (form.data) form.reload();
     }
   }
   useEffect(() => {
@@ -1135,6 +1164,11 @@ export function VisitsTab({
 
   function closeFlow() {
     setStep(null);
+    // The two panels used to live under the flow and so were read afresh every time it closed — a visit
+    // just saved can keep a commitment or change the next call. Their reads live up here now, so the
+    // closing asks for them again explicitly.
+    commitments.reload();
+    prep.reload();
     if (handoff) onPendingVisitDone();
   }
 
@@ -1159,6 +1193,7 @@ export function VisitsTab({
           if (visit.filedAsOwnSingleVisit) onOwnSingleVisitSaved?.();
         }}
         onStep={setStep}
+        resource={form}
         seatId={seatId}
         step={step}
         test={test}
@@ -1181,6 +1216,7 @@ export function VisitsTab({
   function openAdd() {
     setSaved(null);
     setStep({ name: "start" });
+    if (form.data) form.reload();
   }
 
   const addButton =
@@ -1310,9 +1346,9 @@ export function VisitsTab({
       {ownDay ? (
         <>
           {/* What he said he would do, and has not been back for. His own notes, never a score. */}
-          <CommitmentsPanel seatId={seatId} test={test} />
+          <CommitmentsPanel commitments={commitments} />
           {/* The four continuity facts for his next planned day — read-only, off the plan-change path. */}
-          <CallPrepPanel seatId={seatId} test={test} />
+          <CallPrepPanel prep={prep} />
         </>
       ) : null}
     </div>

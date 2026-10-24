@@ -201,9 +201,15 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.equal((service.match(/foldVisitRow\(fold, /g) ?? []).length, 2, "and it folds through the one function a rep's visit folds through");
     // The lines' product managers (owner, 2026-10-20): the one rule for who is given them, never in test mode, read
     // into the SAME list of people as the seat managers, judged by his own plan report's rule, keyed by him.
+    // Started beside the newest-worked-month lookup since 24 Oct 2026 (performance work); the rule is unchanged.
     assert.match(
       service,
-      /const productManagers =\s*isTest \|\| viewer\.basis !== "all"\s*\? \[\]\s*: \(await loadScopeProductManagers\(viewer, seats\)\)\.filter\(\(manager\) => !seatHolders\.has\(manager\.hrId\)\);/,
+      /const productManagersRead: Promise<ScopeProductManager\[\]> =\s*isTest \|\| viewer\.basis !== "all" \|\| seats\.length === 0 \? Promise\.resolve\(\[\]\) : loadScopeProductManagers\(viewer, seats\);/,
+      "the product managers come from the one rule, for the company readers only, and none in the test world",
+    );
+    assert.match(
+      service,
+      /const productManagersOnGrid = productManagersRead\.then\(\(read\) => read\.filter\(\(manager\) => !seatHolders\.has\(manager\.hrId\)\)\);/,
       "the product managers come from the one rule, for the company readers only — the National Sales Manager's calendar stays field force only (owner, 2026-10-20: \"Keep it as is\") — none in the test world, and a seat holder keeps his seat's row",
     );
     assert.match(service, /countsAsPlannersVisitWithRep\(visit, hrId\)/, "his ride-along is the visit naming him in his own slot");

@@ -65,10 +65,12 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     // streamRoleExtras: the same for a District, Regional or National Sales Manager and the
     // Marketing Manager — his team, region or national figures, rankings, CRM board and inbox fill
     // under their own Suspense, and the identity band and pending actions paint first.
+    // streamDvFocus: and the double-visit focus at the foot of a manager's landing, the same way.
     snapshot = await getPortalHomeSnapshot(access, {
       kpiMonth: one(params.kpiMonth),
       streamRepCards: true,
       streamRoleExtras: true,
+      streamDvFocus: true,
     });
   } catch (error) {
     logPortalFailure(

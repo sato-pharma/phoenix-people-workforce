@@ -16,8 +16,8 @@
 // (`gcExplainsStall`). The web process froze 1-11 s dozens of times a day with nothing running, memory
 // and CPU nowhere near their limits, and a major V8 collection was the leading, unproven suspect:
 // `railway logs | grep event_loop_stall` now settles it line by line. The observer is created and
-// drained inside THIS module, so it cannot suffer the module-instance split that leaves `timings` and
-// `jobs` empty (the recorders live in other chunks).
+// drained inside THIS module. `timings` and `jobs` are recorded from other chunks, which left both empty
+// until 24 Oct 2026; their stores now live on `globalThis`, so every chunk records into the one drained here.
 //
 // Started once from instrumentation.ts, production only: a dev server or a test run has no use
 // for a line every minute, and the timer is unref'd so it never holds a process open.
@@ -182,8 +182,7 @@ export function startProcessHealthReporter(): void {
   histogram.enable();
   let lastStallAtMs: number | null = null;
 
-  // The collections of the current minute. Observed and drained in this module instance, so (unlike
-  // `timings` and `jobs`) nothing can be recording into a different copy of it.
+  // The collections of the current minute, observed and drained in this module instance.
   const gcWindow = createGcWindow();
   let gcObserver: PerformanceObserver | null = null;
   try {

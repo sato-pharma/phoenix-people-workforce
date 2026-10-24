@@ -16,7 +16,7 @@
  * to 100% so nothing scrolls sideways at 375px, square edges, and no ellipsis — every cell wraps.
  */
 
-import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmUrl, type CrmResource, useCrmGet } from "@/components/phoenix-crm/api";
 import { dayLabel } from "@/components/phoenix-crm/format";
 import {
   CrmBlock,
@@ -87,8 +87,19 @@ function CommitmentTable({ group }: { group: CommitmentGroup }) {
   );
 }
 
-export function CommitmentsPanel({ seatId, test }: { seatId: string; test: boolean }) {
-  const commitments = useCrmGet<RepCommitmentsView>(crmUrl("/api/phoenix-crm/commitments", { seatId, test }), "commitments");
+/**
+ * The read is handed in, not made here: the Visits tab starts it beside the day's own read on the
+ * rep's own territory (`useCommitments`), so the panel no longer waits for the day to answer first.
+ */
+export function useCommitments(url: string | null): CrmResource<RepCommitmentsView> {
+  return useCrmGet<RepCommitmentsView>(url, "commitments");
+}
+
+export function commitmentsUrl(seatId: string, test: boolean): string {
+  return crmUrl("/api/phoenix-crm/commitments", { seatId, test });
+}
+
+export function CommitmentsPanel({ commitments }: { commitments: CrmResource<RepCommitmentsView> }) {
   const view = commitments.data;
   const notListed = view ? commitmentsNotListedNote(view) : null;
 

@@ -179,6 +179,11 @@ function portalCandidatesRedirectResponse(request: NextRequest) {
  * one of those away too (`resolveSessionState` starts with the same check). That stale cookie is
  * cleared on the way, so /login does not validate it a second time.
  *
+ * The page they asked for rides along as `returnUrl` (owner, 2026-10-24: "back on that page"), so a
+ * rep who opens a visit from a notification on an expired session lands on that visit after signing
+ * in, not on the home page and one more navigation away. It is always this request's own path, and
+ * the login page still admits only a same-site path (`safeReturnUrl` there and in the form).
+ *
  * Left alone, so they keep the path they had:
  *  - GET/HEAD only, and only the two signed-in page trees (`/employee-portals`, `/admin`) — never
  *    `/api`, which answers 401 as JSON and must never receive an HTML redirect, and never the `/hr`
@@ -219,9 +224,14 @@ function signedOutPageRedirectResponse(request: NextRequest) {
     const sessionCookie = request.cookies.get(phoenixSessionCookieName)?.value;
     if (verifySessionToken(sessionCookie)) return null;
 
+    const asked = new URLSearchParams(request.nextUrl.search);
+    asked.delete("_rsc"); // a client navigation's cache-buster, not part of the page's address
+    const askedQuery = asked.toString();
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
+    url.searchParams.set("returnUrl", `${request.nextUrl.pathname}${askedQuery ? `?${askedQuery}` : ""}`);
 
     const response = NextResponse.redirect(url, 307);
     // Per-user, like the root redirect: a cached answer must never be handed to somebody else.

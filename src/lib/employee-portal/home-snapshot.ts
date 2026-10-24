@@ -605,6 +605,17 @@ export type PortalHomeSnapshot = {
    * else, so the home API route and the Training Manager page still get a whole snapshot.
    */
   roleCards?: Promise<PortalHomeRoleExtras> | null;
+  /**
+   * District, Regional and National Sales Manager, Product Manager and Group Product Manager only,
+   * and only when the page asked for it (`streamDvFocus`): the double-visit focus — the trend, the
+   * scope coverage and the probation watchlist at the foot of the landing — handed over STILL
+   * RUNNING. It walks every double visit in the company since the trend's first month, and the whole
+   * landing used to wait for that walk before it could draw its identity band. While this is set,
+   * `dvFocus` on the snapshot itself is null and must be read from here. It never rejects (a failed
+   * read resolves null, the same as the awaited field). Absent everywhere else, so the home API route
+   * and the Training Manager page still get `dvFocus` whole.
+   */
+  dvFocusCard?: Promise<DoubleVisitPortalFocus | null> | null;
 };
 
 /** What a Medical Rep's achievement tile and his "Achievement by month" panel are drawn from. */
@@ -651,6 +662,19 @@ const STREAM_ROLE_EXTRAS_ROLES = new Set([
   "National Sales Manager",
   "Regional Manager",
   "Marketing Manager",
+]);
+
+/**
+ * The roles whose landing streams the double-visit focus: exactly the PortalCommandCenter layouts
+ * that draw it through `StreamedDoubleVisitFocus`. The Training Manager holds a focus too but is left
+ * awaited: her landing never draws it, and her own page reads `dvFocus` off a whole snapshot.
+ */
+const STREAM_DV_FOCUS_ROLES = new Set([
+  "District Manager",
+  "National Sales Manager",
+  "Regional Manager",
+  "Product Manager",
+  "Group Product Manager",
 ]);
 
 const emptyRoleExtras: RoleSpecificExtras = {
@@ -1110,6 +1134,12 @@ export async function getPortalHomeSnapshot(
      * the promise through Suspense may ask; the JSON home route must not.
      */
     streamRoleExtras?: boolean;
+    /**
+     * The landing's double-visit managers only (see STREAM_DV_FOCUS_ROLES): hand the double-visit
+     * focus back unawaited, on `dvFocusCard`. The same rule as `streamRepCards` — only a caller that
+     * renders the promise through Suspense may ask; the JSON home route must not.
+     */
+    streamDvFocus?: boolean;
   },
 ): Promise<PortalHomeSnapshot> {
   // STARTED, NOT AWAITED (2026-10-01, "slow to transfer between page and page"). Nothing below needs
@@ -1132,6 +1162,9 @@ export async function getPortalHomeSnapshot(
   // The same for a sales or marketing manager: his team, region or national figures and the CRM
   // board are the slowest reads of his landing, and nothing else on it waits for them.
   const streamRoleExtras = options?.streamRoleExtras === true && STREAM_ROLE_EXTRAS_ROLES.has(role);
+  // And the double-visit focus at the foot of a manager's landing: it walks every double visit since
+  // the trend's first month, and nothing above it on the page reads any of it.
+  const streamDvFocus = options?.streamDvFocus === true && STREAM_DV_FOCUS_ROLES.has(role);
 
   // Start MR sales query + the role-specific KPI extras immediately so they run in parallel
   // with the batch below. getRoleSpecificExtras never throws — it resolves emptyRoleExtras
@@ -1393,7 +1426,8 @@ export async function getPortalHomeSnapshot(
     await Promise.all([
       // Streamed: the role extras ride on roleCards, so the page does not wait for them here.
       streamRoleExtras ? Promise.resolve(emptyRoleExtras) : roleExtrasPromise,
-      dvFocusPromise,
+      // Streamed: the double-visit focus rides on dvFocusCard, so the page does not wait for it here.
+      streamDvFocus ? Promise.resolve(null) : dvFocusPromise,
       earlyBirdStarsPromise,
       planAdherencePromise,
       // Streamed: the leave left rides on repCards.record, so the page does not wait for it here.
@@ -1431,5 +1465,6 @@ export async function getPortalHomeSnapshot(
     cvFolders,
     repCards,
     roleCards: streamRoleExtras ? roleExtrasPromise : null,
+    dvFocusCard: streamDvFocus ? dvFocusPromise : null,
   };
 }

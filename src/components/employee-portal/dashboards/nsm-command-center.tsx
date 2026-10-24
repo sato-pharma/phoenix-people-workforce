@@ -39,7 +39,7 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
-import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -152,7 +152,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, dvFocus, earlyBirdStars } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, earlyBirdStars } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   // The national figures and the boards are the slow reads; everything else paints without them,
   // and each section that needs them fills under its own Suspense.
@@ -233,7 +233,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         </Suspense>
       ) : null}
 
-      <DoubleVisitFocusSection focus={dvFocus} />
+      <StreamedDoubleVisitFocus snapshot={snapshot} />
     </div>
   );
 }

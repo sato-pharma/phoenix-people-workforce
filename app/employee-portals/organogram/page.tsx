@@ -63,6 +63,12 @@ export default async function EmployeePortalOrganogramPage() {
 
   await assertPermission(access, "organogram", "read");
 
+  // Asked now, beside the report rather than after it (2026-10-24): the answer needs nothing the
+  // report reads. It is still awaited below, where a failure throws exactly as before; the empty
+  // catch only stops Node calling it unhandled while the report is running.
+  const canAddEmployeeLoad = canAccess(access, "employees", "create");
+  canAddEmployeeLoad.catch(() => undefined);
+
   let initialError: string | null = null;
   let initialReport = null;
   // fixedLine locks the UI filter to one line; for multi-line users it stays null
@@ -108,7 +114,7 @@ export default async function EmployeePortalOrganogramPage() {
   // readable by plenty of roles that may not hire.
   // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
   // the master but does not add to it, and POST /api/employees asserts create on every add.
-  const canAddEmployee = await canAccess(access, "employees", "create");
+  const canAddEmployee = await canAddEmployeeLoad;
 
   if (initialError) {
     return (

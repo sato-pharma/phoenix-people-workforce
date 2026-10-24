@@ -40,6 +40,7 @@
 
 import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { validationError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay, fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
@@ -986,6 +987,11 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   // UNHANDLED rejection. The families' own failure still fails the wave below, as it always did.
   const lineProductsRead = productFamiliesRead.then((families) => families.map((entry) => entry.family));
   lineProductsRead.catch(() => undefined);
+  // The product managers' names ride on the product managers' read, and a manager's own-visit switch
+  // starts here too (2026-10-24, "performance acceleration"): both used to be awaited one after the
+  // other once the whole wave was in, two more round trips before the form could paint. The switch is
+  // read ONCE now, where the vacant-territory flag used to read it a second time.
+  const lineProductManagersRead = loadLineProductManagers(seat);
   const wave = Promise.all([
     // The list, and the customers waiting outside it: a second visit to someone met outside the list
     // is another out-of-list visit to the same customer, never a second customer.
@@ -1008,7 +1014,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // The line's product managers, for "A product manager" on "Who was on the visit" (owner,
     // 2026-10-02). The same cached list the rep's ask offers, so the two can never disagree about who
     // his product managers are; on the wave because it never blocks anything else.
-    loadLineProductManagers(seat),
+    lineProductManagersRead,
     // The out-of-plan doctors of this field week, for the allowance on the unplanned steps.
     loadOffPlanRows([seat.seatId], isTest, offPlanWeekWindow(today)),
     // Whether the Super Admin requires this rep to record the visit (owner, 2026-10-16).
@@ -1018,6 +1024,10 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     enteredAs === "rep" ? loadPlanHolidays(viewer.cairoToday, visitAskLastDay(viewer.cairoToday)) : Promise.resolve(new Map<string, string>()),
     // The customers a named exception covers (owner, 2026-10-17): the day and the week never block them.
     loadOffPlanExemptions(seat.seatId),
+    // Their names are read apart from the day's: a product manager holds no seat, so he is neither in
+    // the day's visits nor in the chain.
+    lineProductManagersRead.then((managers) => loadPeopleNames(managers.map((manager) => manager.hrId))),
+    enteredAs === "manager" ? managerOwnVisitClosedNow(viewer) : Promise.resolve(false),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
@@ -1037,6 +1047,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     recordingRequired,
     doubleVisitHolidays,
     offPlanExemptions,
+    productManagerNames,
+    managerOwnVisitClosed,
   ] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
@@ -1102,9 +1114,6 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
   else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
   const sight = locationSight(viewer, seat);
-  // Their names are read apart from the wave's: the wave's list is built from the day's visits and the
-  // chain, and a product manager is in neither — he holds no seat at all.
-  const productManagerNames = await loadPeopleNames(lineProductManagers.map((manager) => manager.hrId));
   const productManagerRoles = new Map(lineProductManagers.map((manager) => [personKey(manager.hrId) ?? manager.hrId, manager.role]));
 
   // 🔴 THROUGH THE BLIND SHAPER, LAST (Golden Rule #1): a field his browser receives counts as shown.
@@ -1120,9 +1129,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       position: member.position,
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
-    ownVisitClosed: enteredAs === "manager" && (await managerOwnVisitClosedNow(viewer)),
-    // Vacant is asked FIRST, so a territory with a rep never pays for the switch read twice.
-    ownVisitVacant: enteredAs === "manager" && isVacantTerritory(seat) && (await managerOwnVisitClosedNow(viewer)),
+    ownVisitClosed: enteredAs === "manager" && managerOwnVisitClosed,
+    ownVisitVacant: enteredAs === "manager" && isVacantTerritory(seat) && managerOwnVisitClosed,
     productManagers: lineProductManagers.map((manager) => ({
       hrId: manager.hrId,
       name: nameOf(productManagerNames, manager.hrId),
@@ -1295,6 +1303,12 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     throw validationError(draft.error);
   }
   const visit = draft.value;
+  // The line's products are started here and awaited where they always were (2026-10-24, "performance
+  // acceleration"), so they load while the participants and the double-visit ask are checked, and a
+  // refusal from either still reaches the rep first. Handled at once, so an early refusal never leaves
+  // it an unhandled rejection; its own failure still fails the save at the await below.
+  const productFamiliesRead = lineProductsByFamily(seat.lineName);
+  productFamiliesRead.catch(() => undefined);
   // The old "My own visit" is closed for a district manager who plans in Phoenix CRM (owner, 2026-10-16):
   // his single visits go on his own plan and count in his own report, never under a rep's seat. One still
   // on the legacy form keeps it. Double and chain are unchanged.
@@ -1333,7 +1347,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     raw: body.doubleVisit,
   });
 
-  const productFamilies = await lineProductsByFamily(seat.lineName);
+  const productFamilies = await productFamiliesRead;
   const allowedFamilies = new Set(productFamilies.map((entry) => entry.family));
   if (productFamilies.length === 0 || visit.products.some((product) => !allowedFamilies.has(product))) {
     throw validationError("Choose the products discussed from your line's products. Reload the page.");
@@ -1569,9 +1583,14 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // Was this position real? Judged AFTER the save, deliberately: the answer never reaches the rep,
   // never changes what comes back to him, and can never cost him a visit he actually made. A repeat
   // save (`duplicate`) is skipped — the first one was already judged.
-  if (result.duplicate !== true) {
-    const capturedAt = new Date(String(result.captured_at));
-    if (!Number.isNaN(capturedAt.getTime())) {
+  //
+  // 🔴 AND AFTER THE REPLY (2026-10-24, "performance acceleration"): both writers below swallow their own
+  // failures and answer nothing, so the rep no longer waits for them — the save measured p95 8 s on
+  // production that afternoon. `afterResponse` runs them once the reply has gone, still in this order,
+  // and simply awaits them where there is no request (the unit suite, a script).
+  const capturedAt = new Date(String(result.captured_at));
+  if (result.duplicate !== true && !Number.isNaN(capturedAt.getTime())) {
+    await afterResponse("phoenix-crm save visit: capture evidence", async () => {
       await judgeCapture({
         subjectKind: "visit",
         subjectId: visitId,
@@ -1600,7 +1619,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         deviceInstallId: visit.deviceInstallId,
         isTest,
       });
-    }
+    });
   }
 
   const isUnplanned = result.is_unplanned === true;

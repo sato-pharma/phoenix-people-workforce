@@ -133,7 +133,7 @@ export function runOfferOutOnSeatsTests() {
   // an offer is a fact about today's empty chair. Either way it is ONE read for the whole chart.
   assert.match(
     auSource,
-    /const offerOutBySeat\b[^;]*await loadOfferOutBySeat\(\)/,
+    /const offerLoad\b[^;]*loadOfferOutBySeat\(\);[\s\S]*const offerOutBySeat\b[^;]*= await offerLoad;/,
     "the map is read once for the whole chart, not per node",
   );
   assert.equal(
