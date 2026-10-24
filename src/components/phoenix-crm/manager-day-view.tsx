@@ -1,5 +1,6 @@
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { cairoStamp, dayLabelLong } from "@/components/phoenix-crm/format";
+import { ManagerMissedRecordPanel } from "@/components/phoenix-crm/manager-missed-record-panel";
 import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
@@ -74,6 +75,12 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
             <ManagerPlanActualTable plan={view.plan} planUnread={view.planUnread} rows={rows} summary={summary} />
           )}
         </CrmBlock>
+
+        {/* The Super Admin enters what the manager missed (owner, 2026-10-24: "Visits and days"); the server
+            decided it — `missedRecords` is null for everyone else and for a day still to come. */}
+        {view.missedRecords ? (
+          <ManagerMissedRecordPanel date={view.date} managerKey={view.missedRecords.managerKey} managerName={manager.name} />
+        ) : null}
 
         {view.adminDeletes && visits.length > 0 ? (
           <CrmBlock title="Delete a visit">

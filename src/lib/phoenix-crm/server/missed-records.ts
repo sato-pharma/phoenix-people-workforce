@@ -27,7 +27,7 @@ import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
 import { isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
-import { territoryReviewer } from "@/lib/phoenix-crm/scope";
+import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
 import {
   readTestFlag,
   territoryForMissedRecord,
@@ -38,12 +38,12 @@ import { loadDayActivityOn, mapDayActivityRow, type DayActivityRow } from "@/lib
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { ensureReferenceCustomers, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm, withdrawPhoenixCrmVisitNotices } from "@/lib/phoenix-crm/server/notifications";
-import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
-import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
-import { unplannedFirstStatus } from "@/lib/phoenix-crm/unplanned-rules";
+import { reviewerWasOnTheVisit, unplannedFirstStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -68,8 +68,17 @@ export type MissedRecordCustomer = {
   pending: boolean;
 };
 
+/** One manager above the territory, nearest first — who may be on a double or chain visit he enters. */
+export type MissedRecordChainManager = { hrId: string; name: string; title: string; position: number };
+
 export type MissedRecordForm = {
   territory: TerritorySummary;
+  /**
+   * The managers above the territory, nearest first (owner, 2026-10-24: "choose visit single, double or
+   * chain"). A double names one of them; a chain names one and a senior manager above him. Empty when
+   * nobody sits above the territory, and then only a single visit can be entered.
+   */
+  chain: MissedRecordChainManager[];
   isTest: boolean;
   date: string;
   /** The last day a record may be entered for: the visit day running now. */
@@ -109,7 +118,7 @@ export async function loadMissedRecordForm(
     getSupabaseAdmin().from("phoenix_crm_visits").select("customer_id").eq("seat_id", seat.seatId).eq("is_test", isTest).eq("visit_date", date),
     lineProductsByFamily(seat.lineName),
     loadDayActivityOn(seat.seatId, isTest, date),
-    loadPeopleNames(territoryPeople(viewer.org, [seat])),
+    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...managerChain(viewer.org, seat.seatId).map((member) => member.hrId)]),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
@@ -142,12 +151,22 @@ export async function loadMissedRecordForm(
   options.sort((left, right) => Number(right.onSentPlan) - Number(left.onSentPlan) || left.name.localeCompare(right.name));
 
   const products = families.map((entry) => entry.family);
-  let blockedReason: string | null = null;
-  if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
-  else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
+  // The products are optional on his entry (owner, 2026-10-24), so a line with none on file no longer
+  // stops a visit: it is entered with no products, which is what "optional" means.
+  const blockedReason = seat.lineCode ? null : "This territory has no line in the organogram, so visits cannot be saved.";
+  const repHrId = seat.occupantHrId ? seat.occupantHrId.toUpperCase() : null;
+  const chain = managerChain(viewer.org, seat.seatId)
+    .filter((member) => member.hrId !== repHrId)
+    .map((member) => ({
+      hrId: member.hrId,
+      name: nameOf(names, member.hrId, "Manager"),
+      title: seatTierTitle(member.seat.tier),
+      position: member.position,
+    }));
 
   return {
     territory: describeTerritory(viewer.org, seat, names),
+    chain,
     isTest,
     date,
     through: viewer.visitDay,
@@ -180,16 +199,33 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
   if (!parsed.ok) throw validationError(parsed.error);
   const entry = parsed.value;
 
-  // The products discussed come from the line's own list, exactly as on a rep's visit.
-  const families = await lineProductsByFamily(seat.lineName);
-  const allowed = new Set(families.map((family) => family.family));
-  if (families.length === 0 || entry.products.some((product) => !allowed.has(product))) {
-    throw validationError("Choose the products discussed from the line's products. Reload the page.");
+  // The products discussed, when he chose any, come from the line's own list, exactly as on a rep's visit.
+  if (entry.products.length > 0) {
+    const families = await lineProductsByFamily(seat.lineName);
+    const allowed = new Set(families.map((family) => family.family));
+    if (entry.products.some((product) => !allowed.has(product))) {
+      throw validationError("Choose the products discussed from the line's products. Reload the page.");
+    }
   }
 
+  // Who was on it, checked against the territory's chain by the rep's own rule — entered AS the rep, since
+  // the visit is his: a double names a manager above him, a chain that manager and a senior above HIM.
+  const participants = resolveVisitParticipants({
+    index: viewer.org,
+    territorySeatId: seat.seatId,
+    actorHrId: repHrId,
+    enteredAs: "rep",
+    kind: entry.kind,
+    managerHrId: entry.managerHrId,
+    seniorHrId: entry.seniorHrId,
+  });
+  if (!participants.ok) throw validationError(participants.error);
+
   // Where an unplanned visit's approval starts, from the organogram and never from the screen: a
-  // territory with no manager seat above it begins at SFE, exactly as a rep's own off-plan visit does.
+  // territory with no manager seat above it begins at SFE, exactly as a rep's own off-plan visit does —
+  // and so does one whose deciding manager was ON it (owner, 2026-10-12: "the SFE approves it instead").
   const reviewer = territoryReviewer(viewer.org, seat.seatId);
+  const reviewerOnTheVisit = reviewerWasOnTheVisit(reviewer?.hrId ?? null, [participants.value.managerHrId, participants.value.seniorHrId]);
   const result = await callPhoenixCrm<Row>("phoenix_crm_admin_enter_visit", {
     p: {
       id: entry.visitId,
@@ -202,10 +238,13 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
       visit_date: entry.visitDate,
       visit_minute: entry.visitMinute,
       planned: entry.planned,
+      kind: entry.kind,
+      manager_hr_id: participants.value.managerHrId,
+      senior_hr_id: participants.value.seniorHrId,
       products: entry.products,
       comment: entry.comment,
       unplanned_reason: entry.reason,
-      unplanned_first_status: unplannedFirstStatus(reviewer !== null),
+      unplanned_first_status: unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit),
       reviewer_hr_id: reviewer?.hrId ?? null,
     },
   });

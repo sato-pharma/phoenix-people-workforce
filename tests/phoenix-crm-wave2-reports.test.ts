@@ -235,7 +235,7 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // page"), which resolves him by the calendar's own rule for his row.
     assert.match(
       tab,
-      /function cellOpens\([^)]*\): boolean \{\s*if \(row\.kind === "manager"\) return opensTheDay\(day\);/,
+      /function cellOpens\([^)]*\): boolean \{\s*if \(row\.kind === "manager"\) return opensTheDay\(day\) \|\| \(entryThrough !== null && opensForMissedRecords\(day\.day, entryThrough\)\);/,
       "a product manager's row is a manager's row: it opens on a worked day",
     );
     assert.doesNotMatch(tab, /row\.seatless\) return false/, "and no seatless refusal is left in front of it");

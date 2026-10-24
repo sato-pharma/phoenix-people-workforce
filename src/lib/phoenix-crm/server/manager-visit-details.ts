@@ -7,6 +7,7 @@ import {
   type ManagerVisitPlaceSource,
 } from "@/lib/phoenix-crm/manager-visit-detail";
 import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
+import { isManagerVisitEnteredForHim } from "@/lib/phoenix-crm/missed-records";
 import { countsAsPlannersVisitWithRep, singleVisitHalfOfHour } from "@/lib/phoenix-crm/manager-plan-rules";
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
@@ -47,7 +48,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 const OWN_COLUMNS =
-  "id, manager_hr_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, created_at, in_vacant_territory, address, area_name, brick_name";
+  "id, manager_hr_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, created_at, in_vacant_territory, address, area_name, brick_name, entered_by_hr_id";
 
 const RIDE_COLUMNS =
   "id, seat_id, visit_date, captured_at, created_at, customer_id, place_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, products, comment, pharmacy_name, is_unplanned, lat, customer_validated";
@@ -234,6 +235,7 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       customerKey: planCustomerKey(row.customer_id, row.manager_customer_id),
       customerName: customer?.name ?? own?.name ?? "Customer",
       date,
+      enteredByAdmin: isManagerVisitEnteredForHim({ enteredBy: row.entered_by_hr_id, manager: row.manager_hr_id }),
       grade: customer?.grade ?? own?.grade ?? null,
       hasPin: row.lat !== null && row.lat !== undefined,
       id: `own:${String(row.id)}`,

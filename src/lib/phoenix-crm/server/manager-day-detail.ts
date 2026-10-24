@@ -5,6 +5,7 @@ import { managerDayFigures, type ManagerDayFigures, type ManagerDayVisit } from 
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
+import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
 import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecords, readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dayRouteVisitOf, loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
@@ -52,6 +53,11 @@ export type PhoenixCrmManagerDayDetail = {
   isTest: boolean;
   /** The Super Admin may delete any visit on this day as if it never happened (owner, 2026-10-23). */
   adminDeletes: boolean;
+  /**
+   * The Super Admin may enter what this manager missed recording — a single visit of his own, or how the day was
+   * spent (owner, 2026-10-24: "Visits and days"); null for everyone else and for a day still to come.
+   */
+  missedRecords: { managerKey: string; through: string } | null;
   date: string;
   manager: {
     seatId: string;
@@ -145,6 +151,7 @@ export async function loadPhoenixCrmManagerDayDetail(
     figures: managerDayFigures(visits),
     isTest,
     leaveUnread,
+    missedRecords: canEnterMissedRecords(viewer) && isMissedRecordDay(date, viewer.visitDay) ? { managerKey: subject.seatId, through: viewer.visitDay } : null,
     manager: {
       name: nameOf(names, subject.hrId),
       reportsTo: above ? nameOf(names, above) : null,
@@ -158,8 +165,17 @@ export async function loadPhoenixCrmManagerDayDetail(
   };
 }
 
+/**
+ * The manager a day address names, for the viewer — the page's own gate, shared with the Super Admin's missed
+ * record for a manager (owner, 2026-10-24) so the two can never disagree about who that is. Null when the
+ * viewer does not read him; never in test mode, where the calendar draws no manager row.
+ */
+export async function resolveManagerDaySubject(viewer: PhoenixCrmViewer, key: string): Promise<ManagerDaySubject | null> {
+  return resolveSubject(viewer, key, testReadSeats(viewer, false, viewer.scopeTerritories));
+}
+
 /** Whose day the address names: a seat manager, or a line's product manager on his row key. */
-type ManagerDaySubject = { hrId: string; seatId: string; title: string; aboveHrId: string | null; productManager: boolean };
+export type ManagerDaySubject = { hrId: string; seatId: string; title: string; aboveHrId: string | null; productManager: boolean };
 
 /**
  * The manager this address may open, or null — exactly the people the team calendar draws a row for. A seat manager

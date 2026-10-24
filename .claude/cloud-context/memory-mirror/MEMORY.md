@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [weekly usage drain = parallel Opus sessions at 200K+ context](weekly-usage-drain-is-parallel-opus-sessions-at-big-context.md) - measured 24 Oct; compact at 200K, Sonnet default, pr-merger deleted.
 
 
 

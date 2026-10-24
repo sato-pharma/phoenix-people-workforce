@@ -193,8 +193,20 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     assert.equal(unplanned.ok, true);
     if (unplanned.ok) assert.equal(unplanned.value.reason, "Met him at the hospital", "cleaned exactly as the database cleans it");
 
-    assert.equal(parseMissedVisit(visit({ comment: "   " }), VISIT_DAY).ok, false, "a visit with nothing said about it is a row, not a record");
-    assert.equal(parseMissedVisit(visit({ products: [] }), VISIT_DAY).ok, false, "the products discussed are required");
+    // 🔴 Optional on HIS entry and only on his (owner, 2026-10-24) — a rep's own visit still needs both.
+    const bare = parseMissedVisit(visit({ comment: "   ", products: [] }), VISIT_DAY);
+    assert.ok(bare.ok && bare.value.comment === null && bare.value.products.length === 0, "the Super Admin may enter a visit with no comment and no products");
+    // Single, double or chain is HIS choice: an older screen sends none and gets a single visit.
+    assert.ok(planned.ok && planned.value.kind === "single" && planned.value.managerHrId === null && planned.value.seniorHrId === null);
+    const double = parseMissedVisit(visit({ kind: "double", managerHrId: " b-12 " }), VISIT_DAY);
+    assert.ok(double.ok && double.value.kind === "double" && double.value.managerHrId === "B-12" && double.value.seniorHrId === null, "a double names one manager");
+    assert.equal(parseMissedVisit(visit({ kind: "double" }), VISIT_DAY).ok, false, "a double needs its manager");
+    assert.equal(parseMissedVisit(visit({ kind: "chain", managerHrId: "B-12" }), VISIT_DAY).ok, false, "a chain needs its senior manager too");
+    const chain = parseMissedVisit(visit({ kind: "chain", managerHrId: "B-12", seniorHrId: "B-3" }), VISIT_DAY);
+    assert.ok(chain.ok && chain.value.managerHrId === "B-12" && chain.value.seniorHrId === "B-3");
+    const strayPeople = parseMissedVisit(visit({ kind: "single", managerHrId: "B-12", seniorHrId: "B-3" }), VISIT_DAY);
+    assert.ok(strayPeople.ok && strayPeople.value.managerHrId === null && strayPeople.value.seniorHrId === null, "a single visit carries nobody else");
+    assert.equal(parseMissedVisit(visit({ kind: "product_manager" }), VISIT_DAY).ok, false, "a visit with a product manager stays the rep's own");
     assert.equal(
       parseMissedVisit(visit({ products: Array.from({ length: 13 }, (_, index) => `Product ${index}`) }), VISIT_DAY).ok,
       false,
@@ -384,12 +396,12 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
       2,
       "both grids — the desktop row and the phone card — open his days the same way",
     );
-    // The one rule behind both: a manager row opens only on a day he worked, and never to enter a missed record
-    // (there is no record to enter on a manager seat); a rep row opens on work or, for the Super Admin, to enter one.
+    // The one rule behind both: a rep row opens on work or, for the Super Admin, to enter one; a manager row opens
+    // on a day he worked and — since 2026-10-24 ("Visits and days") — for the Super Admin on any day that has begun.
     assert.match(
       calendar,
-      /if \(row\.kind === "manager"\) return opensTheDay\(day\);\s*return opensTheDay\(day\) \|\| opensForEntry\(entrySeats, entryThrough, row\.seatId, day\);/,
-      "a manager cell never opens for entry; a rep cell does",
+      /if \(row\.kind === "manager"\) return opensTheDay\(day\) \|\| \(entryThrough !== null && opensForMissedRecords\(day\.day, entryThrough\)\);\s*return opensTheDay\(day\) \|\| opensForEntry\(entrySeats, entryThrough, row\.seatId, day\);/,
+      "a manager cell opens for entry only for the Super Admin (entryThrough is null for everyone else); a rep cell as before",
     );
     const calendarService = source("src/lib/phoenix-crm/server/team-calendar.ts");
     assert.match(

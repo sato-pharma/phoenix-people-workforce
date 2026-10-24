@@ -65,6 +65,15 @@ export function parseVisitTime(raw: unknown): MinuteParse {
   return { ok: true, value: hours * 60 + minutes };
 }
 
+/** The three kinds of visit the Super Admin may enter for a rep — the same three the rep logs himself. */
+export type MissedVisitKind = "single" | "double" | "chain";
+
+export const MISSED_VISIT_KIND_LABELS: Record<MissedVisitKind, string> = {
+  single: "Single",
+  double: "Double",
+  chain: "Chain",
+};
+
 export type MissedVisitEntry = {
   visitId: string;
   customerId: string;
@@ -73,20 +82,36 @@ export type MissedVisitEntry = {
   visitMinute: number | null;
   /** HIS choice — never read from the plan. */
   planned: boolean;
+  /** HIS choice (owner, 2026-10-24); who stands in each place is checked against the organogram on the server. */
+  kind: MissedVisitKind;
+  /** The manager on a double or chain visit; null on a single. */
+  managerHrId: string | null;
+  /** The senior manager above him on a chain visit; null otherwise. */
+  seniorHrId: string | null;
+  /** Optional on his entry (owner, 2026-10-24) — possibly empty. */
   products: string[];
-  comment: string;
+  /** Optional on his entry (owner, 2026-10-24); null when he wrote none. */
+  comment: string | null;
   /** Why the rep was there off his plan; set only on an unplanned visit. */
   reason: string | null;
 };
 
 export type MissedVisitParse = { ok: true; value: MissedVisitEntry } | { ok: false; error: string };
 
+function hrIdOrNull(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return text || null;
+}
+
 /**
  * One missed visit from the wire.
  *
- * The comment is REQUIRED, as it is on a rep's own visit (owner, 2026-09-30: "visit comment is
- * required"): an entered visit with nothing said about it is a row and not a record. The reason is
- * required on an unplanned one for the person it goes to — the manager decides it, and has to know why.
+ * 🔴 THE PRODUCTS AND THE COMMENT ARE OPTIONAL HERE, AND ONLY HERE (owner, 2026-10-24: "make product
+ * choosing optional and comment optional only when admin is entering a visit for a rep"). A rep's own
+ * visit still requires both (owner, 2026-09-30), and so does every other door; the database widens its
+ * products CHECK for an 'admin' visit alone (20261024213000). The kind — single, double or chain — is
+ * his too; the people on it are named here and checked against the territory's chain on the server.
+ * The reason is still required on an unplanned one: the manager decides it, and has to know why.
  */
 export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitParse {
   const body = bodyOf(raw);
@@ -99,17 +124,23 @@ export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitPar
   if (!minute.ok) return minute;
   if (body.planned !== true && body.planned !== false) return { ok: false, error: "Choose whether the visit was planned or unplanned." };
 
+  // An older screen sends no kind: that visit was a single one, as every entry was before.
+  const kind: MissedVisitKind = body.kind === undefined || body.kind === null ? "single" : (body.kind as MissedVisitKind);
+  if (kind !== "single" && kind !== "double" && kind !== "chain") return { ok: false, error: "Choose single, double or chain." };
+  const managerHrId = kind === "single" ? null : hrIdOrNull(body.managerHrId);
+  const seniorHrId = kind === "chain" ? hrIdOrNull(body.seniorHrId) : null;
+  if (kind !== "single" && !managerHrId) return { ok: false, error: "Choose the manager who was on the visit." };
+  if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
+
   const products: string[] = [];
   for (const entry of Array.isArray(body.products) ? body.products : []) {
     const product = typeof entry === "string" ? entry.trim() : "";
     if (product && !products.includes(product)) products.push(product);
   }
-  if (products.length === 0) return { ok: false, error: "Choose the products discussed." };
   if (products.length > VISIT_PRODUCTS_MAX) return { ok: false, error: `Choose at most ${VISIT_PRODUCTS_MAX} products.` };
 
-  const comment = typeof body.comment === "string" ? body.comment.trim() : "";
-  if (!comment) return { ok: false, error: "Write what happened on the visit." };
-  if (comment.length > VISIT_COMMENT_MAX) return { ok: false, error: `Keep the comment under ${VISIT_COMMENT_MAX} characters.` };
+  const comment = (typeof body.comment === "string" ? body.comment.trim() : "") || null;
+  if (comment && comment.length > VISIT_COMMENT_MAX) return { ok: false, error: `Keep the comment under ${VISIT_COMMENT_MAX} characters.` };
 
   let reason: string | null = null;
   if (body.planned === false) {
@@ -130,11 +161,100 @@ export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitPar
       visitDate: body.visitDate,
       visitMinute: minute.value,
       planned: body.planned,
+      kind,
+      managerHrId,
+      seniorHrId,
       products,
       comment,
       reason,
     },
   };
+}
+
+// ── A manager's missed record (owner, 2026-10-24: "Visits and days") ────────────────────────────
+
+export type MissedManagerVisitEntry = {
+  clientRef: string;
+  /** A customer of a rep list he reaches, or one of Manager's own list — exactly one. */
+  customerId: string | null;
+  managerCustomerId: string | null;
+  visitDate: string;
+  visitMinute: number | null;
+  products: string[];
+  comment: string | null;
+  /** Where the doctor is, typed — required only when the customer's territory is vacant (decided on the server). */
+  address: string | null;
+};
+
+export type MissedManagerVisitParse = { ok: true; value: MissedManagerVisitEntry } | { ok: false; error: string };
+
+/** The most an address on a manager's visit may hold — `MANAGER_CUSTOMER_ADDRESS_MAX`, restated so this file stays pure. */
+const MANAGER_VISIT_ADDRESS_MAX = 300;
+const MANAGER_VISIT_COMMENT_MAX = 1000;
+const MANAGER_VISIT_PRODUCTS_MAX = 12;
+
+/**
+ * One missed single visit of a manager's own, from the wire. Products and comment are optional, as they
+ * are on a visit he logs himself; whether it was planned is read from HIS plan on the server (a manager's
+ * unplanned visit asks nobody's approval, so there is no choice to make — only a fact to file).
+ */
+export function parseMissedManagerVisit(raw: unknown, visitDay: string): MissedManagerVisitParse {
+  const body = bodyOf(raw);
+  if (!isUuid(body.id)) return { ok: false, error: "Reload the page and enter the visit again." };
+  const customerId = isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null;
+  const managerCustomerId = isUuid(body.managerCustomerId) ? String(body.managerCustomerId).toLowerCase() : null;
+  if ((customerId === null) === (managerCustomerId === null)) return { ok: false, error: "Choose the customer the manager visited." };
+  if (!isMissedRecordDay(body.visitDate, visitDay)) return { ok: false, error: "Choose the day of the visit: today or an earlier day." };
+  const minute = parseVisitTime(body.visitTime);
+  if (!minute.ok) return minute;
+
+  const products: string[] = [];
+  for (const entry of Array.isArray(body.products) ? body.products : []) {
+    const product = typeof entry === "string" ? entry.trim() : "";
+    if (product && !products.includes(product)) products.push(product);
+  }
+  if (products.length > MANAGER_VISIT_PRODUCTS_MAX) return { ok: false, error: `Choose at most ${MANAGER_VISIT_PRODUCTS_MAX} products.` };
+
+  const comment = (typeof body.comment === "string" ? body.comment.trim().replace(/\s+/g, " ") : "") || null;
+  if (comment && comment.length > MANAGER_VISIT_COMMENT_MAX) return { ok: false, error: `Keep the comment under ${MANAGER_VISIT_COMMENT_MAX} characters.` };
+  const address = (typeof body.address === "string" ? body.address.trim().replace(/\s+/g, " ") : "") || null;
+  if (address && address.length > MANAGER_VISIT_ADDRESS_MAX) return { ok: false, error: `Keep the address under ${MANAGER_VISIT_ADDRESS_MAX} characters.` };
+
+  return {
+    ok: true,
+    value: {
+      clientRef: `admin:${String(body.id).toLowerCase()}`,
+      customerId,
+      managerCustomerId,
+      visitDate: body.visitDate,
+      visitMinute: minute.value,
+      products,
+      comment,
+      address,
+    },
+  };
+}
+
+/**
+ * The instant a missed visit is filed at: the time he gave on the day he chose, in Cairo — noon when he gave
+ * none — and never later than `now`. The small hours before 02:00 belong to the day before, exactly as
+ * phoenix_crm_admin_enter_visit reads them for a rep's.
+ */
+export function missedVisitInstant(date: string, minute: number | null, now: Date, offsetMinutesAt: (at: Date) => number): Date {
+  const effective = minute ?? MISSED_VISIT_DEFAULT_MINUTE;
+  const [year, month, day] = date.split("-").map(Number);
+  const wall = Date.UTC(year, month - 1, day + (effective < VISIT_DAY_CUTOFF_MINUTE ? 1 : 0), 0, effective);
+  // The offset is read at the wall time taken as UTC, then once more at the instant it gives: right on both
+  // sides of a clock change, which is the one place a single read can be an hour out.
+  const first = wall - offsetMinutesAt(new Date(wall)) * 60_000;
+  const at = new Date(wall - offsetMinutesAt(new Date(first)) * 60_000);
+  return at.getTime() > now.getTime() ? now : at;
+}
+
+/** Whether a manager's own visit was entered for him by somebody else — which only the Super Admin's missed record does. */
+export function isManagerVisitEnteredForHim(visit: { enteredBy: unknown; manager: unknown }): boolean {
+  const enteredBy = personKey(visit.enteredBy);
+  return Boolean(enteredBy) && enteredBy !== personKey(visit.manager);
 }
 
 export type MissedActivityEntry = { activityDate: string; clear: false; draft: DayActivityDraft } | { activityDate: string; clear: true; draft: null };

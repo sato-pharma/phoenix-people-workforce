@@ -238,7 +238,11 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
       "/admin/field-crm/manager-day/SEAT-1/2026-10-13?test=1",
       "in the shell the calendar was read in",
     );
-    assert.match(tab, /if \(row\.kind === "manager"\) return opensTheDay\(day\);/, "and only on a day he worked");
+    assert.match(
+      tab,
+      /if \(row\.kind === "manager"\) return opensTheDay\(day\) \|\| \(entryThrough !== null && opensForMissedRecords\(day\.day, entryThrough\)\);/,
+      "and only on a day he worked — except for the Super Admin, whose `entryThrough` alone is set (2026-10-24: he enters what a manager missed)",
+    );
 
     const page = source("app/employee-portals/field-crm/manager-day/[seatId]/[date]/page.tsx");
     assert.match(page, /loadPhoenixCrmManagerDayPage\(access,/);

@@ -182,7 +182,8 @@ function dayHref(surface: CrmSurface, row: { seatId: string; kind?: "rep" | "man
 
 /**
  * Whether a cell is a link. A rep's cell opens on a working day (or, for the Super Admin, to enter what was
- * missed); a manager's opens only on a day he worked, because there is no record to enter on a manager's seat.
+ * missed); a manager's opens on a day he worked — and, for the Super Admin, on any day that has begun, since he
+ * enters what a manager missed too (owner, 2026-10-24: "Visits and days").
  * A product manager's row is a manager's row here (owner, 2026-10-21: "Open a day page"): his worked day opens
  * the manager's day page on his row key, which that page reads by HR id.
  */
@@ -192,7 +193,7 @@ function cellOpens(
   entrySeats: ReadonlySet<string>,
   entryThrough: string | null,
 ): boolean {
-  if (row.kind === "manager") return opensTheDay(day);
+  if (row.kind === "manager") return opensTheDay(day) || (entryThrough !== null && opensForMissedRecords(day.day, entryThrough));
   return opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
 }
 
