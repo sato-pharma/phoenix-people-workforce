@@ -129,7 +129,7 @@ export default async function EmployeePortalEmployee360Page({
 
   if (!target) {
     return (
-      <Shell description="Your field performance and team roll-up." title="Employee 360">
+      <Shell description="Your field performance, team roll-up, and coaching impact." title="Employee 360">
         <EmployeePortalEmptyState
           message="We could not find your employee record. Please contact HR if this continues."
           title="Profile unavailable"
@@ -148,7 +148,7 @@ export default async function EmployeePortalEmployee360Page({
   // The shared 360 gate stays the single source of truth rather than assuming self-view inline.
   if (!canViewEmployee360Subject(access, target, await buildEmployee360Scope(rows, access))) {
     return (
-      <Shell description="Your team's field performance and roll-up." title="Employee 360">
+      <Shell description="Your team's field performance, roll-up, and coaching impact." title="Employee 360">
         {teamRoster.length > 0 ? (
           <section className="space-y-2">
             <div className="flex items-baseline justify-between gap-3">
@@ -207,7 +207,7 @@ export default async function EmployeePortalEmployee360Page({
   // Finance, admin, office…) gets a clear out-of-scope state, matching the admin report.
   if (!roleCategory) {
     return (
-      <Shell description="Your field performance and team roll-up." title="Employee 360">
+      <Shell description="Your field performance, team roll-up, and coaching impact." title="Employee 360">
         <EmployeePortalEmptyState
           message={`${target.jobTitle || "Your role"} isn't covered by Employee 360. The report is scoped to the field force — Medical Reps, District / Regional / National Sales Managers, Product & Group Product Managers, and Training Managers.`}
           title="Not covered by Employee 360"
@@ -363,7 +363,7 @@ export default async function EmployeePortalEmployee360Page({
     : null;
 
   return (
-    <Shell description="Your field performance and team roll-up." title="Employee 360">
+    <Shell description="Your field performance, team roll-up, and coaching impact." title="Employee 360">
       <div className="space-y-4">
         <PeriodFilter
           activeKey={period.key}
@@ -389,7 +389,6 @@ export default async function EmployeePortalEmployee360Page({
           teamHealth={teamHealth}
           teamLifecycle={teamLifecycle}
           tmAnalytics={tmAnalytics}
-          suppressCoaching
         />
       </div>
     </Shell>

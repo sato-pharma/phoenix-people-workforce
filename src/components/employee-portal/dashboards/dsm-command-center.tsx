@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  ChartColumnBig,
   ClipboardCheck,
   ReceiptText,
   Target,
@@ -46,6 +47,7 @@ import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens"
 
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Team Performance" },
+  { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Vacation Request" },
   { href: "/employee-portals/med-reps-performance", icon: Target, label: "Med Rep Performance" },
@@ -54,6 +56,7 @@ const DASHBOARDS: readonly DashboardLink[] = [
 
 const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Review Team Plan" },
+  { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approve Requests" },
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
 ];

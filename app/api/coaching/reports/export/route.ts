@@ -5,7 +5,6 @@ import {
   requireCoachingPermission,
 } from "@/app/api/coaching/_lib/route-utils";
 import {
-  type AccessContext,
   canAccess,
   canManageCoachingReports,
   normalizeHrId,
@@ -17,7 +16,6 @@ import {
   getCoachingReports,
   getCoachingReportsByIds,
 } from "@/lib/coaching/service";
-import type { CoachingReportFilters } from "@/lib/coaching/types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { NextResponse } from "next/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -32,20 +30,6 @@ function isEmployeePortalRole(role: string) {
 
 function filenameForToday() {
   return `phoenix-coaching-reports-${new Date().toISOString().slice(0, 10)}.xlsx`;
-}
-
-function enforceExportScope(filters: CoachingReportFilters, access: AccessContext) {
-  if (access.role !== "Training Manager") return filters;
-
-  const coachHrId = normalizeHrId(access.hrId);
-  if (!coachHrId) {
-    throw new CoachingApiError("forbidden", "Training Manager export requires a linked HR_ID.", 403);
-  }
-
-  return {
-    ...filters,
-    coachHrId,
-  };
 }
 
 export async function GET(request: Request) {
@@ -63,7 +47,9 @@ export async function GET(request: Request) {
       throw new CoachingApiError("forbidden", `Forbidden: ${access.role} cannot export coaching.`, 403);
     }
 
-    const filters = enforceExportScope(filtersFromRequest(request), access);
+    // A Training Manager exports every coach's reports, predecessors included (owner, 2026-10-24);
+    // what she may read is still decided by getCoachingReports' own access scope.
+    const filters = filtersFromRequest(request);
     const [reports, employees] = await Promise.all([
       getCoachingReports(filters, access),
       getEmployeeDirectoryRows(),

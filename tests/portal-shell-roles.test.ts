@@ -10,9 +10,8 @@ import { notificationHrefForViewerRole } from "../src/lib/notifications/hrefs.ts
 //   /overview           → redirect(resolveLandingPathForRole(access.role))       app/overview/page.tsx
 //   /employee-portals   → "/overview" when resolveNavigationMode(access) is not the portal,
 //                         otherwise it renders                                    app/employee-portals/page.tsx
-// The Training-Manager bounce into the coaching dashboard was removed on 2026-09-29 (owner: hide
-// training-manager + coaching system-wide in the portal); a Training Manager now renders the portal
-// home like every other portal role.
+// A Training Manager signs in to /employee-portals/training-manager again (owner, 2026-10-24), but the
+// portal home itself never bounces her, so the Command Center row still opens it.
 // Every other address is a page that renders (for this pair's purposes).
 function nextHop(path: string, role: PhoenixRole): string | null {
   const access = createAccessContext({ hrId: "HR-1", loginId: "login-1", role });

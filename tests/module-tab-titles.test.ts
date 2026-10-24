@@ -43,12 +43,6 @@ const ACCEPTED_DUPLICATE_TITLES: readonly string[] = [
   "Probation",
   "Payslips",
   "Vacancies",
-  // "Coaching" — /employee-portals/coaching and /employee-portals/training-manager/coaching both end
-  // in the "coaching" segment. Their distinct catalog labels ("Team/My Coaching Reports", "Coaching
-  // Dashboard") were removed on 2026-09-29 when coaching + the Training Manager section were hidden
-  // system-wide in the portal (owner), so both now derive the same address name. Both routes redirect
-  // to the portal home before rendering, so neither tab is ever actually shown — the collision is inert.
-  "Coaching",
 ];
 
 /** Every `page.tsx` under `app/`, as the URL the browser asks for. */
@@ -137,22 +131,16 @@ export function runModuleTabTitlesTests() {
     );
   }
 
-  // ── 3. Coaching was delisted from the portal (owner, 2026-09-29) ────────────────
-  // The two catalog rows that gave /employee-portals/coaching a role-specific tab name ("My Coaching
-  // Reports" for a rep, "Team Coaching Reports" for a manager) were removed when coaching + the
-  // Training Manager section were hidden system-wide in the portal. The route now redirects to the
-  // portal home before rendering, so its tab is never shown; with no catalog row the resolver falls
-  // back to the address name for every role. Pinned here so a future re-add of a role-specific label
-  // is a conscious change to this assertion, not a silent one.
+  // ── 3. Two rows share one href; the viewer's own row is the one that names it ─
   assert.equal(
     resolveModuleName("/employee-portals/coaching", "employee-portal", "Medical Rep"),
-    "Coaching",
-    "coaching is delisted from the portal — the route redirects and resolves to the plain address name",
+    "My Coaching Reports",
+    "a rep's coaching tab must carry the rep's own wording",
   );
   assert.equal(
     resolveModuleName("/employee-portals/coaching", "employee-portal", "District Manager"),
-    "Coaching",
-    "coaching is delisted from the portal — the route redirects and resolves to the plain address name for every role",
+    "Team Coaching Reports",
+    "a manager opening the same address must not be told these are 'My' reports — the tab would contradict the rail",
   );
 
   // ── 4. A detail route is named after its page, never after the id in it ─────

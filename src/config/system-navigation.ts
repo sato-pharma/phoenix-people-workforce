@@ -27,6 +27,7 @@ import {
   Contact,
   Database,
   FileCheck2,
+  FilePlus2,
   FileClock,
   FileSearch,
   FileSignature,
@@ -1710,12 +1711,13 @@ const employeePortalNavigationSectionSeeds = [
       // catalogued or a recorded omission.
       { href: "/employee-portals/recruitment-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["National Sales Manager"] },
       { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
-      // The Training Manager section and every coaching destination were removed from the portal
-      // catalog (command palette / Modules Control) on 2026-09-29 (owner: "hide anything related to
-      // training manager and coaching anywhere system wide in employee portal"). Coaching read/create
-      // grants are unchanged; the routes are blocked by the layout redirects under
-      // app/employee-portals/{coaching,coaching-analytics,training-manager}. They are recorded as
-      // delisted-by-ruling in tests/navigation-reachability-backlog.ts.
+      // The Training Manager section and the coaching destinations are back in the portal catalog
+      // (owner, 2026-10-24: "lift the hide from everyone"), after the 2026-09-29 hide removed them.
+      { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
+      { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
+      { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
+      { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
+      { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Team Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["District Manager", "National Sales Manager"] },
       { href: "/employee-portals/contact-hr-support", icon: LifeBuoy, label: "HR Support", permissions: [{ resource: "support_requests", action: "create" }] },
       { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Outstation Expenses", permissions: [{ resource: "expenses" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expense Dashboard", permissions: [{ resource: "expenses" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
@@ -1907,11 +1909,11 @@ const employeePortalNavigationSectionSeeds = [
       // Field Absence Calendar — the portal half, the National Sales Manager's own line. The portal
       // rail row is drawn by showFieldAbsenceTab; this row feeds the command palette and Modules Control.
       { href: "/employee-portals/field-absence", icon: CalendarX2, label: "Field Absence Calendar", permissions: [{ resource: "field_absence", action: "read" }], roles: ["National Sales Manager"] },
-      // Coaching Analytics was removed from the portal catalog on 2026-09-29 (owner: hide coaching +
-      // training manager system-wide in the portal). Only the double-visit / field-activity items
-      // remain in this section, so its heading is no longer "Coaching".
+      // Coaching Analytics is back (owner, 2026-10-24, lifting the 2026-09-29 portal hide), and the
+      // section wears its "Coaching" heading again.
+      { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
-    label: "Double Visits",
+    label: "Coaching",
   },
   {
     id: "employee-market-awareness",

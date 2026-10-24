@@ -14,9 +14,10 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "sfe manager") return "/admin/sfe-command-center";
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
-  // The Training Manager coaching dashboard was this role's landing until 2026-09-29, when the owner
-  // hid training-manager + coaching system-wide in the portal. A Training Manager is a portal-shell
-  // role, so it now falls through to the normal /employee-portals home below.
+  // The Training Manager lands on her coaching section again (owner, 2026-10-24, lifting the
+  // 2026-09-29 portal hide). The portal home itself no longer bounces her, so the Command Center row
+  // still opens the normal home.
+  if (normalized === "training manager") return "/employee-portals/training-manager";
   // The two HR seats (owner, 2026-08-28). Admin-shell, so they must NOT be in the portal set
   // above — but /admin is the Super Admin home and shows them a shell of modules they do not
   // hold, so they get their own command centre, composed from the function bundle each seat

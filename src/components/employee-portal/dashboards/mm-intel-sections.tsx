@@ -7,6 +7,7 @@ import {
   Building2,
   Minus,
   ShieldAlert,
+  Stethoscope,
   Target,
   TrendingUp,
   Users,
@@ -14,6 +15,8 @@ import {
 
 import { egp } from "@/components/employee-portal/portal-command-center";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
+import { getCoachingReports } from "@/lib/coaching/service";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
 import { getSalesMarketingDashboard } from "@/lib/sales-marketing-intelligence/service";
@@ -161,13 +164,17 @@ export async function MmRoiSection({ access }: { access: AccessContext }) {
 /* ── Field Activity Health — exceptions first (coaching + double-visit) ── */
 
 export async function MmFieldHealthSection({ access }: { access: AccessContext }) {
-  // Coaching is hidden from the employee portal system-wide (owner, 2026-09-29), so the "Avg coaching
-  // score" stat that used to lead this card is gone; it now shows double-visit health only.
-  const dv = await getDoubleVisitDashboardData({ access }).catch(() => null);
+  const [coaching, dv] = await Promise.all([
+    getCoachingReports({}, access)
+      .then((rows) => buildCoachingReportAnalytics(rows))
+      .catch(() => null),
+    getDoubleVisitDashboardData({ access }).catch(() => null),
+  ]);
 
   const dvReady = !!dv && dv.schemaReady;
   const neglected = dvReady ? dv.executiveReports.reduce((sum, r) => sum + (r.neglectedMrCount ?? 0), 0) : null;
   const mappedVisits = dvReady ? dv.kpis.activeMappedVisitCount : null;
+  const avgCoaching = coaching && coaching.coachingCount > 0 ? `${Math.round(coaching.averageScore)}%` : "—";
 
   return (
     <Shell title="Field Activity Health" icon={Activity}>
@@ -178,6 +185,11 @@ export async function MmFieldHealthSection({ access }: { access: AccessContext }
           value={neglected == null ? "—" : String(neglected)}
           tone={neglected && neglected > 0 ? "danger" : "default"}
           sub={<span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><ShieldAlert className="h-3 w-3" /> no double-visit cover</span>}
+        />
+        <Stat
+          label="Avg coaching score"
+          value={avgCoaching}
+          sub={coaching ? <span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><Stethoscope className="h-3 w-3" /> {coaching.coachingCount} reports</span> : undefined}
         />
         <Stat
           label="Mapped visits (mo)"

@@ -16,10 +16,7 @@ import {
   normalizeHrId,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
-import {
-  resolveAccessContextFromPage,
-  resolveViewerIdentityFromPage,
-} from "@/lib/auth/server";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCoachingReports } from "@/lib/coaching/service";
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
 import {
@@ -33,6 +30,7 @@ export const dynamic = "force-dynamic";
 
 const createCoachingReportHref = "/employee-portals/training-manager/create-coaching-report";
 const fieldCoachingHref = "/employee-portals/training-manager/field-coaching";
+const archivedCoachingHref = "/employee-portals/training-manager/field-coaching/archived";
 
 function toOptionMap(
   rows: { label: string | null | undefined; value: number | string | null | undefined }[],
@@ -116,16 +114,15 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
 
   let reports: CoachingReportSummaryRow[] = [];
   let employees: EmployeeDirectoryRow[] = [];
-  let coachLabel = coachHrId;
   try {
-    const [resolvedReports, resolvedEmployees, viewer] = await Promise.all([
+    // Every coach's reports, predecessors included (owner, 2026-10-24): a Training Manager reads the
+    // whole field-coaching history for reference, so the list is no longer locked to her own HR_ID.
+    const [resolvedReports, resolvedEmployees] = await Promise.all([
       getCoachingReports({}, access),
       getEmployeeDirectoryRows(),
-      resolveViewerIdentityFromPage(access),
     ]);
     reports = resolvedReports;
     employees = resolvedEmployees;
-    coachLabel = viewer.displayName;
   } catch {
     return (
       <EmployeePortalEmptyState
@@ -148,11 +145,14 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
       description="Review field coaching reports, filter by employee context, export XLSX files, and inspect scoring outcomes without leaving the employee portal."
       title="Field Coaching"
     >
-      {canCreate ? (
-        <EmployeePortalActionBar
-          actions={<EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" />}
-        />
-      ) : null}
+      <EmployeePortalActionBar
+        actions={
+          <>
+            {canCreate ? <EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" /> : null}
+            <EmployeePortalActionLink href={archivedCoachingHref} label="Resigned Evaluations" />
+          </>
+        }
+      />
 
       <CoachingReportsCenter
         canCreate={canCreate}
@@ -161,8 +161,6 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
         detailHrefBase={fieldCoachingHref}
         filterOptions={buildFilterOptions(reports, employees)}
         initialReports={reports}
-        lockedCoachHrId={access.hrId}
-        lockedCoachLabel={coachLabel}
       />
     </EmployeePortalPageShell>
   );
