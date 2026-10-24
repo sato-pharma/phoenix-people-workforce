@@ -117,6 +117,31 @@ export function runPhoenixCrmTimetableScannerTests() {
   assert.ok(screenDoor.kind === "retake" && /phone or computer screen/.test(screenDoor.message) && /building's own wall/.test(screenDoor.message), "and told why in words");
   assert.equal(scheduleDoorAction(offAScreen, 2).kind, "hold", "the third screen photo holds like any third missing timetable");
 
+  // 🔴 A BOARD THAT WRITES FIRST NAMES ONLY NAMES HIM WHEN NOBODY ELSE ON IT SHARES THAT NAME (owner,
+  // 2026-10-24, "Count it if unique"). The two boards are the real readings of Ali Mohamed Shehata's held
+  // seatings that day, partial and cut off as the reader said.
+  const romani = ["سوزى", "سعد", "بيتر رمزى", "ماريو", "فريد", "مريم عوني", "شيرى", "رامى", "مايكل", "الفونس", "ايفون", "يوسف", "ماريان"];
+  const romaniBoard = { ...base, scheduleText: "سوزى 3-11", personNames: romani, legibility: "partial" as const, problem: "cut_off" as const };
+  assert.equal(judgeSchedule({ ...romaniBoard, customerName: "سوزي الغطاس" }).verdict, "match", "سوزى on the board is سوزي الغطاس, ى and ي one letter");
+  assert.equal(judgeSchedule({ ...romaniBoard, customerName: "ماريان اسحاق" }).verdict, "match", "ماريان alone on the board");
+  const nour = ["د/ أحمد الحامولي", "د/ أحمد فتحى", "د/ حسن محمد", "د/ كمال غنيم", "د/ محمد صلاح", "د/ صلاح", "د/ خالد نبيل", "د/ خالد"];
+  const nourBoard = { ...base, scheduleText: "جدول العيادات", personNames: nour, legibility: "partial" as const };
+  assert.equal(judgeSchedule({ ...nourBoard, customerName: "صلاح عبدالفتاح" }).verdict, "match", "د/ صلاح alone, and محمد صلاح is another man's given name, not his");
+  assert.equal(
+    judgeSchedule({ ...nourBoard, customerName: "خالد عبدالله" }).verdict,
+    "unjudged",
+    "🔴 د/ خالد and د/ خالد نبيل share the given name: which خالد is not known, so it stays held",
+  );
+  assert.equal(judgeSchedule({ ...nourBoard, customerName: "حسن علي" }).verdict, "unjudged", "حسن محمد is a FULL name on the board, never a first-name-only entry for every حسن");
+  assert.equal(judgeSchedule({ ...romaniBoard, customerName: "مينا جرجس" }).verdict, "unjudged", "a given name nowhere on the board is no match");
+  assert.equal(judgeSchedule({ ...romaniBoard, personNames: [], customerName: "سوزي الغطاس" }).verdict, "unjudged", "nothing transcribed names nobody");
+  assert.equal(judgeSchedule({ ...romaniBoard, customerName: "" }).verdict, "unjudged", "an empty customer name matches nothing");
+  assert.equal(
+    judgeSchedule({ ...romaniBoard, customerName: "سوزي الغطاس", legibility: "clear", problem: "on_a_screen" }).verdict,
+    "no_schedule",
+    "the screen refusal still comes first",
+  );
+
   // The hold record carries the try and the reason for the queue.
   const record = scheduleHoldRecord({ ...UNREADABLE, tries: 3 }, { sharedPlaceId: "v1", name: "Polyclinic", lat: 30, lon: 31 }, { heldBecause: "timetable_unreadable", tries: 3 });
   assert.equal(record.verdict, "schedule");

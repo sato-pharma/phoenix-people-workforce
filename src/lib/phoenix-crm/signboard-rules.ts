@@ -388,6 +388,27 @@ export function spelledOneWay(word: string): string {
   return SAME_LETTER.reduce((text, [letter, as]) => text.replace(letter, as), word);
 }
 
+/**
+ * 🔴 A TIMETABLE THAT WRITES ONLY THE FIRST NAME NAMES HIM WHEN NOBODY ELSE ON IT SHARES THAT NAME
+ * (owner, 2026-10-24, asked as a choice: "Count it if unique"). Polyclinic boards list their staff as
+ * "د/ صلاح", "سوزى", "ماريان" — read 24 Oct 2026 on three of Ali Mohamed Shehata's held seatings, where
+ * the full-name quorum could only ever half-match. So: some entry on the board is his given name ALONE,
+ * and no other entry begins with that given name. Two people the board calls by the same first name stay
+ * held, and so does a board the reader transcribed nothing from. TIMETABLES ONLY — a signboard names one
+ * person in full, and `isMatchableName`'s "a single word is not evidence" still holds everywhere else;
+ * here the evidence is the board of the building he stood in, not the word.
+ */
+export function boardNamesGivenNameAlone(customerName: string | null, personNames: readonly string[]): boolean {
+  const key = (word: NameWord) => spelledOneWay(withoutArticle(word.word));
+  const wanted = personNameWords(customerName ?? "");
+  if (wanted.length === 0) return false;
+  const given = key(wanted[0]);
+  const entries = personNames.map((name) => personNameWords(name)).filter((words) => words.length > 0);
+  const alone = entries.filter((words) => words.length === 1 && key(words[0]) === given);
+  if (alone.length === 0) return false;
+  return entries.every((words) => key(words[0]) !== given || words.length === 1);
+}
+
 /** Is this word of the customer's name among the words read off one candidate? */
 function nameWordIsThere(given: NameWord, read: readonly NameWord[]): boolean {
   const oneWay = (name: NameWord): NameWord => ({
