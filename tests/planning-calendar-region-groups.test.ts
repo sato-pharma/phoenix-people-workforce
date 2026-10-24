@@ -1,7 +1,15 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-import { groupPlanItemsByRegion, planningGroupKey, resolvePlanItemRegion } from "../src/lib/weekly-planning/calendar.ts";
+import {
+  buildAreaRegionIndex,
+  groupPlanItemsByRegion,
+  isWholeCountryPlace,
+  planningGroupKey,
+  regionOfArea,
+  resolvePlanItemArea,
+  resolvePlanItemRegion,
+} from "../src/lib/weekly-planning/calendar.ts";
 import { buildPlanningCalendarDetailRows } from "../src/lib/weekly-planning/calendar-export.ts";
 
 /**
@@ -45,6 +53,33 @@ export async function runPlanningCalendarRegionGroupsTests() {
   assert.equal(resolvePlanItemRegion(null, null, "Delta (1)"), "Delta (1)", "then the planner's own region");
   assert.equal(resolvePlanItemRegion(null, null, null), null);
 
+  // The whole country is never a place (owner, 2026-10-24: "magdy on 28-10 is showing travelling to egypt").
+  assert.equal(isWholeCountryPlace("Egypt"), true);
+  assert.equal(isWholeCountryPlace(" EGYPT "), true);
+  assert.equal(isWholeCountryPlace("Upper Egypt 2"), false, "a region that names part of the country is a real place");
+  assert.equal(resolvePlanItemRegion(null, null, "Egypt"), null, "the National Sales Manager's travel day with no destination shows no region");
+  assert.equal(resolvePlanItemArea(null, null, "Egypt"), null, "and no area");
+  assert.equal(resolvePlanItemRegion("Egypt", null, "Delta (1)"), "Delta (1)", "a stored whole-country value is skipped too");
+  assert.equal(resolvePlanItemArea("Egypt", "Sohag1", "Egypt"), "Sohag1");
+
+  // A half-day planned in an area groups under that area's region, before the planner's own.
+  const areaRegions = buildAreaRegionIndex([
+    { areaName: "Sohag1", regionName: "Upper Egypt 2" },
+    { areaName: "Sohag1", regionName: "Upper Egypt 2" },
+    { areaName: "Sohag1", regionName: "Upper Egypt" },
+    { areaName: "Sharkia 1", regionName: "Delta (3)" },
+    { areaName: "Sharkia 1", regionName: "Delta (2)" },
+    { areaName: "Egypt", regionName: "Egypt" },
+    { areaName: "Giza 1", regionName: "Egypt" },
+  ]);
+  assert.equal(regionOfArea(areaRegions, "sohag1"), "Upper Egypt 2", "the region most of the area's people sit in");
+  assert.equal(regionOfArea(areaRegions, "Sharkia 1"), null, "a tie names no region");
+  assert.equal(regionOfArea(areaRegions, "Egypt"), null, "the whole country is no area");
+  assert.equal(regionOfArea(areaRegions, "Giza 1"), null, "and no region");
+  assert.equal(regionOfArea(areaRegions, null), null);
+  assert.equal(resolvePlanItemRegion(null, null, "Egypt", regionOfArea(areaRegions, "Sohag1")), "Upper Egypt 2", "Magdy's Sohag visit groups under Upper Egypt 2");
+  assert.equal(resolvePlanItemRegion(null, "Cairo", "Egypt", "Upper Egypt 2"), "Cairo", "the rep it is planned with still wins");
+
   const ui = readFileSync("src/components/employee-portal/planning-calendar.tsx", "utf8");
   assert.match(ui, /const dayRegions = groupPlanItemsByRegion\(dayPlans\)/, "the month tile groups each day's people by region");
   assert.doesNotMatch(ui, /planGroupFor|"Field Visits"/, "the tile no longer groups by Office / Field Visits / Other");
@@ -69,6 +104,7 @@ export async function runPlanningCalendarRegionGroupsTests() {
   assert.equal(lineless[0]?.line, "CNS", "the line keeps its own column");
 
   const service = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
-  assert.match(service, /resolvePlanItemRegion\(row\.location_text, medicalRepEmployee\?\.regionName, employee\.regionName\)/, "a legacy plan row never has an empty region when the directory knows one");
-  assert.match(service, /resolvePlanItemRegion\(null, rep\?\.regionName, employee\.regionName\)/, "a Phoenix CRM manager half-day takes its region from the directory");
+  assert.match(service, /resolvePlanItemRegion\(row\.location_text, medicalRepEmployee\?\.regionName, employee\.regionName, regionOfArea\(areaRegions, area\)\)/, "a legacy plan row never has an empty region when the directory knows one");
+  assert.match(service, /resolvePlanItemRegion\(null, rep\?\.regionName, employee\.regionName, regionOfArea\(areaRegions, area\)\)/, "a Phoenix CRM manager half-day takes its region from the directory, its area's region first");
+  assert.match(service, /const areaRegions = buildAreaRegionIndex\(directoryRows\)/, "the area's region is read from the active directory");
 }
