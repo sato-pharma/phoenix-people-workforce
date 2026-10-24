@@ -20,6 +20,7 @@ import {
   placeEvidenceKey,
   planSlotLabel,
   resolvePlanItemArea,
+  resolvePlanItemRegion,
   sharedPlanningCalendarStatuses,
   mergeFullDayPlanItems,
   withoutOfficeDays,
@@ -410,11 +411,11 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     const employee = directoryByHrId.get(normalizeHrId(header.employee_hr_id));
     if (!employee) return [];
     const lineName = employee?.lineName ?? null;
-    const region = cleanText(row.location_text) || null;
     const activityTitle = activityDisplayLabel(row.activity_type, row.activity_title);
     const medicalRepHrId = cleanText(row.double_visit_medical_rep_hr_id) || null;
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
+    const region = resolvePlanItemRegion(row.location_text, medicalRepEmployee?.regionName, employee.regionName);
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(header.employee_hr_id, row.activity_date)));
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
@@ -498,6 +499,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
     const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" || halfDay.kind === "with_area" ? halfDay.areaName : null;
     const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(halfDay.managerHrId, halfDay.date)));
+    const region = resolvePlanItemRegion(null, rep?.regionName, employee.regionName);
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
       activityTitle,
@@ -518,13 +520,13 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
       notes: halfDay.note,
       planId: halfDay.planId,
       planKind: "weekly",
-      region: null,
+      region,
       source: "plan",
       startDate: halfDay.date,
       status: managerPlanLegacyStatus(halfDay.status),
       time: halfDay.half,
       withHrId: halfDay.seniorHrId,
-      title: planningCalendarTitle(employeeDisplayName, null, area, activityTitle),
+      title: planningCalendarTitle(employeeDisplayName, region, area, activityTitle),
     };
     return [item];
   });

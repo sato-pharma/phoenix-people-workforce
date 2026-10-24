@@ -496,6 +496,7 @@ import { runWeeklyPlanCalendarOwnerScopeTests } from "./weekly-plan-calendar-own
 import { runPlanningCalendarExportTests } from "./planning-calendar-export.test.ts";
 import { runPlanningCalendarHidesOfficeTests } from "./planning-calendar-hides-office.test.ts";
 import { runPlanningCalendarFullDayMergeTests } from "./planning-calendar-full-day-merge.test.ts";
+import { runPlanningCalendarRegionGroupsTests } from "./planning-calendar-region-groups.test.ts";
 import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
 import { runWeeklyPlanVisibilityTests } from "./weekly-plan-visibility.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
@@ -3952,6 +3953,7 @@ await runTest("weekly plan calendar owner scope (title eligibility, cross-line/h
 await runTest("planning calendar XLSX export (SFE Manager/Super Admin gate, per-user summary + detail)", runPlanningCalendarExportTests);
 await runTest("planning calendar hides Office days (only field days are shown)", runPlanningCalendarHidesOfficeTests);
 await runTest("planning calendar shows an identical AM and PM as one Full day entry", runPlanningCalendarFullDayMergeTests);
+await runTest("planning calendar groups the tile by region and the details by region then area", runPlanningCalendarRegionGroupsTests);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("weekly plan visibility (manager-chain + company-wide roles)", runWeeklyPlanVisibilityTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
