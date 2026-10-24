@@ -362,7 +362,7 @@ function runReadsTests(): void {
   assert.match(org, /is_other_pseudo_dm/, "the organogram read selects the pseudo-DM flag");
   assert.match(
     org,
-    /"phoenix-crm-org-seats-v3"/,
+    /"phoenix-crm-org-seats-v4"/,
     "and the cache key moved with the shape — a cached copy WITHOUT the new column must never be served to a reader that needs it",
   );
 }

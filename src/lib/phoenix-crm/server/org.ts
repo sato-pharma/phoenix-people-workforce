@@ -22,7 +22,7 @@ const loadOrgSeats = unstable_cache(
     const { data, error } = await getSupabaseAdmin()
       .from("au_v_org_tree")
       .select(
-        "seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_name, seat_label, is_other_pseudo_dm",
+        "seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_code, region_name, seat_label, is_other_pseudo_dm",
       );
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Array<Record<string, unknown>>;
@@ -46,6 +46,7 @@ const loadOrgSeats = unstable_cache(
           lineName: text(row.line_name),
           areaCode: text(row.area_code),
           areaName: text(row.area_name),
+          regionCode: text(row.region_code),
           regionName: text(row.region_name),
           seatLabel: text(row.seat_label),
           isOtherPseudoDm: row.is_other_pseudo_dm === true,
@@ -53,10 +54,11 @@ const loadOrgSeats = unstable_cache(
       ];
     });
   },
-  // v3: the rows gained `is_other_pseudo_dm` (the team-readiness board, 2026-10-03) on top of v2's
-  // `area_code` (the daily forecast, 2026-10-01). A new key each time, so a cached copy of the old
-  // shape — without the column — is never served to a reader that needs it.
-  ["phoenix-crm-org-seats-v3"],
+  // v4: the rows gained `region_code` (the Training Manager's weekly plan, 2026-10-24) on top of v3's
+  // `is_other_pseudo_dm` (the team-readiness board, 2026-10-03) and v2's `area_code` (the daily
+  // forecast, 2026-10-01). A new key each time, so a cached copy of the old shape — without the
+  // column — is never served to a reader that needs it.
+  ["phoenix-crm-org-seats-v4"],
   { revalidate: 300, tags: ["sos-reference"] },
 );
 

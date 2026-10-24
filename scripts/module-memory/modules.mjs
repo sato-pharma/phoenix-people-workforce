@@ -387,6 +387,7 @@ export const MODULES = [
       "app/api/phoenix-crm/plans/old-crm/**",
       "supabase/migrations/*phoenix_crm_manager_plan*",
       "tests/phoenix-crm-manager-plan*",
+      "tests/phoenix-crm-training-manager-plan*",
     ],
     keywords: ["manager plan", "manager's plan", "manager's own list", "district manager plan", "district manager's plan", "dm plan", "single visits"],
     tables: ["phoenix_crm_manager_"],
@@ -428,6 +429,27 @@ export const MODULES = [
       "tests/phoenix-crm-manager-plan*",
     ],
     keywords: ["with a district manager", "with my manager", "visit with dm", "with the regional manager", "with the product manager", "ride-along half-day"],
+    tables: [],
+  },
+  // 🔴 SPLIT, 2026-10-24, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN A THIRD TIME: the Training
+  // Manager's week (three rules at once) measured its injected pointer at 4,238 bytes against the 4,000 margin
+  // `tests/module-memory.test.ts` holds. Her kind, her region scopes and her companion visits are one family and
+  // move together; every glob here is also `phoenix-crm-manager-plan`'s, so a file here loads the pair and nothing
+  // that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-manager-plan-training-manager",
+    title: "Phoenix CRM — the Training Manager's weekly plan",
+    scope: "The Training Manager's own week in Phoenix CRM: her plan kind with no seat, a region then a rep, an area or the Office per half-day, never a doctor, and her place as the companion on a rep's visit on every line.",
+    globs: [
+      "src/lib/phoenix-crm/manager-plan-rules.ts",
+      "src/lib/phoenix-crm/server/manager-plan-reach.ts",
+      "src/lib/phoenix-crm/server/manager-plans.ts",
+      "src/components/phoenix-crm/manager-plan-board.tsx",
+      "supabase/migrations/*phoenix_crm_manager_plan_training_manager*",
+      "tests/phoenix-crm-manager-plan*",
+      "tests/phoenix-crm-training-manager-plan*",
+    ],
+    keywords: ["training manager plan", "training manager's plan", "training manager week", "with an area", "region scope"],
     tables: [],
   },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the

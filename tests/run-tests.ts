@@ -2026,6 +2026,7 @@ import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
+import { runPhoenixCrmTrainingManagerPlanTests } from "./phoenix-crm-training-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
 import { runPhoenixCrmPlanDayEdgesTests } from "./phoenix-crm-plan-day-edges.test.ts";
@@ -7683,6 +7684,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's district manager plans his own week (owner, 2026-10-16): each half-day is with a rep, admin or a single visit, read strictly; the coming Saturday's week only, Thursday a morning, never a Friday or a holiday; his RSM or NSM approves, Hany Saad's district managers then Ali Mohamed Ali, and the Administrator may act in place; a rep's draft customer reads not sent and a dropped one stays flagged; the rep is refused everywhere, the acting district manager files both weeks and her own rep seat is never one of her reps; every table is RLS-locked to the service role, nothing outside the module reads them and his visits reach no KPI; no notice emails, the Hub counts each week once; a switched district manager loses the legacy form and the Plans tab and keeps the calendar; and his old My own visit is closed",
   runPhoenixCrmManagerPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM's Training Manager plans her own week (owner, 2026-10-24): she holds no organogram seat, so she chooses a region and then, each half-day, a rep of that region, an area of it, or the Office — never a doctor; her slot carries the region it belongs to, the rep must sit in that region and the area must be one of its territories, the Others region is never offered; her approvers are the legacy ones; a visit with a rep is a visit for the rep and a visit for her, and she is offered as a companion on every line, never added to the district manager's double visits",
+  runPhoenixCrmTrainingManagerPlanTests,
 );
 
 await runTest(

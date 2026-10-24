@@ -92,13 +92,32 @@ export const VISIT_ASK_MARKETING_MANAGER_ROLE = "Marketing Manager";
  */
 export const VISIT_ASK_MARKETING_MANAGER_LINE_CODES: ReadonlySet<string> = new Set(["cns"]);
 
+/**
+ * 🔒 THE TRAINING MANAGER IS OFFERED ON EVERY LINE (owner, 2026-10-24: "add training manager option in dv and
+ * in everywhere it should be"). A rep of any line may pick her for a visit beside the product managers, and
+ * the visit counts for both — "a visit for the rep and a visit for salma the training manager". She owns no
+ * products, so the products test is not hers: the role alone offers her. She is stored where a product
+ * manager is (`product_manager_hr_id`) and titled by her role, "Training Manager".
+ */
+export const VISIT_ASK_TRAINING_MANAGER_ROLE = "Training Manager";
+
 /** Every app role an ask can be addressed to on SOME line — who reads and answers his own asks. */
-export const VISIT_ASK_ASKABLE_ROLES = [...VISIT_ASK_PRODUCT_MANAGER_ROLES, VISIT_ASK_MARKETING_MANAGER_ROLE] as const;
+export const VISIT_ASK_ASKABLE_ROLES = [...VISIT_ASK_PRODUCT_MANAGER_ROLES, VISIT_ASK_MARKETING_MANAGER_ROLE, VISIT_ASK_TRAINING_MANAGER_ROLE] as const;
 
 /** The app roles a rep of this line may pick for a product manager's visit (`lineCode`: the seat's own). */
 export function visitAskProductManagerRolesOfLine(lineCode: string | null | undefined): readonly string[] {
   const line = typeof lineCode === "string" ? lineCode.trim().toLowerCase() : "";
-  return VISIT_ASK_MARKETING_MANAGER_LINE_CODES.has(line) ? VISIT_ASK_ASKABLE_ROLES : VISIT_ASK_PRODUCT_MANAGER_ROLES;
+  return VISIT_ASK_MARKETING_MANAGER_LINE_CODES.has(line)
+    ? VISIT_ASK_ASKABLE_ROLES
+    : [...VISIT_ASK_PRODUCT_MANAGER_ROLES, VISIT_ASK_TRAINING_MANAGER_ROLE];
+}
+
+/** The heading over the companions offered beside the managers: "Product managers", or with her in it, both. */
+export function companionGroupTitle(people: ReadonlyArray<{ title?: string | null }>): string {
+  const training = people.some((person) => person.title === VISIT_ASK_TRAINING_MANAGER_ROLE);
+  const product = people.some((person) => person.title !== VISIT_ASK_TRAINING_MANAGER_ROLE);
+  if (training && !product) return "Training manager";
+  return training ? "Product and training managers" : "Product managers";
 }
 
 /**

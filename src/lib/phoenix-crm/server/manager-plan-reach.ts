@@ -24,6 +24,10 @@
  * the person stored on it at send, whatever his app role grants elsewhere — the CEO and the Marketing
  * Manager approve a week here with `read` alone, as they do the legacy plan.
  *
+ * 🔴 WIDENED AGAIN (owner, 2026-10-24): the Training Manager plans a week too (`plansAsTrainingManager`, a
+ * role like the product managers', no seat). Her week is read by the manager her HR record names, and by
+ * SFE, the CEO and the Super Admin, as a product manager's is.
+ *
  * It never goes through `territoryForRead` / `territoryForRepWrite`: those answer for a REP seat, and a
  * manager's seat owns no customers.
  */
@@ -75,19 +79,32 @@ function productManagersOf(viewer: Pick<PhoenixCrmViewer, "productManagers">): R
   return Array.isArray(viewer.productManagers) ? viewer.productManagers : [];
 }
 
+/** The same for the Training Manager roster. */
+function trainingManagersOf(viewer: Partial<Pick<PhoenixCrmViewer, "trainingManagers">>): ReadonlyArray<ProductManagerPlanner> {
+  return Array.isArray(viewer.trainingManagers) ? viewer.trainingManagers : [];
+}
+
 /** The viewer's own writer: what he plans as, or null. */
-export function managerPlanWriter(viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "plansAsProductManager">): ManagerPlanWriter | null {
-  return managerPlanWriterOf(viewer.org, viewer.hrId, { productManager: viewer.plansAsProductManager === true });
+export function managerPlanWriter(
+  viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "plansAsProductManager"> & Partial<Pick<PhoenixCrmViewer, "plansAsTrainingManager">>,
+): ManagerPlanWriter | null {
+  return managerPlanWriterOf(viewer.org, viewer.hrId, {
+    productManager: viewer.plansAsProductManager === true,
+    trainingManager: viewer.plansAsTrainingManager === true,
+  });
 }
 
 /** Any person's writer, as the viewer's organogram and roster know him. */
 export function managerPlanWriterFor(
-  viewer: Pick<PhoenixCrmViewer, "org" | "productManagers">,
+  viewer: Pick<PhoenixCrmViewer, "org" | "productManagers"> & Partial<Pick<PhoenixCrmViewer, "trainingManagers">>,
   hrId: string | null | undefined,
 ): ManagerPlanWriter | null {
   const key = personKey(hrId);
   if (!key) return null;
-  return managerPlanWriterOf(viewer.org, key, { productManager: productManagersOf(viewer).some((entry) => entry.hrId === key) });
+  return managerPlanWriterOf(viewer.org, key, {
+    productManager: productManagersOf(viewer).some((entry) => entry.hrId === key),
+    trainingManager: trainingManagersOf(viewer).some((entry) => entry.hrId === key),
+  });
 }
 
 /** The viewer plans a week of his own, as any of the four kinds. */
@@ -118,9 +135,18 @@ function seatWriters(viewer: PhoenixCrmViewer): ReachableManager[] {
   return [...out.values()];
 }
 
-/** The product managers who plan here, as writers. */
+/** The product managers and the Training Manager who plan here, as writers — the seatless planners. */
+function seatlessRoster(viewer: PhoenixCrmViewer): ProductManagerPlanner[] {
+  const seen = new Set<string>();
+  return [...productManagersOf(viewer), ...trainingManagersOf(viewer)].filter((entry) => {
+    if (seen.has(entry.hrId)) return false;
+    seen.add(entry.hrId);
+    return true;
+  });
+}
+
 function productManagerWriters(viewer: PhoenixCrmViewer): ReachableManager[] {
-  return productManagersOf(viewer).flatMap((entry) => {
+  return seatlessRoster(viewer).flatMap((entry) => {
     const writer = managerPlanWriterFor(viewer, entry.hrId);
     return writer ? [reachable(writer)] : [];
   });
@@ -140,7 +166,7 @@ function managersBelow(viewer: PhoenixCrmViewer): ReachableManager[] {
       if (managerChain(viewer.org, seatId).some((member) => member.hrId === viewer.hrId)) out.push(entry);
     }
   }
-  const reports = new Set(productManagersOf(viewer).filter((entry) => entry.managerHrId === viewer.hrId).map((entry) => entry.hrId));
+  const reports = new Set(seatlessRoster(viewer).filter((entry) => entry.managerHrId === viewer.hrId).map((entry) => entry.hrId));
   for (const entry of productManagerWriters(viewer)) {
     if (entry.hrId !== viewer.hrId && reports.has(entry.hrId) && !out.some((known) => known.hrId === entry.hrId)) out.push(entry);
   }
@@ -231,7 +257,7 @@ export function resolveManagerPlanReader(viewer: PhoenixCrmViewer, managerParam:
 export function assertManagerPlanWriter(viewer: PhoenixCrmViewer): ManagerPlanWriter {
   if (viewer.isSuperAdmin && !viewer.isTestPersona) throw superAdminHasNoFieldWrite("plan a manager's week");
   const writer = managerPlanWriter(viewer);
-  if (!writer) throw forbiddenError("Only a district, regional, national or product manager plans a manager's week.");
+  if (!writer) throw forbiddenError("Only a district, regional, national or product manager, or the Training Manager, plans a manager's week.");
   if (writer.kind === "dm" && !viewer.canCreate) throw forbiddenError("Your role cannot plan a week.");
   return writer;
 }

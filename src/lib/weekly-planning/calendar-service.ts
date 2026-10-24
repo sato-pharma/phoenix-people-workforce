@@ -453,7 +453,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const senior = halfDay.seniorHrId ? directoryByHrId.get(normalizeHrId(halfDay.seniorHrId)) : undefined;
     const seniorDisplayName = senior ? (senior.displayName || senior.fullName) : null;
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
-    const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" ? halfDay.areaName : null;
+    const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" || halfDay.kind === "with_area" ? halfDay.areaName : null;
     const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName);
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {

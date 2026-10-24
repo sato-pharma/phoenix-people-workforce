@@ -22,6 +22,10 @@
  * Infective — and may skip the district manager altogether: "Any rep in <line>". A district manager plans
  * his own district and sees no picker.
  *
+ * 🔴 THE TRAINING MANAGER (owner, 2026-10-24: "he neevr choose dr he choose the region then the area/rep only")
+ * chooses a REGION instead of a district manager, the same way — once per day, another for one half-day — and
+ * then With a rep (the rep alone, never a customer), An area (one area of the region), or Admin / Office.
+ *
  * 🔴 TICKING A REP IS NOT A DOUBLE VISIT. The double visit is counted only when the REP logs it and names
  * him; this plan is what he intends, read against what happened in the "Manager plans" report.
  *
@@ -137,9 +141,12 @@ function ownRef(managerCustomerId: string, name: string): CustomerRef {
   return { key: `m:${managerCustomerId}`, customerId: null, managerCustomerId, name };
 }
 
-/** A half-day that names a district: with a rep, with its district manager, or single visits in one of its areas. */
+/**
+ * A half-day that names a district: with a rep, with its district manager, or single visits in one of its areas —
+ * or, for the Training Manager, a region: with a rep, or an area.
+ */
 function namesADistrict(kind: ManagerSlotKind | null): boolean {
-  return kind === "with_rep" || kind === "single_visit" || kind === "with_dm";
+  return kind === "with_rep" || kind === "single_visit" || kind === "with_dm" || kind === "with_area";
 }
 
 function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
@@ -158,18 +165,24 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
   };
 }
 
-/** A regional, national or product manager: the planner who chooses a district manager first. */
+/** A regional, national or product manager, or the Training Manager: the planner who chooses a scope first. */
 function choosesADistrict(view: ManagerPlanBoardView | null): boolean {
   return Boolean(view?.writer && view.writer.kind !== "dm");
 }
 
+/** The Training Manager: her scope is a region, and her With a rep names the rep alone (owner, 2026-10-24). */
+function plansARegion(view: ManagerPlanBoardView | null): boolean {
+  return view?.writer?.kind === "tm";
+}
+
 /** What a half-day still lacks before it can be saved, or null when it can. */
-function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null {
-  if (choosesDistrict && namesADistrict(draft.kind) && !draft.scope) return "choose the district manager";
+function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = false): string | null {
+  if (choosesDistrict && namesADistrict(draft.kind) && !draft.scope) return byRegion ? "choose the region" : "choose the district manager";
   if (draft.kind === "with_rep") {
     if (!draft.repSeatId) return "choose the rep you go with";
-    if (draft.customers.length === 0) return "tick at least one of the rep's customers";
+    if (!byRegion && draft.customers.length === 0) return "tick at least one of the rep's customers";
   }
+  if (draft.kind === "with_area" && !draft.areaSeatId) return "choose the area";
   if (draft.kind === "with_dm") {
     if (!draft.scope?.startsWith("dm:")) return "choose the district manager you go with";
     if (draft.areaSeatIds.length === 0) return "tick at least one of the district manager's areas";
@@ -187,10 +200,15 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null
   return null;
 }
 
-/** The scope the server is told: the district manager's seat and its line, or a whole line. */
-function scopeFields(key: string | null, scopes: ReadonlyArray<ManagerBoardScope>): { scopeDmSeatId: string | null; scopeLineCode: string | null } {
+/** The scope the server is told: the district manager's seat and its line, a whole line, or the Training Manager's region. */
+function scopeFields(
+  key: string | null,
+  scopes: ReadonlyArray<ManagerBoardScope>,
+): { scopeDmSeatId: string | null; scopeLineCode: string | null; scopeRegionCode: string | null } {
   const found = key ? scopes.find((scope) => scope.key === key) : undefined;
-  return found ? { scopeDmSeatId: found.dmSeatId, scopeLineCode: found.lineCode } : { scopeDmSeatId: null, scopeLineCode: null };
+  if (!found) return { scopeDmSeatId: null, scopeLineCode: null, scopeRegionCode: null };
+  if (found.regionCode) return { scopeDmSeatId: null, scopeLineCode: null, scopeRegionCode: found.regionCode };
+  return { scopeDmSeatId: found.dmSeatId, scopeLineCode: found.lineCode, scopeRegionCode: null };
 }
 
 function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes: ReadonlyArray<ManagerBoardScope>) {
@@ -200,13 +218,13 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes:
     kind: draft.kind,
     repSeatId: draft.kind === "with_rep" ? draft.repSeatId : null,
     activityType: draft.kind === "admin" ? draft.activityType : null,
-    areaSeatId: draft.kind === "single_visit" ? draft.areaSeatId : null,
+    areaSeatId: draft.kind === "single_visit" || draft.kind === "with_area" ? draft.areaSeatId : null,
     areaSeatIds: draft.kind === "with_dm" || draft.kind === "with_senior" ? draft.areaSeatIds : [],
     seniorHrId: draft.kind === "with_senior" ? draft.seniorHrId : null,
     ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
-      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === "with_senior" || draft.kind === null
+      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === "with_senior" || draft.kind === "with_area" || draft.kind === null
         ? []
         : draft.customers.map((customer) => (customer.customerId ? { customerId: customer.customerId } : { managerCustomerId: customer.managerCustomerId })),
   };
@@ -292,6 +310,7 @@ export function ManagerPlanBoard({
   }, [pending.length, onDirtyChange]);
 
   const choosesDistrict = choosesADistrict(view);
+  const byRegion = plansARegion(view);
   const days = view?.days ?? [];
   const day: ManagerBoardDay | null = days.find((entry) => entry.date === date) ?? days.find((entry) => entry.editable) ?? days[0] ?? null;
   const dayHalves = day?.halves ?? [];
@@ -401,7 +420,7 @@ export function ManagerPlanBoard({
           });
           continue;
         }
-        const problem = draftProblem(waiting, choosesADistrict(viewRef.current));
+        const problem = draftProblem(waiting, choosesADistrict(viewRef.current), plansARegion(viewRef.current));
         if (problem) {
           allSaved = false;
           continue;
@@ -497,7 +516,7 @@ export function ManagerPlanBoard({
 
   const plan = view.plan;
   const waitingProblems = Object.entries(drafts).flatMap(([waitingKey, waiting]) => {
-    const problem = waiting.kind === null ? null : draftProblem(waiting, choosesDistrict);
+    const problem = waiting.kind === null ? null : draftProblem(waiting, choosesDistrict, byRegion);
     if (!problem) return [];
     const [waitingDate, waitingHalf] = waitingKey.split("|");
     const dayText = days.find((entry) => entry.date === waitingDate)?.dateText ?? waitingDate;
@@ -530,9 +549,9 @@ export function ManagerPlanBoard({
   let districtGate: ReactNode = null;
   if (choosesDistrict && namesADistrict(draft.kind)) {
     if (!halfScope) {
-      districtGate = <CrmNote tone="info">Choose the district manager for this day first.</CrmNote>;
+      districtGate = <CrmNote tone="info">{byRegion ? "Choose the region for this day first." : "Choose the district manager for this day first."}</CrmNote>;
     } else if (view.scope !== halfScope) {
-      const name = view.scopes.find((entry) => entry.key === halfScope)?.name ?? slot?.scopeName ?? "the district manager";
+      const name = view.scopes.find((entry) => entry.key === halfScope)?.name ?? slot?.scopeName ?? (byRegion ? "the region" : "the district manager");
       districtGate =
         scopeKey !== halfScope ? (
           <div>
@@ -543,9 +562,11 @@ export function ManagerPlanBoard({
         ) : board.error ? (
           <CrmLoadError message={board.error} onRetry={board.reload} />
         ) : board.loading ? (
-          <CrmLoading label="Loading the district's reps and areas" />
+          <CrmLoading label={byRegion ? "Loading the region's reps and areas" : "Loading the district's reps and areas"} />
         ) : (
-          <CrmNote tone="warn">This district manager is no longer one you plan with. Choose another for this day.</CrmNote>
+          <CrmNote tone="warn">
+            {byRegion ? "This region holds no rep now. Choose another for this day." : "This district manager is no longer one you plan with. Choose another for this day."}
+          </CrmNote>
         );
     }
   }
@@ -553,9 +574,11 @@ export function ManagerPlanBoard({
   return (
     <CrmPanel
       description={
-        choosesDistrict
-          ? "Plan each half-day: choose the district manager, then go with one of the reps, make single visits in an area of that district, or record an admin activity or a day in the Office. The reps do not see it."
-          : "Plan each half-day: with a rep, an admin activity, or single visits in an area of your district. Your reps do not see it."
+        byRegion
+          ? "Plan each half-day: choose the region, then go with one of its reps, spend it in one of its areas, or record an admin activity or a day in the Office. The reps do not see it."
+          : choosesDistrict
+            ? "Plan each half-day: choose the district manager, then go with one of the reps, make single visits in an area of that district, or record an admin activity or a day in the Office. The reps do not see it."
+            : "Plan each half-day: with a rep, an admin activity, or single visits in an area of your district. Your reps do not see it."
       }
       eyebrow={view.isTest ? "Plan · test persona" : "Plan"}
       title={view.manager ? `${view.manager.name} · ${view.manager.place}` : "Your week"}
@@ -720,6 +743,7 @@ function DayStep({
 // ── The district manager a regional, national or product manager plans with ────────────────────
 
 function scopeOption(scope: ManagerBoardScope, disabled: boolean): CrmChoiceOption<string> {
+  if (scope.regionCode) return { value: scope.key, label: scope.name, disabled };
   return scope.dmSeatId
     ? { value: scope.key, label: scope.dmName ?? "No district manager", note: scope.place ?? undefined, disabled }
     : { value: scope.key, label: `Any rep in ${scope.lineName ?? "the line"}`, note: "Without a district manager", disabled };
@@ -746,7 +770,13 @@ function ScopePicker({
   value: string | null;
 }) {
   const [pickedLine, setPickedLine] = useState<string | null>(null);
-  if (scopes.length === 0) return <CrmEmpty message="No district manager is in your reach right now." title="No district managers" />;
+  if (scopes.length === 0) {
+    return label.startsWith("Region") ? (
+      <CrmEmpty message="No region holds a rep right now." title="No regions" />
+    ) : (
+      <CrmEmpty message="No district manager is in your reach right now." title="No district managers" />
+    );
+  }
 
   if (byLine) {
     const lines = new Map<string, string>();
@@ -798,20 +828,24 @@ function ScopePicker({
 /** "Another district manager for this half" — and, once one is chosen, the way back to the day's. */
 function HalfScopeControl({
   byLine,
+  byRegion,
   dayScope,
   draftScope,
   onPick,
   scopes,
 }: {
   byLine: boolean;
+  /** The Training Manager: the scope is a region. */
+  byRegion: boolean;
   dayScope: string;
   draftScope: string | null;
   onPick: (key: string) => void;
   scopes: ReadonlyArray<ManagerBoardScope>;
 }) {
   const [open, setOpen] = useState(false);
+  const word = byRegion ? "region" : "district manager";
   const own = draftScope !== null && draftScope !== dayScope;
-  const ownName = own ? (scopes.find((scope) => scope.key === draftScope)?.name ?? "another district manager") : null;
+  const ownName = own ? (scopes.find((scope) => scope.key === draftScope)?.name ?? `another ${word}`) : null;
   return (
     <div className="grid min-w-0 gap-2">
       {ownName ? (
@@ -827,7 +861,7 @@ function HalfScopeControl({
           <ScopePicker
             byLine={byLine}
             disabled={false}
-            label="District manager for this half"
+            label={byRegion ? "Region for this half" : "District manager for this half"}
             onPick={(next) => {
               setOpen(false);
               onPick(next);
@@ -844,7 +878,7 @@ function HalfScopeControl({
       ) : (
         <div>
           <CrmButton onClick={() => setOpen(true)} size="sm" variant="ghost">
-            Another district manager for this half
+            {`Another ${word} for this half`}
           </CrmButton>
         </div>
       )}
@@ -891,6 +925,7 @@ function HalfStep({
 }) {
   const choosesDistrict = choosesADistrict(view);
   const byLine = view.writer?.kind === "pm";
+  const byRegion = plansARegion(view);
   const halfOptions: Array<CrmChoiceOption<ManagerHalf>> = day.halves.map((entry) => ({
     value: entry,
     label: entry,
@@ -915,9 +950,16 @@ function HalfStep({
     <div className="grid min-w-0 gap-5">
       {choosesDistrict ? (
         <div className="grid min-w-0 gap-2">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · District manager for this day`}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${byRegion ? "Region" : "District manager"} for this day`}</p>
           {canEdit ? (
-            <ScopePicker byLine={byLine} disabled={false} label="District manager for this day" onPick={onDayScope} scopes={view.scopes} value={dayScope} />
+            <ScopePicker
+              byLine={byLine}
+              disabled={false}
+              label={byRegion ? "Region for this day" : "District manager for this day"}
+              onPick={onDayScope}
+              scopes={view.scopes}
+              value={dayScope}
+            />
           ) : (
             <p className="break-words text-sm font-bold text-slate-900">{dayScopeName ?? "None chosen"}</p>
           )}
@@ -935,6 +977,7 @@ function HalfStep({
       {choosesDistrict && canEdit && dayScope && namesADistrict(draft.kind) ? (
         <HalfScopeControl
           byLine={byLine}
+          byRegion={byRegion}
           dayScope={dayScope}
           draftScope={draft.scope}
           key={halfKey(day.date, half)}
@@ -947,8 +990,14 @@ function HalfStep({
       ) : null}
 
       {draft.kind === "with_rep"
-        ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} test={test} view={view} />)
+        ? (districtGate ??
+          (byRegion ? (
+            <RegionRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} view={view} />
+          ) : (
+            <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} test={test} view={view} />
+          )))
         : null}
+      {draft.kind === "with_area" ? (districtGate ?? <WithAreaPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "with_senior" ? <WithSeniorPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
@@ -1149,6 +1198,88 @@ function WithRepPart({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The Training Manager's With a rep (owner, 2026-10-24: "he neevr choose dr he choose the region then the
+ * area/rep only"): the reps of the region she chose, each with where the rep is that half-day. She picks the
+ * rep and nothing else, so a rep with no plan is still offered.
+ */
+function RegionRepPart({
+  canEdit,
+  day,
+  draft,
+  half,
+  onDraft,
+  view,
+}: {
+  canEdit: boolean;
+  day: ManagerBoardDay;
+  draft: HalfDraft;
+  half: ManagerHalf;
+  onDraft: (next: HalfDraft) => void;
+  view: ManagerPlanBoardView;
+}) {
+  if (view.reps.length === 0) return <CrmEmpty message="No rep sits in this region right now." title="No reps" />;
+  const halves = new Map(day.repHalves.filter((entry) => entry.half === half).map((entry) => [entry.seatId, entry]));
+  const options: Array<CrmChoiceOption<string>> = view.reps.map((rep) => {
+    const repHalf = halves.get(rep.seatId);
+    const state = REP_WEEK[repHalf?.weekState ?? rep.weekState];
+    const where = repHalf && repHalf.bricks.length > 0 ? repHalf.bricks.join(", ") : null;
+    return {
+      value: rep.seatId,
+      label: rep.name,
+      disabled: !canEdit,
+      note: (
+        <span className="grid gap-1">
+          <span className="break-words">{rep.territoryName}</span>
+          {where ? <span className="break-words">{where}</span> : null}
+          <span>
+            <CrmPill tone={state.tone}>{state.label}</CrmPill>
+          </span>
+        </span>
+      ),
+    };
+  });
+  return (
+    <CrmChoice
+      columns={2}
+      label="Which rep"
+      onChange={(seatId) => onDraft({ ...draft, repSeatId: seatId, customers: [] })}
+      options={options}
+      value={draft.repSeatId}
+    />
+  );
+}
+
+/** The Training Manager's An area (owner, 2026-10-24): one area of the region she chose, a vacant one by its own name. */
+function WithAreaPart({
+  canEdit,
+  draft,
+  onDraft,
+  view,
+}: {
+  canEdit: boolean;
+  draft: HalfDraft;
+  onDraft: (next: HalfDraft) => void;
+  view: ManagerPlanBoardView;
+}) {
+  if (view.areas.length === 0) return <CrmEmpty message="This region has no area right now." title="No areas" />;
+  const options: Array<CrmChoiceOption<string>> = view.areas.map((area) => ({
+    value: area.seatId,
+    label: area.areaName,
+    note: area.vacant ? "Vacant" : (area.repName ?? area.territoryName),
+    disabled: !canEdit,
+  }));
+  return (
+    <CrmChoice
+      columns={2}
+      label="Which area"
+      onChange={(areaSeatId) => onDraft({ ...draft, areaSeatId, customers: [] })}
+      options={options}
+      value={draft.areaSeatId}
+    />
   );
 }
 

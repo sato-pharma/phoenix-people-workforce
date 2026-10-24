@@ -12,6 +12,7 @@ paths:
   - "app/api/phoenix-crm/plans/old-crm/**"
   - "supabase/migrations/*phoenix_crm_manager_plan*"
   - "tests/phoenix-crm-manager-plan*"
+  - "tests/phoenix-crm-training-manager-plan*"
 ---
 
 # Module memory — Phoenix CRM — the district manager's weekly plan

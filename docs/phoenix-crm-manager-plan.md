@@ -780,3 +780,50 @@ CRM doctor by name somewhere, 19 of them ambiguously.
 
 The rep never sees any of it: the marks live only in the manager's plan board, and the test pins that the
 rep's plan board, List and visit form never import them.
+
+## The Training Manager (owner, 2026-10-24)
+
+His request: *"in phx crm set up the weekly plan but he never choose dr he choose the region then the
+area/rep only but add training manager option in dv and everywhere it should be"*. His answers, in
+chat the same day:
+
+- **A visit she makes with a rep:** *"a visit for the rep and a visit for salma the training manager"*.
+- **Her half-day choices:** *"Rep, area or Office"*.
+
+Measured on production first: one active Training Manager, Salma Labib, holding no organogram seat;
+reps sit in nine regions (AB, CA, D1, D2, D3, GZ, UE, UE-1, UE-2).
+
+### What she plans
+
+- **Kind `'tm'`**, read from her app role after every seat, so a district manager seat still wins.
+- **A region first**, offered from the reps' seats (`regionCode`); the Others region holds no reps and
+  is never offered. The day's region applies to both halves, and a half may take another.
+- **Each half:** With a rep (a rep of that region), An area (one of the region's territories, kind
+  `with_area`, shown on the calendars as *"An area · <area>"* and as Field on the legacy calendar), or
+  the Office. Never a doctor.
+- **Stored per half** in `scope_region_code`. `managerSlotScopeError` refuses a rep or an area outside
+  the region (the organogram is the application's, as for the other scopes); the database refuses a
+  region or An area on any other planner kind, and a doctor, a district manager or a line on hers.
+
+### Defaults taken without asking
+
+- Approvers: `legacyStyleApprovers`, with HR's automatic acknowledgement, as for the product managers.
+- Her legacy weekly-plan form stays.
+- Her Office halves are not read by `attendance/plan-office-days.ts`, which reads RSM and NSM weeks
+  only; a product manager is not read there either.
+- On a rep's visit she is stored in `product_manager_hr_id`, so the visit counts for the rep and for
+  her and never adds to the district manager's `double_visits`. The report column keeps its name.
+
+### The companion everywhere
+
+She is offered beside the product managers on every line (`visitAskProductManagerRolesOfLine`,
+`VISIT_ASK_ASKABLE_ROLES`), with no product families, so a line's products never drop her. The
+picker's heading comes from `companionGroupTitle`, and the visit detail and the unplanned-visit
+companion read *"Product or training manager"*.
+
+### The migration
+
+`20261024233000_phoenix_crm_manager_plan_training_manager.sql` widens `planner_kind` and the
+no-seat check to `tm`, adds `scope_region_code` with its check, adds `with_area` to the slot kinds and
+the district-manager check, and replaces `phoenix_crm_save_manager_plan_slot`. Pinned by
+`tests/phoenix-crm-training-manager-plan.test.ts`.
