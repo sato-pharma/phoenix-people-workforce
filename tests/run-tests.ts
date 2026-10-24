@@ -2302,6 +2302,7 @@ import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
 import { runPortalNavChromeBehaviourTests } from "./portal-nav-chrome-behaviour.test.ts";
+import { runTrainingManagerNoPlanInterviewTabsTests } from "./training-manager-no-plan-interview-tabs.test.ts";
 import { runPortalGodmodeChromeTests } from "./portal-godmode-chrome.test.ts";
 import { runPortalBottomNavGodmodeTests } from "./portal-bottom-nav-godmode.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
@@ -8720,6 +8721,7 @@ await runTest(
   "portal nav chrome behaves (one lit bottom-bar tab, the user menu closes on outside click and Escape, the closed drawer is inert, the header search is a keyboard combobox whose results wrap)",
   runPortalNavChromeBehaviourTests,
 );
+await runTest("training manager has no plan or interview calendar tab", runTrainingManagerNoPlanInterviewTabsTests);
 await runTest(
   "portal godmode chrome (command bar, recent pages, pins shared with the phone bar, sidebar filter, waiting-on-you total that never double-counts the hub, rail pop-outs and counts, trail, offline warning, shortcuts, focus mode, photo, greeting; the sidebar stays white)",
   runPortalGodmodeChromeTests,
