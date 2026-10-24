@@ -1,5 +1,8 @@
 import { systemEmail } from "@/config/system-settings";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import type { AccessContext } from "@/lib/auth/permissions";
+import type { PreparedEmailAttachment } from "@/lib/email/email-providers";
 import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
 import { conflictError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -68,6 +71,8 @@ export type ConfidenceGateInput = {
    * admin BCC rewrite the address arrays. Falls back to computeRealAudienceSize when absent.
    */
   audienceSize?: number;
+  /** The files on the send. Kept only if the send is HELD, so approving it sends them too. */
+  attachments?: PreparedEmailAttachment[];
   bcc?: string[];
   cc?: string[];
   html: string;
@@ -545,9 +550,16 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
 
   let reviewId: string | null = null;
   try {
+    // A held send keeps its files, or approving it would send the email without them. Only a hold
+    // writes them; a send that goes out now has no later re-send to feed.
+    const heldAttachments =
+      decision === "hold" && input.attachments && input.attachments.length > 0
+        ? await keepHeldAttachments(input.attachments, getSupabaseAdmin())
+        : null;
     const { data, error } = await getSupabaseAdmin()
       .from("notification_send_reviews")
       .insert({
+        ...(heldAttachments ? { held_attachments: heldAttachments } : {}),
         bcc_addresses: input.bcc ?? [],
         cc_addresses: input.cc ?? [],
         checks,
@@ -688,16 +700,19 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
   const decidedBy = access.hrId ?? access.loginId ?? "system";
   const { data: row, error: fetchError } = await getSupabaseAdmin()
     .from("notification_send_reviews")
-    .select(REVIEW_COLUMNS)
+    .select(`${REVIEW_COLUMNS},held_attachments`)
     .eq("id", reviewId)
     .eq("status", "held")
     .maybeSingle();
   if (fetchError) throw fetchError;
   if (!row) throw conflictError("This item is no longer pending review (already decided, or not found).");
   const held = mapReviewRow(row as ReviewRow);
+  // Read before the send: a file that cannot be read back refuses the approval, never drops off it.
+  const attachments = await loadHeldAttachments((row as { held_attachments?: unknown }).held_attachments, getSupabaseAdmin());
 
   const { sendPhoenixEmail } = await import("@/lib/email/send-phoenix-email");
   const result = await sendPhoenixEmail({
+    attachments,
     bcc: held.bccAddresses,
     bypassConfidenceGate: true,
     cc: held.ccAddresses,
@@ -723,6 +738,83 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
     })
     .eq("id", reviewId);
   if (updateError) throw updateError;
+}
+
+export const HELD_ATTACHMENTS_BUCKET = "notification-held-attachments";
+
+/** One file of a held send, as the review row records it. `storagePath` null = it could not be kept. */
+export type HeldAttachment = {
+  byteSize: number;
+  contentId?: string;
+  contentType?: string;
+  filename: string;
+  remoteUrl?: string;
+  storagePath: string | null;
+};
+
+/**
+ * Stores a held send's files so approving it can send them. Never throws — a hold must stand even
+ * when storage is down — so a file that could not be stored is recorded with `storagePath: null`,
+ * and loadHeldAttachments refuses the approval over it instead of sending without it.
+ */
+export async function keepHeldAttachments(attachments: PreparedEmailAttachment[], supabase: SupabaseClient): Promise<HeldAttachment[]> {
+  const folder = crypto.randomUUID();
+  const kept: HeldAttachment[] = [];
+  for (const [index, att] of attachments.entries()) {
+    const bytes = Buffer.from(att.content, "base64");
+    const entry: HeldAttachment = {
+      byteSize: bytes.length,
+      contentId: att.contentId,
+      contentType: att.contentType,
+      filename: att.filename,
+      remoteUrl: att.remoteUrl,
+      storagePath: null,
+    };
+    // The index keeps two files of the same name apart; the name never builds the path.
+    const path = `${folder}/${index}`;
+    try {
+      const { error } = await supabase.storage.from(HELD_ATTACHMENTS_BUCKET).upload(path, bytes, {
+        contentType: att.contentType || "application/octet-stream",
+        upsert: false,
+      });
+      if (error) throw error;
+      entry.storagePath = path;
+    } catch (error) {
+      logError("A held email's attachment could not be kept — approving it will be refused rather than send without the file", {
+        error,
+        labels: { event: "confidence_gate_held_attachment_keep_failed" },
+      });
+    }
+    kept.push(entry);
+  }
+  return kept;
+}
+
+/**
+ * Reads a held send's files back for its approval. Any file that was not kept or cannot be read
+ * REFUSES the approval: an approved email that arrives without its file is the defect this exists
+ * to stop. Nothing recorded (a send that never had files) is undefined.
+ */
+export async function loadHeldAttachments(stored: unknown, supabase: SupabaseClient): Promise<PreparedEmailAttachment[] | undefined> {
+  if (!Array.isArray(stored) || stored.length === 0) return undefined;
+  const loaded: PreparedEmailAttachment[] = [];
+  for (const raw of stored as HeldAttachment[]) {
+    const name = raw?.filename || "an attachment";
+    const refusal = conflictError(
+      `"${name}" could not be kept when this email was held, so approving it would send the email without the file. Discard it and send it again.`,
+    );
+    if (!raw?.storagePath) throw refusal;
+    const { data, error } = await supabase.storage.from(HELD_ATTACHMENTS_BUCKET).download(raw.storagePath);
+    if (error || !data) throw refusal;
+    loaded.push({
+      content: Buffer.from(await data.arrayBuffer()).toString("base64"),
+      contentId: raw.contentId,
+      contentType: raw.contentType,
+      filename: raw.filename,
+      remoteUrl: raw.remoteUrl,
+    });
+  }
+  return loaded;
 }
 
 /**

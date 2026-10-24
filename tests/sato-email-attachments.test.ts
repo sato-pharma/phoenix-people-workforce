@@ -27,6 +27,7 @@ import {
   looksLikePicture,
   picturesFromTransfer,
 } from "@/lib/email/transfer-files";
+import { brevoProvider, resendProvider, type PreparedEmail } from "@/lib/email/email-providers";
 import { parseSatoEmailDraft } from "@/lib/sato-email/draft";
 import { loadSatoEmailAttachments, resolveSatoEmailAttachments } from "@/lib/sato-email/media";
 import {
@@ -267,5 +268,101 @@ export async function runSatoEmailAttachmentTests() {
     EDITOR_IMAGE_ACCEPT.split(",").every((type) => SATO_EMAIL_INLINE_ACCEPT.includes(type)),
     true,
     "the editor's fallback picker must not offer a type the body-picture store would refuse",
+  );
+
+  // ── 8. An attached PDF reaches the provider's request, byte for byte ───────────────────────
+  //
+  // Owner 2026-10-24: "make sure if i attached a pdf it will be send attched in the email". Every
+  // check above stops at the loader; this one follows the file to the HTTP body each provider is
+  // actually sent, because a field name the provider does not know (`attachment` vs `attachments`,
+  // `type` vs `content_type`) is not an error at either end — the mail goes out, 200, with nothing
+  // on it. Both providers are checked: Brevo is the one that sends on the bad day.
+  await assertPdfReachesProviderRequests();
+}
+
+async function assertPdfReachesProviderRequests() {
+  const pdfBytes = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
+  const pdfId = "44444444-4444-4444-8444-444444444444";
+  const row = {
+    byte_size: pdfBytes.length,
+    content_type: "application/pdf",
+    id: pdfId,
+    original_file_name: "HR Policy 2026.pdf",
+    storage_bucket: "sato-email-media",
+    storage_path: "attachment/2026-10/abc.pdf",
+  };
+  const downloads: string[] = [];
+  const supabase = stubSupabase([row], []) as unknown as Record<string, unknown>;
+  supabase.storage = {
+    from: (bucket: string) => ({
+      download: async (path: string) => {
+        downloads.push(`${bucket}/${path}`);
+        return { data: new Blob([pdfBytes], { type: "application/pdf" }), error: null };
+      },
+    }),
+  };
+
+  const loaded = await loadSatoEmailAttachments([pdfId], supabase as never);
+  assert.ok(!("problem" in loaded), "a stored PDF must load for the send");
+  assert.deepEqual(downloads, ["sato-email-media/attachment/2026-10/abc.pdf"], "the bytes must be read from the file's own storage path");
+
+  const email: PreparedEmail = {
+    attachments: loaded.attachments,
+    from: "Sato Pharma HR <hr@people.satopharma.com>",
+    html: "<p>The policy is attached.</p>",
+    idempotencyKey: "sato-pdf-1",
+    replyTo: "hr@people.satopharma.com",
+    subject: "HR Policy",
+    text: "The policy is attached.",
+    to: ["someone@example.com"],
+  };
+
+  const realFetch = globalThis.fetch;
+  const saved = {
+    brevo: process.env.BREVO_API_KEY,
+    brevoFrom: process.env.BREVO_EMAIL_FROM,
+    resend: process.env.RESEND_API_KEY,
+  };
+  const bodies: Record<string, Record<string, unknown>> = {};
+  try {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.BREVO_API_KEY = "brevo_test";
+    delete process.env.BREVO_EMAIL_FROM;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const provider = String(input).includes("resend") ? "resend" : "brevo";
+      bodies[provider] = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify(provider === "resend" ? { id: "R1" } : { messageId: "<B1>" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    }) as typeof fetch;
+    await resendProvider.send(email);
+    await brevoProvider.send(email);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (saved.brevo === undefined) delete process.env.BREVO_API_KEY;
+    else process.env.BREVO_API_KEY = saved.brevo;
+    if (saved.brevoFrom === undefined) delete process.env.BREVO_EMAIL_FROM;
+    else process.env.BREVO_EMAIL_FROM = saved.brevoFrom;
+    if (saved.resend === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = saved.resend;
+  }
+
+  const resendFiles = bodies.resend?.attachments as Array<Record<string, string>> | undefined;
+  assert.equal(resendFiles?.length, 1, "the PDF must be on Resend's request as attachments[] — the mail would go out with nothing attached");
+  assert.equal(resendFiles?.[0].filename, "HR Policy 2026.pdf", "the recipient must see the PDF under its own name");
+  assert.equal(resendFiles?.[0].content_type, "application/pdf", "Resend must be told it is a PDF");
+  assert.equal("content_id" in (resendFiles?.[0] ?? {}), false, "an attached PDF must not be marked as an inline picture");
+  assert.ok(
+    Buffer.from(resendFiles?.[0].content ?? "", "base64").equals(pdfBytes),
+    "the PDF on Resend's request must be the uploaded file byte for byte",
+  );
+
+  const brevoFiles = bodies.brevo?.attachment as Array<Record<string, string>> | undefined;
+  assert.equal(brevoFiles?.length, 1, "the PDF must be on Brevo's request as attachment[] — the backup would send it without the file");
+  assert.equal(brevoFiles?.[0].name, "HR Policy 2026.pdf");
+  assert.ok(
+    Buffer.from(brevoFiles?.[0].content ?? "", "base64").equals(pdfBytes),
+    "the PDF on Brevo's request must be the uploaded file byte for byte",
   );
 }
