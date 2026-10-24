@@ -268,7 +268,9 @@ overrides:
   # only — an optional/peer dependency of openai@7.17.0 and a couple of others, never a direct
   # `dependencies` entry — so this is a bare entry, not a scoped one, and the peer ranges
   # (`>=5 <9`, `>=7.24.1`) both accept 7.29.1.
-  "undici": 7.29.1
+  # RE-BUMPED to 7.30.1 for GHSA-xjj6-f33q-929c (high, reached via openai > undici): the audit step
+  # `pnpm audit --audit-level=high --prod` failed `static` on every PR until the pin moved.
+  "undici": 7.30.1
 
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
