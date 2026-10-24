@@ -719,7 +719,6 @@ export function Employee360View({
   tmAnalytics = null,
   pmMarketing = null,
   bare = false,
-  suppressCoaching = false,
 }: {
   /**
    * Which shell this report is rendered in, and therefore whether the subject's name is the page's
@@ -738,14 +737,6 @@ export function Employee360View({
   teamLifecycle?: TeamLifecycleSummary | null;
   tmAnalytics?: TrainingManagerAnalytics | null;
   pmMarketing?: PmMarketingSummary | null;
-  /**
-   * Hide every coaching and Training-Manager surface from this report — the received-coaching card,
-   * the Before/After coaching-impact card, the Training-Manager effectiveness card, the coaching-score
-   * KPIs in Leadership Activity, and the Training-Manager labels in the double-visit history. Set true
-   * by the EMPLOYEE-PORTAL 360 pages only (owner, 2026-09-29: hide coaching + Training Manager
-   * system-wide in the portal); the admin-shell 360 leaves it false and keeps every coaching view.
-   */
-  suppressCoaching?: boolean;
   /**
    * The employee portal's page shell already pads and sizes the content column, so its two call
    * sites render the report BARE: no second padding (32px lost at 375px) and no max-width, which
@@ -799,7 +790,7 @@ export function Employee360View({
             okText={`${summary.leadership?.distinctRepsReached ?? 0} reps reached`}
             badText="No coaching / double-visits delivered"
           />
-        ) : suppressCoaching ? null : (
+        ) : (
           <TrustChip ok={summary.coaching.hasData} okText={`${summary.coaching.reportCount} coaching reports`} badText="Never coached" />
         )}
       </div>
@@ -809,11 +800,11 @@ export function Employee360View({
 
       {/* Leaders lead with what they DELIVER. */}
       {plan.showLeadership && summary.leadership ? (
-        <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} suppressCoaching={suppressCoaching} />
+        <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} />
       ) : null}
 
-      {/* Training Manager god-mode: coverage / neglect / concentration + verdict. Hidden in the portal. */}
-      {tmAnalytics && !suppressCoaching ? <TrainingManagerSection a={tmAnalytics} /> : null}
+      {/* Training Manager god-mode: coverage / neglect / concentration + verdict. */}
+      {tmAnalytics ? <TrainingManagerSection a={tmAnalytics} /> : null}
 
       {/* Team / line sales — leaders show it up top (reps see their own further down). */}
       {plan.showTeamSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
@@ -1023,9 +1014,9 @@ export function Employee360View({
       {/* Coaching / impact / double-visits RECEIVED — a rep-side view (Medical Reps). */}
       {showReceivedSide ? (
         <>
-          {suppressCoaching ? null : <CoachingSection coaching={summary.coaching} field={summary.fieldBenchmarks} />}
-          {suppressCoaching ? null : <ImpactSection impact={summary.impact} />}
-          <DoubleVisitSection dv={summary.doubleVisits} suppressTm={suppressCoaching} />
+          <CoachingSection coaching={summary.coaching} field={summary.fieldBenchmarks} />
+          <ImpactSection impact={summary.impact} />
+          <DoubleVisitSection dv={summary.doubleVisits} />
         </>
       ) : null}
 
@@ -1042,7 +1033,7 @@ function splitLine(split: { am: number; pm: number; pharmacies: number }): strin
   return `AM ${intFmt.format(split.am)} · PM ${intFmt.format(split.pm)} · Pharmacies ${intFmt.format(split.pharmacies)}`;
 }
 
-function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { leadership: LeadershipActivity; isTM: boolean; suppressCoaching?: boolean }) {
+function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivity; isTM: boolean }) {
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader
@@ -1058,13 +1049,11 @@ function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { lea
         <>
           <SummaryLine text={leadership.summaryText} />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            {suppressCoaching ? null : (
-              <KpiTile
-                label="Coaching delivered"
-                value={intFmt.format(leadership.coachingDelivered)}
-                hint={`${leadership.coachingRepsReached} rep${leadership.coachingRepsReached === 1 ? "" : "s"} coached`}
-              />
-            )}
+            <KpiTile
+              label="Coaching delivered"
+              value={intFmt.format(leadership.coachingDelivered)}
+              hint={`${leadership.coachingRepsReached} rep${leadership.coachingRepsReached === 1 ? "" : "s"} coached`}
+            />
             <KpiTile
               label="Double-visits conducted"
               value={intFmt.format(leadership.dvConducted)}
@@ -1077,17 +1066,15 @@ function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { lea
               value={leadership.ownSingle ? intFmt.format(leadership.ownSingle.visits) : "—"}
               hint={leadership.ownSingle ? splitLine(leadership.ownSingle.split) : "could not be read just now"}
             />
-            <KpiTile label="Reps reached" value={intFmt.format(leadership.distinctRepsReached)} hint={suppressCoaching ? "distinct reps accompanied" : "distinct reps coached or accompanied"} />
-            {suppressCoaching ? null : (
-              <KpiTile
-                label="Avg score given"
-                value={leadership.avgScoreGiven == null ? "—" : `${Math.round(leadership.avgScoreGiven)}%`}
-                hint="mean coaching score awarded"
-              />
-            )}
+            <KpiTile label="Reps reached" value={intFmt.format(leadership.distinctRepsReached)} hint="distinct reps coached or accompanied" />
+            <KpiTile
+              label="Avg score given"
+              value={leadership.avgScoreGiven == null ? "—" : `${Math.round(leadership.avgScoreGiven)}%`}
+              hint="mean coaching score awarded"
+            />
           </div>
 
-          {!suppressCoaching && isTM && leadership.impact ? (
+          {isTM && leadership.impact ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">
                 Impact of their double-visits — reps&apos; field activity in the {leadership.impact.windowDays} days before vs after
@@ -1103,9 +1090,9 @@ function LeadershipSection({ leadership, isTM, suppressCoaching = false }: { lea
               <div className={LIST_BOX}>
                 {leadership.byRep.map((r) => {
                   const parts = [
-                    suppressCoaching || r.coachingReports <= 0 ? null : `${r.coachingReports} coaching`,
+                    r.coachingReports > 0 ? `${r.coachingReports} coaching` : null,
                     r.doubleVisits > 0 ? `${r.doubleVisits} double-visit${r.doubleVisits === 1 ? "" : "s"}` : null,
-                    suppressCoaching || r.avgScoreGiven == null ? null : `${Math.round(r.avgScoreGiven)}% avg`,
+                    r.avgScoreGiven != null ? `${Math.round(r.avgScoreGiven)}% avg` : null,
                   ].filter(Boolean);
                   return (
                     <div key={r.hrId} className={LIST_ROW}>
@@ -1732,10 +1719,10 @@ function phoenixDoubleVisitLine(event: Employee360Profile["doubleVisits"]["event
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile["doubleVisits"]; suppressTm?: boolean }) {
+function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) {
   return (
     <Card className={PREMIUM_CARD}>
-      <SectionHeader icon={Users} tone="blue" sub={suppressTm ? "Every visit where a manager accompanied this rep." : "Every visit where a manager accompanied this rep. TM = Training Manager."}>
+      <SectionHeader icon={Users} tone="blue" sub="Every visit where a manager accompanied this rep. TM = Training Manager.">
         Double-Visit History
       </SectionHeader>
       {dv.totalReceived === 0 ? (
@@ -1745,7 +1732,7 @@ function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile
           {/* One column on a phone: three across left ~54px tiles at 375px, labels spilling out. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <KpiTile label="Double-visits received" value={intFmt.format(dv.totalReceived)} />
-            {suppressTm ? null : <KpiTile label="With Training Manager" value={intFmt.format(dv.tmCount)} hint="TM field coaching" />}
+            <KpiTile label="With Training Manager" value={intFmt.format(dv.tmCount)} hint="TM field coaching" />
             <KpiTile label="Distinct visitors" value={intFmt.format(dv.distinctVisitors)} />
           </div>
 
@@ -1753,14 +1740,11 @@ function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Who accompanied this rep</div>
               <div className="flex flex-wrap gap-2">
-                {dv.byVisitor.map((v) => {
-                  const markTm = v.isTrainingManager && !suppressTm;
-                  return (
-                    <span key={v.hrId} className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", markTm ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
-                      {v.name ?? NAME_NOT_ON_RECORD} · {v.count}{markTm ? " · TM" : ""}
-                    </span>
-                  );
-                })}
+                {dv.byVisitor.map((v) => (
+                  <span key={v.hrId} className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", v.isTrainingManager ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
+                    {v.name ?? NAME_NOT_ON_RECORD} · {v.count}{v.isTrainingManager ? " · TM" : ""}
+                  </span>
+                ))}
               </div>
             </div>
           ) : null}
@@ -1775,7 +1759,7 @@ function DoubleVisitSection({ dv, suppressTm = false }: { dv: Employee360Profile
                     <span className="min-w-0 break-words text-slate-800">
                       {e.doubleName ?? NAME_NOT_ON_RECORD}
                       {e.double2Name ? ` and ${e.double2Name}` : ""}
-                      {e.isTrainingManager && !suppressTm ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
+                      {e.isTrainingManager ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
                     </span>
                   </div>
                   <span className={LIST_SIDE}>

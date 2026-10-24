@@ -13,10 +13,6 @@ import {
 } from "@/lib/coaching/analytics";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import {
-  type AccessContext,
-  normalizeHrId,
-} from "@/lib/auth/permissions";
-import {
   filtersFromRequest,
   jsonError,
   requireCoachingPermission,
@@ -27,23 +23,19 @@ export const dynamic = "force-dynamic";
 
 const defaultAnalyticsReportLimit = 500;
 
-function enforceAnalyticsScope(filters: ReturnType<typeof filtersFromRequest>, access: AccessContext) {
-  const scopedFilters = {
+// A Training Manager is no longer pinned to her own HR_ID here (owner, 2026-10-24): she reads every
+// coach's reports, predecessors included, exactly as the page's first render already did.
+function enforceAnalyticsScope(filters: ReturnType<typeof filtersFromRequest>) {
+  return {
     ...filters,
     limit: filters.limit ?? defaultAnalyticsReportLimit,
-  };
-  if (access.role !== "Training Manager") return scopedFilters;
-  const coachHrId = normalizeHrId(access.hrId);
-  return {
-    ...scopedFilters,
-    coachHrId: coachHrId ?? "__no_training_manager_hr_id__",
   };
 }
 
 export async function GET(request: Request) {
   try {
     const access = await requireCoachingPermission(request, "read");
-    const filters = enforceAnalyticsScope(filtersFromRequest(request), access);
+    const filters = enforceAnalyticsScope(filtersFromRequest(request));
     const reports = await getCoachingReports(filters, access);
     const [quarterlySummary, scoreAnalytics, directory] = await Promise.all([
       getCoachingQuarterlySummary({

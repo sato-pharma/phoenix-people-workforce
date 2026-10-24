@@ -231,7 +231,7 @@ export function runEmployeePortalNavigationTests() {
 
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
-  assert.equal(districtManager.showTeamCoachingTab, false, "Coaching is hidden from the portal system-wide (owner, 2026-09-29) — DSM keeps coaching data access, not the link");
+  assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
   // Added 2026-08-22 with isLineScopedOrganogramRole's District Manager branch. The DSM held
   // organogram: ["read"] with no link and no scope gate, so the audience picker inside OrgChartTree
@@ -255,7 +255,7 @@ export function runEmployeePortalNavigationTests() {
   // read-permissions already imply — the data layers were RM-ready and only the sidebar flags were
   // missing (probation walks the RM subtree, coaching is RM=hierarchy, organogram is line-scoped).
   const regionalManager = resolveEmployeePortalNavVisibility("Regional Manager");
-  assert.equal(regionalManager.showTeamCoachingTab, false, "Coaching is hidden from the portal system-wide (owner, 2026-09-29) — RM keeps coaching data access, not the link");
+  assert.equal(regionalManager.showTeamCoachingTab, true, "RM should see Team Coaching Reports (coaching read is RM=hierarchy)");
   assert.equal(regionalManager.showProbationTab, true, "RM should see the Probation Tracker (canReadProbationEmployee has an RM subtree branch)");
   assert.equal(regionalManager.showOrganogramTab, true, "RM should see the Organogram (line-scoped, same grain as NSM)");
   assert.equal(regionalManager.showMyCoachingTab, false, "RM should not see My Coaching Reports (that is the Medical Rep view)");
@@ -505,7 +505,7 @@ export function runEmployeePortalNavigationTests() {
 
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
-  assert.equal(nationalSalesManager.showTeamCoachingTab, false, "Coaching is hidden from the portal system-wide (owner, 2026-09-29) — NSM keeps coaching data access, not the link");
+  assert.equal(nationalSalesManager.showTeamCoachingTab, true, "NSM should see Team Coaching Reports");
   assert.equal(
     nationalSalesManager.showRoiIntelligenceTab,
     true,
@@ -514,7 +514,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(
     nationalSalesManager.showCoachingAnalyticsTab,
     false,
-    "Coaching Analytics is hidden from the portal system-wide (owner, 2026-09-29)",
+    "NSM gaining ROI Intelligence must not also grant Coaching Analytics (that stays PM/GPM/MM only)",
   );
   assert.equal(
     nationalSalesManager.showDoubleVisitAnalyticsTab,
@@ -523,24 +523,21 @@ export function runEmployeePortalNavigationTests() {
   );
 
   const nsmAlias = resolveEmployeePortalNavVisibility("NSM");
-  assert.equal(nsmAlias.showTeamCoachingTab, false, "Coaching is hidden from the portal system-wide (owner, 2026-09-29) — the NSM alias resolves the same, no coaching link");
+  assert.equal(nsmAlias.showTeamCoachingTab, true, "NSM alias should see Team Coaching Reports");
 
   const trainingManager = resolveEmployeePortalNavVisibility("Training Manager");
   assert.equal(trainingManager.showDashboardTab, false, "Training Manager should not see Dashboard");
   assert.equal(trainingManager.showMyPerformanceTab, false, "Training Manager should not see My Performance");
   assert.equal(trainingManager.showIncentiveTab, false, "Training Manager should not see Incentive");
-  // The whole Training Manager section is hidden from the portal system-wide (owner, 2026-09-29:
-  // "hide anything related to training manager and coaching anywhere system wide in employee portal").
-  // Coaching read access is unchanged server-side; only these portal links are gone.
-  assert.equal(trainingManager.showTrainingManagerDashboardTab, false, "Training Manager section is hidden from the portal (owner, 2026-09-29)");
-  assert.equal(trainingManager.showTrainingManagerCreateCoachingTab, false, "Training Manager section is hidden from the portal (owner, 2026-09-29)");
-  assert.equal(trainingManager.showTrainingManagerFieldCoachingTab, false, "Training Manager section is hidden from the portal (owner, 2026-09-29)");
+  assert.equal(trainingManager.showTrainingManagerDashboardTab, true, "Training Manager should see Coaching Dashboard");
+  assert.equal(trainingManager.showTrainingManagerCreateCoachingTab, true, "Training Manager should see Create Coaching Report");
+  assert.equal(trainingManager.showTrainingManagerFieldCoachingTab, true, "Training Manager should see Field Coaching");
   assert.equal(trainingManager.showMyCoachingTab, false, "Training Manager should not see My Coaching Reports");
   assert.equal(trainingManager.showTeamCoachingTab, false, "Training Manager should not see Team Coaching Reports");
   assert.equal(
     resolveLandingPathForRole("Training Manager"),
-    "/employee-portals",
-    "Training Manager lands on the normal portal home now that the coaching dashboard is hidden (owner, 2026-09-29)",
+    "/employee-portals/training-manager",
+    "Training Manager should land on the dedicated coaching dashboard",
   );
   assert.equal(
     resolveLandingPathForRole("SFE Manager"),

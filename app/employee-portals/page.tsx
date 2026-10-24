@@ -36,9 +36,8 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
   if (mode !== "employee-portal") {
     redirect("/overview");
   }
-  // The Training Manager used to be bounced into the coaching dashboard here. That whole section is
-  // now hidden from the portal (owner, 2026-09-29: hide training manager + coaching system-wide), so
-  // a Training Manager lands on the normal portal home like every other portal role.
+  // A Training Manager signs in to her coaching section (landing.ts), but this home is never a bounce
+  // for her: the Command Center row must still open it.
   try {
     await assertPermission(access, "employee_profile", "read");
   } catch (error) {

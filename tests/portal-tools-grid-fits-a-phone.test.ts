@@ -77,12 +77,9 @@ export function runPortalToolsGridFitsAPhoneTests() {
 
   // Vacuity guards: this test is worthless if the file stopped matching what it reads.
   const tileCount = lines.filter((line) => line.includes("<PremiumNavTile")).length;
-  // Was 4 ("My Workspace": My Coaching, My Plans, My Expenses, My Payslips). The "My Coaching" tile
-  // was removed 2026-09-29 when coaching was hidden system-wide in the portal (owner), leaving 3.
-  // The grid-column checks below still run on the remaining grid, so the coverage is unchanged.
   assert.ok(
-    tileCount >= 3,
-    `${CENTER}: only ${tileCount} <PremiumNavTile> usages found (expected at least 3, the three in ` +
+    tileCount >= 4,
+    `${CENTER}: only ${tileCount} <PremiumNavTile> usages found (expected at least 4, the four in ` +
       `"My Workspace"). The test would pass vacuously — re-point it rather than lowering this floor.`,
   );
   assert.ok(

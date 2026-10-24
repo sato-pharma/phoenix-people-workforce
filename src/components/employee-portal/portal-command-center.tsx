@@ -766,6 +766,7 @@ const PM_GPM_DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
   { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales" },
   { href: "/employee-portals/roi", icon: PieChart, label: "ROI Intelligence" },
+  { href: "/employee-portals/coaching-analytics", icon: ClipboardCheck, label: "Coaching Analytics" },
   { href: "/employee-portals/double-visit-analytics", icon: Network, label: "Double-Visit Analytics" },
   { href: "/employee-portals/organogram", icon: Building2, label: "Organogram" },
 ];
@@ -1812,8 +1813,12 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
-          {/* The "My Coaching" tile was removed here on 2026-09-29 (owner: hide training-manager +
-              coaching system-wide in the portal). */}
+          {/* The retired Talent Acquisition seat held no `coaching` grant, so this tile landed her on the
+              "not authorized to view coaching reports" dead end. Guarded like its two
+              neighbours below, which were already hidden from her. */}
+          {!isPortalHrOfficeStaff && (
+            <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
+          )}
           {!isPortalHrOfficeStaff && (
             <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
           )}

@@ -10,6 +10,7 @@ import {
   Inbox,
   Network,
   ShieldCheck,
+  Stethoscope,
   TrendingUp,
 } from "lucide-react";
 
@@ -47,6 +48,7 @@ function ageInDays(iso: string | null, now: number): number | null {
 
 const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; description: string }> = [
   { href: "/employee-portals/roi", icon: TrendingUp, label: "ROI Intelligence", description: "Coverage, spend at risk, gap" },
+  { href: "/employee-portals/coaching-analytics", icon: Stethoscope, label: "Coaching Analytics", description: "Scores and coverage" },
   { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", description: "Field execution health" },
   { href: "/employee-portals/source-of-sales", icon: BarChart3, label: "Source of Sales", description: "Distributor sell-in by line, region, product" },
   { href: "/employee-portals/organogram", icon: Network, label: "Organogram", description: "Structure and vacancies" },
