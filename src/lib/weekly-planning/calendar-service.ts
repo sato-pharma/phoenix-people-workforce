@@ -19,6 +19,8 @@ import {
   planningConflictKey,
   placeEvidenceKey,
   planSlotLabel,
+  buildAreaRegionIndex,
+  regionOfArea,
   resolvePlanItemArea,
   resolvePlanItemRegion,
   sharedPlanningCalendarStatuses,
@@ -331,10 +333,11 @@ async function loadPlaceEvidence(start: string, end: string): Promise<Map<string
 /** The legacy plans' items and the district managers' Phoenix CRM half-days, read side by side. */
 async function loadSubmittedPlanItems(start: string, end: string): ReturnType<typeof loadLegacySubmittedPlanItems> {
   const [legacy, halfDays] = await Promise.all([loadLegacySubmittedPlanItems(start, end), readManagerPlanHalfDays(start, end)]);
-  return { ...legacy, items: [...legacy.items, ...managerPlanCalendarItems(halfDays, legacy.directoryByHrId, legacy.placeEvidence)] };
+  return { ...legacy, items: [...legacy.items, ...managerPlanCalendarItems(halfDays, legacy.directoryByHrId, legacy.placeEvidence, legacy.areaRegions)] };
 }
 
 async function loadLegacySubmittedPlanItems(start: string, end: string): Promise<{
+  areaRegions: Map<string, string>;
   directoryByHrId: Map<string, EmployeeDirectoryRow>;
   hasMoreHeaders: boolean;
   hasMoreItems: boolean;
@@ -366,8 +369,10 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
   const headerById = new Map(headers.map((header) => [header.id, header]));
   const planIds = headers.map((header) => header.id);
   const directoryByHrId = new Map(directoryRows.map((row) => [normalizeHrId(row.hrId), row]));
+  const areaRegions = buildAreaRegionIndex(directoryRows);
   if (planIds.length === 0) {
     return {
+      areaRegions,
       directoryByHrId,
       hasMoreHeaders,
       hasMoreItems: false,
@@ -415,9 +420,9 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     const medicalRepHrId = cleanText(row.double_visit_medical_rep_hr_id) || null;
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
-    const region = resolvePlanItemRegion(row.location_text, medicalRepEmployee?.regionName, employee.regionName);
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(header.employee_hr_id, row.activity_date)));
+    const region = resolvePlanItemRegion(row.location_text, medicalRepEmployee?.regionName, employee.regionName, regionOfArea(areaRegions, area));
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const employeeDisplayName = employee?.displayName || header.employee_name;
     const item: PlanningCalendarPlanItem = {
@@ -453,6 +458,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
   });
 
   return {
+    areaRegions,
     directoryByHrId,
     hasMoreHeaders,
     hasMoreItems,
@@ -484,7 +490,12 @@ async function readManagerPlanHalfDays(start: string, end: string): Promise<Mana
   }
 }
 
-function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Map<string, EmployeeDirectoryRow>, placeEvidence: Map<string, string>): PlanningCalendarPlanItem[] {
+function managerPlanCalendarItems(
+  halfDays: ManagerHalfDays,
+  directoryByHrId: Map<string, EmployeeDirectoryRow>,
+  placeEvidence: Map<string, string>,
+  areaRegions: Map<string, string>,
+): PlanningCalendarPlanItem[] {
   return halfDays.flatMap((halfDay) => {
     const employee = directoryByHrId.get(normalizeHrId(halfDay.managerHrId));
     // Same rule as the legacy rows: someone no longer in the directory drops off the shared calendar.
@@ -499,7 +510,7 @@ function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Ma
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
     const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" || halfDay.kind === "with_area" ? halfDay.areaName : null;
     const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(halfDay.managerHrId, halfDay.date)));
-    const region = resolvePlanItemRegion(null, rep?.regionName, employee.regionName);
+    const region = resolvePlanItemRegion(null, rep?.regionName, employee.regionName, regionOfArea(areaRegions, area));
     const employeeDisplayName = employee.displayName || employee.fullName;
     const item: PlanningCalendarPlanItem = {
       activityTitle,

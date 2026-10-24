@@ -216,21 +216,66 @@ export function resolvePlanItemArea(
   ownerAreaName: string | null | undefined,
   evidenceAreaName?: string | null,
 ): string | null {
-  return cleanText(storedArea) || cleanText(repAreaName) || cleanText(evidenceAreaName) || cleanText(ownerAreaName) || null;
+  return placeText(storedArea) || placeText(repAreaName) || placeText(evidenceAreaName) || placeText(ownerAreaName) || null;
+}
+
+/**
+ * The whole country is never a place on the calendar (owner, 2026-10-24: "magdy on 28-10 is showing
+ * travelling to egypt"). The National Sales Manager's employee file says region "Egypt" and area
+ * "Egypt", so a travel day with no destination stored read "Travelling to Egypt". Such a value is
+ * skipped wherever it comes from, and an item that knows nothing better shows "-".
+ */
+export function isWholeCountryPlace(value: string | null | undefined) {
+  return planningGroupKey(value) === "egypt";
+}
+
+function placeText(value: string | null | undefined) {
+  const text = cleanText(value);
+  return text && !isWholeCountryPlace(text) ? text : "";
+}
+
+/**
+ * The region each area belongs to, read from the active employee directory: the region most of the
+ * area's people sit in, and none when two regions tie or only the whole country is known. A half-day
+ * planned in an area therefore groups under that area's region, never the planner's own.
+ */
+export function buildAreaRegionIndex(rows: ReadonlyArray<{ areaName?: string | null; regionName?: string | null }>): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const areaKey = planningGroupKey(placeText(row.areaName));
+    const region = placeText(row.regionName);
+    if (!areaKey || !region) continue;
+    const byRegion = counts.get(areaKey) ?? new Map<string, number>();
+    byRegion.set(region, (byRegion.get(region) ?? 0) + 1);
+    counts.set(areaKey, byRegion);
+  }
+  const index = new Map<string, string>();
+  for (const [areaKey, byRegion] of counts) {
+    const ranked = [...byRegion].sort((left, right) => right[1] - left[1]);
+    if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) index.set(areaKey, ranked[0][0]);
+  }
+  return index;
+}
+
+export function regionOfArea(index: Map<string, string>, areaName: string | null | undefined): string | null {
+  const key = planningGroupKey(placeText(areaName));
+  return (key && index.get(key)) || null;
 }
 
 /**
  * The same never-empty rule for the region the calendar groups by (owner, 2026-10-24: "group them by
  * region"): the region typed on the plan wins; otherwise the rep it is planned WITH; otherwise the
- * planner's own region. A Phoenix CRM manager half-day stores no region at all, so it always resolves
- * through the directory.
+ * region of the area the item is in (`buildAreaRegionIndex`); otherwise the planner's own region. A
+ * Phoenix CRM manager half-day stores no region at all, so it always resolves through the directory.
+ * The whole country ("Egypt") is never a region here (`isWholeCountryPlace`).
  */
 export function resolvePlanItemRegion(
   storedRegion: string | null | undefined,
   repRegionName: string | null | undefined,
   ownerRegionName: string | null | undefined,
+  areaRegionName?: string | null,
 ): string | null {
-  return cleanText(storedRegion) || cleanText(repRegionName) || cleanText(ownerRegionName) || null;
+  return placeText(storedRegion) || placeText(repRegionName) || placeText(areaRegionName) || placeText(ownerRegionName) || null;
 }
 
 /**
