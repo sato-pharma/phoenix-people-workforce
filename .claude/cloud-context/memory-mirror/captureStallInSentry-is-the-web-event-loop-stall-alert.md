@@ -1,6 +1,6 @@
 ---
 name: captureStallInSentry-is-the-web-event-loop-stall-alert
-description: Sentry PHOENIX-WORKFORCE-6 / captureStallInSentry is the web process's event-loop freeze warning, and its count is a FLOOR — one event per 30 min per container; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour; after the GC reading ships they also say whether a GC was the freeze (`gcExplainsStall`).
+description: Sentry PHOENIX-WORKFORCE-6 / captureStallInSentry is the web process's event-loop freeze warning, and its count is a FLOOR — one event per 30 min per container; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour; their `gcExplainsStall` is false on every freeze measured 24 Oct: GC is ruled out and the 5 s one repeats every exactly 65:00.
 metadata:
   type: project
 ---
@@ -33,13 +33,9 @@ health reporter itself). Not the platform pausing containers: the worker contain
 minutes on the same project and region never passed **113 ms** in 946 minutes. It is the web
 process's own single thread, blocked.
 
-**Leading candidate: a major V8 GC** — the frequency tracks traffic (every few minutes in the
-evening, hourly when idle) and the period drifts, which is allocation-driven rather than clock-driven.
-Unproven until the GC reading shipped (PR opened 23 Oct 2026 evening, branch `codex/gc-reading`): once it is live every
-`event_loop_stall` line carries `gcExplainsStall`, `gcLongest` and `gcTotalMs`, and the `process_health` line carries `gc`
-per kind — so the same grep above settles it: `gcExplainsStall:true` on the 5 s freezes = major GC; `false` with only
-ms-long collections = something else blocking the thread. The timings/jobs windows stay empty — see
-[[the-process-health-timings-and-jobs-windows-are-always-empty]].
+🔴 **GARBAGE COLLECTION IS RULED OUT (24 Oct 2026, 14:50 Cairo, from the GC reading shipped in PR 6403).** One container, 24 Oct 01:30–14:25 Cairo: **23 freezes, `gcExplainsStall` false on all 23**; the longest single collection in any freeze minute was 22–87 ms against freezes of 1.0–6.5 s, and a whole minute's collections total 270–730 ms every minute, freeze or not (heap 380–990 MB of 4288). Do not propose GC tuning, `--max-old-space-size` or heap work for these freezes.
+
+🔴 **THE 5-SECOND FREEZE IS CLOCK-DRIVEN: `sinceLastStallS` is EXACTLY 3900 s (65:00) on every overnight one** — 01:30, 02:35, 03:40, 04:45, 05:50, 06:55, 08:00, 09:05, 10:10 (5.2–6.5 s each), and it holds through the day (11:15, 12:20, 14:25 on the same grid, one 5-minute slip at 13:20), traffic or none. It is not allocation-driven, so the earlier "drifting a few minutes each cycle" was wrong. The 1.0–1.5 s freezes (10:22 onward, business hours, 12 of the 23) are a separate, traffic-shaped thing and equally not GC. **CAUSE FOUND (24 Oct 2026, same day): THE MASTER MAP SHEET'S HOURLY FULL CHECK.** At every one of the 9 grid freezes read in Railway's HTTP logs (01:29, 02:34, 03:39, 04:44, 05:49 overnight; 11:14, 12:19, 13:19, 14:24 by day) the SAME request lands in the same second: `GET /api/sales/master-map/sheet` from a Google Apps Script (user agent `Google-Apps-Script; beanserver`), taking 13.4–26.5 s end to end, while Stackdriver's `/api/healthz` probe at that second takes 3.8–5.2 s. It is the sheet's plan fetch (`?plan=1`): `google-apps-script/master-map/Code.gs` ticks every 5 minutes and runs the full check when `Date.now() - lastFull > FULL_CHECK_EVERY_MS`, so a 60-minute interval tested on 5-minute ticks fires at the 13th tick = exactly **65:00**. The plan loads the whole customer master (~74,000 rows) and `getMasterMapPlan` builds the tree and SHA-1 hashes every row (`src/lib/sales/master-map/payload.ts`) — synchronous CPU on the web process's single thread. The fix belongs in that route (yield to the loop, or do the build off the main thread), never in GC or memory settings. The 1.0–1.5 s freezes are NOT explained by this and are still unattributed.
 
 **Why it matters:** every request in flight waits out the freeze; Railway's own latency on the web
 service reads p90 1.33 s, p95 1.59 s, p99 3.31 s over 6.3 K requests an hour. Related:

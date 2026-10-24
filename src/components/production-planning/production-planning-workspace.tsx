@@ -553,6 +553,11 @@ function stockSourceLabels(t: Record<ProductionPlanningStringKey, string>): Reco
  * samples. Named constants rather than two string literals because the FIRST READ sends them too: a
  * bare `GET /api/production-planning` computes no plan, so without them the screen would open with
  * the form filled in and the table beneath it empty, which reads as a module that cannot calculate.
+ *
+ * 🔴 THE SAMPLE COUNT IS NOT SENT ON THAT READ — it is the PRODUCT's (`default_sample_units`), and the
+ * server fills it in. Sending this 10,000 for every product put Ivyronc's samples into Royanoxicam, a
+ * tablet with none: 3 runs read "590,000 tablets and 10,000 samples" (owner, 2026-10-24). The
+ * constant below is only what the field shows for the instant before the first answer lands.
  */
 const DEFAULT_REQUESTED_QTY = "100000";
 const DEFAULT_SAMPLE_UNITS = "10000";
@@ -595,7 +600,6 @@ export function ProductionPlanningWorkspace() {
       const params = new URLSearchParams({
         mode: DEFAULT_MODE,
         requestedQty: DEFAULT_REQUESTED_QTY,
-        sampleUnits: DEFAULT_SAMPLE_UNITS,
       });
       // 🔴 THE WHOLE PAYLOAD IS PER PRODUCT, so the product has to travel on the GET.
       //
@@ -616,6 +620,14 @@ export function ProductionPlanningWorkspace() {
       const workspace = payload as WireWorkspace;
       setData(workspace);
       setPlan(workspace.plan);
+      // The form follows the plan it is showing. A load replaces the plan with this product's default
+      // one, so a form still holding the last product's mode, count and samples would sit above
+      // figures it did not ask for — and Calculate would carry those samples into this product.
+      if (workspace.plan) {
+        setMode(workspace.plan.mode);
+        setRequestedQty(workspace.plan.requestedQty);
+        setSampleUnits(workspace.plan.sampleUnits);
+      }
       // 🔴 `productId` is NOT seeded from the response, deliberately. Seeding it would change the
       // state this `load` depends on and fire a SECOND identical fetch on every mount. The selected
       // product is read as `productId || data.productId`, so an unset choice follows the server's

@@ -112,7 +112,7 @@ export { T as PRODPLAN_TABLES };
 // Explicit column lists, never `select("*")`: a `*` read is how a column added for one screen
 // quietly starts travelling to every other one.
 const PRODUCT_COLUMNS =
-  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, measure_unit, factory_location_id, is_active, notes";
+  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, measure_unit, factory_location_id, default_sample_units, is_active, notes";
 /** Which materials belong to which product. Before Guamusin every material belonged to the only one. */
 const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active";
 const MATERIAL_COLUMNS =
@@ -195,6 +195,15 @@ export type LoadedProduct = {
    * it" to "send it". The column keeps each product's split its own.
    */
   readonly factoryLocationId: string | null;
+  /**
+   * The free-sample count the planner's Samples field opens on for THIS product
+   * (`prodplan_products.default_sample_units`). Ivyronc and Guamusin keep the 10,000 the screen
+   * always opened on; Royanoxicam is a tablet with no free samples, so it is 0. Before this column the
+   * screen sent Ivyronc's 10,000 for every product, and 3 Royanoxicam runs read "590,000 tablets and
+   * 10,000 samples" (owner, 2026-10-24). Optional only so a test can build a product without it —
+   * an absent figure means no samples.
+   */
+  readonly defaultSampleUnits?: bigint;
   readonly notes: string | null;
 };
 
@@ -390,6 +399,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     // seeded before this column existed still resolves. Ivyronc was backfilled to EGPI in the same
     // migration, so nothing actually takes this path.
     factoryLocationId: asText(row.factory_location_id),
+    defaultSampleUnits: row.default_sample_units == null ? BigInt(0) : BigInt(row.default_sample_units),
     notes: asText(row.notes),
     geometry: {
       runVolumeMl: BigInt(row.run_volume_ml),
@@ -1186,6 +1196,23 @@ async function listRetiredMaterials(): Promise<WireRetiredMaterial[]> {
  * which can see this file. Without the annotation a field renamed here would typecheck everywhere and
  * arrive as `undefined` at the screen.
  */
+/**
+ * A read that names no sample count gets the PRODUCT's own default, never a module-wide one.
+ *
+ * Only an ABSENT count is filled in — `undefined` or `null`, which is what the workspace GET and the
+ * workbook GET hand over when the query string has no `sampleUnits`. A count he typed, an empty field
+ * included, is his answer and passes through untouched: an empty field still means zero samples.
+ * The screen's first read of every product sends no count, so Royanoxicam opens on 0 samples and the
+ * other two on their 10,000, and the form then takes its figure from the plan it is showing.
+ */
+export function withProductSampleDefault(body: PlanRequestInput, data: ProductionPlanningData): PlanRequestInput {
+  if (body.sampleUnits !== undefined && body.sampleUnits !== null) return body;
+  const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
+  const product = data.products.find((candidate) => candidate.id === productId);
+  if (!product) return body;
+  return { ...body, sampleUnits: (product.defaultSampleUnits ?? BigInt(0)).toString() };
+}
+
 export async function getProductionPlanningWorkspace(
   access: AccessContext,
   body: PlanRequestInput = {},
@@ -1199,7 +1226,8 @@ export async function getProductionPlanningWorkspace(
   // figure in it correct. Measured against the running app on 2026-10-06. No quantity asked for means
   // no plan computed, never a refusal to load.
   const askedForAPlan = asScalar(body.requestedQty) !== null;
-  const plan = data.products.length > 0 && askedForAPlan ? computePlan(data, body) : null;
+  const plan =
+    data.products.length > 0 && askedForAPlan ? computePlan(data, withProductSampleDefault(body, data)) : null;
 
   // 🔴 WHICH PRODUCT THE WHOLE PAYLOAD BELONGS TO, resolved once and used by every array below.
   //
