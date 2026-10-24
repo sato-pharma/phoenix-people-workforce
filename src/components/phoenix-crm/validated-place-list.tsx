@@ -27,7 +27,7 @@ import { useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
+import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -245,6 +245,7 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
  */
 function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
@@ -259,13 +260,16 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note, refusalReason: reason }, "refused");
-      done("refused");
+      markSaved(done("refused"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
       setArmed(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   if (!open) {
     return (
@@ -339,6 +343,7 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
  */
 function Approve({ row }: { row: ValidatedPlaceRow }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -348,12 +353,15 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: "" }, "approved");
-      done("approved");
+      markSaved(done("approved"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="space-y-2">

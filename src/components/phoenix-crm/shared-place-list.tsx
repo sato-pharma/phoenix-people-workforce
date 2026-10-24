@@ -27,7 +27,7 @@ import { useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
+import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -288,6 +288,7 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
  */
 function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -298,12 +299,15 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/restore", { sharedPlaceId: row.sharedPlaceId, note }, "restored");
-      done("restored");
+      markSaved(done("restored"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="min-w-0 space-y-2">
@@ -336,6 +340,7 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
 
 function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnBuilding(row).refusal ?? "");
@@ -353,12 +358,15 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         "decided",
       );
       // Approving a building that was never held is "Keep it" on screen, and the review says so too.
-      done(decision === "reject" ? "rejected" : row.status === "held" ? "approved" : "kept");
+      markSaved(done(decision === "reject" ? "rejected" : row.status === "held" ? "approved" : "kept"));
+      setSaving(null);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   // 🔴 A REJECTED VENUE IS DECIDED, NOT GONE (owner, 2026-10-15: "make me able to approve validation
   // after rejection"). Its row shows what was said about it and ONE control — the undo — never the
