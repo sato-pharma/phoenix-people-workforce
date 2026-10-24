@@ -176,6 +176,7 @@ function StatusCell({ row }: { row: PlanVsActualRow }) {
           {type ? <p className="break-words text-xs font-bold leading-5 text-slate-700">{type}</p> : null}
           <div className="flex flex-wrap gap-1.5">
             <Chip className="border-slate-200 bg-white text-slate-600">{managerVisitHalfLabel(visit)}</Chip>
+            {visit.awaitingApproval ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Waiting for approval — not counted yet</Chip> : null}
             {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">Not scored yet</Chip> : null}
             {visit.inVacantTerritory ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Vacant area</Chip> : null}
           </div>

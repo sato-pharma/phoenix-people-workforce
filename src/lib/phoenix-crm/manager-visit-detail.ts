@@ -84,6 +84,11 @@ export type ManagerDayVisit = {
   pharmacyName: string | null;
   /** A ride-along whose customer is not validated yet counts in no figure, exactly as on the rep's own row. */
   awaitingValidation: boolean;
+  /**
+   * A visit that was not on the plan and is still waiting for its approvals (the manager, then the SFE): listed and
+   * marked, and in no figure until approved. Only a rep's day reads these (`loadRepVisitDetails` with `includeWaiting`).
+   */
+  awaitingApproval?: boolean;
   inVacantTerritory: boolean;
   /**
    * His own visit was entered for him by the Super Admin — a record he missed (owner, 2026-10-24). Read from who
