@@ -6,6 +6,11 @@ import {
   CROSS_ORIGIN_MASKED_DISPLAY,
   isCrossOriginMaskedErrorEvent,
 } from "@/lib/error-monitor/cross-origin-masked";
+import {
+  createNetworkBurstCollector,
+  isBareBrowserNetworkFailure,
+  networkBurstContext,
+} from "@/lib/error-monitor/network-failure-burst";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { installScreenCapture } from "@/lib/error-monitor/screen-capture";
 import { startSentryBrowser } from "@/lib/observability/sentry-client";
@@ -26,6 +31,18 @@ function isIgnorable(message: string, source?: string | null): boolean {
 // rest. Module-level, so it resets on a real page load and holds across App Router navigations,
 // matching the sequence counter in report-client-error.ts.
 let maskedCrossOriginCount = 0;
+
+// The browser's own "the connection dropped" rejections, one row per BURST rather than one per rejection: a rep's
+// phone losing its connection wrote up to 69 bare `Load failed` rows inside a second (network-failure-burst.ts).
+// Module-level for the same reason as the counter above.
+const networkBursts = createNetworkBurstCollector(
+  ({ count, message }) => reportClientError({ context: networkBurstContext(count), error: message }),
+  {
+    clearTimeout: (handle) => window.clearTimeout(handle as number),
+    now: () => Date.now(),
+    setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+  },
+);
 
 // Route error.tsx boundaries only catch React render-phase errors within their own
 // segment. A router-mount race or a chunk error thrown outside a component's render
@@ -54,6 +71,10 @@ export function GlobalErrorReporter() {
         reportClientError({ error: CROSS_ORIGIN_MASKED_DISPLAY });
         return;
       }
+      if (isBareBrowserNetworkFailure(event.error ?? message)) {
+        networkBursts.add(message);
+        return;
+      }
       maybeRecover(event.error, message);
       reportClientError({ error: event.error ?? message });
     }
@@ -61,12 +82,18 @@ export function GlobalErrorReporter() {
     function handleRejection(event: PromiseRejectionEvent) {
       const message = event.reason instanceof Error ? event.reason.message : String(event.reason);
       if (isIgnorable(message)) return;
+      if (isBareBrowserNetworkFailure(event.reason)) {
+        networkBursts.add(message);
+        return;
+      }
       maybeRecover(event.reason, message);
       reportClientError({ error: event.reason });
     }
 
     window.addEventListener("error", handleError);
     window.addEventListener("unhandledrejection", handleRejection);
+    // A burst still open as the page goes away is reported now (the report is a keepalive request).
+    window.addEventListener("pagehide", networkBursts.flush);
     startSentryBrowser();
     // The error screenshot (owner, 23 Oct 2026): a refused or failed /api/ request leaves a picture of
     // what the person saw for the System Audit. Installs once, never unwrapped on unmount — a second
@@ -76,6 +103,7 @@ export function GlobalErrorReporter() {
     return () => {
       window.removeEventListener("error", handleError);
       window.removeEventListener("unhandledrejection", handleRejection);
+      window.removeEventListener("pagehide", networkBursts.flush);
     };
   }, []);
 

@@ -12,7 +12,8 @@ import { CROSS_ORIGIN_MASKED_DISPLAY } from "@/lib/error-monitor/cross-origin-ma
  *
  * The match is EXACT. "Connection closed." is deliberately NOT here: the repo has seen it as a real Supabase
  * failure, and a filter that hides a genuine fault is worse than the noise it removes (benign-disconnect.ts).
- * Only the SENTRY copy is skipped — the system error table still records every one of these.
+ * Only the SENTRY copy is skipped. The system error table still records them, but a BURST of bare ones (no stack
+ * frame at all) is one row with its count since 24 Oct 2026 — network-failure-burst.ts.
  */
 const BROWSER_NETWORK_FAILURE_MESSAGES = new Set([
   "Load failed",
@@ -22,7 +23,12 @@ const BROWSER_NETWORK_FAILURE_MESSAGES = new Set([
   "NetworkError when attempting to fetch resource.",
 ]);
 
+/** One of the engines' own words for a cut-off `fetch` — the network half of the noise, without the cross-origin placeholder. */
+export function isBrowserNetworkFailureMessage(message: string | null | undefined): boolean {
+  return BROWSER_NETWORK_FAILURE_MESSAGES.has(String(message ?? "").trim());
+}
+
 export function isBrowserNoiseMessage(message: string | null | undefined): boolean {
   const text = String(message ?? "").trim();
-  return text === CROSS_ORIGIN_MASKED_DISPLAY || BROWSER_NETWORK_FAILURE_MESSAGES.has(text);
+  return text === CROSS_ORIGIN_MASKED_DISPLAY || isBrowserNetworkFailureMessage(text);
 }
