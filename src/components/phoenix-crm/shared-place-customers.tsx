@@ -27,7 +27,7 @@
 import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
-import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
+import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -206,6 +206,7 @@ function Cost({ customer }: { customer: SeatedCustomer }) {
  */
 function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(customer);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<ValidationRefusalReason | "">(defaultReason(customer));
   const [note, setNote] = useState("");
@@ -223,13 +224,16 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       } else {
         await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: customer.placeId, note, refusalReason: reason }, "refused");
       }
-      done("rejected");
+      markSaved(done("rejected"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
       setArmed(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   if (!open) {
     return (
@@ -305,6 +309,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
 /** A customer the system is still checking: approve him, or reject him with a timetable reason. */
 function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCustomer; noTimetable: boolean; scope: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(customer);
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer, noTimetable));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
@@ -320,12 +325,15 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
         { reviewId: customer.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      done(decision === "approve" ? "approved" : "rejected");
+      markSaved(done(decision === "approve" ? "approved" : "rejected"));
+      setSaving(null);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="space-y-2">
@@ -360,6 +368,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 /** Taking a rejection back — the mirror of the reject, through the review restore route. */
 function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(customer);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -370,12 +379,15 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: customer.reviewId, note }, "restored");
-      done("restored");
+      markSaved(done("restored"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="min-w-0 space-y-2">

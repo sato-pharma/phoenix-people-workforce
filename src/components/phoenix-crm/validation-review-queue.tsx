@@ -17,7 +17,7 @@ import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
+import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -184,6 +184,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
  */
 function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -194,12 +195,15 @@ function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note }, "restored");
-      done("restored");
+      markSaved(done("restored"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="space-y-2 border-t border-slate-100 pt-2">
@@ -239,6 +243,7 @@ function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
  */
 function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
@@ -255,12 +260,15 @@ function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: 
         { reviewId: row.reviewId, decision: "reject", note, refusalReason: reason },
         "decided",
       );
-      done("rejected");
+      markSaved(done("rejected"));
+      setSaving(false);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
     }
   }
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   return (
     <div className="space-y-2 border-t border-slate-100 pt-2">
@@ -319,11 +327,14 @@ function Settled({ row }: { row: ValidationReviewRow }) {
 
 function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: string }) {
   const done = usePlaceCheckDone();
+  const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+
+  if (saved) return <PlaceCheckSaved outcome={saved} />;
 
   if (row.status !== "pending") {
     return (
@@ -348,7 +359,8 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      done(decision === "approve" ? "approved" : "rejected");
+      markSaved(done(decision === "approve" ? "approved" : "rejected"));
+      setSaving(null);
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);

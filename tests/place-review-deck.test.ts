@@ -264,6 +264,32 @@ export function runPlaceReviewDeckTests(): void {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
     assert.match(functionBody(hook, "usePlaceCheckDone"), /scope\?\.done\(scope\.item, outcome\);\s*router\.refresh\(\);/, "outside the review the hook is exactly the old router.refresh()");
   }
+
+  // ── 4b · A saved decision releases its button at once (owner, 2026-10-24: "when i press approve its
+  // staled do approving and grey out to forever") — never "Approving…" until the page's re-read lands ──
+  {
+    const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
+    assert.match(functionBody(hook, "usePlaceCheckDone"), /return outcome;/, "the hook hands the outcome back, so a control can mark it saved");
+    const savedHook = functionBody(hook, "useSavedOutcome");
+    assert.match(savedHook, /JSON\.stringify\(subject\)/, "the saved outcome is tied to the row as it was when the button was pressed");
+    assert.match(savedHook, /mark\.snapshot === snapshot/, "a re-read that changes the row hands it back to the server's own view, undo included");
+  }
+  for (const [path, names] of CONTROLS) {
+    if (path.includes("crm-integrity/")) continue; // useCrmAction already releases its own busy state
+    const code = stripComments(read(path));
+    for (const name of names) {
+      const body = functionBody(code, name);
+      assert.match(body, /const \{ saved, markSaved \} = useSavedOutcome\((?:row|customer)\);/, `${path} ${name} must hold its saved outcome against its own row`);
+      const calls = body.match(/\bdone\(/g) ?? [];
+      const wrapped = body.match(/markSaved\(done\(/g) ?? [];
+      assert.ok(calls.length > 0 && wrapped.length === calls.length, `${path} ${name}: every saved decision is marked saved the moment the server says yes (${wrapped.length} of ${calls.length})`);
+      assert.match(body, /markSaved\(done\([^;]*\)\);\s*setSaving\((?:false|null)\);/, `${path} ${name} lets go of its busy state on success, not only on failure`);
+      const savedAt = body.search(/if \(saved\) return <PlaceCheckSaved outcome=\{saved\} \/>;/);
+      assert.ok(savedAt >= 0, `${path} ${name} draws the saved outcome instead of its buttons once the decision is saved`);
+      const firstButton = body.search(/<CrmButton/);
+      assert.ok(firstButton < 0 || savedAt < firstButton, `${path} ${name} checks the saved outcome before any button can be drawn`);
+    }
+  }
   for (const path of NEW_FILES) {
     const code = stripComments(read(path));
     if (path.endsWith("deck-cases.ts")) {
