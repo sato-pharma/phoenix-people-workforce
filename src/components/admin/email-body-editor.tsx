@@ -24,7 +24,7 @@ import {
 import type { ClipboardEvent, DragEvent } from "react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { EDITOR_IMAGE_ACCEPT, picturesFromTransfer } from "@/lib/email/transfer-files";
+import { EDITOR_IMAGE_ACCEPT, nonPicturesFromTransfer, picturesFromTransfer } from "@/lib/email/transfer-files";
 
 
 export type EditorVariable = {
@@ -305,6 +305,13 @@ type ToolbarAction = {
 };
 
 type Props = {
+  /**
+   * Attach a file that is not a picture — a PDF, a spreadsheet — that was dropped or pasted into
+   * the body. Supplied only by a screen with an attachments row. Without it such a file is still
+   * kept from opening in the tab, but it goes nowhere: on 2026-10-24 that sent a welcome email
+   * saying "the handbook is attached" with nothing attached.
+   */
+  attachFiles?: (files: File[]) => void;
   /** Toolbar action labels to hide, e.g. ["Action button"] where {{ctaUrl}} cannot resolve. */
   hiddenActions?: string[];
   /**
@@ -327,7 +334,7 @@ type Props = {
 };
 
 export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function EmailBodyEditor(
-  { hiddenActions, imageAccept, onChange, onFocusBody, uploadImage, value, variables },
+  { attachFiles, hiddenActions, imageAccept, onChange, onFocusBody, uploadImage, value, variables },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -693,11 +700,20 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       // A screenshot or a copied photo arrives as a file on the clipboard, with no text beside it.
       // Before this it fell through to the plain-text branch below, found nothing, and returned —
       // so Ctrl+V on a picture did nothing at all, with nothing on screen to say why.
-      const pictures = uploadImage ? picturesFromTransfer(Array.from(event.clipboardData.files)) : [];
+      const pastedFiles = Array.from(event.clipboardData.files);
+      const pictures = uploadImage ? picturesFromTransfer(pastedFiles) : [];
+      // A PDF copied in File Explorer and pasted here is an attachment, not text — handed to the
+      // host's attachments row rather than falling through to the empty plain-text branch.
+      const others = attachFiles ? nonPicturesFromTransfer(pastedFiles) : [];
+      if (others.length > 0) attachFiles?.(others);
       if (pictures.length > 0) {
         event.preventDefault();
         rememberSelection();
         void insertUploadedImages(pictures);
+        return;
+      }
+      if (others.length > 0) {
+        event.preventDefault();
         return;
       }
       // Word/Outlook/Gmail paste carries heavy markup the email sanitizer would strip
@@ -709,7 +725,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       rememberSelection();
       emit();
     },
-    [emit, insertUploadedImages, rememberSelection, uploadImage],
+    [attachFiles, emit, insertUploadedImages, rememberSelection, uploadImage],
   );
 
   const handleDrop = useCallback(
@@ -717,7 +733,12 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       // A picture dragged in from a folder, dropped where the pointer is rather than at the end of
       // the body — the caret is taken from the drop point BEFORE the upload starts, because by the
       // time the bytes come back the pointer is long gone.
-      const pictures = uploadImage ? picturesFromTransfer(Array.from(event.dataTransfer.files)) : [];
+      const droppedFiles = Array.from(event.dataTransfer.files);
+      const pictures = uploadImage ? picturesFromTransfer(droppedFiles) : [];
+      // A PDF, a spreadsheet or a Word file dropped on the body goes to the attachments row. Before
+      // 2026-10-24 it was stopped from opening in the tab and then simply lost (see `attachFiles`).
+      const others = attachFiles ? nonPicturesFromTransfer(droppedFiles) : [];
+      if (others.length > 0) attachFiles?.(others);
       if (pictures.length > 0) {
         event.preventDefault();
         const dropRange = caretRangeAtPoint(event.clientX, event.clientY);
@@ -754,7 +775,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         emit();
       }, 0);
     },
-    [emit, insertToken, insertUploadedImages, rememberSelection, uploadImage, variables],
+    [attachFiles, emit, insertToken, insertUploadedImages, rememberSelection, uploadImage, variables],
   );
 
   const actions: ToolbarAction[] = [

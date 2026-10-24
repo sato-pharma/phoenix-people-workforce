@@ -20,14 +20,17 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   EDITOR_IMAGE_ACCEPT,
   attachablesFromTransfer,
   looksLikePicture,
+  nonPicturesFromTransfer,
   picturesFromTransfer,
 } from "@/lib/email/transfer-files";
 import { brevoProvider, resendProvider, type PreparedEmail } from "@/lib/email/email-providers";
+import { promisesAnAttachment } from "@/lib/sato-email/attachment-promise";
 import { parseSatoEmailDraft } from "@/lib/sato-email/draft";
 import { loadSatoEmailAttachments, resolveSatoEmailAttachments } from "@/lib/sato-email/media";
 import {
@@ -278,6 +281,50 @@ export async function runSatoEmailAttachmentTests() {
   // `type` vs `content_type`) is not an error at either end — the mail goes out, 200, with nothing
   // on it. Both providers are checked: Brevo is the one that sends on the bad day.
   await assertPdfReachesProviderRequests();
+
+  // ── 9. A PDF dropped or pasted into the BODY is attached, never lost ──────────────────────
+  //
+  // Owner 2026-10-24: "fix the composer so an attached PDF uploads before Send". A welcome email
+  // reached five inboxes saying "Your New Starter Handbook is attached" with nothing on it: the PDF
+  // went into the body, the editor kept it from opening in the tab and then did nothing with it.
+  assertBodyHandsFilesToTheAttachmentsRow(dropped);
+}
+
+function assertBodyHandsFilesToTheAttachmentsRow(dropped: Array<{ name: string; type: string }>) {
+  assert.deepEqual(
+    nonPicturesFromTransfer(dropped).map((file) => file.name),
+    ["policy.pdf"],
+    "the PDF in a mixed drop must go to the attachments row — and neither the picture nor the folder",
+  );
+
+  const editor = readFileSync(new URL("../src/components/admin/email-body-editor.tsx", import.meta.url), "utf8");
+  const handlerCalls = editor.match(/if \(others\.length > 0\) attachFiles\?\.\(others\);/g) ?? [];
+  assert.equal(
+    handlerCalls.length,
+    2,
+    "🔴 BOTH the drop and the paste handler must hand a non-picture file to `attachFiles` — one alone loses the other gesture",
+  );
+  const composer = readFileSync(new URL("../src/components/admin/sato-email-composer.tsx", import.meta.url), "utf8");
+  assert.ok(
+    /<EmailBodyEditor\s+attachFiles=\{\(files\) => void attachFiles\(files\)\}/.test(composer),
+    "🔴 the composer's body editor must be given the attachments row, or a PDF dropped on the body is lost again",
+  );
+
+  // The second net: the words promise a file, the preview carries none.
+  assert.equal(promisesAnAttachment("Welcome", "<p>Your New Starter Handbook is attached.</p>"), true);
+  assert.equal(promisesAnAttachment("Welcome", "<p>Please find the handbook enclosed.</p>"), true);
+  assert.equal(promisesAnAttachment("Attachments: the policy", "<p>Hello</p>"), true, "the subject counts too");
+  assert.equal(promisesAnAttachment("ترحيب", "<p>تجد الدليل مرفقًا</p>"), true, "the Arabic مرفق family counts");
+  assert.equal(
+    promisesAnAttachment("CV", "<p>Please attach your CV and reply.</p>"),
+    false,
+    "asking the READER to attach a file promises nothing — the bare verb must not raise the warning",
+  );
+  assert.equal(promisesAnAttachment("Hello", '<p style="color:#0A527D">See you on Sunday.</p>'), false);
+  assert.ok(
+    composer.includes('{promisedButEmpty ? "Send it without an attachment" : "Yes, send it"}'),
+    "🔴 an email that promises a file and carries none must be confirmed as sent WITHOUT one, never with the plain Yes",
+  );
 }
 
 async function assertPdfReachesProviderRequests() {

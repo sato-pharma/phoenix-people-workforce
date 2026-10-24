@@ -59,3 +59,14 @@ export function picturesFromTransfer<T extends TransferFile>(files: readonly T[]
 export function attachablesFromTransfer<T extends TransferFile>(files: readonly T[]): T[] {
   return files.filter((file) => fileName(file) !== "" && !looksLikeFolder(file));
 }
+
+/**
+ * The files in a paste or a drag that are NOT pictures — a PDF, a spreadsheet, a Word file.
+ *
+ * Owner 2026-10-24: a handbook PDF dropped into the message body vanished — the editor stopped the
+ * browser opening it and then did nothing with it, and the email went out saying "attached" with
+ * nothing attached. A body that can hand these to its host's attachments row does so now.
+ */
+export function nonPicturesFromTransfer<T extends TransferFile>(files: readonly T[]): T[] {
+  return attachablesFromTransfer(files).filter((file) => !looksLikePicture(file));
+}
