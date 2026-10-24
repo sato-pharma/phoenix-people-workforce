@@ -978,7 +978,28 @@ function runNoDoubleCountTests(code: string): void {
     !flat(visitBranch).includes("distinct on (upper(btrim(e.hr_id)))"),
     "and no slot keeps a second copy of that rule inline",
   );
-  assert.ok(flat(visitBranch).includes("join public.phoenix_crm_customers customer on customer.id = p.customer_id"), "one customer per visit");
+  // ONE CUSTOMER PER VISIT, AND THE JOIN IS A LEFT ONE ON PURPOSE (speed, 2026-10-24, 20261024180000).
+  // It cannot drop a row either way: phoenix_crm_visits.customer_id is NOT NULL and
+  // phoenix_crm_visits_customer_id_fkey references phoenix_crm_customers(id) VALIDATED, so every visit has
+  // exactly one customer row, and on a unique key LEFT and INNER return the same rows. The word is what lets
+  // the planner REMOVE the join outright for a read that selects none of the four columns it feeds
+  // (contact_crm_id, contact_name, speciality, crm_contact_grade): Postgres drops a left join to a unique key
+  // nothing selects, and will NOT use a foreign key to reach that conclusion about an inner one — the sibling
+  // left join to this same table inside phoenix_crm_countable_visits disappeared from such a plan while this
+  // one, four lines away, was paid in full. Measured on production as a true A/B, both bodies alternating in
+  // one session: the 8-column month read goes from 22,508 buffers to 8,808, and all 148,814 rows of the door
+  // hash the same either way (5a6976bcf91c994b338516e4d8c690ca).
+  //
+  // 🔴 ASSERTED WHOLE, BOTH WAYS, because "join public.phoenix_crm_customers" is a SUBSTRING of the left-join
+  // text: the single includes() this replaced went green on either word and so pinned nothing at all.
+  assert.ok(
+    flat(visitBranch).includes("left join public.phoenix_crm_customers customer on customer.id = p.customer_id"),
+    "one customer per visit, and LEFT so a read wanting no customer column pays nothing for it",
+  );
+  assert.ok(
+    !/(?<!left )join public.phoenix_crm_customers/.test(flat(visitBranch)),
+    "and no inner join to the customers table came back",
+  );
 
   // The Phoenix CRM List's "iReports360 history" reads vendor rows only, so the visits it already shows
   // as "saved here" are never counted a second time beside them.
