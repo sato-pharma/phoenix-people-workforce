@@ -236,6 +236,40 @@ async function sentryTests() {
   assert.deepEqual(empty, { read: true, fresh: [], recurring: [], capped: false });
   assert.equal(calls.length, 1, "nothing in the release, no baseline read");
 
+  // A dropped connection, a stall or a busy Sentry is tried again; the token's own refusal never is.
+  let refusals = 0;
+  await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { refusals += 1; return jsonResponse({}, { status: 403 }); }) as unknown as typeof fetch });
+  assert.equal(refusals, 1, "a 401 or 403 is the token's answer and is never retried");
+
+  const reset = () => new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
+  let flaky = 0;
+  let signal: unknown = null;
+  const recovered = (await readSentryIssues({
+    token: TOKEN,
+    releases: ["a"],
+    pauseMs: 0,
+    fetchImpl: (async (_input: string, init?: { signal?: unknown }) => {
+      flaky += 1;
+      signal = init?.signal ?? null;
+      if (flaky === 1) throw reset();
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch,
+  })) as SentryReading;
+  assert.equal(recovered.read, true, "one dropped connection no longer costs the whole Sentry read");
+  assert.equal(flaky, 2);
+  assert.ok(signal instanceof AbortSignal, "every try carries a time limit, so a stalled read cannot hang the check");
+
+  let busy = 0;
+  const afterBusy = (await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { busy += 1; return busy === 1 ? jsonResponse({}, { status: 503 }) : jsonResponse({ data: [] }); }) as unknown as typeof fetch })) as SentryReading;
+  assert.equal(afterBusy.read, true, "a 503 is tried again");
+  assert.equal(busy, 2);
+
+  let down = 0;
+  const lost = (await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { down += 1; throw reset(); }) as unknown as typeof fetch })) as SentryReading;
+  assert.equal(lost.read, false, "a Sentry that never answers is still not read, never a pass");
+  assert.equal(down, 3, "three tries, then it stops");
+  assert.match(lost.reason ?? "", /release read \(fetch failed: ECONNRESET\), after 3 tries/, "the reason names undici's real cause and the tries");
+
   const fields = sentryEventParams({ releases: ["a"] }).getAll("field");
   assert.ok(fields.includes("issue") && fields.includes("count()"));
 }
