@@ -396,7 +396,8 @@ export async function buildProductionPlanningWorkbook(
   formulaCell(
     sheet,
     boxesRow,
-    `$B$${packagingSetsRow}/${UNITS_PER_BOX}`,
+    // ROUNDUP, as the engine does: a part-box is still a carton (owner, 2026-10-24).
+    `ROUNDUP($B$${packagingSetsRow}/${UNITS_PER_BOX},0)`,
     num(plan.totalBoxes),
     UNITS_FMT,
   );

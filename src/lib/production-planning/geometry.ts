@@ -127,7 +127,10 @@ export function yieldForRuns(geometry: RunGeometry, runs: bigint, sampleUnits: b
     goodUnits,
     sampleUnits,
     packagingSets,
-    totalBoxes: packagingSets / geometry.unitsPerBox,
+    // ROUNDED UP: a part-box is still a box (owner, 2026-10-24, "Round up to a box"). Guamusin's
+    // 40,000 sachets are 3,334 cartons of twelve, not 3,333 with four sachets silently dropped — and
+    // `per_box` materials (the carton, the film) read this count, so flooring it under-ordered them.
+    totalBoxes: ceilDiv(packagingSets, geometry.unitsPerBox),
     totalVolumeMl,
     totalDoses: totalVolumeMl / geometry.doseMl,
     leftoverMl,
@@ -202,7 +205,7 @@ export function resolveRunGeometry(geometry: RunGeometry, request: PlanRequest):
       goodUnits: targetGoodUnits,
       sampleUnits: samples,
       packagingSets,
-      totalBoxes: packagingSets / geometry.unitsPerBox,
+      totalBoxes: ceilDiv(packagingSets, geometry.unitsPerBox),
       totalVolumeMl: requiredVolumeMl,
       totalDoses,
       leftoverMl: BigInt(0),

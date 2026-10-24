@@ -386,6 +386,24 @@ export async function runProductionPlanningGuamusinTests() {
   assert.equal(sixRuns.totalBoxes, BigInt(10_000), "which is exactly 10,000 cartons of twelve");
   assert.equal(sixRuns.leftoverMl, BigInt(0), "with nothing left over — 600 kg divides by 5 g exactly");
 
+  // 🔴 A PART-BOX IS STILL A BOX — ROUNDED UP, NEVER DROPPED (owner, 2026-10-24: "Round up to a box").
+  // Two runs with 10,000 samples are 40,000 sachets, which is 3,333 cartons of twelve and four sachets
+  // over. The count used to FLOOR to 3,333, so those four sachets had no carton and no film, and every
+  // `per_box` material was ordered one box short. One run on its own is 20,000 sachets: 1,667 boxes.
+  const twoRunsWithSamples = yieldForRuns(GUAMUSIN, BigInt(2), BigInt(10_000));
+  assert.equal(twoRunsWithSamples.packagingSets, BigInt(40_000), "two runs fill 40,000 sachets, samples included");
+  assert.equal(twoRunsWithSamples.totalBoxes, BigInt(3_334), "3,333 full cartons plus one for the last four sachets");
+  assert.equal(yieldForRuns(GUAMUSIN, BigInt(1), BigInt(0)).totalBoxes, BigInt(1_667), "one run is 1,666 boxes and a part-box");
+  const partBoxPlan = computePlan(planningData(), {
+    mode: "runs",
+    productId: "prod-guamusin",
+    requestedQty: "2",
+    sampleUnits: "10000",
+  });
+  assert.equal(partBoxPlan.totalBoxes, "3334", "the screen's box count carries the part-box");
+  const cartonLine = partBoxPlan.rows.find((row) => row.code === "BOX_GUAMUSIN_12");
+  assert.equal(cartonLine?.basisCount, "3334", "and a carton is ordered for it");
+
   // 🔴 DEFECT 1, at its root. These two were ONE number for a year, and they are equal only while a
   // box holds one unit. 120,000 against 10,000 is the twelve-fold gap the sheet was carrying.
   assert.equal(basisCountFor("per_packaging_set", resolvedSix()), BigInt(120_000));
@@ -507,6 +525,10 @@ export async function runProductionPlanningGuamusinTests() {
   const packagingSetsRow = rowOfLabel(sheet, "إجمالي العبوات الكاملة (كيس)");
   const boxesRow = rowOfLabel(sheet, "إجمالي العلب (الكراتين)");
   assert.notEqual(packagingSetsRow, boxesRow, "two rows, because they are two figures");
+  // The sheet rounds a part-box UP exactly as the engine does, so a sample count he edits in Excel
+  // cannot leave the carton row a box short of the screen.
+  const boxesFormula = (sheet.getCell(`B${boxesRow}`).value as { formula?: string }).formula;
+  assert.equal(boxesFormula, `ROUNDUP($B$${packagingSetsRow}/$B$${rowOfLabel(sheet, "عدد الوحدات في العلبة")},0)`);
 
   // 🔴 THE RUN-SIZE CELL IS IN GRAMS AND THE كجم FIGURE IS DERIVED FROM IT. The total-doses formula
   // divides the gram cell by the gram dose, so writing 100 into it instead of 100,000 would divide
