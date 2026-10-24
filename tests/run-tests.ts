@@ -2029,6 +2029,7 @@ import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmRepEntryDaysCacheTests } from "./phoenix-crm-rep-entry-days-cache.test.ts";
+import { runPhoenixCrmTeamStartsStatisticsTests } from "./phoenix-crm-team-starts-statistics.test.ts";
 import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth-cache.test.ts";
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
 import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
@@ -7704,6 +7705,11 @@ await runTest(
 await runTest(
   "Phoenix CRM caches the entry days instead of recomputing them on every read (the \"Phoenix wins the day\" rule, owner 2026-10-16, was 35.2 ms and 4,509 buffers of a 79.4 ms read and was paid once per calendar day of the window): the rule still lives in exactly ONE body, phoenix_crm_rep_entry_days_calc, which is the only thing that reads the countable view or names an activity type — every write path recomputes through it, so the cache cannot drift into a second definition — the public reader reads the table and never falls back to the live computation, each of the four fact tables that decide a rep-day is triggered on insert, update AND delete with an update recomputing the OLD key as well as the new one, a team start rebuilds, the 5-minute reconcile repairs and warns rather than only reporting, and the migration refuses to commit a backfill that disagrees with the truth",
   runPhoenixCrmRepEntryDaysCacheTests,
+);
+
+await runTest(
+  "Phoenix CRM keeps planner statistics on the team starts table (production 2026-10-24: it had NEVER been analyzed — reltuples -1, zero pg_stats columns, analyze_count 0 — so the planner guessed 350 rows for a 21-row table in all five places the two union doors read it, three times in crm_visits_unified and twice in crm_checkins_unified, and sized its join orders from that; all five nodes read rows=21 at cost 1.21 after it): the migration both sets a per-table autovacuum analyze threshold the table's own traffic can reach — the cluster default of 50 modifications is unreachable for one row per team start, so the hole was permanent and not slow to heal — and runs the ANALYZE itself, because the threshold alone leaves a table at n_mod_since_analyze = 0 that is never looked at again; it alters exactly that one table, takes no lock the doors would wait on, and the measurement stays in docs/crm-team-starts-statistics.md because ANALYZE is only half-transactional and the before-image cannot be re-taken",
+  runPhoenixCrmTeamStartsStatisticsTests,
 );
 
 await runTest(
