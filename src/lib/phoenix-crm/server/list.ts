@@ -84,6 +84,7 @@ import {
   assertListRequestApprover,
   canCurateList,
   canDecideListRequest,
+  canDecideValidationReviews,
   canMovePlaces,
   canOverrideDecision,
   canReviewTerritory,
@@ -3254,6 +3255,17 @@ export async function answerReturnedRequest(
 }
 
 /**
+ * Why SFE cannot yet admit a customer whose place Google Maps could not confirm. Read only by the
+ * approver above the rep, never by the rep (golden rule #1). Whoever may decide the hold is sent to the
+ * Place checks page by name; anyone else is told the request waits for that decision.
+ */
+export function placeCheckHoldMessage(decidesPlaceChecks: boolean): string {
+  return decidesPlaceChecks
+    ? "Google Maps could not confirm this customer's place, so it is waiting on Place Checks. Approve or reject the place there first, then approve this request."
+    : "Google Maps could not confirm this customer's place, so it is waiting for a Place Checks decision. This request can be approved once the place is decided.";
+}
+
+/**
  * A decision on a list request. Refusing needs a note for the rep.
  *
  * A grade change is the district manager's alone. A drop, an add or a bring-back takes two steps — the
@@ -3311,10 +3323,14 @@ export async function decideListRequest(
   // request with the rep is at the stored stage 'rep', whatever step the card named.
   const stage = withRep ? "rep" : isRequestStage(body.stage) ? body.stage : rowStage;
   // SFE's step admits him to the list. While his place is still with the Super Admin it waits: only the
-  // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03).
+  // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03), and
+  // the SFE Manager since 2026-10-19. The Google check itself is long FINISHED by now — it runs at the
+  // save — so the refusal says what it is waiting on and, to someone who can decide it, where: the
+  // old "still being checked … once the check is finished" read as a lookup still running and sent
+  // Khaled Bedair back to wait on a decision that was his own (production, 2026-10-24).
   const customerId = text(request.customer_id);
   if (decision === "approve" && rowStage === "sfe" && (kind === "add" || kind === "restore") && customerId && (await pendingLocationReview(customerId))) {
-    throw validationError("This customer's location is still being checked against Google Maps. They can be added once the check is finished.");
+    throw validationError(placeCheckHoldMessage(canDecideValidationReviews(viewer)));
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_request", {

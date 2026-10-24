@@ -182,6 +182,15 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.ok(addPlace.includes("googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest })"), "another clinic is checked the same way");
   const decide = /export async function decideListRequest\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.ok(decide.includes("await pendingLocationReview(customerId)"), "SFE cannot admit a customer whose place the Super Admin has not decided");
+  // The refusal names the decision it waits on, never a check "still running" (production, 2026-10-24:
+  // the SFE Manager was told to wait for a Google lookup long finished, on a hold that was his own).
+  assert.ok(
+    decide.includes("throw validationError(placeCheckHoldMessage(canDecideValidationReviews(viewer)));"),
+    "the hold's refusal is worded for whether the approver can decide the place himself",
+  );
+  const holdMessage = /export function placeCheckHoldMessage\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
+  assert.ok(holdMessage.includes("Approve or reject the place there first"), "a decider is sent to Place Checks");
+  assert.doesNotMatch(list, /still being checked against Google Maps/, "nothing tells an approver the finished check is still running");
 
   // ── Only the Super Admin and the SFE Manager decide ───────────────────────────
   //
