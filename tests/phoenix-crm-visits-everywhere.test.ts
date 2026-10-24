@@ -1472,13 +1472,41 @@ function runPlanDoorTests(plans: string): void {
   const names = vendorItems.map(outputName);
   assert.equal(phoenixItems.length, names.length);
   const item = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
+  const phoenix = flat(phoenixBranch);
+  // 🔴 A RANGE READ NARROWS ONLY WHILE THIS BRANCH'S DAY IS THE SUBQUERY'S GROUP KEY, AND THE PLAN
+  // SCREEN READS A RANGE. A predicate on a grouping column is pushed INTO the subquery above; one on
+  // the items table is not, and Postgres propagates only an EQUALITY across i.plan_date = pd.plan_date,
+  // never a range. Written on i.plan_date (20261024002000) the door answered ONE DAY in 22 ms and a
+  // WEEK in 1,428 ms mean on production — max 17,787 ms, 24 Oct 2026 — because the range grouped all
+  // 14,037 plan items and ran the status function for every one of the ~1,128 plan-days in the company
+  // to answer one rep's week. On pd.plan_date (20261024004000) that week is 38 ms, and the pushdown
+  // survives a generic plan, which is the form PostgREST sends. The two columns are equal by the join
+  // below, so no value changes: 203,190 rows either way, 0 rows differing under "except all".
+  assert.ok(
+    phoenix.includes("join public.phoenix_crm_plan_items i on i.plan_id = pd.plan_id and i.plan_date = pd.plan_date"),
+    "the items join is on the plan AND the day — that is what makes pd.plan_date value-identical to i.plan_date",
+  );
+  for (const onTheItems of [
+    "i.plan_date,",
+    "extract(month from i.plan_date)",
+    "extract(year from i.plan_date)",
+    "i.plan_date >= r.counted_from",
+    "i.plan_date < r.counted_until",
+  ]) {
+    assert.ok(
+      !phoenix.includes(onTheItems),
+      `RED the Phoenix branch takes its day from the group key, never from the items: "${onTheItems}" stops a plan_date RANGE being pushed into the plan-day subquery, and a rep's week then scans every plan-day in the company (1,428 ms mean, max 17.8 s, production, 24 Oct 2026)`,
+    );
+  }
   const expected: Record<string, string> = {
     crm_plan_entry_id: "-1 - ('x' || substr(md5(i.id::text), 1, 13))::bit(52)::bigint",
     plan_kind: "'weekly'::text",
     crm_plan_id: "-1 - ('x' || substr(md5(pl.id::text), 1, 8))::bit(30)::integer",
-    plan_date: "i.plan_date",
-    plan_month: "extract(month from i.plan_date)::smallint",
-    plan_year: "extract(year from i.plan_date)::smallint",
+    // 🔴 pd.plan_date, NOT i.plan_date — the grouped subquery's OWN key, so a plan_date RANGE is pushed
+    // into it. The narrowing pin below says what reverting this one word costs (24 Oct 2026).
+    plan_date: "pd.plan_date",
+    plan_month: "extract(month from pd.plan_date)::smallint",
+    plan_year: "extract(year from pd.plan_date)::smallint",
     plan_frequency: "null::smallint",
     agent_crm_id: "r.agent_crm_id",
     agent_hr_id: "r.hr_id",
@@ -1502,8 +1530,7 @@ function runPlanDoorTests(plans: string): void {
   for (const [column, expression] of Object.entries(expected)) {
     assert.equal(item.get(column), expression, `a Phoenix plan day's ${column} is ${expression}`);
   }
-  const phoenix = flat(phoenixBranch);
-  assert.ok(phoenix.includes("join reps r on r.seat_id = pl.seat_id and i.plan_date >= r.counted_from and (r.counted_until is null or i.plan_date < r.counted_until)"), "carried for the rep who sat on that territory that day, within the start");
+  assert.ok(phoenix.includes("join reps r on r.seat_id = pl.seat_id and pd.plan_date >= r.counted_from and (r.counted_until is null or pd.plan_date < r.counted_until)"), "carried for the rep who sat on that territory that day, within the start");
   // The started-team set is read ONCE per read, into a materialised CTE both branches share.
   assert.ok(
     flat(view).includes("with reps as materialized ( select * from public.phoenix_crm_started_team_reps() ) select"),
