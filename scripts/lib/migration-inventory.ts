@@ -1730,6 +1730,52 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // tests/crm-contact-master-refresh-speed.test.ts (section 3c) and tests/doctor-lists-everywhere.test.ts.
   // Account: docs/crm-contact-master-refresh-speed.md.
   "20261024160000_the_contact_refresh_hashes_its_handover_and_reads_the_rep_door_once.sql",
+
+  // (7) THE VISITS DOOR STOPS JOINING A TABLE MOST READS NEVER READ — applied 2026-10-24, staging first
+  // then production, through `scripts/apply-sql-file.mjs`, the standing route of AGENTS.md §8 for a body the
+  // Supabase MCP declines. That route writes NO ledger row, hence this entry rather than a ledger write:
+  // production (ozucdzovmcqvepbozvqf) and staging (cifwmndunmlxjhyjugxa) each returned
+  // {"applied":true,"count":0} and hold 0 rows matching `20261024180%` in
+  // supabase_migrations.schema_migrations, read after the apply. The file holds ONE statement, `create or
+  // replace view public.crm_visits_unified with (security_invoker = true)`, and ONE word of it differs from
+  // 20261024005000's: the Phoenix branch's `join public.phoenix_crm_customers` is now a `left join`. No
+  // table, column, grant or policy is touched.
+  //
+  // 🔴 VERIFIED BY DIGEST ON BOTH PROJECTS, AND READ IN THE RIGHT FORM. `create or replace view` makes the
+  // view merely existing worthless as evidence, so the proof is
+  // md5(pg_get_viewdef('public.crm_visits_unified'::regclass)) = 7265552a2f2a4b977e806418a561bd43 at 13,574
+  // bytes, equal on production AND staging. 🔴 `pg_get_viewdef` HAS TWO FORMS AND THEY HASH DIFFERENTLY —
+  // the regclass form above, and the text form `pg_get_viewdef('public.crm_visits_unified')`, which read
+  // 6f7ac3a1e7cfa19b0c03d9fe51b88bd6 on the same body. A reading in one form compared against a reading in
+  // the other looks exactly like drift between the two projects and is not; the pre-change digest
+  // d2c30e87b6e678076a86859594ec0323 at 13,373 bytes was taken in the text form, so it may only be compared
+  // with another text-form reading. `security_invoker` is still on and the view still carries its 14 grant
+  // rows, read after the apply.
+  //
+  // WHY: the inner join could never drop a row — phoenix_crm_visits.customer_id is NOT NULL and its FK to
+  // phoenix_crm_customers(id) is VALIDATED — but Postgres only removes a join it can prove optional, and
+  // that proof is a LEFT join to a unique key whose columns nothing selects. It will not use a foreign key
+  // to reach the same conclusion about an INNER one. So a read wanting none of the four columns `customer`
+  // feeds (contact_crm_id, contact_name, speciality, crm_contact_grade) now gets no join at all, and a read
+  // wanting any of them gets the same join and the same rows as before.
+  //
+  // IDENTITY, proved not asserted, and twice. Both bodies as temp views in ONE production session returned
+  // all 148,814 rows of the door — all time, every column, ordered and hashed whole — with the SAME md5
+  // 5a6976bcf91c994b338516e4d8c690ca, the customers node appearing in the old plan once and in the new one
+  // not at all. Across the apply: 1-23 Oct on production, 10,111 rows, md5
+  // 77c08f610a785e59b806b9f78ba5dc3e before and after; the whole view on staging, 126,330 rows, md5
+  // 7f3ba1fef909960a9008ecb7ca8abc63 before and after.
+  //
+  // EFFECT, measured as a true A/B on the 8-column month read the field-activity pages page through, both
+  // bodies alternating in one session, six runs each with the first of each discarded: buffers 22,508 ->
+  // 8,808 (-13,700, -61%), server-side 182.712 -> 150.160 ms, round trip 358.336 -> 284.688 ms. 🔴 THE
+  // BUFFERS ARE THE WIN, NOT THE MILLISECONDS: the 13,700 match what the branch shed in isolation and are
+  // stable, while an earlier alternating pass of the same A/B put the round trip at 227.527 -> 213.059 ms
+  // (-6.4%) — so the branch's -59% in isolation does not reach the whole door. Pinned by
+  // tests/phoenix-crm-visits-everywhere.test.ts, which asserts the left join whole because
+  // "join public.phoenix_crm_customers" is a substring of it and the single includes() it replaced went
+  // green on either word. Account: docs/crm-visits-door-one-scan.md.
+  "20261024180000_the_visits_door_stops_joining_customers_it_never_reads.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
