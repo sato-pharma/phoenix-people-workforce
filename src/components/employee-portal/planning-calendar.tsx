@@ -990,13 +990,13 @@ function PlanningCalendarDetailsTable({
             <colgroup>
               <col className="w-[8%]" />
               <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
               <col className="w-[12%]" />
+              <col className="w-[7%]" />
               <col className="w-[13%]" />
-              <col className="w-[10%]" />
-              <col className="w-[13%]" />
-              <col className="w-[8%]" />
-              <col className="w-[10%]" />
-              <col className="w-[13%]" />
+              <col className="w-[17%]" />
             </colgroup>
           }
         >
@@ -1043,25 +1043,23 @@ function PlanningCalendarDetailsTable({
                 ...area.rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-xs font-semibold text-slate-500">{row.date}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${employeeHueFor(hues, row.employeeHrId).dot}`} />
                       {row.employee}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                    <span className={`inline-block max-w-full break-words border px-2 py-0.5 text-phx-2xs font-black uppercase leading-snug tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="max-w-[260px] px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-sky-800">
-                    <span className="whitespace-nowrap">{row.conflictWarning}</span>
-                  </td>
+                  <td className="break-words px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-sky-800">{row.conflictWarning}</td>
                 </tr>
                 )),
               ]),

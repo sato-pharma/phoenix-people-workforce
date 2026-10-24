@@ -54,7 +54,12 @@ export async function runPlanningCalendarRegionGroupsTests() {
   // region shows "-", never the person's line, on the screen and in the export.
   assert.doesNotMatch(ui, /regionLocation:[^\n]*lineName/, "the Region / Location column never falls back to the line");
   assert.doesNotMatch(ui, /item\.region \|\| item\.lineName/, "the month tile's meta never shows a line where the region goes");
-  const lineless = buildPlanningCalendarDetailRows([
+  // The day's details table fits its columns: a cell wraps rather than spilling into the next column or
+  // past the table's edge (the HR ACKNOWLEDGED badge and the Chain Visit text did, 2026-10-24).
+  const detailsTable = ui.slice(ui.indexOf('"Region / Location", "Area", "Medical Rep"'), ui.indexOf("</PortalDesktopTable>"));
+  assert.ok(detailsTable.length > 0, "the details table is found");
+  assert.doesNotMatch(detailsTable, /<td className="whitespace-nowrap|<span className="whitespace-nowrap">\{row\.conflictWarning\}|inline-flex whitespace-nowrap border px-2/, "no details cell is held on one line past its column");
+  const lineless =buildPlanningCalendarDetailRows([
     { activityTitle: "Single Visit", activityType: "single_visit", area: null, conflictKey: null, conflictWarning: null, employeeHrId: "X-1", employeeJobTitle: "District Sales Manager", employeeName: "Someone", employeeDisplayName: "Someone", endDate: "2026-10-12", id: "plan-1", lineName: "CNS", medicalRepHrId: null, medicalRepName: null, medicalRepDisplayName: null, notes: null, planId: "p1", planKind: "weekly", region: null, source: "plan", startDate: "2026-10-12", status: "approved", time: null, title: "Someone" } as unknown as Parameters<typeof buildPlanningCalendarDetailRows>[0][number],
   ]);
   assert.equal(lineless[0]?.location, "-", "the export's Region / Location column shows no line either");
