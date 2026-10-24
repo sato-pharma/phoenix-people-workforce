@@ -1,4 +1,4 @@
-import { signNamesCustomer, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
+import { boardNamesGivenNameAlone, signNamesCustomer, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Does the TIMETABLE in the photo name this customer?
@@ -184,6 +184,11 @@ export function judgeSchedule(input: {
 
   // Any reading that names him is a match, however much of the rest was legible.
   if (matches === true) return { ...base, nameScore: score, reason: null, verdict: "match" };
+  // A board that writes first names only names him by his given name, when nobody else on it shares it
+  // (owner, 2026-10-24 — `boardNamesGivenNameAlone` holds the ruling and its limits).
+  if (boardNamesGivenNameAlone(input.customerName, input.personNames)) {
+    return { ...base, nameScore: score, reason: null, verdict: "match" };
+  }
   // 🔴 "NOT ON IT" IS SAID ONLY OF A BOARD THE READER CALLS CLEAR. On a board it could read only in
   // part, his name may be exactly the part it could not read — so that is a photograph to take again,
   // closer, not a customer to hold. A reader that did not say (an older caller) keeps the old verdict.
