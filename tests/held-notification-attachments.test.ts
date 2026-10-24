@@ -139,10 +139,35 @@ export async function runHeldNotificationAttachmentTests() {
 
   const approve = gate.slice(gate.indexOf("export async function approveHeldNotification"));
   const approveBody = approve.slice(0, approve.indexOf("\nexport "));
-  assert.match(approveBody, /\.select\(`\$\{REVIEW_COLUMNS\},held_attachments`\)/, "the approval must read the kept files");
+  assert.match(
+    approveBody,
+    /\.select\(`\$\{REVIEW_COLUMNS\},held_attachments,held_from_address,held_reply_to_address`\)/,
+    "the approval must read the kept files, sender and Reply-To",
+  );
   assert.match(
     approveBody,
     /const attachments = await loadHeldAttachments\([\s\S]*?\);[\s\S]*?sendPhoenixEmail\(\{\s*attachments,/,
     "the approval must load the kept files BEFORE the send and pass them to it",
   );
+
+  // ── 6. The sender and Reply-To survive the hold too (owner, 2026-10-24) ─────────────────────
+  // "fix the held-email approval so it keeps the From and Reply-To": without these the approved
+  // email went out from the default address and its replies landed in the default inbox.
+  const gateCallBody = gateCall.slice(0, gateCall.indexOf("});"));
+  assert.match(gateCallBody, /from: prepared\.from,/, "the send path must hand the gate the resolved sender");
+  assert.match(gateCallBody, /replyTo: prepared\.replyTo,/, "the send path must hand the gate the resolved Reply-To");
+  assert.match(
+    evaluateBody,
+    /decision === "hold" && input\.from \? \{ held_from_address: input\.from \}/,
+    "the gate must keep the sender of a HELD send — and only a held one",
+  );
+  assert.match(
+    evaluateBody,
+    /decision === "hold" && input\.replyTo \? \{ held_reply_to_address: input\.replyTo \}/,
+    "the gate must keep the Reply-To of a HELD send — and only a held one",
+  );
+  const approveSend = approveBody.slice(approveBody.indexOf("sendPhoenixEmail({"));
+  const approveSendBody = approveSend.slice(0, approveSend.indexOf("});"));
+  assert.match(approveSendBody, /from: kept\.held_from_address \|\| undefined,/, "the approval must send from the kept sender");
+  assert.match(approveSendBody, /replyTo: kept\.held_reply_to_address \|\| undefined,/, "the approval must send with the kept Reply-To");
 }

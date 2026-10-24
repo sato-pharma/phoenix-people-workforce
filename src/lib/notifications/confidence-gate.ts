@@ -75,9 +75,13 @@ export type ConfidenceGateInput = {
   attachments?: PreparedEmailAttachment[];
   bcc?: string[];
   cc?: string[];
+  /** The resolved sender. Kept only if the send is HELD, so approving it sends from the same address. */
+  from?: string;
   html: string;
   idempotencyKey: string;
   origin?: NotificationOrigin | null;
+  /** The resolved Reply-To. Kept only if the send is HELD, so replies to the approved email go where they would have. */
+  replyTo?: string;
   subject: string;
   text: string;
   to: string[];
@@ -560,6 +564,10 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
       .from("notification_send_reviews")
       .insert({
         ...(heldAttachments ? { held_attachments: heldAttachments } : {}),
+        // The sender and Reply-To the send resolved, or approving it would send from the default
+        // address and route replies to the default inbox. Hold-only, like the files.
+        ...(decision === "hold" && input.from ? { held_from_address: input.from } : {}),
+        ...(decision === "hold" && input.replyTo ? { held_reply_to_address: input.replyTo } : {}),
         bcc_addresses: input.bcc ?? [],
         cc_addresses: input.cc ?? [],
         checks,
@@ -700,15 +708,16 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
   const decidedBy = access.hrId ?? access.loginId ?? "system";
   const { data: row, error: fetchError } = await getSupabaseAdmin()
     .from("notification_send_reviews")
-    .select(`${REVIEW_COLUMNS},held_attachments`)
+    .select(`${REVIEW_COLUMNS},held_attachments,held_from_address,held_reply_to_address`)
     .eq("id", reviewId)
     .eq("status", "held")
     .maybeSingle();
   if (fetchError) throw fetchError;
   if (!row) throw conflictError("This item is no longer pending review (already decided, or not found).");
   const held = mapReviewRow(row as ReviewRow);
+  const kept = row as { held_attachments?: unknown; held_from_address?: string | null; held_reply_to_address?: string | null };
   // Read before the send: a file that cannot be read back refuses the approval, never drops off it.
-  const attachments = await loadHeldAttachments((row as { held_attachments?: unknown }).held_attachments, getSupabaseAdmin());
+  const attachments = await loadHeldAttachments(kept.held_attachments, getSupabaseAdmin());
 
   const { sendPhoenixEmail } = await import("@/lib/email/send-phoenix-email");
   const result = await sendPhoenixEmail({
@@ -716,8 +725,11 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
     bcc: held.bccAddresses,
     bypassConfidenceGate: true,
     cc: held.ccAddresses,
+    // A row held before these were kept has neither, and falls back to the defaults as it always did.
+    from: kept.held_from_address || undefined,
     html: held.renderedHtml,
     idempotencyKey: `${held.idempotencyKey}:approved`,
+    replyTo: kept.held_reply_to_address || undefined,
     subject: held.subject,
     text: held.renderedText,
     to: held.toAddresses,
