@@ -59,6 +59,9 @@ export async function runPlanningCalendarRegionGroupsTests() {
   const detailsTable = ui.slice(ui.indexOf('"Region / Location", "Area", "Medical Rep"'), ui.indexOf("</PortalDesktopTable>"));
   assert.ok(detailsTable.length > 0, "the details table is found");
   assert.doesNotMatch(detailsTable, /<td className="whitespace-nowrap|<span className="whitespace-nowrap">\{row\.conflictWarning\}|inline-flex whitespace-nowrap border px-2/, "no details cell is held on one line past its column");
+  // A chain visit is not a row of its own on top of the people's own rows (owner, 2026-10-24: "you see the
+  // duplication in rasha and nermine") — each person's row carries it in the Chain Visit column.
+  assert.doesNotMatch(ui, /selectedConflicts\.map|activity: "Chain visit"/, "the day's details never add a Chain visit row that repeats the people already listed");
   const lineless =buildPlanningCalendarDetailRows([
     { activityTitle: "Single Visit", activityType: "single_visit", area: null, conflictKey: null, conflictWarning: null, employeeHrId: "X-1", employeeJobTitle: "District Sales Manager", employeeName: "Someone", employeeDisplayName: "Someone", endDate: "2026-10-12", id: "plan-1", lineName: "CNS", medicalRepHrId: null, medicalRepName: null, medicalRepDisplayName: null, notes: null, planId: "p1", planKind: "weekly", region: null, source: "plan", startDate: "2026-10-12", status: "approved", time: null, title: "Someone" } as unknown as Parameters<typeof buildPlanningCalendarDetailRows>[0][number],
   ]);

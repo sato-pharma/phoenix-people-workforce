@@ -317,26 +317,10 @@ export function PlanningCalendar({
   );
   const selectedHolidays = selectedItems.filter((item) => item.source === "holiday");
   const selectedPlans = selectedItems.filter(isPlanItem);
-  const selectedConflicts = conflictForDay(conflicts, selectedDate);
   const selectedDayHues = useMemo(() => assignDailyEmployeeHues(selectedPlans), [selectedPlans]);
+  // A chain visit is shown on each person's own row, in the Chain Visit column — never as an extra
+  // row that repeats them (owner, 2026-10-24: "you see the duplication in rasha and nermine").
   const selectedDetailRows: PlanningCalendarDetailRow[] = [
-    ...selectedConflicts.map((conflict) => ({
-      activity: "Chain visit",
-      area: conflict.areaNames.join(", ") || "-",
-      conflictWarning: conflict.warning,
-      date: conflict.date,
-      employee: conflict.employeeNames.join(", ") || "-",
-      employeeHrId: "",
-      groupArea: conflict.areaNames[0] ?? null,
-      groupRegion: conflict.regionNames[0] ?? null,
-      id: conflict.id,
-      medicalRep: conflict.medicalRepName || conflict.medicalRepHrId || "-",
-      notes: conflict.lineName ? `Line: ${conflict.lineName}` : "-",
-      regionLocation: conflict.regionNames.join(", ") || "-",
-      status: "Chain visit",
-      time: "Full day",
-      tone: "conflict" as const,
-    })),
     ...selectedHolidays.map((holiday) => ({
       activity: holiday.title,
       area: "-",
