@@ -1892,6 +1892,7 @@ import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmAddPathNameRowTests } from "./phoenix-crm-add-path-name-row.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
+import { runPhoenixCrmAdminDayPageTests } from "./phoenix-crm-admin-day-page.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmNoticeBadgeTests } from "./phoenix-crm-notice-badges.test.ts";
@@ -6891,6 +6892,10 @@ await runTest(
 await runTest(
   "Phoenix CRM calendar (the field week is Saturday to Wednesday plus a Thursday morning for accounts, never Friday; a passed day is fixed; Ramadan is the pinned Umm al-Qura table, re-derived from Intl so a hand-edited year cannot ship, and the Super Admin's moved year replaces only that year)",
   runPhoenixCrmCalendarTests,
+);
+await runTest(
+  "Phoenix CRM admin day page (the admin calendar opens the admin day with a route map, a portal viewer is forwarded to the portal day, and only the Super Admin and the SFE Manager get the route)",
+  runPhoenixCrmAdminDayPageTests,
 );
 
 await runTest(

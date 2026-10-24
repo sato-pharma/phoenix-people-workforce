@@ -16,6 +16,7 @@ import {
   sortManagerDayVisits,
   type ManagerDayVisit,
 } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
+import { phoenixCrmDayPath } from "../src/lib/phoenix-crm/modules.ts";
 import { buildPlanVsActual, planCustomerKey, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
 import { ownVisitBucket } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
@@ -225,7 +226,18 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     assert.match(loader, /territorySeatIds: reads/, "ride-alongs are kept only inside territories the viewer already reads");
 
     const tab = source("src/components/phoenix-crm/calendar-tab.tsx");
-    assert.match(tab, /const page = row\.kind === "manager" \? "manager-day" : "day";/, "a manager's cell opens his own page");
+    assert.match(tab, /row\.kind === "manager" \? "manager" : "rep"/, "a manager's cell asks for the manager's page");
+    assert.equal(
+      phoenixCrmDayPath("portal", "manager", "SEAT-1", "2026-10-13", false),
+      "/employee-portals/field-crm/manager-day/SEAT-1/2026-10-13",
+      "a manager's cell opens his own page",
+    );
+    // The admin calendar opens the admin day (owner, 2026-10-24: "Admin tab plus a map").
+    assert.equal(
+      phoenixCrmDayPath("admin", "manager", "SEAT-1", "2026-10-13", true),
+      "/admin/field-crm/manager-day/SEAT-1/2026-10-13?test=1",
+      "in the shell the calendar was read in",
+    );
     assert.match(tab, /if \(row\.kind === "manager"\) return opensTheDay\(day\);/, "and only on a day he worked");
 
     const page = source("app/employee-portals/field-crm/manager-day/[seatId]/[date]/page.tsx");

@@ -16,7 +16,8 @@ export type RouteCheckin = {
   address: string | null;
   checkDate: string;
   contactName: string | null;
-  id: number;
+  /** A vendor check-in id, or a Phoenix CRM visit key — only ever a React key here. */
+  id: number | string;
   lat: number | null;
   lon: number | null;
 };
@@ -24,6 +25,23 @@ export type RouteCheckin = {
 export type RouteLeg = {
   distanceKm: number | null;
   durationMinutes: number | null;
+};
+
+/**
+ * The words around the map. The defaults are the iReports360 check-in trail this map was built for; Phoenix CRM's
+ * admin day page draws its VISITS with it (owner, 2026-10-24) and names them so, never as check-ins.
+ */
+export type RouteMapCopy = {
+  title: string;
+  description: string;
+  empty: string;
+};
+
+const CHECKIN_COPY: RouteMapCopy = {
+  title: "GPS check-in route for this day",
+  description:
+    "Each stop is numbered in the order the rep checked in, with its check-in time. Distance and drive time between stops come from the Google Maps driving route.",
+  empty: "No GPS check-ins with coordinates were recorded for this rep on this day.",
 };
 
 export type DayRoute = {
@@ -107,7 +125,15 @@ function formatTime(value: string) {
  * each stop's check-in time, and the Google driving distance + drive-time between stops
  * (when available). Read-only; reuses the same Google Maps browser loader as the outstation map.
  */
-export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteCheckin[]; route?: DayRoute | null }) {
+export function FieldWorkforceRouteMap({
+  checkins,
+  copy = CHECKIN_COPY,
+  route,
+}: {
+  checkins: RouteCheckin[];
+  copy?: RouteMapCopy;
+  route?: DayRoute | null;
+}) {
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const mapRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
@@ -238,9 +264,9 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
     <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-3">
         <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">Field route</span>
-        <h2 className="mt-2 text-base font-black text-slate-900 sm:text-lg">GPS check-in route for this day</h2>
+        <h2 className="mt-2 text-base font-black text-slate-900 sm:text-lg">{copy.title}</h2>
         <p className="mt-1 text-phx-md leading-relaxed text-slate-500">
-          Each stop is numbered in the order the rep checked in, with its check-in time. Distance and drive time between stops come from the Google Maps driving route.
+          {copy.description}
         </p>
         {hasRoute && (totalKm != null || totalMin != null) ? (
           <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-700">
@@ -250,7 +276,7 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
       </div>
       {points.length === 0 ? (
         <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-3 text-phx-md text-slate-600">
-          No GPS check-ins with coordinates were recorded for this rep on this day.
+          {copy.empty}
         </div>
       ) : (
         <div className="space-y-3">

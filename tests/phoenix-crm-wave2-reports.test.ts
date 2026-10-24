@@ -7,6 +7,7 @@ import {
   frequencyGradeTarget,
 } from "../src/lib/phoenix-crm/customer-frequency.ts";
 import { dayDetailCounts } from "../src/lib/phoenix-crm/day-detail.ts";
+import { phoenixCrmDayPath } from "../src/lib/phoenix-crm/modules.ts";
 import {
   buildTeamCalendar,
   dayShape,
@@ -224,8 +225,12 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // A manager's row never opens a rep's day page — that page is a territory's. Since 2026-10-20 it opens ITS OWN
     // page, `/manager-day/<seat>/<day>`, which lists his visits card by card.
     const tab = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
-    assert.match(tab, /const page = row\.kind === "manager" \? "manager-day" : "day";/, "a manager's cell links to the manager's own day page, never to a territory page");
-    assert.equal((tab.match(/href=\{dayHref\(row, day\.day, test\)\}/g) ?? []).length, 2, "neither the desktop row nor the phone card builds the link any other way");
+    assert.match(tab, /row\.kind === "manager" \? "manager" : "rep"/, "a manager's cell asks for the manager's own day page");
+    for (const surface of ["admin", "portal"] as const) {
+      assert.match(phoenixCrmDayPath(surface, "manager", "S", "2026-10-13", false), /\/manager-day\/S\/2026-10-13$/, "a manager's cell links to the manager's own day page, never to a territory page");
+      assert.match(phoenixCrmDayPath(surface, "rep", "S", "2026-10-13", false), /\/field-crm\/day\/S\/2026-10-13$/, "a rep's cell links to the territory's day page");
+    }
+    assert.equal((tab.match(/href=\{dayHref\(surface, row, day\.day, test\)\}/g) ?? []).length, 2, "neither the desktop row nor the phone card builds the link any other way");
     // A product manager's worked day opens the manager's day page on his row key (owner, 2026-10-21: "Open a day
     // page"), which resolves him by the calendar's own rule for his row.
     assert.match(
