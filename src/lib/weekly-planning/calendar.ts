@@ -163,6 +163,46 @@ export function withoutOfficeDays<T extends { activityType: string }>(items: T[]
   return items.filter((item) => !planningCalendarHiddenActivityTypes.has(item.activityType));
 }
 
+function sameHalfDayPlan(left: PlanningCalendarPlanItem, right: PlanningCalendarPlanItem) {
+  const same = (a: string | null | undefined, b: string | null | undefined) => normalizedPlanningCalendarKey(a) === normalizedPlanningCalendarKey(b);
+  return (
+    left.activityType === right.activityType &&
+    left.status === right.status &&
+    same(left.activityTitle, right.activityTitle) &&
+    same(left.region, right.region) &&
+    same(left.area, right.area) &&
+    same(left.lineName, right.lineName) &&
+    same(left.medicalRepHrId, right.medicalRepHrId) &&
+    same(left.withHrId, right.withHrId)
+  );
+}
+
+/**
+ * One person with the same plan in the AM and the PM of one day is ONE Full day entry, never two
+ * halves (owner, 2026-10-24: "if same employee same day am and pm the same plan area then full day and
+ * do not separate in calendar or details"). It runs in the one loader, so the month grid, the agenda,
+ * the details table and the Excel export all show it once. Two different halves stay two.
+ */
+export function mergeFullDayPlanItems<T extends PlanningCalendarPlanItem>(items: T[]): T[] {
+  const halves = new Map<string, { am: T[]; pm: T[] }>();
+  for (const item of items) {
+    if (item.startDate !== item.endDate || (item.time !== "AM" && item.time !== "PM")) continue;
+    const key = `${normalizedPlanningCalendarKey(item.employeeHrId)}|${item.startDate}`;
+    const day = halves.get(key) ?? { am: [], pm: [] };
+    (item.time === "AM" ? day.am : day.pm).push(item);
+    halves.set(key, day);
+  }
+  const merged = new Map<T, T>();
+  const dropped = new Set<T>();
+  for (const { am, pm } of halves.values()) {
+    if (am.length !== 1 || pm.length !== 1 || !sameHalfDayPlan(am[0], pm[0])) continue;
+    const notes = [...new Set([am[0].notes, pm[0].notes].map((note) => cleanText(note)).filter(Boolean))].join(" · ");
+    merged.set(am[0], { ...am[0], notes: notes || null, time: "Full day" });
+    dropped.add(pm[0]);
+  }
+  return items.filter((item) => !dropped.has(item)).map((item) => merged.get(item) ?? item);
+}
+
 /**
  * An item is never drawn with an empty area when something knows it (owner, 2026-10-24: "grab area
  * from the rep name, do not leave it empty", then "check his CRM visits or his expenses, where was

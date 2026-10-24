@@ -21,6 +21,7 @@ import {
   planSlotLabel,
   resolvePlanItemArea,
   sharedPlanningCalendarStatuses,
+  mergeFullDayPlanItems,
   withoutOfficeDays,
   type PlanningCalendarHolidayItem,
   type PlanningCalendarPlanItem,
@@ -570,7 +571,8 @@ export async function getSharedPlanningCalendarWorkspace(
     };
     const visiblePlanItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
     // Office days are not drawn, but the person still counts as having submitted a plan.
-    const planItems = withoutOfficeDays(visiblePlanItems);
+    // An identical AM and PM for one person on one day is one Full day entry.
+    const planItems = mergeFullDayPlanItems(withoutOfficeDays(visiblePlanItems));
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(visiblePlanItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
