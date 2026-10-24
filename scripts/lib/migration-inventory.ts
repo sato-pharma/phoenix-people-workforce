@@ -1699,6 +1699,37 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // a month straddling the first team start 563.1 -> 320.5 ms, a month entirely before it unchanged.
   // Pinned by tests/phoenix-crm-visits-everywhere.test.ts. Account: docs/crm-visits-door-one-scan.md.
   "20261024005000_crm_visits_unified_one_scan.sql",
+
+  // (6) THE CONTACT REFRESH'S HASHED HAND-OVER AND ITS ONE REP-DOOR READ — applied 2026-10-24, staging
+  // first then production, through `scripts/apply-sql-file.mjs`, the standing route of AGENTS.md §8 for a
+  // body the Supabase MCP declines (this one carries a `delete from` and seven `drop table if exists
+  // pg_temp.…`). That route writes NO ledger row, hence this entry rather than a ledger write: production
+  // (ozucdzovmcqvepbozvqf) and staging (cifwmndunmlxjhyjugxa) each hold 0 rows matching `20261024160%` in
+  // supabase_migrations.schema_migrations, read after the apply. The file holds ONE statement,
+  // `create or replace function public.crm_contact_master_refresh(boolean)` — no table, view, grant or
+  // policy is touched, and every `drop table` in it is a `pg_temp.` scratch table the body itself creates
+  // and drops inside its own call.
+  //
+  // VERIFIED BY DIGEST ON BOTH PROJECTS, not by the function merely existing — `create or replace` makes
+  // presence worthless as evidence. `md5(prosrc)` is a6dc9541576a7a474ad6a49c60013f34 at 36,805 chars on
+  // production AND on staging, equal to this file's own dollar-quoted body; the pre-image on both was
+  // 0e5d0165b9ca43d1fb4a18f4ef2015e1, 20261022163300's body. `prosecdef` is still false and `proconfig`
+  // still {search_path=public}. `public.crm_contact_fold_grade` is deliberately NOT dropped even though
+  // its five call sites are now inlined: its other callers keep it, and removing the SET clause that
+  // blocks inlining would raise the `function_search_path_mutable` advisor finding that
+  // `scripts/check-advisor-baseline.ts` fails on.
+  //
+  // Effect proved on production, not asserted. OUTPUT: from the same committed state, each body run once
+  // in its own rolled-back transaction, twice each — both wrote exactly one assignment row and the SAME
+  // one (agent PD-0018, contact 1000049049, Pharmacy, no grade, open from 2026-10-24), and the full-row
+  // checksum of `crm_contacts` was e3044c1025dc165bef1258ad931c4af4 on all four runs; the returned jsonb
+  // was equal field for field, the per-statement `ms` map aside. SPEED, old and new alternating four
+  // times each with the pending row settled first so every timed run is the quiet tick the cron pays:
+  // 1,320 · 1,300 · 1,357 · 1,435 ms against 770 · 769 · 831 · 818 ms — median 1,338 -> 794 ms, 41% off a
+  // job that runs about 96 times a day, roughly 52 seconds of database time. Pinned by
+  // tests/crm-contact-master-refresh-speed.test.ts (section 3c) and tests/doctor-lists-everywhere.test.ts.
+  // Account: docs/crm-contact-master-refresh-speed.md.
+  "20261024160000_the_contact_refresh_hashes_its_handover_and_reads_the_rep_door_once.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

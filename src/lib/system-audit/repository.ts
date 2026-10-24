@@ -302,6 +302,54 @@ export async function loadAlertCandidates(override?: Client): Promise<AlertCandi
   return (data ?? []) as AlertCandidate[];
 }
 
+/** What the daily message says about one issue beyond its stored title: who met it, where, in whose words. */
+export type AlertDetail = {
+  /** Distinct people in the order they last met it, most recent first. */
+  people: Array<{ name: string; role: string | null }>;
+  /** The sidebar module of the most recent occurrence. */
+  module: string | null;
+  /** The words the person saw (or, for a silent finding, the system's own text) — whole, never the cut title. */
+  text: string | null;
+};
+
+type DetailRow = {
+  issue_id: string;
+  employee_name: string | null;
+  role_at_event: string | null;
+  module_label: string | null;
+  user_message: string | null;
+  is_silent: boolean | null;
+  technical_message: string | null;
+};
+
+/** Reads the live (non-test, not triaged away) occurrences of the issues the message lists. */
+export async function loadAlertDetails(issueIds: string[], override?: Client): Promise<Map<string, AlertDetail>> {
+  const details = new Map<string, AlertDetail>();
+  if (issueIds.length === 0) return details;
+  const { data, error } = await client(override)
+    .from("system_audit_occurrences")
+    .select("issue_id, employee_name, role_at_event, module_label, user_message, is_silent, technical_message")
+    .in("issue_id", issueIds)
+    .eq("is_test", false)
+    .is("triage_override", null)
+    .order("occurred_at", { ascending: false })
+    .limit(1000);
+  if (error) throw failure("alert detail read", error);
+  for (const row of (data ?? []) as DetailRow[]) {
+    let detail = details.get(row.issue_id);
+    if (!detail) {
+      const spoken = !row.is_silent && row.user_message?.trim() ? row.user_message.trim() : null;
+      detail = { people: [], module: row.module_label?.trim() || null, text: spoken ?? (row.technical_message?.trim() || null) };
+      details.set(row.issue_id, detail);
+    }
+    const name = row.employee_name?.trim();
+    if (name && !detail.people.some((person) => person.name === name)) {
+      detail.people.push({ name, role: row.role_at_event?.trim() || null });
+    }
+  }
+  return details;
+}
+
 export async function markIssuesAlerted(issueIds: string[], override?: Client): Promise<number> {
   if (issueIds.length === 0) return 0;
   const { data, error } = await client(override).rpc("system_audit_mark_alerted", { p_issue_ids: issueIds });

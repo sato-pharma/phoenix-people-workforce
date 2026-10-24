@@ -31,7 +31,7 @@ import { loadBrickNames } from "@/lib/crm/brick-geo";
 import type { SharedWith } from "@/lib/crm/location-confidence";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
-import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
@@ -84,6 +84,7 @@ import {
   assertListRequestApprover,
   canCurateList,
   canDecideListRequest,
+  canDecideValidationReviews,
   canMovePlaces,
   canOverrideDecision,
   canReviewTerritory,
@@ -3254,6 +3255,17 @@ export async function answerReturnedRequest(
 }
 
 /**
+ * Why SFE cannot yet admit a customer whose place Google Maps could not confirm. Read only by the
+ * approver above the rep, never by the rep (golden rule #1). Whoever may decide the hold is sent to the
+ * Place checks page by name; anyone else is told the request waits for that decision.
+ */
+export function placeCheckHoldMessage(decidesPlaceChecks: boolean): string {
+  return decidesPlaceChecks
+    ? "Google Maps could not confirm this customer's place, so it is waiting on Place Checks. Approve or reject the place there first, then approve this request."
+    : "Google Maps could not confirm this customer's place, so it is waiting for a Place Checks decision. This request can be approved once the place is decided.";
+}
+
+/**
  * A decision on a list request. Refusing needs a note for the rep.
  *
  * A grade change is the district manager's alone. A drop, an add or a bring-back takes two steps — the
@@ -3276,12 +3288,27 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, decided_by_hr_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
   const request = data as Row | null;
   if (!request) throw notFoundError("This request is no longer there. Reload the page.");
+  // 🔴 A DECIDED REQUEST IS ANSWERED BEFORE ANY STEP IS READ FROM IT. Its stage is cleared once it is
+  // final, and a null stage is how a GRADE change reads — so a second press of Approve (or a retry whose
+  // first answer was lost) reached the grade gate and told the SFE Manager "Only the territory's
+  // reviewing manager decides this." about a request he had just approved himself (production,
+  // 2026-10-24: three presses for two decisions). The same person's same decision again is the answer
+  // he already has; anything else is decided and says so, as the database would.
+  const settled = text(request.status);
+  if (settled !== "pending") {
+    const decidedBy = personKey(text(request.decided_by_hr_id));
+    const sameDecision = settled === (decision === "approve" ? "approved" : "refused");
+    if (sameDecision && decidedBy !== null && decidedBy === personKey(viewer.hrId)) {
+      return { requestId, status: decision === "approve" ? "approved" : "refused", stage: null, final: true };
+    }
+    throw conflictError("This request was already decided. Reload the page.");
+  }
   const seat = viewer.org.seats.get(String(request.seat_id));
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const isTest = request.is_test === true;
@@ -3311,10 +3338,14 @@ export async function decideListRequest(
   // request with the rep is at the stored stage 'rep', whatever step the card named.
   const stage = withRep ? "rep" : isRequestStage(body.stage) ? body.stage : rowStage;
   // SFE's step admits him to the list. While his place is still with the Super Admin it waits: only the
-  // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03).
+  // Super Admin approves or rejects a place the Google check could not confirm (owner, 2026-10-03), and
+  // the SFE Manager since 2026-10-19. The Google check itself is long FINISHED by now — it runs at the
+  // save — so the refusal says what it is waiting on and, to someone who can decide it, where: the
+  // old "still being checked … once the check is finished" read as a lookup still running and sent
+  // Khaled Bedair back to wait on a decision that was his own (production, 2026-10-24).
   const customerId = text(request.customer_id);
   if (decision === "approve" && rowStage === "sfe" && (kind === "add" || kind === "restore") && customerId && (await pendingLocationReview(customerId))) {
-    throw validationError("This customer's location is still being checked against Google Maps. They can be added once the check is finished.");
+    throw validationError(placeCheckHoldMessage(canDecideValidationReviews(viewer)));
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_request", {
