@@ -2517,6 +2517,7 @@ import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
+import { runInterviewManagerShareTests } from "./interview-manager-share.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
@@ -9708,6 +9709,11 @@ await runTest(
 await runTest(
   "the interview calendar's per-person .ics feed emits a valid VCALENDAR (empty for a stale token, one VEVENT per interview with UTC DTSTART/DTEND, escaped text, and the office or Zoom link as the location)",
   runInterviewCalendarIcsTests,
+);
+
+await runTest(
+  "the interview calendar shares one interviewer's interviews with one manager, interview by interview: Phoenix suggests the ones in the manager's line and region (never one with no area or an unknown area), the manager reads only the shared ones, and is told in-app and by push, never email",
+  runInterviewManagerShareTests,
 );
 
 await runTest(
