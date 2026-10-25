@@ -191,7 +191,8 @@ export function invalidateEmployeeCvIndex(): void {
   cvIndexCache = null;
 }
 
-async function fetchEmployeeCvIndex(): Promise<Set<string>> {
+/** The index, or null when it could not be read — a null is answered but never cached. */
+async function fetchEmployeeCvIndex(): Promise<Set<string> | null> {
   const ids = new Set<string>();
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -207,7 +208,8 @@ async function fetchEmployeeCvIndex(): Promise<Set<string>> {
     // Pre-migration or a transient failure. An empty set reads as "nobody has a CV", which is the
     // safe direction: the filter offers people who turn out to have one, rather than hiding people
     // who do not — the opposite would quietly shorten the list of who still needs chasing.
-    return new Set();
+    // Null, so that empty answer is served to this load and never kept for the next minute.
+    return null;
   }
   return ids;
 }
@@ -231,6 +233,7 @@ export async function getEmployeeCvHrIdSet(): Promise<Set<string>> {
   if (!inFlightCvIndex) {
     inFlightCvIndex = fetchEmployeeCvIndex()
       .then((ids) => {
+        if (!ids) return new Set<string>();
         cvIndexCache = { expiresAt: Date.now() + CV_INDEX_TTL_MS, value: ids };
         return ids;
       })

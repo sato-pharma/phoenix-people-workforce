@@ -39,6 +39,7 @@ import {
   mergeVisitCountSplits,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
+import { markDegraded } from "@/lib/cache/serve-uncached";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import {
   loadReferenceEmployees,
@@ -219,7 +220,8 @@ export async function loadReviewDirectory(): Promise<ReviewDirectory> {
     // superset carries no compensation column, and nothing here ever wanted one.
     rows = await loadReferenceEmployees();
   } catch {
-    return directory;
+    // No names for this render; marked so the bundle cache never keeps a review with nobody in it.
+    return markDegraded(directory);
   }
   for (const row of rows) {
     const hrId = String(row.hr_id ?? "").trim();
@@ -264,7 +266,7 @@ export async function loadLineIdByCode(): Promise<Record<string, number>> {
       if (code && row.id != null) out[code] = Number(row.id);
     }
   } catch {
-    return out;
+    return markDegraded(out);
   }
   return out;
 }

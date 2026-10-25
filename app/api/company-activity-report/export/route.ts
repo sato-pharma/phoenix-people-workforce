@@ -12,6 +12,7 @@ import { getCompanyActivityReport } from "@/lib/company-activity-report/service"
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,6 +112,7 @@ export async function GET(request: Request) {
 
     return new NextResponse(buffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="${fileName}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

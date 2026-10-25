@@ -6,8 +6,9 @@
  * The photos sit in a private bucket; the screen asks /api/phoenix-crm/photos/sign for short-lived
  * links. A list of a hundred customers must not send a hundred requests, so every thumbnail on screen
  * joins one batch (collected for a few milliseconds, at most 120 paths, one batch per territory so a
- * refusal for one territory never blanks another's photos). Links live ten minutes on the server and
- * are reused here for eight.
+ * refusal for one territory never blanks another's photos). Every link the server hands out has at
+ * least ten minutes left (it reuses its own links until then, so the browser keeps the picture), and
+ * is reused here for eight.
  */
 
 import { useEffect, useSyncExternalStore } from "react";

@@ -8,6 +8,7 @@ import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 import { buildDeductionsCategoryWorkbook } from "@/lib/deductions/exports/category-workbook.ts";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     const buffer = await workbook.xlsx.writeBuffer();
     return new NextResponse(buffer as ArrayBuffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="deductions-${category}-${monthKey}.xlsx"`,
       },

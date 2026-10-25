@@ -71,10 +71,10 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
 
     return new Response(png, {
       headers: {
-        // Public and cacheable: the picture behind a token is stable, and a scraper (and the CDN)
-        // should not re-render it. Short enough that a spotlight going ineligible is not served for
-        // long from a cache.
-        "Cache-Control": "public, max-age=3600, s-maxage=3600",
+        // Public and cacheable: the picture behind a token is stable, and a scraper should not
+        // re-render it. Short enough that a spotlight going ineligible is not served for long from
+        // a cache. No s-maxage: nothing shared sits in front of Railway, so it had no reader.
+        "Cache-Control": "public, max-age=3600",
         "Content-Type": "image/png",
       },
     });

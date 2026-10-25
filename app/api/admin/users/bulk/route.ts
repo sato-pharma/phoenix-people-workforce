@@ -10,6 +10,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -279,6 +280,7 @@ export async function GET(request: Request) {
     const fileName = "phoenix-workforce-users-template.xlsx";
     return new NextResponse(buffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${fileName}"`,

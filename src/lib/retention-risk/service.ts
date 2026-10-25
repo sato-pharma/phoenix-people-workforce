@@ -12,6 +12,7 @@
 
 import { unstable_cache } from "next/cache";
 
+import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { isRetentionRiskSubjectTitle } from "@/lib/retention-risk/eligibility";
@@ -352,7 +353,11 @@ const computeRetentionRiskCached = unstable_cache(
   // scan on every landing-page render, with a cache in front of it that looked like it was working.
   async (dayKey: string) => {
     void dayKey;
-    return computeRetentionRisk(new Date().toISOString());
+    const view = await computeRetentionRisk(new Date().toISOString());
+    // A board built while the CRM read failed is served to this one render and never kept. Cached,
+    // a one-second blip would hide the whole silence half of the board for the next two hours.
+    if (view.crmUnavailable) serveWithoutCaching(view, "the retention-risk CRM read failed");
+    return view;
   },
   ["retention-risk-view"],
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["retention-risk"] },
@@ -362,5 +367,5 @@ const computeRetentionRiskCached = unstable_cache(
 export async function getRetentionRiskView(options: { fresh?: boolean } = {}): Promise<RetentionRiskView> {
   const now = new Date();
   if (options.fresh) return computeRetentionRisk(now.toISOString());
-  return computeRetentionRiskCached(cairoDateIso(now));
+  return unwrapServedWithoutCaching(computeRetentionRiskCached(cairoDateIso(now)));
 }

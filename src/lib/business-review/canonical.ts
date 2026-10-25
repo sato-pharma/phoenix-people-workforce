@@ -52,6 +52,7 @@
 // layer, never discarded to make a total look tidy.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isDegraded, markDegraded } from "@/lib/cache/serve-uncached";
 import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import {
@@ -1256,7 +1257,7 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
         : null,
   });
 
-  return {
+  const bundle: ReviewBundle = {
     window,
     coverage,
     datasets,
@@ -1276,6 +1277,10 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
       restatementNotice: REVIEW_SOURCE_NOTICE,
     },
   };
+  // A source that failed to read answered "no data" above, which the coverage layer states in words.
+  // That is right for this render; the mark tells the five-minute cache in service.ts not to keep it.
+  const sourceFailed = [marketing, outstation, visits, directory, lineIdByCode].some(isDegraded);
+  return sourceFailed ? markDegraded(bundle) : bundle;
 }
 
 /**

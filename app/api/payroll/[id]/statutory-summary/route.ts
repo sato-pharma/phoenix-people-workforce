@@ -15,6 +15,7 @@ import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;
     return new Response(buffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="phoenix-statutory-summary-${period}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

@@ -1057,6 +1057,17 @@ async function loadAgentMetaByHrId(): Promise<Map<string, AgentMeta>> {
   return byHrId;
 }
 
+/**
+ * Shallow copies of rows that came out of the triples or vacations memo, made before
+ * {@link attachAgentMeta} or {@link relabelHandedOverRows} write into them (2026-10-26 cache audit, P3).
+ * Those memos hand every caller the SAME row objects for a minute, and both decorators write fields in
+ * place — so one viewer's decoration landed in the shared copy, and a relabelled name could be relabelled
+ * again by the next. Copy the page (or the export chunk), never the whole memo.
+ */
+function copyMemoRows(rows: readonly CrmMasterRow[]): CrmMasterRow[] {
+  return rows.map((row) => ({ ...row }));
+}
+
 /** Set each row's `line` + `hire_date` from the resolved HR ID in `hrIdField` (the agent for most
  * tabs, the rep for triples), using the roster meta map. Unknown HR ids leave both null → "—". */
 function attachAgentMeta(rows: CrmMasterRow[], metaByHrId: Map<string, AgentMeta>, hrIdField: string): void {
@@ -2182,7 +2193,7 @@ export async function getCrmMasterData(
     // Advanced filters apply to the rep (base) of each triple; Duration/half are vacation-only.
     const filtered = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     const start = (page - 1) * pageSize;
-    const pageRows = filtered.slice(start, start + pageSize);
+    const pageRows = copyMemoRows(filtered.slice(start, start + pageSize));
     attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
     return {
       ...echo,
@@ -2203,7 +2214,7 @@ export async function getCrmMasterData(
     ]);
     const filtered = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     const start = (page - 1) * pageSize;
-    const pageRows = filtered.slice(start, start + pageSize);
+    const pageRows = copyMemoRows(filtered.slice(start, start + pageSize));
     attachAgentMeta(pageRows, agentMeta, "agent_hr_id");
     relabelHandedOverRows(pageRows, await loadIdentityMapsForLabels(pageRows), "from_date");
     return {
@@ -2389,8 +2400,11 @@ export async function* streamCrmMasterExportPages(
       hrIdField: "base_hr_id",
       minDuration: null,
     });
-    attachAgentMeta(rows, agentMeta, "base_hr_id");
-    for (let i = 0; i < rows.length; i += CHUNK) yield rows.slice(i, i + CHUNK);
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = copyMemoRows(rows.slice(i, i + CHUNK));
+      attachAgentMeta(chunk, agentMeta, "base_hr_id");
+      yield chunk;
+    }
     return;
   }
 
@@ -2398,9 +2412,13 @@ export async function* streamCrmMasterExportPages(
   if (dataset === "vacations") {
     const [{ periods: allPeriods }, agentMeta] = await Promise.all([computeVacationPeriods(range), loadAgentMetaByHrId()]);
     const rows = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
-    attachAgentMeta(rows, agentMeta, "agent_hr_id");
-    relabelHandedOverRows(rows, await loadIdentityMapsForLabels(rows), "from_date");
-    for (let i = 0; i < rows.length; i += CHUNK) yield rows.slice(i, i + CHUNK);
+    const identityMaps = await loadIdentityMapsForLabels(rows);
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = copyMemoRows(rows.slice(i, i + CHUNK));
+      attachAgentMeta(chunk, agentMeta, "agent_hr_id");
+      relabelHandedOverRows(chunk, identityMaps, "from_date");
+      yield chunk;
+    }
     return;
   }
 

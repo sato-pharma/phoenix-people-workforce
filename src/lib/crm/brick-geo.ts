@@ -148,6 +148,11 @@ const loadBrickCentroidsCached = unstable_cache(
       supabase.from("source_of_sales_regions").select("region_code, region_name"),
     ]);
 
+    // Thrown, like the two paginated reads: this callback has no error handling on purpose (see
+    // above), and an unchecked error here was cached for five minutes as bricks with no area name.
+    if (areasRes.error) throw areasRes.error;
+    if (regionsRes.error) throw regionsRes.error;
+
     const areaName = new Map<string, string>();
     for (const a of (areasRes.data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
       if (a.area_code) areaName.set(a.area_code, a.area_name ?? "");

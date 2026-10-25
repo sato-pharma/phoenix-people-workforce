@@ -37,14 +37,22 @@ import {
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
 const SNOOZE_KEY = "phoenix-action-snooze:v1";
+// Every access is guarded: storage can throw (a private window, blocked site data), and a snooze that
+// cannot be saved simply is not remembered (2026-10-26 cache audit, P3).
 function getSnoozeMap(): Record<string, number> {
-  try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? "{}") as Record<string, number>; }
-  catch { return {}; }
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, number>) : {};
+  } catch { return {}; }
+}
+function saveSnoozeMap(m: Record<string, number>) {
+  try { localStorage.setItem(SNOOZE_KEY, JSON.stringify(m)); }
+  catch { /* not remembered */ }
 }
 function setSnoozeExpiry(id: string) {
   const m = getSnoozeMap();
   m[id] = Date.now() + 86_400_000;
-  localStorage.setItem(SNOOZE_KEY, JSON.stringify(m));
+  saveSnoozeMap(m);
 }
 function isSnoozed(id: string): boolean {
   return (getSnoozeMap()[id] ?? 0) > Date.now();
@@ -52,7 +60,7 @@ function isSnoozed(id: string): boolean {
 function purgeSnoozed() {
   const m = getSnoozeMap();
   const now = Date.now();
-  localStorage.setItem(SNOOZE_KEY, JSON.stringify(Object.fromEntries(Object.entries(m).filter(([, v]) => v > now))));
+  saveSnoozeMap(Object.fromEntries(Object.entries(m).filter(([, v]) => v > now)));
 }
 
 /**

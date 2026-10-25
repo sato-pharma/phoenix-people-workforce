@@ -93,7 +93,8 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
 
   return new Response(html, {
     headers: {
-      "Cache-Control": "public, max-age=3600, s-maxage=3600",
+      // No s-maxage: nothing shared sits in front of Railway, so it had no reader.
+      "Cache-Control": "public, max-age=3600",
       "Content-Type": "text/html; charset=utf-8",
     },
   });

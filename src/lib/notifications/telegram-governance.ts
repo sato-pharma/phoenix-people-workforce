@@ -150,6 +150,12 @@ export function defaultTelegramPolicyFor(moduleName: string): TelegramModulePoli
 // src/lib/auth/permissions.ts). Telegram fan-out resolves governance once per
 // recipient; without this, the global switch + module policies hit the DB N times
 // per notification. Admin writes call clearTelegramGovernanceCache().
+//
+// That clear reaches only the process that saved — the website. The background worker holds its own
+// copy and keeps it until the TTL runs out, so a switch-off (global or per module) stops the worker's
+// Telegram sends up to PHOENIX_TELEGRAM_GOVERNANCE_CACHE_SECONDS (30 s) later. Accepted on purpose
+// (2026-10-26 cache audit, P3): the bound is short, and a cross-process signal would cost more than
+// it saves. Lower the env value if a switch-off must bite sooner; the floor is 5 s.
 const governanceCacheSeconds = Number(process.env.PHOENIX_TELEGRAM_GOVERNANCE_CACHE_SECONDS ?? 30);
 const governanceCacheMs = Math.max(5000, Number.isFinite(governanceCacheSeconds) ? governanceCacheSeconds * 1000 : 30000);
 

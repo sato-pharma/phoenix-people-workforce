@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateDeviceImportTemplate } from "@/lib/devices/bulk-import";
 import { deviceErrorMessage } from "@/lib/devices/service";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
 
     return new NextResponse(workbook as ArrayBuffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="device-custody-${prefillRoster ? "walk-the-fleet" : "import"}-${currentCairoDateOnlyIso()}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

@@ -14,6 +14,7 @@ import {
   type AuditPeriodFilter,
   type AuditRoleFilter,
 } from "@/lib/double-visit-analytics/audit-export";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,6 +85,7 @@ export async function GET(request: Request) {
     const body = buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer);
     return new NextResponse(body, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="double-visit-coaching-audit-${dateFrom}-to-${dateTo}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

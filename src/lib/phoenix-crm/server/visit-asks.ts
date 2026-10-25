@@ -40,6 +40,7 @@ import { unstable_cache } from "next/cache";
 import { isSamePerson } from "@/lib/auth/identity-aliases";
 import { scopeForRole, type AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
 import { addDaysIso } from "@/lib/crm/dates";
 import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import { ApiError, conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -139,6 +140,7 @@ const cachedProductManagerReach = unstable_cache(
       if (hrId && !isTerminalEmploymentStatus(textOrNull(row.employment_status))) current.add(hrId);
     }
     const reach: ProductManagerReach[] = [];
+    let missedSomeone = false;
     for (const holder of holders) {
       const hrId = personKey(holder.hrId);
       if (!hrId || !current.has(hrId)) continue;
@@ -156,8 +158,12 @@ const cachedProductManagerReach = unstable_cache(
           error: caught,
           labels: { event: "phoenix_crm_visit_ask_product_manager_failed", hrId },
         });
+        missedSomeone = true;
       }
     }
+    // A list with somebody left out is offered to this one rep, never kept: cached, that product
+    // manager would vanish from every rep's picker for five minutes over one failed read.
+    if (missedSomeone) serveWithoutCaching(reach, "a product manager's products could not be read");
     return reach;
   },
   // v3: the Training Manager joined the list (owner, 2026-10-24); v2 the CNS rule.
@@ -173,7 +179,10 @@ const cachedProductManagerReach = unstable_cache(
  */
 export async function loadLineProductManagers(seat: Pick<OrgSeat, "lineCode" | "lineName">): Promise<VisitAskProductManager[]> {
   try {
-    const [reach, families] = await Promise.all([cachedProductManagerReach(), lineProductsByFamily(seat.lineName)]);
+    const [reach, families] = await Promise.all([
+      unwrapServedWithoutCaching(cachedProductManagerReach()),
+      lineProductsByFamily(seat.lineName),
+    ]);
     return productManagersOfLine(
       reach,
       families.map((entry) => entry.family),

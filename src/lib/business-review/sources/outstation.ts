@@ -20,6 +20,7 @@
 // rejected rows have been written by more than one surface over the years and an equality check
 // reads some of them back as pending.
 
+import { markDegraded } from "@/lib/cache/serve-uncached";
 import { isRejectedStatus } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -72,7 +73,8 @@ export async function loadOutstationFacts(window: ReviewWindow): Promise<Outstat
       "id",
     );
   } catch {
-    return { facts: [], periodsWithData: [], totalRows: 0 };
+    // "No data" for this render, marked so the bundle cache never keeps it past this render.
+    return markDegraded({ facts: [], periodsWithData: [], totalRows: 0 });
   }
 
   const facts: OutstationFact[] = [];

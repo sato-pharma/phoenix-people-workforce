@@ -5,6 +5,7 @@ import { buildPrivateCalendarPdf, buildPrivateCalendarWorkbook } from "@/lib/pri
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { currentCairoDateParts } from "@/lib/i18n/format";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
       const buffer = await buildPrivateCalendarPdf(workspace, generatedAt);
       return new Response(buffer as unknown as BodyInit, {
         headers: {
+          ...DOWNLOAD_NO_STORE_HEADERS,
           "Content-Disposition": `attachment; filename="phoenix_private_calendar_${employeeName}_${periodLabel}.pdf"`,
           "Content-Type": "application/pdf",
         },
@@ -50,6 +52,7 @@ export async function GET(request: Request) {
     const buffer = await buildPrivateCalendarWorkbook(workspace, generatedAt);
     return new Response(buffer as unknown as BodyInit, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="phoenix_private_calendar_${employeeName}_${periodLabel}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

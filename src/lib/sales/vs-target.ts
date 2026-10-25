@@ -61,6 +61,7 @@ import { gunzip, gzip } from "node:zlib";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
+import { SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { asyncPool } from "@/lib/utils/async-pool";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -513,7 +514,8 @@ async function loadAchievementMonth(period: string, token: string): Promise<Achi
     unstable_cache(
       async () => packAchievementRows(await loadAchievementRangeUncached(period, period)),
       keyParts,
-      { revalidate: ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS },
+      // Tagged so a Product Master price edit expires it at once: the token does not see a price.
+      { revalidate: ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS, tags: [SALES_ACHIEVEMENT_STAMPED_CACHE_TAG] },
     )(),
   );
   if (packed === null) return loadAchievementRangeUncached(period, period);

@@ -439,9 +439,14 @@ export function runCrmPreHireMappingGuardTests() {
     "attachDerived relabels right after the roster overlay",
   );
   assert.equal(
-    (master.match(/relabelHandedOverRows\(\w+, await loadIdentityMapsForLabels\(\w+\), "from_date"\);/g) ?? []).length,
+    (master.match(/relabelHandedOverRows\(\w+, (?:await loadIdentityMapsForLabels\(\w+\)|identityMaps), "from_date"\);/g) ?? []).length,
     2,
     "the vacations page and the vacations export relabel by the period's first day",
+  );
+  assert.match(
+    master,
+    /const identityMaps = await loadIdentityMapsForLabels\(rows\);\s*for \(let i = 0; i < rows\.length; i \+= CHUNK\) \{\s*const chunk = copyMemoRows\(rows\.slice\(i, i \+ CHUNK\)\);/,
+    "the vacations export reads the identity maps once, then relabels each chunk's own copies",
   );
   assert.match(
     master,
