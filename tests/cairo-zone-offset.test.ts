@@ -97,8 +97,8 @@ export function runCairoZoneOffsetTests() {
   // The whole point is that an old engine converges on the server's string, not that the string
   // changes. Swept hour by hour across 2023-2027, which spans nine daylight-saving transitions,
   // plus each transition to the minute on either side. Offenders are collected rather than asserted
-  // one at a time: runTest rethrows, so a bare assert inside the loop would report the first
-  // difference and hide how wide the change was.
+  // one at a time: the first failed assert ends the test, so a bare assert inside the loop would
+  // report the first difference and hide how wide the change was.
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
   const engineReader = new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",

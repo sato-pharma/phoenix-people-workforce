@@ -209,6 +209,175 @@ const knownOf = (source: string): string[] => {
   return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
 };
 
+/**
+ * THE SOURCE HALF — every ratchet in this file that reads files and spawns no script: the PINNED list
+ * against the scripts tree (3b), each pinned script's import, entry and call order, the caller ratchet
+ * (4), the own-flag scan (4b), cron-autoarm's array caller, and the ratchet over every script that
+ * takes arguments (5).
+ *
+ * 🔴 IT IS ITS OWN REGISTRATION SO `scripts/check-contracts.mjs` CAN RUN IT IN ABOUT A SECOND. Measured
+ * over 18-25 Oct 2026 this file turned 10 CI jobs red on 8 branches, and 9 of the 11 failure messages
+ * were "a script gained a refuseUnknownFlags call that PINNED does not list" — the branch had done the
+ * right thing and forgotten the list. The whole file is a ~12-110 s run that spawns every gated script,
+ * so the contract check had left it to CI and each of those branches learned about the list one push
+ * late. Nothing here needs a probe: the behavioural half stays in {@link runUnknownFlagGatesTests}.
+ */
+export function runUnknownFlagGatesSourceTests() {
+  // ── 3b. Every pinned script is gated, imports the shared gate, and calls it early ──────────
+  const gated: string[] = [];
+  const tracked = execFileSync("git", ["ls-files", "scripts"], { encoding: "utf8" })
+    .split("\n")
+    .filter((f) => /\.(mjs|ts)$/.test(f) && !f.startsWith("scripts/lib/"));
+  assert.ok(tracked.length > 100, `expected the scripts tree, listed ${tracked.length}`);
+  for (const file of tracked) {
+    if (/refuseUnknownFlags\(/.test(stripComments(readFileSync(file, "utf8")))) gated.push(file);
+  }
+  for (const name of PINNED) {
+    assert.ok(gated.includes(name), `${name} must call refuseUnknownFlags — a pinned script lost its gate`);
+  }
+  assert.deepEqual(
+    gated.filter((f) => !PINNED.includes(f)),
+    [],
+    "a script gained a refuseUnknownFlags call that PINNED does not list — add it so deleting it later goes red",
+  );
+
+  const knownByScript = new Map<string, string[]>();
+  for (const file of PINNED) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    const importPath = file.split("/").length === 2 ? "./lib/refuse-arguments.mjs" : "../lib/refuse-arguments.mjs";
+    assert.ok(
+      source.includes(`import { refuseUnknownFlags } from "${importPath}"`),
+      `${file}: must import the shared gate as "${importPath}"`,
+    );
+    assert.match(source, /entry:\s*import\.meta\.url/, `${file}: must pass entry: import.meta.url so an import never judges its parent's flags`);
+    knownByScript.set(file, knownOf(source));
+
+    const call = source.indexOf("refuseUnknownFlags({");
+    // The one-process probe below asks the gate about a flag that is not on the command line, so it is only
+    // the same answer as a real run while the gate reads the real command line: no pinned script may hand
+    // it an argument list of its own.
+    assert.doesNotMatch(
+      source.slice(call, source.indexOf("})", call)),
+      /\bargv\s*:/,
+      `${file}: must not pass its own argv to refuseUnknownFlags — the gate must judge the real command line`,
+    );
+    const effect = source.search(SIDE_EFFECT);
+    if (effect >= 0) {
+      assert.ok(call < effect, `${file}: refuseUnknownFlags must be called BEFORE the first side effect`);
+    }
+
+  }
+
+
+  // ── 4. The caller ratchet — a flag a CALLER passes must be in the script's vocabulary ───────
+  {
+    const callerFiles = [
+      "package.json",
+      ".claude/settings.json",
+      ...execFileSync("git", ["ls-files", ".github/workflows"], { encoding: "utf8" }).split("\n").filter((f) => /\.ya?ml$/.test(f)),
+    ].filter((f) => existsSync(f));
+    let controlSeen = false;
+    for (const file of PINNED) {
+      const needle = `scripts/${file.replace(/^scripts\//, "")}`;
+      const known = knownByScript.get(file) ?? [];
+      for (const caller of callerFiles) {
+        for (const line of readFileSync(caller, "utf8").split("\n")) {
+          // A YAML comment that MENTIONS the script is prose, not a caller: ci.yml documents
+          // "node scripts/ci-tree-reuse.mjs --report" in a comment above the step that runs --dry-run.
+          if (/^\s*#/.test(line)) continue;
+          const at = line.indexOf(needle);
+          if (at < 0) continue;
+          const command = line.slice(at + needle.length).split(/&&|\|\||\||;|"|`/)[0];
+          for (const m of command.matchAll(/(?:^|\s)(--?[a-z][\w-]*)(?==|\s|$)/g)) {
+            const flag = m[1];
+            assert.ok(
+              known.includes(flag),
+              `${caller} passes ${flag} to ${file}, which would refuse it — add it to that script's known list (${known.join(" ") || "none"})`,
+            );
+            if (file === "scripts/ci-tree-reuse.mjs" && flag === "--dry-run" && caller.endsWith("ci.yml")) controlSeen = true;
+          }
+        }
+      }
+    }
+    assert.equal(
+      controlSeen,
+      true,
+      "the scan must SEE .github/workflows/ci.yml passing --dry-run to ci-tree-reuse.mjs — the case that made this ratchet necessary; if it does not, the scan is blind",
+    );
+  }
+
+  // ── 4b. Every flag a script TESTS FOR in its own code is in its known list ───────────────────
+  // The caller ratchet above sees what a caller passes; nothing yet saw a flag the script itself reads. Dropping
+  // `--apply` from `known` would leave every caller scan green and make the script refuse its own mutating flag.
+  // Read straight from each pinned script's comment-stripped source: argv.includes("--x"), indexOf, startsWith,
+  // has("--x"), and the helper style flag("x") / has("x") / argValue("x") of the scripts that build `--${name}`.
+  {
+    const DASHED = /\b(?:includes|indexOf|startsWith|has)\(\s*["'`](--?[A-Za-z][\w-]*)=?["'`]/g;
+    const NAMED = /\b(?:flag|arg|argValue|readArg|value|has)\(\s*["'`]([A-Za-z][\w-]*)["'`]/g;
+    let seen = 0;
+    for (const file of PINNED) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      const known = knownByScript.get(file) ?? [];
+      const own = new Set<string>();
+      for (const m of source.matchAll(DASHED)) own.add(m[1]);
+      if (/`--\$\{(?:name|flag|key)\}/.test(source) || /["'`]--["'`]\s*\+/.test(source)) {
+        for (const m of source.matchAll(NAMED)) own.add(`--${m[1]}`);
+      }
+      for (const flag of own) {
+        if (flag === "--help" || flag === "-h") continue;
+        seen += 1;
+        assert.ok(known.includes(flag), `${file} tests for ${flag} itself, but its known list (${known.join(" ") || "none"}) lacks it — the script would refuse its own flag`);
+      }
+    }
+    assert.ok(seen > 60, `the own-flag scan must see the scripts' flags (saw ${seen}); if it sees almost none it is blind`);
+  }
+
+  // A caller that passes flags through an ARRAY — execFileSync("node", [SYNC_SCRIPT, "--job", key, "--apply"]) —
+  // is invisible to the line scan above, and it is the production cron arming path: cron-autoarm.yml runs it on
+  // every deploy that adds a job. So the two flags it passes are pinned by name, read from its own source.
+  {
+    const autoarm = stripComments(readFileSync("scripts/cron-autoarm.mjs", "utf8"));
+    const known = knownByScript.get("scripts/cronjob-sync.mjs") ?? [];
+    for (const flag of ["--job", "--apply"]) {
+      assert.ok(autoarm.includes(`"${flag}"`), `scripts/cron-autoarm.mjs no longer passes ${flag} to cronjob-sync — drop this check with it`);
+      assert.ok(known.includes(flag), `cron-autoarm passes ${flag} to cronjob-sync, which would refuse it and leave a new cron unarmed`);
+    }
+  }
+
+  // ── 5. The ratchet over every script that takes arguments ────────────────────────────────────
+  // It started as "parses argv AND writes files" and that left the whole .ts tree and every read-only report
+  // outside it — `rep-seat-vacancies.ts --perod=2026-10` read the DEFAULT month and printed a confident answer.
+  // So: any tracked non-library script that PARSES arguments (a flag, a positional, or a parser) must refuse
+  // an unknown one, or be listed here with the reason it must not.
+  const EXEMPT: Record<string, string> = {
+    "scripts/dev-server.mjs": "forwards every flag it does not own to `next dev`, so refusing one would break the passthrough",
+    "scripts/remote-check-plan.mjs": "a pure library: its parseArgs only SORTS argv into dispatch, retired and unknown, and its one caller, remote-check.mjs, refuses every retired and unknown flag by name from that result (tests/remote-check.test.ts)",
+    "scripts/office-rule-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
+    "scripts/weekly-export-design-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
+  };
+  {
+    const PARSES_ARGS =
+      /process\.argv\.(includes|indexOf|find|some|filter|slice\(\s*[2-9])|process\.argv\[[2-9]\]|parseArgs\(/;
+    const unguarded: string[] = [];
+    for (const file of tracked) {
+      if (file in EXEMPT) continue;
+      const code = stripComments(readFileSync(file, "utf8"));
+      if (ALREADY_REFUSES.test(code)) continue;
+      if (PARSES_ARGS.test(code) || (/process\.argv/.test(code) && WRITES.test(code))) unguarded.push(file);
+    }
+    assert.deepEqual(
+      unguarded,
+      [],
+      `these scripts take arguments but ignore an unknown one — add refuseUnknownFlags (${HELPER}) with a vetted known list, or EXEMPT with a reason: ${unguarded.join(", ")}`,
+    );
+    for (const file of Object.keys(EXEMPT)) {
+      assert.ok(tracked.includes(file), `EXEMPT lists ${file}, which is not a tracked script any more — remove the entry`);
+      assert.equal(gated.includes(file), false, `${file} is gated now — drop its EXEMPT entry so the reason cannot go stale`);
+    }
+  }
+
+}
+
 export async function runUnknownFlagGatesTests() {
   const dir = mkdtempSync(join(tmpdir(), "phx-unknown-flags-"));
   try {
@@ -365,52 +534,10 @@ export async function runUnknownFlagGatesTests() {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // ── 3b. Every pinned script: gated, called early, and the gate answers when probed ──────────
-  const gated: string[] = [];
-  const tracked = execFileSync("git", ["ls-files", "scripts"], { encoding: "utf8" })
-    .split("\n")
-    .filter((f) => /\.(mjs|ts)$/.test(f) && !f.startsWith("scripts/lib/"));
-  assert.ok(tracked.length > 100, `expected the scripts tree, listed ${tracked.length}`);
-  for (const file of tracked) {
-    if (/refuseUnknownFlags\(/.test(stripComments(readFileSync(file, "utf8")))) gated.push(file);
-  }
-  for (const name of PINNED) {
-    assert.ok(gated.includes(name), `${name} must call refuseUnknownFlags — a pinned script lost its gate`);
-  }
-  assert.deepEqual(
-    gated.filter((f) => !PINNED.includes(f)),
-    [],
-    "a script gained a refuseUnknownFlags call that PINNED does not list — add it so deleting it later goes red",
-  );
-
-  const knownByScript = new Map<string, string[]>();
-  const probeFiles: string[] = [];
-  for (const file of PINNED) {
-    const source = stripComments(readFileSync(file, "utf8"));
-    const importPath = file.split("/").length === 2 ? "./lib/refuse-arguments.mjs" : "../lib/refuse-arguments.mjs";
-    assert.ok(
-      source.includes(`import { refuseUnknownFlags } from "${importPath}"`),
-      `${file}: must import the shared gate as "${importPath}"`,
-    );
-    assert.match(source, /entry:\s*import\.meta\.url/, `${file}: must pass entry: import.meta.url so an import never judges its parent's flags`);
-    knownByScript.set(file, knownOf(source));
-
-    const call = source.indexOf("refuseUnknownFlags({");
-    // The one-process probe below asks the gate about a flag that is not on the command line, so it is only
-    // the same answer as a real run while the gate reads the real command line: no pinned script may hand
-    // it an argument list of its own.
-    assert.doesNotMatch(
-      source.slice(call, source.indexOf("})", call)),
-      /\bargv\s*:/,
-      `${file}: must not pass its own argv to refuseUnknownFlags — the gate must judge the real command line`,
-    );
-    const effect = source.search(SIDE_EFFECT);
-    if (effect >= 0) {
-      assert.ok(call < effect, `${file}: refuseUnknownFlags must be called BEFORE the first side effect`);
-    }
-
-    probeFiles.push(file);
-  }
+  // ── 3b. Every pinned script's gate answers when probed ───────────────────────────────────────
+  // That each one is gated, imports the shared gate and calls it early is the SOURCE half's question
+  // (runUnknownFlagGatesSourceTests, which scripts/check-contracts.mjs runs before a push).
+  const probeFiles = [...PINNED];
 
   // THE PROBES RUN AS A FEW PROCESSES, NOT ONE PER SCRIPT. `tests/support/flag-gate-probe-driver.mjs`
   // imports a GROUP of pinned scripts in one process, rewriting process.argv[1] to each in turn so
@@ -515,113 +642,6 @@ export async function runUnknownFlagGatesTests() {
     assert.equal(probe.status, 0, `${file}: a bare probe must pass its own gate, got ${probe.status}: ${probe.detail}`);
     assert.match(probe.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
     assert.match(probe.stdout, /GATE-REFUSES \S+ --zzz-not-a-flag/, `${file}: an unknown flag must be refused, got: ${probe.stdout.trim()}`);
-  }
-
-  // ── 4. The caller ratchet — a flag a CALLER passes must be in the script's vocabulary ───────
-  {
-    const callerFiles = [
-      "package.json",
-      ".claude/settings.json",
-      ...execFileSync("git", ["ls-files", ".github/workflows"], { encoding: "utf8" }).split("\n").filter((f) => /\.ya?ml$/.test(f)),
-    ].filter((f) => existsSync(f));
-    let controlSeen = false;
-    for (const file of PINNED) {
-      const needle = `scripts/${file.replace(/^scripts\//, "")}`;
-      const known = knownByScript.get(file) ?? [];
-      for (const caller of callerFiles) {
-        for (const line of readFileSync(caller, "utf8").split("\n")) {
-          // A YAML comment that MENTIONS the script is prose, not a caller: ci.yml documents
-          // "node scripts/ci-tree-reuse.mjs --report" in a comment above the step that runs --dry-run.
-          if (/^\s*#/.test(line)) continue;
-          const at = line.indexOf(needle);
-          if (at < 0) continue;
-          const command = line.slice(at + needle.length).split(/&&|\|\||\||;|"|`/)[0];
-          for (const m of command.matchAll(/(?:^|\s)(--?[a-z][\w-]*)(?==|\s|$)/g)) {
-            const flag = m[1];
-            assert.ok(
-              known.includes(flag),
-              `${caller} passes ${flag} to ${file}, which would refuse it — add it to that script's known list (${known.join(" ") || "none"})`,
-            );
-            if (file === "scripts/ci-tree-reuse.mjs" && flag === "--dry-run" && caller.endsWith("ci.yml")) controlSeen = true;
-          }
-        }
-      }
-    }
-    assert.equal(
-      controlSeen,
-      true,
-      "the scan must SEE .github/workflows/ci.yml passing --dry-run to ci-tree-reuse.mjs — the case that made this ratchet necessary; if it does not, the scan is blind",
-    );
-  }
-
-  // ── 4b. Every flag a script TESTS FOR in its own code is in its known list ───────────────────
-  // The caller ratchet above sees what a caller passes; nothing yet saw a flag the script itself reads. Dropping
-  // `--apply` from `known` would leave every caller scan green and make the script refuse its own mutating flag.
-  // Read straight from each pinned script's comment-stripped source: argv.includes("--x"), indexOf, startsWith,
-  // has("--x"), and the helper style flag("x") / has("x") / argValue("x") of the scripts that build `--${name}`.
-  {
-    const DASHED = /\b(?:includes|indexOf|startsWith|has)\(\s*["'`](--?[A-Za-z][\w-]*)=?["'`]/g;
-    const NAMED = /\b(?:flag|arg|argValue|readArg|value|has)\(\s*["'`]([A-Za-z][\w-]*)["'`]/g;
-    let seen = 0;
-    for (const file of PINNED) {
-      const source = stripComments(readFileSync(file, "utf8"));
-      const known = knownByScript.get(file) ?? [];
-      const own = new Set<string>();
-      for (const m of source.matchAll(DASHED)) own.add(m[1]);
-      if (/`--\$\{(?:name|flag|key)\}/.test(source) || /["'`]--["'`]\s*\+/.test(source)) {
-        for (const m of source.matchAll(NAMED)) own.add(`--${m[1]}`);
-      }
-      for (const flag of own) {
-        if (flag === "--help" || flag === "-h") continue;
-        seen += 1;
-        assert.ok(known.includes(flag), `${file} tests for ${flag} itself, but its known list (${known.join(" ") || "none"}) lacks it — the script would refuse its own flag`);
-      }
-    }
-    assert.ok(seen > 60, `the own-flag scan must see the scripts' flags (saw ${seen}); if it sees almost none it is blind`);
-  }
-
-  // A caller that passes flags through an ARRAY — execFileSync("node", [SYNC_SCRIPT, "--job", key, "--apply"]) —
-  // is invisible to the line scan above, and it is the production cron arming path: cron-autoarm.yml runs it on
-  // every deploy that adds a job. So the two flags it passes are pinned by name, read from its own source.
-  {
-    const autoarm = stripComments(readFileSync("scripts/cron-autoarm.mjs", "utf8"));
-    const known = knownByScript.get("scripts/cronjob-sync.mjs") ?? [];
-    for (const flag of ["--job", "--apply"]) {
-      assert.ok(autoarm.includes(`"${flag}"`), `scripts/cron-autoarm.mjs no longer passes ${flag} to cronjob-sync — drop this check with it`);
-      assert.ok(known.includes(flag), `cron-autoarm passes ${flag} to cronjob-sync, which would refuse it and leave a new cron unarmed`);
-    }
-  }
-
-  // ── 5. The ratchet over every script that takes arguments ────────────────────────────────────
-  // It started as "parses argv AND writes files" and that left the whole .ts tree and every read-only report
-  // outside it — `rep-seat-vacancies.ts --perod=2026-10` read the DEFAULT month and printed a confident answer.
-  // So: any tracked non-library script that PARSES arguments (a flag, a positional, or a parser) must refuse
-  // an unknown one, or be listed here with the reason it must not.
-  const EXEMPT: Record<string, string> = {
-    "scripts/dev-server.mjs": "forwards every flag it does not own to `next dev`, so refusing one would break the passthrough",
-    "scripts/remote-check-plan.mjs": "a pure library: its parseArgs only SORTS argv into dispatch, retired and unknown, and its one caller, remote-check.mjs, refuses every retired and unknown flag by name from that result (tests/remote-check.test.ts)",
-    "scripts/office-rule-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
-    "scripts/weekly-export-design-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
-  };
-  {
-    const PARSES_ARGS =
-      /process\.argv\.(includes|indexOf|find|some|filter|slice\(\s*[2-9])|process\.argv\[[2-9]\]|parseArgs\(/;
-    const unguarded: string[] = [];
-    for (const file of tracked) {
-      if (file in EXEMPT) continue;
-      const code = stripComments(readFileSync(file, "utf8"));
-      if (ALREADY_REFUSES.test(code)) continue;
-      if (PARSES_ARGS.test(code) || (/process\.argv/.test(code) && WRITES.test(code))) unguarded.push(file);
-    }
-    assert.deepEqual(
-      unguarded,
-      [],
-      `these scripts take arguments but ignore an unknown one — add refuseUnknownFlags (${HELPER}) with a vetted known list, or EXEMPT with a reason: ${unguarded.join(", ")}`,
-    );
-    for (const file of Object.keys(EXEMPT)) {
-      assert.ok(tracked.includes(file), `EXEMPT lists ${file}, which is not a tracked script any more — remove the entry`);
-      assert.equal(gated.includes(file), false, `${file} is gated now — drop its EXEMPT entry so the reason cannot go stale`);
-    }
   }
 
   // ── 6. run-fold is gated INLINE, on builtins only, before anything runs ──────────────────────

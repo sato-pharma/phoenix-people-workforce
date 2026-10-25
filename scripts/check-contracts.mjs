@@ -3,9 +3,10 @@
 //
 // WHAT IT IS FOR. The gates that redden `validate/Test` are mostly whole-repo contracts, not the
 // PR's own feature test, and until now the only way to meet one was to push and wait ~210s for CI
-// (or ~125s for the box). This runs all of them locally and REPORTS THEM ALL — the suite rethrows
-// at the first red, so one failure has always hidden the next one. The gate list, the measured
-// failure counts and the one gate left out are in scripts/check-contracts-gates.mjs.
+// (or ~125s for the box). This runs all of them locally and REPORTS THEM ALL — as the suite itself
+// has since 26 Oct 2026; until then it rethrew at the first red, so one failure hid the next one.
+// The gate list, the measured failure counts and the gates left out are in
+// scripts/check-contracts-gates.mjs.
 //
 // 🔴 IT IS NOT A GATE AND NEVER BECOMES ONE. It starts nothing, refuses nothing and blocks no push
 // — the owner ruled "keep the pre-push test as a rule, no guard" on 2026-10-04. The PR's own

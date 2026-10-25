@@ -193,9 +193,9 @@ times, `checks/Typecheck` 17, `checks/Lint` 5 and `validate/Check migrations` 4.
 
 Four things together made those gates invisible before a push: a local typecheck is denied outright
 (`bash-guard.mjs` C8), the unit suite runs only on the box (~125s) or in the PR's own `validate`
-(~210s), `tests/run-tests.ts` has **no per-test filter** — only `PHX_TEST_SHARD=<i>/<n>` — and
-`runTest` **rethrows at the first failure**, so one red gate reports on a prefix of the suite and
-the next push finds a second gate.
+(~210s), `tests/run-tests.ts` has **no per-test filter** — only `PHX_TEST_SHARD=<i>/<n>` — and,
+until 26 Oct 2026, `runTest` **rethrew at the first failure**, so one red gate reported on a prefix
+of the suite and the next push found a second gate (it now carries on — see the 26 Oct note below).
 
 **`pnpm run check:contracts` answers in about 8 seconds**, and reports every gate instead of
 stopping at the first. The eleven it runs, with the failing CI jobs each caused between 9 and
@@ -241,6 +241,39 @@ The other six stay with the PR's own CI:
 - `HR function governance` (5), `sidebar labels never clip` (3), `Phoenix CRM edges` (3) and the
   `malformed uuid id guards` (2) reach `@/lib/supabase/server`, so they are not offline.
 - The `crm integrity board` signboard case (3) is a feature test, not a repo-wide one.
+
+**Two more joined on 26 Oct 2026, by splitting two of the tests left out.** All 187 failed jobs of
+18-25 Oct 2026, read by cause:
+
+- **28** were gates this script already ran — and since the 23 Oct reminder on every push, **1**.
+- **25** were type errors in the PR's own code (`checks/Typecheck`), which only CI finds here.
+- **10 jobs on 8 branches** were the unknown-flag test: 9 of its 11 messages were a new
+  `refuseUnknownFlags` gate missing from its `PINNED` list — the branch did the right thing and
+  forgot the list.
+- **9 jobs on 6 branches** were the CRM manager-plan test, and every branch among them that never
+  touched Phoenix CRM (the calendar, CRM team statistics, the admin delete) was red on its
+  whole-tree scans: a migration or reader naming a manager-plan table.
+- 7 were the dependency audit finding a new advisory (working as designed), 5 runner memory kills
+  (since fixed), 4 sidebar labels, and 3 each Phoenix CRM edges, HR function governance and the offer
+  PDF runtime. About 60 were one-off feature tests of the PR itself.
+
+Each of the two was split: a source half that loads nothing but Node and the comment stripper,
+registered on its own, is now a gate; the rest still runs only in the PR's own CI (the probes that
+spawn every gated script, and the manager-plan rules that import `src/lib/phoenix-crm/server`).
+
+| Gate | Red CI jobs, 18-25 Oct |
+| --- | --- |
+| `the unknown-flag source ratchets` (`tests/unknown-flag-gates.test.ts`) | 10, on 8 branches |
+| `the CRM manager-plan source scans` (`tests/phoenix-crm-manager-plan-source.test.ts`) | 9, on 6 branches |
+
+🔴 **AND THE SUITE NO LONGER STOPS AT ITS FIRST RED.** `runTest` records a failure — `FAIL <name>`
+and its error, where it happens — sets `process.exitCode = 1` and carries on, and the end of the run
+lists every failure again, indented so `scripts/run-tests-sharded-plan.mjs` does not read them
+twice. Until 26 Oct it rethrew: that week 21 branches went red twice or more in a row, and on 8 of
+them the next red was a DIFFERENT test that had been hiding behind the first (two branches took four
+rounds). A red run ends itself five seconds after its summary, so a test that failed with a server
+or timer still open cannot hang the job. **Read the first failure first** — a test that fails before
+it restores a mocked global can redden the ones after it.
 
 **There is no hook that runs this script before a push, deliberately.** A pre-push hook's warning
 reaches the session only after the push has run, so it cannot stop the red run it warns about. Only

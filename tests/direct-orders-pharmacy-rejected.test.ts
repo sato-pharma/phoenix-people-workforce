@@ -84,8 +84,8 @@ export function runDirectOrderPharmacyRejectedTests() {
   );
   // ── An APPROVED order is never swept up by rejecting its venue ───────────────────────────
   //
-  // ASSERTED FIRST, DELIBERATELY. `runTest` rethrows, so whichever assertion in this block fires
-  // first is the message a developer reads. The exact-match on the status list below would also go
+  // ASSERTED FIRST, DELIBERATELY. The first failed assertion ends the test, so whichever one in this
+  // block fires first is the message a developer reads. The exact-match on the status list below would also go
   // red if `approved` were put back, but it would report "the list changed" — true, and the wrong
   // headline for money being reversed. This one has to be the one that speaks.
   //

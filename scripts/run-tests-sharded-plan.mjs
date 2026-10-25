@@ -102,11 +102,13 @@ export function collectProblems(results, total, window) {
     else if (result.code !== 0) problems.push(`shard ${result.index} exited ${result.code}`);
   }
 
-  // 🔴 COVERAGE IS ONLY ASKED WHEN NOTHING ALREADY FAILED. `tests/run-tests.ts` rethrows on the first
-  // failing test, so a shard with a red test stops there and its counts are legitimately short —
-  // reporting that as a coverage breach too would bury the one line that matters (which test failed)
-  // under two that are consequences of it, and would train a reader to discount this check. A failing
-  // shard is already a failing run; coverage is the question you ask when every shard passed.
+  // 🔴 COVERAGE IS ONLY ASKED WHEN NOTHING ALREADY FAILED. Since 26 Oct 2026 `tests/run-tests.ts`
+  // records a failing test and carries on, so a red shard's counts are usually whole — but a crash
+  // OUTSIDE a test (a throw at import, a top-level await that rejects, an OOM kill) still ends it
+  // short. Reporting that as a coverage breach too would bury the line that matters (which test
+  // failed, printed as FAIL by the shard itself) under consequences of it, and would train a reader
+  // to discount this check. A failing shard is already a failing run; coverage is the question you
+  // ask when every shard passed.
   if (problems.length > 0) return problems;
 
   const parsed = results.map((result) => ({ index: result.index, result: parseResult(result.out) }));
