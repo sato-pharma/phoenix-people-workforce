@@ -251,9 +251,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // `crm-agent-crm-ids-reconcile` is the only thing keeping the departed-agent CRM id cache current,
   // and the door never falls back to the live read, so a stopped job froze the cache silently.
   // `crm_agent_crm_ids_reconcile_run()` records success after each run
-  // (20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql). pg_cron fires in UTC; Cairo's whole-hour
-  // offset leaves `*/15` the same instants. NO watchingSince: a new declaration.
-  { slug: "phoenix-crm-agent-crm-ids-reconcile", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 1 * HOUR },
+  // (20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql). Hourly at minute 7 since the 2026-10-25
+  // load audit (20261026000000): every 15 minutes it was the second-heaviest statement on the database.
+  // The grace is two hours so an on-time run never reads late. pg_cron fires in UTC; Cairo's whole-hour
+  // offset leaves minute 7 the same instant. NO watchingSince: a new declaration.
+  { slug: "phoenix-crm-agent-crm-ids-reconcile", kind: "cron", schedule: "7 * * * *", graceSeconds: 2 * HOUR },
   // The other six pg_cron jobs, wired the same way by 20261023223000_pg_cron_jobs_report_heartbeats.sql
   // (owner's "Watch all six", 2026-10-23). Each `_run()` wrapper records success after the unchanged
   // function; the recovery snapshot's records FAIL when take_snapshots() reports a table it could not

@@ -46,7 +46,8 @@ before it can discard duplicates.
 * **`crm_agent_crm_ids_rebuild()`** empties and refills it THROUGH `_calc()`, so there is no second
   copy of the rule. Its `delete … where true` is load-bearing, not decoration: see below.
 * **`crm_agent_crm_ids_reconcile()`** compares the cache with `_calc()` with `except` both ways,
-  rebuilds on any difference and raises a warning. Scheduled `*/15 * * * *` as
+  rebuilds on any difference and raises a warning. Scheduled hourly at minute 7 (`7 * * * *`, every 15
+  minutes until 2026-10-25 — see "Hourly since the load audit" below) as
   `crm-agent-crm-ids-reconcile`, which since 2026-10-23 runs it through
   `crm_agent_crm_ids_reconcile_run()` so every run reports to the heartbeat register — see
   "Who watches the reconcile" below.
@@ -94,19 +95,34 @@ form measures nothing. The planner cannot push `= any(ids.a)` down, falls back t
 `ireports360_visits_visit_date_idx` and scans the whole table (1,035 ms). Only a literal array
 reproduces the live plan.
 
-## 🔴 The 15-minute reconcile is the staleness bound, not a safety net
+## 🔴 The hourly reconcile is the staleness bound, not a safety net
 
 `crm_person_by_hr_key_cache` hangs an AFTER STATEMENT trigger on `employees`, its one input, and
 its reconcile is a safety net. **This cache has no such trigger and cannot have one**:
-`crm_visits_unified` draws on ~10 input tables. A pair can be up to 15 minutes old.
+`crm_visits_unified` draws on ~10 input tables. A pair can be up to an hour old.
 
 That is safe for THIS read, and only because of what the read is for. A pair enters the set when a
 rep first records a visit under a CRM id. A departed rep records no new visits, so a departed
-person's pair set is historical and frozen. The only pair a 15-minute window can miss belongs to
-someone whose FIRST EVER visit landed in the last 15 minutes — who is, by construction, active, and
+person's pair set is historical and frozen. The only pair a one-hour window can miss belongs to
+someone whose FIRST EVER visit landed in the last hour — who is, by construction, active, and
 therefore not in the question being asked.
 
 **Re-check that argument before reusing this cache for anything else.**
+
+### Hourly since the load audit (2026-10-25)
+
+The production load audit after the 25 Oct 16:14 Cairo restart (the 2 GB database box, 11 restarts in
+14 days, all in working hours) found `crm_agent_crm_ids_reconcile_run()` the second-heaviest
+statement on the database: 30 runs in seven hours, 118 s in all, a 3.9 s mean and a 9.7 s peak. Every
+run recomputes `_calc()` — the full `distinct` over `crm_visits_unified` — to learn whether one
+pair changed, and almost always none had. The argument above holds for any window shorter than a
+departure, so `20261026000000_crm_agent_crm_ids_reconcile_hourly.sql` moved the job to `7 * * * *`:
+a quarter of the runs, and minute 7 keeps it off the top-of-hour pile-up. The command is still the
+reporting wrapper and no function body changed. The declaration in `JOB_SCHEDULES` moved with it,
+with a two-hour grace so an on-time run never reads late. Pinned by
+`tests/crm-agent-crm-ids-reconcile-heartbeat.test.ts` (the LAST migration to schedule the job must
+say `7 * * * *`, and the declaration must match it). Rollback: re-schedule `*/15 * * * *` with the
+same command and put the declaration back to a one-hour grace.
 
 ## Who watches the reconcile
 
@@ -124,7 +140,8 @@ frozen with every read still answering, quickly and wrongly.
 * **`crm_agent_crm_ids_reconcile_run()`** runs the unchanged reconcile, then records `success`
   with what it found (`in step: 0 differences against _calc()` or `rebuilt: N row(s)…`).
 * The slug **`phoenix-crm-agent-crm-ids-reconcile`** is declared in `JOB_SCHEDULES` on the same
-  `*/15 * * * *` with a one-hour grace, and in `docs/observability.md` as **in-house only** —
+  cadence as the job (`*/15 * * * *` with a one-hour grace then; `7 * * * *` with a two-hour grace
+  since 2026-10-25), and in `docs/observability.md` as **in-house only** —
   nothing pings Healthchecks for it. The 15-minute sweep judges it like every other job and pages
   in-app, Telegram and push when it stops.
 
