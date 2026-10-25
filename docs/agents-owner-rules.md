@@ -6735,7 +6735,7 @@ rename cannot slip the old shape back in.
 CNS a rep is ranked on CNS money alone. A board is never quoted without saying what it was
 filtered to.
 
-**The window is summed, then divided once.** Over a quarter or semester the covered actual and the
+**The window is summed, then divided once.** Over a quarter or semester all sales and the
 target are each summed across the window and divided a single time. Averaging the monthly ratios
 instead made 1200/1100 read 205% where the truth is 109%.
 
@@ -6743,6 +6743,14 @@ instead made 1200/1100 read 205% where the truth is 109%.
 gated per `lineCode|period`, so an unpublished month cannot put anybody first and the Monthly
 Closing stays the one source of truth (§4's golden rule). The test refuses the loader if it ever
 reads a table directly.
+
+**The numerator is ALL sales, the closing's own** (owner, 2026-10-25: *"make sure results here
+/sales/rankings is perfectly matching with the monthly closings"*). It shipped dividing COVERED sales
+(the product-rows that carry a target), so a rep who sold off-target products read lower than his
+closing — 7 of 240 rep-months drifted, worst CN0008 in August at 30.71% against the closing's 107.82%.
+The board, the portal rank badge (`rep-rank.ts`) and the performance card now divide every pound by
+the target, as `closing-matrix` does; the DM board already did. Pinned in `tests/sales-rankings.test.ts`
+and `tests/rep-rank-badges.test.ts` (a 100-on-target + 300-off-target rep reads 200%, never 50%).
 
 **"Out of N" is organogram seats**, vacancies included, and it goes blank the moment a title,
 region or name filter narrows the population — the seat model counts REP seats, so it would answer
