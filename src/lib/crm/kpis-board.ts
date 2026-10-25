@@ -200,6 +200,10 @@ export type KpiRepRow = {
    * can find a rep under a Regional or National Sales Manager, not only under his district manager. */
   managersAbove?: string[];
   jobTitle: string | null;
+  /** His hiring date as the employee record holds it (`employees.hire_date`, `YYYY-MM-DD`), so every
+   * KPI page and the XLSX export print it beside his name (owner, 2026-10-25). Null when the record
+   * has none or the hr id did not resolve. Optional so a fixture can leave it out. */
+  hireDate?: string | null;
 
   // ── Call rate (the selected period) ───────────────────────────────────────
   /** Sat–Wed days in the period, national holidays already removed. */
@@ -824,6 +828,7 @@ export function joinKpiRows(input: {
     managerName: null,
     managersAbove: [],
     jobTitle: null,
+    hireDate: null,
     workingDays,
     amVerified: 0,
     pmVerified: 0,
@@ -956,6 +961,7 @@ export function joinKpiRows(input: {
       row.managerName = identity.managerName;
       row.managersAbove = [...(identity.managersAbove ?? [])];
       row.jobTitle = identity.jobTitle;
+      row.hireDate = identity.hireDate ?? null;
       // The directory's display name is the nickname-aware one and is what the owner's
       // human-readable-names rule asks for; the CRM's agent name is the vendor's spelling. Prefer
       // the directory when it has something, but never blank out a name the CRM did supply.
@@ -991,6 +997,8 @@ export type KpiDirectoryEntry = {
    * itself never reads it. */
   managerHrId?: string | null;
   jobTitle: string | null;
+  /** `employees.hire_date`, `YYYY-MM-DD`. Optional so a fixture can leave it out. */
+  hireDate?: string | null;
 };
 
 /**
@@ -1276,6 +1284,7 @@ export async function getKpisBoard(input: {
     managersAbove: managersAboveByHrId.get(canonicalHrIdKey(employee.hrId) ?? "") ?? [],
     managerHrId: employee.managerHrId?.trim() || null,
     jobTitle: employee.jobTitle?.trim() || null,
+    hireDate: employee.hireDate?.trim() || null,
   }));
 
   const allInScope = joinKpiRows({

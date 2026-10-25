@@ -238,7 +238,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
       <div className="divide-y divide-slate-100 md:hidden">
         {reps.map((line) => (
           <div className="px-4 py-4" key={line.key}>
-            <KpiRepName areaName={line.areaName} jobTitle={line.jobTitle} lineName={line.lineName} name={line.repName} />
+            <KpiRepName areaName={line.areaName} hireDate={line.hireDate} jobTitle={line.jobTitle} lineName={line.lineName} name={line.repName} />
             <div className="mt-2 grid grid-cols-3 gap-2">
               {columns.map((column, index) => (
                 <div
@@ -280,7 +280,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
             {reps.map((line) => (
               <tr key={line.key}>
                 <td className={TD}>
-                  <KpiRepName areaName={line.areaName} jobTitle={line.jobTitle} lineName={line.lineName} name={line.repName} />
+                  <KpiRepName areaName={line.areaName} hireDate={line.hireDate} jobTitle={line.jobTitle} lineName={line.lineName} name={line.repName} />
                 </td>
                 {columns.map((column, index) => (
                   <td className={`${PERIOD_TD}${cellTint(column)}`} key={column.key}>

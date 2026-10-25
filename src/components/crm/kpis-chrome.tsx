@@ -36,6 +36,7 @@
 import Link from "next/link";
 
 import { KPI_BAND_SHORT, type KpiBand } from "@/lib/crm/kpis-filters";
+import { utcDate } from "@/lib/format/cairo-datetime";
 
 // ── Tone ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -398,18 +399,23 @@ export function KpiSortableTh({
  */
 export function KpiRepName({
   areaName,
+  hireDate,
   jobTitle,
   lineName,
   name,
   rank,
 }: {
   areaName?: string | null;
+  /** `employees.hire_date` (`YYYY-MM-DD`) — printed as "Hired 12 Mar 2025" (owner, 2026-10-25). */
+  hireDate?: string | null;
   jobTitle?: string | null;
   lineName?: string | null;
   name: string;
   rank?: number;
 }) {
   const where = [lineName, areaName].filter((part): part is string => Boolean(part?.trim())).join(" · ");
+  // A date-only value, so the UTC formatter — the same bytes on the server and in every browser.
+  const hired = hireDate && /^\d{4}-\d{2}-\d{2}/.test(hireDate) ? utcDate(hireDate.slice(0, 10)) : null;
   return (
     <span className="flex items-start gap-2">
       {rank != null ? <KpiRank rank={rank} /> : null}
@@ -421,6 +427,9 @@ export function KpiRepName({
         {where ? <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where}</span> : null}
         {!where && jobTitle ? (
           <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{jobTitle}</span>
+        ) : null}
+        {hired && hired !== "—" ? (
+          <span className="block text-phx-2xs leading-4 text-slate-500 tabular-nums sm:text-phx-3xs">Hired {hired}</span>
         ) : null}
       </span>
     </span>

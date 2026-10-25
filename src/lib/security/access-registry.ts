@@ -832,6 +832,9 @@ export const accessRegistry = [
   // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
   // roster guarantee is a read guarantee, not a write one.
   sessionApi({ methods: ["POST"], pattern: "/api/crm/early-birds/sync", permission: { resource: "crm_visits", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // The KPIs board as XLSX (owner, 2026-10-25). The KPIs pages' own gate — canSeeDoctorCoverage plus
+  // crm_visits:read — and getKpisBoard's scope decides whose rows the file holds.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/kpis-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
   // Doctor Coverage visit norms (visits per month, per contact kind and grade). `crm_visits:update`
   // is held ONLY by Super Admin and SFE Manager — it exists for this policy singleton alone; the
   // CRM visit mirror stays read-only for everyone. The CEO account is deliberately excluded, being
