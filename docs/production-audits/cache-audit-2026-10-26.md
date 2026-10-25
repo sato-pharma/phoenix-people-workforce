@@ -13,6 +13,16 @@ was serving at 00:29 Cairo on 26 Oct. Nothing was changed.
   - the backup schemas are kept, on the owner's word.
 - Each finding below carries its own **Status** line. Where the fix differs from the one the audit proposed,
   the line says so.
+- **Finding 10 turned out to be a risk on paper only** — checked live, a signed download never carried the
+  one-year cache (see its Status line).
+- **One consequence of the P0 fix:** a draft or offline entry saved before the fix went live (01:47 Cairo on
+  26 Oct) cannot say whose it is, so it is never sent.
+  - An old trip-claim draft, offline claim included, is deleted the first time the claim screen opens
+    (`mobile-outstation-wizard.tsx`). So are the old Contact HR and expense-decision drafts.
+  - Old offline leave requests are deleted when the leave form opens (`vacation-request-form.tsx`).
+  - Old offline marketing visits are not sent, and the screen counts them as expired
+    (`marketing-validation-workspace.tsx`).
+  - Only the marketing screen tells the person. The server cannot see whether any old entry existed.
 
 ## How the caches work here (the facts behind every verdict)
 
@@ -155,8 +165,13 @@ was serving at 00:29 Cairo on 26 Oct. Nothing was changed.
     - This rests on Supabase's documented header behaviour; it was not fetched live, because that needs credentials.
     - Fix: `no-store` or a short value.
     - **Status: fixed in [#6476], with a short value.** Sick notes, leave attachments, hiring documents, and
-      car and marketing evidence are now uploaded with a 5-minute cache. A file uploaded before the change
-      keeps the header it was stored with.
+      car and marketing evidence are now uploaded with a 5-minute cache.
+    - **Checked live after the fix (26 Oct, 02:46 Cairo): the year never reached a browser.** A signed
+      download of a leave attachment uploaded on 15 Oct with `max-age=31536000` came back with no
+      `Cache-Control` and `Expires` set to the signed link's own expiry (60 s after the request, for a 60 s
+      link). Supabase caps a signed download at its link's lifetime, so the 650 private files still stored
+      with one year (351 car evidence, 232 marketing evidence, 46 hiring documents, 15 leave attachments,
+      6 pharmacy licences) need no re-upload. The finding was a risk on paper only; the fix stays.
 11. **The employee photo is cached 24 h under unversioned links.**
     - The route is `app/api/employees/[hrId]/photo/route.ts:93`.
     - Callers with bare links:
