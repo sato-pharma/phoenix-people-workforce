@@ -91,6 +91,7 @@ type ReportRow = {
   areaName: string | null;
   lineName: string | null;
   jobTitle: string | null;
+  hireDate: string | null;
 };
 
 /**
@@ -126,6 +127,7 @@ function rowsFor(
         areaName: rep?.areaName ?? null,
         lineName: rep?.lineName ?? null,
         jobTitle: rep?.jobTitle ?? null,
+        hireDate: rep?.hireDate ?? null,
       };
     });
 }
@@ -223,7 +225,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
         {rows.map((row, index) => (
           <tr key={row.repKey ?? `${row.repName}-${index}`}>
             <td className={TD}>
-              <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
+              <KpiRepName areaName={row.areaName} hireDate={row.hireDate} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
               <span className={`mt-0.5 block ${CAPTION}`}>
                 {row.block.applicable
                   ? `${row.block.coverage.panel} on their list`
@@ -248,7 +250,7 @@ function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
       <div className="divide-y divide-slate-100 border-t border-slate-100">
         {rows.map((row, index) => (
           <div className="px-4 py-3" key={row.repKey ?? `${row.repName}-${index}`}>
-            <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
+            <KpiRepName areaName={row.areaName} hireDate={row.hireDate} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
             <p className={`mt-0.5 ${CAPTION}`}>
               {row.block.applicable ? `${row.block.coverage.panel} on their list` : "No list of this kind"}
             </p>

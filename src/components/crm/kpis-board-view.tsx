@@ -1,3 +1,4 @@
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { Fragment } from "react";
 
@@ -338,6 +339,20 @@ function hrefWith(
 
 function sortHref(context: ViewContext, field: KpiSortField): string {
   return hrefWith(context, { filters: nextKpiSort(context.board.filters, field) });
+}
+
+/**
+ * The workbook export's address: the board's own month, period and filters through the one query
+ * builder, so the file can never hold a wider (or different) set of reps than the screen. The Weekly
+ * tab's board is a span, not a picked period, so it exports the whole month — as leaving that tab does.
+ */
+function kpisExportHref(board: KpisBoard, weekly: boolean): string {
+  return `/api/crm/kpis-export?${buildKpisQuery({
+    month: board.month,
+    period: weekly ? "month" : board.range.periodKey,
+    tab: "summary",
+    filters: board.filters,
+  })}`;
 }
 
 // ── The headline ──────────────────────────────────────────────────────────────────────────────
@@ -916,6 +931,7 @@ function RepCell({
     <td className={TD}>
       <KpiRepName
         areaName={row.areaName}
+        hireDate={row.hireDate}
         jobTitle={row.jobTitle}
         lineName={row.lineName}
         name={row.repName}
@@ -1990,6 +2006,7 @@ function RepCard({
     <div className="px-4 py-3">
       <KpiRepName
         areaName={row.areaName}
+        hireDate={row.hireDate}
         jobTitle={row.jobTitle}
         lineName={row.lineName}
         name={row.repName}
@@ -2878,7 +2895,14 @@ function SessionCard({
   const figures = sessionFigures(row, board, session);
   return (
     <div className="px-4 py-3">
-      <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} rank={rank} />
+      <KpiRepName
+        areaName={row.areaName}
+        hireDate={row.hireDate}
+        jobTitle={row.jobTitle}
+        lineName={row.lineName}
+        name={row.repName}
+        rank={rank}
+      />
       <div className="mt-2.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className={`text-lg font-black tabular-nums ${toneOf(figures.band).text}`}>{rate(figures.perDay)}</span>
@@ -3318,9 +3342,25 @@ export function KpisBoardView({
                 {(phoenix ? KPI_TAB_HINT_PHOENIX[tab] : undefined) ?? KPI_TAB_HINT[tab]}
               </p>
             </div>
-            <p className={CAPTION}>
-              {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
-            </p>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <p className={CAPTION}>
+                {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
+              </p>
+              {/* The board as a house-identity workbook (owner, 2026-10-25) — the same month, period
+                  and filters as on screen, so the file is what the reader is looking at. A plain link,
+                  so it stays a server component; the route re-checks the gate and the scope. */}
+              {board.reps.length > 0 ? (
+                <a
+                  className="inline-flex h-9 items-center gap-2 whitespace-nowrap border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
+                  download
+                  href={kpisExportHref(board, weekly)}
+                  title="Download this board as a styled Excel workbook"
+                >
+                  <Download aria-hidden className="h-3.5 w-3.5" />
+                  Export XLSX
+                </a>
+              ) : null}
+            </div>
           </div>
 
           {tab === "call-rate" ? <CallRateViewSwitch context={context} /> : null}

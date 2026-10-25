@@ -430,6 +430,8 @@ export type KpiTrendRepLine = {
   lineName: string | null;
   areaName: string | null;
   jobTitle: string | null;
+  /** `employees.hire_date`, `YYYY-MM-DD` — printed beside his name. */
+  hireDate: string | null;
   /** One cell per column, in column order. Null when he is not on that column's board at all. */
   cells: Array<KpiTrendCell | null>;
 };
@@ -569,6 +571,7 @@ export async function getKpisTrend(input: {
       lineName: totalRow.lineName,
       areaName: totalRow.areaName,
       jobTitle: totalRow.jobTitle,
+      hireDate: totalRow.hireDate ?? null,
       cells: [...pieceCells, kpiTrendCell(totalSums)],
     };
   });
