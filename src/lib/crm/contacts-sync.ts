@@ -27,6 +27,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeContactGrade } from "@/lib/crm/sync";
+import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { CRM_CONTACTS_TABLE, CRM_PLAN_ENTRIES_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import {
   crmWebFetchContacts,
@@ -198,6 +199,60 @@ export async function loadCrmContactSyncTargets(): Promise<{
   if (error) throw new Error(`Could not read the employee roster: ${error.message}`);
 
   const hrIds = (employees ?? []).map((row) => row.hr_id as string);
+  const agentByHrId = await resolveAgentCrmIdsByHr(hrIds);
+
+  const targets: CrmContactSyncTarget[] = [];
+  const unresolved: { hrId: string; name: string }[] = [];
+  for (const employee of employees ?? []) {
+    const hrId = employee.hr_id as string;
+    const agentCrmId = agentByHrId.get(hrId);
+    if (agentCrmId == null) {
+      unresolved.push({ hrId, name: (employee.full_name as string) ?? hrId });
+      continue;
+    }
+    targets.push({ agentCrmId, hrId });
+  }
+  targets.sort((left, right) => left.agentCrmId - right.agentCrmId);
+  return { targets, unresolved };
+}
+
+const AGENT_CRM_IDS_BY_HR_RPC = "phx_crm_agent_crm_ids_by_hr";
+
+/**
+ * Every HR id's CRM agent id, the highest across the visit and plan-entry mirrors, in ONE statement.
+ *
+ * 2026-10-25 production load audit: the chunked read below scanned all 198,723 plan entries per
+ * chunk (124 calls at 229 ms), and each chunk matched about half the table, of which PostgREST
+ * returned only its first 1,000 rows. The function answers from two index-only scans as one jsonb
+ * value, so no row cap applies. See
+ * supabase/migrations/20261025233000_crm_plan_entries_agent_hr_id_index.sql.
+ */
+export async function resolveAgentCrmIdsByHr(hrIds: string[]): Promise<Map<string, number>> {
+  if (hrIds.length === 0) return new Map();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc(AGENT_CRM_IDS_BY_HR_RPC, { p_hr_ids: hrIds });
+  if (error) {
+    if (isMissingCrmRpcError(error)) return resolveAgentCrmIdsByHrInChunks(hrIds);
+    throw new Error(`Could not resolve CRM agent ids: ${error.message}`);
+  }
+  return agentCrmIdsFromTuples((Array.isArray(data) ? data : []) as [string, number | null][]);
+}
+
+/** The function's [hr_id, agent_crm_id] pairs as the map the sync reads; highest id wins. Pure; exported for its test. */
+export function agentCrmIdsFromTuples(tuples: [string, number | null][]): Map<string, number> {
+  const agentByHrId = new Map<string, number>();
+  for (const [hrId, agentId] of tuples) {
+    if (!hrId || agentId == null) continue;
+    const id = Number(agentId);
+    const current = agentByHrId.get(hrId);
+    if (current == null || id > current) agentByHrId.set(hrId, id);
+  }
+  return agentByHrId;
+}
+
+/** The pre-function read, kept only for a database that has not got `phx_crm_agent_crm_ids_by_hr` yet. */
+async function resolveAgentCrmIdsByHrInChunks(hrIds: string[]): Promise<Map<string, number>> {
+  const supabase = getSupabaseAdmin();
   const agentByHrId = new Map<string, number>();
   for (const table of [CRM_VISITS_TABLE, CRM_PLAN_ENTRIES_TABLE] as const) {
     for (let index = 0; index < hrIds.length; index += DELETE_CHUNK) {
@@ -219,20 +274,7 @@ export async function loadCrmContactSyncTargets(): Promise<{
       }
     }
   }
-
-  const targets: CrmContactSyncTarget[] = [];
-  const unresolved: { hrId: string; name: string }[] = [];
-  for (const employee of employees ?? []) {
-    const hrId = employee.hr_id as string;
-    const agentCrmId = agentByHrId.get(hrId);
-    if (agentCrmId == null) {
-      unresolved.push({ hrId, name: (employee.full_name as string) ?? hrId });
-      continue;
-    }
-    targets.push({ agentCrmId, hrId });
-  }
-  targets.sort((left, right) => left.agentCrmId - right.agentCrmId);
-  return { targets, unresolved };
+  return agentByHrId;
 }
 
 export function rowFromContact(

@@ -62,6 +62,7 @@ import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-ins
 import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
+import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_CONTACT_ROSTER } from "@/lib/crm/shared-windows";
 import {
@@ -580,67 +581,101 @@ const CONTACT_ROSTER_LIMITS = { maxEntries: 1, maxRowsTotal: 60_000 };
  * Every contact on every rep's list today, reduced to the fields identity matching needs.
  *
  * READ FROM PHOENIX'S OWN LIST — the open periods of `crm_contact_assignments`, with the contact's
- * name, phone, speciality and region embedded from `crm_contacts` — never from the vendor scrape,
- * which stops moving the day the sweep is switched off.
+ * name, phone, speciality and region from `crm_contacts` — never from the vendor scrape, which stops
+ * moving the day the sweep is switched off.
  *
  * A COMPANY-WIDE READ IS THE POINT, and it is safe here because nothing from it reaches the screen
  * except a rep's NAME on a row the viewer can already see. Sharing cannot be detected from one rep's
  * own list by construction: the other half of the pair is, by definition, on somebody else's.
  *
- * Deliberately NOT `unstable_cache`d. At roughly 9,800 rows this sits close enough to the 2 MB data
- * cache entry limit to be a hazard, and exceeding that limit throws only in dev and kills the dev
- * server outright. A few narrow columns fetched fresh cost far less than that failure mode.
- *
- * SHARED IN MEMORY FOR A MINUTE instead (25 Oct 2026). Fetched fresh, it was the heaviest read on the
- * database: 13,095 open rows as 14 parallel pages for every rep opened, about 168 full reads in seven
- * hours, on the 2 GB box that restarted eleven times in two weeks under working-day load. One copy is
- * kept in process (`getOrLoadShared`, no data-cache entry limit), concurrent opens share one load, and
- * an applied doctor-list change drops it at once (`refreshSharedContactRoster`). The only thing it
- * feeds is the "also on another rep's list" note, so a minute behind the hourly refresh costs nothing.
+ * 🔴 ONE STATEMENT, AND A MINUTE-OLD COPY (2026-10-25 production load audit). This read was 28% of all
+ * database time: every Reps List rep page ran it, as fourteen parallel OFFSET pages with the contact
+ * EMBEDDED — and an embed is a lateral join run for every row the OFFSET throws away, so the whole read
+ * cost ~3.1 s of database time (222 ms a page, 2,357 pages in seven hours). `phx_crm_contact_roster`
+ * returns the same rows from one hash join (~180 ms), and the in-process shared copy
+ * (`getOrLoadShared`, 60 s, the freshness the owner chose for display reads on 2026-10-16) means a
+ * manager stepping from rep to rep pays it once a minute, not once a page; an applied list change
+ * drops it at once (`refreshSharedContactRoster`). It is a DISPLAY read — the
+ * "also on X's list" line — and nothing that decides money, an approval or a notification reads it.
+ * The copy is in memory, never `unstable_cache`: at ~13,000 rows it is over the 2 MB data-cache entry
+ * limit that throws in dev. The page walk stays only as the fallback for a database without the
+ * function (PGRST202).
  */
 export async function loadContactRoster(): Promise<RosterEntry[]> {
-  const { rows } = await getOrLoadShared(CRM_CONTACT_ROSTER, "open", readRoster, CONTACT_ROSTER_LIMITS);
+  const { rows } = await getOrLoadShared(CRM_CONTACT_ROSTER, "open", readContactRoster, CONTACT_ROSTER_LIMITS);
   return rows ?? [];
+}
 
-  async function readRoster(): Promise<RosterEntry[] | null> {
-    const supabase = getSupabaseAdmin();
-    const { count, error: countError } = await supabase
-      .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-      .select("id", { count: "exact", head: true })
-      .is("effective_to", null);
-    if (countError) {
-      if (isCrmSchemaMissingError(countError)) return null;
-      throw new Error(`Could not size the contact roster: ${countError.message}`);
-    }
+const CONTACT_ROSTER_RPC = "phx_crm_contact_roster";
 
-    // Counted first, then every page requested at once. Sequential paging over ten pages is ten round
-    // trips on a board a human is waiting for; the count makes the fan-out exact rather than a guess.
-    // Ordered by the assignment `id` — unique, so no page repeats or skips a row.
-    const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
-    const results = await Promise.all(
-      Array.from({ length: pages }, (_unused, page) =>
-        supabase
-          .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-          .select(`id, contact_crm_id, agent_crm_id, agent_hr_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
-          .is("effective_to", null)
-          .order("id", { ascending: true })
-          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
-      ),
-    );
+/** One roster row as the function returns it: [id, contact_crm_id, agent_crm_id, agent_hr_id, name, phone, speciality, crm_region_name]. */
+export type RosterTuple = [number, number, number | null, string | null, string | null, string | null, string | null, string | null];
 
-    const roster: RosterEntry[] = [];
-    for (const { data, error } of results) {
-      if (error) {
-        if (isCrmSchemaMissingError(error)) return null;
-        throw new Error(`Could not read the contact roster: ${error.message}`);
-      }
-      for (const row of (data ?? []) as unknown as RosterAssignmentRecord[]) {
-        const entry = toRosterEntry(row);
-        if (entry) roster.push(entry);
-      }
-    }
-    return roster;
+/** The function's tuple as the record the page walk's embed returned. Pure; exported for its test. */
+export function rosterRecordFromTuple(tuple: RosterTuple): RosterAssignmentRecord {
+  const [, contactCrmId, agentCrmId, agentHrId, name, phone, speciality, crmRegionName] = tuple;
+  return {
+    agent_crm_id: agentCrmId == null ? null : Number(agentCrmId),
+    agent_hr_id: agentHrId,
+    contact: { crm_region_name: crmRegionName, name, phone, speciality },
+    contact_crm_id: Number(contactCrmId),
+  };
+}
+
+/** null = the CRM schema is missing here (never stored); otherwise every roster entry. */
+async function readContactRoster(): Promise<RosterEntry[] | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc(CONTACT_ROSTER_RPC);
+  if (error) {
+    if (isMissingCrmRpcError(error)) return readContactRosterByPages();
+    if (isCrmSchemaMissingError(error)) return null;
+    throw new Error(`Could not read the contact roster: ${error.message}`);
   }
+  const roster: RosterEntry[] = [];
+  for (const tuple of (Array.isArray(data) ? data : []) as RosterTuple[]) {
+    const entry = toRosterEntry(rosterRecordFromTuple(tuple));
+    if (entry) roster.push(entry);
+  }
+  return roster;
+}
+
+/** The pre-function read, kept only for a database that has not got `phx_crm_contact_roster` yet. */
+async function readContactRosterByPages(): Promise<RosterEntry[] | null> {
+  const supabase = getSupabaseAdmin();
+  const { count, error: countError } = await supabase
+    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .is("effective_to", null);
+  if (countError) {
+    if (isCrmSchemaMissingError(countError)) return null;
+    throw new Error(`Could not size the contact roster: ${countError.message}`);
+  }
+
+  // Ordered by the assignment `id` — unique, so no page repeats or skips a row.
+  const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const results = await Promise.all(
+    Array.from({ length: pages }, (_unused, page) =>
+      supabase
+        .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+        .select(`id, contact_crm_id, agent_crm_id, agent_hr_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
+        .is("effective_to", null)
+        .order("id", { ascending: true })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+    ),
+  );
+
+  const roster: RosterEntry[] = [];
+  for (const { data, error } of results) {
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return null;
+      throw new Error(`Could not read the contact roster: ${error.message}`);
+    }
+    for (const row of (data ?? []) as unknown as RosterAssignmentRecord[]) {
+      const entry = toRosterEntry(row);
+      if (entry) roster.push(entry);
+    }
+  }
+  return roster;
 }
 
 /**
