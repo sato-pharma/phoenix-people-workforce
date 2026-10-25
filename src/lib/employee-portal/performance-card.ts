@@ -86,7 +86,7 @@ export type PerformanceCardData = {
   fromPeriod: string;
   toPeriod: string;
   windowLabel: string;
-  /** Cumulative achievement over the window: covered actual ÷ target, summed then divided ONCE. */
+  /** Cumulative achievement over the window: ALL sales ÷ target (the closing's rule), summed then divided ONCE. */
   achievementPercent: number;
   /** Null when he is outside both bands — the card then carries the figure and the chart alone. */
   standing: RepRankStanding | null;
@@ -171,12 +171,14 @@ export async function loadPerformanceCard(hrId: string): Promise<PerformanceCard
     fromPeriod,
     toPeriod,
     windowLabel: windowLabel(fromPeriod, toPeriod),
-    achievementPercent: summary.achievementValue * 100,
+    // ALL sales ÷ target, as the closing and the rank badge printed on this card divide — never
+    // the summary's covered ratio, which reads lower for a rep selling an untargeted product.
+    achievementPercent: (summary.actualValue / summary.targetValue) * 100,
     standing,
     months: points.map((point) => ({
       period: point.period,
       label: MONTH_NAMES[Number(point.period.slice(5, 7)) - 1] ?? point.period,
-      achievementPercent: point.achievementValue != null ? point.achievementValue * 100 : 0,
+      achievementPercent: (point.actualValue / point.targetValue) * 100,
     })),
   };
 }

@@ -14,10 +14,12 @@
 //
 // Five more things are load-bearing.
 //
-//   1. IT RANKS THE SAME ARITHMETIC THE REST OF THE SYSTEM USES. Achievement is covered-actual
-//      ÷ target off the SoS Monthly Closing engine — the same as /sales-vs-target, the closing
-//      matrix and every manager's leaderboard (Rule #1), ranked achievement then sales like
-//      every one of them. A second definition of "achievement" here is how a rep's badge would
+//   1. IT RANKS THE MONTHLY CLOSING'S OWN ARITHMETIC. Achievement is ALL sales ÷ target off the
+//      SoS Monthly Closing engine — what `closingAchievement` divides, and what his portal
+//      overview's achievement already divides — the same as /sales-vs-target and the Rankings
+//      board his manager reads (Rule #1), ranked achievement then sales like every one of them.
+//      It divided COVERED sales until 2026-10-25, which is how a badge read 21.76% beside a
+//      closing of 25.90%. A second definition of "achievement" here is how a rep's badge would
 //      start disagreeing with the boards his own manager reads.
 //
 //   2. THE WINDOW IS NAMED ON THE BADGE. A rank means nothing without the period it was won
@@ -107,17 +109,17 @@ function hrKey(value: string | null | undefined): string {
   return String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-type Totals = { covered: number; target: number; full: number };
+type Totals = { target: number; full: number };
 
+// Every pound counts, targeted product or not — the closing divides all sales (note 1).
 function addTo(totals: Totals, row: AchievementRow): void {
   const target = row.targetValue ?? 0;
   totals.target += target;
   totals.full += row.actualValue;
-  if (row.hasTarget) totals.covered += row.actualValue;
 }
 
 function emptyTotals(): Totals {
-  return { covered: 0, target: 0, full: 0 };
+  return { target: 0, full: 0 };
 }
 
 type Standing = { key: string; totals: Totals };
@@ -136,8 +138,8 @@ function placeOn(board: readonly Standing[], ownKey: string, establishment: Seat
   const ranked = board
     .filter((entry) => entry.totals.target > 0)
     .sort((a, b) => {
-      const left = a.totals.covered / a.totals.target;
-      const right = b.totals.covered / b.totals.target;
+      const left = a.totals.full / a.totals.target;
+      const right = b.totals.full / b.totals.target;
       return right - left || b.totals.full - a.totals.full;
     });
   const index = ranked.findIndex((entry) => entry.key === ownKey);
@@ -151,7 +153,7 @@ function placeOn(board: readonly Standing[], ownKey: string, establishment: Seat
     outOf: seats,
     ranked: ranked.length,
     vacant: establishment && establishment.seats > 0 ? establishment.vacant : 0,
-    achievementPercent: (own.totals.covered / own.totals.target) * 100,
+    achievementPercent: (own.totals.full / own.totals.target) * 100,
   };
 }
 

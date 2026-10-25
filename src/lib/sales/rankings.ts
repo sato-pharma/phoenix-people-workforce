@@ -9,11 +9,14 @@
 //
 // Five things are load-bearing, and four of them are the same four that govern the rep's badge:
 //
-//   1. IT RANKS THE ARITHMETIC THE REST OF THE SYSTEM USES. Achievement is covered-actual ÷
-//      target off the SoS Monthly Closing engine, ranked by achievement and then by full sales —
-//      the same comparator as /sales-vs-target, the closing matrix and the rep's own badge. A
-//      second definition of "achievement" here is how a manager's board would start disagreeing
-//      with the rep's own screen.
+//   1. IT RANKS THE MONTHLY CLOSING'S OWN ARITHMETIC. Achievement is ALL sales ÷ target off the
+//      SoS Monthly Closing engine — what `closingAchievement` divides (owner ruling 2026-09-05,
+//      "THE OLD CLOSING IS THE CORRECT ONE") — ranked by achievement and then by full sales, the
+//      same as the District Manager board below, /sales-vs-target and the rep's own badge. It
+//      divided COVERED sales (only the money on a targeted product) until 2026-10-25, and that
+//      put three reps' months off the published closing by up to 77 points (CN0008 August read
+//      30.71% against the closing's 107.82%). A second definition of "achievement" here is how a
+//      manager's board starts disagreeing with the closing it reports.
 //
 //   2. THE WINDOW IS SUMMED, THEN DIVIDED ONCE — never an average of monthly ratios. A 10%
 //      month and a 400% month do not make 205%, and averaging is how a quarter drifts away
@@ -236,10 +239,8 @@ export type RankingEntry = {
   hasPhoto: boolean;
   rank: number;
   achievementPercent: number;
-  /** Full sales, targeted or not — the tiebreaker, and the money column. */
+  /** Full sales, targeted or not — the numerator of the achievement, the tiebreaker, and the money column. */
   salesValue: number;
-  /** Sales that had a target to be measured against — the numerator of the achievement. */
-  coveredValue: number;
   targetValue: number;
   /** Where the same person stood in the comparison window, and by how much he moved. */
   priorRank: number | null;
@@ -279,22 +280,22 @@ export type RankingBoards = {
   vacant: number | null;
 };
 
-type Totals = { covered: number; target: number; full: number };
+type Totals = { target: number; full: number };
 
 function emptyTotals(): Totals {
-  return { covered: 0, target: 0, full: 0 };
+  return { target: 0, full: 0 };
 }
 
+// Every pound counts, targeted product or not — the closing divides all sales (note 1).
 function addTo(totals: Totals, row: AchievementRow): void {
   totals.target += row.targetValue ?? 0;
   totals.full += row.actualValue;
-  if (row.hasTarget) totals.covered += row.actualValue;
 }
 
 /** Achievement first, full sales as the tiebreaker — the comparator every board in the app uses. */
 function byStanding(a: { totals: Totals }, b: { totals: Totals }): number {
-  const left = a.totals.covered / a.totals.target;
-  const right = b.totals.covered / b.totals.target;
+  const left = a.totals.full / a.totals.target;
+  const right = b.totals.full / b.totals.target;
   return right - left || b.totals.full - a.totals.full;
 }
 
@@ -391,9 +392,8 @@ function toEntries(
         regionName: person?.regionName ?? "",
         hasPhoto: person?.hasPhoto ?? false,
         rank,
-        achievementPercent: (entry.totals.covered / entry.totals.target) * 100,
+        achievementPercent: (entry.totals.full / entry.totals.target) * 100,
         salesValue: entry.totals.full,
-        coveredValue: entry.totals.covered,
         targetValue: entry.totals.target,
         priorRank,
         // Positive is UP the board: 3rd from 8th is +5, the way the badge reads it.
@@ -612,7 +612,6 @@ function districtManagerBoard(options: {
       rank,
       achievementPercent: (node.current.achievementValue ?? 0) * 100,
       salesValue: node.current.actualValue,
-      coveredValue: node.current.gradedActualValue,
       targetValue: node.current.targetValue,
       priorRank,
       trend: priorRank == null ? null : priorRank - rank,

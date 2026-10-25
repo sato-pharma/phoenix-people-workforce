@@ -21,10 +21,10 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  * Six things can go wrong silently here, and each one is pinned below.
  *
- *  1. THE BOARD COULD DISAGREE WITH THE CLOSING IT REPORTS. Achievement is covered-actual ÷ target
- *     off the Monthly Closing engine (AGENTS.md §4). A query of its own in the loader, or ranking
- *     on full sales instead of the covered figure, is how a manager's board starts contradicting
- *     the rep's own badge and the closing matrix at once.
+ *  1. THE BOARD COULD DISAGREE WITH THE CLOSING IT REPORTS. Achievement is ALL sales ÷ target off
+ *     the Monthly Closing engine — what the published closing divides (AGENTS.md §4). A query of
+ *     its own in the loader, or dividing only the money on a targeted product (the covered figure
+ *     it used until 2026-10-25), is how a manager's board starts contradicting the closing.
  *  2. A WINDOW COULD AVERAGE ITS MONTHS. A quarter is SUMMED and divided once; averaging three
  *     monthly ratios lets a tiny month outweigh a large one, and the quarter then disagrees with
  *     the three months it is made of.
@@ -193,6 +193,29 @@ export function runSalesRankingsTests() {
     Math.round(summed.overall[0].achievementPercent),
     109,
     "a window is summed and divided once (1200/1100), never averaged across its months (205%)",
+  );
+
+  // ── 1. All sales ÷ target — the closing's own division ───────────────────────────────────────
+  // B-1 sells 100 on his one targeted product (target 200) and 300 on a product nobody gave a
+  // target. The published closing divides every pound: 400/200 = 200%. The covered rule this
+  // board used until 2026-10-25 read 50% and ranked him under B-2 — the production shape (CN0008
+  // August: 30.71% on the board, 107.82% on the closing).
+  const mixed = boardsOf({
+    rows: [
+      row({ repHrId: "B-1", actualValue: 100, targetValue: 200 }),
+      row({ repHrId: "B-1", actualValue: 300, targetValue: null }),
+      row({ repHrId: "B-2", actualValue: 150, targetValue: 100 }),
+    ],
+  });
+  assert.equal(
+    Math.round(mixed.overall.find((entry) => entry.hrId === "B-1")?.achievementPercent ?? 0),
+    200,
+    "a rep's achievement is ALL his sales ÷ target (400/200), as the closing divides — never the targeted slice alone (50%)",
+  );
+  assert.deepEqual(
+    mixed.overall.map((entry) => entry.hrId),
+    ["B-1", "B-2"],
+    "ranked on the closing's percentage: 200% stands above 150%",
   );
 
   // ── 3. The published gate, per line ──────────────────────────────────────────────────────────

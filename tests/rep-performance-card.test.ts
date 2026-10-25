@@ -323,6 +323,10 @@ export function runRepPerformanceCardTests() {
     `${CARD}: the window is summed then divided once — the repo's one implementation of that rule`,
   );
   assert.ok(
+    !/summary.achievementValue * 100/.test(card) && !/point.achievementValue != null ? point.achievementValue * 100/.test(card),
+    `${CARD}: the card's percentages are ALL sales ÷ target, as the closing and the rank badge on it divide — never the covered ratio`,
+  );
+  assert.ok(
     /publishedPointsOnly/.test(card) && /targetValue > 0/.test(card),
     `${CARD}: published months with a target only — an unscorable month is not a bar on a keepsake`,
   );

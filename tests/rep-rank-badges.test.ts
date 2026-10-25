@@ -19,9 +19,10 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  * Four things can go wrong silently, and each is pinned below.
  *
- *  1. THE RANK COULD DISAGREE WITH THE PERCENTAGE PRINTED ABOVE IT. Achievement is covered-actual ÷
- *     target off the closing engine (Rule #1). Re-deriving it, or ranking on full sales instead of
- *     the covered figure, puts a rank on the page that the rep's own tile contradicts.
+ *  1. THE RANK COULD DISAGREE WITH THE PERCENTAGE PRINTED ABOVE IT. Achievement is ALL sales ÷
+ *     target off the closing engine (Rule #1) — what the published closing and his portal overview
+ *     divide. Re-deriving it, or dividing only the targeted slice (the covered rule it used until
+ *     2026-10-25), puts a rank on the page that the closing contradicts.
  *  2. THE WINDOW COULD SILENTLY NARROW TO ONE MONTH. Owner, 2026-10-03, correcting the first
  *     build: *"do not calculate only August, calculate up to date — example for now 7 and 8, when
  *     9 closing is published then 7 8 9."* So the board is every PUBLISHED month summed and
@@ -93,8 +94,8 @@ export function runRepRankBadgesTests() {
   assert.equal(LINE_RANK_BADGE_LIMIT, 7, "the line badge is the top 7 — the owner's number");
 
   // ── 2. The ranking itself ────────────────────────────────────────────────────────────────────
-  // Achievement descending, and it is the COVERED actual over the target, never full sales: B-2
-  // outsells B-1 and is still behind it, because achievement is what the badge ranks.
+  // Achievement descending, never raw sales: B-2 outsells B-1 and is still behind it, because
+  // achievement is what the badge ranks.
   const board = [
     row({ repHrId: "B-1", actualValue: 200, targetValue: 100 }),
     row({ repHrId: "B-2", actualValue: 900, targetValue: 1000 }),
@@ -104,7 +105,23 @@ export function runRepRankBadgesTests() {
   assert.ok(first?.company, "a rep at 200% must hold a company badge");
   assert.equal(first.company.rank, 1, "200% ranks above 150% and 90%");
   assert.equal(first.company.outOf, 3, "out-of counts every rep that could be scored");
-  assert.equal(Math.round(first.company.achievementPercent), 200, "the % on the badge is covered ÷ target");
+  assert.equal(Math.round(first.company.achievementPercent), 200, "the % on the badge is sales ÷ target");
+
+  // ALL sales ÷ target, as the closing divides: B-4 sells 100 against his one target of 200 and 300
+  // on an untargeted product, so the closing reads 400/200 = 200%. The covered rule read 50%
+  // (production: PD0017 July, 21.76% on the badge against the closing's 25.90%).
+  const mixed = [
+    row({ repHrId: "B-4", actualValue: 100, targetValue: 200 }),
+    row({ repHrId: "B-4", actualValue: 300, targetValue: null }),
+    row({ repHrId: "B-5", actualValue: 150, targetValue: 100 }),
+  ];
+  const mixedStanding = repRankStanding(mixed, PUBLISHED, { hrId: "B-4" });
+  assert.equal(
+    Math.round(mixedStanding?.company?.achievementPercent ?? 0),
+    200,
+    "the badge divides ALL his sales by his target (400/200), never the targeted slice alone (50%)",
+  );
+  assert.equal(mixedStanding?.company?.rank, 1, "and ranks on it: 200% stands above 150%");
   assert.equal(
     repRankStanding(board, PUBLISHED, { hrId: "B-2" })?.company?.rank,
     3,
