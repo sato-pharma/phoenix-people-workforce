@@ -142,11 +142,12 @@ function ownRef(managerCustomerId: string, name: string): CustomerRef {
 }
 
 /**
- * A half-day that names a district: with a rep, with its district manager, or single visits in one of its areas —
- * or, for the Training Manager, a region: with a rep, or an area.
+ * A half-day that names a district: with a rep, with its district manager, with a manager or product manager in
+ * it, or single visits in one of its areas — or, for the Training Manager, a region: with a rep, or an area. A
+ * district manager's own carry no scope (`choosesADistrict` is false for him).
  */
 function namesADistrict(kind: ManagerSlotKind | null): boolean {
-  return kind === "with_rep" || kind === "single_visit" || kind === "with_dm" || kind === "with_area";
+  return kind === "with_rep" || kind === "single_visit" || kind === "with_dm" || kind === "with_senior" || kind === "with_area";
 }
 
 function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
@@ -188,6 +189,7 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = fal
     if (draft.areaSeatIds.length === 0) return "tick at least one of the district manager's areas";
   }
   if (draft.kind === "with_senior") {
+    if (choosesDistrict && !draft.scope?.startsWith("dm:")) return "choose the district manager first";
     if (!draft.seniorHrId) return "choose who you go with";
     if (draft.areaSeatIds.length === 0) return "tick at least one area";
   }
@@ -999,7 +1001,7 @@ function HalfStep({
         : null}
       {draft.kind === "with_area" ? (districtGate ?? <WithAreaPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
-      {draft.kind === "with_senior" ? <WithSeniorPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} /> : null}
+      {draft.kind === "with_senior" ? (districtGate ?? <WithSeniorPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "single_visit"
         ? (districtGate ?? (
@@ -1343,6 +1345,8 @@ function WithDmPart({
  * pm/gpm w regional manager … follow organogram"): the people the organogram puts above the district manager's
  * own seat — the regional manager where the line has one, then the national sales manager — and the line's
  * product managers, as the server offers them; then the areas of the district, a vacant one by its own name.
+ * A regional, national or product manager's With a manager or product manager (owner, 2026-10-25) is the same
+ * part, in the district he picked first, with the people the server offers him there.
  */
 function WithSeniorPart({
   canEdit,
@@ -1355,8 +1359,22 @@ function WithSeniorPart({
   onDraft: (next: HalfDraft) => void;
   view: ManagerPlanBoardView;
 }) {
+  // A regional, national or product manager picks the district first (owner, 2026-10-25).
+  const ownDistrict = view.writer?.kind === "dm";
+  if (!ownDistrict && !draft.scope?.startsWith("dm:")) {
+    return <CrmEmpty message="Choose a district manager above. Any rep in the line names no district to go in." title="Choose the district manager" />;
+  }
   if (view.seniors.length === 0) {
-    return <CrmEmpty message="Nobody holds a manager seat above yours, and your line has no product manager, right now." title="Nobody to go with" />;
+    return (
+      <CrmEmpty
+        message={
+          ownDistrict
+            ? "Nobody holds a manager seat above yours, and your line has no product manager, right now."
+            : "Nobody else holds a manager seat in this district's line, and it has no product manager, right now."
+        }
+        title="Nobody to go with"
+      />
+    );
   }
   const options: Array<CrmChoiceOption<string>> = view.seniors.map((senior) => ({ value: senior.hrId, label: senior.name, note: senior.title, disabled: !canEdit }));
   const ticked = new Set(draft.areaSeatIds);
@@ -1368,7 +1386,7 @@ function WithSeniorPart({
     <div className="grid min-w-0 gap-4">
       <CrmChoice columns={2} label="Who you go with" onChange={(seniorHrId) => onDraft({ ...draft, seniorHrId })} options={options} value={draft.seniorHrId} />
       {view.areas.length === 0 ? (
-        <CrmEmpty message="Your district has no area right now." title="No areas" />
+        <CrmEmpty message={ownDistrict ? "Your district has no area right now." : "This district manager has no area right now."} title="No areas" />
       ) : (
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">

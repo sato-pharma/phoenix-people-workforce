@@ -85,8 +85,15 @@ export const MANAGER_SLOT_KINDS: ReadonlyArray<{ key: ManagerSlotKind; label: st
 
 /**
  * The half-day kinds one planner is offered. A district manager plans With my manager or product manager and
- * never With a district manager; everyone above him the other way round (owner, 2026-10-23: "in district
- * managers account make them able to put the pm/gpm w regional manager … follow organogram").
+ * never With a district manager (owner, 2026-10-23: "in district managers account make them able to put the
+ * pm/gpm w regional manager … follow organogram").
+ *
+ * 🔴 THE NATIONAL, REGIONAL AND PRODUCT MANAGERS PLAN A HALF-DAY WITH ONE ANOTHER TOO (owner, 2026-10-25: "in
+ * weekly plan for nsm make an option to dv with product manager and if poedia make an option to with regional
+ * manager same to product manager option 2 double visit with nsm and so on") — With a district manager AND
+ * With a manager or product manager: the national manager with the line's product managers and his regional
+ * managers, the regional manager with his national manager and the product managers, the product manager with
+ * the regional and national managers of his lines. Never a product manager with another.
  *
  * 🔴 THE TRAINING MANAGER PLANS A REGION, THEN A REP OR AN AREA — NEVER A CUSTOMER, NEVER A DISTRICT MANAGER
  * (owner, 2026-10-24: "he neevr choose dr he choose the region then the area/rep only"; asked, "Rep, area or
@@ -94,8 +101,13 @@ export const MANAGER_SLOT_KINDS: ReadonlyArray<{ key: ManagerSlotKind; label: st
  */
 export function managerSlotKinds(kind: ManagerPlannerKind): ReadonlyArray<{ key: ManagerSlotKind; label: string }> {
   if (kind === "tm") return MANAGER_SLOT_KINDS.filter((entry) => entry.key === "with_rep" || entry.key === "with_area" || entry.key === "admin");
-  return MANAGER_SLOT_KINDS.filter((entry) => entry.key !== "with_area" && (kind === "dm" ? entry.key !== "with_dm" : entry.key !== "with_senior"));
+  return MANAGER_SLOT_KINDS.filter((entry) => entry.key !== "with_area" && (kind !== "dm" || entry.key !== "with_dm")).map((entry) =>
+    entry.key === "with_senior" && kind !== "dm" ? { key: entry.key, label: MANAGER_PEER_SLOT_LABEL } : entry,
+  );
 }
+
+/** What a regional, national or product manager's With a manager half-day is called — he has no "my manager" to name. */
+export const MANAGER_PEER_SLOT_LABEL = "With a manager or product manager";
 
 /** The most areas one half-day with a district manager holds — the database's own limit. */
 export const MANAGER_DM_VISIT_AREA_MAX = 60;
@@ -877,11 +889,12 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
   }
   if (kind === "with_senior") {
     const seniorHrId = personKey(textOf(body.seniorHrId));
-    if (!seniorHrId) return { ok: false, error: "Choose who you go with: your manager or the line's product manager." };
-    if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one area of your district." };
-    if (customers.length > 0) return { ok: false, error: "With your manager or product manager, you tick areas, not customers." };
-    if (scopeDmSeatId || scopeLineCode) return { ok: false, error: "Your half-days are planned in your own district." };
-    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId } };
+    if (!seniorHrId) return { ok: false, error: "Choose who you go with: a manager or a product manager of the line." };
+    if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one area of the district." };
+    if (customers.length > 0) return { ok: false, error: "With a manager or product manager, you tick areas, not customers." };
+    // A district manager's carries no scope (his own district); everyone else's names the district picked
+    // first — `managerSlotScopeError` decides which one this planner owes.
+    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, scopeDmSeatId, scopeLineCode } };
   }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };
   if (customers.length === 0) return { ok: false, error: "Choose at least one customer for the single visit." };
@@ -907,12 +920,16 @@ export function managerSlotScopeError(
     return findManagerPlanScope(scopes, { dmSeatId: null, lineCode: null, regionCode: draft.scopeRegionCode }) ? null : "Choose one of the regions shown. Reload the page.";
   }
   if (draft.scopeRegionCode || draft.kind === "with_area") return "A region and An area are the Training Manager's half-days.";
-  if (draft.kind === "with_senior") return kind === "dm" ? null : "With my manager or product manager is a district manager's half-day.";
+  if (draft.kind === "with_senior") {
+    // A district manager's is in his own district; everyone else's names a district first (owner, 2026-10-25).
+    if (kind === "dm") return draft.scopeDmSeatId || draft.scopeLineCode ? "Your half-days are planned in your own district." : null;
+    if (!draft.scopeDmSeatId) return "Choose the district manager first.";
+  }
   if (draft.kind === "with_dm") {
     if (kind === "dm") return "With a district manager is not one of a district manager's half-days.";
     if (!draft.scopeDmSeatId) return "Choose the district manager you go with.";
   }
-  if (draft.kind !== "with_rep" && draft.kind !== "single_visit" && draft.kind !== "with_dm") return null;
+  if (draft.kind !== "with_rep" && draft.kind !== "single_visit" && draft.kind !== "with_dm" && draft.kind !== "with_senior") return null;
   if (kind === "dm") return draft.scopeDmSeatId || draft.scopeLineCode ? "Your half-days are planned in your own district." : null;
   if (!draft.scopeDmSeatId && !draft.scopeLineCode) return "Choose the district manager first.";
   return findManagerPlanScope(scopes, { dmSeatId: draft.scopeDmSeatId, lineCode: draft.scopeLineCode }) ? null : "Choose one of the district managers shown. Reload the page.";
@@ -1219,7 +1236,35 @@ export function parseManagerDmVisit(raw: unknown): ManagerDmVisit | null {
  * there is no regional manager — and the product managers of the line. The very people a rep's chain visit
  * offers (`loadDoubleVisitOffers`); the server builds the list, and the save refuses anyone not on it.
  */
-export type ManagerSeniorOffer = { hrId: string; role: "manager" | "product_manager"; title: string };
+export type ManagerSeniorOffer = {
+  hrId: string;
+  role: "manager" | "product_manager";
+  title: string;
+  /** The line the person is offered in — the seat's line, or the planner's for a product manager. Null: every line. */
+  lineCode?: string | null;
+  /** The manager seat the person is offered on; null for a product manager. A regional seat is offered only in its own districts. */
+  seatId?: string | null;
+  /** The seat's tier ("RSM", "NSM"); null for a product manager. */
+  tier?: string | null;
+};
+
+/**
+ * 🔴 THE PEOPLE OFFERED IN ONE DISTRICT (owner, 2026-10-25). A regional, national or product manager picks the
+ * district first, so the list narrows to it: a person of another line is dropped, and a regional manager only
+ * where the district sits under his seat. A district manager's list is his own district's already — no scope,
+ * everything stands.
+ */
+export function seniorOffersForScope<T extends ManagerSeniorOffer>(
+  offers: ReadonlyArray<T>,
+  scope: Pick<ManagerPlanScope, "lineCode" | "regionSeatId"> | null | undefined,
+): T[] {
+  if (!scope) return [...offers];
+  return offers.filter((offer) => {
+    if (offer.lineCode && scope.lineCode && offer.lineCode !== scope.lineCode) return false;
+    if (offer.tier === "RSM") return Boolean(offer.seatId) && offer.seatId === scope.regionSeatId;
+    return true;
+  });
+}
 
 /** The title a manager seat above a district manager reads as on the picker. */
 export function managerSeniorTitle(tier: string): string {
@@ -1244,6 +1289,24 @@ export function countsAsDmsVisitWithSenior(
   if (!dm || !senior || visit.kind !== "chain") return false;
   if (personKey(textOf(visit.managerHrId)) !== dm) return false;
   return personKey(textOf(visit.seniorHrId)) === senior || personKey(textOf(visit.productManagerHrId)) === senior;
+}
+
+/**
+ * 🔴 A REP'S VISIT THAT ANSWERS A REGIONAL, NATIONAL OR PRODUCT MANAGER'S "WITH A MANAGER OR PRODUCT MANAGER"
+ * HALF-DAY (owner, 2026-10-25): a chain visit naming BOTH of them, whichever column each sits in — a chain of
+ * two managers stores the nearer as its manager and the farther as its senior, a manager with a product manager
+ * as manager and product manager (`companyToStorage`). The caller matches the seat to a ticked area and the day.
+ */
+export function countsAsPlannersVisitWithPeer(
+  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  plannerHrId: string | null | undefined,
+  peerHrId: string | null | undefined,
+): boolean {
+  const planner = personKey(plannerHrId);
+  const peer = personKey(peerHrId);
+  if (!planner || !peer || planner === peer || visit.kind !== "chain") return false;
+  const named = new Set([visit.managerHrId, visit.seniorHrId, visit.productManagerHrId].map((value) => personKey(textOf(value))).filter(Boolean));
+  return named.has(planner) && named.has(peer);
 }
 
 /** A "with my manager or product manager" half-day's own content: who goes with the district manager, and the areas ticked. */

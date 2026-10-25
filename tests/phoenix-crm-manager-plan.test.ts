@@ -12,6 +12,9 @@ import {
   ceoHrIdOf,
   countManagerOutcomes,
   countsAsDmsVisitWithSenior,
+  countsAsPlannersVisitWithPeer,
+  MANAGER_PEER_SLOT_LABEL,
+  seniorOffersForScope,
   countsAsPlannersVisitWithDm,
   countsAsPlannersVisitWithRep,
   managerSeniorTitle,
@@ -2064,9 +2067,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // ── With my manager or product manager (owner, 2026-10-23: "in district managers account … follow organogram") ──
   assert.equal(managerSlotKinds("dm").some((entry) => entry.key === "with_senior"), true, "a district manager is offered With my manager or product manager");
+  // The regional, national and product managers plan it too (owner, 2026-10-25: "in weekly plan for nsm make an
+  // option to dv with product manager … same to product manager option 2 double visit with nsm").
   for (const kind of ["rsm", "nsm", "pm"] as const) {
-    assert.equal(managerSlotKinds(kind).some((entry) => entry.key === "with_senior"), false, `the ${kind} is never offered it`);
+    const entry = managerSlotKinds(kind).find((slot) => slot.key === "with_senior");
+    assert.equal(entry?.label, MANAGER_PEER_SLOT_LABEL, `the ${kind} is offered With a manager or product manager`);
+    assert.equal(managerSlotKinds(kind).some((slot) => slot.key === "with_dm"), true, `and the ${kind} keeps With a district manager beside it`);
   }
+  assert.equal(managerSlotKinds("tm").some((entry) => entry.key === "with_senior"), false, "the Training Manager is never offered it");
   const withSenior = (extra: Record<string, unknown>) => parseManagerSlotDraft({ date: "2026-10-25", half: "AM", kind: "with_senior", ...extra });
   const parsedSenior = withSenior({ seniorHrId: "b-60", areaSeatIds: ["T-1", "T-1", "T-2"] });
   assert.equal(parsedSenior.ok, true, "a with-senior half-day with a pick and ticked areas parses");
@@ -2074,11 +2082,20 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     assert.equal(parsedSenior.value.seniorHrId, "B-60", "the pick is kept as a person key");
     assert.deepEqual(parsedSenior.value.areaSeatIds, ["T-1", "T-2"], "its areas once each");
     assert.equal(managerSlotScopeError("dm", parsedSenior.value, []), null, "a district manager plans it in his own district");
-    assert.equal(managerSlotScopeError("nsm", parsedSenior.value, []), "With my manager or product manager is a district manager's half-day.", "and nobody else may");
+    assert.equal(managerSlotScopeError("nsm", parsedSenior.value, []), "Choose the district manager first.", "anyone else names the district first");
+    assert.equal(managerSlotScopeError("tm", parsedSenior.value, []), "The Training Manager plans With a rep, An area or Admin.", "and the Training Manager never plans it");
+  }
+  const scopedSenior = withSenior({ seniorHrId: "B-70", areaSeatIds: ["T-1"], scopeDmSeatId: "DM-1", scopeLineCode: "pedia" });
+  assert.equal(scopedSenior.ok, true, "a with-senior half-day naming a district parses");
+  if (scopedSenior.ok) {
+    assert.equal(scopedSenior.value.scopeDmSeatId, "DM-1", "and keeps the district manager seat");
+    assert.equal(managerSlotScopeError("dm", scopedSenior.value, []), "Your half-days are planned in your own district.", "a district manager's carries no scope");
+    const scope = { key: "dm:DM-1", dmSeatId: "DM-1", lineCode: "pedia", lineName: "Pedia", dmHrId: "B-1", regionSeatId: "RSM-1", regionHrId: "B-60", regionCode: null };
+    assert.equal(managerSlotScopeError("nsm", scopedSenior.value, [scope] as never), null, "a national manager plans it in a district shown to him");
+    assert.equal(managerSlotScopeError("pm", scopedSenior.value, []), "Choose one of the district managers shown. Reload the page.", "never in one he was not shown");
   }
   assert.equal(withSenior({ areaSeatIds: ["T-1"] }).ok, false, "with nobody picked it is refused");
   assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: [] }).ok, false, "with no area ticked it is refused");
-  assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], scopeDmSeatId: "DM-1", scopeLineCode: "pedia" }).ok, false, "it carries no scope: it is his own district");
   assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], customers: [{ customerId: "00000000-0000-4000-8000-000000000001" }] }).ok, false, "and no customer");
 
   const rideChain = { kind: "chain", managerHrId: "B-1", seniorHrId: "B-60", productManagerHrId: null };
@@ -2101,13 +2118,67 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   );
   const offerSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
   assert.match(offerSource, /managerChain\(viewer\.org, writer\.seat\.seatId\)/, "the picker is the organogram above his own seat");
-  assert.match(offerSource, /loadLineProductManagers\(writer\.seat\)/, "plus his line's product managers");
+  assert.match(offerSource, /await offerProductManagers\(writer\.seat\)/, "plus his line's product managers");
+  assert.match(
+    offerSource,
+    /writer\.kind === "pm"[\s\S]*?seat\.tier === "RSM" \|\| seat\.tier === "NSM"[\s\S]*?return offers;/,
+    "a product manager is offered the line's managers and never another product manager",
+  );
+
+  // Who a regional, national or product manager may pick, narrowed to the district he chose (owner, 2026-10-25).
+  const offers = [
+    { hrId: "B-60", role: "manager" as const, title: "Regional sales manager", lineCode: "pedia", seatId: "RSM-1", tier: "RSM" },
+    { hrId: "B-61", role: "manager" as const, title: "Regional sales manager", lineCode: "pedia", seatId: "RSM-2", tier: "RSM" },
+    { hrId: "B-50", role: "manager" as const, title: "National sales manager", lineCode: "pedia", seatId: "NSM-1", tier: "NSM" },
+    { hrId: "B-70", role: "product_manager" as const, title: "Product Manager", lineCode: "pedia", seatId: null, tier: null },
+    { hrId: "B-80", role: "manager" as const, title: "National sales manager", lineCode: "cns", seatId: "NSM-2", tier: "NSM" },
+  ];
+  assert.deepEqual(
+    seniorOffersForScope(offers, { lineCode: "pedia", regionSeatId: "RSM-1" }).map((offer) => offer.hrId),
+    ["B-60", "B-50", "B-70"],
+    "the district's own regional manager, the national manager and the line's product managers — never another region's or line's",
+  );
+  assert.deepEqual(
+    seniorOffersForScope(offers, { lineCode: "pedia", regionSeatId: null }).map((offer) => offer.hrId),
+    ["B-50", "B-70"],
+    "a district with no regional seat offers no regional manager",
+  );
+  assert.equal(seniorOffersForScope(offers, null).length, offers.length, "a district manager's own list is never narrowed");
+
+  const peerChain = { kind: "chain", managerHrId: "B-60", seniorHrId: "B-50", productManagerHrId: null };
+  assert.equal(countsAsPlannersVisitWithPeer(peerChain, "B-50", "B-60"), true, "a chain visit naming the national and the regional manager answers the national manager's half-day");
+  assert.equal(countsAsPlannersVisitWithPeer(peerChain, "B-60", "B-50"), true, "and the regional manager's");
+  assert.equal(
+    countsAsPlannersVisitWithPeer({ kind: "chain", managerHrId: "B-50", seniorHrId: null, productManagerHrId: "B-70" }, "B-70", "B-50"),
+    true,
+    "a product manager with the national manager",
+  );
+  assert.equal(countsAsPlannersVisitWithPeer({ ...peerChain, seniorHrId: "B-51" }, "B-50", "B-60"), false, "a visit without him does not");
+  assert.equal(countsAsPlannersVisitWithPeer(peerChain, "B-50", "B-50"), false, "never himself");
+  assert.equal(countsAsPlannersVisitWithPeer({ ...peerChain, kind: "double" }, "B-50", "B-60"), false, "only a chain visit carries them both");
+  const peerReportSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plan-report.ts", import.meta.url), "utf8"));
+  assert.match(peerReportSource, /if \(peerKey && countsAsPlannersVisitWithPeer\(visit, manager, peerKey\)\) keys\.add\(/, "the report reads Done from that visit");
+  assert.match(peerReportSource, /plan\.plannerKind === "rsm" \|\| plan\.plannerKind === "nsm" \|\| plan\.plannerKind === "pm"/, "for the regional, national and product managers");
 
   const withSeniorMigration = stripSqlComments(
     readFileSync(new URL("../supabase/migrations/20261023233002_phoenix_crm_manager_plan_with_senior.sql", import.meta.url), "utf8"),
   ).replace(/\r\n/g, "\n");
   assert.match(withSeniorMigration, /kind = 'with_senior' and scope_dm_seat_id is null and scope_line_code is null/, "the database holds a with-senior half-day in his own district");
-  assert.match(withSeniorMigration, /elsif v_kind = 'with_senior' then\s+if v_planner <> 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refuses one from anyone but a district manager");
+  assert.match(withSeniorMigration, /elsif v_kind = 'with_senior' then\s+if v_planner <> 'dm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind'/, "and refused one from anyone but a district manager");
+  const peerMigration = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261025020000_phoenix_crm_manager_plan_double_visit_partners.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.match(
+    peerMigration,
+    /kind = 'with_senior'\s+and \(\(scope_dm_seat_id is null and scope_line_code is null\) or \(scope_dm_seat_id is not null and scope_line_code is not null\)\)/,
+    "since 2026-10-25 the database holds one in his own district or in a district manager's, both or neither",
+  );
+  assert.match(
+    peerMigration,
+    /elsif v_kind = 'with_senior' then\s+if v_planner = 'tm' then\s+raise exception 'phoenix_crm:manager_plan_bad_kind';\s+end if;\s+if v_planner <> 'dm' and v_scope_seat is null then\s+raise exception 'phoenix_crm:bad_input'/,
+    "refuses the Training Manager, and anyone but a district manager without a district",
+  );
+  assert.match(peerMigration, /v_kind is distinct from 'with_dm' and v_kind is distinct from 'with_senior'\)\) then/, "and lets its scope through");
 
   // The picked person's side (owner, 2026-10-24: "calendar + notice"). Who an approved week names, grouped
   // per person in date order, never the district manager himself and never another kind.
