@@ -566,6 +566,13 @@ export type ValidatedCustomerListRow = {
   createdAt: string;
   ownerHrId: string | null;
   ownerName: string | null;
+  /**
+   * Who validated it. `validated_by_hr_id` is NULL on a row the system validated from the owner's
+   * own evidence, so this falls back to the owner; it names someone else only when the record says
+   * so — a validation carried over from the Phoenix CRM keeps the CRM validator here.
+   */
+  validatedByHrId: string | null;
+  validatedByName: string | null;
   managerHrId: string | null;
   managerName: string | null;
   areaName: string | null;
@@ -601,7 +608,7 @@ export async function listValidatedMarketingCustomers(
   const { data: customerData, error } = await supabase
     .from("marketing_customers")
     .select(
-      "id, customer_code, display_name, normalized_name, customer_type, validation_status, evidence_status, validated_at, created_at, owner_hr_id, manager_hr_id, area_id, line_id, extracted_governorate_name",
+      "id, customer_code, display_name, normalized_name, customer_type, validation_status, evidence_status, validated_at, validated_by_hr_id, created_at, owner_hr_id, manager_hr_id, area_id, line_id, extracted_governorate_name",
     )
     .in("validation_status", VALIDATED_STATUSES as unknown as string[])
     .neq("active", false)
@@ -617,7 +624,7 @@ export async function listValidatedMarketingCustomers(
   const hrIds = [
     ...new Set(
       customers
-        .flatMap((row) => [text(row, "owner_hr_id"), text(row, "manager_hr_id")])
+        .flatMap((row) => [text(row, "owner_hr_id"), text(row, "manager_hr_id"), text(row, "validated_by_hr_id")])
         .filter((value): value is string => Boolean(value)),
     ),
   ];
@@ -712,6 +719,7 @@ export async function listValidatedMarketingCustomers(
     const nameKey = (text(row, "normalized_name") ?? text(row, "display_name") ?? "").toLowerCase();
     const ownerHrId = text(row, "owner_hr_id");
     const managerHrId = text(row, "manager_hr_id");
+    const validatedByHrId = text(row, "validated_by_hr_id") ?? ownerHrId;
     const areaId = num(row, "area_id");
     const lineId = num(row, "line_id");
 
@@ -743,6 +751,8 @@ export async function listValidatedMarketingCustomers(
           }
         : null,
       validatedAt: text(row, "validated_at"),
+      validatedByHrId,
+      validatedByName: hrNameFrom(employeeName, validatedByHrId),
       validationStatus: String(row.validation_status),
     };
   });
@@ -770,8 +780,6 @@ export type ValidatedCustomerDetail = {
     evidencePhotoName: string | null;
     evidencePhotoCapturedAt: string | null;
     validationNotes: string | null;
-    validatedByHrId: string | null;
-    validatedByName: string | null;
     createdByHrId: string | null;
     createdByName: string | null;
   };
@@ -1125,7 +1133,7 @@ async function assembleValidatedMarketingCustomerDetail(
 
   const ownerHrId = text(customer, "owner_hr_id");
   const managerHrId = text(customer, "manager_hr_id");
-  const validatedByHrId = text(customer, "validated_by_hr_id");
+  const validatedByHrId = text(customer, "validated_by_hr_id") ?? ownerHrId;
   const createdByHrId = text(customer, "created_by_hr_id");
 
   return {
