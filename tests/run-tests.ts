@@ -2485,6 +2485,7 @@ import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWorkflowFilesParseTests } from "./workflow-files-parse.test.ts";
 import { runAttributionRefreshSerializedTests } from "./attribution-refresh-serialized.test.ts";
+import { runDbLoadSweepSkipscanTests } from "./db-load-sweep-skipscan.test.ts";
 import { runMigrationPreimageGuardedTests } from "./migration-preimage-guarded.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 import { runTargetsUploadedNotificationTests } from "./targets-uploaded-notification.test.ts";
@@ -9460,6 +9461,11 @@ await runTest(
 await runTest(
   "the attribution refresh serializes per period and is never 'fixed' with a unique index (two concurrent runs doubled 2026-09; the direct and indirect rows legitimately share a key)",
   runAttributionRefreshSerializedTests,
+);
+
+await runTest(
+  "The attribution freshness sweep finds its months with a skip-scan and one LATERAL LIMIT 1 validated-batch probe each (the whole-rollup DISTINCT was 264 ms and 8,353 buffers a call on a 2 GB box that swaps; the skip-scan is 16 ms and 1,479, and returned the same 11 months), never a plain EXISTS because the planner flattens that into the same whole-table semi-join, with everything around the candidate list the 20260929200000 body unchanged (publications, never locks); and the four indexes behind four polled reads stay, created in the plain IF NOT EXISTS form a migration transaction can run, with no later migration dropping one or putting the DISTINCT back",
+  runDbLoadSweepSkipscanTests,
 );
 
 await runTest(

@@ -29,6 +29,7 @@ const MIGRATION = "20261023220000_crm_agent_crm_ids_reconcile_heartbeat.sql";
 const SLUG = "phoenix-crm-agent-crm-ids-reconcile";
 const JOB = "crm-agent-crm-ids-reconcile";
 const WRAPPER_COMMAND = "select public.crm_agent_crm_ids_reconcile_run();";
+const HOURLY = "7 * * * *";
 const DOC = "docs/observability.md";
 
 function read(rel: string): string {
@@ -51,6 +52,7 @@ function flat(sql: string): string {
 
 export async function runCrmAgentCrmIdsReconcileHeartbeatTests(): Promise<void> {
   const sql = stripSqlComments(read(`${MIGRATION_DIR}/${MIGRATION}`));
+  let lastCadence = { name: MIGRATION, schedule: "*/15 * * * *" };
 
   // ── 1. The job runs the reporting wrapper, and no later migration points it back ──────────────
   {
@@ -77,8 +79,21 @@ export async function runCrmAgentCrmIdsReconcileHeartbeatTests(): Promise<void> 
         body.slice(at, at + 200).includes(WRAPPER_COMMAND),
         `${name} re-schedules ${JOB} without the reporting wrapper — the cache would freeze unwatched again`,
       );
+      const cadence = /^cron\.schedule\( '[^']+', '([^']+)'/.exec(body.slice(at));
+      if (cadence) lastCadence = { name, schedule: cadence[1] };
     }
   }
+
+  // ── 1b. The job runs HOURLY, at minute 7 (2026-10-25 load audit) ──────────────────────────────
+  // Every 15 minutes it was the second-heaviest statement on production (3.9 s mean, 9.7 s peak, 96 runs
+  // a day). The cache answers a question about DEPARTED people, whose pairs are frozen, so an hour is a
+  // safe staleness bound. The LAST migration's scheduler call is the live cadence, and the declaration
+  // must name that same cadence or the sweep judges a schedule the job does not keep.
+  assert.equal(
+    lastCadence.schedule,
+    HOURLY,
+    `the last migration to schedule ${JOB} (${lastCadence.name}) must run it hourly at minute 7 — every 15 minutes it was the second-heaviest statement on the database`,
+  );
 
   // ── 2 and 3. Success after the work, and a failure left uncaught ──────────────────────────────
   {
@@ -144,8 +159,12 @@ export async function runCrmAgentCrmIdsReconcileHeartbeatTests(): Promise<void> 
     assert.equal(declared.kind, "cron");
     assert.equal(
       declared.schedule,
-      "*/15 * * * *",
-      "the declared cadence is the pg_cron one — Cairo's whole-hour offset leaves */15 the same instants in UTC",
+      HOURLY,
+      "the declared cadence is the pg_cron one — Cairo's whole-hour offset leaves minute 7 the same instant in UTC",
+    );
+    assert.ok(
+      (declared.graceSeconds ?? 0) > 60 * 60,
+      "the grace is longer than the hour between runs, or every on-time run would already read late",
     );
     assert.equal(declared.vendorSync, undefined, "it reads Phoenix's own tables, so the CRM cutover must never stand it down");
     assert.equal(declared.watchingSince, undefined, "a new declaration carries no watchingSince");
