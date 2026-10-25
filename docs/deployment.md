@@ -1081,11 +1081,19 @@ the variable copy, the certificate, and the image booting on Fly. Pinned by `tes
 is back — retire the all-deployments-through-Fly rule"*). 04:31:56 the Fly worker was scaled to zero; 04:31:58 Railway's
 worker was set to `PHOENIX_PROCESS_ROLE=worker` and redeployed, booting `[process-role] worker` and
 `[crm:live-poll] started` at 04:33:30; 04:33:32 the four cron-job.org jobs moved back to
-`phoenix-workforce-worker-production.up.railway.app` (`inbound-intake` stays off); 04:35:41 `phoenix-worker-standby` was
+`phoenix-workforce-worker-production.up.railway.app` (`inbound-intake` was left off; see below); 04:35:41 `phoenix-worker-standby` was
 destroyed. Read live 23 Oct ~05:17: the worker's `/api/healthz` answers from Railway, and Fly reports
 `Could not find App "phoenix-worker-standby"`. `phoenix-hr-standby` is kept, stopped at zero machines, as the Emergency
 host button's app. The go-live's worker step has no app to move now and fails harmlessly (`continue-on-error`). What
 follows is the outage record, kept for the next time Railway cannot deploy.
+
+🔴 **`inbound-intake` (job `8200920`) was off from 22 Oct 03:24 to 25 Oct 14:55 Cairo, and nobody decided it.** Its
+last run failed during the dead-key outage, cron-job.org switched it off, and the move back carried the off state
+over as if it were intended. Every WhatsApp and email CV queued and none became a candidate: 48 sat in
+`ats_inbound_intake_queue` at 0 attempts, while the WhatsApp bot still told each applicant the application was
+recorded. The careers form kept working because it does not use the queue. Switched back on 25 Oct on the owner's
+word. **After any outage, read every worker job's `enabled` live; a job switched off during the outage is not
+a decision.**
 
 From 22 Oct 2026 03:38 Cairo the background jobs ran on Fly as well (owner, choosing **"Separate worker on Fly"**).
 Railway's worker was stuck on its 20 Oct deployment holding the database key that had just been switched off, and
