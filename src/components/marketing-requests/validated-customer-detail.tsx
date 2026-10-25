@@ -451,7 +451,7 @@ export function ValidatedCustomerDetailView({
               { label: "Type", value: customer.customerType || "Not recorded" },
               { label: "Validation", value: customer.validationStatus.replace(/_/g, " ") },
               { label: "Evidence", value: customer.evidenceStatus || "missing" },
-              { label: "Validated by", value: customer.ownerName || "Not recorded" },
+              { label: "Validated by", value: customer.validatedByName || "Not recorded" },
               { label: "Manager", value: customer.managerName || "Not recorded" },
               { label: "Captured at", value: cairoDateTime(customer.capturedAt) },
               { label: "Created at", value: cairoDateTime(customer.createdAt) },

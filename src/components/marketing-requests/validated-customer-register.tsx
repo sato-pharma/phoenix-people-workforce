@@ -134,7 +134,7 @@ export function ValidatedCustomerRegister() {
       if (transferFilter === "transferred" && !row.transfer) return false;
       if (transferFilter === "not_transferred" && row.transfer) return false;
       if (!needle) return true;
-      return [row.displayName, row.customerCode, row.ownerName, row.areaName, row.governorate]
+      return [row.displayName, row.customerCode, row.ownerName, row.validatedByName, row.areaName, row.governorate]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
@@ -259,7 +259,7 @@ export function ValidatedCustomerRegister() {
               >
                 <PortalRecordFields
                   fields={[
-                    { label: "Validated by", value: row.ownerName || "Not recorded" },
+                    { label: "Validated by", value: row.validatedByName || "Not recorded" },
                     { label: "Manager", value: row.managerName || "Not recorded" },
                     { label: "Area", value: row.areaName || "Not recorded" },
                     { label: "Line", value: row.lineName || "Not recorded" },
@@ -309,7 +309,7 @@ export function ValidatedCustomerRegister() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">
-                        {row.ownerName || "Not recorded"}
+                        {row.validatedByName || "Not recorded"}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">
                         {row.managerName || "Not recorded"}
