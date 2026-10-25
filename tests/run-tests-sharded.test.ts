@@ -109,8 +109,8 @@ export function runRunTestsShardedTests() {
   }
 
   // ── 6. A process-level failure is reported ALONE, and coverage is not asked ──────────────────
-  // tests/run-tests.ts rethrows on the first failing test, so a red shard's counts are legitimately
-  // short. Reporting that as a coverage breach too would bury the line that matters.
+  // A red shard can end short of its slice (a crash outside a test still ends tests/run-tests.ts
+  // early). Reporting that as a coverage breach too would bury the line that matters.
   {
     const red = { index: 2, code: 1, signal: null, out: "FAIL something\n" };
     const problems = collectProblems([shard(1, 2, 2253, 1127), red], 2);

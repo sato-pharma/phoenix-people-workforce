@@ -302,4 +302,29 @@ export function runRunTestsRegistrationShapeTests() {
       "and the only evidence is a TS2554 in the `checks` job rather than a test failure. Fix the " +
       "registration; do not relax this test.",
   );
+
+  // 🔴 A FAILING TEST IS RECORDED AND THE SUITE CARRIES ON (26 Oct 2026). Until then runTest's catch
+  // rethrew, so a shard died at its first red test and every test after it never ran: on 8 branches
+  // in one week the next push found a second red that had been hiding behind the first. The catch
+  // must record, mark the run red and return; the end of the file must end a red run itself, or a
+  // failed test that left a server open would hang the job the old rethrow used to end.
+  const declaredAt = source.indexOf(`async function ${CALLEE}(`);
+  assert.ok(declaredAt >= 0, `${CALLEE}'s own declaration must exist in ${RUNNER}`);
+  const bodyEnd = source.indexOf("\n}\n", declaredAt);
+  assert.ok(bodyEnd > declaredAt, `${CALLEE}'s body never closes at the top level`);
+  const body = source.slice(declaredAt, bodyEnd);
+  const catchAt = body.indexOf("} catch (error) {");
+  assert.ok(catchAt >= 0, `${CALLEE} must catch a failing test`);
+  const handler = body.slice(catchAt);
+  assert.equal(
+    /\bthrow\b/.test(handler),
+    false,
+    `${CALLEE}'s catch rethrows again — a shard would stop at its first red test and hide every one after it`,
+  );
+  assert.ok(handler.includes("failedTests.push(name);"), `${CALLEE}'s catch must record the failing test`);
+  assert.ok(handler.includes("process.exitCode = 1;"), `${CALLEE}'s catch must still make the run red`);
+  assert.ok(
+    source.includes("setTimeout(() => process.exit(1), 5_000).unref();"),
+    "a red run must end itself after its summary, or a failed test's open handle hangs the CI job",
+  );
 }

@@ -223,7 +223,7 @@ export const CONTRACT_GATES = [
   // and fast; each comment gives how many different PRs it turned red in that sample. `redJobs` stays
   // null because that field is printed as a 9-13 Oct count. Left to the PR's own CI, deliberately:
   //   - tests/unknown-flag-gates.test.ts (6 PRs) spawns every argument-parsing script and ran past
-  //     five minutes here;
+  //     five minutes here — its source half is a gate since 26 Oct, see the end of this list;
   //   - HR function governance (5), sidebar labels never clip (3), Phoenix CRM edges (3) and the
   //     malformed uuid id guards (2) reach @/lib/supabase/server, so they are not offline.
   {
@@ -261,6 +261,30 @@ export const CONTRACT_GATES = [
     namePrefix: 'hr ids are stored in canonical casing everywhere',
     redJobs: null,
     costMs: 4960,
+  },
+  // THE 2026-10-26 SPLITS. Read from all 187 failed jobs of 18-25 Oct 2026: two tests that the list above
+  // had to leave to CI kept turning branches red on a part of them that needs nothing but the source
+  // text. Each was split, and only that half is here; the rest still runs in the PR's own CI.
+  {
+    // 10 jobs on 8 branches; 9 of the 11 messages were a new refuseUnknownFlags gate missing from PINNED.
+    // The probes that spawn every script stay in runUnknownFlagGatesTests.
+    slug: 'unknown-flag-gates-source',
+    file: 'tests/unknown-flag-gates.test.ts',
+    export: 'runUnknownFlagGatesSourceTests',
+    namePrefix: 'the unknown-flag source ratchets',
+    redJobs: null,
+    costMs: 790,
+  },
+  {
+    // 9 jobs on 6 branches, the unrelated ones (calendar, CRM team statistics, the admin delete) all
+    // on these scans: a migration or reader naming a manager-plan table. The rest of the manager-plan
+    // test reaches src/lib/phoenix-crm/server and is not offline.
+    slug: 'phoenix-crm-manager-plan-source',
+    file: 'tests/phoenix-crm-manager-plan-source.test.ts',
+    export: 'runPhoenixCrmManagerPlanSourceTests',
+    namePrefix: 'the CRM manager-plan source scans',
+    redJobs: null,
+    costMs: 2660,
   },
 ];
 
@@ -625,8 +649,9 @@ function explain(error) {
 /**
  * Run every gate, in order, CONTINUING PAST A FAILURE.
  *
- * That is the whole difference from the suite: `runTest` rethrows, so one red gate tells a session
- * about a prefix of the gates and nothing about the rest. Returns the slugs that failed.
+ * The suite has done the same since 26 Oct 2026 (`runTest` records a failure and carries on); until
+ * then it rethrew, and one red gate told a session about a prefix of the gates and nothing about the
+ * rest. Returns the slugs that failed.
  */
 export async function runContractGates({
   gates = CONTRACT_GATES,

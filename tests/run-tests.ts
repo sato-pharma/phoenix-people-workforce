@@ -2033,6 +2033,7 @@ import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
+import { runPhoenixCrmManagerPlanSourceTests } from "./phoenix-crm-manager-plan-source.test.ts";
 import { runPhoenixCrmTrainingManagerPlanTests } from "./phoenix-crm-training-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
@@ -2334,6 +2335,8 @@ import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runSyncCloudContextArgsTests } from "./sync-cloud-context-args.test.ts";
 import { runGeneratorArgGatesTests } from "./generator-arg-gates.test.ts";
 import { runUnknownFlagGatesTests } from "./unknown-flag-gates.test.ts";
+// A line of its own: tests/check-contracts.test.ts matches each contract gate by its exact import line.
+import { runUnknownFlagGatesSourceTests } from "./unknown-flag-gates.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
@@ -2847,11 +2850,29 @@ let ranCount = 0;
 
 process.on("exit", () => {
   // One machine-readable line, always, so the parent can prove coverage. Printed from `exit` rather
-  // than after the last call because a FAILING test rethrows out of this file.
+  // than after the last call because a crash outside a test can still end this file early.
   console.log(`PHX_SHARD_RESULT shard=${shardIndex}/${shardTotal} seen=${seenCount} ran=${ranCount}`);
 });
 
 const dealShard = createShardDeal(shardTotal);
+
+/**
+ * 🔴 A FAILING TEST IS RECORDED AND THE SUITE CARRIES ON — it is never rethrown out of `runTest`.
+ *
+ * Until 26 Oct 2026 `runTest` rethrew, so a shard died at its first red test and every test after
+ * it in that shard never ran. A branch with two broken tests learned about the second only on its NEXT
+ * push: measured over 18-25 Oct, 21 branches went red two or more times in a row, and on 8 of them the
+ * next red was a DIFFERENT test that had been hiding behind the first (recruitment-rebuild and
+ * system-error-audit each took four rounds). Every round is a push and a whole CI run.
+ *
+ * Now each failure prints `FAIL <name>` and its error where it happens, the run goes on, and the
+ * list is repeated at the end. `process.exitCode` makes the shard red, and `ran` still counts
+ * every test this shard executed, passed or failed, so the coverage sum stays true.
+ *
+ * Read the FIRST failure first: a test that fails before it restores a global (a mocked `fetch`, an
+ * env var) can make later tests fail too, and those are consequences, not separate defects.
+ */
+const failedTests: string[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
   seenCount += 1;
@@ -2865,8 +2886,10 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
     testDurationsMs.push({ name, durationMs });
     console.log(`PASS ${name} (${durationMs.toFixed(0)}ms)`);
   } catch (error) {
+    failedTests.push(name);
+    process.exitCode = 1;
     console.error(`FAIL ${name}`);
-    throw error;
+    console.error(error);
   }
 }
 
@@ -7707,6 +7730,11 @@ await runTest(
 );
 
 await runTest(
+  "the CRM manager-plan source scans: no file in src or app reads a manager-plan table outside src/lib/phoenix-crm/server/manager-*.ts, no migration names his own visits table except the ones that only widen it, tune its storage or delete one row, the weekly-planning, calendar, Hub and report readers reach his week only through manager-plan-readers.ts and never name the table, and the two quiet readers import no notice sender - the half of the manager-plan test any branch can trip, split out so scripts/check-contracts.mjs runs it before a push (18-25 Oct 2026 it reddened branches that never touched Phoenix CRM)",
+  runPhoenixCrmManagerPlanSourceTests,
+);
+
+await runTest(
   "Phoenix CRM's Training Manager plans her own week (owner, 2026-10-24): she holds no organogram seat, so she chooses a region and then, each half-day, a rep of that region, an area of it, or the Office — never a doctor; her slot carries the region it belongs to, the rep must sit in that region and the area must be one of its territories, the Others region is never offered; her approvers are the legacy ones; a visit with a rep is a visit for the rep and a visit for her, and she is offered as a companion on every line, never added to the district manager's double visits",
   runPhoenixCrmTrainingManagerPlanTests,
 );
@@ -8819,6 +8847,10 @@ await runTest(
 await runTest(
   "every script that PARSES arguments refuses the one it has never heard of (exit 2, naming only the unknown token) through scripts/lib/refuse-arguments.mjs refuseUnknownFlags: --aply, --dryrun and -x used to be read as absent, so the script did the OTHER thing while the caller believed the flag took effect (measured 2026-10-15: 32 scripts parse argv and write files, 5 refused). The gate is proved behaviourally against a fixture (known flag, --flag=value, positional and a separate flag value pass; an imported module never refuses its parent flags; --help answers at exit 0), every wired script is probed through PHX_FLAG_GATE_PROBE, ci.yml and package.json are checked so no caller passes a flag its script now refuses, and run-fold.mjs - whose bare run opens a real pull request - is SPAWNED against an empty checkout so a gate turned into dead code still fails the test",
   runUnknownFlagGatesTests,
+);
+await runTest(
+  "the unknown-flag source ratchets: every script that calls refuseUnknownFlags is on the PINNED list, imports the shared gate and calls it before its first side effect, every flag a caller passes or the script tests for itself is in its known list, and no script that takes arguments ignores an unknown one - the half of the unknown-flag test that spawns nothing, so scripts/check-contracts.mjs runs it before a push (9 of its 11 CI failures, 18-25 Oct 2026, were a new gate missing from PINNED)",
+  runUnknownFlagGatesSourceTests,
 );
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
@@ -11070,4 +11102,15 @@ const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs)
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
 for (const t of slowest) {
   console.log(`  ${t.durationMs.toFixed(0)}ms  ${t.name}`);
+}
+if (failedTests.length > 0) {
+  // Indented, never `FAIL ` at the start of a line: run-tests-sharded-plan.mjs reads those, and
+  // this list would name every failure twice.
+  console.error(`\n${failedTests.length} test file(s) FAILED in this run, in the order they ran:`);
+  for (const name of failedTests) console.error(`  - ${name}`);
+  // A failed test can leave open a server, socket or timer it would have closed on success, and the
+  // old rethrow ended the process regardless. Give the streams five seconds to drain on their own,
+  // then end it, so a red run never becomes a hung CI job. Unref'd: a run that exits cleanly is not
+  // delayed by it.
+  setTimeout(() => process.exit(1), 5_000).unref();
 }
