@@ -9,6 +9,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,6 +98,7 @@ export async function GET(request: Request) {
       const pdf = await buildEmployeePlansPdf(plans, exportOptions);
       return new Response(pdf, {
         headers: {
+          ...DOWNLOAD_NO_STORE_HEADERS,
           "Content-Disposition": `attachment; filename="phoenix-weekly-monthly-plans-${fileDate()}.pdf"`,
           "Content-Type": "application/pdf",
         },
@@ -106,6 +108,7 @@ export async function GET(request: Request) {
     const workbook = await buildEmployeePlansWorkbook(plans, exportOptions);
     return new Response(workbook, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="phoenix-weekly-monthly-plans-${fileDate()}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

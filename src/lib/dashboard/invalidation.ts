@@ -11,6 +11,15 @@ import { revalidatePath, revalidateTag } from "next/cache.js";
 export const CLOSING_STORE_SPLIT_CACHE_TAG = "closing-store-split";
 export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";
 
+/**
+ * Every cache keyed on the achievement stamp (`loadAchievementCacheStamp`, src/lib/sales/vs-target.ts):
+ * one month of achievement rows, the Business Review bundle and the admin sales metrics. The stamp
+ * moves with actuals, targets, seats and the attribution config, and NOT with a Product Master price,
+ * so a price edit reached those figures only when their time ran out (up to an hour for a month of
+ * achievement). The tag is how a price edit reaches them at once.
+ */
+export const SALES_ACHIEVEMENT_STAMPED_CACHE_TAG = "sales-achievement-stamped";
+
 export type ExecutiveDashboardModule =
   | "employees"
   | "vacancies"
@@ -94,8 +103,9 @@ export function invalidateExecutiveDashboardCache(
 ) {
   const uniqueModules = Array.from(new Set(modules));
   try {
+    // "/overview" is not revalidated: it is force-dynamic and only redirects to the role's landing page,
+    // so it holds nothing to refresh (2026-10-26 cache audit, P3).
     revalidatePath("/admin");
-    revalidatePath("/overview");
     // A sales-affecting change also invalidates the cached SoS + Marketing-ROI dashboards and
     // their shared reference data; non-sales changes leave those caches to their own TTL.
     if (uniqueModules.includes("sales")) {
@@ -210,6 +220,30 @@ export function invalidateCompanyVacationReportCache(reason: string) {
       error: error instanceof Error ? error.message : String(error),
       reason,
     });
+  }
+}
+
+/**
+ * Expires the sales caches whose keys do not see a Product Master price — the Closing-Matrix
+ * store-split overlay and everything keyed on the achievement stamp — for a write to the master
+ * data (a price, a product, a brick). Their keys carry the month and the attribution inputs, never
+ * the factory price or its history, so a price edit took up to an hour to show on the unpublished
+ * month (cache audit, 2026-10-26). Published months were never at risk: the publish gate recomputes
+ * without the cache. `{ expire: 0 }` so the editor's next screen already shows the new price; nothing
+ * on the master-data routes busts these tags with "max" afterwards, which would undo it.
+ * Best-effort, as below.
+ */
+export function invalidatePriceDependentSalesCaches(reason: string) {
+  for (const tag of [CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG]) {
+    try {
+      revalidateTag(tag, { expire: 0 });
+    } catch (error) {
+      console.warn("Price-dependent sales cache tag revalidation failed.", {
+        error: error instanceof Error ? error.message : String(error),
+        reason,
+        tag,
+      });
+    }
   }
 }
 

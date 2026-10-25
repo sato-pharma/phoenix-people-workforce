@@ -14,6 +14,7 @@ import {
 } from "@/lib/deductions/org-filter.ts";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildDeductionsMasterWorkbook, type EmployeeOrgInfo } from "@/lib/deductions/exports/master-workbook.ts";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
     const buffer = await workbook.xlsx.writeBuffer();
     return new NextResponse(buffer as ArrayBuffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         // The filter is in the filename too: a filtered download must never land
         // in the same folder under the same name as the full month's workbook.

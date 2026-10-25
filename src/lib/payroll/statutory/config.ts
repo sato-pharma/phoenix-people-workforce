@@ -46,6 +46,11 @@ const cache = new Map<string, CacheEntry>();
  * Resolve the statutory config in force for a payroll period: the row with the
  * latest effective_from on or before the first day of the period. Falls back to
  * DEFAULT_STATUTORY_CONFIG when the table is empty/unavailable.
+ *
+ * Only an answer the table actually gave is remembered (2026-10-26 cache audit, P3). A failed read
+ * still falls back to the default for THIS call, but is not cached — otherwise a one-second blip
+ * pinned the default for the next minute, and a payroll recalculated in that minute used it even
+ * though the configured row was there.
  */
 export async function getStatutoryConfigForPeriod(period: {
   month: number;
@@ -56,6 +61,7 @@ export async function getStatutoryConfigForPeriod(period: {
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.config;
 
   let config = DEFAULT_STATUTORY_CONFIG;
+  let answered = false;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -70,8 +76,9 @@ export async function getStatutoryConfigForPeriod(period: {
         labels: { event: "statutory_config_load_failed", periodStart },
         error,
       });
-    } else if (data) {
-      config = mapConfigRow(data as Record<string, unknown>);
+    } else {
+      answered = true;
+      if (data) config = mapConfigRow(data as Record<string, unknown>);
     }
   } catch (error) {
     logError("Statutory config load threw an exception, using default configuration", {
@@ -80,6 +87,6 @@ export async function getStatutoryConfigForPeriod(period: {
     });
   }
 
-  cache.set(periodStart, { at: Date.now(), config });
+  if (answered) cache.set(periodStart, { at: Date.now(), config });
   return config;
 }

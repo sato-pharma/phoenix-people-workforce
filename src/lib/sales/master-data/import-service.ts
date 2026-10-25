@@ -1,6 +1,7 @@
 import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { invalidatePriceDependentSalesCaches } from "@/lib/dashboard/invalidation";
 import { errorMessageOf, isStatementTimeoutError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
@@ -507,6 +508,10 @@ export async function importMasterWorkbook(input: {
     summary: `Database Mapping import — ${def.label}: ${inserted} added, ${updated} updated, ${blockedRows.length} blocked.`,
   });
 
+  // A price, product or brick changed: the store split and the achievement figures must not wait out
+  // their cache time to show it (invalidatePriceDependentSalesCaches).
+  if (inserted + updated > 0) invalidatePriceDependentSalesCaches(`master import: ${def.master}`);
+
   return { blockedRows, inserted, master: def.master, skipped, totalRead, updated };
 }
 
@@ -595,6 +600,7 @@ export async function addSingleMasterRow(input: {
     summary: `Database Mapping single add — ${def.label}: ${key} added.`,
   });
 
+  invalidatePriceDependentSalesCaches(`master add: ${def.master}`);
   return { success: true, inserted: true };
 }
 
@@ -704,6 +710,7 @@ export async function updateSingleMasterRow(input: {
     summary: `Database Mapping single edit — ${def.label}: ${key} updated.`,
   });
 
+  invalidatePriceDependentSalesCaches(`master edit: ${def.master}`);
   return { success: true };
 }
 
@@ -778,6 +785,7 @@ export async function setMasterRowActive(input: {
     summary: `Database Mapping row ${input.active ? "reactivated" : "deactivated"} — ${def.label}: ${key}.`,
   });
 
+  invalidatePriceDependentSalesCaches(`master ${input.active ? "reactivate" : "deactivate"}: ${def.master}`);
   return { success: true };
 }
 
@@ -884,6 +892,7 @@ export async function relocateBrick(input: {
     summary: `Database Mapping brick move — ${result.newBrickName} created in ${result.toAreaName} (block ${result.toBlockLabel}), replacing ${oldName}.`,
   });
 
+  invalidatePriceDependentSalesCaches("master brick move");
   return { result, success: true };
 }
 

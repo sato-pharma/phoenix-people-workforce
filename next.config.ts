@@ -621,17 +621,15 @@ const nextConfig: NextConfig = {
       ...(process.env.NODE_ENV === "production"
         ? [
             { source: "/_next/static/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
-            // Next's public/ default (Cache-Control: public, max-age=0) forces Cloud CDN — which
-            // sits in front of this origin with cacheMode: USE_ORIGIN_HEADERS — to revalidate
-            // with origin on essentially every request. Confirmed via Cloud Run request logs
-            // (2026-07-26/28, 5 revisions) that near-simultaneous revalidation GETs from
-            // "Cloud-CDN-Google (GFE/2.0)" for /brand/identity-watermark.png intermittently 500
-            // at the origin; not user-visible (CDN's serveWhileStale keeps serving the last good
-            // copy) but it pollutes error logs/alerts. A bounded max-age (not `immutable`, since
-            // these filenames aren't content-hashed) cuts origin revalidation traffic from
-            // "every request" to "about once a day," which removes the trigger almost entirely,
-            // while capping worst-case staleness if a brand asset is ever replaced in place.
-            { source: "/brand/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
+            // Brand files under public/brand keep their names when a picture is replaced, so a
+            // browser's copy is the only thing that can show an old logo. Next's public/ default
+            // (public, max-age=0) makes every page load ask again; a day plus a week of
+            // stale-while-revalidate (the old value, set for a Cloud CDN that no longer exists —
+            // GCP is gone and Railway has no shared cache) let a replaced logo linger for up to
+            // eight days. With one hour plus a day of stale serving, repeat loads stay cheap and a
+            // replaced file shows from the second load after the hour is up. Not `immutable`: the
+            // names are not content-hashed.
+            { source: "/brand/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" }] },
           ]
         : []),
     ];

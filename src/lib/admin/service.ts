@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache.js";
+import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -371,8 +372,20 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
   };
 }
 
-export const getDataHealthStats = unstable_cache(
-  getDataHealthStatsUncached,
+const getDataHealthStatsCached = unstable_cache(
+  async (): Promise<DataHealthStats> => {
+    const stats = await getDataHealthStatsUncached();
+    // A source that could not be read is named in `unavailable` and its figures left null. Right for
+    // this render; kept, it would blank those figures for the next two minutes. Served, never kept.
+    if (stats.unavailable.length > 0) {
+      serveWithoutCaching(stats, `data health could not read: ${stats.unavailable.join(", ")}`);
+    }
+    return stats;
+  },
   ["data-health-stats-v2"],
   { revalidate: DATA_HEALTH_STATS_CACHE_TTL_SECONDS },
 );
+
+export function getDataHealthStats(): Promise<DataHealthStats> {
+  return unwrapServedWithoutCaching(getDataHealthStatsCached());
+}

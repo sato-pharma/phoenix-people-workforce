@@ -44,16 +44,32 @@ function resolveStorage(storage?: SessionActivityStorage) {
   return window.localStorage;
 }
 
+// Storage can throw on access (a private window, blocked site data). Each helper swallows that: the
+// last-activity stamp is a convenience shared between tabs, and a page must never break because it
+// could not be written (2026-10-26 cache audit, P3).
 export function readSessionActivityAt(storage?: SessionActivityStorage) {
-  const value = resolveStorage(storage)?.getItem(phoenixLastActivityStorageKey);
+  let value: string | null | undefined;
+  try {
+    value = resolveStorage(storage)?.getItem(phoenixLastActivityStorageKey);
+  } catch {
+    return null;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 export function markSessionActivity(storage?: SessionActivityStorage, now = Date.now()) {
-  resolveStorage(storage)?.setItem(phoenixLastActivityStorageKey, String(now));
+  try {
+    resolveStorage(storage)?.setItem(phoenixLastActivityStorageKey, String(now));
+  } catch {
+    // Not recorded; the idle timer counts from the last stamp it could read.
+  }
 }
 
 export function clearSessionActivity(storage?: SessionActivityStorage) {
-  resolveStorage(storage)?.removeItem(phoenixLastActivityStorageKey);
+  try {
+    resolveStorage(storage)?.removeItem(phoenixLastActivityStorageKey);
+  } catch {
+    // Nothing to clear that this page can reach.
+  }
 }

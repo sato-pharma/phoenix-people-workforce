@@ -14,6 +14,7 @@ import { DV_FOCUS_ROLES } from "@/lib/employee-portal/home-snapshot";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,6 +94,7 @@ export async function GET(request: Request) {
       const buffer = await buildDoubleVisitReportPdf(data, filtered, activeFilters, tab);
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
+          ...DOWNLOAD_NO_STORE_HEADERS,
           "Content-Disposition": `attachment; filename="double-visit-report-${data.dateFrom}-to-${data.dateTo}.pdf"`,
           "Content-Type": "application/pdf",
         },
@@ -104,6 +106,7 @@ export async function GET(request: Request) {
     const body = buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer);
     return new NextResponse(body, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="double-visit-report-${data.dateFrom}-to-${data.dateTo}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

@@ -61,7 +61,8 @@ export function invalidateEmployeePhotoMap(): void {
   photoMapCache = null;
 }
 
-async function fetchEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>> {
+/** The map, or null when it could not be read — a null is answered but never cached. */
+async function fetchEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry> | null> {
   const map = new Map<string, PhotoMapEntry>();
   try {
     const supabase = getSupabaseAdmin();
@@ -70,19 +71,20 @@ async function fetchEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>> {
       .select("hr_id, photo_path, photo_updated_at")
       .not("photo_path", "is", null);
 
-    if (!error && Array.isArray(data)) {
-      for (const row of data as Array<{
-        hr_id: string | null;
-        photo_path: string | null;
-        photo_updated_at: string | null;
-      }>) {
-        const key = normalizeHrId(row.hr_id);
-        if (!key || !row.photo_path) continue;
-        map.set(key, { path: row.photo_path, updatedAt: row.photo_updated_at });
-      }
+    if (error || !Array.isArray(data)) return null;
+    for (const row of data as Array<{
+      hr_id: string | null;
+      photo_path: string | null;
+      photo_updated_at: string | null;
+    }>) {
+      const key = normalizeHrId(row.hr_id);
+      if (!key || !row.photo_path) continue;
+      map.set(key, { path: row.photo_path, updatedAt: row.photo_updated_at });
     }
   } catch {
-    // Pre-migration or transient failure — fall back to no uploaded photos.
+    // Pre-migration or a transient failure: no uploaded photos for THIS load, and nothing cached,
+    // so the next load reads again instead of showing initials for the next minute.
+    return null;
   }
 
   return map;
@@ -102,6 +104,7 @@ export async function getEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>>
   if (!inFlightPhotoMap) {
     inFlightPhotoMap = fetchEmployeePhotoMap()
       .then((map) => {
+        if (!map) return new Map<string, PhotoMapEntry>();
         photoMapCache = { value: map, expiresAt: Date.now() + PHOTO_MAP_TTL_MS };
         return map;
       })

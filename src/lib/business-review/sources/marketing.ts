@@ -16,6 +16,7 @@
 // The month is `pay_date`, not `request_date` and not `created_at`, because that is the month the
 // money lands in and the month every existing marketing aggregate keys on.
 
+import { markDegraded } from "@/lib/cache/serve-uncached";
 import { roiValueBucket } from "@/lib/marketing-requests/roi-report-service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -62,7 +63,8 @@ export async function loadMarketingFacts(window: ReviewWindow): Promise<Marketin
   } catch {
     // A missing table or a transient read must not read as "spent nothing" — an empty load with
     // no periods makes the coverage layer report the source as empty, which is the truthful state.
-    return { facts: [], periodsWithData: [], totalRows: 0 };
+    // Marked, so the bundle cache never keeps it past this render.
+    return markDegraded({ facts: [], periodsWithData: [], totalRows: 0 });
   }
 
   const facts: MarketingFact[] = [];

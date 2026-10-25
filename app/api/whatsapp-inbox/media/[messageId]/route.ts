@@ -29,7 +29,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ mess
     const inline = new URL(request.url).searchParams.get("download") !== "1" && INLINE_TYPES.test(mimeType);
     return new Response(new Uint8Array(attachment.bytes), {
       headers: {
-        "Cache-Control": "private, max-age=300",
+        // A customer's WhatsApp media: never kept in a browser cache, where the next person on a
+        // shared machine could open it after inbox access was taken away.
+        "Cache-Control": "private, no-store",
         "Content-Disposition": contentDisposition(inline ? "inline" : "attachment", attachment.fileName),
         "Content-Length": String(attachment.bytes.length),
         "Content-Type": inline ? mimeType : "application/octet-stream",

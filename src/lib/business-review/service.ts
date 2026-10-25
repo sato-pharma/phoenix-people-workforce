@@ -33,6 +33,8 @@ import { unstable_cache } from "next/cache";
 
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
+import { isDegraded, serveWithoutCaching, servedWithoutCachingValue } from "@/lib/cache/serve-uncached";
+import { SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { loadAchievementCacheStamp, shareTokenKeyedRead } from "@/lib/sales/vs-target";
 
 import {
@@ -149,13 +151,27 @@ export async function loadBusinessReview(input?: {
   // SHARED WHILE IN FLIGHT: two viewers opening the same window together join one cache read instead
   // of each building the whole bundle on a miss. Same key, same builder, same bundle.
   const keyParts = reviewBundleCacheKeyParts(window, adjustment, stamp);
-  const packed = await shareTokenKeyedRead(bundleReadsInFlight, keyParts, () =>
-    unstable_cache(
-      async () => packBundle(await loadReviewBundle(window, adjustment)),
-      keyParts,
-      { revalidate: BUNDLE_CACHE_TTL_SECONDS },
-    )(),
-  );
+  let packed: string | null;
+  try {
+    packed = await shareTokenKeyedRead(bundleReadsInFlight, keyParts, () =>
+      unstable_cache(
+        async () => {
+          const bundle = await loadReviewBundle(window, adjustment);
+          // A source that failed to read (visits, marketing, outstation, the directory) says "no
+          // data" on this render, and must not keep saying it for five minutes: served, never kept.
+          if (isDegraded(bundle)) serveWithoutCaching(bundle, "a Business Review source failed to read");
+          return packBundle(bundle);
+        },
+        keyParts,
+        // Tagged so a Product Master price edit expires it at once: the stamp does not see a price.
+        { revalidate: BUNDLE_CACHE_TTL_SECONDS, tags: [SALES_ACHIEVEMENT_STAMPED_CACHE_TAG] },
+      )(),
+    );
+  } catch (error) {
+    const served = servedWithoutCachingValue<ReviewBundle>(error);
+    if (!served) throw error;
+    return { review: served.value, resolution, available };
+  }
   // null means this window does not fit even compressed, so nothing usable was stored. Build live:
   // correct-but-slow is the right trade against handing the data cache an entry that would take
   // the process down. The null marker itself is cached, so later calls skip straight to here.

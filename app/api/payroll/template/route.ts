@@ -37,6 +37,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 import { payrollHeaderCell, payrollTotalsCell } from "@/lib/payroll/payroll-sheet-style";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -895,6 +896,7 @@ async function exactTemplateResponse() {
 
   return new Response(buffer, {
     headers: {
+      ...DOWNLOAD_NO_STORE_HEADERS,
       "Content-Disposition": 'attachment; filename="phoenix-payroll-template.xlsx"',
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     },
@@ -1892,6 +1894,7 @@ export async function GET(request: Request) {
 
       return new Response(buffer, {
         headers: {
+          ...DOWNLOAD_NO_STORE_HEADERS,
           "Content-Disposition": 'attachment; filename="phoenix-salary-upload-template.xlsx"',
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         },
@@ -1928,6 +1931,7 @@ export async function GET(request: Request) {
 
     return new Response(buffer, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

@@ -59,6 +59,7 @@ import {
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
+import { stalePlanDraftKeys } from "@/lib/weekly-planning/plan-draft-retention";
 import {
   findMarketingDoubleVisitPartner,
   isMarketingDoubleVisit,
@@ -1582,10 +1583,20 @@ export function PlansWorkspace({
   const hydratedRef = useRef(false);
   const currentHrId = workspace.currentEmployee?.hrId ?? "";
 
-  // On mount: restore draft if there's no selected plan.
+  // On mount: forget drafts for periods long gone, then restore this period's draft if there's no
+  // selected plan. Without the sweep a draft was removed only when that same period's plan was saved, so
+  // every period left unsaved stayed in the browser for good (2026-10-26 cache audit, P3).
   useEffect(() => {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
+    try {
+      const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? "");
+      for (const key of stalePlanDraftKeys(keys, { currentVersion: DRAFT_VERSION, today: new Date() })) {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // localStorage unavailable — nothing to sweep
+    }
     if (selectedPlan || !currentHrId) return;
     const key = draftKey(currentHrId, activeKind, period.periodStartDate);
     void (async () => {

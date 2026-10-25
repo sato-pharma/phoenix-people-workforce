@@ -18,6 +18,24 @@ const fallbackThemeContext: ThemeContextValue = {
   toggleTheme: () => undefined,
 };
 
+// Browser storage can throw on access (a private window, blocked site data); the theme then falls back
+// to light and is simply not remembered (2026-10-26 cache audit, P3).
+function readSavedTheme(): string | null {
+  try {
+    return window.localStorage.getItem("phoenix-theme");
+  } catch {
+    return null;
+  }
+}
+
+function saveTheme(theme: Theme) {
+  try {
+    window.localStorage.setItem("phoenix-theme", theme);
+  } catch {
+    // Not remembered — the choice still applies to this page.
+  }
+}
+
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark");
   document.documentElement.style.colorScheme = theme;
@@ -27,7 +45,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<Theme>("light");
 
   React.useEffect(() => {
-    const savedTheme = window.localStorage.getItem("phoenix-theme");
+    const savedTheme = readSavedTheme();
     const initialTheme = savedTheme === "dark" ? "dark" : "light";
     const frame = window.requestAnimationFrame(() => {
       setThemeState(initialTheme);
@@ -41,7 +59,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setTheme = React.useCallback((nextTheme: Theme) => {
     setThemeState(nextTheme);
     applyTheme(nextTheme);
-    window.localStorage.setItem("phoenix-theme", nextTheme);
+    saveTheme(nextTheme);
   }, []);
 
   const toggleTheme = React.useCallback(() => {

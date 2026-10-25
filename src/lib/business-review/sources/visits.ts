@@ -44,6 +44,7 @@ import {
   isCrmDoubleVisitRow,
   queryVisits,
 } from "@/lib/crm/reads";
+import { markDegraded } from "@/lib/cache/serve-uncached";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
@@ -228,8 +229,9 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
     ]);
   } catch {
     // A missing mirror or a transient read must read as "no data", which the coverage layer then
-    // states in words. It must never read as a month in which nobody visited anybody.
-    return EMPTY;
+    // states in words. It must never read as a month in which nobody visited anybody. Marked, so
+    // the five-minute bundle cache serves it to this render only (src/lib/cache/serve-uncached.ts).
+    return markDegraded({ ...EMPTY });
   }
 
   const commentByVisitId = new Map<number, string | null>();

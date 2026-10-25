@@ -1,5 +1,7 @@
 import { unstable_cache } from "next/cache.js";
 
+import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
+
 import { getEmployeeDirectory, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 
 import {
@@ -140,6 +142,20 @@ async function getRoleCoverageAuditUncached(): Promise<RoleCoverageAudit> {
   };
 }
 
-export const getRoleCoverageAudit = unstable_cache(getRoleCoverageAuditUncached, ["role-coverage-audit"], {
-  revalidate: ROLE_COVERAGE_CACHE_TTL_SECONDS,
-});
+const getRoleCoverageAuditCached = unstable_cache(
+  async (): Promise<RoleCoverageAudit> => {
+    const audit = await getRoleCoverageAuditUncached();
+    // A probe that failed or timed out is not a measurement. Served to this render, never kept for
+    // five minutes as if that module had been measured; the next load runs it again.
+    if (audit.totals.probeFailed > 0) {
+      serveWithoutCaching(audit, `${audit.totals.probeFailed} role-coverage probe(s) failed`);
+    }
+    return audit;
+  },
+  ["role-coverage-audit"],
+  { revalidate: ROLE_COVERAGE_CACHE_TTL_SECONDS },
+);
+
+export function getRoleCoverageAudit(): Promise<RoleCoverageAudit> {
+  return unwrapServedWithoutCaching(getRoleCoverageAuditCached());
+}

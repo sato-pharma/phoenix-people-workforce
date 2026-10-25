@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { invalidateExecutiveDashboardCache, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
 import { isDisposableSalesBatchRow, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { formatUnits } from "@/lib/sales/format";
@@ -277,7 +277,6 @@ function buildBatchReconciliation(records: ScopedRecord[]): SalesBatchReconcilia
       : 0
   ));
 
-  invalidateExecutiveDashboardCache("sales import created", ["sales"]);
   return {
     importedSalesUnits,
     importedTargetUnits,
@@ -1213,7 +1212,8 @@ export async function getSalesPlatformMetrics(accessContext?: AccessContext | nu
   const cached = unstable_cache(
     () => buildSalesPlatformMetrics(context),
     ["sales-platform-metrics", stamp, JSON.stringify(context)],
-    { revalidate: SALES_PLATFORM_METRICS_CACHE_TTL_SECONDS },
+    // Tagged so a Product Master price edit expires it at once: the stamp does not see a price.
+    { revalidate: SALES_PLATFORM_METRICS_CACHE_TTL_SECONDS, tags: [SALES_ACHIEVEMENT_STAMPED_CACHE_TAG] },
   );
   return cached();
 }
@@ -1377,6 +1377,10 @@ export async function createSalesImport(payload: SalesImportPayload) {
     }
   }
 
+  // The bust belongs to the write (2026-10-26 cache audit, P3). It used to sit inside
+  // buildBatchReconciliation, which only the batch-detail READ calls — so every look at a batch emptied
+  // every sales cache, and a new upload busted nothing until someone opened it.
+  invalidateExecutiveDashboardCache("sales import created", ["sales"]);
   return {
     ...payload.batch,
     linkedRecords: linkedCount,

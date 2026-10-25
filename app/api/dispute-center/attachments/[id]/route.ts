@@ -17,7 +17,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const picture = await readDisputeCenterAttachment({ access, attachmentId: decodeURIComponent(id) });
     return new NextResponse(Buffer.from(picture.bytes), {
       headers: {
-        "Cache-Control": "private, max-age=300",
+        // A dispute photo is evidence one person may see: never kept in a browser cache, where the
+        // next person on a shared machine could open it after access was taken away.
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `inline; filename="${encodeURIComponent(picture.fileName)}"`,
         "Content-Type": picture.contentType,
       },

@@ -21,13 +21,21 @@ import { ApiError, validationError } from "@/lib/http/api-errors";
 import { readTestFlag, territoryForValidation, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
+import { createSignedLinkMemo } from "@/lib/phoenix-crm/server/signed-link-memo";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const PHOENIX_CRM_PHOTO_BUCKET = "phoenix-crm-photos";
 
 /** Far above a real day (a rep validates or visits a few dozen customers), low enough to stop a loop. */
 const SLOTS_PER_HOUR = 90;
-const SIGNED_URL_SECONDS = 600;
+/**
+ * A display link lives fifteen minutes, and one is handed out again only while it has ten or more
+ * left — more than the eight minutes the screen keeps reusing a link (components/phoenix-crm/photo.tsx),
+ * so a reused link never dies on screen. Reusing it is what lets the browser keep the picture.
+ */
+const SIGNED_URL_SECONDS = 900;
+const SIGNED_LINK_MIN_LEFT_MS = 10 * 60 * 1000;
+const signedLinks = createSignedLinkMemo({ max: 5_000, minLeftMs: SIGNED_LINK_MIN_LEFT_MS });
 const SIGN_BATCH_MAX = 120;
 
 export type PhotoPurpose = "place" | "visit";
@@ -191,7 +199,10 @@ export function photoPathTerritory(path: string): { seatSegment: string; isTest:
   return { seatSegment: rest[0], isTest };
 }
 
-/** Ten-minute display URLs for the photos a viewer may see. Paths outside their scope are refused. */
+/**
+ * Display URLs for the photos a viewer may see. Paths outside their scope are refused — checked for
+ * every path before a remembered link is looked up, so reuse never skips the check.
+ */
 export async function signPhotoPaths(viewer: PhoenixCrmViewer, rawPaths: unknown): Promise<Record<string, string>> {
   const paths = [...new Set((Array.isArray(rawPaths) ? rawPaths : []).map((value) => String(value ?? "").trim()).filter(Boolean))];
   if (paths.length === 0) return {};
@@ -208,11 +219,20 @@ export async function signPhotoPaths(viewer: PhoenixCrmViewer, rawPaths: unknown
     }
   }
 
-  const { data, error } = await getSupabaseAdmin().storage.from(PHOENIX_CRM_PHOTO_BUCKET).createSignedUrls(paths, SIGNED_URL_SECONDS);
+  // Taken before the request, so the remembered expiry is never later than the real one.
+  const now = Date.now();
+  const { reused, toSign } = signedLinks.take(paths, now);
+  if (toSign.length === 0) return reused;
+
+  const { data, error } = await getSupabaseAdmin().storage.from(PHOENIX_CRM_PHOTO_BUCKET).createSignedUrls(toSign, SIGNED_URL_SECONDS);
   if (error) throw error;
-  const signed: Record<string, string> = {};
+  const signed: Record<string, string> = { ...reused };
+  const expiresAt = now + SIGNED_URL_SECONDS * 1000;
   for (const entry of data ?? []) {
-    if (entry.path && entry.signedUrl && !entry.error) signed[entry.path] = entry.signedUrl;
+    if (entry.path && entry.signedUrl && !entry.error) {
+      signed[entry.path] = entry.signedUrl;
+      signedLinks.remember(entry.path, entry.signedUrl, expiresAt);
+    }
   }
   return signed;
 }

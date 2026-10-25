@@ -6,6 +6,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildDoubleVisitExportWorkbook, getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     const body = buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer);
     return new NextResponse(body, {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="double-visit-analytics-${data.dateFrom}-to-${data.dateTo}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },

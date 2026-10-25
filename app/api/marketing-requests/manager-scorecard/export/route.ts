@@ -12,6 +12,7 @@ import {
 } from "@/lib/marketing-requests/manager-scorecard-export";
 import { getMarketingManagerScorecard } from "@/lib/marketing-requests/manager-scorecard-service";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
       const pdf = await buildMarketingManagerScorecardPdf(scorecard);
       return new NextResponse(new Uint8Array(pdf), {
         headers: {
+          ...DOWNLOAD_NO_STORE_HEADERS,
           "Content-Disposition": `attachment; filename="${marketingManagerScorecardFilename(scorecard.generatedAtIso, "pdf")}"`,
           "Content-Type": "application/pdf",
         },
@@ -57,6 +59,7 @@ export async function GET(request: Request) {
     const buffer = await workbook.xlsx.writeBuffer();
     return new NextResponse(buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer), {
       headers: {
+        ...DOWNLOAD_NO_STORE_HEADERS,
         "Content-Disposition": `attachment; filename="${marketingManagerScorecardFilename(scorecard.generatedAtIso, "xlsx")}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
