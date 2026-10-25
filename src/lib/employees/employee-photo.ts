@@ -250,6 +250,21 @@ export async function clearEmployeePhoto(hrId: string): Promise<void> {
   invalidateEmployeePhotoMap();
 }
 
+/**
+ * The validator for an employee's current uploaded photo, or null when there is none. Every upload
+ * stores a new object path (a fresh UUID) and a removal clears it, so the path's last segment changes
+ * exactly when the picture does. Read from the cached photo map, so a browser asking "is my copy
+ * still current?" is answered without downloading the picture from storage.
+ */
+export async function employeePhotoEtag(hrId: string): Promise<string | null> {
+  const key = normalizeHrId(hrId);
+  if (!key) return null;
+  const entry = (await getEmployeePhotoMap()).get(key);
+  if (!entry) return null;
+  const version = entry.path.split("/").pop()?.replace(/[^A-Za-z0-9._-]/g, "") ?? "";
+  return version ? `"${version}"` : null;
+}
+
 /** Downloads the raw bytes for an employee's uploaded photo (service-role). */
 export async function streamEmployeePhoto(
   hrId: string,

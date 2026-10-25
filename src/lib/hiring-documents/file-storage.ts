@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-cache";
 
 /**
  * Storage for the scans behind the hiring checklist.
@@ -91,7 +92,7 @@ export async function uploadHiringDocumentFile(input: {
   const { error } = await getSupabaseAdmin()
     .storage.from(HIRING_DOCUMENTS_BUCKET)
     .upload(input.path, input.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: input.contentType,
       // False, always. Every path carries its own random segment, so a collision here means two
       // uploads raced for one object — which must fail loudly rather than quietly replace a

@@ -7,6 +7,7 @@ import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { isMissingColumnError } from "@/lib/employees/missing-column";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
@@ -1408,6 +1409,10 @@ export async function POST(request: Request) {
     });
 
     invalidateEmployeeDirectoryCache();
+    // The same modules a single employee save busts (employee-directory.ts upsertEmployee): an import
+    // fills vacancies and moves seats, so without this the org tree kept the filled seats open and
+    // the finance landing kept the old headcount for up to their 300s TTL (cache audit, 2026-10-26).
+    invalidateExecutiveDashboardCache("employee import confirmed", ["employees", "vacancies", "payroll"]);
 
     // Every employee the sheet CREATED needs an iReports360 (CRM) account before their field work
     // can be matched to them — owner instruction 2026-09-07. `rowsToInsert` is the same list access

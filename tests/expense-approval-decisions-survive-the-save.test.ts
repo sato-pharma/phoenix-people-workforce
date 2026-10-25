@@ -236,15 +236,15 @@ export function runExpenseApprovalDecisionsSurviveTheSaveTests() {
 
   assert.match(
     workspace,
-    /const DECISION_DRAFT_KEY = "phoenix\.outstation\.expense-approvals\.draft\.v1"/,
-    "the queue must keep unsaved decisions somewhere a reload cannot clear",
+    /const draftKey = ownerScopedStorageKey\(EXPENSE_DECISION_DRAFT_KEY_BASE, viewerHrId\)/,
+    "the queue must keep unsaved decisions somewhere a reload cannot clear — under the reviewer's own key",
   );
   assert.match(
     workspace,
-    /writeExpenseDecisionDraft\(decisions\)/,
+    /writeExpenseDecisionDraft\(draftKey, decisions\)/,
     "and write that draft whenever the decisions change, not only on the way out",
   );
-  assert.match(workspace, /readExpenseDecisionDraft\(\)/, "and read it back when the queue loads");
+  assert.match(workspace, /readExpenseDecisionDraft\(draftKey\)/, "and read it back when the queue loads");
 
   // Registered only while something is unsaved: a permanently attached beforeunload makes the page
   // ineligible for the back/forward cache, which is why report-client-error.ts refuses to use one.

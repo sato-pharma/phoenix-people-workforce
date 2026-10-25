@@ -1,3 +1,4 @@
+import { invalidateCrmDailyForecastCache } from "@/lib/dashboard/invalidation";
 // Runtime-safe: closing-area-merges pulls only TYPES from monthly-distributor-import (erased at
 // build time), so this does not close the monthly-distributor-import -> monthly-targets value cycle.
 import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
@@ -363,6 +364,8 @@ export async function upsertMonthlyTargets(input: {
     p_source: input.source ?? "upload",
   });
   if (error) throw error;
+  // The reps' daily forecast reads each month's target from the closing engine (cache audit, 2026-10-26).
+  invalidateCrmDailyForecastCache("monthly targets saved");
   return { upserted: num(data), errors };
 }
 

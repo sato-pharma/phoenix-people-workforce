@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 
+import { browserLocalStorage, clearSignedOutDrafts } from "@/lib/browser-storage/owner-scoped";
 import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 
@@ -18,6 +19,11 @@ export const SIGN_OUT_FAILED_MESSAGE =
  *
  * The OneSignal unbind comes first and never blocks, so a shared device stops receiving the
  * signed-out person's pushes.
+ *
+ * Once the server has answered, the person's unsaved-typing drafts are removed from this browser
+ * (cache audit, 2026-10-26) — the next person on a shared PC must not open the Contact HR form to
+ * find the last person's message. The offline queues are deliberately kept: they are owner-checked
+ * and wait for their owner (src/lib/browser-storage/owner-scoped.ts).
  */
 export async function signOutAndLeave(): Promise<boolean> {
   logoutOneSignal();
@@ -33,6 +39,7 @@ export async function signOutAndLeave(): Promise<boolean> {
     toast.error(typeof payload?.message === "string" && payload.message ? payload.message : SIGN_OUT_FAILED_MESSAGE);
     return false;
   }
+  clearSignedOutDrafts(browserLocalStorage());
   hardNavigate("/login");
   return true;
 }

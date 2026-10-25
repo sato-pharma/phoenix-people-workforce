@@ -73,8 +73,22 @@ const TEXT_FORMAT = {
  * Process-local memo, same reasoning as the campaign-account one: a rep's page is re-rendered many
  * times over the same handful of fragments, and every repeat would otherwise be another paid round
  * trip. Cleared on deploy — it is a cache, not a store.
+ *
+ * Bounded (cache audit, 2026-10-26), like the campaign-account memo: at most
+ * CAMPAIGN_NOTE_ASSIST_MEMO_MAX_ENTRIES fragments are kept, the oldest going first.
  */
+export const CAMPAIGN_NOTE_ASSIST_MEMO_MAX_ENTRIES = 2_000;
 const memo = new Map<string, CampaignAssistReading | null>();
+
+function rememberReading(fragment: string, reading: CampaignAssistReading | null): void {
+  memo.delete(fragment); // re-inserting moves it to the newest end of the Map's order
+  memo.set(fragment, reading);
+  while (memo.size > CAMPAIGN_NOTE_ASSIST_MEMO_MAX_ENTRIES) {
+    const oldest = memo.keys().next();
+    if (oldest.done) break;
+    memo.delete(oldest.value);
+  }
+}
 
 function parseFragments(outputText: string): Map<number, unknown> {
   const byIndex = new Map<number, unknown>();
@@ -127,7 +141,7 @@ export async function assistCampaignFragments(
     const byIndex = parseFragments(outputText);
     for (const [index, fragment] of batch.entries()) {
       const reading = acceptAssistRow(fragment, byIndex.get(index));
-      memo.set(fragment, reading);
+      rememberReading(fragment, reading);
       if (reading) resolved.set(fragment, reading);
     }
   } catch (error) {

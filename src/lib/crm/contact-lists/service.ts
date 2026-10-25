@@ -629,10 +629,12 @@ export async function requestContactListChange(
  * An applied change moves a list, so the cached list sizes the Reps List, the KPI boards and Plan
  * Verification read (getRepListSummaries, 300s) are wrong until busted. A failure here must never
  * turn an applied change into an error: the list is written, and the TTL is the fallback.
+ * Expired at once, not "max": the manager's own screen re-reads the sizes straight after the change,
+ * and "max" (stale-while-revalidate) served that read the sizes from before it.
  */
 function bustListSummaries(): void {
   try {
-    revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
+    revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, { expire: 0 });
   } catch (error) {
     console.warn("Doctor list summaries cache revalidation failed.", { error });
   }

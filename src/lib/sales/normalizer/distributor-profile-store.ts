@@ -73,6 +73,10 @@ function strArray(value: unknown): string[] {
 async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.byCode;
   const byCode = new Map<string, DbProfileRow>();
+  // Only a read that SUCCEEDED is cached (cache audit, 2026-10-26). A failed one used to cache the
+  // empty map for the whole TTL, so every upload in that window parsed on the code defaults with the
+  // saved overrides ignored; now it answers this one call and the next call reads again.
+  let loaded = false;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from(PROFILE_TABLE).select("*").eq("active", true);
@@ -87,6 +91,7 @@ async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
         const code = normalizeCodeKey(row.distributor_code);
         if (code) byCode.set(code, row);
       }
+      loaded = true;
     }
   } catch (e) {
     logError("Distributor profile override load threw", {
@@ -94,7 +99,7 @@ async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
       error: e,
     });
   }
-  cache = { at: Date.now(), byCode };
+  if (loaded) cache = { at: Date.now(), byCode };
   return byCode;
 }
 

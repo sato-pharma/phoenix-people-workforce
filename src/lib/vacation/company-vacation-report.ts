@@ -229,11 +229,33 @@ export async function getHolidayCalendarReadinessForLeave(
 }
 
 async function loadHolidayDates(startDate: string, endDate: string): Promise<string[]> {
-  const dates = new Set<string>();
+  return holidayDatesOf(await loadHolidayResults(startDate, endDate));
+}
+
+async function loadHolidayResults(startDate: string, endDate: string) {
   // One call per month, run concurrently — sequential awaits here were a meaningful chunk of
   // page load time for a multi-month range with no benefit (each month's lookup is independent).
-  const results = await Promise.all(monthKeysBetween(startDate, endDate).map(({ month, year }) =>
+  return Promise.all(monthKeysBetween(startDate, endDate).map(({ month, year }) =>
     getConfirmedNationalHolidays({ month, year }).catch(() => null)));
+}
+
+/**
+ * The historical half, which is cached for 6 h — so it THROWS when any month could not be read
+ * (cache audit, 2026-10-26). A month Google's feed could not answer comes back with the fixed-date
+ * holidays only, and cached that way the Eid days counted as vacation days in the report and its
+ * export for six hours after the feed was back. A throw is never cached: loadHolidayDateSet falls
+ * back to the uncached best-effort read for this one load, and the next load asks again.
+ */
+async function loadHolidayDatesComplete(startDate: string, endDate: string): Promise<string[]> {
+  const results = await loadHolidayResults(startDate, endDate);
+  if (results.some((result) => !result || !result.calendarReachable)) {
+    throw new Error("The public holiday calendar could not be read for every month of this range.");
+  }
+  return holidayDatesOf(results);
+}
+
+function holidayDatesOf(results: Awaited<ReturnType<typeof loadHolidayResults>>): string[] {
+  const dates = new Set<string>();
   for (const result of results) {
     if (!result) continue; // Best-effort — a holiday lookup outage just under-excludes that month.
     for (const holiday of result.holidays) {
@@ -247,7 +269,8 @@ async function loadHolidayDates(startDate: string, endDate: string): Promise<str
   return [...dates];
 }
 
-const loadHolidayDatesCached = unstable_cache(loadHolidayDates, ["company-vacation-report-holidays"], {
+// A NEW key: an entry the old best-effort version cached during an outage is never read back.
+const loadHolidayDatesCached = unstable_cache(loadHolidayDatesComplete, ["company-vacation-report-holidays-complete"], {
   revalidate: HISTORICAL_REVALIDATE_SECONDS,
   tags: [CACHE_TAG],
 });
@@ -255,7 +278,9 @@ const loadHolidayDatesCached = unstable_cache(loadHolidayDates, ["company-vacati
 async function loadHolidayDateSet(startDate: string, endDate: string): Promise<Set<string>> {
   const { current, historical } = splitHistoricalAndCurrent(startDate, endDate);
   const [historicalDates, currentDates] = await Promise.all([
-    historical ? loadHolidayDatesCached(historical.start, historical.end) : Promise.resolve([]),
+    historical
+      ? loadHolidayDatesCached(historical.start, historical.end).catch(() => loadHolidayDates(historical.start, historical.end))
+      : Promise.resolve([]),
     current ? loadHolidayDates(current.start, current.end) : Promise.resolve([]),
   ]);
   return new Set([...historicalDates, ...currentDates]);
@@ -348,9 +373,15 @@ const loadEmployeesCached = unstable_cache(loadEmployeesRaw, ["company-vacation-
   revalidate: 300,
   tags: [CACHE_TAG],
 });
+// A failed read THROWS, exactly as the employee roster above does (cache audit, 2026-10-26). It used
+// to be caught here as "nobody is fingerprint-mapped", and that empty answer was cached for 5 min:
+// days the fingerprints prove were WORKED showed as CRM vacation signals, and the approve route takes
+// the day count the screen sends — so an approval in that window could deduct leave for a worked
+// day. An error page that clears on reload is the safe failure. A new key, so no empty set the old
+// version cached is ever read back.
 const loadDeviceMappedHrIdsCached = unstable_cache(
-  async () => [...(await loadActiveDeviceMappedHrIds().catch(() => new Set<string>()))],
-  ["company-vacation-report-device-mapped"],
+  async () => [...(await loadActiveDeviceMappedHrIds())],
+  ["company-vacation-report-device-mapped-v2"],
   { revalidate: 300, tags: [CACHE_TAG] },
 );
 

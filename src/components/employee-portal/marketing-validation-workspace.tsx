@@ -109,6 +109,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { isOwnedByViewer, normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
 import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
@@ -161,16 +162,30 @@ function useFocusTrap(active: boolean) {
 
 type QueuedSubmission = {
   id: string;
+  /**
+   * Who queued it. Absent on entries queued before 2026-10-26, which are never sent: the replay
+   * posts under the SIGNED-IN session, so on a shared tablet rep A's visit was filed as rep B's
+   * (src/lib/browser-storage/owner-scoped.ts).
+   */
+  ownerHrId?: string;
   payload: unknown;
   timestamp: number;
 };
 
-function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
+/**
+ * The queue is per BROWSER and a tablet is shared, so only `viewerHrId`'s own entries are replayed,
+ * counted or added; everyone's entries stay mirrored to disk for their owners. `viewerHrId` arrives
+ * with the workspace load, and until it does nothing is replayed or queued.
+ */
+function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHrId: string) {
   const [queue, setQueue] = useState<QueuedSubmission[]>([]);
   // Always start `true` to match SSR output --- sync real value in useEffect
   const [isOnline, setIsOnline] = useState(true);
-  /** Offline submissions found on disk that were too old to send. Surfaced, never dropped quietly. */
-  const [expiredCount, setExpiredCount] = useState(0);
+  /**
+   * The owners of the offline submissions found on disk that can no longer be sent: too old, or
+   * queued before entries said whose they are ("" for those). Surfaced, never dropped quietly.
+   */
+  const [unsendableOwners, setUnsendableOwners] = useState<string[]>([]);
   const replayingRef = useRef(false);
   // Set once the stored queue has been read back, so the persist effect below cannot write its
   // empty initial state over a real queue in the moment before the read returns.
@@ -196,12 +211,16 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
       if (Array.isArray(stored) && stored.length > 0) {
         const entries = stored as QueuedSubmission[];
         const cutoff = Date.now() - MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS;
-        const usable = entries.filter((entry) => Number(entry.timestamp) >= cutoff);
+        const usable = entries.filter(
+          (entry) => Number(entry.timestamp) >= cutoff && normalizeOwnerHrId(entry.ownerHrId) !== "",
+        );
         if (usable.length > 0) {
           setQueue(usable);
         }
         if (usable.length < entries.length) {
-          setExpiredCount(entries.length - usable.length);
+          setUnsendableOwners(
+            entries.filter((entry) => !usable.includes(entry)).map((entry) => normalizeOwnerHrId(entry.ownerHrId)),
+          );
         }
       }
       hydratedRef.current = true;
@@ -241,13 +260,13 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
     };
   }, []);
 
-  // Replay queue when back online
+  // Replay queue when back online --- the signed-in person's own entries only.
   useEffect(() => {
-    if (!isOnline || queue.length === 0 || replayingRef.current) return;
+    const pending = queue.filter((item) => isOwnedByViewer(item.ownerHrId, viewerHrId));
+    if (!isOnline || pending.length === 0 || replayingRef.current) return;
     replayingRef.current = true;
 
     (async () => {
-      const pending = [...queue];
       for (const item of pending) {
         try {
           await onReplay(item.payload);
@@ -259,23 +278,30 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
       }
       replayingRef.current = false;
     })();
-  }, [isOnline, queue, onReplay]);
+  }, [isOnline, queue, onReplay, viewerHrId]);
 
-  function enqueue(payload: unknown) {
+  /** False, and nothing queued, while the page does not yet know who is signed in. */
+  function enqueue(payload: unknown): boolean {
+    const owner = normalizeOwnerHrId(viewerHrId);
+    if (!owner) return false;
     const submission: QueuedSubmission = {
       id: `q-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      ownerHrId: owner,
       payload,
       timestamp: Date.now(),
     };
     setQueue((current) => [...current, submission]);
+    return true;
   }
 
+  const viewer = normalizeOwnerHrId(viewerHrId);
   return {
-    dismissExpired: () => setExpiredCount(0),
+    dismissExpired: () => setUnsendableOwners([]),
     enqueue,
-    expiredCount,
+    // Another person's lost submission is theirs to be told about, not the viewer's.
+    expiredCount: unsendableOwners.filter((owner) => owner === "" || owner === viewer).length,
     isOnline,
-    queueLength: queue.length,
+    queueLength: queue.filter((item) => isOwnedByViewer(item.ownerHrId, viewerHrId)).length,
   };
 }
 
@@ -2048,7 +2074,7 @@ export function MarketingValidationWorkspace() {
       return { ...current, rows: [...rows, ...current.rows], summary };
     });
   }, []);
-  const { dismissExpired, enqueue, expiredCount, isOnline, queueLength } = useOfflineQueue(replaySubmission);
+  const { dismissExpired, enqueue, expiredCount, isOnline, queueLength } = useOfflineQueue(replaySubmission, workspace.viewerHrId);
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -2896,7 +2922,10 @@ export function MarketingValidationWorkspace() {
 
     // Offline path --- queue and optimistically update UI
     if (!isOnline) {
-      enqueue(submissionPayload);
+      if (!enqueue(submissionPayload)) {
+        setMessage("This could not be saved offline because the page had not finished loading. Reconnect and save again.", "warning");
+        return;
+      }
       // Optimistic: increment pending count
       setWorkspace((current) => ({
         ...current,
@@ -2974,7 +3003,10 @@ export function MarketingValidationWorkspace() {
       setActiveTab("pending");
     } catch {
       // Network failure mid-request --- queue for retry
-      enqueue(submissionPayload);
+      if (!enqueue(submissionPayload)) {
+        setMessage("Network error. This could not be queued because the page had not finished loading. Save again.", "warning");
+        return;
+      }
       resetForm();
       setMessage("Network error. Submission queued for automatic retry.");
     } finally {

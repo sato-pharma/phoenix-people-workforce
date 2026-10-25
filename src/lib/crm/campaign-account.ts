@@ -120,8 +120,23 @@ const TEXT_FORMAT = {
  * would otherwise be another paid round trip. Cleared on deploy, which is fine: it is a cache, not
  * a store. A durable cache belongs in the mirror, keyed by visit, and is deliberately not built
  * here — see the module note in the PR.
+ *
+ * Bounded (cache audit, 2026-10-26): the website runs for days between deploys and almost every note
+ * is new, so an unbounded memo only grew. At most CAMPAIGN_ACCOUNT_MEMO_MAX_ENTRIES notes are kept;
+ * past it the oldest goes first, and a forgotten note is simply read again.
  */
+export const CAMPAIGN_ACCOUNT_MEMO_MAX_ENTRIES = 2_000;
 const memo = new Map<string, string | null>();
+
+function rememberAccount(note: string, account: string | null): void {
+  memo.delete(note); // re-inserting moves it to the newest end of the Map's order
+  memo.set(note, account);
+  while (memo.size > CAMPAIGN_ACCOUNT_MEMO_MAX_ENTRIES) {
+    const oldest = memo.keys().next();
+    if (oldest.done) break;
+    memo.delete(oldest.value);
+  }
+}
 
 function parseAccounts(outputText: string): Map<number, string | null> {
   const byIndex = new Map<number, string | null>();
@@ -183,7 +198,7 @@ export async function extractCampaignAccounts(comments: readonly string[]): Prom
       // acceptExtractedAccount is what makes an unanswered index and a hallucinated one behave
       // identically: both become null.
       const account = acceptExtractedAccount(note, byIndex.get(index) ?? null);
-      memo.set(note, account);
+      rememberAccount(note, account);
       resolved.set(note, account);
     }
   } catch (error) {

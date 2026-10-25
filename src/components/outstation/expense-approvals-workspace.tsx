@@ -36,6 +36,7 @@ import { Fact, PanelSection } from "@/components/outstation/approval-detail-prim
 import { TripAttachments } from "@/components/outstation/trip-attachments";
 import { ExpenseClaimValidationPanel } from "@/components/outstation/expense-claim-validation-panel";
 import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
+import { EXPENSE_DECISION_DRAFT_KEY_BASE, ownerScopedStorageKey } from "@/lib/browser-storage/owner-scoped";
 import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import {
   APPROVED_STATUS,
@@ -114,8 +115,12 @@ function savedDecision(record: LoadedRecord): Decision {
  * `localStorage`, not `sessionStorage`: closing the tab and coming back is exactly the case that
  * lost the work. Per browser and per viewer, which is what it should be — a draft is one person's
  * unsaved thinking, not shared state.
+ *
+ * Per viewer is now the KEY (`…draft.v2:<HR id>`, 2026-10-26): the v1 key was one per browser, so on
+ * a shared office PC one reviewer's unsaved decisions were restored into the next reviewer's queue
+ * and saved under their name. With no HR id nothing is stored at all.
  */
-const DECISION_DRAFT_KEY = "phoenix.outstation.expense-approvals.draft.v1";
+const LEGACY_DECISION_DRAFT_KEY = "phoenix.outstation.expense-approvals.draft.v1";
 
 /** A draft older than this belongs to a different sitting — drop it rather than silently re-open
  * decisions taken against a queue that has moved on. */
@@ -123,9 +128,11 @@ const DECISION_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Never let a storage failure reach the queue. Private mode, a full quota and a browser with site
  * data blocked all throw here, and none of them is a reason to stop reviewing expenses. */
-function readExpenseDecisionDraft(): Record<string, Decision> | null {
+function readExpenseDecisionDraft(draftKey: string | null): Record<string, Decision> | null {
   try {
-    const raw = window.localStorage.getItem(DECISION_DRAFT_KEY);
+    window.localStorage.removeItem(LEGACY_DECISION_DRAFT_KEY);
+    if (!draftKey) return null;
+    const raw = window.localStorage.getItem(draftKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { decisions?: unknown; savedAt?: unknown };
     const savedAt = Number(parsed?.savedAt);
@@ -155,14 +162,15 @@ function readExpenseDecisionDraft(): Record<string, Decision> | null {
   }
 }
 
-function writeExpenseDecisionDraft(decisions: Record<string, Decision>) {
+function writeExpenseDecisionDraft(draftKey: string | null, decisions: Record<string, Decision>) {
+  if (!draftKey) return;
   try {
     if (Object.keys(decisions).length === 0) {
-      window.localStorage.removeItem(DECISION_DRAFT_KEY);
+      window.localStorage.removeItem(draftKey);
       return;
     }
     window.localStorage.setItem(
-      DECISION_DRAFT_KEY,
+      draftKey,
       JSON.stringify({ decisions, savedAt: Date.now() }),
     );
   } catch {
@@ -247,7 +255,10 @@ export function ExpenseApprovalsWorkspace({
    * existing caller keeps its current behaviour.
    */
   canDecide = true,
-}: { canDecide?: boolean } = {}) {
+  /** The signed-in reviewer's HR id — the decision draft is kept under it, and nowhere without it. */
+  viewerHrId = null,
+}: { canDecide?: boolean; viewerHrId?: string | null } = {}) {
+  const draftKey = ownerScopedStorageKey(EXPENSE_DECISION_DRAFT_KEY_BASE, viewerHrId);
   const [records, setRecords] = useState<LoadedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -326,7 +337,7 @@ export function ExpenseApprovalsWorkspace({
       await Promise.resolve();
       if (cancelled) return;
 
-      const draft = readExpenseDecisionDraft();
+      const draft = readExpenseDecisionDraft(draftKey);
       if (!draft) return;
 
       const restored: Record<string, Decision> = {};
@@ -350,13 +361,13 @@ export function ExpenseApprovalsWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [records]);
+  }, [records, draftKey]);
 
   // Persist on every change, so the draft is never more than one decision behind the screen.
   useEffect(() => {
     if (!draftRestoredRef.current) return;
-    writeExpenseDecisionDraft(decisions);
-  }, [decisions]);
+    writeExpenseDecisionDraft(draftKey, decisions);
+  }, [decisions, draftKey]);
 
   // Imported history (trips before July 2026) is values only — owner ruling 2026-09-12, see
   // imported-history.ts — so it always shows what is stored, whatever a restored draft holds for it.

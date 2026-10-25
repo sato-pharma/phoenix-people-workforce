@@ -125,6 +125,7 @@ import { packVacationReportRows, unpackVacationReportRows } from "@/lib/vacation
 import { resolveVacationInformedHrIds, VACATION_INFORMED_SEAT, isVacationInformedType } from "@/lib/vacation/informed-recipients";
 import { resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
 import { listLeaveBalanceChargesForEmployees } from "@/lib/deductions/leave-balance-ledger";
+import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-cache";
 
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
@@ -456,22 +457,29 @@ export async function canManageVacationRecords(access: AccessContext) {
   );
 }
 
+/**
+ * True only when a table really is missing: PostgREST's PGRST205 ("Could not find the table … in the
+ * schema cache") or Postgres's 42P01 ("relation … does not exist"). The code is read when the error
+ * still carries it; throwVacationDatabaseError keeps only the message, so both shapes are matched too.
+ *
+ * NOT "schema cache" on its own, and NOT any message that merely names a vacation table (cache audit,
+ * 2026-10-26). PostgREST answers PGRST002 ("Could not query the database for the schema cache") while
+ * the database restarts, and the callers turn a missing table into an EMPTY answer — which the
+ * report's 60 s cache then kept: the Vacation Report and the approval badges showed no requests, and
+ * the portal's leave tile showed the whole entitlement as remaining. A permission, constraint or
+ * missing-column error that names a table is a real failure too, and must surface as one.
+ */
 function isVacationSchemaMissingError(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const code = typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+  if (code === "PGRST205" || code === "42P01") return true;
+  // Any other code is what it says it is — 42703 is a missing COLUMN ("column … of relation … does not
+  // exist"), never a missing table.
+  if (code) return false;
+  const raw = (error as { message?: unknown } | null)?.message;
+  const message = (typeof raw === "string" ? raw : String(error)).toLowerCase();
   return (
-    message.includes(vacationRequestsTable) ||
-    message.includes(vacationEventsTable) ||
-    message.includes(vacationEvidenceReviewsTable) ||
-    message.includes(vacationApprovalStepsTable) ||
-    message.includes(vacationSlaRunsTable) ||
-    message.includes(vacationSlaSettingsTable) ||
-    message.includes(vacationTokensTable) ||
-    message.includes(vacationWeeklyOffPoliciesTable) ||
-    message.includes(vacationRetentionPoliciesTable) ||
-    message.includes(vacationRetentionPurgeRunsTable) ||
     message.includes("could not find the table") ||
-    message.includes("schema cache") ||
-    (message.includes("relation") && message.includes("does not exist"))
+    (message.includes("relation") && message.includes("does not exist") && !message.includes("column"))
   );
 }
 
@@ -3305,7 +3313,7 @@ async function uploadSickAttachment(input: {
   const { error } = await getSupabaseAdmin().storage
     .from(vacationAttachmentBucket)
     .upload(objectPath, input.attachment.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: input.attachment.contentType,
       upsert: false,
     });
@@ -3339,7 +3347,7 @@ async function uploadCompensatoryAttachment(input: {
   const { error } = await getSupabaseAdmin().storage
     .from(vacationAttachmentBucket)
     .upload(objectPath, input.attachment.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: input.attachment.contentType,
       upsert: false,
     });
@@ -3409,7 +3417,7 @@ async function uploadAdditionalVacationEvidenceFile(input: {
   const { error } = await getSupabaseAdmin().storage
     .from(vacationAttachmentBucket)
     .upload(objectPath, input.attachment.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: input.attachment.contentType,
       upsert: false,
     });

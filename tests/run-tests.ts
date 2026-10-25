@@ -994,6 +994,8 @@ import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
 import { runOutstationCarEvidenceValidationTests } from "./outstation-car-evidence-validation.test.ts";
 import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
+import { runBrowserStorageOwnerScopedTests } from "./browser-storage-owner-scoped.test.ts";
+import { runCacheAuditFixesTests } from "./cache-audit-fixes.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
 import { runExpenseReadsAreNotCappedAt1000Tests } from "./expense-reads-are-not-capped-at-1000.test.ts";
@@ -4751,6 +4753,8 @@ await runTest("workflow control api routes", runWorkflowControlApiRoutesTests);
 await runTest("outstation car evidence validation", runOutstationCarEvidenceValidationTests);
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
+await runTest("a draft or offline queue on a shared device is restored and sent only for its own person", runBrowserStorageOwnerScopedTests);
+await runTest("a cache never keeps a failed read, a write expires the screen it moves, and a private file is kept no longer than its link", runCacheAuditFixesTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
 await runTest(
   "outstation workflow resync preserves the HR decision",

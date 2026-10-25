@@ -36,7 +36,8 @@ import {
 } from "@/lib/outstation/evidence-waiver";
 import {
   isRestorableOutstationLocalDraft,
-  outstationDraftStorageKey,
+  outstationDraftStorageKeyBase,
+  outstationDraftStorageKeyFor,
   parseOutstationLocalDraft,
   type OutstationLocalDraft,
 } from "@/lib/outstation/local-draft";
@@ -104,7 +105,37 @@ type PermissionPromptState = {
   kind: PermissionPromptKind;
 };
 
-const draftKey = outstationDraftStorageKey;
+/**
+ * The draft lives under the signed-in person's own key (`outstationDraftStorageKeyFor`), and every
+ * read and write goes through these three: a browser with site data blocked or a full quota (the
+ * arrival photo is a data URL) must never take the claim screen down. A null key stores nothing.
+ */
+function readStoredDraft(key: string | null): OutstationLocalDraft | null {
+  if (!key) return null;
+  try {
+    return parseOutstationLocalDraft(window.localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredDraft(key: string | null, draft: OutstationLocalDraft) {
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Not stored: the claim screen keeps working, it simply cannot recover after a reload.
+  }
+}
+
+function removeStoredDraft(key: string | null) {
+  if (!key) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Nothing to remove from a store that cannot be read.
+  }
+}
 
 function buildDraftId() {
   return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function"
@@ -333,6 +364,7 @@ export function MobileOutstationWizard({
   residenceSummary: string;
 }) {
   const router = useRouter();
+  const draftKey = outstationDraftStorageKeyFor(employeeHrId);
   const [step, setStep] = useState(1);
   // He pressed Next (or Submit) on a step that still needs something: the bar then says
   // "Still needed" in rose instead of "Now" — the same two words Log a visit uses.
@@ -498,7 +530,7 @@ export function MobileOutstationWizard({
     pendingOfflineDraftRef.current = false;
     syncAttemptedRef.current = false;
     lastCalculationKeyRef.current = "";
-    window.localStorage.removeItem(draftKey);
+    removeStoredDraft(draftKey);
     stopCarEvidenceCamera();
     setCalculation(null);
     setCaptured(null);
@@ -522,12 +554,15 @@ export function MobileOutstationWizard({
     setTicketFiles([]);
     setTransportationType("car");
     setStep(1);
-  }, [stopCarEvidenceCamera]);
+  }, [draftKey, stopCarEvidenceCamera]);
 
   useEffect(() => {
-    const restore = parseOutstationLocalDraft(window.localStorage.getItem(draftKey));
-    if (!isRestorableOutstationLocalDraft(restore)) {
-      window.localStorage.removeItem(draftKey);
+    // The browser-wide draft from before 2026-10-26 cannot say whose claim it is, so it is removed
+    // rather than restored for whoever happens to be signed in (src/lib/browser-storage/owner-scoped.ts).
+    removeStoredDraft(outstationDraftStorageKeyBase);
+    const restore = readStoredDraft(draftKey);
+    if (!isRestorableOutstationLocalDraft(restore, employeeHrId)) {
+      removeStoredDraft(draftKey);
       return;
     }
 
@@ -568,7 +603,7 @@ export function MobileOutstationWizard({
     setTransportationType(restore.transportationType);
     setTripEndDate(restore.tripEndDate);
     setTripStartDate(restore.tripStartDate);
-  }, []);
+  }, [draftKey, employeeHrId]);
 
   useEffect(() => {
     const syncOnlineState = () => setIsOffline(!navigator.onLine);
@@ -589,7 +624,7 @@ export function MobileOutstationWizard({
 
     if (!isOffline || !captured) {
       if (!pendingOfflineDraftRef.current) {
-        window.localStorage.removeItem(draftKey);
+        removeStoredDraft(draftKey);
       }
       return;
     }
@@ -614,6 +649,7 @@ export function MobileOutstationWizard({
       pmWorkload,
       medicalTripHrId,
       notes,
+      ownerHrId: employeeHrId,
       returnTicketAmount,
       syncPending: true,
       transportationType,
@@ -622,7 +658,7 @@ export function MobileOutstationWizard({
       tripEndDate,
       tripStartDate,
     };
-    window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    writeStoredDraft(draftKey, draft);
   }, [
     captured,
     carEvidence?.capturedAt,
@@ -632,6 +668,8 @@ export function MobileOutstationWizard({
     carEvidence?.capturedLocationLabel,
     carEvidence?.capturedLongitude,
     carEvidenceDraftId,
+    draftKey,
+    employeeHrId,
     expenseType,
     goTicketAmount,
     meetingAmount,
@@ -653,10 +691,11 @@ export function MobileOutstationWizard({
   useEffect(() => {
     if (!isOffline) {
       const syncPending = async () => {
-        const draft = parseOutstationLocalDraft(window.localStorage.getItem(draftKey));
+        const draft = readStoredDraft(draftKey);
         if (
-          !draft?.syncPending ||
-          !draft.captured ||
+          // Only the signed-in person's own draft is ever sent: the server files it under THIS
+          // session, so another person's draft replayed here became their claim under our name.
+          !isRestorableOutstationLocalDraft(draft, employeeHrId) ||
           !draft.tripStartDate ||
           !draft.tripEndDate ||
           // Applies to EVERY transport type, not just car: the server refuses any request
@@ -753,7 +792,7 @@ export function MobileOutstationWizard({
     } else {
       syncAttemptedRef.current = false;
     }
-  }, [employeeHrId, isOffline, medicalTripOptions, resetFormState, router]);
+  }, [draftKey, employeeHrId, isOffline, medicalTripOptions, resetFormState, router]);
 
   const hasTicketAttachments = ticketFiles.length > 0;
   const hasCarEvidence = Boolean(carEvidence?.imageDataUrl);

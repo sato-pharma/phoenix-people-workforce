@@ -186,7 +186,7 @@ export function runCrmContactListChangesTests() {
   // An applied change moves a list, so the cached list sizes are busted on both paths that apply one.
   assert.match(
     service,
-    /function bustListSummaries\(\)[^{]*\{\s*try \{\s*revalidateTag\(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max"\)/,
+    /function bustListSummaries\(\)[^{]*\{\s*try \{\s*revalidateTag\(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, \{ expire: 0 \}\)/,
     "the list-size cache tag is busted, inside a try so a cache failure never fails an applied change",
   );
   assert.match(applyBody, /throw applied\.error;\s*\}\s*bustListSummaries\(\);\s*return \{ changeId \}/, "a direct change busts the list sizes once applied");

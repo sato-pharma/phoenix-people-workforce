@@ -65,6 +65,15 @@ export const FINANCE_DASHBOARD_CACHE_TAG = "finance-dashboard";
  */
 export const VACATION_REPORT_ROWS_CACHE_TAG = "vacation-report-rows";
 
+/**
+ * The reps' daily forecast's own tag (src/lib/phoenix-crm/server/daily-forecast.ts: the published CNS
+ * closing it measures a rep against). A bare string here for the same reason as the tags above. It
+ * was tagged only "sos-reference", which nothing that moves a closing busts: a publish, an unpublish
+ * or a target save left the forecast on the old closing for its whole 10-minute TTL (cache audit,
+ * 2026-10-26). Busted by invalidateCrmDailyForecastCache below.
+ */
+export const CRM_DAILY_FORECAST_CACHE_TAG = "phoenix-crm-daily-forecast";
+
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
@@ -115,14 +124,17 @@ export function invalidateExecutiveDashboardCache(
     // leave steps. Without this its 300s TTL is the only thing between a confirmed payroll run
     // and the finance manager seeing it — on a landing page whose whole job is "what is waiting
     // on you", five minutes of staleness is five minutes of a queue he thinks he has cleared.
+    // Expired at once (cache audit, 2026-10-26): "max" is stale-while-revalidate, so the finance
+    // manager's own refresh after a decision was still served the queue from before it.
     if (uniqueModules.some((module) => FINANCE_DASHBOARD_MODULES.includes(module))) {
-      revalidateTag(FINANCE_DASHBOARD_CACHE_TAG, "max");
+      revalidateTag(FINANCE_DASHBOARD_CACHE_TAG, { expire: 0 });
     }
     // An organogram-affecting change also invalidates the cached org tree — it shares "sos-reference"
     // with the sales reference masters, so a hire, seat move or exit shows up immediately instead of
-    // waiting out the cache's 300s TTL.
+    // waiting out the cache's 300s TTL. Expired at once, not "max": the HR screen that just saved a
+    // hire re-reads the tree straight away, and "max" served it the tree from before the save.
     if (uniqueModules.some((module) => ORG_TREE_MODULES.includes(module))) {
-      revalidateTag("sos-reference", "max");
+      revalidateTag("sos-reference", { expire: 0 });
     }
   } catch (error) {
     console.warn("Executive dashboard route revalidation failed.", {
@@ -143,6 +155,58 @@ export function invalidateSalesDashboardCache(reason: string) {
     for (const tag of SALES_DASHBOARD_CACHE_TAGS) revalidateTag(tag, "max");
   } catch (error) {
     console.warn("Sales dashboard cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/**
+ * Expires the reps' daily forecast at once, after a closing is published or unpublished or a month's
+ * targets are saved or dropped. `{ expire: 0 }`, not "max": a rep opening the forecast right after a
+ * publish must get the published month, not one more read of the old one. Best-effort, as below.
+ */
+export function invalidateCrmDailyForecastCache(reason: string) {
+  try {
+    revalidateTag(CRM_DAILY_FORECAST_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("CRM daily forecast cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/**
+ * Expires the Finance Command Center at once, for a write it counts that no module of
+ * invalidateExecutiveDashboardCache names: a marketing request decision and a direct order's status or
+ * booked month. Those writes busted nothing, so the finance landing kept an order or a request
+ * "waiting on you" for up to its 300s TTL after it was decided (cache audit, 2026-10-26).
+ * Best-effort, as below.
+ */
+export function invalidateFinanceDashboardCache(reason: string) {
+  try {
+    revalidateTag(FINANCE_DASHBOARD_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Finance dashboard cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/**
+ * Expires the Company Vacation Report's caches at once, for a write that moves the holiday calendar
+ * (a confirmed observed-date override). Leave writes reach the same tag through the `leave` block of
+ * invalidateExecutiveDashboardCache; a holiday-calendar save is not a leave write, so it never did,
+ * and the report kept counting a re-dated Eid on its old day for up to six hours (cache audit,
+ * 2026-10-26). Best-effort, as below.
+ */
+export function invalidateCompanyVacationReportCache(reason: string) {
+  try {
+    revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Company vacation report cache tag revalidation failed.", {
       error: error instanceof Error ? error.message : String(error),
       reason,
     });

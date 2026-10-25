@@ -821,9 +821,11 @@ async function runScheduledContactListSync(): Promise<void> {
     // ("Invariant: static generation store missing", Next 16 `revalidate()`), and this function only
     // ever runs from the poller's timer. The call that used to sit here therefore failed on every
     // slice — every five minutes from 06:00 to 22:00 Cairo — and logged a false ERROR each time
-    // (seen on production 2026-09-21), while busting nothing. The bust that DOES work stays where a
-    // request exists: the cron route (after its master refresh) and a person's list edit
-    // (`bustListSummaries`). Pinned by `tests/crm-live-poller.test.ts`.
+    // (seen on production 2026-09-21), while busting nothing. The bust that refreshes the WEBSITE is
+    // a person's list edit (`bustListSummaries`), which runs there. The cron route's bust runs on the
+    // worker and refreshes only the worker's copy (cache audit, 2026-10-26): for a synced slice the
+    // website's counts catch up through their 300s TTL, on purpose. Pinned by
+    // `tests/crm-live-poller.test.ts`.
     await pingDeadMansSwitch(
       CONTACT_LIST_JOB_SLUG,
       refreshedNothing || contactMaster.status === "failed" ? "fail" : "success",

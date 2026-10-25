@@ -69,8 +69,8 @@ export function runOrgTreeCacheInvalidationTests() {
     );
     assert.match(
       fnBody,
-      /revalidateTag\(\s*"sos-reference"\s*,\s*"max"\s*\)/,
-      "the organogram branch must bust the sos-reference tag the org tree reads share",
+      /revalidateTag\(\s*"sos-reference"\s*,\s*\{\s*expire:\s*0\s*\}\s*\)/,
+      "the organogram branch must EXPIRE the sos-reference tag the org tree reads share — \"max\" serves the old tree to the next read",
     );
 
     // The whole function stays wrapped in the existing try/catch — revalidateTag throws outside a

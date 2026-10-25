@@ -26,6 +26,7 @@ import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { PageContainer } from "@/components/layout/page-container";
+import { isOwnedByViewer, normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
 import { addDaysToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import {
   availableBalanceAfterPending,
@@ -100,6 +101,12 @@ type QueuedVacationSubmission = {
   createdAt: number;
   id: string;
   lastSyncError: string | null;
+  /**
+   * Whose request this is. Absent on entries queued before 2026-10-26, which are never sent: the
+   * replay posts under the SIGNED-IN session, so an entry replayed for the wrong person became that
+   * person's leave request (src/lib/browser-storage/owner-scoped.ts).
+   */
+  ownerHrId?: string;
   payload: QueuedVacationPayload;
   retryCount: number;
 };
@@ -161,7 +168,13 @@ async function deleteQueuedVacationSubmission(id: string) {
   });
 }
 
-function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<void>) {
+/**
+ * The queue is per BROWSER, and a shared phone serves several people, so the hook only ever replays,
+ * counts or adds entries for `ownerHrId` — the signed-in person. Another person's entries stay
+ * stored for when they sign back in; an un-owned legacy entry is removed, since nobody can be told
+ * it was theirs.
+ */
+function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<void>, ownerHrId: string) {
   const [queue, setQueue] = useState<QueuedVacationSubmission[]>([]);
   // SSR hydration guard: always start `true` to match server output,
   // then sync the real browser value inside useEffect.
@@ -182,7 +195,11 @@ function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<v
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     readQueuedVacationSubmissions()
-      .then(setQueue)
+      .then((stored) => {
+        const unowned = stored.filter((item) => !normalizeOwnerHrId(item.ownerHrId));
+        for (const item of unowned) void deleteQueuedVacationSubmission(item.id).catch(() => undefined);
+        setQueue(stored.filter((item) => normalizeOwnerHrId(item.ownerHrId)));
+      })
       .catch(() => undefined);
     return () => {
       window.removeEventListener("online", handleOnline);
@@ -190,13 +207,15 @@ function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<v
     };
   }, []);
 
-  // Replay queue when back online
+  const ownQueue = queue.filter((item) => isOwnedByViewer(item.ownerHrId, ownerHrId));
+
+  // Replay queue when back online — the signed-in person's own entries only.
   useEffect(() => {
-    if (!isOnline || queue.length === 0 || replayingRef.current) return;
+    const pending = queue.filter((item) => isOwnedByViewer(item.ownerHrId, ownerHrId));
+    if (!isOnline || pending.length === 0 || replayingRef.current) return;
     replayingRef.current = true;
 
     (async () => {
-      const pending = [...queue];
       for (const item of pending) {
         try {
           await onReplay(item.payload);
@@ -211,21 +230,26 @@ function useOfflineQueue(onReplay: (payload: QueuedVacationPayload) => Promise<v
       }
       replayingRef.current = false;
     })();
-  }, [isOnline, queue, onReplay]);
+  }, [isOnline, queue, onReplay, ownerHrId]);
 
-  async function enqueue(payload: QueuedVacationPayload) {
+  /** False, and nothing stored, when the page does not know who is signed in: an un-owned entry is never sent. */
+  async function enqueue(payload: QueuedVacationPayload): Promise<boolean> {
+    const owner = normalizeOwnerHrId(ownerHrId);
+    if (!owner) return false;
     const submission: QueuedVacationSubmission = {
       createdAt: Date.now(),
       id: `q-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       lastSyncError: null,
+      ownerHrId: owner,
       payload,
       retryCount: 0,
     };
     await putQueuedVacationSubmission(submission);
     setQueue((current) => [...current, submission]);
+    return true;
   }
 
-  return { enqueue, isOnline, queueLength: queue.length };
+  return { enqueue, isOnline, queueLength: ownQueue.length };
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1266,7 +1290,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     }
   }, []);
 
-  const { enqueue, isOnline, queueLength } = useOfflineQueue(replayVacationRequest);
+  const { enqueue, isOnline, queueLength } = useOfflineQueue(replayVacationRequest, initialData?.employee.hrId ?? "");
 
   // Reject an oversized evidence file at selection time so the employee gets an immediate, clear
   // message (with the actual file size) instead of a confusing failure when the upload runs.
@@ -1409,8 +1433,12 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
         setError("Online connection is required for evidence upload. Sick and compensatory vacation requests cannot be queued offline.");
         return;
       }
-      await enqueue(queuedPayload);
+      const queued = await enqueue(queuedPayload);
       setSubmitting(false);
+      if (!queued) {
+        setError("Your request could not be saved offline. Reconnect and submit it again.");
+        return;
+      }
       setSubmitSuccess(true);
       setTimeout(() => {
         setSubmitSuccess(false);

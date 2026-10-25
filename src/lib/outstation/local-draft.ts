@@ -1,3 +1,4 @@
+import { isOwnedByViewer, ownerScopedStorageKey } from "@/lib/browser-storage/owner-scoped";
 import type {
   OutstationCaptureResult,
   OutstationCarEvidenceSource,
@@ -25,6 +26,12 @@ export type OutstationLocalDraft = {
   medicalTripHrId: string;
   notes: string;
   otherAmount?: string;
+  /**
+   * The HR id of the person who saved this draft. Optional only because drafts written before
+   * 2026-10-26 carry none — and such a draft is never restored or sent, because there is no way to
+   * tell whose claim it is (src/lib/browser-storage/owner-scoped.ts).
+   */
+  ownerHrId?: string;
   pmWorkload?: string;
   amWorkload?: string;
   returnTicketAmount: string;
@@ -36,7 +43,16 @@ export type OutstationLocalDraft = {
   tripStartDate: string;
 };
 
-export const outstationDraftStorageKey = "phoenix-outstation-draft";
+/**
+ * One draft per person on a shared phone. The key was `phoenix-outstation-draft` for the whole
+ * browser until 2026-10-26, and the wizard restored and replayed it for whoever was signed in — so
+ * rep A's offline claim was filed as rep B's. Null when there is no viewer: then nothing is stored.
+ */
+export const outstationDraftStorageKeyBase = "phoenix-outstation-draft";
+
+export function outstationDraftStorageKeyFor(viewerHrId: string): string | null {
+  return ownerScopedStorageKey(outstationDraftStorageKeyBase, viewerHrId);
+}
 
 export function parseOutstationLocalDraft(raw: string | null): OutstationLocalDraft | null {
   if (!raw) return null;
@@ -47,11 +63,13 @@ export function parseOutstationLocalDraft(raw: string | null): OutstationLocalDr
   }
 }
 
+/** Restored and replayed only for the person who saved it — never for the next person to sign in. */
 export function isRestorableOutstationLocalDraft(
   draft: OutstationLocalDraft | null,
+  viewerHrId: string,
 ): draft is OutstationLocalDraft & {
   captured: OutstationCaptureResult;
   syncPending: true;
 } {
-  return Boolean(draft?.syncPending && draft.captured);
+  return Boolean(draft?.syncPending && draft.captured && isOwnedByViewer(draft.ownerHrId, viewerHrId));
 }

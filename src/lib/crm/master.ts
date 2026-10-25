@@ -914,11 +914,11 @@ async function computeTriplesUncached(range: {
       .order("visit_date", { ascending: false })
       .order("crm_visit_id", { ascending: false })
       .range(from, from + PAGE - 1);
-    if (error || !data) {
-      if (dv.length === 0) return { rows: [], byVisitId: new Map(), truncated: false };
-      break;
-    }
-    const pageRows = data as unknown as TripleDvRow[];
+    // THROW, never return what was read so far (cache audit, 2026-10-26). This result is memoised for
+    // 60 s for every viewer, and a failed scan is never memoised — so a read error answered as "no
+    // double visits" (or as the pages before it) was served to everyone as the truth for a minute.
+    if (error) throw new Error(`CRM double-visit scan failed: ${error.message}`);
+    const pageRows = (data ?? []) as unknown as TripleDvRow[];
     dv.push(...pageRows);
     if (pageRows.length < PAGE) break;
   }
@@ -1741,11 +1741,9 @@ async function computeVacationPeriodsUncached(range: { dateFrom: string | null; 
       // half), and ranged paging over ties can repeat one row and skip another between pages.
       .order("crm_visit_id", { ascending: true })
       .range(from, from + PAGE - 1);
-    if (error || !data) {
-      if (days.length === 0) return { periods: [], truncated: false };
-      break;
-    }
-    const rows = data as unknown as VacationDayRow[];
+    // THROW, never return what was read so far — the same reason as the double-visit scan above.
+    if (error) throw new Error(`CRM vacation scan failed: ${error.message}`);
+    const rows = (data ?? []) as unknown as VacationDayRow[];
     days.push(...rows);
     if (rows.length < PAGE) break;
   }

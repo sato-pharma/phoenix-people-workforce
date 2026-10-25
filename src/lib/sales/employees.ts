@@ -288,7 +288,9 @@ async function loadDirectory() {
     employment_status: row.employment_status ? String(row.employment_status) : null,
   }));
 
-  setMemoryCache(rows);
+  // NEVER CACHED (cache audit, 2026-10-26). These rows carry no line, region or area, so holding them
+  // for the cache's five minutes stamped every import row read in that window "Unassigned". They
+  // answer this one call; the next one tries the full directory again.
   return rows;
 }
 

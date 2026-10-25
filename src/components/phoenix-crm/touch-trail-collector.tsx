@@ -43,6 +43,7 @@ import {
   valueForTrail,
   type TouchTrailEvent,
 } from "@/lib/phoenix-crm/touch-trail";
+import { isOwnedByViewer, normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
 
 const ENDPOINT = "/api/phoenix-crm/touch-trail";
 const QUEUE_KEY = "phx-crm-touch-trail";
@@ -61,7 +62,18 @@ const TYPE_SETTLE_MS = 800;
 /** Controls worth naming as themselves rather than as whatever wrapper caught the event. */
 const INTERACTIVE = "button,a,input,select,textarea,label,summary,[role=button],[role=tab],[role=switch],[data-trail]";
 
-type Queued = { seatId: string | null; events: TouchTrailEvent[] };
+/**
+ * One held batch. `ownerHrId` is whose hands made it: the route files a batch under the session that
+ * POSTS it, so before 2026-10-26 a batch held on a shared tablet was sent — and filed — as the NEXT
+ * rep's taps. A held batch is now sent only while its owner is signed in, another owner's is left for
+ * them, and one with no owner is dropped (src/lib/browser-storage/owner-scoped.ts).
+ */
+type Queued = { seatId: string | null; events: TouchTrailEvent[]; ownerHrId?: string };
+
+/** What goes over the wire: the batch as the route has always read it, the owner stays on the phone. */
+function wireOf(batch: Queued): { seatId: string | null; events: TouchTrailEvent[] } {
+  return { events: batch.events, seatId: batch.seatId };
+}
 
 function newSessionId(): string {
   try {
@@ -142,8 +154,13 @@ function descriptorFor(element: HTMLElement | null): string | null {
   });
 }
 
-export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
+export function PhoenixCrmTouchTrail({ test = false, viewerHrId = null }: { test?: boolean; viewerHrId?: string | null }) {
   const pathname = usePathname();
+  // Read by the flush, never a reason to re-register the listeners: one layout mount is one person.
+  const viewer = useRef(normalizeOwnerHrId(viewerHrId));
+  useEffect(() => {
+    viewer.current = normalizeOwnerHrId(viewerHrId);
+  }, [viewerHrId]);
   // One page load keeps one id and one clock, across every App Router navigation inside the module:
   // that is what turns a heap of rows back into the sequence a reader replays.
   const session = useRef<string | null>(null);
@@ -206,7 +223,7 @@ export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
     async function post(batch: Queued): Promise<boolean> {
       try {
         const response = await fetch(ENDPOINT, {
-          body: JSON.stringify({ ...batch, sessionId, test }),
+          body: JSON.stringify({ ...wireOf(batch), sessionId, test }),
           headers: { "Content-Type": "application/json" },
           keepalive: true,
           method: "POST",
@@ -227,12 +244,25 @@ export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
       settleTyping();
       const pending = buffer;
       buffer = [];
+      const owner = viewer.current;
       const queued = reason === "leaving" ? [] : readQueue();
-      const batches: Queued[] = [...queued];
+      // Only the signed-in person's held batches go out under this session; another person's stay
+      // on the phone for them, and an un-owned one is nobody's to send.
+      const batches: Queued[] = queued.filter((batch) => isOwnedByViewer(batch.ownerHrId, owner));
+      const othersHeld = queued.filter(
+        (batch) => normalizeOwnerHrId(batch.ownerHrId) !== "" && !isOwnedByViewer(batch.ownerHrId, owner),
+      );
       for (let at = 0; at < pending.length; at += MAX_EVENTS_PER_BATCH) {
-        batches.push({ events: pending.slice(at, at + MAX_EVENTS_PER_BATCH), seatId: seat.current });
+        batches.push({
+          events: pending.slice(at, at + MAX_EVENTS_PER_BATCH),
+          ownerHrId: owner || undefined,
+          seatId: seat.current,
+        });
       }
-      if (batches.length === 0) return;
+      if (batches.length === 0) {
+        if (othersHeld.length !== queued.length) writeQueue(othersHeld);
+        return;
+      }
 
       if (reason === "leaving") {
         // The page is going away, so there is no promise left to await: `sendBeacon` hands the bytes
@@ -244,7 +274,7 @@ export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
         return;
       }
 
-      writeQueue([]);
+      writeQueue(othersHeld);
       void (async () => {
         const failed: Queued[] = [];
         for (const batch of batches) {
@@ -257,7 +287,7 @@ export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
     function beacon(batch: Queued): boolean {
       try {
         if (typeof navigator.sendBeacon !== "function") return false;
-        const body = new Blob([JSON.stringify({ ...batch, sessionId, test })], { type: "application/json" });
+        const body = new Blob([JSON.stringify({ ...wireOf(batch), sessionId, test })], { type: "application/json" });
         return navigator.sendBeacon(ENDPOINT, body);
       } catch {
         return false;

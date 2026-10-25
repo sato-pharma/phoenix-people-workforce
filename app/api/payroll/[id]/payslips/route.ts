@@ -91,6 +91,9 @@ export async function GET(
       buildPayslipDocument(records, exportData.batch.month, exportData.batch.year, exportData.batch.status),
       {
         headers: {
+          // A payslip is one person's salary: never kept by the browser's back/forward cache, a shared
+          // PC's disk cache or any proxy on the way (cache audit, 2026-10-26).
+          "Cache-Control": "private, no-store",
           "Content-Type": "text/html; charset=utf-8",
         },
       },

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   isRestorableOutstationLocalDraft,
+  outstationDraftStorageKeyFor,
   parseOutstationLocalDraft,
   type OutstationLocalDraft,
 } from "../src/lib/outstation/local-draft.ts";
@@ -53,6 +54,7 @@ const baseDraft: OutstationLocalDraft = {
   kilometerReading: "12345",
   medicalTripHrId: "",
   notes: "Draft note",
+  ownerHrId: "DEV-NSM-001",
   returnTicketAmount: "",
   syncPending: true,
   transportationType: "car",
@@ -65,15 +67,47 @@ export function runOutstationLocalDraftTests() {
   assert.equal(parseOutstationLocalDraft("{invalid"), null);
   assert.deepEqual(parseOutstationLocalDraft(JSON.stringify(baseDraft)), baseDraft);
 
-  assert.equal(isRestorableOutstationLocalDraft(baseDraft), true);
+  const owner = "DEV-NSM-001";
+  assert.equal(isRestorableOutstationLocalDraft(baseDraft, owner), true);
   assert.equal(
-    isRestorableOutstationLocalDraft({ ...baseDraft, syncPending: false }),
+    isRestorableOutstationLocalDraft({ ...baseDraft, syncPending: false }, owner),
     false,
     "submitted or stale online drafts must not restore old expense data",
   );
   assert.equal(
-    isRestorableOutstationLocalDraft({ ...baseDraft, captured: null }),
+    isRestorableOutstationLocalDraft({ ...baseDraft, captured: null }, owner),
     false,
     "offline sync drafts need a captured destination before restore",
   );
+
+  // ── Whose claim is it? (cache audit, 2026-10-26, P0) ──────────────────────────────────────
+  // The wizard restores AND replays the draft, and the server files a replay under the session that
+  // sends it. A draft restored for the wrong person is that person's money claim.
+  assert.equal(
+    isRestorableOutstationLocalDraft(baseDraft, "DEV-REP-002"),
+    false,
+    "HEADLINE: rep A's offline claim is never restored or replayed for rep B on a shared phone",
+  );
+  assert.equal(
+    isRestorableOutstationLocalDraft({ ...baseDraft, ownerHrId: undefined }, owner),
+    false,
+    "a draft from before the owner rule cannot say whose claim it is, so it is never restored",
+  );
+  assert.equal(isRestorableOutstationLocalDraft(baseDraft, ""), false, "nor for a viewer not yet known");
+  assert.equal(
+    isRestorableOutstationLocalDraft({ ...baseDraft, ownerHrId: " dev-nsm-001 " }, owner),
+    true,
+    "spaces and letter case never decide whose draft it is",
+  );
+  assert.notEqual(
+    outstationDraftStorageKeyFor("DEV-NSM-001"),
+    outstationDraftStorageKeyFor("DEV-REP-002"),
+    "each person on a shared phone keeps a draft under their own key",
+  );
+  assert.notEqual(
+    outstationDraftStorageKeyFor("DEV-NSM-001"),
+    "phoenix-outstation-draft",
+    "and never under the old browser-wide key",
+  );
+  assert.equal(outstationDraftStorageKeyFor(""), null, "no viewer, no key: nothing is stored");
 }
