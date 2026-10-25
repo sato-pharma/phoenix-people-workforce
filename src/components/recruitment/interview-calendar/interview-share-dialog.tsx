@@ -9,6 +9,9 @@
 //
 // Below the people, COPY LINKS (the owner, 2026-09-18, "exactly as Google Sheets"): a link at a level
 // he picks, for the week on screen or the whole calendar, to copy or send on WhatsApp himself.
+//
+// Between them, ONE INTERVIEWER'S INTERVIEWS WITH ONE MANAGER (the owner, 2026-10-26): only the
+// interviews he ticks, never the whole calendar — see interview-manager-share-section.tsx.
 
 import { Loader2, Search, Share2, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -33,6 +36,7 @@ import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
 
 import { PanelHeading } from "./calendar-dialog";
 import { CopyLinkSection } from "./copy-link-section";
+import { InterviewManagerShareSection } from "./interview-manager-share-section";
 import {
   phxFieldClassName,
   phxLabelClassName,
@@ -325,6 +329,8 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
               )}
             </ul>
           </section>
+
+          <InterviewManagerShareSection />
 
           <CopyLinkSection weekStart={weekStart} />
         </div>

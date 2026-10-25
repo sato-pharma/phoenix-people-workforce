@@ -568,6 +568,34 @@ export type InterviewCalendarShare = {
   sharedAt: string;
 };
 
+/**
+ * Sharing ONE interviewer's interviews with ONE manager (owner, 2026-10-26): each upcoming interview of
+ * the interviewer, marked for the manager chosen. `suggested` is the server's reading — the interview's
+ * line is the manager's line and its area sits in the manager's region (or is the manager's own area);
+ * `reason` says why it is or is not, in words. The owner ticks the final set; nothing is shared on a
+ * suggestion alone.
+ */
+export type InterviewManagerShareItem = {
+  bookingId: string;
+  candidateName: string;
+  startsAt: string;
+  durationMinutes: number;
+  area: string | null;
+  line: string | null;
+  jobTitle: string | null;
+  /** The region the interview's area belongs to, from the org tree; null when the area is unknown. */
+  region: string | null;
+  shared: boolean;
+  suggested: boolean;
+  reason: string;
+};
+
+export type InterviewManagerSharePlan = {
+  interviewer: { hrId: string; name: string; jobTitle: string | null };
+  manager: { hrId: string; name: string; jobTitle: string | null; line: string | null; region: string | null; area: string | null };
+  items: InterviewManagerShareItem[];
+};
+
 export type InterviewCalendarPerson = {
   hrId: string;
   name: string;

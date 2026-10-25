@@ -90,6 +90,8 @@ import {
   type InterviewCalendarPerson,
   type InterviewCalendarRole,
   type InterviewCalendarShare,
+  type InterviewManagerShareItem,
+  type InterviewManagerSharePlan,
   type InterviewOutcome,
   type InterviewPlatform,
   type InterviewSession,
@@ -241,21 +243,30 @@ export async function resolveInterviewCalendarRole(access: AccessContext): Promi
  */
 export function mayReadBooking(
   caller: InterviewCalendarCaller,
-  row: { starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id?: string | null; panelist_hr_ids?: string[] | null },
+  row: {
+    starts_at: string;
+    interviewer_hr_id: string | null;
+    requested_by_hr_id?: string | null;
+    panelist_hr_ids?: string[] | null;
+    shared_with_hr_ids?: string[] | null;
+  },
 ): boolean {
   const role = calendarRoleFor(caller, weekOfInstant(row.starts_at));
   if (!role) return false;
   // Everyone above the own-only tier (a Viewer and up) reads every booking.
   if (role !== "interviewer" && role !== "requester") return true;
   // The own-only tier — an interviewer or a requester — reads ONLY the interviews it is part of: the
-  // ones it was chosen to conduct (as the lead OR anywhere on the panel), and the ones it requested.
-  // A District Manager who does more than one of these sees them all.
+  // ones it was chosen to conduct (as the lead OR anywhere on the panel), the ones it requested, and
+  // the ones the owner shared with it one by one (owner, 2026-10-26 — a district manager sees only
+  // the interviews for their own region, never the whole calendar). A District Manager who does more
+  // than one of these sees them all.
   const viewer = canonicalHrIdKey(caller.access.hrId);
   if (!viewer) return false;
   return (
     viewer === canonicalHrIdKey(row.interviewer_hr_id) ||
     viewer === canonicalHrIdKey(row.requested_by_hr_id) ||
-    isOnPanel(viewer, row.panelist_hr_ids)
+    isOnPanel(viewer, row.panelist_hr_ids) ||
+    isOnPanel(viewer, row.shared_with_hr_ids)
   );
 }
 
@@ -544,6 +555,7 @@ type BookingRow = {
   external_cv_mime_type: string | null;
   interviewer_hr_id: string | null;
   panelist_hr_ids: string[] | null;
+  shared_with_hr_ids: string[] | null;
   interview_area: string | null;
   interview_line: string | null;
   interview_job_title: string | null;
@@ -584,7 +596,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,interview_job_title,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,shared_with_hr_ids,interview_area,interview_line,interview_job_title,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -1304,7 +1316,10 @@ export async function listMyUpcomingInterviews(caller: InterviewCalendarCaller, 
   const rows = (await bookingsBetween(from, to)).filter(
     (row) =>
       !row.outcome &&
-      (canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me || isOnPanel(me, row.panelist_hr_ids)),
+      (canonicalHrIdKey(row.interviewer_hr_id) === me ||
+        canonicalHrIdKey(row.requested_by_hr_id) === me ||
+        isOnPanel(me, row.panelist_hr_ids) ||
+        isOnPanel(me, row.shared_with_hr_ids)),
   );
   return hydrate(rows.slice(0, 50), caller, now);
 }
@@ -2713,6 +2728,243 @@ export async function unshareInterviewCalendar(caller: InterviewCalendarCaller, 
   return listInterviewCalendarShares(caller);
 }
 
+// ── Sharing one interviewer's interviews with one manager ───────────────────────────────────────
+//
+// The owner, 2026-10-26: "choose Ali Muhammad Ali and choose Zahra, the PDA Cairo district manager,
+// and share. Only the interviews related to them appear." A national manager interviews for several
+// regions in one week; each district manager is shown only the ones for their own region — never the
+// whole calendar, which is what a calendar share gives. The manager's hr id is written onto each chosen
+// booking (`shared_with_hr_ids`), and mayReadBooking lets them read exactly those, view only.
+//
+// The server SUGGESTS which interviews are the manager's, from the org tree: the interview's line is
+// the manager's line, and its area is the manager's own area or sits in the manager's region. An
+// interview with no area, or an area the org tree does not know, is never suggested — the owner ticks
+// it himself. Nothing is shared on a suggestion alone: only the ticked set is saved.
+
+/** How far ahead the list reaches — the interviews still to come, not the whole history. */
+const MANAGER_SHARE_DAYS_AHEAD = 60;
+
+/** A name compared loosely: case, spaces, brackets and dashes ignored ("Behira (1)" is "Behira 1"). */
+function orgNameKey(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, "");
+}
+
+type OrgSeatRow = {
+  occupant_hr_id: string | null;
+  seat_tier: string | null;
+  line_name: string | null;
+  region_name: string | null;
+  area_name: string | null;
+};
+
+type ManagerSeat = { line: string | null; region: string | null; area: string | null };
+
+/** The manager's own seat: their line, and the region and area it covers (either may be empty). */
+async function loadManagerSeat(hrId: string): Promise<ManagerSeat> {
+  const { data, error } = await recruitmentDb()
+    .from("au_v_org_tree")
+    .select("occupant_hr_id,seat_tier,line_name,region_name,area_name")
+    .in("occupant_hr_id", hrIdLookupKeys(hrId));
+  if (error) throw error;
+  // A person holding several seats is read at their broadest one with a line (fewest filled levels).
+  const seat = ((data ?? []) as OrgSeatRow[])
+    .filter((row) => row.line_name)
+    .sort(
+      (left, right) =>
+        Number(Boolean(left.area_name)) - Number(Boolean(right.area_name)) ||
+        Number(Boolean(left.region_name)) - Number(Boolean(right.region_name)),
+    )[0];
+  return {
+    area: seat?.area_name?.trim() || null,
+    line: seat?.line_name?.trim() || null,
+    region: seat?.region_name?.trim() || null,
+  };
+}
+
+type OrgAreaRegions = { byLineArea: Map<string, string>; byArea: Map<string, string>; regions: Map<string, string> };
+
+/** Every area the org tree knows, per line, with the region it sits in — and the region names themselves. */
+async function loadAreaRegions(): Promise<OrgAreaRegions> {
+  const { data, error } = await recruitmentDb().from("au_v_org_tree").select("line_name,region_name,area_name").not("region_name", "is", null);
+  if (error) throw error;
+  const byLineArea = new Map<string, string>();
+  const byArea = new Map<string, string>();
+  const regions = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ line_name: string | null; region_name: string | null; area_name: string | null }>) {
+    const region = row.region_name?.trim();
+    if (!region) continue;
+    regions.set(orgNameKey(region), region);
+    const area = orgNameKey(row.area_name);
+    if (!area) continue;
+    byLineArea.set(`${orgNameKey(row.line_name)}|${area}`, region);
+    if (!byArea.has(area)) byArea.set(area, region);
+  }
+  return { byArea, byLineArea, regions };
+}
+
+/** The region an interview's area sits in — on its own line first, then any line, then an area named after a region. */
+function regionForArea(orgAreas: OrgAreaRegions, line: string | null, area: string | null): string | null {
+  const key = orgNameKey(area);
+  if (!key) return null;
+  return orgAreas.byLineArea.get(`${orgNameKey(line)}|${key}`) ?? orgAreas.byArea.get(key) ?? orgAreas.regions.get(key) ?? null;
+}
+
+/** Whether this interview is the manager's, and why — in the words the share dialog shows. */
+export function suggestInterviewForManager(
+  manager: ManagerSeat,
+  interview: { line: string | null; area: string | null; region: string | null },
+): { suggested: boolean; reason: string } {
+  if (manager.line && interview.line && orgNameKey(manager.line) !== orgNameKey(interview.line)) {
+    return { reason: `${interview.line} line, not the manager's line (${manager.line}).`, suggested: false };
+  }
+  if (!manager.region && !manager.area) {
+    return manager.line && interview.line
+      ? { reason: `On the manager's line (${manager.line}).`, suggested: true }
+      : { reason: "No line to compare. Tick it if it is theirs.", suggested: false };
+  }
+  if (!interview.area) return { reason: "No area set on this interview. Tick it if it is theirs.", suggested: false };
+  if (manager.area) {
+    return orgNameKey(manager.area) === orgNameKey(interview.area)
+      ? { reason: `In the manager's area (${manager.area}).`, suggested: true }
+      : { reason: `${interview.area} is not the manager's area (${manager.area}).`, suggested: false };
+  }
+  if (!interview.region) return { reason: `${interview.area} is not on the org chart. Tick it if it is theirs.`, suggested: false };
+  return orgNameKey(interview.region) === orgNameKey(manager.region)
+    ? { reason: `${interview.area} is in the manager's region (${manager.region}).`, suggested: true }
+    : { reason: `${interview.area} is in ${interview.region}, not ${manager.region}.`, suggested: false };
+}
+
+/** The interviewer's upcoming interviews — as the lead or on the panel — from the start of today (Cairo). */
+async function upcomingInterviewsOf(interviewerHrId: string, now: Date): Promise<BookingRow[]> {
+  const me = canonicalHrIdKey(interviewerHrId);
+  if (!me) return [];
+  const from = cairoLocalToUtc(cairoDateKey(now), 0);
+  const to = new Date(from.getTime() + MANAGER_SHARE_DAYS_AHEAD * 24 * 60 * 60 * 1000);
+  return (await bookingsBetween(from, to)).filter((row) => canonicalHrIdKey(row.interviewer_hr_id) === me || isOnPanel(me, row.panelist_hr_ids));
+}
+
+async function resolveManagerSharePeople(input: { interviewerHrId?: unknown; managerHrId?: unknown }) {
+  const interviewerId = typeof input.interviewerHrId === "string" ? input.interviewerHrId.trim() : "";
+  const managerId = typeof input.managerHrId === "string" ? input.managerHrId.trim() : "";
+  if (!interviewerId) throw new Error("Choose the interviewer first.");
+  if (!managerId) throw new Error("Choose the manager to share with.");
+  const people = await loadPeople([interviewerId, managerId]);
+  const interviewer = people.get(canonicalHrIdKey(interviewerId) ?? "");
+  const manager = people.get(canonicalHrIdKey(managerId) ?? "");
+  if (!interviewer) throw new Error("That interviewer is not in the employee directory.");
+  if (!manager) throw new Error("That manager is not in the employee directory.");
+  if (canonicalHrIdKey(interviewer.hrId) === canonicalHrIdKey(manager.hrId)) {
+    throw new Error("Choose a different manager. The interviewer already sees their own interviews.");
+  }
+  // Below District Manager the calendar never opens at all (the requester seat rule), so a share
+  // would reach nobody; say so rather than save a share nobody can read.
+  if (!isDistrictManagerOrAbove({ jobTitle: manager.jobTitle })) {
+    throw new Error(`${manager.name} is not a District Manager or above, so the interview calendar does not open for them.`);
+  }
+  return { interviewer, manager };
+}
+
+/** One interviewer's upcoming interviews, marked for one manager: already shared, suggested, and why. */
+export async function getInterviewManagerSharePlan(
+  caller: InterviewCalendarCaller,
+  input: { interviewerHrId?: unknown; managerHrId?: unknown },
+  now: Date = new Date(),
+): Promise<InterviewManagerSharePlan> {
+  requireCalendarAccess(caller, "share", null);
+  const { interviewer, manager } = await resolveManagerSharePeople(input);
+  const [rows, seat, orgAreas] = await Promise.all([upcomingInterviewsOf(interviewer.hrId, now), loadManagerSeat(manager.hrId), loadAreaRegions()]);
+  const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
+  const managerKey = canonicalHrIdKey(manager.hrId);
+  const items: InterviewManagerShareItem[] = rows.map((row) => {
+    const area = row.interview_area?.trim() || null;
+    const line = row.interview_line?.trim() || null;
+    const region = regionForArea(orgAreas, line, area);
+    const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
+    const verdict = suggestInterviewForManager(seat, { area, line, region });
+    return {
+      area,
+      bookingId: row.id,
+      candidateName: candidate?.full_name?.trim() || row.external_name?.trim() || "Unnamed candidate",
+      durationMinutes: Number(row.duration_minutes),
+      jobTitle: row.interview_job_title?.trim() || null,
+      line,
+      reason: verdict.reason,
+      region,
+      shared: isOnPanel(managerKey, row.shared_with_hr_ids),
+      startsAt: row.starts_at,
+      suggested: verdict.suggested,
+    };
+  });
+  return {
+    interviewer: { hrId: interviewer.hrId, jobTitle: interviewer.jobTitle, name: interviewer.name },
+    items,
+    manager: { ...seat, hrId: manager.hrId, jobTitle: manager.jobTitle, name: manager.name },
+  };
+}
+
+/**
+ * Save which of the interviewer's upcoming interviews the manager sees: the ticked ones gain the
+ * manager, the unticked ones lose them. Only that interviewer's upcoming interviews can be touched —
+ * an id from anywhere else in the request is ignored. The manager is told in Phoenix and on their
+ * phone when something new is shared with them; never by email (the recruitment rule).
+ */
+export async function saveInterviewManagerShare(
+  caller: InterviewCalendarCaller,
+  input: { interviewerHrId?: unknown; managerHrId?: unknown; bookingIds?: unknown },
+  now: Date = new Date(),
+): Promise<InterviewManagerSharePlan> {
+  requireCalendarAccess(caller, "share", null);
+  if (!Array.isArray(input.bookingIds)) throw new Error("Tick the interviews to share.");
+  const wanted = new Set(input.bookingIds.filter((id): id is string => typeof id === "string" && isUuid(id)));
+  const { interviewer, manager } = await resolveManagerSharePeople(input);
+  const managerKey = canonicalHrIdKey(manager.hrId);
+  const managerStored = hrIdForStorage(manager.hrId) ?? manager.hrId;
+  const actor = hrIdForStorage(caller.access.hrId);
+  const rows = await upcomingInterviewsOf(interviewer.hrId, now);
+  const added: BookingRow[] = [];
+  for (const row of rows) {
+    const current = row.shared_with_hr_ids ?? [];
+    const has = isOnPanel(managerKey, current);
+    const want = wanted.has(row.id);
+    if (has === want) continue;
+    const next = want ? [...current, managerStored] : current.filter((hrId) => canonicalHrIdKey(hrId) !== managerKey);
+    const { error } = await recruitmentDb().from(BOOKINGS).update({ shared_with_hr_ids: next, updated_by_hr_id: actor }).eq("id", row.id);
+    if (error) throw error;
+    await recordBookingChange(row.id, actor, "shared", want ? `Shared with ${manager.name}.` : `No longer shared with ${manager.name}.`);
+    if (want) added.push(row);
+  }
+  if (added.length > 0) await notifyInterviewsShared(manager, interviewer.name, added);
+  return getInterviewManagerSharePlan(caller, { interviewerHrId: interviewer.hrId, managerHrId: manager.hrId }, now);
+}
+
+/** In-app and push only — never email, and never Telegram (whose failure falls back to email). */
+async function notifyInterviewsShared(manager: InterviewCalendarPerson, interviewerName: string, rows: readonly BookingRow[]) {
+  const first = rows[0];
+  if (!first) return;
+  const firstAt = new Date(first.starts_at);
+  const firstDay = cairoDateKey(firstAt);
+  const when = `${formatDayLong(firstDay)} at ${formatTimeOfDay(cairoMinutesOfDay(firstAt))}`;
+  const what = rows.length === 1 ? `an interview ${interviewerName} is holding on ${when}` : `${rows.length} interviews ${interviewerName} is holding, the first on ${when}`;
+  await createSystemNotification({
+    actionUrl: interviewCalendarHref({ weekStart: weekStartFor(firstDay) }),
+    channels: ["in_app", "push"],
+    eventType: "interview_calendar_shared",
+    message: `You can now see ${what}. It is on your interview calendar, with the CV.`,
+    metadata: {
+      idempotencyKey: `interview-calendar-interviews-shared:${canonicalHrIdKey(manager.hrId)}:${rows
+        .map((row) => row.id)
+        .sort()
+        .join(",")}`,
+    },
+    module: "recruitment",
+    priority: "normal",
+    recipientHrId: manager.hrId,
+    title: rows.length === 1 ? "An interview was shared with you" : "Interviews were shared with you",
+  }).catch((error) => {
+    console.warn("[interview-calendar] interview share notice failed", errorText(error));
+  });
+}
+
 // ── Finding a candidate from an empty cell ──────────────────────────────────────────────────────
 
 export type InterviewCandidateMatch = { id: string; name: string; jobTitle: string | null };
@@ -2768,9 +3020,15 @@ export function assertCvsOpenTo(caller: InterviewCalendarCaller) {
  */
 async function assertCandidateOnCalendar(caller: InterviewCalendarCaller, candidateId: string) {
   if (!isUuid(candidateId)) throw new Error("Candidate not found.");
-  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at,interviewer_hr_id,requested_by_hr_id").eq("candidate_id", candidateId).limit(200);
+  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at,interviewer_hr_id,requested_by_hr_id,panelist_hr_ids,shared_with_hr_ids").eq("candidate_id", candidateId).limit(200);
   if (error) throw error;
-  const rows = (data ?? []) as Array<{ starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id: string | null }>;
+  const rows = (data ?? []) as Array<{
+    starts_at: string;
+    interviewer_hr_id: string | null;
+    requested_by_hr_id: string | null;
+    panelist_hr_ids: string[] | null;
+    shared_with_hr_ids: string[] | null;
+  }>;
   if (rows.length === 0) throw new Error("Forbidden: this candidate is not on the interview calendar.");
   if (!rows.some((row) => mayReadBooking(caller, row))) {
     throw new Error("Forbidden: this candidate is not on the part of the calendar open to you.");
