@@ -68,7 +68,8 @@ export async function runWorkerOnlyCronRoutesTests() {
     assert.equal(spec.adopted?.jobId, want.jobId, `${key} names its live job`);
     assert.equal(`${spec.base ?? PROD}${spec.path}`, `${want.base}${want.path}`, `${key} is matched on its real URL`);
   }
-  assert.equal(JOBS["inbound-intake"].enabled, false, "inbound-intake is declared OFF, as it is kept");
+  // On again since 25 Oct 2026 14:55 Cairo — it was left off after an outage, never switched off on purpose.
+  assert.notEqual(JOBS["inbound-intake"].enabled, false, "inbound-intake is not declared OFF — the CV intake job runs");
 
   const spec = JOBS["recruitment-email-intake"];
   const live = { enabled: false, jobId: 8200919, schedule: { ...spec.schedule, timezone: "Africa/Cairo" } };
@@ -76,11 +77,21 @@ export async function runWorkerOnlyCronRoutesTests() {
   const drifted = planJobAction(spec, live, { apply: true });
   assert.equal(drifted.status, "drift");
   assert.equal(drifted.write, null, "an adopted job is never PATCHED, even under --apply");
+  const intake = JOBS["inbound-intake"];
+  const intakeLive = { ...live, schedule: { ...intake.schedule, timezone: "Africa/Cairo" } };
   assert.deepEqual(
-    planJobAction(JOBS["inbound-intake"], { ...live, schedule: { ...JOBS["inbound-intake"].schedule, timezone: "Africa/Cairo" } }, { apply: true }),
+    planJobAction({ ...intake, enabled: false }, intakeLive, { apply: true }),
     { drift: [], status: "ok", write: null },
     "a job declared off and found off is not drift",
   );
+  assert.deepEqual(
+    planJobAction(intake, { ...intakeLive, enabled: true }, { apply: true }),
+    { drift: [], status: "ok", write: null },
+    "the CV intake job found on is not drift",
+  );
+  const intakeOff = planJobAction(intake, intakeLive, { apply: true });
+  assert.equal(intakeOff.status, "drift", "the CV intake job found OFF is reported as drift");
+  assert.equal(intakeOff.write, null, "and, being adopted, it is reported, never patched");
   // A managed (non-adopted) declaration keeps its old behaviour.
   const managed = JOBS["territory-restamp"];
   assert.equal(planJobAction(managed, null, { apply: true }).write, "create");

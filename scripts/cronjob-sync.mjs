@@ -100,7 +100,7 @@ const JOB_FILTER = (() => {
  * repository said which address runs the heavy routes. They are declared below with `adopted`: the
  * script reports each one (OK, DRIFT, MISSING) and NEVER creates or patches it, even with `--apply`,
  * and `cron-autoarm.yml` arming a newly added row therefore writes nothing for them. `enabled: false`
- * on an adopted row means "switched off on purpose" (inbound-intake), so a disabled job is not drift.
+ * on an adopted row means "switched off on purpose", so a disabled job is not drift.
  * To take over an adopted job, remove `adopted` in its own PR.
  *
  * `hours` / `minutes` are Africa/Cairo. `-1` means "every", which is cron-job.org's wildcard.
@@ -455,8 +455,9 @@ const JOBS = {
   "inbound-intake": {
     adopted: { jobId: 8200920 },
     base: WORKER,
-    // Switched OFF by hand and kept off since the 23 Oct move back to Railway (docs/deployment.md).
-    enabled: false,
+    // ON again since 25 Oct 2026 14:55 Cairo (owner). It was never switched off on purpose: its last run,
+    // 22 Oct 03:24 Cairo, failed during the worker's dead-database-key outage, cron-job.org disabled
+    // it, and the 23 Oct move back to Railway carried the off state over. 48 CVs sat unprocessed.
     title: "Phoenix — inbound CV intake",
     path: "/api/cron/inbound-intake",
     schedule: {
