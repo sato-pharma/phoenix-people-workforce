@@ -110,6 +110,17 @@ export function runDirectOrderEvidenceCheckTests() {
     "an unreadable sign must say so rather than silently omitting the line",
   );
 
+  // ── The reply must have room to finish ───────────────────────────────────────────────────
+  // 25 Oct 2026: OpenAI refused its key, the read failed over to Claude, and Claude stopped at the
+  // 500-token cap before closing its JSON ("ran out of room … (max_tokens)"), so a rep's photo went
+  // unread. The cap bounds the reply; it does not set what a reply costs.
+  const cap = /maxOutputTokens:\s*(\d+)/.exec(stripComments(reader));
+  assert.ok(cap, "the storefront read must set maxOutputTokens");
+  assert.ok(
+    Number(cap[1]) >= 1500,
+    `THE STOREFRONT READ'S OUTPUT CAP IS ${cap[1]}: below 1,500 Claude runs out of room before it closes the JSON on a long Arabic sign, and the photo goes unread`,
+  );
+
   // ── It must never block the filing ───────────────────────────────────────────────────────
   assert.match(
     validation,

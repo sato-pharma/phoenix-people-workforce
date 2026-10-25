@@ -38,6 +38,7 @@
  * The grouping core is pure and fixture-testable; everything touching Supabase sits below it.
  */
 
+import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { getAgentContactList, getRepContactList, type DoctorListRow } from "@/lib/crm/contact-lists";
 import {
   loadTradeCounterparties,
@@ -62,6 +63,7 @@ import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import { CRM_CONTACT_ROSTER } from "@/lib/crm/shared-windows";
 import {
   CRM_CHECKINS_UNIFIED_VIEW,
   CRM_CONTACT_ASSIGNMENTS_TABLE,
@@ -571,6 +573,9 @@ export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | nul
   };
 }
 
+/** One copy, with room to grow well past today's 13,095 rows; a load over the budget is served, not kept. */
+const CONTACT_ROSTER_LIMITS = { maxEntries: 1, maxRowsTotal: 60_000 };
+
 /**
  * Every contact on every rep's list today, reduced to the fields identity matching needs.
  *
@@ -585,45 +590,57 @@ export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | nul
  * Deliberately NOT `unstable_cache`d. At roughly 9,800 rows this sits close enough to the 2 MB data
  * cache entry limit to be a hazard, and exceeding that limit throws only in dev and kills the dev
  * server outright. A few narrow columns fetched fresh cost far less than that failure mode.
+ *
+ * SHARED IN MEMORY FOR A MINUTE instead (25 Oct 2026). Fetched fresh, it was the heaviest read on the
+ * database: 13,095 open rows as 14 parallel pages for every rep opened, about 168 full reads in seven
+ * hours, on the 2 GB box that restarted eleven times in two weeks under working-day load. One copy is
+ * kept in process (`getOrLoadShared`, no data-cache entry limit), concurrent opens share one load, and
+ * an applied doctor-list change drops it at once (`refreshSharedContactRoster`). The only thing it
+ * feeds is the "also on another rep's list" note, so a minute behind the hourly refresh costs nothing.
  */
 export async function loadContactRoster(): Promise<RosterEntry[]> {
-  const supabase = getSupabaseAdmin();
-  const { count, error: countError } = await supabase
-    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-    .select("id", { count: "exact", head: true })
-    .is("effective_to", null);
-  if (countError) {
-    if (isCrmSchemaMissingError(countError)) return [];
-    throw new Error(`Could not size the contact roster: ${countError.message}`);
-  }
+  const { rows } = await getOrLoadShared(CRM_CONTACT_ROSTER, "open", readRoster, CONTACT_ROSTER_LIMITS);
+  return rows ?? [];
 
-  // Counted first, then every page requested at once. Sequential paging over ten pages is ten round
-  // trips on a board a human is waiting for; the count makes the fan-out exact rather than a guess.
-  // Ordered by the assignment `id` — unique, so no page repeats or skips a row.
-  const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
-  const results = await Promise.all(
-    Array.from({ length: pages }, (_unused, page) =>
-      supabase
-        .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-        .select(`id, contact_crm_id, agent_crm_id, agent_hr_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
-        .is("effective_to", null)
-        .order("id", { ascending: true })
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
-    ),
-  );
+  async function readRoster(): Promise<RosterEntry[] | null> {
+    const supabase = getSupabaseAdmin();
+    const { count, error: countError } = await supabase
+      .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+      .select("id", { count: "exact", head: true })
+      .is("effective_to", null);
+    if (countError) {
+      if (isCrmSchemaMissingError(countError)) return null;
+      throw new Error(`Could not size the contact roster: ${countError.message}`);
+    }
 
-  const roster: RosterEntry[] = [];
-  for (const { data, error } of results) {
-    if (error) {
-      if (isCrmSchemaMissingError(error)) return [];
-      throw new Error(`Could not read the contact roster: ${error.message}`);
+    // Counted first, then every page requested at once. Sequential paging over ten pages is ten round
+    // trips on a board a human is waiting for; the count makes the fan-out exact rather than a guess.
+    // Ordered by the assignment `id` — unique, so no page repeats or skips a row.
+    const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+    const results = await Promise.all(
+      Array.from({ length: pages }, (_unused, page) =>
+        supabase
+          .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+          .select(`id, contact_crm_id, agent_crm_id, agent_hr_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
+          .is("effective_to", null)
+          .order("id", { ascending: true })
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+      ),
+    );
+
+    const roster: RosterEntry[] = [];
+    for (const { data, error } of results) {
+      if (error) {
+        if (isCrmSchemaMissingError(error)) return null;
+        throw new Error(`Could not read the contact roster: ${error.message}`);
+      }
+      for (const row of (data ?? []) as unknown as RosterAssignmentRecord[]) {
+        const entry = toRosterEntry(row);
+        if (entry) roster.push(entry);
+      }
     }
-    for (const row of (data ?? []) as unknown as RosterAssignmentRecord[]) {
-      const entry = toRosterEntry(row);
-      if (entry) roster.push(entry);
-    }
+    return roster;
   }
-  return roster;
 }
 
 /**

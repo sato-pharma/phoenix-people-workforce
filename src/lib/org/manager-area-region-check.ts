@@ -78,7 +78,9 @@ export async function findManagerAreaDrift(): Promise<{
   findings: ManagerAreaFinding[];
 }> {
   try {
-    const [areas, teams, managerRows] = await Promise.all([
+    // A failed seat read throws like the others, so the run reports "did not run" — never "nobody
+    // holds a rep seat", which would bring the acting district manager's false alarm back.
+    const [areas, teams, managerRows, repSeatHolderIds] = await Promise.all([
       loadPaged<AreaRow>("areas", "id,name", "id", (row) => {
         const areaId = numberOrNull(row.id);
         const areaName = textOrNull(row.name);
@@ -97,7 +99,10 @@ export async function findManagerAreaDrift(): Promise<{
         "hr_id",
         (row) => (String(row.employment_status ?? "").toLowerCase() === "active" ? row : null),
       ),
+      loadPaged<string>("au_v_employee_seat_drift", "hr_id,seat_tier", "seat_id", (row) =>
+        String(row.seat_tier ?? "").toUpperCase() === "REP" ? textOrNull(row.hr_id) : null),
     ]);
+    const repSeatHolders = new Set(repSeatHolderIds);
 
     const areaNameById = new Map(areas.map((area) => [area.areaId, area.areaName]));
     const teamById = new Map(teams.map((team) => [team.teamId, team]));
@@ -124,7 +129,7 @@ export async function findManagerAreaDrift(): Promise<{
       })
       .filter((row) => row.hrId.length > 0);
 
-    return { ran: true, findings: detectManagerAreaDrift(managers, areas, teams) };
+    return { ran: true, findings: detectManagerAreaDrift(managers, areas, teams, repSeatHolders) };
   } catch (error) {
     logError("Could not check whether every sales manager is recorded against their region", {
       error,
