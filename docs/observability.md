@@ -655,6 +655,7 @@ policy):
    | `phoenix-data-retention` | `40 3 * * *` | 2h | pg_cron job `phoenix-data-retention` at 01:40 UTC (03:40 Cairo in winter, 04:40 in summer — declared at the earlier), production only · **in-house only** |
    | `phoenix-marketing-roi-refresh` | `20 * * * *` | 1h | pg_cron job `phoenix-marketing-roi-refresh`, inside the database · **in-house only** |
    | `phoenix-recovery-snapshot` | `5 * * * *` | 1h | pg_cron job `phoenix-recovery-snapshot`, inside the database · **in-house only** |
+   | `phoenix-analyze-tables-without-statistics` | `20 4 * * *` | 2h | pg_cron job `phoenix-analyze-tables-without-statistics` at 02:20 UTC (04:20 Cairo in winter, 05:20 in summer — declared at the earlier), inside the database · **in-house only** |
    | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org job `8351275` |
 
    **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
@@ -756,6 +757,7 @@ policy):
    | `phoenix-data-retention` | `platform in-house-only` | The nightly pg_cron prune of audit log rows and raw attendance punches over 12 months and email delivery events over 6 months, the ages the owner set. Production only. A red means those three tables have stopped being trimmed and keep growing. |
    | `phoenix-marketing-roi-refresh` | `marketing in-house-only` | The hourly :20 pg_cron rebuild of the Marketing ROI fact tables the ROI dashboard reads. A run that finds another rebuild holding the lock reports skipped, which is normal; a red means the dashboard's figures have stopped moving. |
    | `phoenix-recovery-snapshot` | `platform in-house-only` | The hourly :05 pg_cron capture of the protected tables into the recovery undo log, which stands in for the point-in-time recovery production does not have. It reports a failure when any one table could not be captured. A red means the undo log has stopped being a recovery path. |
+   | `phoenix-analyze-tables-without-statistics` | `platform in-house-only` | The nightly pg_cron ANALYZE of every table that holds data and has no column statistics, so the database never plans a query from its built-in guess of 350 rows. Most nights it analyzes nothing, which is correct. A red means a new or refilled table can sit with that guess until its own traffic reaches autovacuum. |
    | `phoenix-job-heartbeat-sweep` | `platform` | The sweeper for the in-house dead-man's switch: it judges every declared job against its schedule and pages a human when one stops reporting. A red here means the thing that watches everything else has stopped. |
 
    🔴 **STANDING A JOB DOWN AND BRINGING IT BACK NEEDS `watchingSince`, or the restore alarms about
@@ -935,7 +937,9 @@ judged. Three things in it are deliberate:
   run as an hour early and the job as stranded.
 
 Pinned by `tests/pg-cron-heartbeats.test.ts`, which also asserts that every `cron.schedule` in any
-migration names one of these seven jobs — a new pg_cron job must be declared here too.
+migration names one of these seven jobs or `phoenix-analyze-tables-without-statistics` (the nightly
+statistics sweep, `20261025230153`, pinned by `tests/phoenix-crm-team-starts-statistics.test.ts`) —
+a new pg_cron job must be declared here too.
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.

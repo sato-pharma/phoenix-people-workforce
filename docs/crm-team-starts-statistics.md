@@ -110,7 +110,7 @@ signal, production held:
 | ordinary `public` tables | **532** |
 | with zero columns in `pg_stats` | **237** |
 | … of those, `relpages = 0`, i.e. EMPTY | **208** — left alone, deliberately |
-| … of those, holding data with no statistics at all | **29** (2,328 kB in total, every one a single page) |
+| … of those, holding data with no statistics at all | **29** (256 kB of table data, 2,328 kB with indexes and TOAST; 26 a single page, 3 two pages) |
 
 An empty table that **has** been analyzed holds no `pg_stats` rows either, so those 208 are
 indistinguishable from never-analyzed ones and equally harmless — a planner estimate of a table with
@@ -149,3 +149,24 @@ deleted, the pages not yet reclaimed: `employee_plan_item_return_notes`, `employ
 all** — there is nothing to describe — so without the `reltuples <> 0` clause they would match the
 loop again on every single run, for ever. That clause is why a second run of the file picks up **0
 tables**, measured, and why its re-runnable claim is true rather than hoped for.
+
+## The sweep runs nightly (2026-10-25)
+
+The sweep above ran once, at apply time, so a table created, restored or refilled after that day was
+planned from the 350-row guess again. `supabase/migrations/20261025230153_analyze_tables_with_no_statistics_nightly.sql`
+moves it into `public.phx_analyze_tables_without_statistics()`, run every night at 02:20 UTC by the
+pg_cron job `phoenix-analyze-tables-without-statistics` through a `_run()` wrapper that reports to
+the job heartbeat register (declared in `JOB_SCHEDULES` at `20 4 * * *` Cairo, grace 2 hours). Three
+things in the selection were corrected on the way:
+
+- it reads `pg_catalog.pg_statistic`, not the `pg_stats` view, which hides rows by column privilege
+  and row security — a table that has statistics could read as one with none;
+- it keeps only tables the running role may analyze (`has_table_privilege(…, 'MAINTAIN')`), so the
+  count it reports is of analyzes that really ran;
+- an emptied table comes back as soon as it is written to: `reltuples <> 0` OR
+  `n_mod_since_analyze > 0`. An INSERT does not move `reltuples`, so the old clause kept the nine
+  above out until autovacuum's 50 modifications. ANALYZE resets the counter, so a table still empty
+  afterwards is not picked again the next night.
+
+Read on production before it was applied: **0** tables match, so most nights it analyzes nothing,
+which is correct.

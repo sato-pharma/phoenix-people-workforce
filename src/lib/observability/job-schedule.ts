@@ -269,6 +269,10 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-data-retention", kind: "cron", schedule: "40 3 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-roi-refresh", kind: "cron", schedule: "20 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-recovery-snapshot", kind: "cron", schedule: "5 * * * *", graceSeconds: 1 * HOUR },
+  // The nightly ANALYZE of every table that holds data with no column statistics
+  // (20261025230153_analyze_tables_with_no_statistics_nightly.sql). 02:20 UTC, declared at the
+  // EARLIER Cairo reading for the same reason as the retention job. NO watchingSince: new.
+  { slug: "phoenix-analyze-tables-without-statistics", kind: "cron", schedule: "20 4 * * *", graceSeconds: 2 * HOUR },
   // The sweeper itself. Declared like any other job so it holds a row and verifies itself on every
   // run. It cannot report its OWN silence — see the migration header and docs/observability.md.
   { slug: "phoenix-job-heartbeat-sweep", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 30 * MINUTE },

@@ -10,7 +10,8 @@
 --     harmless, because a planner estimate of a table with no pages is right whatever it reads.
 --     They are deliberately left alone: analyzing them would put them straight back into the
 --     same set and make this migration re-do the same work on every run for ever.
---   * 29 hold data and have no statistics at all — 2,328 kB in total, every one a single page:
+--   * 29 hold data and have no statistics at all — 256 kB of table data (2,328 kB with their
+--     indexes and TOAST), 26 of them a single page and 3 two pages:
 --     `ats_whatsapp_template_sends`, `attendance_holiday_overrides`, `attendance_settlements`,
 --     `automated_payroll_non_employees`, `automated_payroll_runs`, `device_assignments`,
 --     `early_birds_national_winners`, `email_suppressions`, `employee_plan_item_return_notes`,
@@ -49,6 +50,10 @@
 -- single run, for ever. `reltuples` is 0 for exactly those nine right after an ANALYZE, -1 for a
 -- table never analyzed, and positive for one with rows: the clause keeps the first out and lets
 -- the other two in.
+--
+-- Superseded by 20261025230153_analyze_tables_with_no_statistics_nightly.sql, which runs this
+-- sweep every night through pg_cron, reads pg_statistic rather than the pg_stats view, and lets
+-- an emptied table back in once it is written to again (n_mod_since_analyze).
 --
 -- Re-runnable: ALTER ... SET is idempotent, and the loop analyzes only a table that has live
 -- rows and still has no statistics — so a second run of this file selects nothing and does

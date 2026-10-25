@@ -24,6 +24,9 @@ import { findJobSchedule } from "../src/lib/observability/job-schedule.ts";
  *   5. Each slug is declared on the job's real cadence and marked in-house only in the doc.
  *   6. Every cron.schedule in every migration names a watched job, and no later migration points one
  *      of these back at its bare function.
+ *
+ * A job born later with its wrapper already in place (the nightly statistics sweep, 2026-10-25) names its
+ * own `migration` and the UTC `scheduledAt` it is created with; every other check applies to it unchanged.
  */
 
 const MIGRATION_DIR = "supabase/migrations";
@@ -38,6 +41,10 @@ type Job = {
   schedule: string;
   graceSeconds: number;
   tags: string[];
+  /** The migration defining the wrapper, when it is not MIGRATION. */
+  migration?: string;
+  /** Set when that migration CREATES the job with cron.schedule, already on its wrapper: the UTC schedule. */
+  scheduledAt?: string;
 };
 
 const JOBS: Job[] = [
@@ -96,6 +103,18 @@ const JOBS: Job[] = [
     graceSeconds: 3600,
     tags: ["platform", "in-house-only"],
   },
+  {
+    // 02:20 UTC: 04:20 Cairo in winter, 05:20 in summer. Declared at the EARLIER reading.
+    job: "phoenix-analyze-tables-without-statistics",
+    slug: "phoenix-analyze-tables-without-statistics",
+    bare: "public.phx_analyze_tables_without_statistics()",
+    wrapper: "public.phx_analyze_tables_without_statistics_run()",
+    schedule: "20 4 * * *",
+    graceSeconds: 7200,
+    tags: ["platform", "in-house-only"],
+    migration: "20261025230153_analyze_tables_with_no_statistics_nightly.sql",
+    scheduledAt: "20 2 * * *",
+  },
 ];
 
 /** The departed-agent cache's job, wired by 20261023220000 and pinned by its own test. */
@@ -110,9 +129,9 @@ function flat(sql: string): string {
 }
 
 /** One function's body — between its header and its closing `$function$;`. */
-function functionBody(sql: string, qualifiedName: string): string {
+function functionBody(sql: string, qualifiedName: string, file: string = MIGRATION): string {
   const start = sql.indexOf(`create or replace function ${qualifiedName}`);
-  assert.notEqual(start, -1, `${qualifiedName} is defined in ${MIGRATION}`);
+  assert.notEqual(start, -1, `${qualifiedName} is defined in ${file}`);
   const end = sql.indexOf("$function$;", start);
   assert.notEqual(end, -1, `${qualifiedName}'s body ends`);
   return sql.slice(start, end);
@@ -134,8 +153,12 @@ export async function runPgCronHeartbeatsTests(): Promise<void> {
   const docMeta = parseCheckMeta(doc) as Map<string, { tags: string[] }>;
 
   for (const job of JOBS) {
+    const file = job.migration ?? MIGRATION;
+    const jobSql = file === MIGRATION ? sql : stripSqlComments(read(`${MIGRATION_DIR}/${file}`));
+    const jobFlatSql = flat(jobSql);
+
     // ── 1 and 2. The unchanged function first, then the record, and nothing caught ─────────────
-    const body = flat(functionBody(sql, job.wrapper.replace(/\(\)$/, "(")));
+    const body = flat(functionBody(jobSql, job.wrapper.replace(/\(\)$/, "("), file));
     const workAt = body.indexOf(`:= ${job.bare};`);
     const recordAt = body.indexOf(`perform public.phx_record_job_heartbeat( '${job.slug}', 'success'`) === -1
       ? body.indexOf(`perform public.phx_record_job_heartbeat('${job.slug}', 'success'`)
@@ -151,16 +174,23 @@ export async function runPgCronHeartbeatsTests(): Promise<void> {
       `${job.wrapper} must NOT catch: pg_cron runs it in one transaction, so a caught failure reads \`succeeded\` in cron.job_run_details`,
     );
 
-    // ── 4. Re-pointed by alter_job, from the known bare command only ───────────────────────────
-    assert.ok(
-      flatSql.includes(`('${job.job}', 'select ${job.bare};', 'select ${job.wrapper};')`),
-      `${job.job} is re-pointed from exactly 'select ${job.bare};' to 'select ${job.wrapper};'`,
-    );
+    // ── 4. Re-pointed by alter_job, from the known bare command only — or born on its wrapper ────
+    if (job.scheduledAt) {
+      assert.ok(
+        jobFlatSql.includes(`cron.schedule( '${job.job}', '${job.scheduledAt}', 'select ${job.wrapper};' )`),
+        `${file} schedules ${job.job} at ${job.scheduledAt} UTC on 'select ${job.wrapper};'`,
+      );
+    } else {
+      assert.ok(
+        jobFlatSql.includes(`('${job.job}', 'select ${job.bare};', 'select ${job.wrapper};')`),
+        `${job.job} is re-pointed from exactly 'select ${job.bare};' to 'select ${job.wrapper};'`,
+      );
+    }
 
     // ── Reachable by the service role only ──────────────────────────────────────────────────────
     assert.ok(
-      sql.includes(`revoke execute on function ${job.wrapper} from public, anon, authenticated;`) &&
-        sql.includes(`grant execute on function ${job.wrapper} to service_role;`),
+      jobSql.includes(`revoke execute on function ${job.wrapper} from public, anon, authenticated;`) &&
+        jobSql.includes(`grant execute on function ${job.wrapper} to service_role;`),
       `${job.wrapper} is revoked from the browser roles and granted to service_role`,
     );
 
