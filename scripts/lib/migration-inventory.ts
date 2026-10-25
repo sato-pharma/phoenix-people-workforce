@@ -1803,6 +1803,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 'notification-held-attachments' = public false, file_size_limit 41943040, allowed_mime_types null;
   // pg_policy notification_held_attachments_service_role = roles {service_role}, cmd * (ALL).
   "20261025003000_held_notifications_keep_their_attachments.sql",
+
+  // THE DOUBLE-VISIT PARTNERS — applied 25 Oct 2026, staging first then production (the owner's choice),
+  // through scripts/apply-sql-file.mjs, the standing route of AGENTS.md §8: the staging Supabase MCP's
+  // apply_migration answered {"status":"declined"} twice. Production (ozucdzovmcqvepbozvqf) returned
+  // {"applied":true} and holds NO ledger row for 20261025020000, hence this entry rather than a ledger write.
+  //
+  // VERIFIED BY DIGEST ON BOTH PROJECTS: md5(pg_proc.prosrc) of phoenix_crm_save_manager_plan_slot =
+  // 21565d063301074025b3b321fe13d610 on production AND staging, equal to the file's body (production read
+  // fb531b177a38cfbdc9bebc95e9204de3 before — the body of 20261024233000), prosecdef true, proacl
+  // {postgres=X/postgres,service_role=X/postgres}. The check phoenix_crm_manager_plan_slots_kind reads back
+  // widened: with_senior holds its district scope both-or-neither. No row is written: production held 0
+  // with_senior half-days before. A rolled-back staging test answered nsm=t, tm=manager_plan_bad_kind and a
+  // product manager without a district bad_input. Pinned by tests/phoenix-crm-manager-plan.test.ts.
+  "20261025020000_phoenix_crm_manager_plan_double_visit_partners.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

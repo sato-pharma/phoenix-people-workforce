@@ -37,6 +37,7 @@ import {
   managerDmVisitTitle,
   managerSeniorVisitTitle,
   countsAsDmsVisitWithSenior,
+  countsAsPlannersVisitWithPeer,
   isSeatlessPlannerKind,
   managerVisitWindow,
   type ManagerCountRow,
@@ -135,8 +136,10 @@ async function loadWithRepDone(
   weekStart: string,
   isTest: boolean,
   productManagerHrIds: ReadonlyArray<string> = [],
+  peerPlannerHrIds: ReadonlyArray<string> = [],
 ): Promise<Map<string, Set<string>>> {
   const done = new Map<string, Set<string>>();
+  const peerPlanners = new Set(dedupeIds(peerPlannerHrIds));
   const managers = dedupeIds(managerHrIds);
   if (managers.length === 0 || seatIds.length === 0) return done;
   const productManagers = dedupeIds(productManagerHrIds);
@@ -185,6 +188,14 @@ async function loadWithRepDone(
         for (const picked of [row.senior_hr_id, row.product_manager_hr_id]) {
           const pickedKey = personKey(textOrNull(picked));
           if (pickedKey && countsAsDmsVisitWithSenior(visit, manager, pickedKey)) keys.add(`sr|${seatId}|${date}|${pickedKey}`);
+        }
+        // A regional, national or product manager's With a manager or product manager (owner, 2026-10-25): a chain
+        // visit naming him AND the person he picked, whichever column each sits in (`countsAsPlannersVisitWithPeer`).
+        if (peerPlanners.has(manager)) {
+          for (const named of [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id]) {
+            const peerKey = personKey(textOrNull(named));
+            if (peerKey && countsAsPlannersVisitWithPeer(visit, manager, peerKey)) keys.add(`sr|${seatId}|${date}|${peerKey}`);
+          }
         }
         done.set(manager, keys);
       }
@@ -239,6 +250,7 @@ export async function computeManagerReports(
       isTest,
       // The Training Manager is on a rep's visit in the same slot as a product manager (owner, 2026-10-24).
       planRows.filter((plan) => isSeatlessPlannerKind(plan.plannerKind)).map((plan) => plan.managerHrId),
+      planRows.filter((plan) => plan.plannerKind === "rsm" || plan.plannerKind === "nsm" || plan.plannerKind === "pm").map((plan) => plan.managerHrId),
     ),
   ]);
   const customersBySlot = new Map<string, typeof slotCustomers>();

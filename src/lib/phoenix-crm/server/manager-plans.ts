@@ -63,6 +63,7 @@ import {
   nextManagerPlanStatus,
   parseManagerSlotDraft,
   repHalfKey,
+  seniorOffersForScope,
   returnStageOfApproved,
   type ManagerCustomerFlag,
   type ManagerHalf,
@@ -429,8 +430,9 @@ export type ManagerPlanBoardView = {
   /** The half-day kinds this planner is offered — With a district manager for everyone but a district manager. */
   slotKinds: Array<{ key: ManagerSlotKind; label: string }>;
   /**
-   * A district manager's With my manager or product manager picker, from the organogram above HIS seat and his
-   * line's product managers (`managerSeniorOffers`). Empty for everyone else.
+   * The With a manager or product manager picker (`managerSeniorOffers`): a district manager's from the organogram
+   * above HIS seat and his line's product managers; a regional, national or product manager's narrowed to the
+   * district on show (`seniorOffersForScope`), empty until he picks one. Empty for the Training Manager.
    */
   seniors: Array<ManagerSeniorOffer & { name: string }>;
   days: ManagerBoardDay[];
@@ -471,30 +473,55 @@ function slotSummary(input: {
 }
 
 /**
- * 🔴 WHO A DISTRICT MANAGER MAY GO WITH (owner, 2026-10-23: "follow organogram") — the occupied manager seats
- * above his seat, nearest first (his regional manager where his line has one, then the national sales manager;
- * the national sales manager alone where there is none), then the product managers of his line: the people a
- * rep's chain visit offers (`loadDoubleVisitOffers`). Empty for everyone but a district manager on a seat.
+ * 🔴 WHO A PLANNER MAY GO WITH ON A "WITH A MANAGER OR PRODUCT MANAGER" HALF-DAY — from the organogram, the
+ * people a rep's chain visit offers (`loadDoubleVisitOffers`):
+ * - a district manager (owner, 2026-10-23: "follow organogram"): the occupied manager seats above his seat,
+ *   nearest first, then the product managers of his line;
+ * - a regional manager (owner, 2026-10-25): the national sales manager above him, then the line's product managers;
+ * - a national sales manager: the regional managers below him, then the line's product managers;
+ * - a product manager: the regional and national managers of each of his lines — never another product manager.
+ * Never the planner himself; the Training Manager is offered nobody. A regional, national or product manager's
+ * list is narrowed to the district he picks (`seniorOffersForScope`).
  */
 async function managerSeniorOffers(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<ManagerSeniorOffer[]> {
-  if (writer.kind !== "dm" || !writer.seat) return [];
+  if (writer.kind === "tm") return [];
   const self = personKey(writer.hrId);
   const seen = new Set<string>(self ? [self] : []);
   const offers: ManagerSeniorOffer[] = [];
-  for (const member of managerChain(viewer.org, writer.seat.seatId)) {
-    const key = personKey(member.hrId);
-    if (!key || seen.has(key)) continue;
+  const offerSeat = (hrId: string | null | undefined, seat: OrgSeat) => {
+    const key = personKey(hrId);
+    if (!key || seen.has(key)) return;
     seen.add(key);
-    offers.push({ hrId: key, role: "manager", title: managerSeniorTitle(member.seat.tier) });
-  }
+    offers.push({ hrId: key, role: "manager", title: managerSeniorTitle(seat.tier), lineCode: seat.lineCode ?? null, seatId: seat.seatId, tier: seat.tier });
+  };
   // Lazily, as scope-product-managers.ts reads it: visit-asks.ts sits above this module's readers.
-  const { loadLineProductManagers } = await import("@/lib/phoenix-crm/server/visit-asks");
-  for (const manager of await loadLineProductManagers(writer.seat)) {
-    const key = personKey(manager.hrId);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    offers.push({ hrId: key, role: "product_manager", title: manager.role || "Product Manager" });
+  const offerProductManagers = async (seat: Pick<OrgSeat, "lineCode" | "lineName">) => {
+    const { loadLineProductManagers } = await import("@/lib/phoenix-crm/server/visit-asks");
+    for (const manager of await loadLineProductManagers(seat)) {
+      const key = personKey(manager.hrId);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      offers.push({ hrId: key, role: "product_manager", title: manager.role || "Product Manager", lineCode: seat.lineCode ?? null, seatId: null, tier: null });
+    }
+  };
+  if (writer.kind === "pm") {
+    // The regional, then national, managers of each of his two lines — never under "Others".
+    const seats = [...viewer.org.seats.values()]
+      .filter((seat) => (seat.tier === "RSM" || seat.tier === "NSM") && !seat.isOtherPseudoDm && Boolean(seat.lineCode) && writer.lineCodes.includes(seat.lineCode ?? ""))
+      .sort((left, right) => (left.lineCode ?? "").localeCompare(right.lineCode ?? "") || (left.tier === right.tier ? left.seatId.localeCompare(right.seatId) : left.tier === "RSM" ? -1 : 1));
+    for (const seat of seats) offerSeat(seat.occupantHrId, seat);
+    return offers;
   }
+  if (!writer.seat) return [];
+  if (writer.kind === "nsm") {
+    const regions = [...viewer.org.seats.values()]
+      .filter((seat) => seat.tier === "RSM" && seat.seatId !== writer.seat?.seatId && seat.path.includes(writer.seat?.seatId ?? ""))
+      .sort((left, right) => left.seatId.localeCompare(right.seatId));
+    for (const seat of regions) offerSeat(seat.occupantHrId, seat);
+  } else {
+    for (const member of managerChain(viewer.org, writer.seat.seatId)) offerSeat(member.hrId, member.seat);
+  }
+  await offerProductManagers(writer.seat);
   return offers;
 }
 
@@ -650,7 +677,9 @@ async function buildBoard(
     ...seniorOffers.map((offer) => offer.hrId),
   ]);
   view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind) };
-  view.seniors = seniorOffers.map((offer) => ({ ...offer, name: nameOf(names, offer.hrId) }));
+  // A regional, national or product manager sees the people of the district he chose (owner, 2026-10-25).
+  const seniorsHere = writer.kind === "dm" ? seniorOffers : chosen?.dmSeatId ? seniorOffersForScope(seniorOffers, chosen) : [];
+  view.seniors = seniorsHere.map((offer) => ({ ...offer, name: nameOf(names, offer.hrId) }));
   view.scopes = scopeChoices(viewer, writer, scopes, names);
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
@@ -1048,12 +1077,18 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   // the organogram above HIS seat and his line's product managers, and areas of his own district.
   let seniorVisit: { senior_hr_id: string; role: ManagerSeniorOffer["role"]; title: string; areas: Array<{ seat_id: string; area_code: string | null; area_name: string; seat_ids: string[] }> } | null = null;
   if (draft.kind === "with_senior") {
-    const offer = (await managerSeniorOffers(viewer, writer)).find((entry) => entry.hrId === personKey(draft.seniorHrId));
-    if (!offer) throw forbiddenError("Choose your own manager or a product manager of your line, as the list shows them. Reload the page.");
+    // A regional, national or product manager's list is the district's he picked (owner, 2026-10-25).
+    const offers = seniorOffersForScope(await managerSeniorOffers(viewer, writer), own ? null : scope);
+    const offer = offers.find((entry) => entry.hrId === personKey(draft.seniorHrId));
+    if (!offer) {
+      throw forbiddenError(
+        own ? "Choose your own manager or a product manager of your line, as the list shows them. Reload the page." : "Choose a manager or product manager of the district you chose, as the list shows them. Reload the page.",
+      );
+    }
     const areaKey = (seat: OrgSeat) => seat.areaCode ?? seat.areaName ?? seat.seatId;
     const areas = draft.areaSeatIds.map((seatId) => {
       const seat = district.find((entry) => entry.seatId === seatId);
-      if (!seat) throw forbiddenError("Choose areas of your own district.");
+      if (!seat) throw forbiddenError(own ? "Choose areas of your own district." : "Choose the areas of the district manager you chose.");
       return {
         seat_id: seat.seatId,
         area_code: seat.areaCode ?? null,

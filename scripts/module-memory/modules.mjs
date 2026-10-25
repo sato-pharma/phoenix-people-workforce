@@ -418,7 +418,7 @@ export const MODULES = [
   {
     id: "phoenix-crm-manager-ride-alongs",
     title: "Phoenix CRM — a manager's half-day with another manager",
-    scope: "The half-days a manager spends with another manager rather than a rep: a regional, national or product manager's With a district manager (`with_dm`), and a district manager's With my manager or product manager (`with_senior`), its organogram picker, the areas ticked, Done by a chain visit, and how the Approvals Hub shows them.",
+    scope: "The half-days a manager spends with another manager rather than a rep: a regional, national or product manager's With a district manager (`with_dm`), and the double visit between two of a line's managers (`with_senior`: the DM's With my manager or product manager, everyone else's With a manager or product manager), its organogram picker, the areas ticked, Done by a chain visit, and how the Approvals Hub shows them.",
     globs: [
       "src/lib/phoenix-crm/manager-plan-rules.ts",
       "src/lib/phoenix-crm/server/manager-plans.ts",
