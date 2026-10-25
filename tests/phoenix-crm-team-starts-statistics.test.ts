@@ -41,11 +41,36 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION = "supabase/migrations/20261024190000_phoenix_crm_team_starts_keeps_its_planner_statistics.sql";
 const SWEEP = "supabase/migrations/20261024200000_every_table_with_data_and_no_statistics_gets_them.sql";
+const NIGHTLY = "supabase/migrations/20261025230153_analyze_tables_with_no_statistics_nightly.sql";
 
 /** The three small CRM door tables that get the per-table threshold, and the only ones that may. */
 const OVERRIDDEN = ["phoenix_crm_day_starts", "phoenix_crm_manager_visits", "phoenix_crm_visit_edits"] as const;
 const ACCOUNT = "docs/crm-team-starts-statistics.md";
 const TABLE = "public.phoenix_crm_team_starts";
+
+/**
+ * Statements that take an ACCESS EXCLUSIVE lock (or remove data) — never in a statistics migration:
+ * crm_visits_unified and crm_checkins_unified read these tables on every request.
+ */
+const FORBIDDEN = [/vacuum\s+full/i, /\breindex\b/i, /\bdrop\s+table\b/i, /\btruncate\b/i, /\block\s+table\b/i] as const;
+
+function assertNoLockingStatements(sql: string, label: string): void {
+  for (const forbidden of FORBIDDEN) {
+    assert.equal(forbidden.test(sql), false, `no ${String(forbidden)} in ${label} — it would lock tables the two CRM doors read on every request`);
+  }
+}
+
+/**
+ * True when every `reltuples` in the SQL is `reltuples <> 0` (a table that holds rows). Any other read —
+ * `= -1`, `< 0`, `::int < 0`, `in (-1)` — would be the "has no statistics" signal, and ANALYZE is only
+ * half-transactional, so a rolled-back one clears that sentinel and leaves the statistics missing. An
+ * allow-list, so a spelling nobody thought of fails rather than passes.
+ */
+function readsReltuplesOnlyAsHoldsRows(sql: string): boolean {
+  const every = sql.match(/\breltuples\b/gi) ?? [];
+  const holdsRows = sql.match(/\breltuples\s*<>\s*0\b/gi) ?? [];
+  return every.length === holdsRows.length;
+}
 
 /** A migration with its comments removed, so no assertion below can be satisfied by prose. */
 function sqlSource(file: string = MIGRATION): string {
@@ -58,9 +83,12 @@ export async function runPhoenixCrmTeamStartsStatisticsTests(): Promise<void> {
   // ── The migration exists, and it is about this one table ────────────────────────────────────
   {
     assert.ok(sql.trim().length > 0, `${MIGRATION} has statements, not only prose`);
-    const alters = sql.match(/alter\s+table\s+public\.\w+/gi) ?? [];
+    // Every `alter table`, in any spelling — `if exists`, `only`, schema-qualified or not — and it names
+    // this table.
+    const alters = [...sql.matchAll(/\balter\s+table\b(?:\s+if\s+exists)?(?:\s+only)?\s+("?[\w.]+"?)/gi)];
+    assert.equal(alters.length, (sql.match(/\balter\s+table\b/gi) ?? []).length, "every alter table names its target plainly");
     assert.equal(alters.length, 1, "exactly one table is altered");
-    assert.match(alters[0], /alter\s+table\s+public\.phoenix_crm_team_starts/i, `the altered table is ${TABLE}`);
+    assert.match(alters[0][1].replace(/"/g, ""), /^(public\.)?phoenix_crm_team_starts$/i, `the altered table is ${TABLE}`);
   }
 
   // ── Statement 1: a threshold this table's own traffic can actually reach ────────────────────
@@ -93,13 +121,7 @@ export async function runPhoenixCrmTeamStartsStatisticsTests(): Promise<void> {
 
   // ── Nothing here may lock a table both doors read on every request ─────────────────────────
   {
-    for (const forbidden of [/vacuum\s+full/i, /\breindex\b/i, /\bdrop\s+table\b/i, /\btruncate\b/i, /\block\s+table\b/i]) {
-      assert.equal(
-        forbidden.test(sql),
-        false,
-        `no ${String(forbidden)} in a statistics migration — crm_visits_unified and crm_checkins_unified read this table on every request`,
-      );
-    }
+    assertNoLockingStatements(sql, MIGRATION);
     assert.ok(sql.includes("begin;") && sql.includes("commit;"), "the file is one transaction, like every other migration here");
   }
 
@@ -168,10 +190,9 @@ export async function runPhoenixCrmTeamStartsStatisticsTests(): Promise<void> {
     // that is how the first sweep of this work reported "0 never-analyzed tables" on a schema with
     // 29 blind ones.
     assert.match(sweep, /from\s+pg_stats\b/i, "the sweep asks pg_stats which tables have no column statistics");
-    assert.equal(
-      /reltuples\s*=\s*-\s*1/i.test(sweep),
-      false,
-      "the sweep never keys on reltuples = -1 -- a rolled-back ANALYZE clears that sentinel and leaves the statistics missing",
+    assert.ok(
+      readsReltuplesOnlyAsHoldsRows(sweep),
+      "the sweep reads reltuples only as `reltuples <> 0`, never as -1 or < 0 --a rolled-back ANALYZE clears that sentinel and leaves the statistics missing",
     );
 
     // A second run of the file must select nothing: `relpages > 0` keeps the 208 empty tables out,
@@ -194,13 +215,60 @@ export async function runPhoenixCrmTeamStartsStatisticsTests(): Promise<void> {
       "no table is named in a literal ANALYZE -- the set is not the same on staging and production",
     );
 
-    for (const forbidden of [/vacuum\s+full/i, /\breindex\b/i, /\bdrop\s+table\b/i, /\btruncate\b/i, /\block\s+table\b/i]) {
-      assert.equal(
-        forbidden.test(sweep),
-        false,
-        `no ${String(forbidden)} in a statistics sweep -- it would take an ACCESS EXCLUSIVE lock on every table it touched`,
-      );
-    }
+    assertNoLockingStatements(sweep, SWEEP);
+  }
+
+  // -- The nightly sweep: the one-off becomes a pg_cron job, with five selection fixes ----------
+  //
+  // 20261024200000 ran once, at apply time; a table created, restored or refilled afterwards sat on
+  // the 350-row guess again. The nightly job re-runs the selection and corrects it in five places.
+  {
+    const nightly = sqlSource(NIGHTLY);
+    assert.ok(nightly.trim().length > 0, `${NIGHTLY} has statements, not only prose`);
+
+    // 1. pg_statistic, not pg_stats: the view hides rows by column privilege and row security, so a
+    //    table that HAS statistics could read as one with none and be re-analyzed (and counted) forever.
+    assert.match(nightly, /pg_catalog\.pg_statistic\b/i, "the nightly sweep reads pg_catalog.pg_statistic");
+    assert.equal(/\bfrom\s+(pg_catalog\.)?pg_stats\b/i.test(nightly), false, "the nightly sweep never asks the filtered pg_stats view");
+    // 2. only a table the running role can analyze, so the count is of analyzes that really ran.
+    assert.match(nightly, /has_table_privilege\(\s*c\.oid\s*,\s*'MAINTAIN'\s*\)/i, "the nightly sweep keeps only tables it may ANALYZE");
+    // 3. a table with pages and no live rows comes back as soon as it is written to.
+    assert.match(nightly, /relpages\s*>\s*0/i, "the nightly sweep skips a table with no pages");
+    assert.match(nightly, /n_mod_since_analyze/i, "an emptied table that is written to again is picked up through n_mod_since_analyze");
+    assert.ok(readsReltuplesOnlyAsHoldsRows(nightly), "the nightly sweep reads reltuples only as `reltuples <> 0`, never as the statistics signal");
+    // 4. unlogged tables fall into the same hole, so they are swept too.
+    assert.match(nightly, /relpersistence\s+in\s*\(\s*'p'\s*,\s*'u'\s*\)/i, "the nightly sweep covers unlogged tables as well as permanent ones");
+    // 5. a table ANALYZE can never describe (no columns, or all at statistics 0) is left out, or it
+    //    would be analyzed and counted every night for ever.
+    assert.match(
+      nightly,
+      /coalesce\(\s*a\.attstattarget\s*,\s*-1\s*\)\s*<>\s*0/i,
+      "the nightly sweep leaves out a table with no column ANALYZE can describe",
+    );
+
+    assert.match(nightly, /execute\s+format\(\s*'analyze %s'/i, "the nightly sweep analyzes through one dynamic statement");
+    assert.equal(/\banalyze\s+public\.\w+/i.test(nightly), false, "no table is named in a literal ANALYZE");
+    assertNoLockingStatements(nightly, NIGHTLY);
+
+    // Every ANALYZE in a run holds its lock until the run ends, so the sweep waits a bounded time for
+    // each one and skips a busy table, catching that and nothing else.
+    const sweepAt = nightly.search(/create\s+or\s+replace\s+function\s+public\.phx_analyze_tables_without_statistics\(\)/i);
+    assert.ok(sweepAt !== -1, "the sweep function exists");
+    const sweepFn = nightly.slice(sweepAt, nightly.indexOf("$function$;", sweepAt));
+    assert.match(sweepFn, /\bset\s+lock_timeout\s+to\s+'\d+s'/i, "the sweep bounds each lock wait with its own lock_timeout");
+    const handlers = sweepFn.match(/\bexception\b/gi) ?? [];
+    const busyOnly = sweepFn.match(/\bexception\s+when\s+lock_not_available\s+then\b/gi) ?? [];
+    assert.ok(busyOnly.length >= 1, "the sweep skips a table it cannot lock in time");
+    assert.equal(handlers.length, busyOnly.length, "the sweep catches lock_not_available and nothing else");
+
+    // The pg_cron guard. The wrapper's order and catch-nothing rule, its grants, the cron.schedule
+    // command and the JOB_SCHEDULES declaration are pinned with every other heartbeat job in
+    // tests/pg-cron-heartbeats.test.ts.
+    assert.match(
+      nightly,
+      /if\s+not\s+exists\s*\(\s*select\s+1\s+from\s+pg_extension\s+where\s+extname\s*=\s*'pg_cron'\s*\)/i,
+      "the schedule is guarded on pg_cron",
+    );
   }
 
   console.log("phoenix-crm team starts statistics: OK");

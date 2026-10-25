@@ -508,21 +508,26 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     if (!tableRead.test(source(file))) continue;
     assert.match(file, /^src\/lib\/phoenix-crm\/server\/manager-[a-z-]+\.ts$/, `${file} reads a manager-plan table directly — outside screens go through manager-plan-readers.ts`);
   }
-  // A migration that only widens the table itself — its own columns, checks and comments — reads nothing from
-  // it. Named one by one, and each still may not read it, view it or wrap it in a function.
-  const widensOwnVisitsOnly = new Set([
-    "20261019103745_phoenix_crm_manager_visit_place.sql",
-    "20261023035106_manager_visit_detail_writeup.sql",
+  // A migration that only CHANGES the table itself reads nothing from it. Named one by one, each may not read
+  // it, view it or wrap it in a function; where the value is a pattern, the table may be named only inside it.
+  //   * widening — its own columns, checks and comments (null: it names the table wherever it likes);
+  //   * planner and autovacuum tuning (2026-10-24) — an `alter table … set (...)` of storage parameters,
+  //     which reads nothing, counts nothing and reaches no KPI.
+  const changesOwnVisitsOnly = new Map<string, { purpose: string; onlyIn: RegExp | null }>([
+    ["20261019103745_phoenix_crm_manager_visit_place.sql", { purpose: "widen his own visits' table", onlyIn: null }],
+    ["20261023035106_manager_visit_detail_writeup.sql", { purpose: "widen his own visits' table", onlyIn: null }],
+    [
+      "20261024200000_every_table_with_data_and_no_statistics_gets_them.sql",
+      {
+        purpose: "tune his own visits' storage",
+        onlyIn: /alter\s+table\s+if\s+exists\s+public\.phoenix_crm_manager_visits\s+set\s*\([^)]*\);/gi,
+      },
+    ],
   ]);
+  const readsOwnVisits = /\b(from|join)\s+(public\.)?phoenix_crm_manager_visits\b|create\s+(or\s+replace\s+)?(view|function|materialized)/i;
   // The Super Admin's delete (owner, 2026-10-23) takes ONE of his visits out by id, with a copy kept. It counts,
   // sums and reports nothing: its only function is that delete, and the table is named in exactly two places.
   const deletesOwnVisitsOnly = new Set(["20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql"]);
-  // Planner and autovacuum tuning (2026-10-24) touches the table's STORAGE, never its rows: an
-  // `alter table … set (...)` of storage parameters reads nothing, counts nothing and reaches no KPI. Named one
-  // by one, and each may name the table in that one statement and nowhere else.
-  const tunesOwnVisitsStorageOnly = new Set([
-    "20261024200000_every_table_with_data_and_no_statistics_gets_them.sql",
-  ]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
@@ -540,24 +545,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
       assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to lock one row and delete it`);
       continue;
     }
-    if (tunesOwnVisitsStorageOnly.has(file)) {
+    const change = changesOwnVisitsOnly.get(file);
+    if (change) {
       const body = stripSqlComments(text);
-      assert.equal(
-        /\b(from|join)\s+(public\.)?phoenix_crm_manager_visits\b|create\s+(or\s+replace\s+)?(view|function|materialized)/i.test(body),
-        false,
-        `${file} may tune his own visits' storage, never read the table into a view, a function or a KPI`,
-      );
-      const leftover = body.replace(/alter\s+table\s+if\s+exists\s+public\.phoenix_crm_manager_visits\s+set\s*\([^)]*\);/gi, "");
-      assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to set its storage parameters`);
-      continue;
-    }
-    if (widensOwnVisitsOnly.has(file)) {
-      const body = stripSqlComments(text);
-      assert.equal(
-        /\b(from|join)\s+(public\.)?phoenix_crm_manager_visits\b|create\s+(or\s+replace\s+)?(view|function|materialized)/i.test(body),
-        false,
-        `${file} may widen his own visits' table, never read it into a view, a function or a KPI`,
-      );
+      assert.equal(readsOwnVisits.test(body), false, `${file} may ${change.purpose}, never read the table into a view, a function or a KPI`);
+      if (change.onlyIn) {
+        const leftover = body.replace(change.onlyIn, "");
+        assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to ${change.purpose}`);
+      }
       continue;
     }
     assert.equal(text.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits — they count in his own report only, never a view or a KPI`);
