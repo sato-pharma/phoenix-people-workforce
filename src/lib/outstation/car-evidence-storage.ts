@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-cache";
 import type {
   OutstationCarEvidenceMetadata,
   OutstationTicketAttachmentMetadata,
@@ -105,7 +106,7 @@ export async function uploadOutstationDepartureEvidenceImage(params: {
   const { error } = await getSupabaseAdmin()
     .storage.from(OUTSTATION_EVIDENCE_BUCKET)
     .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: parsed.contentType,
       // Still false, and still for the original reason: no capture may ever overwrite another.
       // Retakes do not need it — each one writes to its own versioned path, so a collision here
@@ -152,7 +153,7 @@ export async function uploadOutstationJourneyStopImage(params: {
   const { error } = await getSupabaseAdmin()
     .storage.from(OUTSTATION_EVIDENCE_BUCKET)
     .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: parsed.contentType,
       // Never overwrite: a stop photo is evidence, and a collision means two captures raced.
       upsert: false,
@@ -209,7 +210,7 @@ export async function uploadOutstationCarEvidenceImage(params: {
   const { error } = await supabase.storage
     .from(OUTSTATION_EVIDENCE_BUCKET)
     .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: parsed.contentType,
       upsert: true,
     });
@@ -287,7 +288,7 @@ export async function uploadOutstationTicketAttachments(
       const { error } = await supabase.storage
         .from(OUTSTATION_EVIDENCE_BUCKET)
         .upload(path, attachment.bytes, {
-          cacheControl: "31536000",
+          cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
           contentType: attachment.contentType,
           upsert: false,
         });
@@ -395,7 +396,7 @@ export async function uploadOutstationMeetingInvoice(params: {
   const { error } = await getSupabaseAdmin()
     .storage.from(OUTSTATION_EVIDENCE_BUCKET)
     .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: parsed.contentType,
       upsert: true,
     });

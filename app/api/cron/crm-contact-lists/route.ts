@@ -147,6 +147,13 @@ export async function GET(request: Request) {
     // so the tag is busted AFTER the master refresh — busting it before would let a board re-cache
     // the pre-refresh counts for another five minutes. Wrapped because a revalidate failure must
     // never turn a SUCCESSFUL sync into a 500: the rows are written, and the TTL is the fallback.
+    //
+    // THIS BUSTS THE WORKER'S COPY ONLY (cache audit, 2026-10-26). The route runs on the worker
+    // (refuseOnPageServer above), and with no shared cacheHandler each process keeps its own tag
+    // state, so the website's cached counts are NOT refreshed by this line: the website catches up
+    // through its own 300s TTL. That is accepted — a synced list is a few minutes late on a board,
+    // never wrong for long. A person's own list edit (bustListSummaries) runs on the website and does
+    // refresh it at once.
     try {
       revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
     } catch (error) {

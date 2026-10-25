@@ -18,6 +18,7 @@ import {
   PortalSkeleton,
 } from "@/components/employee-portal/portal-primitives";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CONTACT_HR_DRAFT_KEY_BASE, ownerScopedStorageKey } from "@/lib/browser-storage/owner-scoped";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -40,7 +41,9 @@ type SupportRequestRow = {
   subject: string;
 };
 
-const SUPPORT_DRAFT_KEY = "phoenix:contact-hr-draft:v1";
+// The draft is kept per person (`phoenix:contact-hr-draft:v2:<HR id>`): one key for the whole
+// browser restored one person's message to HR for whoever signed in next on the same device.
+const LEGACY_SUPPORT_DRAFT_KEY = "phoenix:contact-hr-draft:v1";
 const DESCRIPTION_SOFT_LIMIT = 1000;
 
 const hrRequestSubcategories = [
@@ -52,6 +55,7 @@ const hrRequestSubcategories = [
 
 export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }) {
   const employeeName = data.employee.fullName || data.employee.hrId || "your profile";
+  const draftKey = ownerScopedStorageKey(CONTACT_HR_DRAFT_KEY_BASE, data.employee.hrId);
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [subject, setSubject] = useState("");
@@ -118,7 +122,8 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     if (draftRestoredRef.current) return;
     if (typeof window === "undefined") return;
     try {
-      const raw = window.localStorage.getItem(SUPPORT_DRAFT_KEY);
+      window.localStorage.removeItem(LEGACY_SUPPORT_DRAFT_KEY);
+      const raw = draftKey ? window.localStorage.getItem(draftKey) : null;
       if (!raw) {
         draftRestoredRef.current = true;
         return;
@@ -144,26 +149,26 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     } finally {
       draftRestoredRef.current = true;
     }
-  }, []);
+  }, [draftKey]);
 
   /* -------- Persist draft to localStorage (lightweight debounce via render) -------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!draftRestoredRef.current) return;
+    if (!draftRestoredRef.current || !draftKey) return;
     const hasAnything = category || subcategory || subject || description;
     try {
       if (hasAnything) {
         window.localStorage.setItem(
-          SUPPORT_DRAFT_KEY,
+          draftKey,
           JSON.stringify({ category, description, subcategory, subject }),
         );
       } else {
-        window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
+        window.localStorage.removeItem(draftKey);
       }
     } catch {
       // storage full / disabled - silently ignore
     }
-  }, [category, subcategory, subject, description]);
+  }, [category, subcategory, subject, description, draftKey]);
 
   useEffect(() => {
     return () => {
@@ -271,9 +276,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       setDescription("");
       setAttachments([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && draftKey) {
         try {
-          window.localStorage.removeItem(SUPPORT_DRAFT_KEY);
+          window.localStorage.removeItem(draftKey);
         } catch {
           // ignore
         }

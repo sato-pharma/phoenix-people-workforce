@@ -1,3 +1,4 @@
+import { invalidateCrmDailyForecastCache } from "@/lib/dashboard/invalidation";
 import { lineName, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { isClosingLocked } from "@/lib/sales/monthly-closing-lock";
 import { isClosingPublished } from "@/lib/sales/monthly-closing-publication";
@@ -46,6 +47,7 @@ export async function dropMonthlyTargets(input: {
     p_actor: input.actorHrId,
   });
   if (error) throw error;
+  invalidateCrmDailyForecastCache(`monthly targets dropped — ${lineLabel}/${input.period}`);
   const dropped = Number(data ?? 0);
   return { dropped: Number.isFinite(dropped) ? dropped : 0, lineLabel };
 }

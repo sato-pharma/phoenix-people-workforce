@@ -1,4 +1,5 @@
 import { PhoenixCrmTouchTrail } from "@/components/phoenix-crm/touch-trail-collector";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 // The admin twin of `app/employee-portals/field-crm/layout.tsx`: the same touch trail over the
 // manager's and Super Admin's side of Phoenix CRM, mounted once for the whole subtree.
@@ -9,10 +10,14 @@ import { PhoenixCrmTouchTrail } from "@/components/phoenix-crm/touch-trail-colle
 // Both incidents of 3 Oct were diagnosed from the rep's side; the next one may not be.
 //
 // Renders nothing, changes nothing, and deleting it turns the trail off for the admin side alone.
-export default function AdminFieldCrmLayout({ children }: { children: React.ReactNode }) {
+//
+// `viewerHrId` is whose taps a held batch is (owner-scoped.ts): the access read is React-cached, so
+// a page below that reads it too reuses the same answer rather than adding a second read.
+export default async function AdminFieldCrmLayout({ children }: { children: React.ReactNode }) {
+  const access = await resolveAccessContextFromPage();
   return (
     <>
-      <PhoenixCrmTouchTrail />
+      <PhoenixCrmTouchTrail viewerHrId={access.hrId} />
       {children}
     </>
   );

@@ -81,6 +81,9 @@ export async function recruitmentFileResponse(
   const inline = params.get("disposition") === "inline";
   return new NextResponse(download.bytes as unknown as BodyInit, {
     headers: {
+      // A candidate's CV or ID scan, the same as the two answers above: never left in a shared
+      // browser's cache or a proxy (cache audit, 2026-10-26).
+      "Cache-Control": "private, no-store",
       "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${download.fileName.replace(/"/g, "")}"`,
       "Content-Type": download.mimeType,
     },

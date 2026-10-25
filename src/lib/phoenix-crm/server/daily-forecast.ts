@@ -1,5 +1,7 @@
 import { unstable_cache } from "next/cache";
 
+import { CRM_DAILY_FORECAST_CACHE_TAG } from "@/lib/dashboard/invalidation";
+
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
@@ -189,7 +191,8 @@ async function cnsTargets(period: string): Promise<Map<string, Map<string, Month
 /**
  * One published month's CNS closing, by area and product: units and value. Cached ten minutes — a
  * published month changes only if the owner unpublishes it, and the engine read behind it is the
- * whole company's month, paged.
+ * whole company's month, paged. A publish, an unpublish and a target save or drop expire it at once
+ * (invalidateCrmDailyForecastCache); the TTL is only the backstop.
  */
 const loadCnsClosing = unstable_cache(
   async (period: string): Promise<Array<{ areaCode: string; productCode: string; actualUnits: number; actualValue: number; targetUnits: number | null }>> => {
@@ -205,7 +208,7 @@ const loadCnsClosing = unstable_cache(
       }));
   },
   ["phoenix-crm-forecast-cns-closing"],
-  { revalidate: 600, tags: ["sos-reference"] },
+  { revalidate: 600, tags: ["sos-reference", CRM_DAILY_FORECAST_CACHE_TAG] },
 );
 
 async function publishedCnsPeriods(): Promise<string[]> {

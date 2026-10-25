@@ -4,6 +4,7 @@ import { assertPermission, canSeeEmployee, type AccessContext } from "@/lib/auth
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   clearEmployeePhoto,
+  employeePhotoEtag,
   readImagePayload,
   streamEmployeePhoto,
   uploadEmployeePhoto,
@@ -82,6 +83,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     }
     const { hrId } = await params;
     await assertCanViewTargetPhoto(access, hrId);
+    // HOW LONG THE BROWSER KEEPS IT (cache audit, 2026-10-26). A link carrying `?v=` (photoRouteFor,
+    // versioned by the photo's own update time) names one picture for good, so it keeps a day. A BARE
+    // link — the employee screen, the rankings and the milestone card all use one — names whatever
+    // the photo is now, so it used to show a replaced or removed picture for up to a day. It must now
+    // ask every time; the ETag makes that a 304 without downloading the picture again.
+    const versioned = new URL(request.url).searchParams.has("v");
+    const cacheControl = versioned ? "private, max-age=86400, must-revalidate" : "private, no-cache";
+    const etag = await employeePhotoEtag(hrId);
+    if (!etag) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    if (request.headers.get("if-none-match") === etag) {
+      return new NextResponse(null, { status: 304, headers: { "Cache-Control": cacheControl, ETag: etag } });
+    }
     const photo = await streamEmployeePhoto(hrId);
     if (!photo) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -90,7 +105,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       status: 200,
       headers: {
         "Content-Type": photo.contentType,
-        "Cache-Control": "private, max-age=86400, must-revalidate",
+        "Cache-Control": cacheControl,
+        ETag: etag,
       },
     });
   } catch (error) {

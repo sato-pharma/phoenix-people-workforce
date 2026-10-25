@@ -19,5 +19,10 @@ export default async function OutstationExpenseApprovalsPage() {
   // string: the client cannot be trusted to compute its own authority. This only hides controls —
   // the decision route asserts system-administrator access on its own, so a CEO who reached the
   // buttons anyway would still be refused.
-  return <ExpenseApprovalsWorkspace canDecide={canDecideOutstationExpenseApprovals(access)} />;
+  return (
+    <ExpenseApprovalsWorkspace
+      canDecide={canDecideOutstationExpenseApprovals(access)}
+      viewerHrId={access.hrId}
+    />
+  );
 }

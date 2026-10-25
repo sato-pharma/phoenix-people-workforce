@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { licenseVerdictColumns } from "@/lib/venues/pharmacy-license-verdict-columns";
+import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-cache";
 import {
   parsePharmacyLicenseDataUrl,
   PHARMACY_LICENSE_BUCKET,
@@ -113,7 +114,7 @@ export async function storeMarketingEvidencePhoto(params: {
   const upload = await supabase.storage
     .from(MARKETING_EVIDENCE_BUCKET)
     .upload(path, parsed.bytes, {
-      cacheControl: "31536000",
+      cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
       contentType: parsed.contentType,
       // true: the path is keyed on the entity id, and a re-validation of the same record should
       // replace its photo rather than fail. A brand-new record cannot collide with anything.
@@ -210,7 +211,7 @@ export async function storeMarketingPharmacyLicense(params: {
   const supabase = params.supabase ?? getSupabaseAdmin();
 
   const upload = await supabase.storage.from(PHARMACY_LICENSE_BUCKET).upload(path, parsed.bytes, {
-    cacheControl: "31536000",
+    cacheControl: PRIVATE_FILE_CACHE_CONTROL_SECONDS,
     contentType: parsed.contentType,
     upsert: false,
   });

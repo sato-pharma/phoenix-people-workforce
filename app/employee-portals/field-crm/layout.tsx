@@ -1,4 +1,5 @@
 import { PhoenixCrmTouchTrail } from "@/components/phoenix-crm/touch-trail-collector";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 // This layout exists for ONE reason: to mount the Phoenix CRM touch trail once over the rep's whole
 // subtree (owner, 2026-10-03: "every click or every touch on the touch screen for this module to be
@@ -14,10 +15,14 @@ import { PhoenixCrmTouchTrail } from "@/components/phoenix-crm/touch-trail-colle
 //
 // `test` is not passed: the session decides it server-side (`access.testPersona`), so a browser can
 // never clear the flag by claiming it is real.
-export default function FieldCrmLayout({ children }: { children: React.ReactNode }) {
+//
+// `viewerHrId` is whose taps a held batch is (owner-scoped.ts): the access read is React-cached, so
+// a page below that reads it too reuses the same answer rather than adding a second read.
+export default async function FieldCrmLayout({ children }: { children: React.ReactNode }) {
+  const access = await resolveAccessContextFromPage();
   return (
     <>
-      <PhoenixCrmTouchTrail />
+      <PhoenixCrmTouchTrail viewerHrId={access.hrId} />
       {children}
     </>
   );

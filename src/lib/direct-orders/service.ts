@@ -60,6 +60,7 @@ import {
 import { resolveSubmittedCampaignId } from "@/lib/direct-orders/campaign-link";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { afterResponse } from "@/lib/http/after-response";
+import { invalidateFinanceDashboardCache } from "@/lib/dashboard/invalidation";
 import { loadOffsetTotalForOrder } from "@/lib/direct-orders/marketing-offset-service";
 import { deriveRemainingWhenCollectionCleared } from "@/lib/direct-orders/offset-rules";
 import {
@@ -1701,6 +1702,8 @@ export async function rejectDirectOrderPharmacy(
     .select("id");
   if (ordersError) throw ordersError;
   const affected = (openOrders ?? []) as Array<{ id: string }>;
+  // The finance landing counts held and awaiting orders; these just closed.
+  if (affected.length > 0) invalidateFinanceDashboardCache("direct orders rejected with their venue");
 
   // What is still standing, read AFTER the refusal above so it cannot count anything this call just
   // closed. Returned rather than merely skipped: a venue ruled false while carrying approved orders
@@ -1925,6 +1928,8 @@ async function moveHeldDirectOrdersIntoChain(
         `Request ${request.id} was no longer held when the chain was seeded (most likely expired or cancelled in the meantime).`,
       );
     }
+    // Held → awaiting approval moves the finance landing's held and awaiting counts.
+    invalidateFinanceDashboardCache("held direct order revived");
 
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? access.hrId,
@@ -2538,6 +2543,7 @@ export async function cancelHeldDirectOrder(
       "This request is no longer held — it was revived or expired a moment ago. Reload it and check its current state.",
     );
   }
+  invalidateFinanceDashboardCache("held direct order cancelled");
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -4479,6 +4485,8 @@ export async function submitDirectOrder(
     );
     if (stepsError) throw stepsError;
   }
+  // A new order is a new held or awaiting count on the finance landing.
+  invalidateFinanceDashboardCache("direct order submitted");
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -4984,6 +4992,8 @@ export async function decideDirectOrder(
   });
   if (rpcError) throw rpcError;
   const result = mapRequestRow((Array.isArray(updated) ? updated[0] : updated) as Record<string, unknown>);
+  // The finance landing counts awaiting and approved orders; this decision just moved one.
+  invalidateFinanceDashboardCache("direct order decided");
 
   const caps = await loadDirectOrderCaps();
   const overCap = isRequestOverCap(request, caps);
@@ -7777,6 +7787,8 @@ export async function setDirectOrderSalesMonth(
       "closing_locked",
     );
   }
+  // Booking is the finance manager's own hop on the finance landing: show it on their next read.
+  invalidateFinanceDashboardCache("direct order sales month set");
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,

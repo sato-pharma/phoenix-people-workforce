@@ -1,4 +1,3 @@
-import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -7,7 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { COMPANY_VACATION_REPORT_CACHE_TAG, getHolidayCalendarReadinessForLeave } from "@/lib/vacation/company-vacation-report";
+import { getHolidayCalendarReadinessForLeave } from "@/lib/vacation/company-vacation-report";
 import {
   createVacationRequestAsAdmin,
   isVacationSchemaMissing,
@@ -137,7 +136,10 @@ export async function POST(request: Request) {
       summary: "Company vacation report: CRM signal approved and converted to a real vacation request.",
     });
 
-    revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
+    // No cache bust here. createVacationRequestAsAdmin already expires the report's cache at once
+    // ({ expire: 0 }, src/lib/dashboard/invalidation.ts). A "max" here ran AFTER it in the same
+    // request and turned that back into stale-while-revalidate, so the report the reviewer reloads
+    // next still showed the signal they had just approved (cache audit, 2026-10-26).
 
     return NextResponse.json({ request: created, success: true });
   } catch (error) {

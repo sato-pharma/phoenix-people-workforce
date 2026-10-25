@@ -17,6 +17,7 @@
 // observedEndDate === observedDate for an ordinary single-day confirmation.
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { invalidateCompanyVacationReportCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { validationError } from "@/lib/http/api-errors";
 
@@ -206,6 +207,8 @@ export async function bulkUpsertHolidayOverrides(entries: HolidayOverrideInput[]
   // Before the audit log, not after: a confirmation the admin just saved must never be read back
   // from a stale cache on this instance, and writeAuditLog is another round trip that could throw.
   invalidateHolidayOverrideCache();
+  // The Company Vacation Report caches its holiday dates for 6 h under its own tag (cache audit, 2026-10-26).
+  invalidateCompanyVacationReportCache("holiday calendar overrides saved");
 
   await writeAuditLog({
     actorLoginId: actorHrId ?? "system",
