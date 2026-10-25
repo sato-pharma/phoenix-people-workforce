@@ -10,6 +10,7 @@ import {
   resolveCrmWebBaseUrl,
 } from "../src/lib/crm/contacts-web-client.ts";
 import {
+  agentCrmIdsFromTuples,
   CONTACT_SYNC_SLICE_COUNT,
   contactRowKey,
   contactSyncSliceForDate,
@@ -632,6 +633,44 @@ export function runCrmContactListsTests() {
         cron.indexOf("revalidateTag(") > cron.indexOf("await refreshCrmContactMaster("),
       "the contacts sync must bust the summaries tag AFTER the contact master refresh, which is what moves the counts",
     );
+  }
+
+
+  // ── The rep -> CRM account lookup is ONE statement (2026-10-25 production load audit) ───────────
+  // The chunked read scanned all 198,723 plan entries per chunk (124 calls at 229 ms), and each chunk
+  // matched about half the table, of which PostgREST returned only its first 1,000 rows, so a rep
+  // past that cap could be reported as having no CRM account. phx_crm_agent_crm_ids_by_hr answers
+  // from two index-only scans as one jsonb value, which no row cap cuts.
+  {
+    const source = readFileSync("src/lib/crm/contacts-sync.ts", "utf8");
+    const start = source.indexOf("export async function resolveAgentCrmIdsByHr(");
+    const end = source.indexOf("export function agentCrmIdsFromTuples(", start);
+    assert.ok(start >= 0 && end > start, "resolveAgentCrmIdsByHr must exist");
+    const resolver = source.slice(start, end);
+    assert.ok(
+      resolver.includes("supabase.rpc(AGENT_CRM_IDS_BY_HR_RPC, { p_hr_ids: hrIds })") && !resolver.includes(".from("),
+      "the rep -> CRM account lookup must be ONE rpc call: the chunked table read scanned 198,723 plan entries per chunk and PostgREST cut each chunk at 1,000 rows",
+    );
+    assert.ok(
+      resolver.includes("if (isMissingCrmRpcError(error)) return resolveAgentCrmIdsByHrInChunks(hrIds);"),
+      "a database without phx_crm_agent_crm_ids_by_hr must fall back to the chunked read, never fail the sync",
+    );
+    const sync = source.slice(source.indexOf("export async function loadCrmContactSyncTargets("), start);
+    assert.ok(
+      sync.includes("await resolveAgentCrmIdsByHr(hrIds)") && !sync.includes("CRM_PLAN_ENTRIES_TABLE"),
+      "loadCrmContactSyncTargets must resolve through the one-statement lookup, not read the mirrors itself",
+    );
+    const migration = readFileSync("supabase/migrations/20261025233000_crm_plan_entries_agent_hr_id_index.sql", "utf8");
+    assert.ok(
+      migration.includes("on public.ireports360_plan_entries (agent_hr_id, agent_crm_id);") &&
+        migration.includes("grant execute on function public.phx_crm_agent_crm_ids_by_hr(text[]) to service_role;") &&
+        migration.includes("revoke execute on function public.phx_crm_agent_crm_ids_by_hr(text[]) from public, anon, authenticated;"),
+      "the migration must carry the plain (agent_hr_id, agent_crm_id) index and keep the function service-role only",
+    );
+    const map = agentCrmIdsFromTuples([["AI-0001", 900], ["AI-0001", 1399], ["AI-0002", null], ["", 5], ["AI-0003", 12]]);
+    assert.equal(map.get("AI-0001"), 1399, "the highest CRM account wins, as the row-by-row read decided");
+    assert.equal(map.has("AI-0002"), false, "a pair with no CRM id resolves nothing");
+    assert.equal(map.size, 2);
   }
 
 }

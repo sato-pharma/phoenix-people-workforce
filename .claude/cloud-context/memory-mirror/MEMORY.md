@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [the 25 Oct DB restart was the 2 GB box swapping again](the-25-oct-restart-was-the-2gb-box-swapping-again.md) - 11 restarts in 14 days, all working hours; work_mem is NOT the lever (0 temp); top load is the Reps List roster fan-out.
 
 
 

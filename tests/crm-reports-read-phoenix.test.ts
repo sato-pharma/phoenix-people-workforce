@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { assignmentToContactRecord, summarizeRepLists, toDoctorListRow } from "@/lib/crm/contact-lists";
 import { buildVacationPeriod, vacationAgentKey } from "@/lib/crm/master";
 import { toPanelContactRecord } from "@/lib/crm/rep-kpi-reports-data";
-import { toRosterEntry } from "@/lib/crm/reps-list";
+import { rosterRecordFromTuple, toRosterEntry } from "@/lib/crm/reps-list";
 
 // The reports read PHOENIX'S OWN DATA, so they keep working the day iReports360 is switched off.
 //
@@ -99,9 +99,22 @@ export function runCrmReportsReadPhoenixTests() {
     const repsList = readFileSync("src/lib/crm/reps-list.ts", "utf8");
     assert.doesNotMatch(repsList, /CRM_CONTACTS_TABLE/, "Reps List never reads the vendor scrape");
     assert.ok(repsList.includes("hrId ? await getRepContactList(hrId)"), "Reps List loads the list by HR id whenever it has one");
-    const roster = block(repsList, "async function loadContactRoster()");
-    assert.equal(count(roster, ".from(CRM_CONTACT_ASSIGNMENTS_TABLE)"), 2, "the sharing roster's count and pages read the open assignments");
-    assert.equal(count(roster, '.is("effective_to", null)'), 2, "the roster holds today's lists only, on the count as on the pages");
+    const roster = block(repsList, "async function readContactRoster()");
+    assert.equal(count(roster, "supabase.rpc(CONTACT_ROSTER_RPC)"), 1, "the sharing roster is ONE statement, not fourteen OFFSET pages with an embed");
+    assert.equal(count(roster, ".from("), 0, "the roster's main read touches no table directly");
+    assert.ok(roster.includes("if (isMissingCrmRpcError(error)) return readContactRosterByPages();"), "a database without the function falls back to the page walk");
+    const pages = block(repsList, "async function readContactRosterByPages()");
+    assert.equal(count(pages, ".from(CRM_CONTACT_ASSIGNMENTS_TABLE)"), 2, "the fallback's count and pages read the open assignments");
+    assert.equal(count(pages, '.is("effective_to", null)'), 2, "the fallback holds today's lists only, on the count as on the pages");
+    const loader = block(repsList, "export async function loadContactRoster()");
+    assert.ok(loader.includes('getOrLoadShared(CRM_CONTACT_ROSTER, "open", readContactRoster,'), "every rep page within a minute shares one roster read");
+    const migration = readFileSync("supabase/migrations/20261025231000_crm_contact_roster_read_in_one_statement.sql", "utf8");
+    assert.ok(migration.replace(/\s+/g, " ").includes("from public.crm_contact_assignments a left join public.crm_contacts c on c.contact_crm_id = a.contact_crm_id where a.effective_to is null;"), "the function keeps the embed's filter and its null contact");
+    assert.ok(migration.includes("grant execute on function public.phx_crm_contact_roster() to service_role;"), "only the service role runs it");
+    const tuple = rosterRecordFromTuple([7, 55, null, "B-40", "Dr Amal", "0100", "Pediatrics", "Maadi"]);
+    assert.deepEqual(tuple, { agent_crm_id: null, agent_hr_id: "B-40", contact: { crm_region_name: "Maadi", name: "Dr Amal", phone: "0100", speciality: "Pediatrics" }, contact_crm_id: 55 }, "the function's tuple maps to the embed's record, field by field");
+    const service = readFileSync("src/lib/crm/contact-lists/service.ts", "utf8");
+    assert.ok(block(service, "function bustListSummaries()").includes("refreshSharedContactRoster("), "a list change drops the shared roster copy at once");
 
     const component = readFileSync("src/components/crm/reps-list-board.tsx", "utf8");
     assert.match(component, /const hasList = rep\.contactCount \+ rep\.pharmacyCount > 0;/, "a rep card reads 'has a list' from its counts alone");
