@@ -264,5 +264,29 @@ export async function runSharedReadCacheTests() {
     assert.match(bricks, /includePhoenixVisits: true,\s*reuseRecentWindow: true,/, "RED the brick-coverage check-ins share the copy");
   }
 
-  console.log("shared read cache: 11 blocks passed");
+  // ── (12) The Reps List's sharing roster is one shared copy, dropped by every applied list change ──
+  // Fetched fresh it was the heaviest read on the database on 25 Oct 2026: the whole company's open
+  // doctor-list rows as 14 parallel pages for every rep opened, on the 2 GB box that kept restarting.
+  {
+    const repsList = code("src/lib/crm/reps-list.ts");
+    const roster = repsList.slice(repsList.indexOf("export async function loadContactRoster()"));
+    assert.match(
+      roster,
+      /^export async function loadContactRoster\(\): Promise<RosterEntry\[\]> \{\s*const \{ rows \} = await getOrLoadShared\(CRM_CONTACT_ROSTER,/,
+      "RED THE REPS LIST'S ROSTER IS READ FRESH AGAIN: every rep opened re-reads the whole company's doctor lists as 14 parallel pages — the heaviest load on the database box that restarted under it",
+    );
+
+    const service = code("src/lib/crm/contact-lists/service.ts");
+    const bust = service.slice(service.indexOf("function bustListSummaries(): void {"));
+    assert.match(
+      bust,
+      /^function bustListSummaries\(\): void \{\s*try \{[\s\S]*?\} catch \(error\) \{[\s\S]*?\n  \}\s*(?:\/\/[^\n]*\s*)?refreshSharedContactRoster\(/,
+      "RED an applied doctor-list change must drop the shared roster, after the cache-tag try so its failure never skips it",
+    );
+    const applies = service.match(/supabase\.rpc\(CRM_CONTACT_LIST_CHANGE_APPLY_FUNCTION/g) ?? [];
+    const busts = service.match(/^\s*bustListSummaries\(\);$/gm) ?? [];
+    assert.ok(applies.length > 0 && busts.length >= applies.length, "RED every path that applies a doctor-list change must refresh the roster after it");
+  }
+
+  console.log("shared read cache: 12 blocks passed");
 }

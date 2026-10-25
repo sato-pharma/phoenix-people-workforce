@@ -278,4 +278,36 @@ export async function runManagerAreaRegionGuardTests() {
   const bothSummary = String(describeManagerAreaDrift(both));
   assert.match(bothSummary, /recorded against a rep area/);
   assert.match(bothSummary, /team that hangs off a rep area/);
+
+  // ---------------------------------------------------------------------------------------
+  // An ACTING district manager still holds his own rep seat, so the seat rule keeps him on that
+  // rep area and its team. `seat-titles.ts` titles him "District Sales Manager" on purpose, so the
+  // title alone flagged him every night (Upper Egypt 1's acting manager on Minia 1, 2026-10-25).
+  // ---------------------------------------------------------------------------------------
+  const acting = manager({
+    hrId: "PD-0034",
+    fullName: "An Acting Manager",
+    regionName: "Upper Egypt 1",
+    areaId: 1123,
+    areaName: "Minia 1",
+    teamId: 109,
+    teamName: "Minia 1",
+    teamAreaId: 1123,
+    teamAreaName: "Minia 1",
+  });
+  assert.deepEqual(
+    detectManagerAreaDrift([acting], AREAS, TEAMS, new Set(["PD-0034"])),
+    [],
+    "an acting district manager who holds a rep seat keeps that seat's area and team",
+  );
+  assert.deepEqual(
+    detectManagerAreaDrift([acting], AREAS, TEAMS, new Set(["SOMEONE-ELSE"])).map((f) => f.kind).sort(),
+    ["manager_area_is_not_region", "manager_team_is_not_region"],
+    "the same row WITHOUT a rep seat is still a drifted manager",
+  );
+  assert.equal(
+    detectManagerAreaDrift([acting], AREAS, TEAMS).length,
+    2,
+    "omitting the rep-seat set keeps the old behaviour",
+  );
 }

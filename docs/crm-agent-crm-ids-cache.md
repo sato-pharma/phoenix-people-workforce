@@ -157,3 +157,21 @@ Restore the door's body from `20260914000000_crm_unify_vendor_reads.sql`, then
 `JOB_SCHEDULES` and both tables in `docs/observability.md` in the same change — a declaration with
 no job behind it pages every Super Admin for ever. `phx_record_job_heartbeat()` is generic; leave it.
 Nothing else reads any of them, and `src/lib/crm/reads.ts` needs no change either way.
+
+## The reconcile reads `_calc()` once
+
+Measured on production on 25 Oct 2026, during the audit of eleven database restarts in fourteen
+days: the reconcile was the second-heaviest statement on the 2 GB box — 30 runs, 3.9 s mean, 9.7 s
+max, 164,327 blocks read. EXPLAIN of the 20261023190000 body showed two
+"Function Scan on crm_agent_crm_ids_calc" nodes, one per `except` arm, because a function with a
+SET clause is never inlined; and a run that found a difference then called `_rebuild()`, which read
+`_calc()` a third time.
+
+`20261025030000_crm_agent_crm_ids_reconcile_single_pass.sql` re-creates the reconcile under the same
+name, signature, security and grants, so the `_run()` wrapper, its heartbeat and the cron job are
+untouched. It reads `_calc()` once into a local `v_truth` array, both `except` arms diff the cache
+against `unnest(v_truth)`, and a repair refills from the same array (`delete ... where true`, then
+insert) instead of calling `_rebuild()`. `_rebuild()` stays for the backfill and for hand use.
+Applied on staging (first run: 0 differences against 150 cache rows) and production (23:41 Cairo).
+Pinned by `tests/crm-agent-crm-ids-reconcile-single-pass.test.ts`, which refuses a second `_calc()`
+read, a `_rebuild()` call, an unqualified DELETE and a caught exception.

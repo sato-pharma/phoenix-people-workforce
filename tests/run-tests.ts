@@ -2045,6 +2045,7 @@ import { runCrmContactPhoenixTruthCacheTests } from "./crm-contact-phoenix-truth
 import { runCrmPersonByHrKeyCacheTests } from "./crm-person-by-hr-key-cache.test.ts";
 import { runCrmAgentCrmIdsCacheTests } from "./crm-agent-crm-ids-cache.test.ts";
 import { runCrmAgentCrmIdsReconcileHeartbeatTests } from "./crm-agent-crm-ids-reconcile-heartbeat.test.ts";
+import { runCrmAgentCrmIdsReconcileSinglePassTests } from "./crm-agent-crm-ids-reconcile-single-pass.test.ts";
 import { runPgCronHeartbeatsTests } from "./pg-cron-heartbeats.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
@@ -7765,6 +7766,11 @@ await runTest(
 await runTest(
   "The departed-agent CRM id cache can no longer freeze in silence (its pg_cron job is the only thing keeping it current and the door never falls back to the live read): the job runs crm_agent_crm_ids_reconcile_run(), which records success in job_heartbeats AFTER the unchanged reconcile and never catches a failed run, because a caught failure would read `succeeded` in cron.job_run_details; no later migration may point the job back at the bare reconcile; the register write moves only its own outcome's timestamp and only warns when it fails; and the slug is declared on the same */15 cadence and marked in-house only",
   runCrmAgentCrmIdsReconcileHeartbeatTests,
+);
+
+await runTest(
+  "The departed-agent CRM id reconcile reads crm_agent_crm_ids_calc() ONCE per run (it was the second-heaviest statement on the 2 GB production box on 25 Oct 2026 - 3.9 s mean, 9.7 s max - because each EXCEPT arm ran its own Function Scan of the ~136,000-row DISTINCT and a repair then called _rebuild() for a third): the answer is held in one array that both arms and the refill read, it never calls _rebuild(), its DELETE carries `where true` for safeupdate, nothing is caught so a failed run still fails the heartbeat wrapper, the signature, security and service-role-only grants are unchanged, and no cron job is touched",
+  runCrmAgentCrmIdsReconcileSinglePassTests,
 );
 
 await runTest(

@@ -195,6 +195,15 @@ export function detectManagerAreaDrift(
    * it reports every manager as teamless.
    */
   teams?: readonly TeamRow[],
+  /**
+   * HR ids that hold a REP seat. A district-titled person in this set is an ACTING district manager
+   * still sitting in his own rep seat, and the seat rule (the employee row equals the seat) keeps
+   * his area and team on that rep area — so neither check applies to him. `seat-titles.ts` titles
+   * an acting district manager "District Sales Manager" on purpose, which is why the title alone
+   * cannot tell him apart. Measured on production 2026-10-25: Upper Egypt 1's acting manager on
+   * Minia 1 was the only one, and the nightly check reported her as drifted every night.
+   */
+  repSeatHolders?: ReadonlySet<string>,
 ): ManagerAreaFinding[] {
   const regionAreas = indexRegionShapedAreas(areas);
   const regionTeams = teams === undefined ? null : indexRegionTeams(teams, regionAreas);
@@ -204,6 +213,7 @@ export function detectManagerAreaDrift(
 
   for (const manager of managers) {
     if (!isRegionOwningTitle(manager.jobTitle)) continue;
+    if (repSeatHolders?.has(manager.hrId)) continue;
 
     const regionName = String(manager.regionName ?? "").trim();
     const regionKey = key(regionName);

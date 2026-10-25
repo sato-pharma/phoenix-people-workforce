@@ -24,6 +24,7 @@ import { revalidateTag } from "next/cache";
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { refreshSharedContactRoster } from "@/lib/crm/shared-windows";
 import {
   CONTACT_LIST_NOTE_MAX,
   anyDoctorListLive,
@@ -635,6 +636,8 @@ function bustListSummaries(): void {
   } catch (error) {
     console.warn("Doctor list summaries cache revalidation failed.", { error });
   }
+  // In-process and synchronous; after the catch, so a cache-tag failure never skips it.
+  refreshSharedContactRoster("doctor list change applied");
 }
 
 // ── The SFE Manager or the administrator edits directly ────────────────────────────────────────

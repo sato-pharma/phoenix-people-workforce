@@ -206,7 +206,10 @@ export async function checkDirectOrderStorefrontEvidence(input: {
         },
       ],
       instructions,
-      maxOutputTokens: 500,
+      // 1,500, not 500: on 25 Oct 2026 OpenAI refused its key, the call went to Claude, and Claude
+      // stopped at 500 before closing the JSON (max_tokens) — the photo went unread. A long Arabic
+      // sign plus a note needs the room; the cap only bounds a reply, it is not what one costs.
+      maxOutputTokens: 1500,
       purpose: "direct-orders-storefront-evidence",
       reasoning: { effort: "low" },
       text: TEXT_FORMAT,
