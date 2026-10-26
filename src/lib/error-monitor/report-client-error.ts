@@ -4,6 +4,10 @@
 // endpoint (self-hosted, free-forever). Must never throw — a failed report should
 // never surface as a second, user-visible error on top of the one being reported.
 
+import {
+  isSessionVerificationUnavailableDigest,
+  SESSION_VERIFICATION_UNAVAILABLE_DIGEST,
+} from "@/lib/auth/session-unavailable-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { describeDomRewriters } from "@/lib/error-monitor/dom-rewriter";
 import { DOM_GUARD_COUNTER_KEY, domGuardMarker } from "@/lib/error-monitor/dom-translate-guard";
@@ -137,6 +141,11 @@ function collectClientContext(): string | null {
 
 export function reportClientError({ error, route, digest, componentStack, context }: ReportClientErrorInput): void {
   try {
+    // A page whose sign-in check could not reach the database. The server recorded the real error
+    // with the person and the page; the browser copy says only "Minified React error #441", and one
+    // database restart on 25 Oct 2026 filed 8 of them for one Medical Representative. Every boundary
+    // and window.onerror reach this one function, so the skip lives here.
+    if (isSessionVerificationUnavailableDigest(error) || digest === SESSION_VERIFICATION_UNAVAILABLE_DIGEST) return;
     // NOT `String(error)`. The browser throws plenty that is not an Error — a rejected fetch
     // body, a Supabase PostgrestError read client-side, any `throw { code, message }` — and all
     // of it stringifies to the constant "[object Object]", which is what made 19 production rows

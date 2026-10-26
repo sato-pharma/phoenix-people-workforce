@@ -12,6 +12,8 @@
  * No mutation happens here — this is read-time enforcement only.
  */
 
+import { SESSION_VERIFICATION_UNAVAILABLE_DIGEST } from "@/lib/auth/session-unavailable-digest";
+
 /**
  * Employee lifecycle statuses that still grant access. Mirrors
  * `activeLifecycleStatuses` in src/lib/employees/employee-directory.ts (the
@@ -149,6 +151,11 @@ export type SessionLifecycleGate =
  * logout. A `employee_terminal` verdict is unchanged and still ends the session immediately.
  */
 export class SessionVerificationUnavailableError extends Error {
+  // The only part of this error a production browser receives: a page render that throws it shows
+  // the route boundary a calm "could not confirm your sign-in, retrying" state instead of a crash
+  // card. See session-unavailable-digest.ts.
+  readonly digest = SESSION_VERIFICATION_UNAVAILABLE_DIGEST;
+
   constructor(options: { cause?: unknown } = {}) {
     super("Session verification is temporarily unavailable.");
     this.name = "SessionVerificationUnavailableError";

@@ -386,6 +386,22 @@ already on it, so **no new cron job and no cron-job.org entry were needed.**
 - Pinned by `tests/database-restart-watch.test.ts`, in the required `validate` job.
 
 
+### What the employee sees during a restart — the sign-in check (26 October 2026)
+
+While the database restarts, `resolveSessionState` cannot read the session and throws
+`SessionVerificationUnavailableError` from the page render. A production build strips the message, so
+until 26 Oct the browser saw only "Minified React error #441": the portal drew its crash card
+("Employee portal unavailable") and the browser filed a crash row on every retry — 8 for one Medical
+Representative in the 25 Oct 16:14 Cairo restart, across Employee 360 and Field CRM. Every #441 row on
+Milestones and Field CRM in the two weeks before had the same shape.
+
+The error now carries a fixed digest, `PHX_SESSION_VERIFICATION_UNAVAILABLE`
+(`src/lib/auth/session-unavailable-digest.ts`). Next keeps a digest the error already has, so it is the
+one part of the cause that reaches the browser. On it the route error card says "We could not confirm
+your sign-in just now", tells the employee they are still signed in, and retries by itself after 3, 5,
+10 and 20 seconds, then every 30 seconds for ten minutes. `reportClientError` files nothing for it: the
+server row (`Session verification is temporarily unavailable.`) and the `session_verification_unavailable`
+log line are the record. Any other #441 is still a crash and still reported.
 
 ## 18 October 2026 — a slow database, the Talent Acquisition seat, and what changed
 
