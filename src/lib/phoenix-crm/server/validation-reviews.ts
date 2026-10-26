@@ -441,6 +441,11 @@ export type ValidationReviewRow = {
    * decide"). He may still decide it now; the row says the system has not finished with it.
    */
   systemStillReading: boolean;
+  /**
+   * Whether the board shows this row with no decider chosen: waiting, decided in the last 14 days, or a
+   * rejection still taken back within 90. Always true unless the read asked for `everyDecision`.
+   */
+  recent: boolean;
 };
 
 function reading(lat: unknown, lon: unknown, accuracy: unknown): ValidationReviewReading | null {
@@ -479,21 +484,35 @@ export type ValidationBoardRead<T> = { rows: T[]; capped: boolean };
  * repeats at a page seam; `whenFull: "stop"` because this read PRESENTS rather than judges, and newest
  * first means a ceiling loses only the oldest — which `capped` then says out loud.
  */
-export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidationReviewRow>> {
+export async function loadValidationReviews(
+  viewer: PhoenixCrmViewer,
+  options: {
+    /**
+     * Every decision ever made, not only the recent ones (owner, 2026-10-26: "view only approved by me or
+     * only by khaled bedair"). 🔴 THE 14-DAY WINDOW WOULD HAVE HIDDEN 86 OF HIS 480 DECISIONS, so a
+     * "Decided by" filter on the recent read alone answers a smaller number than the one he was told. The
+     * Super Admin's page asks for it (772 decisions in all, 2026-10-26); each row says whether it is
+     * `recent`, and the board shows the others only while a decider is chosen.
+     */
+    everyDecision?: boolean;
+  } = {},
+): Promise<ValidationBoardRead<ValidationReviewRow>> {
   const seats = placeChecksSeatScope(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
   const read = await readEveryPage<Row>(
     () => {
-      const query = getSupabaseAdmin()
+      const base = getSupabaseAdmin()
         .from("phoenix_crm_validation_reviews")
         .select(
           "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
-        )
-        // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
-        // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
-        // with nothing left to undo is dropped after the read, below.
-        .or(`status.eq.pending,decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
+        );
+      // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
+      // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
+      // with nothing left to undo is dropped after the read, below.
+      const query = options.everyDecision
+        ? base
+        : base.or(`status.eq.pending,decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
       return seatScoped(query, seats)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false });
@@ -625,6 +644,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
         signboardHold: signboard,
         stored: place.signboard_check,
       }),
+      recent: true,
     };
   });
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
@@ -632,7 +652,14 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
   // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window
   // rather than sitting on a working screen for three months. The history is in
   // `phoenix_crm_list_events`, as it always was.
-  const keep = rows.filter((row) => row.status !== "rejected" || row.restorable || row.decidedAt === null || row.decidedAt >= since);
+  // The same two windows the narrow read asks the database for, applied here so the wide read can say
+  // of every row whether it is one the board shows by default.
+  for (const row of rows) {
+    const decided = row.decidedAt;
+    row.recent =
+      row.status === "pending" || decided === null || decided >= since || (row.status === "rejected" && row.restorable && decided >= rejectedSince);
+  }
+  const keep = options.everyDecision ? rows : rows.filter((row) => row.recent);
   return { rows: keep, capped: read.capped };
 }
 

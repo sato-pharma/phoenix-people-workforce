@@ -34,6 +34,12 @@ export type ValidationReviewFilters = {
   list: string;
   period: ValidationReviewPeriod;
   text: string;
+  /**
+   * Who decided it, by the name the board shows — a person, or "The system" (owner, 2026-10-26: "i want
+   * to be able to view only approved by me or only by khaled bedair"). Empty is anyone. The Super
+   * Admin's and the SFE Manager's board only: a manager's board never names a decider.
+   */
+  decider: string;
 };
 
 export const EMPTY_VALIDATION_REVIEW_FILTERS: ValidationReviewFilters = {
@@ -45,6 +51,7 @@ export const EMPTY_VALIDATION_REVIEW_FILTERS: ValidationReviewFilters = {
   list: "",
   period: "all",
   text: "",
+  decider: "",
 };
 
 /** The fields every filterable row carries — both the review rows and the validated-place rows have all of these. */
@@ -154,6 +161,31 @@ export function sharedPlacePassesOutcome(
   return outcome === "all" || outcome === "validated";
 }
 
+/**
+ * Whether a row was decided by the chosen decider. Nobody chosen passes every row; once somebody is
+ * chosen, a row NOBODY decided — a place still waiting, a building still held, a place in use nobody
+ * ever reviewed — passes no one, because "approved by Khaled Bedair" cannot hold a row he never touched.
+ */
+export function decidedByMatches(decidedByName: string | null | undefined, decider: string): boolean {
+  if (decider === "") return true;
+  return decidedByName === decider;
+}
+
+/**
+ * The History tab's title for the decided places. With a decider chosen it names that person and drops
+ * "the last 14 days", because the board then holds every decision of theirs, not only the recent ones;
+ * a manager's board says "settled" and never names anyone.
+ */
+export function decidedSectionTitle(filters: Pick<ValidationReviewFilters, "outcome" | "decider">, team: boolean): string {
+  if (!team && filters.decider !== "") {
+    const verb = filters.outcome === "approved" ? "Approved" : filters.outcome === "rejected" ? "Rejected" : "Decided";
+    return `${verb} by ${filters.decider}`;
+  }
+  if (filters.outcome === "approved") return "Approved in the last 14 days";
+  if (filters.outcome === "rejected") return "Rejected in the last 14 days";
+  return team ? "Settled in the last 14 days" : "Decided in the last 14 days";
+}
+
 /** Whether any narrowing filter is set — the outcome selector alone does not count, since "Clear" also resets it. */
 export function hasActiveValidationReviewFilter(filters: ValidationReviewFilters): boolean {
   return (
@@ -163,6 +195,7 @@ export function hasActiveValidationReviewFilter(filters: ValidationReviewFilters
     filters.area !== "" ||
     filters.list !== "" ||
     filters.period !== "all" ||
+    filters.decider !== "" ||
     filters.text.trim() !== ""
   );
 }

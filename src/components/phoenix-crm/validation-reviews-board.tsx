@@ -45,6 +45,8 @@ import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
 import {
+  decidedByMatches,
+  decidedSectionTitle,
   distinctValues,
   EMPTY_VALIDATION_REVIEW_FILTERS,
   hasActiveValidationReviewFilter,
@@ -244,7 +246,14 @@ export function ValidationReviewsBoard({
     setFilters((current) => ({ ...current, [key]: value }));
 
   const pending = useMemo(() => pendingRows.filter(isReal), [pendingRows]);
-  const decided = useMemo(() => decidedRows.filter(isReal), [decidedRows]);
+  // 🔴 THE PAGE MAY HAND EVERY DECISION EVER MADE (`everyDecision`), and the board shows the older ones
+  // only while a decider is chosen — so "Decided by Khaled Bedair" answers for all of his, and with
+  // nobody chosen the board is the recent window it always was.
+  const everyDecided = useMemo(() => decidedRows.filter(isReal), [decidedRows]);
+  const decided = useMemo(
+    () => (filters.decider ? everyDecided : everyDecided.filter((row) => row.recent)),
+    [everyDecided, filters.decider],
+  );
   const validated = useMemo(() => validatedRows.filter(isReal), [validatedRows]);
   const reopened = useMemo(() => reopenedRows.filter(isReal), [reopenedRows]);
   const sharedPlaces = useMemo(() => venueRows.filter(isReal), [venueRows]);
@@ -267,6 +276,20 @@ export function ValidationReviewsBoard({
     [everyRow, sharedPlaces],
   );
   const lists = useMemo(() => distinctValues(everyRow.map((row) => row.listType)), [everyRow]);
+  // Everybody who has decided anything this board holds — a person, or "The system". A manager's board
+  // never names a decider, so it gets no list and no box.
+  const deciders = useMemo(
+    () =>
+      mode === "team"
+        ? []
+        : distinctValues([
+            ...everyDecided.map((row) => row.decidedByName),
+            ...validated.map((row) => row.decidedByName),
+            ...reopened.map((row) => row.refusedByName),
+            ...sharedPlaces.map((row) => row.decidedByName),
+          ]),
+    [mode, everyDecided, validated, reopened, sharedPlaces],
+  );
 
   const cutoff = validationReviewPeriodCutoff(filters.period);
 
@@ -283,7 +306,10 @@ export function ValidationReviewsBoard({
   );
 
   const filteredPending = useMemo(
-    () => clinicPending.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff)),
+    () =>
+      clinicPending.filter(
+        (row) => decidedByMatches(null, filters.decider) && matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff),
+      ),
     [clinicPending, filters, cutoff],
   );
   const filteredDecided = useMemo(
@@ -291,6 +317,7 @@ export function ValidationReviewsBoard({
       clinicDecided.filter((row) => {
         if (filters.outcome === "approved" && row.status !== "approved") return false;
         if (filters.outcome === "rejected" && row.status !== "rejected") return false;
+        if (!decidedByMatches(row.decidedByName, filters.decider)) return false;
         return matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff);
       }),
     [clinicDecided, filters, cutoff],
@@ -300,6 +327,7 @@ export function ValidationReviewsBoard({
       clinicValidated.filter(
         (row) =>
           validatedPassesOutcome(row, filters.outcome) &&
+          decidedByMatches(row.decidedByName, filters.decider) &&
           matchesValidationReviewFilters(row, filters) &&
           withinValidationReviewPeriod(row.validatedAt, cutoff),
       ),
@@ -316,6 +344,7 @@ export function ValidationReviewsBoard({
         !clinics.has(row.placeId) &&
         chipTakes(chip, row) &&
         validatedPassesOutcome(row, filters.outcome) &&
+        decidedByMatches(row.decidedByName, filters.decider) &&
         matchesValidationReviewFilters(row, filters) &&
         withinValidationReviewPeriod(row.validatedAt, cutoff),
     ).length;
@@ -323,7 +352,10 @@ export function ValidationReviewsBoard({
   const filteredReopened = useMemo(
     () =>
       clinicReopened.filter(
-        (row) => matchesValidationReviewFilters(filterableReopened(row), filters) && withinValidationReviewPeriod(row.reopenedAt, cutoff),
+        (row) =>
+          decidedByMatches(row.refusedByName, filters.decider) &&
+          matchesValidationReviewFilters(filterableReopened(row), filters) &&
+          withinValidationReviewPeriod(row.reopenedAt, cutoff),
       ),
     [clinicReopened, filters, cutoff],
   );
@@ -348,10 +380,20 @@ export function ValidationReviewsBoard({
   const scorecard = useMemo(
     () =>
       placeCheckScorecard({
-        waiting: pending.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff)),
-        inUse: validated.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.validatedAt, cutoff)),
+        waiting: pending.filter(
+          (row) => decidedByMatches(null, filters.decider) && matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff),
+        ),
+        inUse: validated.filter(
+          (row) =>
+            decidedByMatches(row.decidedByName, filters.decider) &&
+            matchesValidationReviewFilters(row, filters) &&
+            withinValidationReviewPeriod(row.validatedAt, cutoff),
+        ),
         reopened: reopened.filter(
-          (row) => matchesValidationReviewFilters(filterableReopened(row), filters) && withinValidationReviewPeriod(row.reopenedAt, cutoff),
+          (row) =>
+            decidedByMatches(row.refusedByName, filters.decider) &&
+            matchesValidationReviewFilters(filterableReopened(row), filters) &&
+            withinValidationReviewPeriod(row.reopenedAt, cutoff),
         ),
       }),
     [pending, validated, reopened, filters, cutoff],
@@ -404,11 +446,11 @@ export function ValidationReviewsBoard({
   const openCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
   const historyCount = (showDecided ? filteredDecided.length : 0) + (showReopened ? filteredReopened.length : 0);
   const unconfirmedCount = showValidated ? inUse.filter((row) => chipTakes("open", row)).length : 0;
-  const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : team ? "Settled in the last 14 days" : "Decided in the last 14 days";
+  const decidedTitle = decidedSectionTitle(filters, team);
 
   // The filter signature remounts every paged list so "Show more" starts over when a filter changes,
   // rather than keeping a page offset from the wider set.
-  const filterKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.text}`;
+  const filterKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.decider}|${filters.text}`;
   const validatedKey = `${filterKey}|${chip}`;
 
   // 🔴 THE COMPARISON TAB IS THE SUPER ADMIN'S ALONE: a manager's board is `mode="team"` and is never
@@ -531,6 +573,19 @@ export function ValidationReviewsBoard({
                 ))}
               </CrmSelect>
             </CrmField>
+
+            {team ? null : (
+              <CrmField htmlFor="vr-decider" label="Decided by">
+                <CrmSelect id="vr-decider" onChange={(event) => set("decider", event.target.value)} value={filters.decider}>
+                  <option value="">Anyone</option>
+                  {deciders.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+            )}
           </div>
           <div className="mt-3 min-w-0 lg:max-w-md">
             <CrmSearchField

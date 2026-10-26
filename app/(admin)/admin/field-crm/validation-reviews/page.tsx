@@ -52,7 +52,9 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // `canDecideValidationReviews` above admits — so it cannot 403 a viewer this page has already
   // admitted, and it needs no second redirect.
   const [reviews, validatedRead, reopenedRead, sharedRead] = await Promise.all([
-    loadValidationReviews(viewer),
+    // Every decision, so "Decided by" can answer for all of them; the cards and the board's default stay
+    // on the recent ones (`recent`).
+    loadValidationReviews(viewer, { everyDecision: true }),
     loadValidatedPlaces(viewer),
     loadReopenedCustomers(viewer),
     loadSharedPlaceBoard(viewer),
@@ -83,7 +85,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // a polyclinic in use — the card read 98, four of them test entries and 36 rejected.
   const real = <Row extends { isTest: boolean }>(set: Row[]) => set.filter((row) => !row.isTest);
   const realWaiting = real(waiting);
-  const realDecided = real(decided);
+  const realDecided = real(decided).filter((row) => row.recent);
   const realValidated = real(validated);
   // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
   const unseen = realValidated.filter((row) => !row.reviewed).length;
