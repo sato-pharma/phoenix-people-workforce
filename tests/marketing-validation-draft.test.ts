@@ -308,10 +308,11 @@ export async function runMarketingValidationDraftTests() {
 
   // What the banner reported is cleared from the device; another rep's aged entries stay for them.
   // Until 26 Oct 2026 nothing was cleared, so the same banner came back on every visit.
-  const ownerlessEntry = { id: "q-ownerless" };
-  const ownAged = { id: "q-own", ownerHrId: " b-10 " };
-  const theirAged = { id: "q-theirs", ownerHrId: "MR-0412" };
-  const found = [ownerlessEntry, ownAged, theirAged];
+  type StoredEntry = { id: string; ownerHrId?: string };
+  const ownerlessEntry: StoredEntry = { id: "q-ownerless" };
+  const ownAged: StoredEntry = { id: "q-own", ownerHrId: " b-10 " };
+  const theirAged: StoredEntry = { id: "q-theirs", ownerHrId: "MR-0412" };
+  const found: StoredEntry[] = [ownerlessEntry, ownAged, theirAged];
   assert.deepEqual(
     unsendableEntriesToKeep(found, "B-10").map((entry) => entry.id),
     ["q-theirs"],
@@ -323,7 +324,7 @@ export async function runMarketingValidationDraftTests() {
     "while the page does not know who is signed in, nobody has been told about an owned entry, so it stays",
   );
   assert.deepEqual(
-    unsendableEntriesToKeep([ownerlessEntry, { id: "q-blank", ownerHrId: "   " }], "B-10"),
+    unsendableEntriesToKeep<StoredEntry>([ownerlessEntry, { id: "q-blank", ownerHrId: "   " }], "B-10"),
     [],
     "an entry with no owner is reported to whoever is signed in, so it never stays",
   );
