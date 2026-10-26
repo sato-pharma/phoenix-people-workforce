@@ -347,9 +347,12 @@ export type DoubleVisitCadenceBand = "healthy" | "warning" | "critical";
 export type DoubleVisitRosterEntry = {
   areaName: string | null;
   /** Cadence band from days-since-last-DV (regardless of the selected window): healthy <=30,
-   * warning 31-60, critical >60 or never (reuses the buildMrScores 30/60 thresholds). */
+   * warning 31-60, critical >60 (reuses the buildMrScores 30/60 thresholds). A rep with no DV in the
+   * lookback is banded on days since HIRE instead — overdue only once that passes 30 (warning) or
+   * 60 (critical); with no hire date on record it reads critical. */
   cadenceBand: DoubleVisitCadenceBand;
-  /** Convenience flag: cadenceBand !== "healthy". Drives the "overdue only" filter + digest count. */
+  /** Convenience flag: cadenceBand !== "healthy". Drives the "overdue only" filter + digest count.
+   * Only reps who have started (hire date on or before today, Cairo) are on the roster at all. */
   cadenceOverdue: boolean;
   daysSinceHire: number | null;
   /** Days since this rep's most recent double visit measured from TODAY (not dateTo), looked back
@@ -459,6 +462,17 @@ export type DoubleVisitReportData = {
   roster: DoubleVisitRosterEntry[];
   rows: DoubleVisitReportRow[];
   schemaReady: boolean;
+  /** Active Medical Reps in scope whose hire date is after today (Cairo): named in a note on the
+   * DV Planner and counted NOWHERE — not in the roster, coverage, Never Visited or probation.
+   * Optional so an older payload or a hand-built fixture still type-checks. */
+  startingSoon?: DoubleVisitStartingSoonEntry[];
+};
+
+export type DoubleVisitStartingSoonEntry = {
+  areaName: string | null;
+  /** YYYY-MM-DD, after today. */
+  hireDate: string;
+  name: string;
 };
 
 // ── Data Integrity Report (admin-only): every visit that could NOT be confidently

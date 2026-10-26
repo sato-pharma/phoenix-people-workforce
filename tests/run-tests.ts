@@ -520,6 +520,7 @@ import { runDoubleVisitReportExportTests } from "./double-visit-report-export.te
 import { runDoubleVisitAuditExportTests } from "./double-visit-audit-export.test.ts";
 import { runDoubleVisitDownwardScopeTests } from "./double-visit-downward-scope.test.ts";
 import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
+import { runDvPlannerNewHiresTests } from "./dv-planner-new-hires.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCallRateTests } from "./crm-call-rate.test.ts";
 import {
@@ -4063,6 +4064,7 @@ await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitR
 await runTest("double visit coaching audit export (weeks, period filter, workbook)", runDoubleVisitAuditExportTests);
 await runTest("double visit downward scope (chain + ladder cut, hidden from totals, coaching line roles)", runDoubleVisitDownwardScopeTests);
 await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
+await runTest("dv planner counts a rep from their hire date (future hire off the roster; never-visited overdue only past 30/60 days since hire)", runDvPlannerNewHiresTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
 await runTest("KPIs call rate holidays (a national holiday takes the week from five days to four)", runKpiCallRateHolidayTests);
