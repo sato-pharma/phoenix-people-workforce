@@ -198,6 +198,16 @@ function findRow(sheet: ExcelJS.Worksheet, column: number, text: string): ExcelJ
   return found;
 }
 
+// The matrix shows geography by NAME (owner, 2026-10-26: "never use code always use name"), so a
+// row is found by the area name, or "<Region> (Region)" for a subtotal, in the Area column.
+const MATRIX_LABEL: Record<string, string> = {
+  UE1: "Minia 1", UE2: "Minia 2", UE3: "Assiut 1", UE: "Upper Egypt (Region)",
+  "UE-1": "Upper Egypt 1 (Region)", "UE-2": "Upper Egypt 2 (Region)",
+};
+function findMatrixRow(sheet: ExcelJS.Worksheet, code: string): ExcelJS.Row {
+  return findRow(sheet, 2, MATRIX_LABEL[code] ?? code);
+}
+
 async function auditWorkbook(matrix: MonthlyClosingMatrix) {
   const buffer = await buildMonthlyClosingWorkbook(matrix, buildComparison());
   const workbook = new ExcelJS.Workbook();
@@ -230,7 +240,7 @@ const NO_FOREIGN = "a surviving formula on the Closing Matrix may reference only
 
 function assertRows(sheet: ExcelJS.Worksheet, rows: [string, number, number][]) {
   for (const [label, units, value] of rows) {
-    const row = findRow(sheet, 1, label);
+    const row = findMatrixRow(sheet, label);
     assert.equal(row.getCell(UNITS_COL).value, units, `${label} Units must equal the screen's ${units}`);
     assert.equal(row.getCell(VALUE_COL).value, value, `${label} Value must equal the screen's ${value}`);
     assert.equal(row.getCell(ROW_TOTAL_COL).value, value, `${label} row total must equal the screen's ${value}`);
@@ -265,13 +275,25 @@ export async function runClosingExportMatchesScreenTests() {
     ["UE-2", 40, 12_000],
   ]);
   assert.equal(findRow(a.sheet, 2, "National Grand Total").getCell(ROW_TOTAL_COL).value, 75_000, "the national grand total must equal the screen's");
+  // Geography by NAME, never by code (owner, 2026-10-26: "in bricks and areas and overall never use
+  // code always use name"). No cell of the Closing Matrix may print an area or region code.
+  const geographyCodes = new Set(["UE", "UE1", "UE2", "UE3", "UE-1", "UE-2"]);
+  const codeCells: string[] = [];
+  a.sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cellRef) => {
+      if (typeof cellRef.value === "string" && geographyCodes.has(cellRef.value.trim())) {
+        codeCells.push(`${cellRef.address}: ${cellRef.value}`);
+      }
+    });
+  });
+  assert.deepEqual(codeCells, [], "the Closing Matrix names every area and region; it never prints a code");
 
   // The direct money is a second, independent way the Calc sheet falls short: UE1's invoice line is
   // 27,000 while the screen shows 36,000, the difference being direct orders, which never appear as
   // a distributor invoice line at all.
   assert.equal(DIST_PRODUCT.find((r) => r.areaCode === "UE1")?.value, 27_000, "fixture sanity: UE1's Calc-sheet invoice value");
   assert.equal(
-    findRow(a.sheet, 1, "UE1").getCell(VALUE_COL).value,
+    findMatrixRow(a.sheet, "UE1").getCell(VALUE_COL).value,
     36_000,
     "an area carrying merged direct must export the screen's figure, not its invoice-only subset",
   );

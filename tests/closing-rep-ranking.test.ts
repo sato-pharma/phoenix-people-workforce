@@ -478,7 +478,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
   // One rendered strip per sheet, registered on FIRST USE — so a workbook that drops a sheet never
   // still carries that sheet's chrome inside it.
   assert.equal(built.facts.bannersEmbedded, built.facts.sheetNames.length, "the identity dress is embedded");
-  assert.equal(built.facts.lockedSheets, built.facts.sheetNames.length, "🔒 every tab is locked");
+  assert.equal(built.facts.openSheets, built.facts.sheetNames.length, "every tab is left unprotected");
   assert.ok(built.facts.productRows > 0, "the product rows are really in the file");
 
   const zip = await JSZip.loadAsync(built.buffer);
@@ -492,7 +492,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
     // PDF. Every row was in the file and the reader saw one rep's products per team.
     assert.ok(!xml.includes('collapsed="1"'), `${name}: no row may leave the server collapsed`);
     assert.ok(!xml.includes('hidden="1"'), `${name}: nor hidden`);
-    assert.ok(xml.includes("<sheetProtection"), `${name}: locked`);
+    assert.ok(!xml.includes("<sheetProtection"), `${name}: not protected`);
     outlined += [...xml.matchAll(/\soutlineLevel="\d+"/g)].length;
     // Duplicated cfRule priorities are what make Excel "repair" the file and drop the formats.
     const priorities = [...xml.matchAll(/<cfRule\b[^>]*?priority="(\d+)"/g)].map((match) => Number(match[1]));
@@ -553,7 +553,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
     withRows.facts.sheetNames.length - 1,
     "the Rows tab is the one tab with no strip — there is no artwork for it, and no other tab's may be borrowed",
   );
-  assert.equal(withRows.facts.lockedSheets, withRows.facts.sheetNames.length, "🔒 it is locked like every other tab");
+  assert.equal(withRows.facts.openSheets, withRows.facts.sheetNames.length, "it is unprotected like every other tab");
 
   // READ BACK WITH EXCEL'S OWN READER, not by grepping the XML: ExcelJS writes text into
   // sharedStrings and leaves an index behind in the sheet, so a grep of the worksheet part finds

@@ -580,13 +580,15 @@ export async function runMonthlyClosingExportStoreSplitFilteredTests() {
   const splitSheet = east.book.getWorksheet("Store Split");
   assert.ok(splitSheet, "the filtered workbook still has a Store Split sheet");
   const marked = new Map<string, string>();
+  // The area is shown by NAME, never its code (owner, 2026-10-26); "In this export" is column 4.
+  const alexNames = ALEX.map((code) => AREA_NAMES[code]);
   splitSheet.eachRow((row) => {
-    const code = String(row.getCell(2).value ?? "");
-    if (ALEX.includes(code as (typeof ALEX)[number])) marked.set(code, String(row.getCell(5).value ?? ""));
+    const name = String(row.getCell(1).value ?? "");
+    if (alexNames.includes(name)) marked.set(name, String(row.getCell(4).value ?? ""));
   });
   assert.deepEqual(
     [...marked.entries()].sort(),
-    [["AB1", "Yes"], ["AB2", "No"], ["AB3", "No"]],
+    [["Alex Center", "No"], ["Alex East", "Yes"], ["Alex West", "No"]],
     "every area of the store's city is listed, each marked with whether this export covers it — "
       + "so a reader who filtered to one area can still see where the rest of the money went",
   );

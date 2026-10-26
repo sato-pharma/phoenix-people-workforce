@@ -8,7 +8,7 @@ import {
 import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 import { CLOSING_ENGINE_EMBLEM_ON_DARK_PNG_BASE64 } from "./closing-engine-emblem-on-dark";
 import { applyExecutiveGeometry, applyExecutivePalette, applyOnDarkEmblem, applyTabColours, ensureAccentButtonStyle, EXECUTIVE_GEOMETRY, EXECUTIVE_ZEBRA_FILLS, fitFrozenPanesForPhone, fitNavigationBand, paintExecutiveBands, resolveSheetParts } from "./closing-executive-look";
-import { lockEngineWorkbook, unlockEngineCells } from "./closing-workbook-lock";
+import { unprotectEngineWorkbook } from "./closing-workbook-lock";
 import { PIVOT_GRID_SPECS, buildPivotGrid, type GridCellKind } from "./closing-pivot-grid";
 
 /**
@@ -394,16 +394,10 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   // is still free to change them. A pane frozen wider than a phone hides the data it labels.
   await fitFrozenPanesForPhone(zip, finalParts);
 
-  // THE LOCK, after every pass that touches a sheet or a style (owner, 2026-10-13: nobody edits a cell
-  // of a downloaded closing). Every sheet is protected; the one cell left open is the Rep Card's rep
-  // picker, which changes WHICH rep the card shows and never a figure. Pivots, slicers and the
-  // button bar stay live -- see closing-workbook-lock.ts. There is no option to skip this.
-  {
-    const lockParts = await resolveSheetParts(zip);
-    const repCardPart = lockParts.get(REP_CARD);
-    if (repCardPart) await unlockEngineCells(zip, repCardPart, ["B5"]);
-    await lockEngineWorkbook(zip, { sheetParts: lockParts });
-  }
+  // NO PROTECTION, after every pass that touches a sheet (owner, 2026-10-26: "all its types download
+  // non protected"). Any sheet or workbook protection the template carries is stripped, so every
+  // tab opens for editing. See closing-workbook-lock.ts.
+  await unprotectEngineWorkbook(zip, { sheetParts: await resolveSheetParts(zip) });
 
   // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
   // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
