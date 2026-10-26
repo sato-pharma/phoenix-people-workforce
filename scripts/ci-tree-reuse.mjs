@@ -43,9 +43,19 @@
 // to the log (`tree-reuse-shadow-record {json}`) and the job summary. No token, header or env is recorded.
 //
 //   node scripts/ci-tree-reuse.mjs --dry-run       in ci.yml, on a push; writes verdict= and minutes=
-//   node scripts/ci-tree-reuse.mjs --report [n]    count the classes of the last n (default 40) push runs
+//   node scripts/ci-tree-reuse.mjs --report        every push run of the owner's 14-day observation window
+//                                                  (OBSERVATION_WINDOW), with a completeness status
+//   node scripts/ci-tree-reuse.mjs --report <n>    the newest n push runs, any n
 //   node scripts/ci-tree-reuse.mjs --replay [n]    re-classify the last n (default 20) real pushes from
 //                                                  history, read-only, and check each against its own run
+//
+// THE REPORT IS COMPLETE OR SAYS IT IS NOT (owner, 2026-10-26: "account for EVERY relevant main push").
+// GitHub's run list answers at most 1,000 results per query and, past that, an EMPTY page with
+// total_count 0 — a silent truncation. So the report lists by `created` range, splits any range the API
+// counts above 1,000 in half until each fits, reads every page, checks the distinct ids it got against
+// the API's own count, dedupes by run id, and reconciles the runs with the repository's own push record
+// (the activity list). Anything it could not read is named as a gap and the status says
+// INCOMPLETE_RETRIEVAL; an open window says PARTIAL_OBSERVATION, never "missing".
 //
 // Pinned by tests/ci-tree-reuse-dryrun.test.ts.
 
@@ -278,7 +288,32 @@ function run(file, args) {
   return execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, maxBuffer: 20 * 1024 * 1024 });
 }
 
-const gh = (path) => JSON.parse(run("gh", ["api", path]));
+/** The one wall-clock read: the push's own "now", and how far the report's window has run. */
+const wallClock = () => Date.now();
+
+/**
+ * One read-only `gh api` GET. With `include`, it also returns the `Link: rel="next"` path, because the
+ * activity list pages by cursor. A failure throws gh's own last stderr line, which carries the HTTP status.
+ */
+export function gh(path, { include = false } = {}) {
+  let out;
+  try {
+    out = execFileSync("gh", ["api", ...(include ? ["-i"] : []), path], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
+  } catch (error) {
+    const last = String(error?.stderr ?? "").trim().split("\n").filter(Boolean).at(-1);
+    throw new Error(last || oneLine(error));
+  }
+  if (!include) return JSON.parse(out);
+  const split = /\r?\n\r?\n/.exec(out);
+  return { body: JSON.parse(split ? out.slice(split.index + split[0].length) : out), next: nextLink(split ? out.slice(0, split.index) : "") };
+}
+
+/** The `rel="next"` path of a `Link` header, relative to the API root, or `null`. */
+export function nextLink(headers) {
+  const line = String(headers ?? "").split(/\r?\n/).find((l) => /^link:/i.test(l));
+  const match = line ? /<([^>]+)>;\s*rel="next"/.exec(line) : null;
+  return match ? match[1].replace(/^https:\/\/api\.github\.com\//, "") : null;
+}
 
 /**
  * The GITHUB_* variables this script reads — the whole list. Nothing else in the environment can reach
@@ -347,7 +382,7 @@ export function liveContext(env = readEnv(), readEvent = (path) => JSON.parse(re
   } catch {
     event = null;
   }
-  return { repo: env.repo, eventName: env.eventName, ref: env.ref, workflowRef: env.workflowRef, event, now: Date.now(), runId: env.runId, runAttempt: env.runAttempt };
+  return { repo: env.repo, eventName: env.eventName, ref: env.ref, workflowRef: env.workflowRef, event, now: wallClock(), runId: env.runId, runAttempt: env.runAttempt };
 }
 
 /**
@@ -464,36 +499,468 @@ const reusableJobsFailed = (jobs) =>
 
 const DEFAULT_REPO = "Gawish-1997/phoenix-people-workforce";
 
-/** Count the classes of the last `limit` push runs of ci.yml, from step names alone. */
-export function report(limit = 40, { repo = readEnv().repo || DEFAULT_REPO, readGh = gh } = {}) {
-  const runs = readGh(`repos/${repo}/actions/workflows/ci.yml/runs?event=push&branch=main&per_page=${limit}`)?.workflow_runs ?? [];
+// ── The observation window and its clock ────────────────────────────────────────────────────────────
+
+/**
+ * The owner's 14-day shadow observation (2026-10-26): from the merge of the shadow, 26 Oct 2026 05:12
+ * Cairo, to 9 Nov 2026 05:12 Cairo — start-inclusive, end-exclusive. Written as Cairo wall-clock times and
+ * converted with the time-zone database, never a fixed offset: Cairo leaves summer time on 30 Oct, so the
+ * window is 337 hours, not 336.
+ */
+export const OBSERVATION_WINDOW = Object.freeze({ zone: "Africa/Cairo", start: "2026-10-26T05:12", end: "2026-11-09T05:12" });
+/** GitHub's run list answers at most this many results for one query; past it, an empty page. */
+export const SEARCH_CAP = 1000;
+export const PAGE_SIZE = 100;
+/** Runs created in the last five minutes are not read yet: the run list can lag a push by that much. */
+export const SETTLE_MS = 5 * 60000;
+/** A push and its run on either side of a window edge are within this of it; they are labelled, not missing. */
+export const EDGE_MS = 2 * 60000;
+/** How long one rate-limit pause may be before the report stops and says INCOMPLETE_RETRIEVAL instead. */
+export const MAX_RATE_WAIT_MS = 15 * 60000;
+const TRANSIENT_BACKOFF_MS = [2000, 8000, 30000];
+const SECONDARY_WAIT_MS = 60000;
+const SECONDARY_RETRIES = 3;
+const PRIMARY_RETRIES = 2;
+const SECOND = 1000;
+const DAY = 24 * 3600 * SECOND;
+/** The floor of a newest-n walk when the repository's own creation date cannot be read. */
+const ACTIONS_EPOCH = Date.UTC(2018, 9, 16);
+/** The activity types that move a branch's head. */
+const MOVES_BRANCH = ["push", "force_push", "pr_merge", "merge_queue_merge"];
+
+const floorSecond = (ms) => Math.floor(ms / SECOND) * SECOND;
+/** An instant as the API's query form, to the second: 2026-10-26T02:12:00Z. */
+export const isoSecond = (ms) => new Date(floorSecond(ms)).toISOString().replace(".000Z", "Z");
+
+/** The offset of `zone` from UTC at the instant `ms`, in ms, from the time-zone database. */
+export function zoneOffsetMs(zone, ms) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(new Date(ms))
+      .map((p) => [p.type, p.value]),
+  );
+  return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second) - floorSecond(ms);
+}
+
+/**
+ * A wall-clock time in `zone` ("2026-10-26T05:12") as the UTC instant, in ms. A time the clock skips, or
+ * shows twice when it falls back, has no single answer and throws rather than guessing.
+ */
+export function zonedToUtc(local, zone) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(local ?? ""));
+  if (!m) throw new Error(`not a wall-clock time: ${local}`);
+  const naive = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+  const found = new Set();
+  for (const probe of [naive - DAY, naive, naive + DAY]) {
+    const offset = zoneOffsetMs(zone, probe);
+    if (zoneOffsetMs(zone, naive - offset) === offset) found.add(naive - offset);
+  }
+  if (found.size !== 1) throw new Error(`${local} ${found.size ? "happens twice" : "does not happen"} in ${zone}`);
+  return [...found][0];
+}
+
+/** An instant as a reader's time: "2026-10-26 05:12:00 Africa/Cairo (UTC+03:00)". */
+export function zonedLabel(ms, zone = OBSERVATION_WINDOW.zone) {
+  const offset = zoneOffsetMs(zone, ms);
+  const local = new Date(floorSecond(ms) + offset).toISOString().slice(0, 19).replace("T", " ");
+  const minutes = Math.abs(offset) / 60000;
+  return `${local} ${zone} (UTC${offset < 0 ? "-" : "+"}${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")})`;
+}
+
+// ── Reading, with retries that never lose what was already read ────────────────────────────────────
+
+/** A read that failed for good. `kind`: gone (404/410), rate-limit, transient, secondary, primary, fatal. */
+export class ReadFailure extends Error {
+  constructor(kind, message) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+/** What a failed read's message says about it. */
+export function failureKind(message) {
+  const text = String(message ?? "");
+  if (/secondary rate limit/i.test(text)) return "secondary";
+  if (/rate limit/i.test(text) || /HTTP 429\b/.test(text)) return "primary";
+  if (/HTTP (?:404|410)\b/.test(text)) return "gone";
+  if (/HTTP 5\d\d\b|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|timed? ?out|connection|socket|TLS|JSON/i.test(text)) return "transient";
+  return "fatal";
+}
+
+const sleepMs = (ms) => {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+/**
+ * A GET reader that retries what is worth retrying and counts what it spent. A transient failure is
+ * retried after 2 s, 8 s and 30 s; a secondary rate limit after 60 s, three times; the primary limit is
+ * waited out until its reset — unless that is further away than `maxRateWaitMs`, when it stops with a
+ * `rate-limit` failure. Gone data and anything else fail at once. Every failure is a {@link ReadFailure}.
+ */
+export function makeReader({ readGh = gh, sleep = sleepMs, clock = wallClock, maxRateWaitMs = MAX_RATE_WAIT_MS } = {}) {
+  const stats = { requests: 0, retries: 0, waited_ms: 0, rate_limit_waits: 0 };
+  const pause = (ms) => {
+    stats.waited_ms += ms;
+    sleep(ms);
+  };
+  const read = (path, options) => {
+    let transient = 0;
+    let secondary = 0;
+    let primary = 0;
+    for (;;) {
+      stats.requests++;
+      try {
+        return options ? readGh(path, options) : readGh(path);
+      } catch (error) {
+        const message = oneLine(error);
+        const kind = failureKind(message);
+        if (kind === "transient" && transient < TRANSIENT_BACKOFF_MS.length) {
+          stats.retries++;
+          pause(TRANSIENT_BACKOFF_MS[transient++]);
+          continue;
+        }
+        if (kind === "secondary" && secondary < SECONDARY_RETRIES) {
+          secondary++;
+          stats.retries++;
+          stats.rate_limit_waits++;
+          pause(SECONDARY_WAIT_MS);
+          continue;
+        }
+        if (kind === "primary" && primary < PRIMARY_RETRIES) {
+          primary++;
+          let resetMs = NaN;
+          try {
+            stats.requests++;
+            resetMs = Number(readGh("rate_limit")?.resources?.core?.reset) * 1000;
+          } catch {
+            resetMs = NaN;
+          }
+          const wait = Number.isFinite(resetMs) ? Math.max(SECOND, resetMs - clock() + SECOND) : SECONDARY_WAIT_MS;
+          if (wait > maxRateWaitMs) {
+            throw new ReadFailure("rate-limit", `the API rate limit is spent and resets at ${zonedLabel(clock() + wait)}, beyond the ${Math.round(maxRateWaitMs / 60000)} minutes this report waits`);
+          }
+          stats.retries++;
+          stats.rate_limit_waits++;
+          pause(wait);
+          continue;
+        }
+        throw new ReadFailure(kind === "primary" || kind === "secondary" ? "rate-limit" : kind, message);
+      }
+    }
+  };
+  return { read, stats };
+}
+
+// ── Listing every push run, past the 1,000-result cap ──────────────────────────────────────────────
+
+const slimRun = (r) => ({
+  id: r.id,
+  run_attempt: Number.isInteger(r.run_attempt) ? r.run_attempt : 1,
+  head_sha: r.head_sha,
+  created_at: r.created_at,
+  run_started_at: r.run_started_at,
+  updated_at: r.updated_at,
+  status: r.status,
+  conclusion: r.conclusion,
+});
+const newestFirst = (a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0) || (b.id ?? 0) - (a.id ?? 0);
+
+function newListing() {
+  return { byId: new Map(), gaps: [], ranges: 0, splits: 0, duplicates_merged: 0, dropped: { outside_range: 0, not_push: 0, not_main: 0, other_workflow: 0 }, halted: false };
+}
+
+const addGap = (acc, from, to, reason) => acc.gaps.push({ from_ms: from, to_ms: to, reason });
+
+/**
+ * Read every push run of ci.yml on main created in [from, to) into `acc`. A range the API counts above
+ * {@link SEARCH_CAP} is split at a whole second and each half read on its own, newer half first; a single
+ * second holding more than the cap is the one range that cannot be split, and is a gap. Every other range
+ * reads all its pages and must return exactly as many distinct ids as the API counted — else it is read
+ * once more, and a second mismatch is a gap. What was read is always kept.
+ */
+function collectRange(read, repo, from, to, acc, log = () => {}) {
+  const stack = [[floorSecond(from), floorSecond(to)]];
+  while (stack.length > 0) {
+    const [a, b] = stack.pop();
+    if (b <= a) continue;
+    if (acc.halted) {
+      addGap(acc, a, b, "not read: the rate limit stopped the report");
+      continue;
+    }
+    const query = (page) => `repos/${repo}/actions/workflows/ci.yml/runs?event=push&branch=main&per_page=${PAGE_SIZE}&page=${page}&created=${isoSecond(a)}..${isoSecond(b - SECOND)}`;
+    let first;
+    try {
+      first = read(query(1));
+    } catch (error) {
+      addGap(acc, a, b, `the run list could not be read: ${oneLine(error)}`);
+      if (error?.kind === "rate-limit") acc.halted = true;
+      continue;
+    }
+    const total = first?.total_count;
+    if (!Number.isInteger(total) || total < 0 || !Array.isArray(first?.workflow_runs)) {
+      addGap(acc, a, b, "the run list carried no total_count, so its completeness cannot be checked");
+      continue;
+    }
+    if (total > SEARCH_CAP && b - a > SECOND) {
+      const mid = a + Math.floor((b - a) / 2 / SECOND) * SECOND;
+      acc.splits++;
+      stack.push([a, mid], [mid, b]);
+      continue;
+    }
+    acc.ranges++;
+    const expected = Math.min(total, SEARCH_CAP);
+    const pages = Math.ceil(expected / PAGE_SIZE);
+    const union = new Map();
+    const take = (list, countRepeats) => {
+      for (const r of Array.isArray(list) ? list : []) {
+        if (r?.id == null) continue;
+        const prev = union.get(r.id);
+        if (prev && countRepeats) acc.duplicates_merged++;
+        if (!prev || (r.run_attempt ?? 1) >= (prev.run_attempt ?? 1)) union.set(r.id, r);
+      }
+    };
+    take(first.workflow_runs, true);
+    let problem = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      problem = null;
+      try {
+        for (let page = attempt === 1 ? 2 : 1; page <= pages; page++) take(read(query(page))?.workflow_runs, attempt === 1);
+      } catch (error) {
+        problem = `a page of the run list could not be read: ${oneLine(error)}`;
+        if (error?.kind === "rate-limit") {
+          acc.halted = true;
+          break;
+        }
+      }
+      if (!problem && union.size === expected) break;
+      problem ??= `${union.size} distinct runs were listed where the API counts ${expected}`;
+    }
+    if (total > SEARCH_CAP) problem = `${total} runs were created in one second and the API lists only ${SEARCH_CAP} of them`;
+    if (problem) addGap(acc, a, b, problem);
+    for (const r of union.values()) {
+      const created = Date.parse(r.created_at);
+      if (!(created >= a && created < b)) acc.dropped.outside_range++;
+      else if (r.event !== "push") acc.dropped.not_push++;
+      else if (r.head_branch !== "main") acc.dropped.not_main++;
+      else if (r.path !== WORKFLOW_PATH) acc.dropped.other_workflow++;
+      else {
+        const prev = acc.byId.get(r.id);
+        if (prev) acc.duplicates_merged++;
+        if (!prev || (r.run_attempt ?? 1) >= prev.run_attempt) acc.byId.set(r.id, slimRun(r));
+      }
+    }
+    log(`listed ${union.size} of ${expected} runs created ${zonedLabel(a)} .. ${zonedLabel(b)}`);
+  }
+  return acc;
+}
+
+/** Every push run created in [fromMs, toMs), newest first, with the listing's own account of itself. */
+export function listPushRuns(read, repo, fromMs, toMs, { log } = {}) {
+  const acc = collectRange(read, repo, fromMs, toMs, newListing(), log);
+  return { ...acc, runs: [...acc.byId.values()].sort(newestFirst) };
+}
+
+/**
+ * The newest `count` push runs created before `untilMs`, any count: windows of 1, 2, 4 ... days are read
+ * backwards, each one completely, until there are enough or the repository's creation is reached.
+ */
+export function listNewestPushRuns(read, repo, count, { untilMs, floorMs = ACTIONS_EPOCH, log } = {}) {
+  const acc = newListing();
+  let to = floorSecond(untilMs);
+  let span = DAY;
+  while (acc.byId.size < count && to > floorMs && !acc.halted) {
+    const from = Math.max(floorSecond(floorMs), to - span);
+    collectRange(read, repo, from, to, acc, log);
+    to = from;
+    span *= 2;
+  }
+  return { ...acc, runs: [...acc.byId.values()].sort(newestFirst).slice(0, count), exhausted: acc.byId.size < count };
+}
+
+/**
+ * Every event that moved main in [fromMs, toMs), from the repository's activity list (newest first,
+ * paged by cursor), until an event older than `fromMs` proves the list reaches the window's start.
+ */
+export function listMainPushes(read, repo, fromMs, toMs) {
+  const result = { events: [], reaches_start: false, pages: 0, error: null, error_kind: null };
+  const seen = new Set();
+  let path = `repos/${repo}/activity?ref=refs/heads/main&per_page=${PAGE_SIZE}`;
+  try {
+    while (path) {
+      const page = read(path, { include: true });
+      result.pages++;
+      if (!Array.isArray(page?.body)) throw new ReadFailure("fatal", "the activity list is not a list");
+      for (const ev of page.body) {
+        if (ev?.id != null) {
+          if (seen.has(ev.id)) continue;
+          seen.add(ev.id);
+        }
+        const at = Date.parse(ev?.timestamp);
+        if (!Number.isFinite(at)) continue;
+        if (at < fromMs) {
+          result.reaches_start = true;
+          continue;
+        }
+        if (at >= toMs || !MOVES_BRANCH.includes(ev.activity_type) || !isSha(ev.after) || /^0+$/.test(ev.after)) continue;
+        result.events.push({ id: ev.id, type: ev.activity_type, after: ev.after, at });
+      }
+      if (result.reaches_start) break;
+      path = page.next;
+    }
+  } catch (error) {
+    result.error = oneLine(error);
+    result.error_kind = error?.kind ?? "fatal";
+  }
+  return result;
+}
+
+/** Match each push to main with the CI run of its head, and each run with its push. */
+export function reconcile(events, runs, edges) {
+  const heads = new Set(runs.map((r) => r.head_sha));
+  const pushed = new Set(events.map((e) => e.after));
+  const nearEdge = (ms) => edges.some((edge) => Math.abs(ms - edge) <= EDGE_MS);
+  const lonePushes = events.filter((e) => !heads.has(e.after)).map((e) => ({ commit: e.after, type: e.type, at: zonedLabel(e.at), near_edge: nearEdge(e.at) }));
+  const loneRuns = runs.filter((r) => !pushed.has(r.head_sha)).map((r) => ({ run: r.id, commit: r.head_sha, at: zonedLabel(Date.parse(r.created_at)), near_edge: nearEdge(Date.parse(r.created_at)) }));
+  return {
+    push_events: events.length,
+    push_events_matched_to_a_run: events.length - lonePushes.length,
+    pushes_without_ci_run: lonePushes.filter((x) => !x.near_edge),
+    runs_without_push_event: loneRuns.filter((x) => !x.near_edge),
+    near_window_edge: [...lonePushes, ...loneRuns].filter((x) => x.near_edge),
+  };
+}
+
+/** A run's latest-attempt jobs, every page. `complete` is false when fewer came back than the API counts. */
+function readJobs(read, repo, id) {
+  const path = (page) => `repos/${repo}/actions/runs/${id}/jobs?filter=latest&per_page=${PAGE_SIZE}${page > 1 ? `&page=${page}` : ""}`;
+  const first = read(path(1));
+  if (!Array.isArray(first?.jobs)) throw new ReadFailure("fatal", "the jobs list is not a list");
+  const jobs = [...first.jobs];
+  const total = first.total_count;
+  for (let page = 2; Number.isInteger(total) && jobs.length < total; page++) {
+    const more = read(path(page))?.jobs;
+    if (!Array.isArray(more) || more.length === 0) break;
+    jobs.push(...more);
+  }
+  return { jobs, complete: Number.isInteger(total) ? jobs.length >= total : jobs.length < PAGE_SIZE };
+}
+
+/** The shadow verdict (or the 14 Oct dry run's word) a push run's step names carry, and its overhead. */
+function verdictOf(jobs) {
+  let seen = null;
+  const overhead = [];
+  for (const job of jobs) {
+    for (const step of job?.steps ?? []) {
+      const name = String(step?.name ?? "");
+      const parsed = parseShadowStep(name);
+      if (parsed) seen = { kind: "shadow", ...parsed };
+      else if (name.startsWith(LEGACY_PREFIX) && name !== `${LEGACY_PREFIX}(log only)`) {
+        const word = name.slice(LEGACY_PREFIX.length).trim();
+        if (LEGACY_VERDICTS.includes(word) && !seen) seen = { kind: "legacy", word };
+      }
+      if (name === SHADOW_LOG_STEP && step?.conclusion !== "skipped") {
+        const s = stepSeconds(step);
+        if (s !== null) overhead.push(s);
+      }
+    }
+  }
+  return { seen, overhead };
+}
+
+const gapOut = (g) => ({ from: zonedLabel(g.from_ms), to: zonedLabel(g.to_ms), from_utc: isoSecond(g.from_ms), to_utc: isoSecond(g.to_ms), reason: g.reason });
+const tally = (values) => values.reduce((acc, v) => ((acc[v] = (acc[v] ?? 0) + 1), acc), {});
+const hours = (ms) => Math.round((ms / 3600000) * 100) / 100;
+
+/**
+ * THE REPORT. With no `limit` it reads the whole observation window; with a number, the newest `limit`
+ * push runs. Every push run is counted from its step names, and the report says how complete it is:
+ *   INCOMPLETE_RETRIEVAL   a read failed or a range could not be listed whole — the gaps are named
+ *   EVIDENCE_UNAVAILABLE   everything was read, but some evidence no longer exists or does not match
+ *                          (expired jobs, a push with no CI run, an activity list that ends too early)
+ *   PARTIAL_OBSERVATION    complete so far, and the window is still open — the rest is not missing
+ *   COMPLETE_OBSERVATION   the window has ended and every check below passed
+ *   COMPLETE_RETRIEVAL     (newest-n) every one of the n runs and their jobs was read
+ * Never throws for a read; what it could not read is in `retrieval` and `completeness_evidence`.
+ * @param {number | null} [limit] the newest n push runs; null reads the observation window
+ */
+export function report(limit = null, { repo = readEnv().repo || DEFAULT_REPO, readGh = gh, sleep = sleepMs, clock = wallClock, maxRateWaitMs = MAX_RATE_WAIT_MS, window = OBSERVATION_WINDOW, log = () => {} } = {}) {
+  const startedAt = clock();
+  const { read, stats } = makeReader({ readGh, sleep, clock, maxRateWaitMs });
+  const newest = Number.isInteger(limit) && limit > 0;
+  let listing;
+  let windowOut = null;
+  let activity = null;
+  let edges = [];
+  let observationComplete = true;
+  if (newest) {
+    let floorMs = ACTIONS_EPOCH;
+    try {
+      const created = Date.parse(read(`repos/${repo}`)?.created_at);
+      if (Number.isFinite(created)) floorMs = created;
+    } catch {
+      floorMs = ACTIONS_EPOCH;
+    }
+    listing = listNewestPushRuns(read, repo, limit, { untilMs: floorSecond(clock()) + SECOND, floorMs, log });
+  } else {
+    const startMs = zonedToUtc(window.start, window.zone);
+    const endMs = zonedToUtc(window.end, window.zone);
+    const readUntil = Math.max(startMs, Math.min(endMs, floorSecond(clock() - SETTLE_MS)));
+    observationComplete = readUntil >= endMs;
+    listing = listPushRuns(read, repo, startMs, readUntil, { log });
+    activity = readUntil > startMs ? listMainPushes(read, repo, startMs, readUntil) : { events: [], reaches_start: true, pages: 0, error: null, error_kind: null };
+    edges = [startMs, readUntil];
+    windowOut = {
+      zone: window.zone,
+      bounds: "start-inclusive, end-exclusive",
+      start: zonedLabel(startMs, window.zone),
+      end: zonedLabel(endMs, window.zone),
+      start_utc: isoSecond(startMs),
+      end_utc: isoSecond(endMs),
+      read_until: zonedLabel(readUntil, window.zone),
+      hours_total: hours(endMs - startMs),
+      hours_observed: hours(readUntil - startMs),
+      hours_not_yet_observed: hours(endMs - readUntil),
+      note: observationComplete
+        ? "the window has ended"
+        : `the window is still open: the hours not yet observed are future time, not missing data (runs from the last ${SETTLE_MS / 60000} minutes are read next time)`,
+    };
+  }
+
+  const runs = listing.runs;
   const classes = Object.fromEntries(CLASSES.map((c) => [c, 0]));
   const legacy = Object.fromEntries(LEGACY_VERDICTS.map((v) => [v, 0]));
   let none = 0;
+  let noneInProgress = 0;
   let minutes = 0;
   const overhead = [];
   const falseEligible = [];
   const eligibleRunRedElsewhere = [];
-  for (const r of runs) {
-    const jobs = readGh(`repos/${repo}/actions/runs/${r.id}/jobs?filter=latest&per_page=100`)?.jobs ?? [];
-    let seen = null;
-    for (const job of jobs) {
-      for (const step of job?.steps ?? []) {
-        const name = String(step?.name ?? "");
-        const parsed = parseShadowStep(name);
-        if (parsed) seen = { kind: "shadow", ...parsed };
-        else if (name.startsWith(LEGACY_PREFIX) && name !== `${LEGACY_PREFIX}(log only)`) {
-          const word = name.slice(LEGACY_PREFIX.length).trim();
-          if (LEGACY_VERDICTS.includes(word) && !seen) seen = { kind: "legacy", word };
-        }
-        if (name === SHADOW_LOG_STEP && step?.conclusion !== "skipped") {
-          const s = stepSeconds(step);
-          if (s !== null) overhead.push(s);
-        }
-      }
+  const unavailable = [];
+  const unread = [];
+  const partial = [];
+  let halted = listing.halted;
+  for (const [i, r] of runs.entries()) {
+    if (halted) {
+      unread.push(r.id);
+      continue;
     }
-    if (!seen) none++;
-    else if (seen.kind === "legacy") legacy[seen.word]++;
+    let jobs;
+    try {
+      const got = readJobs(read, repo, r.id);
+      jobs = got.jobs;
+      if (!got.complete) partial.push(r.id);
+    } catch (error) {
+      (error?.kind === "gone" ? unavailable : unread).push(r.id);
+      if (error?.kind === "rate-limit") halted = true;
+      continue;
+    }
+    if ((i + 1) % 50 === 0) log(`read the jobs of ${i + 1} of ${runs.length} runs`);
+    const { seen, overhead: spent } = verdictOf(jobs);
+    overhead.push(...spent);
+    if (!seen) {
+      none++;
+      if (r.status !== "completed") noneInProgress++;
+    } else if (seen.kind === "legacy") legacy[seen.word]++;
     else {
       classes[seen.decision]++;
       if (seen.decision === "ELIGIBLE_FOR_REUSE") {
@@ -503,7 +970,49 @@ export function report(limit = 40, { repo = readEnv().repo || DEFAULT_REPO, read
       }
     }
   }
+
+  const reconciliation = activity ? { ...reconcile(activity.events, runs, edges), reaches_start: activity.reaches_start, activity_pages: activity.pages, error: activity.error } : null;
+  const withVerdict = CLASSES.reduce((s, c) => s + classes[c], 0);
+  const completed = runs.filter((r) => r.status === "completed");
+  const reruns = runs.filter((r) => r.run_attempt > 1);
+  const activityUnread = Boolean(activity?.error) && activity.error_kind !== "gone";
+  const checks = [
+    { check: "every listed range returned exactly as many distinct runs as the API counts", ok: listing.gaps.length === 0, detail: listing.gaps.length ? `${listing.gaps.length} gap(s), named in retrieval.gaps` : `${listing.ranges} range(s), ${listing.splits} split(s) past the ${SEARCH_CAP}-result cap` },
+    { check: "every run's jobs were read in full", ok: unread.length === 0 && partial.length === 0, detail: `${runs.length - unread.length - unavailable.length} of ${runs.length} read; ${unread.length} unread, ${partial.length} partly read` },
+    { check: "no run's job evidence has expired", ok: unavailable.length === 0, detail: unavailable.length ? `${unavailable.length} run(s) no longer list their jobs` : "all present" },
+  ];
+  if (newest) checks.push({ check: `the newest ${limit} runs exist`, ok: true, detail: listing.exhausted ? `only ${runs.length} push runs exist in the whole history` : `${runs.length} read` });
+  if (reconciliation) {
+    checks.push(
+      { check: "the push record was read", ok: !activity.error, detail: activity.error ?? `${activity.pages} page(s) of the activity list` },
+      { check: "the push record reaches back past the window's start", ok: activity.reaches_start, detail: activity.reaches_start ? "an event older than the start was seen" : "the activity list ended before the window's start" },
+      { check: "every push to main in the window has a CI run", ok: reconciliation.pushes_without_ci_run.length === 0, detail: `${reconciliation.push_events_matched_to_a_run} of ${reconciliation.push_events} matched (a [skip ci] push has none)` },
+      { check: "every CI run in the window has a push to main", ok: reconciliation.runs_without_push_event.length === 0, detail: `${reconciliation.runs_without_push_event.length} without` },
+    );
+  }
+  const retrievalIncomplete = listing.gaps.length > 0 || unread.length > 0 || partial.length > 0 || activityUnread;
+  const evidenceMissing = checks.some((c) => !c.ok);
+  const status = retrievalIncomplete
+    ? "INCOMPLETE_RETRIEVAL"
+    : evidenceMissing
+      ? "EVIDENCE_UNAVAILABLE"
+      : newest
+        ? "COMPLETE_RETRIEVAL"
+        : observationComplete
+          ? "COMPLETE_OBSERVATION"
+          : "PARTIAL_OBSERVATION";
+  const verifiedComplete = !evidenceMissing;
+
   return {
+    mode: newest ? `newest ${limit}` : "observation window",
+    status,
+    verified_complete: verifiedComplete,
+    coverage: {
+      observation: newest ? "not applicable (newest-n)" : observationComplete ? "complete" : "partial — the window is still open",
+      retrieval: retrievalIncomplete ? "incomplete" : "complete",
+      historical_evidence: unavailable.length > 0 || (reconciliation && (!activity.reaches_start || activity.error_kind === "gone")) ? "partly unavailable" : "available",
+    },
+    window: windowOut,
     examined: runs.length,
     classes,
     legacy,
@@ -512,6 +1021,45 @@ export function report(limit = 40, { repo = readEnv().repo || DEFAULT_REPO, read
     false_eligible_runs: falseEligible,
     eligible_runs_red_outside_reusable_jobs: eligibleRunRedElsewhere,
     shadow_step_seconds: { n: overhead.length, median: median(overhead), max: overhead.length ? Math.max(...overhead) : null },
+    pushes: {
+      main_push_events: reconciliation ? reconciliation.push_events : null,
+      push_runs: runs.length,
+      with_shadow_verdict: withVerdict,
+      without_shadow_verdict: { total: none + LEGACY_VERDICTS.reduce((s, v) => s + legacy[v], 0), legacy_dry_run_word: LEGACY_VERDICTS.reduce((s, v) => s + legacy[v], 0), no_verdict_step_finished_run: none - noneInProgress, no_verdict_step_yet_in_progress: noneInProgress },
+      eligible: classes.ELIGIBLE_FOR_REUSE,
+      not_eligible: classes.NOT_ELIGIBLE,
+      insufficient_evidence: classes.INSUFFICIENT_EVIDENCE,
+      safety_check_failed: classes.SAFETY_CHECK_FAILED,
+      historical_data_unavailable_verdict: classes.HISTORICAL_DATA_UNAVAILABLE,
+      missing_or_unavailable: { jobs_expired: unavailable, jobs_unread: unread, pushes_without_ci_run: reconciliation ? reconciliation.pushes_without_ci_run.length : null },
+      completed_runs: completed.length,
+      in_progress_runs: runs.length - completed.length,
+      conclusions: tally(completed.map((r) => r.conclusion ?? "none")),
+      failed_or_cancelled_runs: completed.filter((r) => ["failure", "cancelled", "timed_out", "startup_failure", "action_required"].includes(r.conclusion)).length,
+      rerun_runs: reruns.length,
+      extra_attempts: reruns.reduce((s, r) => s + r.run_attempt - 1, 0),
+    },
+    eligibility: {
+      eligible: classes.ELIGIBLE_FOR_REUSE,
+      judged: withVerdict,
+      pct: withVerdict ? Math.round((classes.ELIGIBLE_FOR_REUSE / withVerdict) * 1000) / 10 : null,
+      definitive: verifiedComplete && !retrievalIncomplete && observationComplete && !newest,
+      note: "the share of push runs with a shadow verdict whose verdict was ELIGIBLE_FOR_REUSE; definitive only for a complete, finished window",
+    },
+    retrieval: {
+      ranges_read: listing.ranges,
+      range_splits: listing.splits,
+      gaps: listing.gaps.map(gapOut),
+      duplicates_merged: listing.duplicates_merged,
+      dropped_by_local_filter: listing.dropped,
+      jobs_unread: unread,
+      jobs_partly_read: partial,
+      stopped_by_rate_limit: halted,
+    },
+    historical_evidence: { jobs_expired: unavailable, activity_reaches_window_start: reconciliation ? activity.reaches_start : null },
+    reconciliation,
+    completeness_evidence: checks,
+    api: { ...stats, elapsed_ms: Math.round(clock() - startedAt) },
   };
 }
 
@@ -520,8 +1068,17 @@ export function report(limit = 40, { repo = readEnv().repo || DEFAULT_REPO, read
  * what its own push run then did. `before` is the previous push's head (a push run exists for every push
  * to main); `forced` is not in the runs API and is taken as false, which the record says.
  */
-export function replay(limit = 20, { repo = readEnv().repo || DEFAULT_REPO, readGit = run, readGh = gh, clock = () => performance.now() } = {}) {
-  const runs = readGh(`repos/${repo}/actions/workflows/ci.yml/runs?event=push&branch=main&per_page=${Math.min(limit + 1, 100)}`)?.workflow_runs ?? [];
+export function replay(limit = 20, { repo = readEnv().repo || DEFAULT_REPO, readGit = run, readGh = gh, clock = () => performance.now(), wall = wallClock, sleep = sleepMs } = {}) {
+  const { read } = makeReader({ readGh, sleep, clock: wall });
+  let floorMs = ACTIONS_EPOCH;
+  try {
+    const created = Date.parse(read(`repos/${repo}`)?.created_at);
+    if (Number.isFinite(created)) floorMs = created;
+  } catch {
+    floorMs = ACTIONS_EPOCH;
+  }
+  const listing = listNewestPushRuns(read, repo, limit + 1, { untilMs: floorSecond(wall()) + SECOND, floorMs });
+  const runs = listing.runs;
   const results = [];
   for (let i = 0; i < Math.min(limit, runs.length); i++) {
     const r = runs[i];
@@ -551,6 +1108,8 @@ export function replay(limit = 20, { repo = readEnv().repo || DEFAULT_REPO, read
   const ms = results.map((x) => x.detector_ms).filter(Number.isFinite);
   return {
     replayed: results.length,
+    listing_complete: listing.gaps.length === 0,
+    listing_gaps: listing.gaps.map(gapOut),
     classes,
     false_eligible: results.filter((x) => x.push_reusable_jobs_failed === true).map((x) => x.run_id),
     estimated_avoidable_minutes: results.reduce((s, x) => s + x.estimated_avoidable_minutes, 0),
@@ -564,14 +1123,15 @@ export function replay(limit = 20, { repo = readEnv().repo || DEFAULT_REPO, read
 
 const countArg = (flag, fallback) => {
   const n = Number(process.argv[process.argv.indexOf(flag) + 1]);
-  return Number.isInteger(n) && n > 0 ? Math.min(n, 100) : fallback;
+  return Number.isInteger(n) && n > 0 ? n : fallback;
 };
+const progress = (line) => process.stderr.write(`ci-tree-reuse: ${line}\n`);
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const env = readEnv();
   try {
     if (process.argv.includes("--report")) {
-      console.log(JSON.stringify(report(countArg("--report", 40)), null, 2));
+      console.log(JSON.stringify(report(countArg("--report", null), { log: progress }), null, 2));
     } else if (process.argv.includes("--replay")) {
       console.log(JSON.stringify(replay(countArg("--replay", 20)), null, 2));
     } else {

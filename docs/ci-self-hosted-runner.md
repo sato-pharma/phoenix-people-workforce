@@ -1988,8 +1988,21 @@ as a caveat, and is why a day-crossing or 12-hour-old PR run is not enough.
 
 **Output, never a gate:** the class and an estimated minute count in the next step's NAME (`Tree reuse
 shadow ELIGIBLE_FOR_REUSE ~8 min`), a `tree-reuse-shadow-record {json}` log line and a table in the job
-summary (no token, header or env). Read it with `node scripts/ci-tree-reuse.mjs --report 400`
+summary (no token, header or env). Read it with a bare `node scripts/ci-tree-reuse.mjs --report`
 (false-eligible runs listed, shadow-step overhead measured) and backtest with `--replay 50` (read-only,
 classifies past pushes from history). The step is push-only, `continue-on-error`, capped at 2 minutes,
 and the script always exits 0. Activation is a separate decision that is the owner's alone; nothing
 changes on day 14.
+
+**The report reads the whole window or says it did not.** The fixed window is 26 Oct 2026 05:12 to 9 Nov
+2026 05:12 Cairo (start included, end excluded), converted through the time-zone database because Cairo
+leaves summer time at midnight on 30 Oct. GitHub's run search returns at most 1,000 results per query and
+answers `total_count 0` past page 10, so the report splits any range whose count is over 1,000 at its
+midpoint until each piece fits, reads every piece twice, keeps one record per run id (the highest
+attempt), and checks that each piece returned exactly as many runs as GitHub counted. It reconciles the
+runs with the push events on `main` (the activity API), not with commits, and reports pushes with a
+verdict, without one, eligible, not eligible, insufficient evidence, missing, failed or cancelled, and
+reruns. Retries back off and wait out a rate limit; a range that still fails is named in
+`retrieval.gaps` and the status is `INCOMPLETE_RETRIEVAL`. Before day 14 the status is
+`PARTIAL_OBSERVATION`, which says the window has not ended, never that data is missing; `--report <n>`
+reads the newest n push runs with no cap.
