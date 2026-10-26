@@ -1183,7 +1183,7 @@ The failure is recorded now, in its own `catch` around the run:
 - `why` is the error message, which is what carries the value — the measured page, with every
   `filled` already reduced to a length and every secret-shaped value dropped by `describePage`. It
   is the same string the card renders, so storing it is exactly as safe as showing it.
-- The browser closes **before** the audit write, not after. The audit has its own 3-second timeout,
+- The browser closes **before** the audit write, not after. The audit has its own bounded timeout,
   and a slow or failing insert must never hold a signed-in mailbox session open behind it.
 - The error is **rethrown**, so the HTTP status still comes from the handler's own catch. Recording
   a failure must never convert it into a success.

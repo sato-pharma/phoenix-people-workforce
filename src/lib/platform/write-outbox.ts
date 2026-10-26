@@ -33,11 +33,43 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * behaviour this file exists to remove.
  */
 
-/** The first attempt, on the request path. Short on purpose: nothing waits on durability here. */
-export const OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS = 3_000;
+/**
+ * The first attempt, on the request path.
+ *
+ * 🔴 IT MUST SIT ABOVE WHAT A SUPABASE ROUND TRIP ACTUALLY COSTS ON THIS CONTAINER, AND 3 SECONDS
+ * DID NOT. It was 3_000 from 23 Oct 2026 to 26 Oct, chosen as "short, because it runs on somebody's
+ * request" — which is the right instinct and was the wrong number. Measured on production
+ * 26 Oct 2026, 09:31–09:33 UTC, from `process_health`'s own `timings.supabase.fetch` (the client's
+ * round trip, not the query):
+ *
+ *     09:31  2,060 calls   p50 1,396 ms   p95 2,988 ms   max 8,061 ms
+ *     09:32  2,266 calls   p50 1,998 ms   p95 3,494 ms   max 5,762 ms
+ *     09:33  2,143 calls   p50 1,760 ms   p95 3,512 ms   max 5,680 ms
+ *
+ * A 3-second budget sits between that p50 and that p95, so it was aborting ordinary writes — 13
+ * `supabase.fetch.timeout` in those three minutes, every elapsed reading 3,000–3,107 ms, all of
+ * them FIRST attempts. And the database was never the reason: `pg_stat_statements` on
+ * `ozucdzovmcqvepbozvqf` put the four inserts behind those aborts at a mean of 0.5–3.3 ms and a
+ * worst case of 118.8 ms over 8,626 calls. The whole three seconds was transport.
+ *
+ * 8_000 clears the measured p95 with better than twice the margin, covers the worst round trip seen,
+ * and stays under both `OUTBOX_RETRY_TIMEOUT_MS` (or the retry would add nothing) and
+ * `supabaseRequestTimeoutMs` in `src/lib/supabase/server.ts`. Raising it is CHEAPER on the request
+ * path than leaving it, not dearer — see `persistThroughOutbox`.
+ */
+export const OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS = 8_000;
 
 /** The retry, the queue write and the drain. Nothing is waiting on these by the time they run. */
 export const OUTBOX_RETRY_TIMEOUT_MS = 10_000;
+
+/**
+ * How late the first attempt may end and still count as having SPENT its budget rather than failed.
+ *
+ * The slack is for the abort timer firing late under event-loop pressure, which this container has:
+ * `eventLoopDelayMs` max was 920 / 811 / 1,725 ms in the same three minutes measured above. Being
+ * generous here is the safe direction — it sends a borderline case to the queue, which always works.
+ */
+export const OUTBOX_FIRST_ATTEMPT_SPENT_SLACK_MS = 250;
 
 /** Rows per opportunistic drain. Small: this runs on the back of somebody's real request. */
 export const OUTBOX_DRAIN_BATCH = 5;
@@ -78,6 +110,17 @@ export type OutboxQueue<TPayload> = {
 export function nextAttemptDelayMs(attempts: number): number {
   const minutes = 2 ** Math.max(0, attempts - 1);
   return Math.min(minutes * 60_000, OUTBOX_MAX_BACKOFF_MS);
+}
+
+/**
+ * Did the first attempt SPEND its whole budget, rather than fail inside it? Pure, so it is tested
+ * without a clock.
+ *
+ * The distinction decides whether a probe and a retry are worth running on the same request — not
+ * whether the write survives, which the queue guarantees either way.
+ */
+export function firstAttemptSpentItsBudget(elapsedMs: number): boolean {
+  return elapsedMs >= OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS - OUTBOX_FIRST_ATTEMPT_SPENT_SLACK_MS;
 }
 
 /** Should this process start a drain now? Pure, so the throttle is tested without a clock. */
@@ -126,17 +169,35 @@ export async function queueOutboxWrite<TPayload>(
  *
  * Returns the error that ended it, or null when the write landed (or had already landed). This is
  * the whole contract a caller needs: one call, and the write is either done or safely queued.
+ *
+ * 🔴 A FIRST ATTEMPT THAT SPENT ITS WHOLE BUDGET IS QUEUED AT ONCE — NO PROBE, NO RETRY ON THAT
+ * REQUEST. The probe and the retry are two further round trips, so running them behind an attempt
+ * that has already held the request for its full budget was what made the old 3-second cap expensive
+ * rather than cheap: a single write could occupy one request for 3 s + 10 s + 10 s + a 10 s queue
+ * write. Queueing immediately does the same job with nobody waiting at all — the drain probes
+ * `alreadyLanded` before it lands anything, so the duplicate guard is not weakened, only moved off
+ * the request. Worst case on the request path falls from ~33 s to ~18 s even as the budget rises.
+ *
+ * An attempt that failed INSIDE its budget — a PostgREST rejection, a gateway 5xx, a reset
+ * connection — still gets the probe and the patient retry. That is the database-restart case the
+ * file was built for (four restarts on 22 Oct 2026), and there a second attempt seconds later often
+ * lands.
  */
 export async function persistThroughOutbox<TPayload>(
   queue: OutboxQueue<TPayload>,
   payload: TPayload,
   onSuccess?: () => void,
 ): Promise<unknown | null> {
+  const startedAt = Date.now();
   try {
     await queue.land(payload, OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS);
     onSuccess?.();
     return null;
   } catch (firstError) {
+    if (firstAttemptSpentItsBudget(Date.now() - startedAt)) {
+      if (queue.queueable?.(firstError) ?? true) await queueOutboxWrite(queue, payload, firstError);
+      return firstError;
+    }
     if (await queue.alreadyLanded(payload)) return null;
     try {
       await queue.land(payload, OUTBOX_RETRY_TIMEOUT_MS);

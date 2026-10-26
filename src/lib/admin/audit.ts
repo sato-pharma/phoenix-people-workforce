@@ -504,8 +504,10 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
 /**
  * Fast attempt, then ONE slower retry, then the outbox. Returns the error that ended it, or null.
  *
- * The 3-second first attempt is what keeps the audit trail off the critical path of a request, and
- * it stays. What changed on 23 Oct 2026 is what happens when it expires: it used to be a log line
+ * The bounded first attempt is what keeps the audit trail off the critical path of a request, and
+ * it stays — `OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS`, raised from 3s to 8s on 26 Oct 2026 because the
+ * client's own round trip on production runs a p95 of 3.5s and 3s was aborting ordinary writes.
+ * What changed on 23 Oct 2026 is what happens when it expires: it used to be a log line
  * and a lost row — 109 of them in 21 days, 40 inside the three hours when production Postgres
  * restarted four times. The mechanism, including the probe that stops a blind retry writing the
  * row twice, is `src/lib/platform/write-outbox.ts`; the `audit_logs` half of it is
