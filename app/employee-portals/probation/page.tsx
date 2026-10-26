@@ -28,7 +28,7 @@ import {
 import {
   canExportProbation,
   canViewProbationAnalytics,
-  getProbationRows,
+  getProbationTrackerRows,
   isProbationSchemaMissing,
   probationErrorMessage,
 } from "@/lib/probation/service";
@@ -37,6 +37,7 @@ import {
   resolveFeedbackTaskNames,
 } from "@/lib/probation/intelligence/feedback-workflow";
 import { listScorableProbationers } from "@/lib/probation/intelligence/manual-dv-day";
+import { evaluatorRoleLabel } from "@/lib/probation/intelligence/evaluator-role-label";
 import { formatDateValue } from "@/lib/i18n/format";
 import {
   getProbationOutcomesAnalytics,
@@ -46,14 +47,6 @@ import { ProbationAnalyticsView } from "@/components/probation/probation-analyti
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
-
-// Human-readable evaluator role for the scorecard launcher — owner rule: names, never codes.
-const EVALUATOR_ROLE_LABEL: Record<string, string> = {
-  dm: "District Manager",
-  nsm: "National Sales Manager",
-  tm: "Training Manager",
-  pm_gpm: "Product Manager",
-};
 
 /* ---------- error handling ---------- */
 
@@ -104,7 +97,7 @@ export default async function EmployeePortalProbationPage() {
   let initialError: string | null = null;
 
   try {
-    initialData = await getProbationRows(access);
+    initialData = await getProbationTrackerRows(access);
   } catch (error) {
     initialError = probationPageError(error);
   }
@@ -190,7 +183,7 @@ export default async function EmployeePortalProbationPage() {
         .map((p) => ({
           employeeHrId: p.employeeHrId,
           employeeName: p.employeeName,
-          evaluatorRoleLabel: EVALUATOR_ROLE_LABEL[p.evaluatorRole] ?? p.evaluatorRole,
+          evaluatorRoleLabel: evaluatorRoleLabel(p.evaluatorRole),
           probationEndLabel: formatDateValue(p.probationEndDate),
           lineLabel: p.lineName ?? "Unassigned line",
           submittedCount: p.submittedCount,

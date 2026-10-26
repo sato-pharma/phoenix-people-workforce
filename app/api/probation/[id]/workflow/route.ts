@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   getProbationRows,
+  getProbationTrackerRows,
   isProbationSchemaMissing,
   probationErrorMessage,
   runProbationWorkflow,
@@ -52,7 +53,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Probation review not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ data, rows: await getProbationRows(access), success: true });
+    // `rows` is the inside-90-days list the admin tracker shows; `trackerRows` adds the probations
+    // that ended with no decision, which the employee portal's tracker lists first.
+    const [rows, trackerRows] = await Promise.all([getProbationRows(access), getProbationTrackerRows(access)]);
+    return NextResponse.json({ data, rows, success: true, trackerRows });
   } catch (error) {
     const message = probationErrorMessage(error);
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: message }, { status: 403 });

@@ -1,5 +1,8 @@
 export type TrafficStatus = "critical" | "warning" | "safe";
 
+/** The tracker's zones: the three day-count zones, plus a probation that ended with no decision. */
+export type ProbationZone = TrafficStatus | "overdue";
+
 // A `ProbationDvState` type, and the `dv_state` field on ProbationRow that carried it, stood here
 // until 2026-09-01: twelve booleans and timestamps projected from `employee_probation`'s DV
 // checkbox columns. That table stopped being filled when the Case model took over provisioning, so
@@ -18,6 +21,12 @@ export type ProbationRow = {
   employment_status?: string;
   has_durable_probation_record?: boolean;
   days_remaining: number;
+  /**
+   * True only on a tracker row (`getProbationTrackerRows`): the probation END DATE HAS PASSED, the
+   * employee is still employed and the case is open with no pass/terminate decision. `days_remaining`
+   * is zero or negative on these rows; `getProbationRows` never returns one.
+   */
+  overdue_decision?: boolean;
   full_name: string;
   hire_date: string;
   hr_id: string;

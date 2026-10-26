@@ -43,7 +43,7 @@ export function runProbationStabilizationTests() {
   assert.match(adminPageSource, /canCreate: canAdminister/);
   assert.match(adminPageSource, /canManageWorkflow: canAdminister/);
   assert.match(adminPageSource, /canExport: canViewAllProbation\(access\)/);
-  assert.match(portalPageSource, /getProbationRows\(access\)/);
+  assert.match(portalPageSource, /getProbationTrackerRows\(access\)/);
   assert.doesNotMatch(portalPageSource, /isDsm|isNsm/);
   assert.match(portalPageSource, /canSubmitManagerFeedback/);
   assert.match(permissionsSource, /Employee:\s*\{[\s\S]*?probation:\s*\["read"\]/);

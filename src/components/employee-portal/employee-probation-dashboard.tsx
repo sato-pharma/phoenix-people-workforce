@@ -9,13 +9,13 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
   calculateProbationProgress,
-  classifyProbationTrafficStatus,
+  classifyProbationRowZone,
   summarizeProbationRiskRows,
 } from "@/lib/lifecycle-risk/metrics";
 import type {
   ProbationRow,
   ProbationWorkflowAction,
-  TrafficStatus,
+  ProbationZone,
 } from "@/lib/probation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -104,10 +104,23 @@ function uniqueOptions(values: string[]) {
   );
 }
 
-function zoneColor(zone: TrafficStatus) {
+function zoneColor(zone: ProbationZone) {
+  if (zone === "overdue") return { bg: "bg-violet-600", text: "text-violet-700", light: "bg-violet-50", border: "border-violet-500", dot: "bg-violet-600" };
   if (zone === "safe") return { bg: "bg-emerald-500", text: "text-emerald-700", light: "bg-emerald-50", border: "border-emerald-400", dot: "bg-emerald-500" };
   if (zone === "warning") return { bg: "bg-amber-500", text: "text-amber-700", light: "bg-amber-50", border: "border-amber-400", dot: "bg-amber-500" };
   return { bg: "bg-rose-500", text: "text-rose-700", light: "bg-rose-50", border: "border-rose-400", dot: "bg-rose-500" };
+}
+
+function zoneLabel(zone: ProbationZone) {
+  if (zone === "overdue") return "Overdue decision";
+  return zone === "safe" ? "Safe" : zone === "warning" ? "Warning" : "Critical";
+}
+
+// A probation that ended with no decision counts DAYS LATE, never a clamped "0 days left".
+function daysCellText(row: ProbationRow) {
+  if (!row.overdue_decision) return String(Math.max(0, row.days_remaining));
+  const late = Math.max(0, -row.days_remaining);
+  return late === 0 ? "Ended today" : `${late}d late`;
 }
 
 function actionLabel(action: ProbationWorkflowAction) {
@@ -144,7 +157,7 @@ export function EmployeeProbationDashboard({
   const [lineFilter, setLineFilter] = useState(ALL_VALUE);
   const [areaFilter, setAreaFilter] = useState(ALL_VALUE);
   const [jobFilter, setJobFilter] = useState(ALL_VALUE);
-  const [trafficFilter, setTrafficFilter] = useState<"all" | TrafficStatus>("all");
+  const [trafficFilter, setTrafficFilter] = useState<"all" | ProbationZone>("all");
   const [sortBy, setSortBy] = useState<SortKey>("days-asc");
   const [rows, setRows] = useState<ProbationRow[]>(initialData);
   const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
@@ -168,7 +181,7 @@ export function EmployeeProbationDashboard({
     return rows
       .filter((row) => {
         const searchable = [row.full_name, row.hr_id, row.crm_id].join(" ").toLowerCase();
-        const traffic = classifyProbationTrafficStatus(row.days_remaining);
+        const traffic = classifyProbationRowZone(row);
         return (
           (!search || searchable.includes(search)) &&
           (lineFilter === ALL_VALUE || row.line_name === lineFilter) &&
@@ -178,6 +191,8 @@ export function EmployeeProbationDashboard({
         );
       })
       .sort((a, b) => {
+        // A probation that ended with no decision is always first, whichever sort is picked.
+        if (Boolean(a.overdue_decision) !== Boolean(b.overdue_decision)) return a.overdue_decision ? -1 : 1;
         if (sortBy === "days-desc") return b.days_remaining - a.days_remaining;
         if (sortBy === "hire-asc") return (parseDateOnly(a.hire_date)?.getTime() ?? 0) - (parseDateOnly(b.hire_date)?.getTime() ?? 0);
         if (sortBy === "hire-desc") return (parseDateOnly(b.hire_date)?.getTime() ?? 0) - (parseDateOnly(a.hire_date)?.getTime() ?? 0);
@@ -205,6 +220,7 @@ export function EmployeeProbationDashboard({
           employeeHrId: row.hr_id,
           employeeName: row.full_name,
           hireDate: row.hire_date,
+          overdueDecision: row.overdue_decision ?? false,
           probationEndDate: row.probation_end_date,
           workflowDecision: row.workflow?.decision ?? null,
         })),
@@ -271,7 +287,7 @@ export function EmployeeProbationDashboard({
       if (!response.ok || !payload.success) {
         throw new Error(payload.error ?? "Probation action failed.");
       }
-      setRows(payload.rows);
+      setRows(payload.trackerRows ?? payload.rows);
       setSelectedAction(null);
       setActionForm(emptyActionForm());
       setMessage({ tone: "success", text: "Probation review updated." });
@@ -286,9 +302,10 @@ export function EmployeeProbationDashboard({
   }
 
   /* Zone distribution percentages */
+  const overduePercent = summary.total > 0 ? Math.round((summary.overdue / summary.total) * 100) : 0;
   const safePercent = summary.total > 0 ? Math.round((summary.safe / summary.total) * 100) : 0;
   const warningPercent = summary.total > 0 ? Math.round((summary.warning / summary.total) * 100) : 0;
-  const criticalPercent = summary.total > 0 ? 100 - safePercent - warningPercent : 0;
+  const criticalPercent = summary.total > 0 ? Math.max(0, 100 - overduePercent - safePercent - warningPercent) : 0;
 
   /* Allowed actions helper */
   function getAllowedActions(row: ProbationRow): ProbationWorkflowAction[] {
@@ -300,7 +317,7 @@ export function EmployeeProbationDashboard({
     <div className="space-y-5" dir="auto">
       {/* ---- Stat Cards ---- */}
       <Card className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
-        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 lg:grid-cols-4">
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 lg:grid-cols-5">
           {/* Total */}
           <div className="border-l-2 border-l-orange-400 px-4 py-4">
             <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -311,6 +328,18 @@ export function EmployeeProbationDashboard({
             </p>
             <p className="mt-0.5 text-phx-xs text-slate-400">
               Matching current filters
+            </p>
+          </div>
+          {/* Overdue decision */}
+          <div className="border-l-2 border-l-violet-500 px-4 py-4">
+            <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
+              Overdue Decision
+            </p>
+            <p className="mt-1 text-2xl font-bold text-slate-800">
+              {summary.overdue}
+            </p>
+            <p className="mt-0.5 text-phx-xs text-slate-400">
+              Ended with no decision
             </p>
           </div>
           {/* Safe */}
@@ -368,6 +397,14 @@ export function EmployeeProbationDashboard({
                 className="flex h-4 w-full overflow-hidden rounded"
                 role="img"
               >
+                {summary.overdue > 0 && (
+                  <div
+                    aria-label={`Overdue decision: ${overduePercent}%`}
+                    className="bg-violet-600"
+                    role="img"
+                    style={{ width: `${overduePercent}%`, minWidth: "2px" }}
+                  />
+                )}
                 {summary.safe > 0 && (
                   <div
                     aria-label={`Safe zone: ${safePercent}%`}
@@ -394,6 +431,10 @@ export function EmployeeProbationDashboard({
                 )}
               </div>
               <div className="mt-2.5 flex flex-wrap gap-4 text-phx-xs text-slate-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-sm bg-violet-600" />
+                  Overdue decision {overduePercent}%
+                </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
                   Safe {safePercent}%
@@ -450,7 +491,7 @@ export function EmployeeProbationDashboard({
             <input
               className={inputClassName}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name, HR ID..."
+              placeholder="Search name..."
               type="text"
               value={query}
             />
@@ -506,10 +547,11 @@ export function EmployeeProbationDashboard({
             <span className={`mb-1.5 block ${labelClassName}`}>Zone</span>
             <SearchableSelect
               className={inputClassName}
-              onChange={(e) => setTrafficFilter(e.target.value as "all" | TrafficStatus)}
+              onChange={(e) => setTrafficFilter(e.target.value as "all" | ProbationZone)}
               value={trafficFilter}
             >
               <option value="all">All zones</option>
+              <option value="overdue">Overdue decision</option>
               <option value="safe">Safe</option>
               <option value="warning">Warning</option>
               <option value="critical">Critical</option>
@@ -581,16 +623,16 @@ export function EmployeeProbationDashboard({
           breakpoint="lg"
           cols={
             <colgroup>
-              <col className="w-[14%]" />
-              <col className="w-[12%]" />
+              <col className="w-[13%]" />
+              <col className="w-[11%]" />
               <col className="w-[12%]" />
               <col className="w-[9%]" />
               <col className="w-[9%]" />
-              <col className="w-[6%]" />
-              <col className="w-[10%]" />
+              <col className="w-[8%]" />
               <col className="w-[8%]" />
               <col className="w-[10%]" />
-              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
             </colgroup>
           }
         >
@@ -631,7 +673,7 @@ export function EmployeeProbationDashboard({
                 </tr>
               ) : (
                 pageRows.map((row) => {
-                  const traffic = classifyProbationTrafficStatus(row.days_remaining);
+                  const traffic = classifyProbationRowZone(row);
                   const progress = calculateProbationProgress(row.days_remaining);
                   const colors = zoneColor(traffic);
                   const allowed = getAllowedActions(row);
@@ -644,7 +686,6 @@ export function EmployeeProbationDashboard({
                       {/* Employee */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="font-semibold text-slate-800">{row.full_name}</p>
-                        <p className="mt-0.5 text-phx-xs text-slate-400">{row.hr_id}</p>
                       </td>
 
                       {/* Job Title */}
@@ -670,12 +711,12 @@ export function EmployeeProbationDashboard({
 
                       {/* Days */}
                       <td className="border-r border-slate-100 px-3 py-3 font-bold text-slate-800 sm:px-4">
-                        {Math.max(0, row.days_remaining)}
+                        {daysCellText(row)}
                       </td>
 
                       {/* Progress */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
-                        <div className="min-w-[100px]">
+                        <div>
                           <div
                             aria-label={`Probation progress for ${row.full_name}`}
                             aria-valuemax={100}
@@ -700,7 +741,7 @@ export function EmployeeProbationDashboard({
                         <span
                           className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
                         >
-                          {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
+                          {zoneLabel(traffic)}
                         </span>
                       </td>
 
@@ -755,7 +796,7 @@ export function EmployeeProbationDashboard({
             </div>
           ) : (
             pageRows.map((row) => {
-              const traffic = classifyProbationTrafficStatus(row.days_remaining);
+              const traffic = classifyProbationRowZone(row);
               const progress = calculateProbationProgress(row.days_remaining);
               const colors = zoneColor(traffic);
               const allowed = getAllowedActions(row);
@@ -774,15 +815,12 @@ export function EmployeeProbationDashboard({
                     <span
                       className={`shrink-0 rounded px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
                     >
-                      {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
+                      {zoneLabel(traffic)}
                     </span>
                   </div>
 
                   {/* Metadata pills */}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
-                      {row.hr_id}
-                    </span>
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
                       {row.line_name}
                     </span>
@@ -812,7 +850,7 @@ export function EmployeeProbationDashboard({
                   <div className="mt-2 flex justify-between text-phx-xs text-slate-400">
                     <span>Hired {formatDate(row.hire_date)}</span>
                     <span>Ends {formatDate(row.probation_end_date)}</span>
-                    <span>{Math.max(0, row.days_remaining)}d left</span>
+                    <span>{row.overdue_decision ? daysCellText(row) : `${Math.max(0, row.days_remaining)}d left`}</span>
                     <span>{progress}%</span>
                   </div>
 
@@ -879,7 +917,7 @@ export function EmployeeProbationDashboard({
               {actionLabel(selectedAction.action)}: {selectedAction.row.full_name}
             </h3>
             <p className="mt-0.5 text-phx-xs text-slate-400">
-              {selectedAction.row.hr_id} | {workflowStatusLabel(selectedAction.row.workflow?.status)} | ends {formatDate(selectedAction.row.probation_end_date)}
+              {workflowStatusLabel(selectedAction.row.workflow?.status)} | ends {formatDate(selectedAction.row.probation_end_date)}
             </p>
           </div>
 
