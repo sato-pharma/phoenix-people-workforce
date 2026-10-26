@@ -321,10 +321,16 @@ function assertChargeable(candidate: CandidateForCharge) {
   }
 }
 
-/** The day the balance period is read from: the deduction's first date, else the first of its month. */
-function anchorDate(candidate: CandidateForCharge): string {
-  if (candidate.dates[0] && /^\d{4}-\d{2}-\d{2}/.test(candidate.dates[0])) return candidate.dates[0].slice(0, 10);
-  return `${candidate.monthKey.slice(0, 7)}-01`;
+/**
+ * The day the balance period is read from: the deduction's first date INSIDE its own month, else the
+ * first of its month. A Head Office cycle row (deductions/cycle.ts) starts on the 22nd of the PREVIOUS
+ * month — January's starts on 22 December — and anchoring there would charge January's payroll row to
+ * last year's balance.
+ */
+export function anchorDate(candidate: Pick<CandidateForCharge, "monthKey" | "dates">): string {
+  const monthKey = candidate.monthKey.slice(0, 7);
+  const inMonth = candidate.dates.find((date) => /^\d{4}-\d{2}-\d{2}/.test(date) && date.startsWith(monthKey));
+  return inMonth ? inMonth.slice(0, 10) : `${monthKey}-01`;
 }
 
 export type LeaveBalancePreview = {

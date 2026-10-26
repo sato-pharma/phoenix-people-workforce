@@ -87,21 +87,40 @@ export async function runDeductionsCurrentMonthGuardTests(): Promise<void> {
   // guard "fixed" at 4am. The button must be disabled and the reason stated in plain words instead.
   {
     const workspace = readFileSync("src/components/admin/deductions-workspace.tsx", "utf8");
+    const page = () => readFileSync("app/(admin)/admin/deductions/page.tsx", "utf8");
 
     assert.match(
       workspace,
       /const monthHasFinished = monthKey < currentCairoMonthKey;/,
       "the workspace must derive whether the selected month has finished, from a boundary passed by the server page",
     );
+    // From October 2026 the control runs one of two cycles (cycle.ts). The gate is the selected
+    // cycle's own window: the Head Office window (22nd → 21st) ends on the 21st, the calendar month on
+    // its last day — and for the calendar cycle it is still exactly `monthHasFinished`.
     assert.match(
       workspace,
-      /disabled=\{collecting \|\| !monthHasFinished\}/,
-      "the Run collection button must be DISABLED for a month that has not finished — otherwise it fires six requests the server refuses and reports them as failures",
+      /const windowHasFinished = officeWindow \? isCycleWindowCollectable\(officeWindow, currentCairoDateIso\) : monthHasFinished;/,
+      "the gate must be the SELECTED cycle's window — the Head Office window by Cairo date, the calendar month exactly as before",
     );
     assert.match(
       workspace,
-      /if \(!monthHasFinished\) return;/,
+      /disabled=\{collecting \|\| !windowHasFinished\}/,
+      "the Run collection button must be DISABLED for a window that has not finished — otherwise it fires six requests the server refuses and reports them as failures",
+    );
+    assert.match(
+      workspace,
+      /if \(!windowHasFinished\) return;/,
       "runCollection must also refuse directly, so a stray call cannot fan out into six refusals",
+    );
+    assert.match(
+      workspace,
+      /and has not\s+finished — it can be collected from the day after/,
+      "the page must SAY why the button is disabled for an unfinished Head Office window, too",
+    );
+    assert.match(
+      page(),
+      /currentCairoDateIso=\{currentCairoDateIso\}/,
+      "the server page must pass today's Cairo DATE — the Head Office window ends mid-month, so a month key cannot gate it",
     );
     assert.match(
       workspace,
@@ -116,9 +135,8 @@ export async function runDeductionsCurrentMonthGuardTests(): Promise<void> {
       "the client workspace must NOT import the server-side collector module — compare the month keys as strings instead",
     );
 
-    const page = readFileSync("app/(admin)/admin/deductions/page.tsx", "utf8");
     assert.match(
-      page,
+      page(),
       /currentCairoMonthKey=\{initialMonthKey\}/,
       "the server page must pass the Cairo month boundary to the workspace — the client has no trustworthy clock for this",
     );

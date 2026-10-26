@@ -38,6 +38,7 @@ import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
 import { loadProvenWorkedDays, provenWorkedDayReason, type ProvenWorkedDays } from "../proven-worked-days.ts";
+import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft, DeductionsSeverity } from "../types.ts";
 
 function lastDayOfMonth(year: number, month: number): number {
@@ -332,7 +333,7 @@ export async function loadFieldReviewClaimedDays(input: { month: number; year: n
       .from("deductions_candidates")
       .select("id,employee_hr_id,dates")
       .eq("category", "field_review")
-      .eq("month_key", monthKey)
+      .in("month_key", ledgerClaimMonthKeys(monthKey))
       .is("superseded_at", null)
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);

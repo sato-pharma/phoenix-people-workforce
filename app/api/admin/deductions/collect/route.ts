@@ -7,6 +7,7 @@ import {
   collectOneConnectorForMonth,
   isDeductionCollectorKey,
 } from "@/lib/deductions/collect.ts";
+import { isDeductionCycle } from "@/lib/deductions/cycle.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -18,6 +19,8 @@ type CollectBody = {
   month?: unknown;
   year?: unknown;
   connector?: unknown;
+  /** "office" (the Head Office 22nd → 21st cycle, one-part pay) or "calendar" (the default). */
+  cycle?: unknown;
 };
 
 /**
@@ -52,6 +55,13 @@ export async function POST(request: Request) {
       throw new Error("Validation: year must be an integer between 2000 and 2100.");
     }
 
+    // Absent means the calendar month — every caller before the two cycles keeps its meaning. Anything
+    // else that is not a known cycle is refused rather than quietly run as the calendar month.
+    const cycle = body.cycle === undefined || body.cycle === null ? "calendar" : body.cycle;
+    if (!isDeductionCycle(cycle)) {
+      throw new Error('Validation: cycle must be "office" or "calendar".');
+    }
+
     const plan = DEDUCTION_COLLECTORS.map((collector) => ({ key: collector.key, label: collector.label }));
 
     if (body.connector === undefined || body.connector === null) {
@@ -63,12 +73,13 @@ export async function POST(request: Request) {
 
     const result = await collectOneConnectorForMonth({
       connector: body.connector,
+      cycle,
       month,
       year,
       createdBy: access.hrId ?? access.loginId ?? "unknown",
     });
 
-    return NextResponse.json({ success: true, connector: body.connector, result });
+    return NextResponse.json({ success: true, connector: body.connector, cycle, result });
   } catch (error) {
     return jsonError(error, "Failed to run the monthly deductions collection.");
   }

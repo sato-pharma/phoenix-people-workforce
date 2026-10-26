@@ -63,6 +63,7 @@ import { monthKeyLabel, payrollMonthState } from "@/lib/dispute-center/payroll-m
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { calculateDeductionAmountFromBaseSalary, resolveAppliedDeductionDates } from "@/lib/deductions/calculations.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
+import { ledgerClaimMonthKeys } from "@/lib/deductions/cycle.ts";
 import { isDeductionExemptEmployee } from "@/lib/deductions/exempt-employees.ts";
 import { insertCandidateDrafts } from "@/lib/deductions/service.ts";
 import { deductionsCategoryNames, type DeductionsCandidateDraft, type DeductionsCategory } from "@/lib/deductions/types.ts";
@@ -708,7 +709,10 @@ export function liveBridgeDeps(): HrOpsBridgeDeps {
       const { data, error } = await getSupabaseAdmin()
         .from("deductions_candidates")
         .select("category,source_system,dates,deductions_decisions(decision_status,applied_dates)")
-        .eq("month_key", monthKey)
+        // This month AND the next: a one-part employee's day from the 22nd on is charged on the Head
+        // Office cycle row of the FOLLOWING payroll month (deductions/cycle.ts) — reading only this
+        // month would charge that day a second time.
+        .in("month_key", ledgerClaimMonthKeys(monthKey))
         .eq("employee_hr_id_compact", compact)
         .in("category", [...FIELD_DAY_CLAIM_CATEGORIES])
         .is("superseded_at", null);

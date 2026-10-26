@@ -478,6 +478,7 @@ import { runDeductionsCrmSuspectDateWeightingTests } from "./deductions-crm-susp
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
+import { runDeductionsCycleTests } from "./deductions-cycle.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
 import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
@@ -3992,6 +3993,10 @@ await runTest(
 await runTest(
   "deductions current-month guard (an unfinished month is never collectable, on Cairo boundaries)",
   runDeductionsCurrentMonthGuardTests,
+);
+await runTest(
+  "deductions two cycles (one-part pay on the Head Office 22nd → 21st cycle from October 2026, two-part on the calendar month; windows tile, every employee on exactly one, a cycle row may leave its month only inside its exact window, and every already-charged read looks one month further)",
+  runDeductionsCycleTests,
 );
 await runTest(
   "daily deductions range + clip (only elapsed days count; clip-to-range prorates days and money together)",

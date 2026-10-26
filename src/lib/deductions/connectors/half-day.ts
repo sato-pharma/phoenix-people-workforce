@@ -50,6 +50,7 @@ import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 import { DeductionsConnectorDegradedError, assertBaseSalaryMapLoaded } from "./health.ts";
+import { ledgerClaimMonthKeys } from "../cycle.ts";
 import { detectSuspectDatesFromCounts, getSuspectDatesForMonth } from "./crm.ts";
 import { ledgerRowStillClaimsItsDays } from "./vacation.ts";
 
@@ -193,7 +194,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
           supabase
             .from("deductions_candidates")
             .select("employee_hr_id_compact, employee_name, dates, category, locked_at, source_system")
-            .eq("month_key", monthKey)
+            .in("month_key", ledgerClaimMonthKeys(monthKey))
             .is("superseded_at", null)
             .order("id", { ascending: true })
             .range(from, to),

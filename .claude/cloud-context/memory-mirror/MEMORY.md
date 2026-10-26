@@ -31,6 +31,8 @@
 ## Inbox — new notes land here
 
 - [grep `origin/main` for the BEHAVIOUR before building a fix](another-session-may-have-already-shipped-your-fix.md) — a parallel session shipped the same 23-file sales fix at 07:14 Cairo; the duplicate PR cost a full validation run and would have regressed a shipped window design.
+- [Claude app 3.6556.2 KEPT; NVIDIA preference is ignored](claude-app-3-6556-2-kept-and-nvidia-is-ignored.md) — 2026-10-26 he kept the auto-updated build (turn box back, reply buttons); Claude draws on the Intel chip whatever Windows says; a tray restart is the measured lever.
+- [the pharmacy-database sync runs only by hand](pharmacy-database-sync-runs-only-by-hand.md) — no app code calls it; the 2026-10-26 run caught up 30,779 codes across every distributor (batch c84d9ccc), not just the file in hand.
 
 
 

@@ -74,6 +74,8 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 // on-demand confirmation converge on ONE candidate instead of double-charging.
 import { assertFingerprintDayApprovable, insertCandidateDrafts, listCandidatesForMonth, recordDecision } from "@/lib/deductions/service.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
+import { dayChargeTarget, ledgerClaimMonthKeys, OFFICE_CYCLE_FIRST_MONTH_KEY } from "@/lib/deductions/cycle.ts";
+import { loadOnePartEmployeeCompacts } from "@/lib/deductions/cycle-population.ts";
 import type { DeductionsCandidateDraft, DeductionsDecision } from "@/lib/deductions/types.ts";
 import type { AccessContext } from "@/lib/auth/permissions";
 
@@ -510,8 +512,12 @@ export async function getEmployeeDayDeductionDecisions(input: {
   const map = new Map<string, EmployeeDayDecisionInfo>();
   if (!hrId || !compact) return map;
 
+  // Each day's month AND the next — a one-part employee's day from the 22nd on sits on the Head
+  // Office cycle row of the following payroll month (deductions/cycle.ts).
   const monthKeys = new Set<string>();
-  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) monthKeys.add(dateIso.slice(0, 7));
+  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) {
+    for (const monthKey of ledgerClaimMonthKeys(dateIso.slice(0, 7))) monthKeys.add(monthKey);
+  }
 
   for (const monthKey of monthKeys) {
     const candidates = await listCandidatesForMonth({ monthKey, category: "fingerprint", employeeHrIdCompact: compact });
@@ -548,7 +554,9 @@ export async function getAllEmployeesFingerprintDeductionsSummary(input: {
   dateToIso: string;
 }): Promise<EmployeeDeductionSummaryRow[]> {
   const monthKeys = new Set<string>();
-  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) monthKeys.add(dateIso.slice(0, 7));
+  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) {
+    for (const monthKey of ledgerClaimMonthKeys(dateIso.slice(0, 7))) monthKeys.add(monthKey);
+  }
 
   const [names] = await Promise.all([loadEmployeeNameMap()]);
 
@@ -633,16 +641,23 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
   const isManualDeduction = day.deductionDays <= 0;
   const systemDays = isManualDeduction ? days : day.deductionDays;
   const rawValue = Math.round(systemDays * 100) / 100;
-  const monthKey = input.dateIso.slice(0, 7);
-  const month = Number(monthKey.slice(5, 7));
-  const year = Number(monthKey.slice(0, 4));
+  // The payroll month this day is charged to — the SAME month the collection run keys it to
+  // (deductions/cycle.ts). From October 2026 an employee paid in one part is on the Head Office cycle,
+  // so his day from the 22nd on belongs to the NEXT payroll month; keyed to its calendar month it would
+  // sit beside the office row for the same day and be charged twice. An unreadable directory refuses.
+  const calendarMonthKey = input.dateIso.slice(0, 7);
+  const isOnePart =
+    calendarMonthKey >= OFFICE_CYCLE_FIRST_MONTH_KEY ? (await loadOnePartEmployeeCompacts()).has(compact) : false;
+  const target = dayChargeTarget(input.dateIso, isOnePart);
+  const { monthKey, month, year } = target;
+  // Priced on the day's own calendar month, as the connector that finds the same day prices it.
   const estimatedAmount =
     dayReport.baseSalary != null
       ? (calculateDeductionAmountFromBaseSalary({
           baseSalary: dayReport.baseSalary,
           deductionDays: systemDays,
-          month,
-          year,
+          month: Number(calendarMonthKey.slice(5, 7)),
+          year: Number(calendarMonthKey.slice(0, 4)),
         }) ?? null)
       : null;
 
@@ -669,13 +684,20 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
   //    confirmation here). listCandidatesForMonth returns the whole month already paged; matching
   //    on the alias-aware compact key + the day is the primary dedup — it catches the common
   //    "collector ran first" case even if source_record_id cased differently.
+  //    The day's calendar month AND the next one: an office-cycle row of the next payroll month carries
+  //    the 22nd on, and a row an earlier path keyed to the calendar month may already hold the day —
+  //    either way the day is decided on the row that has it, never added a second time.
   const resolveExisting = async () => {
-    const monthCandidates = await listCandidatesForMonth({
-      monthKey,
-      category: "fingerprint",
-      employeeHrIdCompact: compact,
-    });
-    return monthCandidates.find((candidate) => candidate.dates.includes(input.dateIso)) ?? null;
+    for (const claimMonthKey of ledgerClaimMonthKeys(calendarMonthKey)) {
+      const monthCandidates = await listCandidatesForMonth({
+        monthKey: claimMonthKey,
+        category: "fingerprint",
+        employeeHrIdCompact: compact,
+      });
+      const found = monthCandidates.find((candidate) => candidate.dates.includes(input.dateIso));
+      if (found) return found;
+    }
+    return null;
   };
 
   let candidate = await resolveExisting();
@@ -719,6 +741,7 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
         shortMinutes: day.shortMinutes,
         outcome: day.outcome,
         reasonText: day.reason,
+        ...(target.cycleEvidence ? { deductionCycle: target.cycleEvidence } : {}),
       },
       dates: [input.dateIso],
       hierarchySnapshot: { jobTitle: dayReport.jobTitle },
