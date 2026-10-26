@@ -40,6 +40,7 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { DirectOrderVenueValidationPhotos } from "@/components/approvals-hub/direct-order-venue-validation-photos";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
+import { utcDate } from "@/lib/format/cairo-datetime";
 import { AttachDirectOrderInvoice } from "@/components/direct-orders/attach-direct-order-invoice";
 import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
 import { NotFieldValidatedLine } from "@/components/validation/not-field-validated-line";
@@ -235,7 +236,7 @@ export function DirectOrderRequestDetail({
   // instead. Null on a one-product order, which keeps the request-level rendering it always had.
   const basketLines = describeDirectOrderBasketLines(detail);
   const basketOverCap = basketLines?.some((line) => line.overCap) ?? false;
-  const collectionDateLabel = request.collectionDate ? String(request.collectionDate).slice(0, 10) : "—";
+  const collectionDateLabel = request.collectionDate ? utcDate(request.collectionDate) : "—";
   // The one candidate the Distributors block speaks about, read once so the FIELDS and the callout
   // below them can never describe different things — which is exactly how they came to contradict.
   const candidateMatch = possibleDistributorMatches[0] ?? null;

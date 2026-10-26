@@ -26,6 +26,16 @@ import { getMyResignations, getResignationsDashboardData } from "@/lib/resignati
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { listMyDirectOrders } from "@/lib/direct-orders/service";
 import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
+import { formatHistoryMoney, historyDate, historyPlanPeriod } from "@/lib/action-center/approval-history-format";
+import {
+  buildLeaveHistory,
+  directOrderHistoryRow,
+  marketingStanding,
+  resolveHistoryOutcome,
+  type HistoryDirectOrderParent,
+  type HistoryLeaveRequestRow,
+  type HistoryLeaveStepRow,
+} from "@/lib/action-center/approval-history-outcome";
 import type { DirectOrderApprovalListItem } from "@/lib/direct-orders/types";
 import type { VacationRequestRecord } from "@/lib/vacation/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -150,7 +160,7 @@ function mapResignationRecord(row: ResignationRecord): MyRequestItem {
 
 /** EGP amount formatted the same way every other money line in this hub is. */
 function egp(amount: number): string {
-  return `${Number(amount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
+  return formatHistoryMoney(amount);
 }
 
 /** The deal term an approver actually has to judge: bonus units, or a discount percentage. */
@@ -692,6 +702,8 @@ type DecidedPlanRow = {
   employee_job_title: string | null;
   manager_hr_id: string | null;
   period_key: string | null;
+  period_start_date: string | null;
+  period_end_date: string | null;
   plan_kind: string | null;
   status: string | null;
   manager_decision_at: string | null;
@@ -765,7 +777,7 @@ type DecidedVacationStepRow = {
   status: string | null;
   approver_hr_id: string | null;
   decided_at: string | null;
-  v2_vacation_requests: unknown;
+  v2_vacation_requests: HistoryLeaveStepRow["v2_vacation_requests"];
 };
 
 type DecidedDirectOrderEventRow = {
@@ -892,7 +904,7 @@ export async function getMyApprovalHistory(
       feed("weekly_plan", () => fetchAllApprovalRows<DecidedPlanRow>(() =>
         db
           .from("employee_plan_headers")
-          .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+          .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,period_start_date,period_end_date,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
           .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
           .not("manager_decision_at", "is", null)
           .order("manager_decision_at", { ascending: false })
@@ -924,7 +936,7 @@ export async function getMyApprovalHistory(
       feed("marketing_request", () => fetchAllApprovalRows<DecidedMarketingStepRow>(() =>
         db
           .from("marketing_request_approval_steps")
-          .select("id,request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id)")
+          .select("id,request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id,status)")
           .or(decidedByAnyOfMine("decision_by_hr_id"))
           .not("decision_at", "is", null)
           .order("decision_at", { ascending: false })
@@ -940,12 +952,16 @@ export async function getMyApprovalHistory(
       // manager_of_manager and manager_level_3 decisions are never written to the main request's
       // manager_decision_by_hr_id column (only direct_manager is). Query the
       // steps table directly so the secondary manager sees their history too.
+      // EVERY step key is read, not just those two (owner, 2026-10-26): the request row stores the
+      // direct manager's id as typed at the time, and it drifts — Hany Saad's leave carries "AA"
+      // there while the step is his own A-12 — so the request feed alone misses a request the
+      // viewer really decided, and only the steps table, keyed on the approver, finds it. A request
+      // in both feeds is listed once. The request's `status` rides along: it is the FINAL outcome.
       // `id` is selected for the same reason as the marketing steps above.
       feed("leave", () => fetchAllApprovalRows<DecidedVacationStepRow>(() =>
         db
           .from("v2_vacation_approval_steps")
-          .select("id,request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
-          .in("step_key", ["manager_of_manager", "manager_level_3"])
+          .select("id,request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date,status)")
           .or(decidedByAnyOfMine("approver_hr_id"))
           .neq("status", "pending")
           .not("decided_at", "is", null)
@@ -958,7 +974,7 @@ export async function getMyApprovalHistory(
       feed("direct_order", () => fetchAllApprovalRows<DecidedDirectOrderEventRow>(() =>
         db
           .from("direct_order_events")
-          .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(product_name,qty,sales_value,requester_hr_id)")
+          .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(status,product_name,qty,sales_value,requester_hr_id,direct_order_pharmacies(pharmacy_name),direct_order_request_items(line_no,product_name,qty))")
           .or(decidedByAnyOfMine("actor_hr_id"))
           .in("event_type", ["approve", "reject", "return"])
           .order("created_at", { ascending: false })
@@ -968,54 +984,24 @@ export async function getMyApprovalHistory(
 
   const employees = directoryResult.status === "fulfilled" ? directoryResult.value : [];
 
-  if (leaves.status === "fulfilled" && !leaves.value.error) {
-    for (const row of leaves.value.data ?? []) {
-      const isMgrDecider = decidedByMe(row.manager_decision_by_hr_id);
-      const isHrDecider = decidedByMe(row.hr_decision_by_hr_id);
-      const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
-      const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
-      // A return stamps manager_decision_at/_by but cannot touch manager_decision (its check allows only
-      // approved/rejected), so it is NULL on a first-stage return and still "approved" when HR returns
-      // after the direct manager approved. The request's current status is the truth, so it wins.
-      const decision = row.status === "returned" ? ("returned" as const) : decodeDecision(decisionRaw);
-      if (!decision || (!isMgrDecider && !isHrDecider)) continue;
-      items.push({
-        id: `history:leave:${row.id}`,
-        module: "leave",
-        employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
-        employeeHrId: String(row.employee_hr_id ?? ""),
-        title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
-        decision,
-        decidedAt: String(decidedAt ?? ""),
-        href: historyHref("leave", row.id),
-      });
-    }
-  }
-
-  // Secondary manager (manager_of_manager) decisions — not in the main leaves query above.
-  if (momSteps.status === "fulfilled" && !momSteps.value.error) {
-    const seenLeaveIds = new Set(
-      items.filter((i) => i.module === "leave").map((i) => i.id.replace(/^history:leave:/, "")),
-    );
-    for (const row of momSteps.value.data ?? []) {
-      const reqId = String(row.request_id ?? "");
-      if (!reqId || seenLeaveIds.has(reqId)) continue;
-      const req = (row as { v2_vacation_requests?: { employee_name?: string; employee_hr_id?: string; vacation_type?: string; start_date?: string } | null }).v2_vacation_requests;
-      if (!req) continue;
-      const decision = row.status === "approved" ? "approved" as const : row.status === "rejected" ? "rejected" as const : null;
-      if (!decision) continue;
-      items.push({
-        id: `history:leave:${reqId}`,
-        module: "leave",
-        employeeName: liveEmployeeName(employees, String(req.employee_hr_id ?? ""), String(req.employee_name ?? "Unknown")),
-        employeeHrId: String(req.employee_hr_id ?? ""),
-        title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
-        decision,
-        decidedAt: String(row.decided_at ?? ""),
-        href: historyHref("leave", reqId),
-      });
-    }
-  }
+  // LEAVE. Two feeds (the request row for the direct manager and HR, the steps table for every other
+  // approver — and for a direct manager whose stored id drifted), merged into one row per request
+  // whose outcome is the request's FINAL status, not the viewer's own step. See approval-history-outcome.ts.
+  const leaveRequestRows: HistoryLeaveRequestRow[] =
+    leaves.status === "fulfilled" && !leaves.value.error ? (leaves.value.data ?? []) : [];
+  const leaveStepRows: HistoryLeaveStepRow[] =
+    momSteps.status === "fulfilled" && !momSteps.value.error ? (momSteps.value.data ?? []) : [];
+  items.push(
+    ...buildLeaveHistory(
+      { requests: leaveRequestRows, steps: leaveStepRows },
+      {
+        decidedByMe,
+        decode: decodeDecision,
+        personName: (id, fallback) => liveEmployeeName(employees, id, fallback),
+        hrefFor: (requestId) => historyHref("leave", requestId),
+      },
+    ),
+  );
 
   if (excuses.status === "fulfilled" && !excuses.value.error) {
     for (const row of excuses.value.data ?? []) {
@@ -1026,7 +1012,7 @@ export async function getMyApprovalHistory(
         module: "excuse",
         employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
-        title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
+        title: `Excuse · ${String(row.excuse_type ?? "")}${historyDate(row.excuse_date) ? ` · ${historyDate(row.excuse_date)}` : ""}`,
         decision,
         decidedAt: String(row.manager_decision_at ?? ""),
         href: historyHref("excuse", row.id),
@@ -1061,7 +1047,7 @@ export async function getMyApprovalHistory(
         module: "weekly_plan",
         employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
-        title: `${String(row.plan_kind ?? "weekly").charAt(0).toUpperCase()}${String(row.plan_kind ?? "weekly").slice(1)} plan · ${row.period_key ?? ""}`,
+        title: `${String(row.plan_kind ?? "weekly").charAt(0).toUpperCase()}${String(row.plan_kind ?? "weekly").slice(1)} plan · ${historyPlanPeriod(row.period_start_date, row.period_end_date, row.period_key)}`,
         decision,
         decidedAt: String(decidedAt ?? ""),
         href: historyHref("weekly_plan", row.id),
@@ -1090,7 +1076,7 @@ export async function getMyApprovalHistory(
         module: "resignation",
         employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
-        title: `Resignation · effective ${row.effective_date ?? ""}`,
+        title: `Resignation${historyDate(row.effective_date) ? ` · effective ${historyDate(row.effective_date)}` : ""}`,
         decision,
         decidedAt: String(decidedAt ?? ""),
         href: historyHref("resignation", row.id),
@@ -1134,16 +1120,24 @@ export async function getMyApprovalHistory(
 
   if (marketingSteps.status === "fulfilled" && !marketingSteps.value.error) {
     for (const row of marketingSteps.value.data ?? []) {
-      const decision = decodeDecision(row.status);
-      if (!decision) continue;
-      const parent = (row as { marketing_requests?: { request_code?: string | null; requester_hr_id?: string | null } | null }).marketing_requests;
+      const stepDecision = decodeDecision(row.status);
+      if (!stepDecision) continue;
+      const rawParent = (row as { marketing_requests?: unknown }).marketing_requests;
+      const parent = (Array.isArray(rawParent) ? rawParent[0] : rawParent) as
+        | { request_code?: string | null; requester_hr_id?: string | null; status?: string | null }
+        | null
+        | undefined;
+      // The REQUESTER is who the row is about (it used to print the request code in that slot), and
+      // the badge is where the request ENDED, not this one approval step.
+      const outcome = resolveHistoryOutcome(stepDecision, marketingStanding(parent?.status));
       items.push({
         id: `history:marketing:${row.request_id}:${row.step_name ?? ""}`,
         module: "marketing_request",
-        employeeName: String(parent?.request_code ?? "Marketing request"),
+        employeeName: liveEmployeeName(employees, parent?.requester_hr_id, "Marketing request"),
         employeeHrId: String(parent?.requester_hr_id ?? ""),
         title: `Marketing · ${String(row.step_name ?? "approval")}`,
-        decision,
+        decision: outcome.decision,
+        outcomeNote: outcome.note,
         decidedAt: String(row.decision_at ?? ""),
         href: NATIVE_HREFS.marketing_request,
       });
@@ -1157,7 +1151,7 @@ export async function getMyApprovalHistory(
         module: "payroll_expense",
         employeeName: liveEmployeeName(employees, String(row.hr_id ?? ""), String(row.specialist ?? "Expense")),
         employeeHrId: String(row.hr_id ?? ""),
-        title: `Expense · ${Number(row.total ?? 0).toLocaleString()} EGP · ${String(row.expense_date ?? "")}`,
+        title: `Expense · ${formatHistoryMoney(row.total)}${historyDate(row.expense_date) ? ` · ${historyDate(row.expense_date)}` : ""}`,
         decision: "approved",
         decidedAt: String(row.approved_at ?? ""),
         href: NATIVE_HREFS.payroll_expense,
@@ -1170,25 +1164,26 @@ export async function getMyApprovalHistory(
       // The embedded parent can come back as an object or a one-element array depending on how
       // PostgREST resolves the relationship; normalize both rather than assuming one shape.
       const rawParent = (row as Record<string, unknown>).direct_order_requests;
-      const parent = (Array.isArray(rawParent) ? rawParent[0] : rawParent) as Record<string, unknown> | null | undefined;
+      const parent = (Array.isArray(rawParent) ? rawParent[0] : rawParent) as HistoryDirectOrderParent | null | undefined;
       const eventType = String(row.event_type ?? "");
-      const decision =
+      const viewerDecision =
         eventType === "approve" ? ("approved" as const)
         : eventType === "reject" ? ("rejected" as const)
         : eventType === "return" ? ("returned" as const)
         : null;
-      if (!decision) continue;
+      if (!viewerDecision) continue;
       const requesterHrId = String(parent?.requester_hr_id ?? "");
-      const productName = String(parent?.product_name ?? "Direct order");
-      const qty = Number(parent?.qty ?? 0);
-      const salesValue = Number(parent?.sales_value ?? 0);
+      // The badge is where the ORDER ended, and the title names the pharmacy and EVERY product with
+      // its own units (a multi-product order used to print its first product alone).
+      const outcome = directOrderHistoryRow(viewerDecision, parent);
       items.push({
         id: `history:direct_order:${row.id}`,
         module: "direct_order",
-        employeeName: liveEmployeeName(employees, requesterHrId, requesterHrId || "Direct order"),
+        employeeName: liveEmployeeName(employees, requesterHrId, "Direct order"),
         employeeHrId: requesterHrId,
-        title: `Direct order · ${productName} · ${qty} unit(s) · ${egp(salesValue)}`,
-        decision,
+        title: outcome.title,
+        decision: outcome.decision,
+        outcomeNote: outcome.note,
         decidedAt: String(row.created_at ?? ""),
         href: directOrderHistoryHref(row.request_id),
       });
