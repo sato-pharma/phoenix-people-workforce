@@ -20,7 +20,7 @@ import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
-import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { buildCrmIdentityMaps, getCrmIdentityResolutions, resolveEmployeeHrId } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmResolutionRow } from "@/lib/crm/types";
@@ -609,14 +609,24 @@ async function paginateLiveMirrorVisits(
 // than deleting the correction outright — is deliberate: the mirror's stored `agent_hr_id` is only
 // re-stamped when the sync next touches a row, so until then `visit.agent_hr_id` still holds the
 // leaver's id and dropping the correction would visibly regress this module.
-type CrmOverrideMap = ReadonlyMap<string, string>;
+//
+// 🔴 BUT ONLY THROUGH THE SHARED WATERFALL, NEVER AS A BARE crm_id → hr_id LOOKUP (2026-10-26). A
+// mapping names who a CRM account belonged to, not who holds it today, and an account passes from a
+// leaver to the next hire on the same territory. Applied bare, the 2026-08-28 mapping of account
+// 1437 ("( Sohag 2 / A )") to Mostafa Khaled, who left on 30 Apr, kept crediting every double visit
+// with Mariam Younan, who has held that account since her 1 Oct hire, to him. So her District
+// Manager's coverage card listed her as never double-visited while the probation watchlist beside it
+// read DV DONE from the same three visits. The waterfall (resolveEmployeeAttribution) scopes the
+// mapping to the label it was saved against and to the mapped person's own employment, so a reseated
+// account heals the day its new holder starts, with nobody having to edit the mapping.
+type CrmOverrideResolver = (visit: MirrorVisitRow) => string | undefined;
 
 function dbRowFromMirrorVisit(
   visit: MirrorVisitRow,
   employeeByHrKey: Map<string, EmployeeDirectoryRow>,
   managerHrIdKeys: Set<string>,
   resolution: DoubleVisitChainResolution | null,
-  crmIdentityOverrides: CrmOverrideMap,
+  resolveOverriddenHrId: CrmOverrideResolver,
 ): DoubleVisitDbRow {
   // When the same-day chain resolves this "manager-visited" row down to the real MR, the visited
   // party becomes that MR (the whole convoy actually saw them); otherwise it stays the recorded
@@ -624,7 +634,7 @@ function dbRowFromMirrorVisit(
   // downstream — coverage, MR scores, calendar — then credits the real, correctly-identified person.
   const rawVisitedHrId = resolution ? resolution.mrHrId : visit.agent_hr_id;
   const correctedHrId = !resolution && visit.agent_crm_id != null
-    ? crmIdentityOverrides.get(String(visit.agent_crm_id))
+    ? resolveOverriddenHrId(visit)
     : undefined;
   const effectiveVisitedHrId = correctedHrId ?? rawVisitedHrId;
   const visitedKey = canonicalHrIdKey(effectiveVisitedHrId);
@@ -838,11 +848,15 @@ export function liveDoubleVisitRowsFromMirror(
   employees: EmployeeDirectoryRow[],
   crmIdentityResolutions: readonly CrmResolutionRow[],
 ): DoubleVisitDbRow[] {
-  const crmIdentityOverrides = new Map<string, string>(
-    crmIdentityResolutions
-      .filter((row) => row.status === "mapped" && row.mappedHrId)
-      .map((row) => [String(row.crmId), row.mappedHrId as string]),
-  );
+  // Only an account an admin mapped is re-resolved here; every other row keeps the hr id the sync
+  // stamped with this same waterfall. A mapped account is answered as the sync answers it on that
+  // row's date — the mapped person inside their own employment, otherwise whoever the account's
+  // crm_id or label names and was employed that day — and a row nobody can own keeps its stamp.
+  const identityMaps = buildCrmIdentityMaps(employees, [...crmIdentityResolutions]);
+  const resolveOverriddenHrId: CrmOverrideResolver = (visit) => {
+    if (!identityMaps.hrIdByManualOverride.has(String(visit.agent_crm_id))) return undefined;
+    return resolveEmployeeHrId(visit.agent_crm_id, visit.agent_name, identityMaps, visit.visit_date) ?? undefined;
+  };
   const employeeByHrKey = new Map(
     employees
       .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
@@ -870,7 +884,7 @@ export function liveDoubleVisitRowsFromMirror(
     (key) => medicalRepHrIdKeys.has(key),
   );
   return mirrorRows.map((visit) =>
-    dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys, chainResolutions.get(visit.id) ?? null, crmIdentityOverrides),
+    dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys, chainResolutions.get(visit.id) ?? null, resolveOverriddenHrId),
   );
 }
 

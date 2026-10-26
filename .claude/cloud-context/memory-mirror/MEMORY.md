@@ -30,6 +30,11 @@
 
 ## Inbox — new notes land here
 - [the 25 Oct DB restart was the 2 GB box swapping again](the-25-oct-restart-was-the-2gb-box-swapping-again.md) - 11 restarts in 14 days, all working hours; work_mem is NOT the lever (0 temp); top load is the Reps List roster fan-out.
+- [AI is pinned to Anthropic on his word](ai-provider-pinned-to-anthropic-on-his-word.md) - `AI_PROVIDER=anthropic` on both prod services since 26 Oct; a fixed OpenAI key does nothing until he says remove it.
+- [Sept 2026 Assuit 1/2 split stays as published](september-2026-assuit-split-stays-as-published.md) - his word 26 Oct: the ~1,001.53 EGP drift is accepted; never re-raise it or suggest re-publishing.
+- [plan-mode prompts are auto-approved by a hook](plan-mode-prompts-are-auto-approved.md) - PermissionRequest hook allows all in plan mode; only the plan approval and his MCQ answers stay his.
+- [a later "max" bust cancels {expire:0}; a worker bust never reaches the website](revalidatetag-max-cancels-expire-zero-and-never-crosses-processes.md) - no cacheHandler, tag state is per process; use {expire:0} where the writer's next screen must show the write.
+- [ALL production backup schemas are kept](production-backup-schemas-are-all-kept.md) - his word 26 Oct: never drop one, never suggest an age-based cleanup, never re-raise it.
 
 
 

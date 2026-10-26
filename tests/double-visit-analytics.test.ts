@@ -248,8 +248,21 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.match(
     service,
-    /const correctedHrId = !resolution && visit\.agent_crm_id != null\s*\n\s*\? crmIdentityOverrides\.get\(String\(visit\.agent_crm_id\)\)\s*\n\s*: undefined;/,
+    /const correctedHrId = !resolution && visit\.agent_crm_id != null\s*\n\s*\? resolveOverriddenHrId\(visit\)\s*\n\s*: undefined;/,
     "a correction must only apply when the same-day chain resolver did not already resolve the row, keyed strictly by agent_crm_id",
+  );
+  // ...and the correction answers through the shared waterfall on the row's own date, never as a bare
+  // crm_id → hr_id lookup: a mapping to a leaver took every visit with the account's new holder
+  // (account 1437, 26 Oct 2026). The behaviour is pinned by tests/double-visit-reseated-account-override.test.ts.
+  assert.match(
+    service,
+    /resolveEmployeeHrId\(visit\.agent_crm_id, visit\.agent_name, identityMaps, visit\.visit_date\)/,
+    "a saved CRM mapping must be applied through the shared waterfall, scoped to the visit date",
+  );
+  assert.doesNotMatch(
+    service,
+    /crmIdentityOverrides\.get\(/,
+    "the bare crm_id → hr_id override lookup must stay retired",
   );
   assert.match(
     service,
