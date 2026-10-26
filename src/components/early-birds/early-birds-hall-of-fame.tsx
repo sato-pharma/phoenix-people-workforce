@@ -1,7 +1,7 @@
 import { Sunrise, Trophy } from "lucide-react";
 
 import { SectionHead, rankChipClass } from "@/components/employee-portal/portal-command-center";
-import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { countWinsByHrIdKey, listMostStars, winnerKey } from "@/lib/early-birds/win-counts";
 import type { EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 
 // Past winners. This is what turns Early Birds from a one-off card into a season-long standings
@@ -83,26 +83,9 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
   // The CoachingStarsOfMonthCard rule: an empty recognition surface is worse than no surface.
   if (winners.length === 0) return null;
 
-  const winCount = new Map<string, number>();
-  for (const winner of winners) {
-    const key = normalizeHrIdForAccess(winner.employeeHrId);
-    if (key) winCount.set(key, (winCount.get(key) ?? 0) + 1);
-  }
-
-  const mostStars = Array.from(
-    winners
-      .reduce((acc, winner) => {
-        const key = normalizeHrIdForAccess(winner.employeeHrId) ?? winner.employeeHrId;
-        const entry = acc.get(key);
-        if (entry) entry.wins += 1;
-        else acc.set(key, { name: winner.employeeName, wins: 1 });
-        return acc;
-      }, new Map<string, { name: string; wins: number }>())
-      .values(),
-  )
-    .filter((entry) => entry.wins > 1)
-    .sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name))
-    .slice(0, 5);
+  // Keyed on the hr id (win-counts.ts), never the name: one rep is stored under several spellings.
+  const winCount = countWinsByHrIdKey(winners);
+  const mostStars = listMostStars(winners);
 
   return (
     <div
@@ -124,8 +107,7 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
           can never be pushed wider than its share whatever the name inside it is. */}
       <div className="grid grid-cols-1 gap-px bg-slate-200 @sm:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4">
         {winners.map((winner) => {
-          const key = normalizeHrIdForAccess(winner.employeeHrId) ?? winner.employeeHrId;
-          return <WinnerCell key={winner.id} winner={winner} wins={winCount.get(key) ?? 1} />;
+          return <WinnerCell key={winner.id} winner={winner} wins={winCount.get(winnerKey(winner)) ?? 1} />;
         })}
       </div>
 
@@ -134,7 +116,7 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
           <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Most stars</p>
           <div className="divide-y divide-slate-100">
             {mostStars.map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-3 py-1.5">
+              <div key={entry.key} className="flex items-center gap-3 py-1.5">
                 {/* The same medal ladder the race panel and every ranking card in the portal use —
                     gold, silver, bronze, then navy — so a rank reads identically across surfaces. */}
                 <span

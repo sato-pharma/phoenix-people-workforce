@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Users } from "lucide-react";
 
 import type { EarlyBirdsDistrict } from "@/lib/early-birds/permissions";
+import { formatDistrictCountChip } from "./early-birds-format";
 import { earlyBirdsHref } from "./early-birds-links";
 
 // WHOSE reps you are looking at — the scope half of the board's control bar.
@@ -61,7 +62,7 @@ export function EarlyBirdsDistrictSwitcher({
         <>
           {scopeLabel ? (
             <span className="max-w-full break-words border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
-              {scopeLabel} · {districts.length} districts
+              {formatDistrictCountChip(scopeLabel, districts.length)}
             </span>
           ) : null}
           <div className="flex min-w-0 flex-wrap gap-1.5">

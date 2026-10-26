@@ -10,6 +10,8 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { collectEarlyBirdsInputs } from "@/lib/early-birds/collect";
+import { countWinsByHrIdKey } from "@/lib/early-birds/win-counts";
+import { completeWinnerIdentities } from "@/lib/early-birds/winner-identity";
 import { buildEarlyBirdsRanking } from "@/lib/early-birds/scoring";
 import {
   currentEarlyBirdsPeriod,
@@ -131,7 +133,9 @@ export async function listEarlyBirdsWinners(input: {
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
     const nationalIds = await listNationalWinnerIds(rows.map((row) => String(row.period_key ?? "")));
 
-    return rows.map((row) => mapWinnerRow(row, nationalIds.has(String(row.id ?? ""))));
+    // Name and area are completed from the employee's live record (winner-identity.ts): the frozen
+    // row left 90 of 125 areas empty and carried the same rep under two spellings.
+    return await completeWinnerIdentities(rows.map((row) => mapWinnerRow(row, nationalIds.has(String(row.id ?? "")))));
   } catch (error) {
     logError("Early Birds winners read failed", {
       labels: { event: "early_birds_winners_read_failed" },
@@ -214,12 +218,7 @@ export async function getEarlyBirdsBoard(input: {
       limit: 12,
     });
 
-    const winCountByHrIdKey = new Map<string, number>();
-    for (const record of winners) {
-      const key = normalizeHrIdForAccess(record.employeeHrId);
-      if (!key) continue;
-      winCountByHrIdKey.set(key, (winCountByHrIdKey.get(key) ?? 0) + 1);
-    }
+    const winCountByHrIdKey = countWinsByHrIdKey(winners);
 
     return {
       ...base,
@@ -292,7 +291,7 @@ export async function getLatestLineEarlyBirds(): Promise<EarlyBirdsWinnerRecord[
     if (rows.length === 0) return [];
 
     const candidates = rows.map((row) => mapWinnerRow(row, String(row.id ?? "") === nationalWinnerId));
-    return pickTopEarlyBirdPerLine(candidates);
+    return await completeWinnerIdentities(pickTopEarlyBirdPerLine(candidates));
   } catch (error) {
     logError("Early Birds line stars read failed", {
       labels: { event: "early_birds_line_stars_read_failed" },

@@ -32,7 +32,7 @@ import {
   EARLY_BIRDS_WEIGHTS,
   buildEarlyBirdsRanking,
 } from "@/lib/early-birds/scoring";
-import { listPendingEarlyBirdsForManagers } from "@/lib/early-birds/decisions";
+import { buildAnnouncement, listPendingEarlyBirdsForManagers } from "@/lib/early-birds/decisions";
 import { notifyEarlyBirdsRecommendation } from "@/lib/early-birds/notify";
 
 /** In-memory throttle on how often the DATABASE is asked. Losing it on restart costs one query. */
@@ -198,7 +198,7 @@ async function autoApproveStaleSnapshots(todayIso: string, storedHrId: (value: s
       p_reason: "Confirmed automatically — no decision was recorded within the window.",
       p_decided_by: storedHrId(snapshot.manager_hr_id),
       p_actor_role: "System",
-      p_announcement: { confirmation_source: "auto" },
+      p_announcement: await buildAnnouncement(current.candidate.id, "auto"),
     });
     if (error) {
       logError("Early Birds auto-approve failed", {

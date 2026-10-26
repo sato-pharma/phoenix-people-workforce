@@ -10,6 +10,7 @@ import { Sunrise } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
+import { formatShownScopeLabel } from "@/components/early-birds/early-birds-format";
 import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -99,7 +100,11 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
     managerHrId: district.hrId,
     managerName: district.name,
     periodKey: period.periodKey,
-    scopeLabel: district.name,
+    scopeLabel: formatShownScopeLabel({
+      scopeLabel: scope.scopeLabel,
+      districtCount: scope.districts.length,
+      districtName: district.name,
+    }),
   });
 
   const requestedRep = params.rep?.trim() ?? "";

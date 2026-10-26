@@ -2340,6 +2340,7 @@ import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runEarlyBirdsBoardWrapsTests } from "./early-birds-board-wraps.test.ts";
+import { runEarlyBirdsHallOfFameIdentityTests } from "./early-birds-hall-of-fame-identity.test.ts";
 import { runMyVisitsTablesFitTests } from "./my-visits-tables-fit.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
@@ -8866,6 +8867,10 @@ await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowra
 await runTest(
   "early birds board wraps and stays square (winner names break, no fixed-width hall-of-fame column, no rounded corner)",
   runEarlyBirdsBoardWrapsTests,
+);
+await runTest(
+  "early birds hall of fame: an empty area falls back to the live area, one rep reads one current name, the win count is keyed on the hr id, and the scope words name the district shown",
+  runEarlyBirdsHallOfFameIdentityTests,
 );
 await runTest(
   "My Visits fits the screen (Medical Rep portal): four desktop tables are w-full table-fixed with a colgroup matching their heads and totalling 100%, never PortalDesktopTable's min-width scroll box, every cell wraps, and the tab strip is an equal grid with the label over its count — no whitespace-nowrap, no ellipsis, no Customer column, the UTC date pin kept",

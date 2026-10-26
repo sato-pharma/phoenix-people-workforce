@@ -18,6 +18,7 @@
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
+import { formatShownScopeLabel } from "@/components/early-birds/early-birds-format";
 import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
@@ -94,7 +95,11 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
     managerHrId: district.hrId,
     managerName: district.name,
     periodKey: period.periodKey,
-    scopeLabel: scope.scopeLabel,
+    scopeLabel: formatShownScopeLabel({
+      scopeLabel: scope.scopeLabel,
+      districtCount: scope.districts.length,
+      districtName: district.name,
+    }),
   });
 
   // The roster of the district and fortnight actually on screen is the only thing `?rep=` is
