@@ -40,6 +40,8 @@ import { reconcileUnattributed } from "@/lib/employee-portal/performance-reconci
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
+import { logError } from "@/lib/observability/log";
+import { creditRepRowsByTenure, loadSeatTenure, type SeatTenure } from "@/lib/sales/seat-tenure-credit";
 import {
   loadSalesSeatTree,
   regionalManagerAbove,
@@ -328,6 +330,37 @@ export function repMembersFromRows(
 }
 
 /**
+ * How a rep LEADERBOARD credits a seat's months. `creditRepsByTenure` (owner, 26 Oct 2026: "Person
+ * who made them") credits each month to the person who held the seat that month and was employed —
+ * never today's holder — so an October hire is not ranked on July–September. Off by default: the
+ * expense forms' medical-trip rep list reads the same builder and must keep today's holders.
+ */
+export type RepBoardOptions = { creditRepsByTenure?: boolean };
+
+/** The seat history when the board asks for it; null (today's holder, as before) when the read fails. */
+async function loadRepTenure(options: RepBoardOptions | undefined): Promise<SeatTenure | null> {
+  if (!options?.creditRepsByTenure) return null;
+  try {
+    return await loadSeatTenure();
+  } catch (error) {
+    logError("Rep leaderboard seat-tenure read failed; crediting today's seat holders", {
+      error,
+      labels: { event: "rep_board_seat_tenure_failed" },
+    });
+    return null;
+  }
+}
+
+/**
+ * The rows a rep leaderboard ranks. Only the leaderboard reads these — every headline total keeps the
+ * rows as loaded, so a month credited to nobody flows into "not attributed to a rep", never out of
+ * the total. Pure.
+ */
+export function repBoardRows(rows: AchievementRow[], tenure: SeatTenure | null): AchievementRow[] {
+  return tenure ? creditRepRowsByTenure(rows, tenure) : rows;
+}
+
+/**
  * Regional Manager roll-up rows (owner, 2026-10-20: the DSMs view had no Regional Manager row).
  *
  * Each row is the SUM of the district-manager rows beneath him and nothing else: every row with a
@@ -439,16 +472,18 @@ export async function buildNsmDsmPerformanceFromSos(
 export async function buildDsmTeamPerformanceFromSos(
   ctx: AccessContext,
   requested: string | string[] | null | undefined,
+  options?: RepBoardOptions,
 ): Promise<DsmTeamPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames, seats] = await Promise.all([
+  const [employeeNames, productNames, seats, tenure] = await Promise.all([
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
+    loadRepTenure(options),
   ]);
 
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
-  const members = repMembersFromRows(used, employeeNames, productNames, seats);
+  const members = repMembersFromRows(repBoardRows(used, tenure), employeeNames, productNames, seats);
   const totals = headlineTotals(used);
   const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, members);
 
@@ -490,17 +525,18 @@ export async function buildCompanyMedRepPerformanceFromSos(
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyMedRepPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
-  const [employeeNames, productNames, seats] = await Promise.all([
+  const [employeeNames, productNames, seats, tenure] = await Promise.all([
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
+    loadRepTenure({ creditRepsByTenure: true }),
   ]);
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
 
   const lines: CompanyMedRepPerformanceLine[] = [];
   for (const [lineCode, meta] of lineMetaByCode) {
     const lineRows = used.filter((row) => row.lineCode === lineCode);
-    const members = repMembersFromRows(lineRows, employeeNames, productNames, seats);
+    const members = repMembersFromRows(repBoardRows(lineRows, tenure), employeeNames, productNames, seats);
     if (members.length === 0) continue;
     const totals = headlineTotals(lineRows);
     const lineUnattributed = reconcileUnattributed(totals, members);
@@ -632,10 +668,11 @@ export async function buildRmRegionalPerformanceFromSos(
       ? relevantAll.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode))
       : relevantAll;
   const activePeriods = activePeriodsOf(relevant, publishedKeys);
-  const [employeeNames, productNames, seats] = await Promise.all([
+  const [employeeNames, productNames, seats, tenure] = await Promise.all([
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
+    loadRepTenure({ creditRepsByTenure: true }),
   ]);
   const used = selectRows(relevant, activePeriods, requested, publishedKeys);
 
@@ -643,7 +680,7 @@ export async function buildRmRegionalPerformanceFromSos(
     .filter((dsm) => isInRegion(dsm.hrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 
-  const topReps = repMembersFromRows(used, employeeNames, productNames, seats)
+  const topReps = repMembersFromRows(repBoardRows(used, tenure), employeeNames, productNames, seats)
     .filter((rep) => isInRegion(rep.hrId) || isInRegion(rep.managerHrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 

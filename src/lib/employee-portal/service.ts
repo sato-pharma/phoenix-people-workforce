@@ -4366,7 +4366,9 @@ export function resolveNsmVacantDsmSeat(
 
 export async function getDsmTeamPerformance(
   access: AccessContext,
-  options: { period?: string | string[] | null } = {},
+  // `creditRepsByTenure`: a ranking credits each month to the rep who held the seat then (owner,
+  // 26 Oct 2026). The expense forms' medical-trip rep list leaves it off and keeps today's holders.
+  options: { period?: string | string[] | null; creditRepsByTenure?: boolean } = {},
 ): Promise<DsmTeamPerformanceData | null> {
   try {
     const currentUser = await resolvePortalCurrentUser(access);
@@ -4379,7 +4381,9 @@ export async function getDsmTeamPerformance(
     // (see sos-team-performance.ts), not from sales_records. Scope is applied inside the
     // builder by resolveVsTargetBound — a line bound for an NSM, an area bound for a DSM —
     // so these numbers reconcile exactly with the /sales-vs-target page.
-    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null);
+    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null, {
+      creditRepsByTenure: options.creditRepsByTenure === true,
+    });
   } catch {
     return null;
   }
@@ -4404,7 +4408,8 @@ export async function getMedRepsPerformance(
     const currentRole = normalizeRole(currentUser.role);
     if (currentRole !== "National Sales Manager" && currentRole !== "Regional Manager") return null;
 
-    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null);
+    // A ranking: each month goes to the rep who held the seat then (owner, 26 Oct 2026).
+    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null, { creditRepsByTenure: true });
   } catch {
     return null;
   }

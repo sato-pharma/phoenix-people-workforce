@@ -2159,6 +2159,7 @@ import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-cam
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
 import { runCustomerMapReadGateTests } from "./customer-map-read-gate.test.ts";
 import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
+import { runSeatTenureCreditTests } from "./seat-tenure-credit.test.ts";
 import { runEmployeeAchievementGroupingTests } from "./employee-achievement-grouping.test.ts";
 import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.test.ts";
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
@@ -8182,6 +8183,11 @@ await runTest(
 await runTest(
   "sos team performance active periods (a stray Direct Order booked before a month's distributor upload lands must not activate that month's full target in the default cumulative keycard view)",
   runSosTeamPerformanceTests,
+);
+
+await runTest(
+  "seat tenure credit (a seat's past sales rank the person who made them: an October hire seated before his hire date never ranks for July–September, a departed rep keeps his months, and no number or total moves)",
+  runSeatTenureCreditTests,
 );
 
 await runTest(
