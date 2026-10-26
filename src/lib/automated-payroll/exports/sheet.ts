@@ -37,6 +37,40 @@ const EXECUTION_FILL = "FFDCFCE7";
 const EXECUTION_HEADER_FILL = "FF166534";
 
 /**
+ * Owner rule 2026-10-26: the Full Name cell — and ONLY that cell — is tinted by who the person is
+ * this month. A resignation or a new hire outranks the pay mode (the band above/below already says
+ * which pay mode they are in); a held row keeps its red, which is a payment signal and outranks all.
+ */
+export const NAME_HIGHLIGHT = {
+  one_part: { argb: "FFDBEAFE", label: "One Part" },
+  two_parts: { argb: "FFEDE9FE", label: "Two Parts" },
+  joiner: { argb: "FFFEF9C3", label: "New hire" },
+  leaver: { argb: "FFE5E7EB", label: "Resignation" },
+} as const;
+
+export function nameHighlightKey(entry: AssembledRow): keyof typeof NAME_HIGHLIGHT {
+  if (entry.lifecycle === "leaver") return "leaver";
+  if (entry.lifecycle === "joiner") return "joiner";
+  return entry.row.paymentMode === "one_part" ? "one_part" : "two_parts";
+}
+
+/** The colour key, on the empty spacer row above the table, starting over the Full Name column. */
+function writeNameHighlightKey(sheet: ExcelJS.Worksheet, startColumn: number, colCount: number, protect: boolean) {
+  const keys = Object.values(NAME_HIGHLIGHT);
+  const first = Math.max(1, Math.min(startColumn, colCount - keys.length + 1));
+  keys.forEach((key, offset) => {
+    const cell = sheet.getRow(4).getCell(first + offset);
+    cell.value = key.label;
+    cell.font = { bold: true, color: { argb: SLATE }, name: "Calibri", size: 9 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.fill = { fgColor: { argb: key.argb }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+    if (protect) cell.protection = { locked: true };
+  });
+  sheet.getRow(4).height = 16;
+}
+
+/**
  * The Part-1 sheet's focused column subset (first installment). "First Part" is
  * the execution/payout column — highlighted distinctly by writePayrollWorksheet.
  */
@@ -153,6 +187,56 @@ function nonEmployeeMoneyColumns(
   return columns;
 }
 
+/** The words on the band that separates the One Part employees from the Two Parts ones. */
+export const TWO_PARTS_SEPARATOR_LABEL =
+  "TWO PARTS — the employees below are paid in two installments (First Part + Second Part)";
+
+/**
+ * One Part employees first, then Two Parts, each group keeping the order it arrived in (owner rule
+ * 2026-10-26). `twoPartsStart` is the index of the first Two Parts row when BOTH groups are present,
+ * and -1 otherwise — a sheet with only one group needs no separator.
+ */
+export function groupByPaymentMode(ordered: readonly AssembledRow[]): {
+  rows: AssembledRow[];
+  twoPartsStart: number;
+} {
+  const onePart = ordered.filter((entry) => entry.row.paymentMode === "one_part");
+  const twoParts = ordered.filter((entry) => entry.row.paymentMode !== "one_part");
+  return {
+    rows: [...onePart, ...twoParts],
+    twoPartsStart: onePart.length > 0 && twoParts.length > 0 ? onePart.length : -1,
+  };
+}
+
+/**
+ * Heads the non-employee rows once the sheet is split by payment mode, so they never read as part of
+ * the Two Parts group above them — their own Payment Group cell says which installment pays them.
+ */
+export const NON_EMPLOYEES_SEPARATOR_LABEL = "NON-EMPLOYEES — paid a monthly salary with no employee record";
+
+/** A full-width black band, white bold words, between two groups of the payroll table. */
+function writePaymentModeSeparator(
+  sheet: ExcelJS.Worksheet,
+  rowNumber: number,
+  colCount: number,
+  protect: boolean,
+  text: string,
+): void {
+  const row = sheet.getRow(rowNumber);
+  for (let column = 1; column <= colCount; column += 1) {
+    const cell = row.getCell(column);
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+    if (protect) cell.protection = { locked: true };
+  }
+  sheet.mergeCells(rowNumber, 1, rowNumber, colCount);
+  const label = row.getCell(1);
+  label.value = text;
+  label.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 11 };
+  label.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+  row.height = 24;
+}
+
 /**
  * Writes one branded payroll worksheet: brand band, bold header, zebra body,
  * money formatting, held rows in red, and a totals row. When `protect` is set,
@@ -193,9 +277,12 @@ export async function writePayrollWorksheet(
   // Owner-fixed HR-ID execution order (2026-07-24) — every downloaded sheet.
   // Anyone the fixed list doesn't cover is grouped by line then hire date
   // rather than dumped in arbitrary order (see sortForExport's doc comment).
-  const rows = sortForExport(options.rows, (entry) => entry.row.hrId, {
+  const ordered = sortForExport(options.rows, (entry) => entry.row.hrId, {
     fallbackKey: (entry) => `${entry.row.line ?? ""}|${entry.row.hireDate ?? ""}|${entry.row.hrId}`,
   });
+  // Owner rule 2026-10-26: the One Part employees always come FIRST, then a clear separator band,
+  // then the Two Parts employees — the fixed HR-ID order above still holds inside each group.
+  const { rows, twoPartsStart } = groupByPaymentMode(ordered);
   const extraColumns = options.extraColumns ?? [];
   const labels = [...headers, ...extraColumns.map((column) => column.label)];
   const colCount = labels.length;
@@ -222,9 +309,15 @@ export async function writePayrollWorksheet(
     if (options.protect) cell.protection = { locked: true };
   });
   headerRow.height = 26;
+  const nameColumnIndex = headers.indexOf("Full Name");
+  if (nameColumnIndex >= 0) writeNameHighlightKey(sheet, nameColumnIndex + 1, colCount, options.protect === true);
 
   let rowNumber = headerRowNumber + 1;
   rows.forEach((entry, index) => {
+    if (index === twoPartsStart) {
+      writePaymentModeSeparator(sheet, rowNumber, colCount, options.protect === true, TWO_PARTS_SEPARATOR_LABEL);
+      rowNumber += 1;
+    }
     const record = toSheetRecord(entry);
     const excelRow = sheet.getRow(rowNumber);
     const zebra = index % 2 === 1;
@@ -246,6 +339,8 @@ export async function writePayrollWorksheet(
       else if (ci === executionColumnIndex) {
         cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
         cell.font = { ...cell.font, bold: true };
+      } else if (ci === nameColumnIndex) {
+        cell.fill = { fgColor: { argb: NAME_HIGHLIGHT[nameHighlightKey(entry)].argb }, pattern: "solid", type: "pattern" };
       } else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
       if (options.protect) cell.protection = { locked: true };
     });
@@ -280,6 +375,10 @@ export async function writePayrollWorksheet(
   // details / the designated value column are populated; everything else
   // (HR_ID, Job Title, Base Salary, etc.) is blank since it doesn't apply.
   const nonEmployees = options.nonEmployees ?? [];
+  if (twoPartsStart >= 0 && nonEmployees.length > 0) {
+    writePaymentModeSeparator(sheet, rowNumber, colCount, options.protect === true, NON_EMPLOYEES_SEPARATOR_LABEL);
+    rowNumber += 1;
+  }
   nonEmployees.forEach((entry, neIndex) => {
     const excelRow = sheet.getRow(rowNumber);
     const zebra = (rows.length + neIndex) % 2 === 1;
