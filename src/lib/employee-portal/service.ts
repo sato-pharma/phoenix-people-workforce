@@ -37,8 +37,10 @@ import {
   buildDsmTeamPerformanceFromSos,
   buildNsmDsmPerformanceFromSos,
   buildRmRegionalPerformanceFromSos,
+  loadPublishedClosingRowsForViewer,
   type SosCompanyLineMeta,
 } from "@/lib/employee-portal/sos-team-performance";
+import { closingPeriodsOf, measureClosingSemesterAchievement } from "@/lib/incentives/closing-semester-achievement";
 import { SALES_LINES, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { periodLabel } from "@/lib/business-review/period-format";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
@@ -3661,10 +3663,36 @@ export async function getMedicalRepPortalData(
   // payout. See src/lib/incentives/semester.ts. The 2026 payout curve itself is untouched.
   const cairoNow = currentCairoDateParts();
   const todayPeriod = `${cairoNow.year}-${String(cairoNow.month).padStart(2, "0")}`;
+  // A MANAGER scored on a line or on his seat's areas (NSM, DM, RM) is scored on the PUBLISHED CLOSING for
+  // that reach — the rows every sales page totals — not on the portal's per-person sales view, which
+  // leaves out direct orders and vacant seats and so read 60.5% for a line the closing puts at 55.8%.
+  // A rep (own bound) and a closed bound keep the portal view. See closing-semester-achievement.ts.
+  const closingIncentive =
+    salesScope === "LINE" || salesScope === "TEAM" || salesScope === "HIERARCHY"
+      ? await loadPublishedClosingRowsForViewer(access).catch((error) => {
+          logPortalFailure("closing rows for the incentive tab failed", { error });
+          return null;
+        })
+      : null;
+  const closingRows =
+    closingIncentive && (closingIncentive.boundKind === "line" || closingIncentive.boundKind === "areas")
+      ? closingIncentive.rows
+      : null;
   const incentiveWindow = resolveIncentiveWindow({
-    periods: allTimeTrend.map((point) => point.period),
+    periods: closingRows ? closingPeriodsOf(closingRows) : allTimeTrend.map((point) => point.period),
     todayPeriod,
   });
+  // A manager whose closing could not be read, or whose seat resolves no reach (the 2026-10-26 closed
+  // bound), must NOT fall back to the per-person view this change calls wrong: that would print the
+  // very figure the closing contradicts, as a pay number, with no notice. He gets "No target yet".
+  const closingUnavailable =
+    (salesScope === "LINE" || salesScope === "TEAM" || salesScope === "HIERARCHY") &&
+    (closingIncentive === null || closingIncentive.boundKind === "none");
+  const closingSemester = closingRows
+    ? measureClosingSemesterAchievement({ rows: closingRows, windowPeriods: incentiveWindow?.present ?? [] })
+    : closingUnavailable
+      ? measureClosingSemesterAchievement({ rows: [], windowPeriods: [] })
+      : null;
   // The semester window governs the INCENTIVE figures and nothing else. Every other sales surface
   // on this payload — the trend chart, the team-comparison period picker, the latest-month ring,
   // the "no sales data" empty state — describes what the rep actually HAS, and must keep seeing
@@ -3718,9 +3746,13 @@ export async function getMedicalRepPortalData(
   // month are divided by a target that excludes them. The owner's definition is total over total,
   // so it is honoured literally here rather than silently carved out — the fix belongs in loading
   // the missing target, not in quietly redefining his formula. Raised with him on 2026-09-05.
-  const semesterSales = semesterTrend.reduce((sum, p) => sum + p.sales, 0);
-  const semesterTarget = semesterTrend.reduce((sum, p) => sum + p.target, 0);
-  const overviewAchievementPercent = semesterTarget > 0 ? (semesterSales / semesterTarget) * 100 : 0;
+  const semesterSales = closingSemester ? closingSemester.totalSales : semesterTrend.reduce((sum, p) => sum + p.sales, 0);
+  const semesterTarget = closingSemester ? closingSemester.totalTarget : semesterTrend.reduce((sum, p) => sum + p.target, 0);
+  const overviewAchievementPercent = closingSemester
+    ? closingSemester.totalAchievementPercent
+    : semesterTarget > 0
+      ? (semesterSales / semesterTarget) * 100
+      : 0;
   const growthVsLastMonthPercent =
     latestTrend && previousTrend && previousTrend.sales > 0
       ? ((latestTrend.sales - previousTrend.sales) / previousTrend.sales) * 100
@@ -4029,10 +4061,11 @@ export async function getMedicalRepPortalData(
     semester: incentiveWindow?.semester,
   });
   const pediaAchievement = pediaSplitEligible
-    ? measurePediaAchievement({
+    ? (closingSemester ??
+      measurePediaAchievement({
         rows: portalSalesRecords,
         windowPeriods: incentiveWindow?.present ?? [],
-      })
+      }))
     : null;
   const pediaSplitCalc =
     pediaSplitEligible && pediaAchievement
@@ -4133,7 +4166,9 @@ export async function getMedicalRepPortalData(
       incentiveSemesterLabel: incentiveWindow?.semesterLabel ?? null,
       incentiveSemesterSales: semesterSales,
       incentiveSemesterTarget: semesterTarget,
-      incentiveWindowNotice: describeIncompleteWindow(incentiveWindow),
+      incentiveWindowNotice: closingUnavailable
+        ? "The published closing could not be read for your reach, so no incentive figure is shown."
+        : describeIncompleteWindow(incentiveWindow),
       // The Pedia split, or null on every other line and in a closed semester. Null is what tells
       // the tab to render the single-figure presentation — it must never be read as "a split worth
       // zero", which is why the whole object is absent rather than its numbers being 0.

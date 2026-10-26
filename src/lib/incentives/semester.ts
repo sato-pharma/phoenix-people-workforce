@@ -164,7 +164,9 @@ export function describeIncompleteWindow(window: IncentiveWindow | null): string
     );
   }
   if (window.remaining.length > 0) {
-    parts.push(`${window.remaining.length} ${window.remaining.length === 1 ? "month" : "months"} still to come`);
+    parts.push(
+      `${window.semesterLabel} has ${window.remaining.length} ${window.remaining.length === 1 ? "month" : "months"} still to come`,
+    );
   }
-  return `Provisional — ${window.semesterLabel} is ${parts.join(", and ")}.`;
+  return `Provisional — ${parts.join(", and ")}.`;
 }

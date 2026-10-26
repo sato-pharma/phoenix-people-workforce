@@ -1782,7 +1782,7 @@ function PediaIncentiveKpiCards({
   const salaryRef = calculateIncentive2026({ ...incentiveSalaryBasis(data), achievementPercent: 100 });
 
   const noteFor = (achievement: number) =>
-    achievement >= 100 ? "Above target" : achievement >= 90 ? "Eligible zone" : `${Math.max(0, 90 - achievement).toFixed(1)}% to threshold`;
+    achievement >= 100 ? "Above target" : achievement >= 90 ? "Eligible zone" : `${Math.max(0, 90 - achievement).toFixed(1)} points to 90%`;
   const accentFor = (achievement: number): MetricAccent =>
     achievement >= 100 ? "green" : achievement >= 90 ? "amber" : "orange";
 
@@ -1919,7 +1919,7 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
       value: hasSemesterTarget ? `${achievementPercent.toFixed(1)}%` : "No target yet",
       note: !hasSemesterTarget
         ? `${data.sales.incentiveSemesterLabel ?? "This semester"} not uploaded yet`
-        : achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)}% to threshold`,
+        : achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)} points to 90%`,
       accent: !hasSemesterTarget ? "blue" : achievementPercent >= 100 ? "green" : achievementPercent >= 90 ? "amber" : "orange",
     },
     {

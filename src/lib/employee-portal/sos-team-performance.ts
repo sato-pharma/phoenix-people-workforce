@@ -179,6 +179,25 @@ async function loadScopedRows(
 }
 
 /**
+ * The rows the PUBLISHED closing holds for one viewer — his bound, published periods only, no period
+ * picked — together with the kind of bound that cut them.
+ *
+ * This is the incentive tab's door onto the closing for a manager whose pay is scored on a line or on
+ * a set of areas (NSM, DM, RM): the same rows `buildNsmDsmPerformanceFromSos` and
+ * `buildDsmTeamPerformanceFromSos` total for the headline, so the achievement the tab scores equals
+ * the one the sales pages print. The caller reads `boundKind` — a rep's own bound (`self`) and a
+ * closed bound (`none`) are not a manager's and stay on the portal's own sales view.
+ */
+export async function loadPublishedClosingRowsForViewer(
+  ctx: AccessContext,
+): Promise<{ boundKind: VsTargetBound["kind"]; rows: AchievementRow[] }> {
+  const bound = performanceBoundFor(ctx.role, await resolveVsTargetBound(ctx));
+  const { rows: windowRows, publishedKeys } = await loadWindowRows();
+  const scoped = filterRowsForBound(windowRows, bound);
+  return { boundKind: bound.kind, rows: selectRows(scoped, activePeriodsOf(scoped, publishedKeys), null, publishedKeys) };
+}
+
+/**
  * Restrict window rows to the active periods, then to the selected periods (if any).
  *
  * Filters per-ROW on `isRowPublished`, not just per-period: a single-line viewer's rows are
