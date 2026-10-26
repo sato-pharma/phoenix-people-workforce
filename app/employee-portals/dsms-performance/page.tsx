@@ -346,10 +346,10 @@ export default async function DsmsPerformancePage({
                 Regional Managers
               </h2>
               <p className="mt-1 text-sm font-medium text-slate-500">
-                Each row totals the sales and target of the district managers in that region.
+                Each row totals the sales and target of the district managers in that region. A region with no regional manager is listed under its own name, so the rows add up to every district.
               </p>
             </div>
-            <TeamLeaderboardTable members={regionalManagers} />
+            <TeamLeaderboardTable members={regionalManagers} showProductCount={false} />
           </Card>
         )}
 

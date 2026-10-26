@@ -4306,6 +4306,12 @@ export type DsmTeamMemberData = {
    * "Vacant — <district>" instead of "Unassigned District" (owner, 2026-10-20).
    */
   vacantManagerSeatId?: string | null;
+  /**
+   * True on a Regional roll-up row that is NOT a person: the seated districts of one region with no
+   * occupied Regional Manager seat, totalled as "<region> — no regional manager". `hrId` is then a
+   * synthetic key, never an employee, and the row is not a manager to count or probe.
+   */
+  isRegionWithoutManager?: boolean;
   position: number;
   products: DsmTeamMemberProductData[];
   totalSales: number;

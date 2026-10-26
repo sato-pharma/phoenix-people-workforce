@@ -5,8 +5,10 @@ import {
   activePeriodsOf,
   performanceBoundFor,
   regionalManagerMembersFromRows,
+  regionWithoutManagerOf,
   repMembersFromRows,
 } from "../src/lib/employee-portal/sos-team-performance.ts";
+import { chartPersonName } from "../src/lib/format/chart-person-name.ts";
 import { buildSalesManagerPerformanceGroups } from "../src/lib/sales/metrics.ts";
 import { indexSalesSeats, regionalManagerAbove, vacantDistrictLabel } from "../src/lib/sales/seat-hierarchy.ts";
 
@@ -109,6 +111,13 @@ export function runSosTeamPerformanceTests() {
   );
 
   runVacantDistrictAndRegionalManagerTests();
+
+  // Chart axis labels are first + last name; a region row's label is not a person and stays whole.
+  assert.equal(chartPersonName("Hany Mohamed Ali Saad"), "Hany Saad");
+  assert.equal(chartPersonName("  Dina   Delta "), "Dina Delta");
+  assert.equal(chartPersonName("Madonna"), "Madonna");
+  assert.equal(chartPersonName("Giza — no regional manager"), "Giza — no regional manager");
+  assert.equal(chartPersonName(null), "Employee");
 }
 
 /**
@@ -203,16 +212,59 @@ function runVacantDistrictAndRegionalManagerTests() {
     hrId: "N-1",
     name: "Nadia National",
   });
-  assert.equal(regionalManagers.length, 1, "one occupied RSM seat yields one Regional Manager row");
-  const [regional] = regionalManagers;
+  assert.equal(regionalManagers.length, 2, "one occupied RSM seat plus the one region with no Regional Manager");
+  const regional = regionalManagers.find((member) => member.hrId === "R-1")!;
   assert.equal(regional.hrId, "R-1");
+  assert.equal(regional.isRegionWithoutManager, undefined, "a seated Regional Manager is a person, not a region row");
   assert.equal(regional.name, "Rami Regional");
   assert.equal(regional.managerName, "Nadia National", "a Regional Manager reports to the line's NSM");
-  // Delta (1) + Delta (2) only: the vacant Alex-BHR district under him has no DM row and is left out,
-  // and Giza and Cairo report straight to the NSM.
+  // Delta (1) + Delta (2) only: the vacant Alex-BHR district under him has no DM row and is left out.
   assert.equal(regional.totalSales, 100 + 300);
   assert.equal(regional.totalTarget, 200 + 300);
   assert.equal(regional.achievementPercent, (400 / 500) * 100);
+
+  // Giza reports straight to the NSM: its sales are not dropped, they are a row of their own.
+  const giza = regionalManagers.find((member) => member.isRegionWithoutManager)!;
+  assert.equal(giza.name, "Giza — no regional manager");
+  assert.equal(giza.totalSales, 400);
+  assert.equal(giza.totalTarget, 500);
+  assert.equal(giza.managerName, "Nadia National");
+  // COMPLETENESS: the roll-up rows add up to every seated district (Delta 1 + Delta 2 + Giza), each once.
+  const seatedDistrictSales = rows
+    .filter((candidate) => candidate.dmHrId)
+    .reduce((sum, candidate) => sum + candidate.actualValue, 0);
+  assert.equal(
+    regionalManagers.reduce((sum, member) => sum + member.totalSales, 0),
+    seatedDistrictSales,
+    "Regional roll-up rows foot to the seated-district total — no region is left out and none is counted twice",
+  );
+  assert.equal(
+    regionalManagers.reduce((sum, member) => sum + member.totalTarget, 0),
+    rows.filter((candidate) => candidate.dmHrId).reduce((sum, candidate) => sum + (candidate.targetValue ?? 0), 0),
+  );
+  // Two numbered districts of one region are ONE row; the Others bucket and a vacant district are none.
+  const upperEgyptSeats = indexSalesSeats([
+    seat("SEAT-NSM", null, "NSM", null, "N-1"),
+    seat("DM-UE1", "SEAT-NSM", "DM", "Upper Egypt 1", "D-4"),
+    seat("DM-UE2", "SEAT-NSM", "DM", "Upper Egypt 2", "D-5"),
+    seat("DM-OTHERS", "SEAT-NSM", "DM", "Others", null, true),
+  ]);
+  const upperEgypt = regionalManagerMembersFromRows(
+    [
+      pediaRow({ repHrId: "M-1", dmSeatId: "DM-UE1", dmHrId: "D-4", actualValue: 10, targetValue: 20 }),
+      pediaRow({ repHrId: "M-2", dmSeatId: "DM-UE2", dmHrId: "D-5", actualValue: 30, targetValue: 40 }),
+      pediaRow({ repHrId: "M-3", dmSeatId: "DM-OTHERS", dmHrId: null, actualValue: 99, targetValue: 99 }),
+    ],
+    upperEgyptSeats,
+    names,
+    products,
+    { hrId: "N-1", name: "Nadia National" },
+  );
+  assert.equal(upperEgypt.length, 1);
+  assert.equal(upperEgypt[0].name, "Upper Egypt — no regional manager");
+  assert.equal(upperEgypt[0].totalSales, 40);
+  assert.equal(regionWithoutManagerOf("DM-OTHERS", upperEgyptSeats), null, "the Others bucket is not a region");
+  assert.equal(regionWithoutManagerOf("DM-UE1", new Map()), null, "an empty seat tree names no region");
 
   // The viewer's own row is never listed back to him.
   assert.deepEqual(
@@ -220,12 +272,16 @@ function runVacantDistrictAndRegionalManagerTests() {
     [],
     "a Regional Manager reading his own region does not see himself as a roll-up row",
   );
-  // A vacant RSM seat names nobody — its districts stay under their own DM rows only.
+  // A vacant RSM seat names nobody — its seated districts are totalled by region, not under a person.
   const vacantRsmSeats = indexSalesSeats([
     seat("SEAT-RSM", null, "RSM", null, null),
     seat("DM-D1", "SEAT-RSM", "DM", "Delta (1)", "D-1"),
   ]);
-  assert.deepEqual(regionalManagerMembersFromRows(rows, vacantRsmSeats, names, products, { hrId: "N-1", name: null }), []);
+  const underVacantRsm = regionalManagerMembersFromRows(rows, vacantRsmSeats, names, products, { hrId: "N-1", name: null });
+  assert.deepEqual(
+    underVacantRsm.map((member) => [member.name, member.totalSales]),
+    [["Delta — no regional manager", 100]],
+  );
 
   // ── A Regional Manager whose seat did not resolve reads nothing, never the whole line ──
   const lineBound = { kind: "line" as const, lineCodes: new Set(["pedia"]) };

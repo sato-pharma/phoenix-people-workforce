@@ -17,6 +17,7 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { repTargetGap } from "@/lib/employee-portal/rep-target-gap";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
 import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
+import { chartPersonName } from "@/lib/format/chart-person-name";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -25,6 +26,7 @@ const LEADERBOARD_PAGE_SIZE = 25;
 type AchievementChartDatum = {
   achievementPercent: number;
   name: string;
+  fullName?: string;
   totalSales: number;
   totalTarget: number;
 };
@@ -61,8 +63,21 @@ function compactEgp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+/** Chart axis labels ONLY — first and last name; tables, cards and tooltips keep the full name. */
 function displayName(fullName: string) {
-  return formatEmployeeDisplayName(fullName);
+  return chartPersonName(fullName);
+}
+
+/**
+ * The incentive-line chip. The 90% line is a PERCENTAGE of target, so the gap is in percentage
+ * points to it — never "more sales" (owner, 2026-10-26: "Needs 8.8% more" read as 8.8% more sales).
+ */
+function incentiveLineLabel(achievementPercent: number): string {
+  if (achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT) {
+    return `Reached the ${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}% line`;
+  }
+  const points = Math.max(0, INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT - achievementPercent);
+  return `${points.toFixed(1)} points to ${INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT}%`;
 }
 
 function isAchievementChartDatum(value: unknown): value is AchievementChartDatum {
@@ -107,13 +122,13 @@ function AchievementTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: Array<{ payload: { name: string; achievementPercent: number; totalSales: number; totalTarget: number } }>;
+  payload?: Array<{ payload: { name: string; fullName?: string; achievementPercent: number; totalSales: number; totalTarget: number } }>;
 }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="max-w-[calc(100vw-4rem)] rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
-      <p className="mb-1 break-words font-semibold text-slate-900">{d.name}</p>
+      <p className="mb-1 break-words font-semibold text-slate-900">{d.fullName ?? d.name}</p>
       <p className="text-slate-600">Achievement: <span className="font-bold text-slate-900">{pct(d.achievementPercent)}</span></p>
       <p className="text-slate-600">Sales: <span className="font-medium">{egp(d.totalSales)}</span></p>
       <p className="text-slate-600">Target: <span className="font-medium">{egp(d.totalTarget)}</span></p>
@@ -135,6 +150,7 @@ export function TeamAchievementChart({
   const [activeDatum, setActiveDatum] = useState<AchievementChartDatum | null>(null);
   const chartData = members.map((m) => ({
     name: displayName(m.name),
+    fullName: formatEmployeeDisplayName(m.name),
     achievementPercent: Math.round(m.achievementPercent * 10) / 10,
     totalSales: m.totalSales,
     totalTarget: m.totalTarget,
@@ -197,7 +213,7 @@ export function TeamAchievementChart({
       {activeDatum ? (
         <div className="mt-3 rounded-lg border border-slate-100 bg-white px-3 py-2 text-xs shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <p className="min-w-0 break-words font-bold text-slate-900">{activeDatum.name}</p>
+            <p className="min-w-0 break-words font-bold text-slate-900">{activeDatum.fullName ?? activeDatum.name}</p>
             <p className="shrink-0 font-bold" style={{ color: achievementColor(activeDatum.achievementPercent) }}>
               {pct(activeDatum.achievementPercent)}
             </p>
@@ -376,7 +392,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
                   color: isEligible ? "#15803d" : "#92400e",
                 }}
               >
-                {isEligible ? "Incentive Eligible" : `Needs ${pct(Math.max(0, INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT - member.achievementPercent))} more`}
+                {incentiveLineLabel(member.achievementPercent)}
               </span>
               <span className="text-phx-2xs text-slate-400">
                 {member.products.length} products
@@ -442,7 +458,14 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
 // Full leaderboard table
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[] }) {
+export function TeamLeaderboardTable({
+  members,
+  showProductCount = true,
+}: {
+  members: DsmTeamMemberData[];
+  /** False on a roll-up (Regional Managers): its "products" are the districts' products, not his own. */
+  showProductCount?: boolean;
+}) {
   const [page, setPage] = useState(0);
 
   const [prevMembers, setPrevMembers] = useState(members);
@@ -483,10 +506,12 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                     {member.position}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-semibold leading-tight text-slate-900">
+                    <p className={`break-words text-sm font-semibold leading-tight ${member.isRegionWithoutManager ? "italic text-slate-500" : "text-slate-900"}`}>
                       {formatEmployeeDisplayName(member.name)}
                     </p>
-                    <p className="mt-0.5 text-phx-2xs text-slate-400">{member.products.length} products</p>
+                    {showProductCount ? (
+                      <p className="mt-0.5 text-phx-2xs text-slate-400">{member.products.length} products</p>
+                    ) : null}
                   </div>
                   <p className="shrink-0 text-base font-bold" style={{ color }}>
                     {pct(member.achievementPercent)}
@@ -568,8 +593,8 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                     </span>
                   </td>
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
-                    <p className="max-w-[220px] break-words font-medium leading-tight text-slate-900 sm:max-w-none">{formatEmployeeDisplayName(member.name)}</p>
-                    <p className="text-phx-2xs text-slate-400">{member.products.length} products</p>
+                    <p className={`max-w-[220px] break-words font-medium leading-tight sm:max-w-none ${member.isRegionWithoutManager ? "italic text-slate-500" : "text-slate-900"}`}>{formatEmployeeDisplayName(member.name)}</p>
+                    {showProductCount ? <p className="text-phx-2xs text-slate-400">{member.products.length} products</p> : null}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <span className="font-bold" style={{ color }}>
