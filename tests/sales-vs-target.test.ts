@@ -11,14 +11,17 @@ import {
   pickLandingPeriod,
   priorPeriodOf,
   publishedPeriodKeysOf,
+  regroupPriorRowsByCurrentMap,
   rollupBricks,
   rollupByArea,
   rollupByDm,
+  rollupByRegion,
   rollupByRegionalManager,
   rollupByRep,
   shiftPeriod,
   splitPeriodAtPublication,
   totalRows,
+  unitsAreAddable,
   type BrickSalesRow,
   type VsTargetNames,
   type VsTargetNode,
@@ -461,6 +464,7 @@ export function runSalesVsTargetTests() {
   );
 
   runRegionalManagerRollupTests();
+  runPriorMonthRehomeAndUnitsTests();
 }
 
 /**
@@ -540,4 +544,103 @@ function runRegionalManagerRollupTests() {
     dashboardSource.includes('if (data.regionalManagers.length > 0) levels.push("regionalManagers");'),
     "the Regional Managers chip appears whenever the payload has Regional Manager rows",
   );
+}
+
+/**
+ * National Sales Manager, September 2026.
+ *
+ *  • Anti Infective's areas moved into Upper Egypt 1 and Upper Egypt 2 in September. August's rows
+ *    still carried the old region and district manager, so the two regions and their District
+ *    Managers (Osama Mohamed El-said, Mohamed Ramadan) found no August node and printed "—" vs Aug.
+ *  • The Pedia tile printed "Units sold 20,521 / Target 38,503" — Guamusin 698 + Ivyronc 10,642 +
+ *    Lacto Advanced 1 5,561 + Lacto Advanced 2 3,620, units of four different products added.
+ */
+function runPriorMonthRehomeAndUnitsTests() {
+  const september = [
+    row({ period: "2026-09", regionCode: "UE-1", areaCode: "MN1", dmSeatId: "DM-UE1", dmHrId: "1002", actualValue: 900 }),
+    row({ period: "2026-09", regionCode: "UE-2", areaCode: "LX1", dmSeatId: "DM-UE2", dmHrId: "1001", actualValue: 400 }),
+  ];
+  const august = [
+    // August: both areas under the old single Upper Egypt region and its old District Manager.
+    row({ period: "2026-08", regionCode: "UE", areaCode: "mn1 ", dmSeatId: "DM-UE", dmHrId: "9999", actualValue: 600 }),
+    row({ period: "2026-08", regionCode: "UE", areaCode: "LX1", dmSeatId: "DM-UE", dmHrId: "9999", actualValue: 500 }),
+    // Direct Orders spread by region carry no area — they keep their own keys.
+    row({ period: "2026-08", regionCode: "UE", areaCode: null, dmSeatId: null, dmHrId: null, actualValue: 70 }),
+    // An area September does not carry keeps its own keys too.
+    row({ period: "2026-08", regionCode: "UE", areaCode: "OLD9", dmSeatId: "DM-UE", dmHrId: "9999", actualValue: 30 }),
+  ];
+  const regrouped = regroupPriorRowsByCurrentMap(september, august);
+  assert.ok(regrouped, "a prior month in gives a prior month out");
+
+  const regions = rollupByRegion(september, regrouped, names);
+  const ue1 = regions.find((node) => node.key === "UE-1");
+  const ue2 = regions.find((node) => node.key === "UE-2");
+  assert.equal(ue1?.prior?.actualValue, 600, "Upper Egypt 1 compares with its own areas' August, not \"—\"");
+  assert.equal(ue2?.prior?.actualValue, 500, "and so does Upper Egypt 2");
+  assert.ok(ue1?.growth != null && Math.abs(ue1.growth - 0.5) < 1e-9, "900 over 600 is +50%, a real figure");
+
+  const managers = rollupByDm(september, regrouped, names);
+  assert.equal(
+    managers.find((node) => node.key === "1002")?.prior?.actualValue,
+    600,
+    "the District Manager who holds Minia 1 now is compared with Minia 1's August",
+  );
+  assert.equal(managers.find((node) => node.key === "1001")?.prior?.actualValue, 500, "and the other with Luxor's");
+
+  assert.deepEqual(regrouped[2], august[2], "a prior row with no area keeps its own region");
+  assert.deepEqual(regrouped[3], august[3], "an area the selected month does not carry keeps its own keys");
+  assert.equal(
+    totalRows(regrouped).actualValue,
+    totalRows(august).actualValue,
+    "re-homing moves keys only — the prior month's own total is unchanged",
+  );
+  assert.equal(regroupPriorRowsByCurrentMap(september, null), null, "no prior month stays no prior month");
+  assert.equal(
+    regroupPriorRowsByCurrentMap(september, august.map((entry) => ({ ...entry, lineCode: "pedia" })))?.[0].regionCode,
+    "UE",
+    "an area is matched on its own line only",
+  );
+
+  // ── Units are shown only for ONE product code ─────────────────────────────────────────────────
+  const pedia = [
+    row({ productCode: "GUA01", actualUnits: 698 }),
+    row({ productCode: "IVY01", actualUnits: 10_642 }),
+    row({ productCode: "LAA01", actualUnits: 5_561 }),
+    row({ productCode: "LAA02", actualUnits: 3_620 }),
+  ];
+  assert.equal(unitsAreAddable(pedia), false, "four products' units are never one figure (the 20,521)");
+  assert.equal(unitsAreAddable(pedia.slice(1, 2)), true, "one product's units are a real quantity");
+  assert.equal(
+    unitsAreAddable([row({ productCode: "IVY01" }), row({ productCode: "ivy01 " })]),
+    true,
+    "the same code twice is still one product",
+  );
+  assert.equal(unitsAreAddable([]), false, "no rows give no units figure");
+
+  // The page wires both, and the tile is gated on the flag — pinned in the source, comments stripped.
+  const pageSource = stripComments(readFileSync(new URL("../src/lib/sales/vs-target-page.ts", import.meta.url), "utf8"));
+  assert.ok(
+    pageSource.includes("regroupPriorRowsByCurrentMap(") && pageSource.includes("unitsAddable: unitsAreAddable(rows)"),
+    "the Sales vs Target loader re-homes the prior month and decides the units flag from the rows in view",
+  );
+  const dashboardSource = stripComments(
+    readFileSync(new URL("../src/components/sales/vs-target/vs-target-dashboard.tsx", import.meta.url), "utf8"),
+  );
+  assert.equal(
+    dashboardSource.split("data.unitsAddable ?").length - 1,
+    2,
+    "both Units sold tiles (portal and admin) are shown only when the units may be added",
+  );
+  for (const [file, source] of [
+    ["vs-target-dashboard.tsx", dashboardSource],
+    [
+      "targets-workspace.tsx",
+      readFileSync(new URL("../src/components/sales/targets-workspace.tsx", import.meta.url), "utf8"),
+    ],
+  ] as const) {
+    assert.ok(
+      !source.includes("counts only sales that have a target"),
+      `${file} no longer claims achievement counts only targeted sales — it divides every sale in a targeted month`,
+    );
+  }
 }

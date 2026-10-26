@@ -1812,7 +1812,11 @@ import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-expor
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts";
 import { runSalesTruthStoreSplitTests } from "./sales-truth-store-split.test.ts";
-import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
+import {
+  runClosingManagerAsOfTests,
+  runClosingPerformanceReviewRehomedAreaTests,
+  runClosingPerformanceReviewTests,
+} from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runClosingPerformanceReviewManagerScopeTests } from "./closing-performance-review-manager-scope.test.ts";
@@ -6476,6 +6480,11 @@ await runTest(
 await runTest(
   "a past month names the district manager who held the area THEN, not the one who holds it now (a dated pair closing and reopening on one day puts exactly one row in force, August sees the old seat and September the new, and February is not hard-coded to 30 days)",
   runClosingManagerAsOfTests,
+);
+
+await runTest(
+  "Performance Review: an area that changed region is ONE row under the selected month's region (the bottom row of Reps · Products by Month equals the closing's own units, never a moved area twice, in the screen and the emitted workbook), Growth by month · area names the selected month's region, and growth off a base of zero or below prints a dash while an empty base is still new",
+  runClosingPerformanceReviewRehomedAreaTests,
 );
 
 await runTest(

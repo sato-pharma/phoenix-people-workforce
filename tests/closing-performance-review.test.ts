@@ -11,6 +11,7 @@ import {
   type ClosingPerformanceReview,
 } from "../src/lib/sales/closing-performance-review.ts";
 import { applyAreaMapAsOf, coversAsOf, periodEndDate } from "../src/lib/sales/closing-performance-review.ts";
+import { GROWTH_NO_BASE, reviewGrowthOf } from "../src/lib/sales/closing-performance-review-regions.ts";
 import { buildClosingPerformanceReviewWorkbook } from "../src/lib/sales/closing-performance-review-export.ts";
 import type {
   MonthlyClosingAreaRow,
@@ -436,7 +437,11 @@ export async function runClosingPerformanceReviewTests() {
   assert.equal(storeByRep.areaName, "Main Store", "an area outside the seat model keeps its own name here too");
   assert.equal(storeByRep.repName, null, "and shows no invented rep");
   assert.deepEqual(storeByRep.units[1], [null, 0, 0], "a product that sold nothing is a zero, not a dash");
-  assert.equal(storeByRep.growth[1], null, "nothing to grow from reads as new, never as a percentage");
+  assert.equal(
+    storeByRep.growth[1],
+    GROWTH_NO_BASE,
+    "a month before that sold ZERO has no base — it prints a dash, never a percentage and never \"new\"",
+  );
 
   const nationalByRep = byRep.rows[byRep.rows.length - 1];
   assert.deepEqual(
@@ -707,4 +712,172 @@ export function runClosingManagerAsOfTests() {
   // lookup reads the directory with `includeInactive`, and an active-only read would turn a real
   // person's month into an ordinary-looking vacancy.
   assert.equal(heldOn("2026-07-31"), "Ahmed Nashaat", "a leaver still owns the month he worked");
+}
+
+/** A matrix from loose area rows, grouped by region in the order given, every total re-derived. */
+function matrixOfAreas(period: string, areas: MonthlyClosingAreaRow[]): MonthlyClosingMatrix {
+  const groups = new Map<string, MonthlyClosingAreaRow[]>();
+  for (const area of areas) {
+    const bucket = groups.get(area.regionCode);
+    if (bucket) bucket.push(area);
+    else groups.set(area.regionCode, [area]);
+  }
+  const grandCells = COLUMNS.map((_, index) => total(areas.map((area) => area.cells[index])));
+  return {
+    availableLines: ["Pedia"],
+    availablePeriods: ["2026-08", "2026-09"],
+    columns: COLUMNS,
+    grandTotal: { cells: grandCells, kind: "grandTotal", rowTotal: total(grandCells) },
+    line: "Pedia",
+    period,
+    regions: [...groups.entries()].map(([regionCode, members]) => {
+      const cells = COLUMNS.map((_, index) => total(members.map((area) => area.cells[index])));
+      return {
+        areas: members,
+        regionCode,
+        regionName: members[0].regionName,
+        subtotal: {
+          cells,
+          kind: "regionSubtotal" as const,
+          regionCode,
+          regionName: members[0].regionName,
+          rowTotal: total(cells),
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * AN AREA THAT CHANGED REGION BETWEEN MONTHS IS ONE ROW, UNDER THE SELECTED MONTH'S REGION — AND
+ * GROWTH OFF A BASE OF ZERO OR BELOW IS A DASH.
+ *
+ * Pedia, September 2026, National Sales Manager: areas moved between Upper Egypt regions. "Reps ·
+ * Products by Month" grouped each month by that month's own region, so each moved area printed twice
+ * — each copy carrying both months — and the bottom row added it twice: Lacto Advanced 1 6,377
+ * against the closing's 5,561, Ivyronc 12,710 against 10,642, Guamusin 1,032 against 698. "Growth by
+ * month · area" labelled a moved area with an old month's region. And Luxor's August Lacto Advanced 1
+ * at −1 unit printed "−4938.9%" beside a month that grew.
+ */
+export async function runClosingPerformanceReviewRehomedAreaTests() {
+  // August: Minia 1 and Luxor under the old regions; Luxor sold −1 (returns) of TB001.
+  const august = matrixOfAreas("2026-08", [
+    areaRow("CA", "Cairo", "CA1", "Cairo 1", [cell(80, 4_000, 5_000), cell(30, 2_000, 2_000), cell(5, 400, 500)]),
+    areaRow("UE", "Upper Egypt", "MN1", "Minia 1", [cell(50, 2_500, 3_000), cell(10, 700, 800), cell(0, 0, null)]),
+    areaRow("UE-2", "Upper Egypt 2", "LX1", "Luxor", [cell(-1, -40, 1_000), cell(4, 300, 300), cell(1, 80, null)]),
+  ]);
+  // September: Minia 1 now sits in Upper Egypt 1, Luxor in Others, and a new area opened.
+  const september = matrixOfAreas("2026-09", [
+    areaRow("CA", "Cairo", "CA1", "Cairo 1", [cell(100, 5_000, 5_000), cell(40, 3_000, 2_000), cell(6, 480, 500)]),
+    areaRow("UE-1", "Upper Egypt 1", "MN1", "Minia 1", [cell(60, 3_000, 3_000), cell(12, 840, 800), cell(3, 240, null)]),
+    areaRow("NW", "New Valley", "NV1", "New Valley 1", [cell(7, 350, null), cell(0, 0, null), cell(0, 0, null)]),
+    areaRow("OT", "Others", "LX1", "Luxor", [cell(48, 1_920, 1_000), cell(5, 375, 300), cell(1, 80, null)]),
+  ]);
+  const review = buildClosingPerformanceReview({
+    availableLines: ["Pedia"],
+    availablePeriods: ["2026-08", "2026-09"],
+    generatedAt: "2026-10-26T09:00:00.000Z",
+    matrix: september,
+    seatAssignments: new Map(),
+    seriesMatrices: [
+      { matrix: august, period: "2026-08" },
+      { matrix: september, period: "2026-09" },
+    ],
+  });
+
+  // ── (1) One row per (rep, area), under the selected month's region ────────────────────────────
+  const grid = review.productUnitsByRepByMonth;
+  const areaRows = grid.rows.filter((entry) => entry.kind === "area");
+  for (const code of ["CA1", "MN1", "LX1", "NV1"]) {
+    assert.equal(
+      areaRows.filter((entry) => entry.areaCode === code).length,
+      1,
+      `${code} is ONE row — an area that changed region is never printed once per region it has sat in`,
+    );
+  }
+  assert.equal(
+    areaRows.find((entry) => entry.areaCode === "MN1")?.regionName,
+    "Upper Egypt 1",
+    "Minia 1 sits under September's region, not August's",
+  );
+  assert.equal(areaRows.find((entry) => entry.areaCode === "LX1")?.regionName, "Others", "and so does Luxor");
+  assert.ok(
+    !grid.rows.some(
+      (entry) => entry.kind === "regionSubtotal" && (entry.regionCode === "UE" || entry.regionCode === "UE-2"),
+    ),
+    "a region only August carried has no subtotal of its own — its areas have moved on",
+  );
+
+  // ── (2) The bottom row equals the closing's own units, per product, in every month ─────────────
+  const national = grid.rows[grid.rows.length - 1];
+  assert.equal(national.kind, "grandTotal", "the grid closes with the national row");
+  COLUMNS.forEach((column, productIndex) => {
+    assert.deepEqual(
+      national.units[productIndex],
+      [august.grandTotal.cells[productIndex].salesUnits, september.grandTotal.cells[productIndex].salesUnits],
+      `the national row of ${column.productCode} equals each month's closing units — never a moved area twice`,
+    );
+  });
+  assert.equal(national.units[0][1], 215, "September TB001: 100 + 60 + 7 + 48, the closing's own total");
+
+  // ── (3) "Growth by month · area" names the selected month's region ────────────────────────────
+  assert.equal(
+    review.areaValueByMonth.find((entry) => entry.key === "MN1")?.subLabel,
+    "Upper Egypt 1",
+    "the area tab labels Minia 1 with September's region",
+  );
+  assert.equal(
+    review.areaValueByMonth.find((entry) => entry.key === "LX1")?.subLabel,
+    "Others",
+    "and Luxor with Others, where September puts it",
+  );
+  assert.equal(review.areaValueByMonth.length, 4, "and still lists each area once");
+
+  // ── (4) Growth off a base of zero or below is a dash; an empty base is still "new" ─────────────
+  assert.equal(
+    areaRows.find((entry) => entry.areaCode === "LX1")?.growth[0],
+    GROWTH_NO_BASE,
+    "48 units over −1 is no growth figure at all — it printed −4938.9%",
+  );
+  assert.equal(
+    areaRows.find((entry) => entry.areaCode === "MN1")?.growth[2],
+    GROWTH_NO_BASE,
+    "a product that sold zero the month before has no base either",
+  );
+  assert.equal(
+    areaRows.find((entry) => entry.areaCode === "NV1")?.growth[0],
+    null,
+    "an area with nothing on record the month before is still \"new\"",
+  );
+  assert.equal(reviewGrowthOf([-1, 48]), GROWTH_NO_BASE, "the shared rule: a negative base is no base");
+  assert.equal(reviewGrowthOf([0, 5]), GROWTH_NO_BASE, "a zero base is no base");
+  assert.equal(reviewGrowthOf([null, 5]), null, "a missing month is new");
+  assert.equal(reviewGrowthOf([5]), null, "one month alone is new");
+  assert.equal(reviewGrowthOf([100, 150]), 0.5, "a real base still gives the ratio");
+
+  // ── (5) The emitted workbook says the same thing ───────────────────────────────────────────────
+  const buffer = await buildClosingPerformanceReviewWorkbook(review);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.getWorksheet(PRODUCT_MONTH_SHEET_NAME);
+  assert.ok(sheet, "the workbook carries the Reps · Products by Month sheet");
+  const rowsHolding = (text: string) => {
+    const found: unknown[][] = [];
+    sheet.eachRow((current) => {
+      const values = (current.values as unknown[]).slice(1);
+      if (values.some((value) => typeof value === "string" && value.includes(text))) found.push(values);
+    });
+    return found;
+  };
+  assert.equal(rowsHolding("Minia 1").length, 1, "the emitted sheet prints Minia 1 once");
+  const nationalRow = rowsHolding("NATIONAL TOTAL")[0];
+  assert.ok(nationalRow, "the emitted sheet closes with NATIONAL TOTAL");
+  assert.ok(nationalRow.includes(215), "its September TB001 cell is the closing's 215");
+  assert.ok(!nationalRow.includes(275), "never the 275 that adding Minia 1 twice gave");
+  const luxorRow = rowsHolding("Luxor")[0];
+  assert.ok(luxorRow?.includes(EM), "Luxor's growth off −1 is emitted as a dash");
+  assert.ok(
+    !luxorRow.some((value) => typeof value === "number" && value < -1),
+    "and never as a ratio like −49.39",
+  );
 }

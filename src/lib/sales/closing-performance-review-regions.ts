@@ -50,6 +50,37 @@ export function longMonthLabel(period: string | null | undefined): string {
 }
 
 /**
+ * A growth figure that cannot be computed because the month before was ZERO OR BELOW.
+ *
+ * Kept apart from `null` ("new", nothing on record the month before) because the two are different
+ * facts. A base of zero has nothing to divide by, and a NEGATIVE base — returns outweighing sales,
+ * Luxor's August Lacto Advanced 1 at −1 unit — turns the ratio inside out: 48 units over −1 printed
+ * "−4938.9%", a fall on a month that grew. Both print "—". A string, not NaN, so it survives the JSON
+ * hop to the workspace.
+ */
+export const GROWTH_NO_BASE = "no-base" as const;
+
+/** Newest month over the one before it: a ratio, `null` for "new", or `GROWTH_NO_BASE` for "—". */
+export type PerformanceReviewGrowth = number | typeof GROWTH_NO_BASE | null;
+
+/**
+ * Growth of the newest month over the one before it — the one rule the screen, the workbook and the
+ * workbook's own TOTAL row all apply.
+ *
+ *  • fewer than two months, or either month absent → `null`, printed "new";
+ *  • the month before at zero or below → `GROWTH_NO_BASE`, printed "—";
+ *  • otherwise the ratio.
+ */
+export function reviewGrowthOf(perMonth: ReadonlyArray<number | null>): PerformanceReviewGrowth {
+  if (perMonth.length < 2) return null;
+  const latest = perMonth[perMonth.length - 1];
+  const previous = perMonth[perMonth.length - 2];
+  if (latest == null || previous == null) return null;
+  if (previous <= 0) return GROWTH_NO_BASE;
+  return (latest - previous) / previous;
+}
+
+/**
  * The region palette, in the order the reader expects to meet the regions.
  *
  * It lives here rather than in the workbook builder because the screen and the export must agree:
@@ -121,6 +152,11 @@ export type PerformanceReviewScope = {
    * and cannot detect the narrowing: without this flag a district manager's bottom row would claim
    * NATIONAL TOTAL over four areas of fifty-eight, which is exactly the false claim this helper
    * exists to prevent. Absent/false for the admin screen, which is unbounded.
+   *
+   * 🔴 FALSE FOR A BOUND THAT COVERS THE WHOLE LINE — a National Sales Manager bound to his line holds
+   * every area and every product a portal reader may see, so his unfiltered bottom row IS the national
+   * total and reads so. The loader decides it by comparing the scoped matrix with the unscoped one
+   * (`viewerBoundNarrowsTheLine`), never by whether a bound exists.
    */
   scopeIsBounded?: boolean | null;
 };

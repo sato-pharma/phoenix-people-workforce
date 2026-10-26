@@ -122,6 +122,47 @@ export function narrowMatrixToViewerScope(
 }
 
 /**
+ * Whether a viewer's bound actually leaves out part of the line — the question "National total" vs
+ * "Filtered total" turns on.
+ *
+ * A bound EXISTING is not the answer. A National Sales Manager is bound to his line, and his scoped
+ * matrix holds every one of its areas and every product a portal reader may read: his bottom row of
+ * fifty areas and 2,786,792 is the national total, and it printed "Filtered total" because the old
+ * test was `viewerScope != null`. So this compares what survived the bound with the whole line as
+ * any portal reader receives it — the unscoped matrix after the same confidential strip, since those
+ * three columns are a product lock on everyone, not a narrowing of him.
+ *
+ * Any area or product missing → true (a district manager's four areas of fifty-eight stays
+ * "Filtered total"). A bound that matched nothing → true as well, never a national claim over zero rows.
+ */
+export function viewerBoundNarrowsTheLine(
+  unscoped: MonthlyClosingMatrix,
+  scoped: MonthlyClosingMatrix,
+): boolean {
+  const whole = stripRestrictedColumns(unscoped);
+  const areaCodes = (matrix: MonthlyClosingMatrix) =>
+    new Set(matrix.regions.flatMap((group) => group.areas.map((area) => area.areaCode.trim().toUpperCase())));
+  const wholeAreas = areaCodes(whole);
+  const keptAreas = areaCodes(scoped);
+  if (keptAreas.size === 0) return true;
+  for (const code of wholeAreas) if (!keptAreas.has(code)) return true;
+  const keptProducts = new Set(scoped.columns.map((column) => column.productCode));
+  return whole.columns.some((column) => !keptProducts.has(column.productCode));
+}
+
+/**
+ * The review's `scopeIsBounded`: no bound → false; a bound → whether narrowing the line by it leaves
+ * anything out (`viewerBoundNarrowsTheLine`). The loader and its tests both ask this one function.
+ */
+export function reviewScopeIsBounded(
+  unscoped: MonthlyClosingMatrix,
+  scope: PerformanceReviewViewerScope | null | undefined,
+): boolean {
+  if (!scope) return false;
+  return viewerBoundNarrowsTheLine(unscoped, narrowMatrixToViewerScope(unscoped, scope));
+}
+
+/**
  * Which line a scoped read loads, and which lines the picker may offer.
  *
  * Delegates to `pickPortalClosingLine`, so the one rule that matters holds here too: A REQUESTED

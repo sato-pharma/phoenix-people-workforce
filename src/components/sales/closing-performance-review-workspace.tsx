@@ -27,9 +27,11 @@ import type {
   PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import {
+  GROWTH_NO_BASE,
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
   reviewTotalRowLabel,
+  type PerformanceReviewGrowth,
 } from "@/lib/sales/closing-performance-review-regions";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
@@ -105,8 +107,10 @@ function Achievement({ ratio }: { ratio: number | null }) {
   return <span className={"font-black tabular-nums " + achievementClass(ratio)}>{(ratio * 100).toFixed(1)}%</span>;
 }
 
-function Growth({ ratio }: { ratio: number | null }) {
+/** "new" when the month before has nothing on record; "—" when it stood at zero or below (returns). */
+function Growth({ ratio }: { ratio: PerformanceReviewGrowth }) {
   if (ratio == null) return <span className="text-xs italic text-slate-400">new</span>;
+  if (ratio === GROWTH_NO_BASE) return <span className="text-xs text-slate-400">—</span>;
   const sign = ratio >= 0 ? "+" : "−";
   return (
     <span className={"font-black tabular-nums " + (ratio >= 0 ? "text-teal-700" : "text-red-700")}>

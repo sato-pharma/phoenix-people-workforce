@@ -12,9 +12,12 @@ import {
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import {
+  GROWTH_NO_BASE,
   longMonthLabel as longMonthName,
+  reviewGrowthOf,
   reviewShowsLessThanTheWholeLine,
   reviewTotalRowLabel,
+  type PerformanceReviewGrowth,
 } from "@/lib/sales/closing-performance-review-regions";
 import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
 import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
@@ -153,7 +156,15 @@ function pct(cell: Cell, ratio: number | null, options: { bold?: boolean } = {})
   return cell;
 }
 
-function growth(cell: Cell, ratio: number | null) {
+function growth(cell: Cell, ratio: PerformanceReviewGrowth) {
+  // The month before stood at zero or below — no growth to compute, and never a percentage off a
+  // negative base (Luxor's −1 printed −4938.9%).
+  if (ratio === GROWTH_NO_BASE) {
+    cell.value = "—";
+    align(cell, { horizontal: "center" });
+    font(cell, { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 8.5 });
+    return cell;
+  }
   if (ratio == null) {
     cell.value = "new";
     align(cell, { horizontal: "center" });
@@ -353,7 +364,7 @@ function masthead(workbook: ExcelJS.Workbook, sheet: Sheet, options: MastheadOpt
         { font: { color: { argb: SLATE }, name: HOUSE_XLSX_FONT, size: 8.5 }, text: " fell on the month     " },
         {
           font: { color: { argb: MUTE }, name: HOUSE_XLSX_FONT, size: 8.5 },
-          text: "new = nothing sold the month before, so there is no growth to compute",
+          text: "new = nothing on record the month before    — = the month before was zero or below",
         },
       ],
     };
@@ -900,9 +911,7 @@ function buildSeriesSheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
     totals.forEach((value, monthIndex) => {
       money(sheet.getCell(row, 3 + monthIndex), value, { bold: true, color: DEEP, na: value == null });
     });
-    const last = totals[totals.length - 1];
-    const previous = totals[totals.length - 2];
-    growth(sheet.getCell(row, LAST), last == null || previous == null || previous === 0 ? null : (last - previous) / previous);
+    growth(sheet.getCell(row, LAST), reviewGrowthOf(totals));
   }
 
   if (options.rows.length > 0) {

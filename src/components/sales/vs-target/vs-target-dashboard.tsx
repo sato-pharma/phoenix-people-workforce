@@ -610,11 +610,14 @@ export function VsTargetDashboard({
                   value={<CountUpNumber value={data.totals.targetValue} format={formatEgp} />}
                   note={`${data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines`}
                 />
-                <BandStat
-                  label="Units sold"
-                  value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
-                  note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
-                />
+                {/* Units of different products are never added — shown only for a one-product view. */}
+                {data.unitsAddable ? (
+                  <BandStat
+                    label="Units sold"
+                    value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
+                    note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
+                  />
+                ) : null}
               </>
             ) : null
           }
@@ -690,11 +693,14 @@ export function VsTargetDashboard({
                   value={<CountUpNumber value={data.totals.targetValue} format={formatEgp} />}
                   note={`${data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines`}
                 />
-                <BandStat
-                  label="Units sold"
-                  value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
-                  note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
-                />
+                {/* Units of different products are never added — shown only for a one-product view. */}
+                {data.unitsAddable ? (
+                  <BandStat
+                    label="Units sold"
+                    value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
+                    note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -772,8 +778,8 @@ export function VsTargetDashboard({
                   </p>
                 ) : null}
                 <p className={missingTargetValue !== 0 ? "" : "font-semibold"}>
-                  Achievement counts only sales that have a target, so an untargeted area is never shown as
-                  under-performing.
+                  Achievement is every sale in a targeted month over that month&apos;s target — the same Ach % the
+                  Monthly Closing prints — so the sales above, targeted or not, are all counted in it.
                   {data.byDesignUntargetedValue !== 0
                     ? ` A further ${formatEgpFull(data.byDesignUntargetedValue)} is in "Other" areas that carry no target by design.`
                     : ""}

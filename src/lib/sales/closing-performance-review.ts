@@ -16,13 +16,17 @@ import {
   type MonthlyClosingFilterOptions,
 } from "@/lib/sales/monthly-closing-filter-options";
 import {
+  GROWTH_NO_BASE,
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
   PERFORMANCE_REVIEW_REGIONS,
   regionOrder,
+  reviewGrowthOf,
+  type PerformanceReviewGrowth,
 } from "@/lib/sales/closing-performance-review-regions";
 import {
   narrowMatrixToViewerScope,
+  reviewScopeIsBounded,
   type PerformanceReviewViewerScope,
 } from "@/lib/sales/closing-performance-review-scope";
 
@@ -32,7 +36,8 @@ import {
 // PERFORMANCE_REVIEW_FIRST_PERIOD but not this file's server-only matrix builder (getEmployeeDirectory
 // above pulls employee-photo's `node:crypto`, which webpack refuses in a browser bundle).
 // Re-exported here so every existing server caller keeps importing from where it already does.
-export { performanceReviewRegionStyle, PERFORMANCE_REVIEW_FIRST_PERIOD, PERFORMANCE_REVIEW_REGIONS };
+export { GROWTH_NO_BASE, performanceReviewRegionStyle, PERFORMANCE_REVIEW_FIRST_PERIOD, PERFORMANCE_REVIEW_REGIONS };
+export type { PerformanceReviewGrowth };
 
 /** The same four narrowings Monthly Closing offers. Empty everywhere means "the whole line". */
 export type ClosingPerformanceReviewFilter = {
@@ -138,8 +143,11 @@ export type PerformanceReviewFamilyRow = {
 };
 
 export type PerformanceReviewSeriesRow = {
-  /** Newest month over the one before it. Null when the previous month sold nothing ("new"). */
-  growth: number | null;
+  /**
+   * Newest month over the one before it. Null when the month before has nothing on record ("new");
+   * `GROWTH_NO_BASE` when it stood at zero or below, which prints "—" (see `reviewGrowthOf`).
+   */
+  growth: PerformanceReviewGrowth;
   key: string;
   label: string;
   /** One entry per month in `months`, oldest first. Null = that month was never uploaded. */
@@ -228,7 +236,7 @@ export type PerformanceProductMonthColumn = {
 export type PerformanceProductMonthRow = {
   areaCode: string;
   areaName: string;
-  growth: Array<number | null>;
+  growth: Array<PerformanceReviewGrowth>;
   kind: "area" | "regionSubtotal" | "grandTotal";
   managerName: string | null;
   regionCode: string;
@@ -315,14 +323,8 @@ function achievementOf(sales: number, target: number | null): number | null {
   return sales / target;
 }
 
-/** Growth of the newest month over the one before it. Null when there is nothing to grow from. */
-function growthOf(perMonth: Array<number | null>): number | null {
-  if (perMonth.length < 2) return null;
-  const latest = perMonth[perMonth.length - 1];
-  const previous = perMonth[perMonth.length - 2];
-  if (latest == null || previous == null || previous === 0) return null;
-  return (latest - previous) / previous;
-}
+/** Growth of the newest month over the one before it — the shared rule, `reviewGrowthOf`. */
+const growthOf = reviewGrowthOf;
 
 /** Sum a matrix cell list, keeping "no target" distinct from "target of zero". */
 function sumCells(cells: MonthlyClosingCell[]): { salesUnits: number; salesValue: number; targetValue: number | null } {
@@ -655,6 +657,44 @@ function areaRowsOf(matrix: MonthlyClosingMatrix) {
   return matrix.regions.flatMap((group) => group.areas.map((area) => ({ area, group })));
 }
 
+type AreaHome = { areaCode: string; areaName: string; regionCode: string; regionName: string };
+
+/**
+ * Every area the series touches, each ONCE, under the region it has in the NEWEST month that holds it.
+ *
+ * 🔴 AN AREA IS ONE ROW, NEVER ONE ROW PER REGION IT HAS EVER SAT IN. The organogram re-homes areas
+ * between months — on Pedia, Minia 1/2, Assuit 1/2, Sohag 1/2 and Qena 1/2 moved from "Upper Egypt"
+ * to "Upper Egypt 1/2" in September, Kafr El-Sheikh 1 from Alex-BHR to Delta (1), Fayoum from Giza to
+ * Upper Egypt 1, Luxor from Upper Egypt 2 to Others. Grouping each month's rows by that month's own
+ * region printed every such area twice, each copy carrying ALL its months, so the region subtotals
+ * and the national row added it twice: September Lacto Advanced 1 summed to 6,377 against the
+ * closing's 5,561, Ivyronc to 12,710 against 10,642.
+ *
+ * The SELECTED month (the headline matrix) is asked first, then the series newest to oldest, so an
+ * area sits where the reader's own month puts it and an area that has since gone keeps its last home.
+ */
+function areaHomesByLatestMonth(
+  headline: MonthlyClosingMatrix | null,
+  seriesMatrices: ReadonlyArray<{ matrix: MonthlyClosingMatrix | null }>,
+): Map<string, AreaHome> {
+  const homes = new Map<string, AreaHome>();
+  const sources = [headline, ...[...seriesMatrices].reverse().map((entry) => entry.matrix)];
+  for (const matrix of sources) {
+    if (!matrix) continue;
+    for (const { area, group } of areaRowsOf(matrix)) {
+      const code = area.areaCode.trim().toUpperCase();
+      if (homes.has(code)) continue;
+      homes.set(code, {
+        areaCode: area.areaCode,
+        areaName: area.areaName,
+        regionCode: group.regionCode,
+        regionName: group.regionName,
+      });
+    }
+  }
+  return homes;
+}
+
 /**
  * Build one performance matrix: reps and areas down the side, the given columns across the top.
  *
@@ -779,27 +819,21 @@ function buildProductMonthMatrix(input: {
     return { cellsByArea, columnIndex, uploaded: entry.matrix != null };
   });
 
-  // Every area that appears in ANY month, grouped by region in the closing's own region order.
+  // Every area that appears in ANY month — ONCE, under the region the selected month gives it — then
+  // grouped by that region in the closing's own region order. One row per (rep, area), so a region
+  // subtotal and the national row add each area exactly once (`areaHomesByLatestMonth`).
   const regionGroups = new Map<
     string,
     { areas: Map<string, { areaCode: string; areaName: string }>; regionCode: string; regionName: string }
   >();
-  const collect = (matrix: MonthlyClosingMatrix | null) => {
-    if (!matrix) return;
-    for (const group of matrix.regions) {
-      let entry = regionGroups.get(group.regionCode);
-      if (!entry) {
-        entry = { areas: new Map(), regionCode: group.regionCode, regionName: group.regionName };
-        regionGroups.set(group.regionCode, entry);
-      }
-      for (const area of group.areas) {
-        const code = area.areaCode.trim().toUpperCase();
-        if (!entry.areas.has(code)) entry.areas.set(code, { areaCode: area.areaCode, areaName: area.areaName });
-      }
+  for (const [code, home] of areaHomesByLatestMonth(headline, seriesMatrices)) {
+    let entry = regionGroups.get(home.regionCode);
+    if (!entry) {
+      entry = { areas: new Map(), regionCode: home.regionCode, regionName: home.regionName };
+      regionGroups.set(home.regionCode, entry);
     }
-  };
-  collect(headline);
-  for (const entry of seriesMatrices) collect(entry.matrix);
+    entry.areas.set(code, { areaCode: home.areaCode, areaName: home.areaName });
+  }
 
   const emptyBlocks = () => columns.map(() => months.map(() => null as number | null));
 
@@ -1137,13 +1171,17 @@ export function buildClosingPerformanceReview(input: {
   // Per AREA: VALUE only. An area sells the whole line, so its units span every product code in it
   // — adding those would be exactly the error rule 1 forbids. `unitsAreAddable: false` states that
   // on the row itself so no renderer can quietly put a units column beside it.
-  const areaKeys = new Map<string, { areaName: string; regionCode: string; regionName: string }>();
+  //
+  // Labelled with the region the SELECTED month gives the area, never the first month the series met
+  // it in — Minia 1 printed "Upper Egypt" beside its September figure after it had moved to Upper
+  // Egypt 1. The headline is asked only for the LABEL: the rows are still the series' own areas.
+  const homes = areaHomesByLatestMonth(matrix, seriesMatrices);
+  const areaKeys = new Map<string, AreaHome>();
   for (const entry of seriesMatrices) {
-    for (const { area, group } of entry.matrix ? areaRowsOf(entry.matrix) : []) {
+    for (const { area } of entry.matrix ? areaRowsOf(entry.matrix) : []) {
       const code = area.areaCode.trim().toUpperCase();
-      if (!areaKeys.has(code)) {
-        areaKeys.set(code, { areaName: area.areaName, regionCode: group.regionCode, regionName: group.regionName });
-      }
+      const home = homes.get(code);
+      if (home && !areaKeys.has(code)) areaKeys.set(code, home);
     }
   }
 
@@ -1343,7 +1381,9 @@ export async function loadClosingPerformanceReview(input?: {
     filterOptions: monthlyClosingFilterOptions(scoped(parts.combined)),
     generatedAt: new Date().toISOString(),
     matrix,
-    scopeIsBounded: viewerScope != null,
+    // Bounded only when the bound LEAVES SOMETHING OUT — a National Sales Manager bound to his whole
+    // line reads "National total" (`viewerBoundNarrowsTheLine`).
+    scopeIsBounded: reviewScopeIsBounded(parts.combined, viewerScope),
     seatAssignments,
     selectedPeriods: parts.periods,
     seriesMatrices,
