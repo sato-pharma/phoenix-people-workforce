@@ -362,13 +362,13 @@ export default async function MedRepsPerformancePage({
           <TeamLeaderboardTable members={members} />
         </Card>
 
-        {/* ── Product Depth Section Divider ── */}
+        {/* ── Product Depth Section Divider ── the title wraps on a phone; at 375px it is wider than the card. */}
         <div className="flex items-center gap-3 px-1">
-          <div className="h-px flex-1 bg-gray-200" />
-          <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <div className="h-px min-w-6 flex-1 bg-gray-200" />
+          <p className="min-w-0 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">
             Medical Reps Product Breakdown ({medicalRepCountLabel(teamMemberCount)})
           </p>
-          <div className="h-px flex-1 bg-gray-200" />
+          <div className="h-px min-w-6 flex-1 bg-gray-200" />
         </div>
 
         {/* ── Product Comparison (grouped by district / DSM) ── */}

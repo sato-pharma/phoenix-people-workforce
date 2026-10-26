@@ -67,4 +67,17 @@ export function runRepTargetGapTests() {
     );
     assert.match(source, /medicalRepCountLabel\(/, `${file} uses the shared count label`);
   }
+
+  // 6. The breakdown divider's title wraps. "(20 medical reps)" made it 355px wide; held to one line by
+  //    shrink-0 it ran past a 375px phone and the card clipped its end (production, 26 Oct 2026).
+  const divider = read("app/employee-portals/med-reps-performance/page.tsx").match(
+    /<p className="([^"]*)">\s*Medical Reps Product Breakdown/,
+  );
+  assert.ok(divider, "the Medical Reps Product Breakdown divider is found");
+  assert.doesNotMatch(
+    divider[1],
+    /\b(shrink-0|whitespace-nowrap|truncate)\b/,
+    "🔴 the breakdown divider's title may wrap — on a phone it is wider than the card",
+  );
+  assert.match(divider[1], /\bmin-w-0\b/, "the divider's title can shrink below its one-line width");
 }
