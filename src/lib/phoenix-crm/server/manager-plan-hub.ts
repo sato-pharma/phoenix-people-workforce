@@ -27,6 +27,7 @@ import {
   managerPlannerTitle,
   managerPlanStage,
   managerPlanStatusLabel,
+  nextManagerPlanStatus,
   returnStageOfApproved,
   singleVisitDayAskStatusLabel,
   type ManagerPlanStage,
@@ -90,6 +91,11 @@ export type ManagerHubPlanDetail = {
   board: ManagerPlanBoardView;
   /** The viewer decides the week now (approve, return the week, return one day). */
   decideAs: ManagerPlanDeciderRole | null;
+  /**
+   * Approve is open at this status. An approved week still reaches its last approver — to return it before
+   * it ends — but never to approve it again, which the server refuses as "already moved on".
+   */
+  canApprove: boolean;
   /** At the first step, the NSM who approves the week after it. */
   thenName: string | null;
   version: number;
@@ -338,6 +344,7 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
     steps: planSteps(plan, names),
     board,
     decideAs: weekOpen ? decideAs : null,
+    canApprove: nextManagerPlanStatus({ action: "approve", status: plan.status, stage, hasSecond }) !== null,
     thenName: plan.status === "submitted" && plan.secondApproverHrId ? nameOf(names, plan.secondApproverHrId) : null,
     version: plan.version,
     returnableDays: board.days.filter((day) => day.halves.length > 0).map((day) => ({ date: day.date, dateText: day.dateText })),

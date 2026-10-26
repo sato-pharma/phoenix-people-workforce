@@ -25,7 +25,7 @@ import {
  * reads that his approval passes it on, and an ask or a removal sends back the step it showed.
  */
 type Target =
-  | { kind: "plan"; planId: string; version: number; returnableDays: Array<{ date: string; dateText: string }>; thenName: string | null }
+  | { kind: "plan"; planId: string; version: number; canApprove: boolean; returnableDays: Array<{ date: string; dateText: string }>; thenName: string | null }
   | { kind: "edit"; requestId: string; version: number; stage: "first" | "second" | null; thenName: string | null }
   | { kind: "removal"; customerId: string; requestedAt: string | null; stage: "first" | "second" | null; thenName: string | null }
   | { kind: "single_visit_day"; requestId: string; version: number; stage: "first" | "second" | null; thenName: string | null };
@@ -210,12 +210,17 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
         <h3 className={headerText}>Your decision</h3>
       </header>
       {passesOnNote ? <div className="px-4 pt-4">{passesOnNote}</div> : null}
+      {target.kind === "plan" && !target.canApprove ? (
+        <p className="px-4 pt-4 text-sm text-slate-600">This week is already approved. You can still return it until the week ends.</p>
+      ) : null}
       <div className="flex flex-wrap gap-2 px-4 py-4">
         {target.kind === "plan" ? (
           <>
-            <button type="button" onClick={() => open("approve")} className={phxButtonApproveClassName}>
-              <CheckCircle2 className="h-4 w-4" /> Approve
-            </button>
+            {target.canApprove ? (
+              <button type="button" onClick={() => open("approve")} className={phxButtonApproveClassName}>
+                <CheckCircle2 className="h-4 w-4" /> Approve
+              </button>
+            ) : null}
             <button type="button" onClick={() => open("return_week")} className={`${outline} border-amber-500 text-amber-700 hover:bg-amber-50`}>
               <CornerUpLeft className="h-4 w-4" /> Return the week
             </button>
