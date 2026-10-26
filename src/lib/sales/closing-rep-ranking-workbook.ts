@@ -4,7 +4,7 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
-import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
+import { unprotectExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 import { type ClosingRepRankingCarve, type RepRanking } from "@/lib/sales/closing-rep-ranking";
 import {
   rankingDressFor,
@@ -469,7 +469,7 @@ export type RepRankingWorkbookResult = {
     sheetNames: string[];
     bannersEmbedded: number;
     falseCollapsesCleared: number;
-    lockedSheets: number;
+    openSheets: number;
     productRows: number;
   };
 };
@@ -1248,7 +1248,7 @@ export async function buildRepRankingWorkbook(input: {
     const extraRows = extraCodes.map((code) => ({
       code,
       noArea: !L.areaRowOf(code),
-      area: L.areaRowOf(code)?.area_name ?? (code ? `${code} - not in today's area map` : "No area on the invoice"),
+      area: L.areaRowOf(code)?.area_name ?? (code ? "Area not in today's area map" : "No area on the invoice"),
       region: L.areaRowOf(code) ? areaRegion(code) : "Not attributed",
       who: L.areaRowOf(code) ? holderOf(code) : { rep: "Reached no seat", dm: "Not assigned", vacant: false, repProbation: null, dmProbation: null },
       extra: true,
@@ -1695,7 +1695,7 @@ export async function buildRepRankingWorkbook(input: {
       ...rows.map((r) => ({ code: r.code, area: r.area, region: r.region, who: r.who, extra: false })),
       ...extraCodes.map((code) => ({
         code,
-        area: L.areaRowOf(code)?.area_name ?? (code ? `${code} - not in today's area map` : "No area on the invoice"),
+        area: L.areaRowOf(code)?.area_name ?? (code ? "Area not in today's area map" : "No area on the invoice"),
         region: L.areaRowOf(code) ? areaRegion(code) : "Not attributed",
         who: L.areaRowOf(code) ? holderOf(code) : { rep: "Reached no seat", dm: "Not assigned", vacant: false, repProbation: null, dmProbation: null },
         extra: true,
@@ -2098,9 +2098,8 @@ export async function buildRepRankingWorkbook(input: {
 
   growRowsToFitWrappedText(wb);
 
-  // 🔒 EVERY TAB LOCKED, NO OPTION TO TURN IT OFF (owner, 2026-10-13: "never be able to edit any
-  // cell in any tab of the downloaded monthly closing sheet"). A new export builder must call this.
-  const lockedSheets = lockExcelWorkbook(wb);
+  // NO TAB PROTECTED (owner, 2026-10-26: "all its types download non protected"), hidden ones included.
+  const openSheets = unprotectExcelWorkbook(wb);
 
   const written = Buffer.from(await wb.xlsx.writeBuffer());
   const repaired = await repairEmittedWorkbook(written);
@@ -2110,7 +2109,7 @@ export async function buildRepRankingWorkbook(input: {
     facts: {
       bannersEmbedded: book.bannerCount,
       falseCollapsesCleared: repaired.falseCollapses,
-      lockedSheets,
+      openSheets,
       productRows: productLineCount,
       sheetNames: wb.worksheets.map((sheet) => sheet.name),
     },

@@ -9,7 +9,7 @@ import {
   houseHeaderStyle,
   writeHouseMasthead,
 } from "@/lib/export/house-xlsx-identity";
-import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
+import { unprotectExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 import {
   achievementBand,
   describeAchievementCell,
@@ -243,6 +243,6 @@ export async function buildRepAchievementWorkbook(input: RepAchievementWorkbookI
     next += 1;
   }
 
-  lockExcelWorkbook(workbook);
+  unprotectExcelWorkbook(workbook);
   return workbook;
 }

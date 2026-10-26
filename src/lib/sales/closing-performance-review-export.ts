@@ -20,7 +20,7 @@ import {
   type PerformanceReviewGrowth,
 } from "@/lib/sales/closing-performance-review-regions";
 import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
-import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
+import { unprotectExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The Performance Review workbook.
@@ -1170,9 +1170,9 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     title: "REPS AND AREAS " + DOT + " PRODUCTS BY MONTH",
   });
 
-  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+  // Not protected: every tab, hidden ones included, opens for editing (owner, 2026-10-26).
 
-  lockExcelWorkbook(workbook);
+  unprotectExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

@@ -53,7 +53,7 @@ import {
   type SplitRegions,
 } from "@/lib/sales/store-sales-city-split";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
-import { lockExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
+import { unprotectExcelWorkbook } from "@/lib/sales/closing-workbook-lock";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -221,6 +221,8 @@ function writeDataSheet(workbook: ExcelJS.Workbook, blocks: DataBlock[]) {
 type RawColumn = {
   name: string;
   width: number;
+  /** A geography code kept only as a formula key or for a filter: hidden, so the sheet reads by name. */
+  hidden?: boolean;
   numFmt?: string;
   value: (row: ClosingDetailRow) => string | number;
 };
@@ -231,15 +233,19 @@ const RAW_COLUMNS: RawColumn[] = [
   // The Closing Matrix's region (the organogram territory that owns the row's closing area), so this
   // sheet names the same region as the matrix beside it — on Anti Infective the map says Upper Egypt
   // where the matrix says Upper Egypt 1 or 2 (owner, 2026-09-16). Geography only where the organogram
-  // has nothing. No formula keys on either column.
-  { name: "Region Code", width: 11, value: (r) => r.operationalRegionCode || r.regionCode },
+  // has nothing.
+  // Bricks, areas and regions read by NAME, never by code (owner, 2026-10-26: "in bricks and areas
+  // and overall never use code always use name"). The code columns stay in the file HIDDEN: the
+  // Total sheet's SUMIFS key on Area Code (an area name can repeat -- two CNS areas both print
+  // "Qena"), and a hidden column costs a reader nothing.
+  { name: "Region Code", width: 11, hidden: true, value: (r) => r.operationalRegionCode || r.regionCode },
   { name: "Region", width: 18, value: (r) => r.operationalRegionName || r.regionName },
-  { name: "Area Code", width: 11, value: (r) => r.areaCode },
+  { name: "Area Code", width: 11, hidden: true, value: (r) => r.areaCode },
   { name: "Area", width: 22, value: (r) => r.areaName },
   { name: "Block", width: 11, value: (r) => r.blockCode },
-  { name: "Brick ID", width: 12, value: (r) => r.brickId },
+  { name: "Brick ID", width: 12, hidden: true, value: (r) => r.brickId },
   { name: "Brick Name", width: 22, value: (r) => r.brickName },
-  { name: "Sheet Area Code", width: 14, value: (r) => r.sheetAreaCode },
+  { name: "Sheet Area", width: 18, value: (r) => r.sheetAreaName || r.sheetAreaCode },
   { name: "Client Code", width: 13, value: (r) => r.clientCode },
   { name: "Client Name", width: 30, value: (r) => r.clientName },
   { name: "Client Address", width: 30, value: (r) => r.clientAddress },
@@ -307,6 +313,7 @@ function writeRawDataSheet(
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
     cell.border = gridBorder();
     sheet.getColumn(index + 1).width = column.width;
+    if (column.hidden) sheet.getColumn(index + 1).hidden = true;
   });
   headerRow.height = 20;
 
@@ -467,13 +474,15 @@ function writeTotalSheet(
   const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
     views: [{ state: "frozen", ySplit: 5 }],
   });
-  // Columns 8-10 are the Data sheet's own sums on every workbook. Beside a Closing Matrix they are
+  // Columns 6-8 are the Data sheet's own sums on every workbook. Beside a Closing Matrix they are
   // named for what they are, and the columns after them carry the matrix's additions and the
-  // area's Sales. Data Value stays column 10: the reconciliation below reads its TOTAL.
+  // area's Sales. The reconciliation below reads Data Value's TOTAL.
+  // Regions and areas read by NAME (owner, 2026-10-26: "never use code always use name"). Their
+  // codes ride HIDDEN at the far right -- a hidden column hides for every table on the sheet, and
+  // the reconciliation under the grid uses the first four. The SUMIFS carry the area code as a
+  // literal, so no figure reads either hidden column.
   const columns: TableColumn[] = [
-    { label: "Region Code", width: 11 },
     { label: "Region", width: 18 },
-    { label: "Area Code", width: 11 },
     { label: "Area", width: 24 },
     { label: "Product Code", width: 12 },
     { label: "Product", width: 22 },
@@ -491,6 +500,8 @@ function writeTotalSheet(
         { label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 15 },
       ]
       : []),
+    { label: "Region Code", width: 11, hidden: true },
+    { label: "Area Code", width: 11, hidden: true },
   ];
   bandHeader(
     sheet,
@@ -605,10 +616,9 @@ function writeTotalSheet(
     const dataUnits = entry.sumsData ? sumOf(match, (r) => r.qty) : 0;
     const dataEffective = entry.sumsData ? sumOf(match, (r) => r.effectiveUnits) : 0;
     const dataValue = entry.sumsData ? sumOf(match, (r) => r.salesValue) : 0;
+    const codes: CellValue[] = [entry.regionCode, entry.areaCode];
     const base: CellValue[] = [
-      entry.regionCode,
       entry.regionName,
-      entry.areaCode,
       entry.areaName,
       entry.productCode,
       entry.productName,
@@ -617,7 +627,7 @@ function writeTotalSheet(
       entry.sumsData ? F(cellFor(effRange, entry.areaCode, entry.productCode), dataEffective) : 0,
       entry.sumsData ? F(cellFor(valueRange, entry.areaCode, entry.productCode), dataValue) : 0,
     ];
-    if (!matrixCells) return base;
+    if (!matrixCells) return [...base, ...codes];
     sum.splitUnits += entry.split.units;
     sum.splitValue += entry.split.value;
     sum.directUnits += entry.direct.units;
@@ -629,8 +639,9 @@ function writeTotalSheet(
       entry.split.value,
       entry.direct.units,
       entry.direct.value,
-      F(`${columnLetter(8)}${at}+${columnLetter(11)}${at}+${columnLetter(13)}${at}`, dataUnits + entry.split.units + entry.direct.units),
-      F(`${columnLetter(10)}${at}+${columnLetter(12)}${at}+${columnLetter(14)}${at}`, dataValue + entry.split.value + entry.direct.value),
+      F(`${columnLetter(6)}${at}+${columnLetter(9)}${at}+${columnLetter(11)}${at}`, dataUnits + entry.split.units + entry.direct.units),
+      F(`${columnLetter(8)}${at}+${columnLetter(10)}${at}+${columnLetter(12)}${at}`, dataValue + entry.split.value + entry.direct.value),
+      ...codes,
     ];
   });
 
@@ -643,27 +654,27 @@ function writeTotalSheet(
     null,
     null,
     null,
-    null,
-    null,
     F(sumifs(qtyRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.units),
     F(sumifs(effRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.effectiveUnits),
     F(sumifs(valueRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.salesValue),
     ...(matrixCells
       ? [
-        columnSum(11, sum.splitUnits),
-        columnSum(12, sum.splitValue),
-        columnSum(13, sum.directUnits),
-        columnSum(14, sum.directValue),
+        columnSum(9, sum.splitUnits),
+        columnSum(10, sum.splitValue),
+        columnSum(11, sum.directUnits),
+        columnSum(12, sum.directValue),
         F(
-          `${columnLetter(8)}${totalsAt}+${columnLetter(11)}${totalsAt}+${columnLetter(13)}${totalsAt}`,
+          `${columnLetter(6)}${totalsAt}+${columnLetter(9)}${totalsAt}+${columnLetter(11)}${totalsAt}`,
           details.reconciliation.includedInClosing.units + sum.splitUnits + sum.directUnits,
         ),
         F(
-          `${columnLetter(10)}${totalsAt}+${columnLetter(12)}${totalsAt}+${columnLetter(14)}${totalsAt}`,
+          `${columnLetter(8)}${totalsAt}+${columnLetter(10)}${totalsAt}+${columnLetter(12)}${totalsAt}`,
           details.reconciliation.includedInClosing.salesValue + sum.splitValue + sum.directValue,
         ),
       ]
       : []),
+    null,
+    null,
   ];
 
   const row = writeTable(sheet, gridStartRow, {
@@ -689,7 +700,7 @@ function writeTotalSheet(
   // row sits 3 above the returned cursor. With no data rows it writes neither — fall back to a
   // plain number so the reconciliation never points at an empty cell.
   const totalValueRef: CellValue = rows.length > 0
-    ? F(`${columnLetter(10)}${row - 3}`, recon.includedInClosing.salesValue)
+    ? F(`${columnLetter(8)}${row - 3}`, recon.includedInClosing.salesValue)
     : recon.includedInClosing.salesValue;
 
   // The Data rows are raw sell-in; the matrix has store sales re-allocated across each store's
@@ -708,7 +719,7 @@ function writeTotalSheet(
     ? null
     : rows.length > 0
       ? F(
-        `${columnLetter(10)}${row - 3}${signed(applied)}${signed(directPlaced)}-${headline.salesValue}`,
+        `${columnLetter(8)}${row - 3}${signed(applied)}${signed(directPlaced)}-${headline.salesValue}`,
         dataPlusSplit - headline.salesValue,
       )
       : dataPlusSplit - headline.salesValue;
@@ -830,7 +841,8 @@ function writeTotalSheet(
 
 // ── Generic table writer ─────────────────────────────────────────────────────
 
-type TableColumn = { dataBar?: boolean; label: string; numFmt?: string; right?: boolean; width?: number };
+// `hidden` hides the whole sheet column, so only a table that has its sheet to itself may use it.
+type TableColumn = { dataBar?: boolean; hidden?: boolean; label: string; numFmt?: string; right?: boolean; width?: number };
 type CellValue = string | number | null | Formula;
 
 function setColumnWidth(sheet: ExcelJS.Worksheet, index: number, width: number) {
@@ -887,6 +899,7 @@ function writeTable(
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
     cell.border = gridBorder();
     setColumnWidth(sheet, index + 1, column.width ?? Math.max(12, column.label.length + 2));
+    if (column.hidden) sheet.getColumn(index + 1).hidden = true;
   });
   headerRow.height = 18;
   row += 1;
@@ -1096,8 +1109,10 @@ function writeMatrixSheet(
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
     cell.border = borderFor(Number(cell.col));
   };
-  sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Area");
-  sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area Name");
+  // By NAME, never by code (owner, 2026-10-26): the region beside each area, because an area name
+  // can repeat across regions (two CNS areas both print "Qena").
+  sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Region");
+  sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area");
   // The last two are CONTRIBUTION percentages — this row's share of the line, not an achievement
   // against a target. The header says "Contr%" outright (owner, 2026-08-05): read as a bare "%"
   // beside "Ach %" they were taken for a second achievement figure.
@@ -1303,7 +1318,7 @@ function writeMatrixSheet(
     region.areas.forEach((area) => {
       const synthetic = isSyntheticDirectArea(area);
       writeRow(
-        synthetic ? "◆ Direct" : area.areaCode,
+        synthetic ? "◆ Direct" : region.regionName,
         synthetic ? "Direct orders (company)" : area.areaName,
         area.cells,
         area.rowTotal,
@@ -1312,7 +1327,7 @@ function writeMatrixSheet(
       );
       zebra = !zebra;
     });
-    writeRow(region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
+    writeRow(region.regionName, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
     zebra = false;
   });
   // When the reader has filtered down to a single region, calling the bottom line "National Grand
@@ -2127,7 +2142,8 @@ function writeRankingsSheet(workbook: ExcelJS.Workbook, c: MonthlyClosingCompari
   row = writeTable(sheet, row, { columns: rankCols("Product", "Code"), rows: keyRank(c.rankings.products, ref.dpUnits, ref.dpValue, ref.dpProduct, true), title: "Top 10 Products" });
   row = writeTable(sheet, row, { columns: rankCols("Area", "Region"), rows: keyRank(c.rankings.areas, ref.dpUnits, ref.dpValue, ref.dpArea, true), title: "Top 10 Areas" });
   row = writeTable(sheet, row, { columns: rankCols("Region"), rows: keyRank(c.rankings.regions, ref.dpUnits, ref.dpValue, ref.dpRegion, false), title: "Top 10 Regions" });
-  row = writeTable(sheet, row, { columns: rankCols("Brick ID"), rows: keyRank(c.rankings.bricks, ref.brkUnits, ref.brkValue, ref.brkId, false), title: "Top 10 Bricks" });
+  // The ranked label is the brick's NAME (its code only where the master has no name).
+  row = writeTable(sheet, row, { columns: rankCols("Brick"), rows: keyRank(c.rankings.bricks, ref.brkUnits, ref.brkValue, ref.brkId, false), title: "Top 10 Bricks" });
 
   const topCustomers = [...c.data.customers].sort((a, b) => b.value - a.value).slice(0, 10);
   const custTotal = c.data.customers.reduce((sum, cu) => sum + cu.value, 0);
@@ -2179,9 +2195,9 @@ function writeGapsSheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparison,
     title: "Zero-Sales Areas",
   });
   row = writeTable(sheet, row, {
-    columns: [{ label: "Brick ID", width: 12 }, { label: "Brick Name", width: 24 }, { label: "Area", width: 18 }, { label: "Region", width: 14 }, { label: "Sales (proof)", numFmt: VALUE_FMT, right: true }],
+    columns: [{ label: "Brick", width: 24 }, { label: "Area", width: 18 }, { label: "Region", width: 14 }, { label: "Sales (proof)", numFmt: VALUE_FMT, right: true }],
     note: `${c.whiteSpace.zeroSalesBricks.length} of ${c.totalBricks} bricks had no sales.`,
-    rows: c.whiteSpace.zeroSalesBricks.map((b) => [b.brickId, b.brickName, b.areaName, b.regionName, F(sumifs(ref.brkValue, [[ref.brkId, b.brickId]]), 0)]),
+    rows: c.whiteSpace.zeroSalesBricks.map((b) => [b.brickName || b.brickId, b.areaName, b.regionName, F(sumifs(ref.brkValue, [[ref.brkId, b.brickId]]), 0)]),
     title: "Zero-Sales Bricks",
   });
   row = writeTable(sheet, row, {
@@ -2474,7 +2490,7 @@ function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosing
 
   const body: CellValue[][] = ordered.map((row) => [
     regionOf(row.areaCode, row.regionCode).regionName,
-    row.areaCode ? `${row.areaCode} — ${row.areaName}` : row.areaName,
+    row.areaName || row.areaCode,
     row.repName || "—",
     row.pharmacy,
     row.product,
@@ -2531,7 +2547,11 @@ function writeStoreSplitDetailSheet(
   stores: StoreSplitCustomerSummary[],
   details: StoreSplitDetailRow[],
   frozen = false,
+  // Area code -> area name, from the matrix. Geography is shown by NAME on every sheet (owner,
+  // 2026-10-26: "in bricks and areas and overall never use code always use name").
+  areaNames: ReadonlyMap<string, string> = new Map(),
 ) {
+  const areaName = (code: string) => areaNames.get(code.trim().toUpperCase()) || code;
   const sheet = workbook.addWorksheet(sanitizeSheetName("Store Split Detail"), {
     views: [{ state: "frozen", ySplit: 5 }],
   });
@@ -2569,7 +2589,7 @@ function writeStoreSplitDetailSheet(
     rows: stores.map((entry) => [
       entry.clientCode,
       entry.clientName,
-      `${entry.originAreaName} (${entry.originAreaCode})`,
+      entry.originAreaName || areaName(entry.originAreaCode),
       entry.city,
       entry.line,
       entry.products,
@@ -2610,7 +2630,7 @@ function writeStoreSplitDetailSheet(
     rows: details.map((entry) => [
       entry.clientCode,
       entry.clientName,
-      `${entry.originAreaName} (${entry.originAreaCode})`,
+      entry.originAreaName || areaName(entry.originAreaCode),
       entry.city,
       entry.line,
       entry.productCode,
@@ -2620,13 +2640,33 @@ function writeStoreSplitDetailSheet(
       entry.sharedWithAreaCodes.length,
       entry.shareUnits,
       entry.shareValue,
-      entry.sharedWithAreaCodes.join(", "),
+      entry.sharedWithAreaCodes.map(areaName).join(", "),
     ]),
     title: "Store × product — what moved, and each area's share",
     totals: details.length === 0
       ? undefined
       : ["", "TOTAL", "", "", "", "", "", Number(detailUnits.toFixed(2)), Number(detailValue.toFixed(2)), "", "", "", ""],
   });
+}
+
+/** Area code -> area name: the matrix first, then the rows, for an area that carries no grid row. */
+function matrixAreaNames(
+  matrix: { regions: readonly { areas: readonly { areaCode: string; areaName: string }[] }[] },
+  rows: readonly { areaCode?: string | null; areaName?: string | null }[] = [],
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const region of matrix.regions) {
+    for (const area of region.areas) {
+      const code = String(area.areaCode ?? "").trim().toUpperCase();
+      if (code && area.areaName && !names.has(code)) names.set(code, area.areaName);
+    }
+  }
+  for (const row of rows) {
+    const code = String(row.areaCode ?? "").trim().toUpperCase();
+    const name = String(row.areaName ?? "").trim();
+    if (code && name && !names.has(code)) names.set(code, name);
+  }
+  return names;
 }
 
 /**
@@ -2698,7 +2738,6 @@ function writeStoreSplitSheet(
   // which painted the black title band a column past the data.
   const columns: TableColumn[] = [
     { label: "Area", width: 24 },
-    { label: "Code", width: 10 },
     { label: "City", width: 20 },
     { label: "Line", width: 16 },
     ...(scoped ? [{ label: "In this export", width: 14 } satisfies TableColumn] : []),
@@ -2721,8 +2760,7 @@ function writeStoreSplitSheet(
         + periodNote
         + scopeNote,
     rows: summary.map((entry) => [
-      entry.areaName,
-      entry.areaCode,
+      entry.areaName || entry.areaCode,
       entry.city,
       entry.line,
       ...(scoped ? [inExport(entry) ? "Yes" : "No"] : []),
@@ -2890,10 +2928,12 @@ function channelTotals(cells: MonthlyClosingCell[]): { units: number; value: num
 }
 
 /** Header + per-product Units/Value columns shared by both channel sheets. */
-function channelColumns(products: MonthlyClosingColumn[], firstLabel: string, secondLabel: string): TableColumn[] {
+function channelColumns(products: MonthlyClosingColumn[], firstLabel: string, secondLabel: string | null): TableColumn[] {
   return [
-    { label: firstLabel, width: 12 },
-    { label: secondLabel, width: 26 },
+    // One label column when the row has only one name to show (the Direct tab's region).
+    ...(secondLabel === null
+      ? [{ label: firstLabel, width: 30 } satisfies TableColumn]
+      : [{ label: firstLabel, width: 20 } satisfies TableColumn, { label: secondLabel, width: 26 } satisfies TableColumn]),
     ...products.flatMap((product): TableColumn[] => [
       { label: `${product.productName} — Units`, numFmt: UNITS_FMT, right: true, width: 14 },
       { label: `${product.productName} — Value`, numFmt: VALUE_FMT, right: true, width: 16 },
@@ -2918,7 +2958,7 @@ function channelColumns(products: MonthlyClosingColumn[], firstLabel: string, se
  */
 function channelRow(
   firstCell: string,
-  secondCell: string,
+  secondCell: string | null,
   cells: MonthlyClosingCell[],
   channelValue: number,
   targetValue: number | null,
@@ -2926,7 +2966,7 @@ function channelRow(
   const totals = channelTotals(cells);
   return [
     firstCell,
-    secondCell,
+    ...(secondCell === null ? [] : [secondCell]),
     ...cells.flatMap((cell): CellValue[] => [cell.salesUnits, cell.salesValue]),
     totals.units,
     totals.value,
@@ -3038,7 +3078,7 @@ function writeRetailChannelSheet(
     views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
   });
   const products = retail.columns;
-  const columns = channelColumns(products, "Area Code", "Area");
+  const columns = channelColumns(products, "Region", "Area");
   bandHeader(sheet, retail.line, retail.period, "Retail Sales only — distributor sell-out, direct orders excluded", columns.length);
 
   const channel = channelTotals(retail.grandTotal.cells);
@@ -3051,10 +3091,10 @@ function writeRetailChannelSheet(
       // dropping it would delete its rows from the sheet.
       .filter((area) => !isSyntheticDirectArea(area))
       .forEach((area) => {
-        rows.push(channelRow(area.areaCode, area.areaName, area.cells, channel.value, area.rowTotal.targetValue));
+        rows.push(channelRow(region.regionName, area.areaName, area.cells, channel.value, area.rowTotal.targetValue));
       });
     rows.push(channelRow(
-      region.regionCode,
+      region.regionName,
       `${region.regionName} — REGION TOTAL`,
       region.subtotal.cells,
       channel.value,
@@ -3131,7 +3171,7 @@ function directCustomerRows(
     customer: row.pharmacy,
     details: row.note || "—",
     regionName: regionOf(row.areaCode, row.regionCode).regionName,
-    areaName: row.areaCode ? `${row.areaName} (${row.areaCode})` : row.areaName,
+    areaName: row.areaName || row.areaCode,
     repName: row.repName || "—",
     productName: row.product,
     units: row.qty,
@@ -3185,7 +3225,7 @@ function writeDirectChannelSheet(
   detailRows: readonly ClosingDetailRow[],
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Sales (no retail)"), {
-    views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
+    views: [{ state: "frozen", xSplit: 1, ySplit: 5 }],
   });
   // Only the products this line actually SOLD direct get a column. Showing the line's whole
   // catalogue meant CNS — which has no direct channel at all — printed ~30 product headers with
@@ -3195,7 +3235,7 @@ function writeDirectChannelSheet(
   const soldDirect = new Set(directCells.filter((cell) => cell.salesUnits !== 0 || cell.salesValue !== 0)
     .map((cell) => normalizeCode(cell.productCode)));
   const products = matrix.columns.filter((column) => soldDirect.has(normalizeCode(column.productCode)));
-  const columns = channelColumns(products, "Region Code", "Region");
+  const columns = channelColumns(products, "Region", null);
   bandHeader(sheet, matrix.line, matrix.period, "Direct Sales only — company direct orders, distributor sales excluded", columns.length);
 
   // Direct money is tagged with a region and a product, never an area — that is why it cannot
@@ -3244,8 +3284,8 @@ function writeDirectChannelSheet(
   );
   const rows: CellValue[][] = ordered.map(([regionCode, cells]) =>
     channelRow(
-      regionCode,
       regionCode === "NATIONAL" ? "Direct – National (no region)" : regionNameByCode.get(regionCode) ?? regionCode,
+      null,
       cells.map(roundedClosingCell),
       channel.value,
       targetByRegion.get(regionCode) ?? null,
@@ -3265,7 +3305,7 @@ function writeDirectChannelSheet(
     title: "Direct sales by region and product",
     totals: rows.length === 0
       ? undefined
-      : channelRow("", "DIRECT TOTAL", totalCells.map(roundedClosingCell), channel.value, matrix.grandTotal.rowTotal.targetValue),
+      : channelRow("DIRECT TOTAL", null, totalCells.map(roundedClosingCell), channel.value, matrix.grandTotal.rowTotal.targetValue),
   });
   if (rows.length > 0) styleAchievementColumn(sheet, columns.length - 1, firstDataRow, firstDataRow + rows.length);
 
@@ -3479,8 +3519,9 @@ function writeOfficeSheet(workbook: ExcelJS.Workbook, office: MonthlyClosingMatr
   const nationalUnits = office.grandTotal.cells.reduce((sum, cell) => sum + (cell.salesUnits ?? 0), 0);
 
   const columns: TableColumn[] = [
-    { label: "Area", width: 12 },
-    { label: "Area Name", width: 30 },
+    // By name, never by code (owner, 2026-10-26).
+    { label: "Region", width: 18 },
+    { label: "Area", width: 30 },
     ...products.map((product) => ({
       label: `${product.productName} (${product.productCode})`,
       numFmt: UNITS_FMT,
@@ -3492,10 +3533,10 @@ function writeOfficeSheet(workbook: ExcelJS.Workbook, office: MonthlyClosingMatr
     { label: "% of Line Office Units", numFmt: PCT_FMT, right: true, width: 18 },
   ];
 
-  const rowFor = (code: string, name: string, cells: MonthlyClosingCell[], total: MonthlyClosingCell): CellValue[] => {
+  const rowFor = (regionName: string, name: string, cells: MonthlyClosingCell[], total: MonthlyClosingCell): CellValue[] => {
     const units = cells.reduce((sum, cell) => sum + (cell.salesUnits ?? 0), 0);
     return [
-      code,
+      regionName,
       name,
       ...cells.map((cell) => cell.salesUnits ?? 0),
       units,
@@ -3506,8 +3547,8 @@ function writeOfficeSheet(workbook: ExcelJS.Workbook, office: MonthlyClosingMatr
 
   const rows: CellValue[][] = [];
   for (const region of office.regions) {
-    for (const area of region.areas) rows.push(rowFor(area.areaCode, area.areaName, area.cells, area.rowTotal));
-    rows.push(rowFor(region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal));
+    for (const area of region.areas) rows.push(rowFor(region.regionName, area.areaName, area.cells, area.rowTotal));
+    rows.push(rowFor(region.regionName, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal));
   }
 
   bandHeader(sheet, office.line, office.period, "Office Allocation", columns.length);
@@ -3814,6 +3855,7 @@ export async function buildMonthlyClosingWorkbook(
         options?.storeSplitMaskedClients,
       ),
       options?.storeSplitFrozen ?? false,
+      matrixAreaNames(matrix, splitSourceRows),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
@@ -3926,9 +3968,9 @@ export async function buildMonthlyClosingWorkbook(
   // Last, now that every sheet exists: fill tab 1 with what this particular export contains.
   writeDashboardSheet(dashboard, workbook, matrix.line, matrix.period);
 
-  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+  // Not protected: every tab, hidden ones included, opens for editing (owner, 2026-10-26).
 
-  lockExcelWorkbook(workbook);
+  unprotectExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -3978,9 +4020,9 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
     );
   }
 
-  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+  // Not protected: every tab, hidden ones included, opens for editing (owner, 2026-10-26).
 
-  lockExcelWorkbook(workbook);
+  unprotectExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -4127,9 +4169,9 @@ export async function buildPortalClosingWorkbook(
   // order as buildMonthlyClosingWorkbook.
   writeDashboardSheet(dashboard, workbook, details.line, details.period);
 
-  // Read-only for good: every tab, hidden ones included (owner, 2026-10-13).
+  // Not protected: every tab, hidden ones included, opens for editing (owner, 2026-10-26).
 
-  lockExcelWorkbook(workbook);
+  unprotectExcelWorkbook(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

@@ -143,6 +143,13 @@ function findRow(sheet: ExcelJS.Worksheet, column: number, text: string): ExcelJ
   return found;
 }
 
+// The matrix shows geography by NAME (owner, 2026-10-26: "never use code always use name"), so a
+// row is found by the area name, or "<Region> (Region)" for a subtotal, in the Area column.
+const MATRIX_LABEL: Record<string, string> = { GZ6: "Fayoum - Beni Suef", UE9: "Beni Suef", GZ1: "Giza - Giza Centers", CA3: "Cairo Centers", GZ: "Giza (Region)", CA: "Cairo (Region)" };
+function findMatrixRow(sheet: ExcelJS.Worksheet, code: string): ExcelJS.Row {
+  return findRow(sheet, 2, MATRIX_LABEL[code] ?? code);
+}
+
 // Region order is a fixed rank inside buildMonthlyClosingMatrix, not alphabetical -- never assume
 // Giza lands at regions[0]. Find the merged row by area code across every region instead.
 function findAreaRowInMatrix(matrix: MonthlyClosingMatrix, areaCode: string) {
@@ -205,7 +212,7 @@ export async function runMonthlyClosingExportAreaMergeStaticTests() {
   const bare = await auditWorkbook(unprotected);
   assert.deepEqual(bare.calcBacked, [], NO_CALC);
   assert.equal(
-    findRow(bare.sheet, 1, "GZ6").getCell(VALUE_COL).value,
+    findMatrixRow(bare.sheet, "GZ6").getCell(VALUE_COL).value,
     24_000,
     "the merged row exports the CORRECT combined total even unflagged — rendering no longer depends on a hand-set flag",
   );
@@ -216,16 +223,16 @@ export async function runMonthlyClosingExportAreaMergeStaticTests() {
   const fixed = await auditWorkbook(protectedMatrix);
   assert.deepEqual(fixed.calcBacked, [], NO_CALC);
 
-  const fixedRow = findRow(fixed.sheet, 1, "GZ6");
+  const fixedRow = findMatrixRow(fixed.sheet, "GZ6");
   assert.equal(fixedRow.getCell(2).value, "Fayoum - Beni Suef", "the merged row keeps its combined display name in the export");
   assert.equal(fixedRow.getCell(UNITS_COL).value, 80, "merged row Units = 50 + 30");
   assert.equal(fixedRow.getCell(VALUE_COL).value, 24_000, "the cell carries the CORRECT merged total, not Fayoum's half alone");
 
   // The rows around it are unchanged, and the Giza subtotal still adds up.
-  assert.equal(findRow(fixed.sheet, 1, "GZ1").getCell(VALUE_COL).value, 6_000, "an untouched area in the SAME region is unchanged");
-  assert.equal(findRow(fixed.sheet, 1, "CA3").getCell(VALUE_COL).value, 3_000, "an untouched area in a DIFFERENT region is unchanged");
+  assert.equal(findMatrixRow(fixed.sheet, "GZ1").getCell(VALUE_COL).value, 6_000, "an untouched area in the SAME region is unchanged");
+  assert.equal(findMatrixRow(fixed.sheet, "CA3").getCell(VALUE_COL).value, 3_000, "an untouched area in a DIFFERENT region is unchanged");
   assert.equal(
-    findRow(fixed.sheet, 1, "GZ").getCell(VALUE_COL).value,
+    findMatrixRow(fixed.sheet, "GZ").getCell(VALUE_COL).value,
     30_000,
     "region subtotal = GZ6 15,000 + UE9 9,000 + GZ1 6,000 = 30,000",
   );

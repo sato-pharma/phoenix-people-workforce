@@ -181,6 +181,13 @@ function findRow(sheet: ExcelJS.Worksheet, column: number, text: string): ExcelJ
   return found;
 }
 
+// The matrix shows geography by NAME (owner, 2026-10-26: "never use code always use name"), so a
+// row is found by the area name, or "<Region> (Region)" for a subtotal, in the Area column.
+const MATRIX_LABEL: Record<string, string> = { D12: "Menoufia 1", D13: "Menoufia 2", D14: "Menoufia 3", CA3: "Cairo Centers", D1: "Delta (1) (Region)", CA: "Cairo (Region)" };
+function findMatrixRow(sheet: ExcelJS.Worksheet, code: string): ExcelJS.Row {
+  return findRow(sheet, 2, MATRIX_LABEL[code] ?? code);
+}
+
 const NO_CALC = "no Closing Matrix cell may reference the hidden Calc sheet — it holds the UNSPLIT "
   + "distributor rows, so any SUMIFS over it recalculates the split away";
 
@@ -217,7 +224,7 @@ export async function runMonthlyClosingExportSplitStaticTests() {
     ["CA3", 30, 10_000],
   ];
   for (const [label, units, value] of rowsA) {
-    const row = findRow(a.sheet, 1, label);
+    const row = findMatrixRow(a.sheet, label);
     assert.equal(row.getCell(UNITS_COL).value, units, `${label} Units must be the post-split figure ${units}`);
     assert.equal(row.getCell(VALUE_COL).value, value, `${label} Value must be the post-split figure ${value}`);
     assert.equal(row.getCell(ROW_TOTAL_COL).value, value, `${label} row total must be the post-split figure`);
@@ -239,13 +246,13 @@ export async function runMonthlyClosingExportSplitStaticTests() {
 
   const b = await auditWorkbook(oneSided);
   assert.deepEqual(b.calcBacked, [], NO_CALC);
-  assert.equal(findRow(b.sheet, 1, "D13").getCell(VALUE_COL).value, 13_000, "the receiving area carries its post-split value");
-  assert.equal(findRow(b.sheet, 1, "D1").getCell(VALUE_COL).value, 49_000, "the region subtotal carries the post-split figure");
+  assert.equal(findMatrixRow(b.sheet, "D13").getCell(VALUE_COL).value, 13_000, "the receiving area carries its post-split value");
+  assert.equal(findMatrixRow(b.sheet, "D1").getCell(VALUE_COL).value, 49_000, "the region subtotal carries the post-split figure");
   assert.equal(
     findRow(b.sheet, 2, "National Grand Total").getCell(ROW_TOTAL_COL).value,
     59_000,
     "a one-sided move moves the grand total, and the sheet states the moved figure",
   );
-  assert.equal(findRow(b.sheet, 1, "D12").getCell(VALUE_COL).value, 30_000, "an area the one-sided move never touched keeps its own figure");
-  assert.equal(findRow(b.sheet, 1, "CA").getCell(VALUE_COL).value, 10_000, "a whole region the split never touched is unchanged");
+  assert.equal(findMatrixRow(b.sheet, "D12").getCell(VALUE_COL).value, 30_000, "an area the one-sided move never touched keeps its own figure");
+  assert.equal(findMatrixRow(b.sheet, "CA").getCell(VALUE_COL).value, 10_000, "a whole region the split never touched is unchanged");
 }

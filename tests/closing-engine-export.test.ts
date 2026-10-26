@@ -297,10 +297,8 @@ export async function runClosingEngineExportTests() {
   assert.equal(parts.filter((name) => /^xl\/slicerCaches\/slicerCache\d+\.xml$/.test(name)).length, 1, "the slicer cache");
   assert.ok(parts.includes("xl/vbaProject.bin"), "the .xlsm keeps the owner's macro buttons");
 
-  // ── READ-ONLY: every sheet of every build is protected, and only the Rep Card's picker is open ───
-  // Owner, 2026-10-13: "never be able to edit any cell in any tab". The element has to sit where
-  // CT_Worksheet puts it or Excel offers to repair the file, so the position is pinned as well as the
-  // presence. Slicers and pivots keep working because `objects` and `pivotTables` are left allowed.
+  // ── NOT PROTECTED: no sheet of any build carries protection, nor the workbook ─────────────────
+  // Owner, 2026-10-26: "make the exported monthly closing xlsx all its types download non protected".
   for (const [label, book] of [
     ["xlsm", macroBook],
     ["xlsx", plainBook],
@@ -311,30 +309,10 @@ export async function runClosingEngineExportTests() {
     assert.ok(sheetParts.length >= 12, `${label}: the engine's sheets are all there`);
     for (const part of sheetParts) {
       const xml = await opened.file(part)!.async("string");
-      const at = xml.indexOf("<sheetProtection");
-      assert.ok(at > 0, `${label}: ${part} is sheet-protected`);
-      assert.match(xml.slice(at, xml.indexOf("/>", at)), /sheet="1"/, `${label}: ${part} protection is switched on`);
-      assert.ok(at > xml.search(/<\/sheetData>|<sheetData\s*\/>/), `${label}: ${part} protection follows sheetData`);
-      for (const later of ["mergeCells", "conditionalFormatting", "dataValidations", "pageMargins", "drawing", "tableParts"]) {
-        const index = xml.indexOf(`<${later}`);
-        assert.ok(index === -1 || index > at, `${label}: ${part} <${later}> must come after sheetProtection`);
-      }
+      assert.ok(!xml.includes("<sheetProtection"), `${label}: ${part} must not be sheet-protected`);
     }
-    const repPart = CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file;
-    const card = await opened.file(repPart)!.async("string");
-    const pickerStyle = /<c r="B5"[^>]*? s="(\d+)"/.exec(card)?.[1];
-    assert.ok(pickerStyle, `${label}: the Rep Card picker B5 has a style`);
-    const styles = await opened.file("xl/styles.xml")!.async("string");
-    const xfBlock = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
-    const xfs = [...xfBlock.matchAll(/<xf\b[^>]*?\/>|<xf\b[^>]*?>[\s\S]*?<\/xf>/g)].map((one) => one[0]);
-    const unlocked = xfs.map((xf, index) => (xf.includes('locked="0"') ? String(index) : "")).filter(Boolean);
-    assert.deepEqual(unlocked, [pickerStyle], `${label}: exactly one style is unlocked -- the picker's`);
-    let users = 0;
-    for (const part of sheetParts) {
-      const xml = await opened.file(part)!.async("string");
-      users += (xml.match(new RegExp(`<c r="[A-Z]+\\d+"[^>]*? s="${pickerStyle}"`, "g")) ?? []).length;
-    }
-    assert.equal(users, 1, `${label}: B5 is the only cell in the workbook that can be edited`);
+    const workbookXml = await opened.file("xl/workbook.xml")!.async("string");
+    assert.ok(!workbookXml.includes("<workbookProtection"), `${label}: the workbook must not be protected`);
   }
 
   // ── The package is one Excel opens without repairing it ────────────────────────────────────

@@ -271,14 +271,13 @@ export async function runClosingChannelTabsTests() {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-  // READ-ONLY (owner, 2026-10-13: "never be able to edit any cell in any tab"): every tab of the
-  // normal workbook -- the hidden Calc sheet too -- leaves the server protected.
+  // NOT PROTECTED (owner, 2026-10-26: "all its types download non protected"): no tab of the
+  // normal workbook -- the hidden Calc sheet included -- leaves the server protected.
   assert.ok(workbook.worksheets.length >= 5, "the fixture workbook has its real tabs");
   for (const sheet of workbook.worksheets) {
-    assert.equal(
-      (sheet as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet,
-      true,
-      `${sheet.name} must be sheet-protected`,
+    assert.ok(
+      !(sheet as unknown as { sheetProtection?: { sheet?: boolean } | null }).sheetProtection?.sheet,
+      `${sheet.name} must not be sheet-protected`,
     );
   }
 
@@ -395,7 +394,7 @@ export async function runClosingChannelTabsTests() {
   const directText = filteredDirect.flat().filter((value): value is string => typeof value === "string");
 
   assert.ok(
-    directText.some((value) => value === "D1"),
+    directText.some((value) => value === "Delta (1)"),
     "the region the reader filtered to is on the Direct tab",
   );
   assert.ok(
@@ -560,8 +559,8 @@ export async function runClosingChannelTabsTests() {
     "the store's customer code appears on the detail sheet",
   );
   assert.ok(
-    splitDetailText.some((v) => v === "Menoufia 1 (D12)"),
-    "the store's own area is shown as 'Name (Code)' on the detail sheet",
+    splitDetailText.some((v) => v === "Menoufia 1") && !splitDetailText.some((v) => v.includes("(D12)")),
+    "the store's own area is shown by its name, never its code, on the detail sheet (owner, 2026-10-26)",
   );
 
   // Dashboard for the details workbook must also list the Store Split tabs.

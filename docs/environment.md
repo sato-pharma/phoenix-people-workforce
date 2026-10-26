@@ -513,7 +513,7 @@ These should never be set in production.
 |---|---|---|
 | PHOENIX_MONTHLY_EXCUSE_ALLOWANCE | Max excuses per employee per month | 2 |
 | PHOENIX_PERMISSION_MATRIX_CACHE_SECONDS | Permission matrix cache TTL | 30 |
-| PHOENIX_CLOSING_LOCK_PASSWORD | **Server secret, set on Railway production by the owner and never written in the repo.** Every downloaded Monthly Closing workbook (normal, portal, details, Performance Review, premium) leaves with every tab sheet-protected (owner, 2026-10-13); with this set, Excel asks for it before a tab can be unprotected. Unset or blank, the tabs are still locked but **Review > Unprotect Sheet opens them with one click.** Changing it affects only workbooks downloaded afterwards. Code: `src/lib/sales/closing-workbook-lock.ts` | *(unset — locked, no password)* |
+| PHOENIX_CLOSING_LOCK_PASSWORD | **Unused since 2026-10-26.** The owner turned the closing-workbook protection off ("make the exported monthly closing xlsx all its types download non protected"): every downloaded Monthly Closing workbook (normal, portal, details, Performance Review, rep ranking, rep-product, premium) now leaves with NO sheet or workbook protection, and no code reads this variable. A value left on Railway is harmless and can be removed. Code: `src/lib/sales/closing-workbook-lock.ts` | *(unused)* |
 
 ## GitHub Actions Secrets & Variables
 

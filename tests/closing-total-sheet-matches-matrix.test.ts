@@ -276,7 +276,7 @@ function totalGrid(book: ExcelJS.Workbook): { rows: TotalRow[]; total: TotalRow 
     if (total) return;
     const first = row.getCell(1).value;
     if (!headers) {
-      if (first === "Region Code") {
+      if (first === "Region") {
         headers = [];
         row.eachCell({ includeEmpty: true }, (entry, column) => { headers![column] = String(entry.value ?? ""); });
       }
@@ -327,9 +327,9 @@ function assertTotalMatchesMatrix(book: ExcelJS.Workbook, matrix: MonthlyClosing
   // Sales is a formula over its own row, so the file recalculates from the Data sheet.
   for (const row of rows) {
     const salesValue = row.values["Sales Value"] as { formula?: string } | null;
-    assert.equal(salesValue?.formula, `J${row.at}+L${row.at}+N${row.at}`, `${label}: Sales Value is Data + Store Split + Direct on row ${row.at}`);
+    assert.equal(salesValue?.formula, `H${row.at}+J${row.at}+L${row.at}`, `${label}: Sales Value is Data + Store Split + Direct on row ${row.at}`);
     const salesUnits = row.values["Sales Units"] as { formula?: string } | null;
-    assert.equal(salesUnits?.formula, `H${row.at}+K${row.at}+M${row.at}`, `${label}: Sales Units is Data + Store Split + Direct on row ${row.at}`);
+    assert.equal(salesUnits?.formula, `F${row.at}+I${row.at}+K${row.at}`, `${label}: Sales Units is Data + Store Split + Direct on row ${row.at}`);
     assert.ok(
       Math.abs(
         numberIn(row.values["Data Value"]) + numberIn(row.values["Store Split Value"]) + numberIn(row.values["Direct Value"])

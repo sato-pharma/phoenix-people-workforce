@@ -526,7 +526,7 @@ export async function runClosingExportOrganogramRegionLabelsTests() {
   );
   assert.equal(valueLabelled(retailSheet, "Direct sales"), directTotal, "the Retail tab's direct figure must match the Direct tab");
   assert.deepEqual(
-    tableUnder(directSheet, "Region Code", "DIRECT TOTAL").map((row) => row.Region).sort(),
+    tableUnder(directSheet, "Region", "DIRECT TOTAL").map((row) => row.Region).sort(),
     ["Cairo", "Upper Egypt 1", "Upper Egypt 2"],
     "the Direct tab lists direct money by the matrix's regions",
   );
@@ -542,6 +542,22 @@ export async function runClosingExportOrganogramRegionLabelsTests() {
     .find((row) => row["Area Code"] === "UE2" && row.Distributor === "UCP");
   assert.equal(dataMinia2?.["Region Code"], "UE-1", "Data must print the matrix's region code");
   assert.equal(dataMinia2?.Region, "Upper Egypt 1", "Data must print the matrix's region name");
+  // The codes stay on Data only as HIDDEN formula keys (owner, 2026-10-26: "never use code always
+  // use name"): the Total sheet's SUMIFS read them, so they are hidden, never deleted.
+  for (const [sheet, labels] of [[dataSheet, ["Region Code", "Area Code", "Brick ID"]], [august.getWorksheet("Total")!, ["Region Code", "Area Code"]]] as const) {
+    const columnOf = new Map<string, number>();
+    sheet.eachRow((row) => {
+      if (columnOf.has("Region Code")) return;
+      const found = new Map<string, number>();
+      row.eachCell((cell, column) => found.set(String(cell.value ?? ""), column));
+      if (found.has("Region Code")) for (const [label, column] of found) columnOf.set(label, column);
+    });
+    for (const label of labels) {
+      const column = columnOf.get(label);
+      assert.ok(column, `${sheet.name} keeps its "${label}" key column`);
+      assert.equal(sheet.getColumn(column).hidden, true, `${sheet.name}'s "${label}" column (${column}) is hidden — a reader sees names only`);
+    }
+  }
 
   const totalSheet = august.getWorksheet("Total");
   assert.ok(totalSheet, "the August file has the Total sheet");
@@ -581,10 +597,10 @@ export async function runClosingExportOrganogramRegionLabelsTests() {
   assert.deepEqual(
     tableUnder(julySheet, "Pharmacy", "TOTAL DIRECT").map((row) => `${row.Area}:${row.Region}`).sort(),
     [
-      "UE1 — Minia 1:Upper Egypt 1",
-      "UE1 — Minia 1:Upper Egypt 1",
-      "UE2 — Minia 2:Upper Egypt 1",
-      "UE8 — Qena 2:Upper Egypt 2",
+      "Minia 1:Upper Egypt 1",
+      "Minia 1:Upper Egypt 1",
+      "Minia 2:Upper Egypt 1",
+      "Qena 2:Upper Egypt 2",
     ],
     "the owner's July orders for Minia 1, Minia 2 and Qena 2 must name the matrix's regions; the tab printed "
       + "the bare map code \"UE\" for every one of them",

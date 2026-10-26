@@ -177,7 +177,7 @@ export function closingRowsRecord(
     // row the masked read substitutes, so the two are indistinguishable in a finished file.
     isMasked ? MAIN_STORES_LABEL : row.clientName,
     isMasked ? "" : row.clientAddress,
-    row.brickId,
+    row.brickName || row.brickId,
     row.sheetAreaName || row.sheetAreaCode,
     row.sheetRegionName || row.sheetRegionCode,
     row.productName,
