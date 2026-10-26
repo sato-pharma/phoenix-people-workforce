@@ -324,7 +324,7 @@ const PLATE_TITLES: ReadonlySet<string> = new Set([
 ]);
 
 /** One word of a person's name. `core` is set only on a compound: the part that says WHICH one. */
-type NameWord = { word: string; core: string | null };
+export type NameWord = { word: string; core: string | null };
 
 /** What is left of a compound once its head and tail are taken off — never empty. */
 function compoundCore(parts: readonly string[]): string {
@@ -335,7 +335,7 @@ function compoundCore(parts: readonly string[]): string {
 }
 
 /** A person's name as the signboard check counts it: folded, untitled, each compound one word. */
-function personNameWords(text: string): NameWord[] {
+export function personNameWords(text: string): NameWord[] {
   const groups: string[][] = [];
   let open = false;
   for (const word of normalizeContactName(text).split(" ")) {

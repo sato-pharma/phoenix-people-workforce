@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { CrmButton, CrmCheck, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
 import { PlaceCheckScorecard, type ScoreTarget } from "@/components/phoenix-crm/place-check-scorecard";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
+import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-board";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
@@ -98,9 +99,11 @@ const PAGE_BUILDINGS = 10;
  * - `polyclinics` — every building, one card each, with its sign, its timetable and the customers in it;
  * - `samePlace`   — the same place seen by two or more reps, the Super Admin's alone, read when first
  *                   opened (owner, 2026-10-17: "a place validated by more than a rep");
+ * - `sameCustomer` — one customer validated by two or more reps at places that do not agree, the
+ *                   deciders' alone, read when first opened (owner, 2026-10-26, "Build the check");
  * - `history`     — what was decided in the last 14 days, and who is waiting to be captured again.
  */
-type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "history";
+type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "sameCustomer" | "history";
 
 /** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
 type UnconfirmedChip = "open" | Exclude<PlaceStanding, "confirmed" | "waiting"> | "all";
@@ -242,6 +245,7 @@ export function ValidationReviewsBoard({
   // The comparison reads every validated place, so it starts on the tab's first opening and then stays
   // mounted — switching tabs must not read it again.
   const [samePlaceOpened, setSamePlaceOpened] = useState(false);
+  const [sameCustomerOpened, setSameCustomerOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
@@ -460,11 +464,13 @@ export function ValidationReviewsBoard({
     { key: "unconfirmed", label: "Not confirmed", count: unconfirmedCount, open: 0 },
     { key: "polyclinics", label: "Polyclinics and hospitals", count: buildingGroups.length, open: 0 },
     ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null, open: 0 }]),
+    ...(team ? [] : [{ key: "sameCustomer" as const, label: "Same customer, several reps", count: null, open: 0 }]),
     { key: "history", label: "History", count: historyCount, open: 0 },
   ];
   const selectView = (key: PlaceCheckView) => {
     setView(key);
     if (key === "samePlace") setSamePlaceOpened(true);
+    if (key === "sameCustomer") setSameCustomerOpened(true);
   };
   // A tapped count opens exactly its rows: that rep (or every rep), the tab and narrowing that hold them,
   // and every outcome — the scorecard never reads the outcome selector, so its counts would not match.
@@ -795,6 +801,12 @@ export function ValidationReviewsBoard({
         {!team && samePlaceOpened ? (
           <div aria-labelledby="vr-tab-samePlace" hidden={view !== "samePlace"} id="vr-panel-samePlace" role="tabpanel">
             <PlaceMatchBoardView filters={filters} />
+          </div>
+        ) : null}
+
+        {!team && sameCustomerOpened ? (
+          <div aria-labelledby="vr-tab-sameCustomer" hidden={view !== "sameCustomer"} id="vr-panel-sameCustomer" role="tabpanel">
+            <CustomerMatchBoardView filters={filters} />
           </div>
         ) : null}
 

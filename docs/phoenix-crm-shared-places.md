@@ -496,6 +496,29 @@ The last clause matters: two differently named customers 50 m apart are two door
 
 Pinned by `tests/phoenix-crm-place-match-groups.test.ts` (the pair rule and the name rule, the grouping, the diameter cap, the ranking, the outlier, the questions and answers, and the source the server, route, screen, board and migration are wired from).
 
+## Same customer, several reps — owner, 2026-10-26
+
+His words, in chat: *"go deep audit between reps validation and reconsiliciation of same drs in different reps and tell me what u got"*, and after the audit his pick **"Build the check"**.
+
+**What it is.** A fourth tab on Place checks, **Same customer, several reps**, drawn only on the company board (`mode="company"`), for the deciders alone: the route refuses anyone `canReadPlaceMatches` rejects before a row is read. Like "Same place, several reps" it is read when the tab is first opened and then stays mounted, and the shared filter bar narrows it without splitting a card: a customer stays whole when any of its validations passes. It stores nothing — there is no answer table; the decider opens the validation in the review queue to act on it.
+
+**Who is one customer** (`customer-match-groups.ts`, pure). Two validations by two different reps' seats, on the **same list** (a morning and an evening place of one person are never compared), whose names are the same person by `personNameWords` (a title is not part of the name, a compound like عبد الناصر is one word written either way, the order of words is the name, one word is never a name, and a leading prefix counts only from three words up — a two-word name matches only whole, because it opens far too many other names). Two **known, different** specialities are two people; an unknown speciality never separates two names.
+
+**When a pair is listed** — the photograph's own fix is the reading trusted (`matchAnchorOf`), the Place checks' own rule:
+
+| Shape | When |
+| --- | --- |
+| One area, places far apart | both name the same area and the anchored points sit more than 1 km apart (`SAME_AREA_FAR_METERS`) |
+| A pin on another rep's point | one rep's pin sits within 50 m of the other rep's point (`PIN_ON_OTHER_METERS`) while that rep's own photograph was taken more than 150 m from the pin (`PIN_FAR_FROM_PHOTO_METERS`) — listed whatever the area; with no photograph there is nothing to say where the rep stood, so it is not listed |
+
+Two areas far apart are two clinics and are never listed on distance alone.
+
+**The card.** One card per customer, with every validation of that name — the agreeing ones included — grouped by the point it sits at (within 150 m, `AGREE_METERS`): validations that agree share a point number, and the one that stands alone is last. A card gathers a same-name validation only when it is in the same area or within 150 m of a listed reading, so a namesake in another governorate never joins (found on the live data: a card had pulled in a namesake 124 km away in Beni Suef). Each card says, in neutral words, where each reading sits and how far apart — never a verdict on a rep.
+
+**Measured on production on 2026-10-26 (read-only, the real rule on 3,414 active places; the board builds in 30 ms).** 15 customers listed — 12 "one area, far apart" and 3 "a pin on another rep's point" — covering 33 validations by 14 reps. The three pins sat 24 m, 13 m and 31 m from the other rep's validation while their own photographs were 869 m, 441 m and 257 m away.
+
+Pinned by `tests/phoenix-crm-customer-match-groups.test.ts` (the name rule, the speciality rule, the list rule, both shapes, the namesake, the card's grouping and order, the neutral sentence, and the source the loader, route, screen and tab are wired from).
+
 ## The timetable scanner, and Place checks as a report — owner, 2026-10-17
 
 His words, in chat: *"their is a disatster in the polyclicnics validation a fucken chaos no timetables employees photgraphing their legs"*, *"i must be be able to see chose photos"*, then *"eyeball the check places full module all tabs and telll me is this a report that really show me data? or its a bunch of chaos … put corrective actions even if we will neeed to rebuild the module from sctach"*, and *"and whatb about the unreadble photos'"*. His rulings, picked from the options put to him: *"3 tries then held to confirmation by admin"*; *"save but hold to me and tell the rep that the dr name is not in the timetable so hheld for admin approval"*; scanner and screen rebuild in ONE PR; *"every polyclicnic should crystal clear show me the name opf the polyclicnic and its data and the customer the repo added to this -poly clicnic and the captured timetable crystal clear … make me able to rotate the picture of validation in place checks bec some timetables are rotated"*; and, later the same afternoon, *"add system recommendations to approve or no on every vlidation"* and *"and the reason of system recommendation"*.

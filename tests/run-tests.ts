@@ -2031,6 +2031,7 @@ import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.t
 import { runPhoenixCrmSharedPlaceGroupsTests } from "./phoenix-crm-shared-place-groups.test.ts";
 import { runPlaceReviewDeckTests } from "./place-review-deck.test.ts";
 import { runPhoenixCrmPlaceMatchGroupsTests } from "./phoenix-crm-place-match-groups.test.ts";
+import { runPhoenixCrmCustomerMatchGroupsTests } from "./phoenix-crm-customer-match-groups.test.ts";
 import { runPhoenixCrmValidateStepsTests } from "./phoenix-crm-validate-steps.test.ts";
 import { runPhoenixCrmOffplanCapTests } from "./phoenix-crm-offplan-cap.test.ts";
 import { runPhoenixCrmOffplanExemptionTests } from "./phoenix-crm-offplan-exemption.test.ts";
@@ -7659,6 +7660,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks, the same place several reps validated (owner, 2026-10-17): the Super Admin's third tab sets two or more reps' validations of one place side by side — confident pairs are grouped with no question, clearly different ones are never shown, and only the in-between pairs are asked, never two differently named customers; the most accurate is named only when it clearly beats the next, and a tie says too close to call; a group is tight, never a chain, though his own same answer is never capped; an answer is kept on the ordered pair so nothing is asked twice and can be taken back; a seated customer is never a subject; and a manager's board never draws the tab",
   runPhoenixCrmPlaceMatchGroupsTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks, the same customer several reps validated (owner, 2026-10-26): the deciders' fourth tab lists one customer on two reps' lists of the same AM or PM list — one name, each compound one word, a leading prefix only from three words up, and no known speciality against it — when both places name one area but sit more than 1 km apart, or one rep's pin sits on the other rep's point while their own photograph was taken elsewhere; every validation of the customer is on the card, grouped by the point it sits at; the words are neutral; it stores nothing; and a manager's board never draws the tab",
+  runPhoenixCrmCustomerMatchGroupsTests,
 );
 
 await runTest(
