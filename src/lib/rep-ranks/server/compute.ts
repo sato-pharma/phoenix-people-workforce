@@ -34,6 +34,7 @@ import { groupPlanByTerritory } from "@/lib/phoenix-crm/report-rules";
 import { seatsWithRealActivity } from "@/lib/phoenix-crm/server/daily-digest";
 import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { seatOccupants } from "@/lib/phoenix-crm/scope";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
 import { PHOENIX_CRM_DEFAULT_SETTINGS } from "@/lib/phoenix-crm/types";
@@ -83,15 +84,27 @@ async function upsertChunks(table: string, rows: Record<string, unknown>[], onCo
 
 // ── Reading Phoenix CRM ─────────────────────────────────────────────────────────────────────────
 
-type SeatOf = { seatId: string; path: readonly string[]; occupantKey: string; occupantHrId: string; lineName: string | null; areaName: string | null; regionName: string | null };
+type SeatOf = {
+  seatId: string;
+  path: readonly string[];
+  occupantKey: string;
+  occupantHrId: string;
+  /** More than one person sits on the seat (a handover) — each is scored on their OWN visits there. */
+  shared: boolean;
+  lineName: string | null;
+  areaName: string | null;
+  regionName: string | null;
+};
 
 async function rosterSeats(todayIso: string): Promise<SeatOf[]> {
   const [org, config] = await Promise.all([loadPhoenixCrmOrg(), loadPhoenixCrmConfig()]);
   const openLines = openLineCodes(config.lineRollout, todayIso);
-  const candidates = org.territories.filter(
+  // One entry per seat × PERSON: `org.territories` is one per seat and so lost the second occupant of a
+  // handover seat — the rep serving notice vanished from the board (2026-10-26).
+  const candidates = org.territoryHolders.filter(
     (seat) => Boolean(seat.occupantHrId) && !seat.isOtherPseudoDm && Boolean(seat.lineCode && openLines.has(seat.lineCode)),
   );
-  const active = await seatsWithRealActivity(candidates.map((seat) => seat.seatId));
+  const active = await seatsWithRealActivity([...new Set(candidates.map((seat) => seat.seatId))]);
   return candidates
     .filter((seat) => active.has(seat.seatId))
     .map((seat) => ({
@@ -99,6 +112,7 @@ async function rosterSeats(todayIso: string): Promise<SeatOf[]> {
       path: seat.path,
       occupantKey: keyOf(seat.occupantHrId) ?? "",
       occupantHrId: seat.occupantHrId ?? "",
+      shared: seatOccupants(seat).length > 1,
       lineName: seat.lineName,
       areaName: seat.areaName,
       regionName: seat.regionName,
@@ -536,7 +550,7 @@ function monthEnd(day: string): string {
 /** Everything every window inside [from, to] needs, read once. */
 export async function loadRankData(from: string, to: string, todayIso: string): Promise<RankRawData> {
   const seats = await rosterSeats(todayIso);
-  const seatIds = seats.map((seat) => seat.seatId);
+  const seatIds = [...new Set(seats.map((seat) => seat.seatId))];
   const occupantHrIds = [...new Set(seats.map((seat) => seat.occupantHrId))];
 
   const holidayFrom = `${from.slice(0, 7)}-01`;
@@ -582,6 +596,7 @@ export async function loadRankData(from: string, to: string, todayIso: string): 
       areaName: first.areaName,
       regionName: first.regionName,
       seatIds: repSeats.map((seat) => seat.seatId),
+      sharedSeatIds: repSeats.filter((seat) => seat.shared).map((seat) => seat.seatId),
       startDay,
     });
   }
