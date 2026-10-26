@@ -910,6 +910,7 @@ import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.
 import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
 import { runMarketingSuperAdminOversightTests } from "./marketing-super-admin-oversight.test.ts";
 import { runMarketingApprovalHistoryTabTests } from "./marketing-approval-history-tab.test.ts";
+import { runMarketingInboxWaitingAndTitleTests } from "./marketing-inbox-waiting-and-title.test.ts";
 import { runMarketingInboxDecisionBarGatingTests } from "./marketing-inbox-decision-bar-gating.test.ts";
 import { runMarketingInboxWorkspaceLayoutTests } from "./marketing-inbox-workspace-layout.test.ts";
 import { runMarketingPremiumNotificationTests } from "./marketing-premium-notifications.test.ts";
@@ -4743,6 +4744,7 @@ await runTest("marketing review routing", runMarketingReviewRoutingTests);
 await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHrIdCasingTests);
 await runTest("marketing Super Admin oversight queue", runMarketingSuperAdminOversightTests);
 await runTest("marketing approval inbox History tab (scope, read-only, stated cap)", runMarketingApprovalHistoryTabTests);
+await runTest("marketing inbox: approved-by-you requests waiting on a later stage reach History, and the title reads activity then requester", runMarketingInboxWaitingAndTitleTests);
 await runTest("marketing approval inbox decision bar (per-step reject/return powers)", runMarketingInboxDecisionBarGatingTests);
 await runTest("marketing approval inbox workspace layout (queues, disclosure, desktop table)", runMarketingInboxWorkspaceLayoutTests);
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);

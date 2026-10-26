@@ -219,12 +219,12 @@ function InboxRowCard({
               and a sideways scroll on a heading is a gesture nobody makes. The parent is min-w-0,
               so the h3 now takes the second line it needs and the name still arrives whole. */}
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-            {row.customerName}
+            {row.requestTitle}
           </h3>
-          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName} ({row.requesterRole})
+            Customer: {row.customerName} · {row.requesterRole}
           </p>
+          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
         </div>
         {/* `w-full` below `sm`, never `shrink-0`: a shrink-0 flex-wrap box is sized by its widest
             child and cannot give way, so the nowrap wait pill and a 31-character step name
@@ -410,12 +410,12 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
               and a sideways scroll on a heading is a gesture nobody makes. The parent is min-w-0,
               so the h3 now takes the second line it needs and the name still arrives whole. */}
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-            {row.customerName}
+            {row.requestTitle}
           </h3>
-          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName} ({row.requesterRole})
+            Customer: {row.customerName} · {row.requesterRole}
           </p>
+          <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
         </div>
         {/* Same width rule as the decision card above — `w-full` below `sm`, never `shrink-0`. */}
         <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
@@ -519,7 +519,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
     const needle = search.trim().toLowerCase();
     const matched = needle
       ? rows.filter((row) =>
-          [row.requestCode, row.customerName, row.requesterName, row.requestType, row.currentStepName]
+          [row.requestCode, row.requestTitle, row.customerName, row.requesterName, row.requestType, row.currentStepName]
             .join(" ")
             .toLowerCase()
             .includes(needle),
@@ -956,7 +956,7 @@ function ChainWatchList({
             meta={
               <>
                 <span className="block">
-                  {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
+                  {row.requestCode} · Customer: {row.customerName} · {egp(row.estimatedCost)}
                 </span>
                 <span className="mt-1 block text-slate-700">{holder(row)}</span>
                 <span className="mt-0.5 block text-slate-400">{position(row)}</span>
@@ -967,7 +967,7 @@ function ChainWatchList({
                 {age(row)}
               </span>
             }
-            title={row.customerName}
+            title={row.requestTitle}
           />
         )}
         renderTable={() => (
