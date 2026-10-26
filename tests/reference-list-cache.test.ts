@@ -62,6 +62,7 @@ const ADOPTERS: ReadonlyArray<{ file: string; what: string }> = [
   { file: "src/lib/outstation/area-rep-options.ts", what: "employees, for the rep names on the wizard" },
   { file: "src/lib/probation/intelligence/manual-dv-day.ts", what: "lines, for the scorecard's line name" },
   { file: "src/lib/recruitment/manager-cv-engagement.ts", what: "lines, for each manager's product line" },
+  { file: "src/lib/recruitment/requisition-places-db.ts", what: "areas and lines, for the position label on a candidate card" },
   // The two write paths below import the `forgetReference*` half only — they refresh the copy, they
   // never read through it. Block (4) proves that is all they take.
   { file: "src/lib/employees/employee-directory.ts", what: "the employee bump, on every directory invalidation" },

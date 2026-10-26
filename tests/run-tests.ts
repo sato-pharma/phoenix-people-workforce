@@ -2845,6 +2845,7 @@ import { runInterviewCalendarFeedHolderTests } from "./interview-calendar-feed-h
 import { runDirectOrderShareLiveRateLimitTests } from "./direct-order-share-live-rate-limit.test.ts";
 import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test.ts";
 import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
+import { runMyCandidatesTidyTests } from "./my-candidates-tidy.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11252,6 +11253,10 @@ await runTest(
 await runTest(
   "Weekly Sales screens print display labels, never stored spellings: a region typed in capitals and a manager typed in capitals read in title case, a distributor reads its registry name by code or by name (overseas to Overseas, Ibn sina to Ibn Sina, ramco to RAMCO), an area reads Sohag 1, October - Zayed and Port Said - Damietta, and the dashboard payload keeps every code and figure untouched",
   runWeeklyDisplayLabelsTests,
+);
+await runTest(
+  "My Candidates tidy-up: a hired candidate is not shown an unanswered Applying-for chip, a position reads as its role and area and never its request code, and the team list hides a manager who has left with no CV and lists CV holders first",
+  runMyCandidatesTidyTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

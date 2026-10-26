@@ -52,6 +52,7 @@ import {
   type ManagerFolderFiling,
   type ManagerFolderFilings,
 } from "@/lib/recruitment/manager-folder-shelf";
+import { requisitionRoleLabel, type RequisitionPlaces } from "@/lib/recruitment/my-candidates-tidy";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
 import type { WorkspaceAnswerChip } from "@/lib/recruitment/workspace/types";
@@ -70,6 +71,11 @@ type Props = {
    */
   areaOptions: CandidateFolderAreaOption[];
   initialApplications: ApplicationWithContext[];
+  /**
+   * Area and line names for the requisitions on the cards, so a position reads as its role and area
+   * and never as the request code (owner, 2026-10-26). Absent = the role alone.
+   */
+  requisitionPlaces?: RequisitionPlaces;
   /**
    * Who has said "I will call" on each CV on this page, keyed by candidate id.
    *
@@ -318,6 +324,7 @@ function CandidateCard({
   claim,
   files,
   onChanged,
+  places,
   viewerHrId,
 }: {
   application: ApplicationWithContext;
@@ -326,6 +333,8 @@ function CandidateCard({
   /** Loaded with the page, for the same reason as the sent-to-you cards. */
   files: TeamCandidateFile[];
   onChanged: () => void;
+  /** Area and line names for the position label. */
+  places?: RequisitionPlaces;
   viewerHrId: string | null;
 }) {
   const candidate = application.candidate!;
@@ -436,7 +445,7 @@ function CandidateCard({
   const flags = (
     <>
       <RowFlag icon={<BriefcaseBusiness aria-hidden="true" className="h-3 w-3" />} tone="slate">
-        {`${requisition.jobTitle} · ${requisition.requisitionCode}`}
+        {requisitionRoleLabel(requisition, places)}
       </RowFlag>
       <RowFlag tone={badge.tone}>{badge.label}</RowFlag>
       {canAct ? <RowFlag tone="orange">Waiting on you</RowFlag> : null}
@@ -876,6 +885,7 @@ function RecruitmentCandidatesPortalBody({
   initialSentToMe: sentToMe,
   initialTeam,
   initialUnseenIds,
+  requisitionPlaces,
   today,
   viewerHrId,
 }: Props) {
@@ -1093,6 +1103,7 @@ function RecruitmentCandidatesPortalBody({
                 files={files[application.candidate?.id ?? ""] ?? []}
                 key={application.id}
                 onChanged={reload}
+                places={requisitionPlaces}
                 viewerHrId={viewerHrId}
               />
             ))}
