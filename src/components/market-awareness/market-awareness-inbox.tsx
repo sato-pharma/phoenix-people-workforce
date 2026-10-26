@@ -22,7 +22,7 @@ import { Conversation } from "@/components/market-awareness/market-awareness-con
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 // Pure, and client-safe: workflow.ts imports permissions only as a TYPE, so nothing server-side
 // follows it into this bundle.
-import { describeInboxStep } from "@/lib/market-awareness/workflow";
+import { describeInboxStep, describeInboxWait } from "@/lib/market-awareness/workflow";
 import {
   phxFieldClassName,
   phxTextareaClassName,
@@ -103,6 +103,12 @@ type Activity = {
   expectedAttendees: number | null;
   speakers: string | null;
   submittedAt: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  withdrawnAt: string | null;
+  executedAt: string | null;
+  closedAt: string | null;
+  updatedAt: string | null;
   rep: SeatHolder;
   decisions: Array<{
     id: number;
@@ -138,15 +144,6 @@ function cairoDate(value: string | null | undefined): string {
   }).format(parsed);
 }
 
-/** How long it has been sitting. An SLA marker, never a blocker. */
-function waitingFor(submittedAt: string | null): string {
-  if (!submittedAt) return "Just submitted";
-  const days = Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000);
-  if (days <= 0) return "Submitted today";
-  if (days === 1) return "Waiting 1 day";
-  return `Waiting ${days} days`;
-}
-
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="block text-phx-3xs font-bold uppercase tracking-[0.14em] text-phx-ink-faint">
@@ -172,7 +169,7 @@ type InboxRow = { activity: Activity; canDecide: boolean; canRelease: boolean };
 
 const INBOX_TABS: ReadonlyArray<{ description: string; icon: typeof Inbox; key: InboxScope; label: string }> = [
   { description: "Still moving through the chain", icon: Inbox, key: "open", label: "In approval" },
-  { description: "Approved, rejected or withdrawn", icon: History, key: "history", label: "History" },
+  { description: "Every answered activity you can see", icon: History, key: "history", label: "History" },
 ];
 
 /**
@@ -335,7 +332,7 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
           </p>
           <p className="max-w-md break-words text-phx-xs font-medium text-phx-ink-soft">
             {scope === "history"
-              ? "Approved, rejected and withdrawn activities collect here once a decision has been made."
+              ? "Approved, rejected, withdrawn, executed and closed activities you can see collect here once they have been answered."
               : "An awareness activity appears here the moment a product manager submits it. Everything you can see is listed; the decision buttons show only where the decision is actually yours."}
           </p>
         </div>
@@ -509,7 +506,7 @@ function InboxCard({
           </p>
         </div>
         <span className="shrink-0 border border-phx-accent-line bg-phx-accent-soft px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-press">
-          {waitingFor(activity.submittedAt)}
+          {describeInboxWait(activity)}
         </span>
       </header>
 
