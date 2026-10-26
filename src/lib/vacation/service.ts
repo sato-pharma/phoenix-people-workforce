@@ -17,7 +17,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
@@ -425,6 +425,17 @@ function integerValue(value: unknown, fallback = 0) {
 
 function canonicalHrId(value: string | null | undefined) {
   return normalizeHrIdForAccess(value) ?? null;
+}
+
+/**
+ * The HR id of whoever DECIDES a request, in the form the database keeps it (`B-118`).
+ * `resolveEmployeeIdentityId` returns the LOWERCASE comparison key, which is right for matching and
+ * wrong for persisting: 85 manager and 77 HR decisions were stored as `b-118` and then missed by every
+ * name lookup and "decided by me" filter. Only the HR id branch is upper-cased; the login id and the
+ * audit fallback stay untouched. Pinned by `tests/vacation-decider-hr-id-storage.test.ts`.
+ */
+function resolveStoredDeciderHrId(access: AccessContext) {
+  return hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access);
 }
 
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
@@ -2094,7 +2105,7 @@ async function recordVacationApprovalStepDecision(input: {
   // The row keeps approver_hr_id pointing at the assigned approver, because that IS who the step
   // belonged to. Without these two columns the decided row would read as if that person answered
   // it — the one thing an override must never be able to look like.
-  const overriddenByHrId = canonicalHrId(input.overriddenByHrId) || null;
+  const overriddenByHrId = hrIdForStorage(input.overriddenByHrId) || null;
   const { data, error } = await getSupabaseAdmin()
     .from(vacationApprovalStepsTable)
     .update({
@@ -3877,7 +3888,7 @@ async function buildAdminVacationMutationPayload(input: {
     vacationType,
   });
   const { manager, managerOfManager } = managerChain(input.directory, employee);
-  const actorHrId = resolveEmployeeIdentityId(input.access);
+  const actorHrId = resolveStoredDeciderHrId(input.access);
   const decisionPayload = adminDecisionPayload({ actorHrId, actorLoginId: input.access.loginId, status });
 
   return {
@@ -5026,7 +5037,7 @@ export async function decideVacationRequest(access: AccessContext, input: {
 
   return applyVacationDecision({
     access,
-    actorHrId: resolveEmployeeIdentityId(access),
+    actorHrId: resolveStoredDeciderHrId(access),
     actorLoginId: access.loginId,
     decision: input.decision,
     decisionComment: input.decisionComment,
