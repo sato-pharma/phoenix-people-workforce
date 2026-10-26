@@ -1959,3 +1959,37 @@ required work on a guess has broken `main` twice. **Not done, and why:** the pla
 narrowed build-risk classifier says no would drop the only build that sees a `src/**` break (the PR build
 was narrowed on 2026-10-08 on exactly that understanding), and the strict "only docs, `.claude`, tests,
 xlsx, markdown" version covers 2 of the last 80 merges — so it saves nothing.
+
+### Tree reuse — SHADOW MODE replaced the dry run (owner, 2026-10-26)
+
+His words: "observational only ... Any uncertainty means: FULL CI REQUIRED", "Do not consider a job reusable
+simply because its status says SUCCESS", and "Do not automatically activate CI skipping after 14 days."
+The three-way MATCH/DIFFER/UNKNOWN dry run above found the PR only from a squash subject's `(#N)` (merge and
+rebase commits always read UNKNOWN) and trusted the run-level `success`. The same script now classifies
+every push to `main` into five classes:
+
+| Class | Means |
+| --- | --- |
+| `ELIGIBLE_FOR_REUSE` | identical tree, `ci.yml` on `main`, one same-repo human PR merged as exactly this commit, a one-commit push, the newest PR run's latest attempt green, every required job (`validate`, `static`, `unit (1)`, `unit (2)`, `checks`) green, AND every work step of `static` and both `unit` jobs green, finished under 12 hours earlier on the same UTC and Cairo day |
+| `NOT_ELIGIBLE` | a definite no — direct push, fork or bot PR, a red, cancelled, skipped or missing required job, another workflow, different trees |
+| `INSUFFICIENT_EVIDENCE` | cannot tell — no or several candidate PRs, a multi-commit push, no tree recorded, a stale or day-crossing PR run; also the fall-through |
+| `SAFETY_CHECK_FAILED` | the evidence contradicts itself — forced push, subject and API name different PRs, two recorded trees, jobs from two attempts, a green job whose work step was skipped or cancelled |
+| `HISTORICAL_DATA_UNAVAILABLE` | a git or API read failed, or the jobs are gone |
+
+**How the PR is found:** `commits/{sha}/pulls` (squash, rebase and merge commits alike), cross-checked
+against the subject's `(#N)` when there is one. A run's `pull_requests[]` is EMPTY once its PR merges
+(read on run 40254982420), so it is never used; the run is matched by `head_sha` and `head_repository`.
+"Did the push move `main` by one commit" is `before == sha^1` — the payload's commit count would mislead,
+because a merge commit's push lists every commit of the PR.
+
+**`validate` is never reusable** — its build, standalone assembly and Playwright smoke run on a push only.
+**The unit suite reads production credentials**, so it is not hermetic; that is written into every record
+as a caveat, and is why a day-crossing or 12-hour-old PR run is not enough.
+
+**Output, never a gate:** the class and an estimated minute count in the next step's NAME (`Tree reuse
+shadow ELIGIBLE_FOR_REUSE ~8 min`), a `tree-reuse-shadow-record {json}` log line and a table in the job
+summary (no token, header or env). Read it with `node scripts/ci-tree-reuse.mjs --report 400`
+(false-eligible runs listed, shadow-step overhead measured) and backtest with `--replay 50` (read-only,
+classifies past pushes from history). The step is push-only, `continue-on-error`, capped at 2 minutes,
+and the script always exits 0. Activation is a separate decision that is the owner's alone; nothing
+changes on day 14.

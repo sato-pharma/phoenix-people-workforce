@@ -501,9 +501,9 @@ jobs:
   static:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # READ-ONLY additions for the tree-reuse DRY RUN (owner, 2026-10-14): `actions: read` lets the push
-    # run read a PR run's step names, `pull-requests: read` lets it find the PR's final head. Nothing
-    # here can write. Account: scripts/ci-tree-reuse.mjs, docs/ci-self-hosted-runner.md.
+    # READ-ONLY additions for the tree-reuse SHADOW (owner, 2026-10-14; shadow mode 2026-10-26):
+    # `actions: read` lets the push run read a PR run's jobs and step names, `pull-requests: read` lets
+    # it find the PR. Nothing here can write. Account: scripts/ci-tree-reuse.mjs, docs/ci-self-hosted-runner.md.
     permissions:
       contents: read
       actions: read
@@ -516,7 +516,7 @@ jobs:
           # depth 2, for the reasons recorded on `validate`'s checkout (one spelling across the file).
           fetch-depth: 2
 
-      # TREE-REUSE DRY RUN, half one (owner, 2026-10-14, cost cuts). A PR run writes down the tree it is
+      # TREE-REUSE SHADOW, half one (owner, 2026-10-14, cost cuts). A PR run writes down the tree it is
       # about to test, in the NAME of the next step: a step name is readable from the jobs API with
       # `actions: read` alone. Nothing reads it for any decision; see scripts/ci-tree-reuse.mjs.
       - name: Compute the tree this run tests
@@ -718,20 +718,23 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      # TREE-REUSE DRY RUN, half two. On a push, ask whether the tree that just landed is the very tree
-      # the PR's green run tested, and say the answer in the NEXT step's name so it can be counted later
-      # (`node scripts/ci-tree-reuse.mjs --report`). 🔴 LOG ONLY: it never skips, shortens or gates
-      # anything, it cannot fail the job, and no `if:` in this file may read its output. Turning it
-      # into a skip is a separate decision that is the owner's alone.
-      - name: Tree reuse dry run (log only)
+      # TREE-REUSE SHADOW, half two (owner: dry run 2026-10-14, shadow mode 2026-10-26). On a push, decide
+      # whether the PR's own run already covered this exact tree, in one of five classes (only
+      # ELIGIBLE_FOR_REUSE says yes, and only when every check passed; anything uncertain says no), and
+      # say the class in the NEXT step's name so `node scripts/ci-tree-reuse.mjs --report` can count it.
+      # The full record goes to the log and the job summary. 🔴 OBSERVATIONAL ONLY: it never skips,
+      # shortens or gates anything, it cannot fail the job, and no `if:` in this file may read its
+      # output. Turning it into a skip is a separate decision that is the owner's alone.
+      - name: Tree reuse shadow (log only)
         id: reuse
         if: github.event_name == 'push'
         continue-on-error: true
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-tree-reuse.mjs --dry-run
 
-      - name: Tree reuse dry run ${{ steps.reuse.outputs.verdict }}
+      - name: Tree reuse shadow ${{ steps.reuse.outputs.verdict }} ~${{ steps.reuse.outputs.minutes }} min
         if: github.event_name == 'push' && steps.reuse.outputs.verdict != ''
         continue-on-error: true
         run: echo "recorded"
