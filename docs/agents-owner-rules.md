@@ -3550,6 +3550,36 @@ Pinned by `tests/phoenix-crm-visit-far-refusal.test.ts` §1b on the three places
 that a point settled on the photograph still has its pin as the second reading was broken on purpose,
 fired (one reading, not two), and the file was restored byte-identical.
 
+### Amendment, 2026-10-26 — the live photo is the customer's saved point; the pin still opens the save
+
+**His words.** *"The source of trust that you compare from is the live validation photo. The location on
+the live validation photo."* And, asked what that means for the place: *"this is the saved location of
+this customer in the system that we later on compare with it"* — every visit or entry after it is judged
+by how far it sits from the photo.
+
+**What was wrong.** Since 2026-10-11 `pickPlacePoint` fixed a place on whichever reading claimed the
+sharper accuracy. A claimed accuracy is the phone's guess about itself, so on production (26 Oct) **760
+of 3,422 active places** held the pin although a photo existed, and the same doctor validated by two reps
+could hold two different points. The kept point (`lat`/`lon`) is what the visit flags, the address,
+the brick and the area are read from.
+
+**What it does now.** `pickPlacePoint` takes the photo's own reading whenever it is within the place's
+250 m line or its phone reported no accuracy; the pin only when there is no photo reading or it is rougher
+than that. On 26 Oct 2026 (~16:00 Cairo) 746 places holding the pin beside a usable photo were moved
+onto their photo, their address re-read where the photo sat 25 m or more from the pin, and 588 of
+their visits measured again (`scripts/phoenix-crm-settle-on-photo.ts`): no brick or area changed and
+one visit flag moved, far to ok. The pre-image is `phoenix_crm_photo_point_backup_20261026_places` and
+`_visits`. 🔴 **Six places were HELD on the pin**: their photo sits 300 m or more from it (Dr Tharwat
+Milad's 10 km cold-receiver photo, Sehet Behteem Hospital's ±200 m photo 327 m off, and four more), the
+contradicting readings — moving them is his decision, place by place. The places whose photo is rougher
+than 250 m keep the pin, and validations saved before this merge served need the script run once more.
+
+**His answer on the door, picked from options the same afternoon:** *"Photo for flags, pin still lets it
+save."* The 2026-10-21 nearer-of-photo-and-pin refusal stays exactly as it is, because 7 rep visits since
+20 October stood 1-279 m from the pin and 322-860 m from the photo — five of them 1-15 m from the pin —
+and a photo-only door would have refused them. Such a visit saves and reads as far from the photo to the
+managers. Never re-propose the photo-only door without his word.
+
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
 He described the whole cycle he wants a medical rep to live in and asked, first, whether it was

@@ -36,7 +36,7 @@ type Row = Record<string, unknown>;
 export type RestampScope = "unplaced" | "all";
 
 /** A place as the measurement needs it: where it is, and when it was captured at the door. */
-type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: string };
+export type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: string };
 
 /**
  * The places ONE visit is measured against: those already captured when it happened.
@@ -52,7 +52,7 @@ type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: strin
  * captured (owner, 2026-09-29). Such a visit has no place captured before it at all, so it measures
  * against the EARLIEST one — the place he was validated with — and never against a clinic added later.
  */
-function placesFor(visit: { capturedAt: string | null }, places: readonly MeasurablePlace[]): MeasurablePlace[] {
+export function placesFor(visit: { capturedAt: string | null }, places: readonly MeasurablePlace[]): MeasurablePlace[] {
   // A visit with no stamp to compare is measured as it always was, rather than silently losing its
   // distance: an absent answer must never read as "no place was there".
   if (!visit.capturedAt) return [...places];
