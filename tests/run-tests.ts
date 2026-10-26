@@ -927,6 +927,7 @@ import { runMarketingRoiReportScopeTests } from "./marketing-roi-report-scope.te
 import { runMarketingRoiReportHelpersTests } from "./marketing-roi-report-helpers.test.ts";
 import { runMarketingRoiLabelingTests } from "./marketing-roi-labeling.test.ts";
 import { runMarketingRequestOverlapTests } from "./marketing-request-overlap.test.ts";
+import { runMarketingRequestTwinGuardTests } from "./marketing-request-twin-guard.test.ts";
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
@@ -4742,6 +4743,7 @@ await runTest(
   runMarketingVenueMergeRouteTests,
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
+await runTest("marketing request twin guard (double-payment refusal)", runMarketingRequestTwinGuardTests);
 await runTest("marketing validation draft recovery (stale evidence must never be restored)", runMarketingValidationDraftTests);
 await runTest(
   "marketing validation save gate (a greyed Save always has a sentence — a nursery carries no distributor code and must still save)",

@@ -431,6 +431,32 @@ export function MarketingRequestDecisionConfirmation({
             sometimes intentional, and only the approver can tell a deliberate double-push from an
             accidental double-count. "Return for edit" right below is the intended response.
           */}
+          {/*
+            Twin warning — the same requester, customer, request type and cost is already live in
+            another request (twin-request.ts). A possible double PAYMENT, so it sits above the
+            double-count warning. Named, never decided: the approver still approves, returns or rejects.
+          */}
+          {summary.twinOf.length > 0 ? (
+            <div className="mt-6 border border-rose-300 bg-rose-50 p-3">
+              <p className="text-sm font-semibold text-rose-900">
+                {summary.twinOf.length === 1
+                  ? "This looks like a second copy of an earlier request"
+                  : `This looks like a copy of ${summary.twinOf.length} earlier requests`}
+              </p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {summary.twinOf.map((twin) => (
+                  <li className="text-xs text-rose-900" key={twin.requestCode}>
+                    <span className="font-semibold">{twin.requestCode}</span> · {twin.statusLabel} · submitted {twin.submittedDay}.{" "}
+                    {twin.description}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-rose-800">
+                Check the earlier request before you decide. If this is the same activity, return or reject this copy.
+              </p>
+            </div>
+          ) : null}
+
           {summary.contestedBy.length > 0 ? (
             <div className="mt-6 border border-amber-300 bg-amber-50 p-3">
               <p className="text-sm font-semibold text-amber-900">

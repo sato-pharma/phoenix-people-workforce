@@ -24,6 +24,12 @@ import {
   windowMonths,
   type OverlapCandidate,
 } from "@/lib/marketing-requests/request-overlap";
+import {
+  findMarketingRequestTwins,
+  MARKETING_REQUEST_TWIN_STATUSES,
+  type TwinCandidate,
+  type TwinSubject,
+} from "@/lib/marketing-requests/twin-request";
 import type { MarketingRequest, MarketingValidationStatus } from "@/lib/marketing-requests/types";
 
 /** One target pharmacy exactly as the requester submitted it — never collapsed to a count. */
@@ -332,6 +338,56 @@ export async function loadMarketingRequestOverlaps(
     requestCode: overlap.requestCode,
     status: overlap.status,
   }));
+}
+
+/**
+ * Every live twin of `subject` — the same requester, customer, request type and cost, still in the
+ * chain or approved (`twin-request.ts`). The customer + type filter narrows the read to a handful of
+ * rows; the requester and cost are compared in `findMarketingRequestTwins`, so HR-id casing and a
+ * numeric round-trip can never hide a twin.
+ */
+export async function loadMarketingRequestTwins(
+  supabase: SupabaseClient,
+  subject: TwinSubject,
+): Promise<TwinCandidate[]> {
+  const rows = await supabase
+    .from("marketing_requests")
+    .select("id, request_code, requester_hr_id, customer_id, request_type_id, estimated_cost, status, submitted_at, created_at")
+    .eq("customer_id", subject.customerId)
+    .eq("request_type_id", subject.requestTypeId)
+    .in("status", [...MARKETING_REQUEST_TWIN_STATUSES]);
+  if (rows.error) throw rows.error;
+
+  const candidates: TwinCandidate[] = ((rows.data ?? []) as Array<{
+    id: string; request_code: string | null; requester_hr_id: string | null; customer_id: string;
+    request_type_id: number | string; estimated_cost: number | string | null; status: string;
+    submitted_at: string | null; created_at: string | null;
+  }>).map((row) => ({
+    currentStepCode: null,
+    customerId: row.customer_id,
+    estimatedCost: Number(row.estimated_cost ?? 0),
+    requestCode: row.request_code ?? row.id,
+    requestId: row.id,
+    requestTypeId: Number(row.request_type_id),
+    requesterHrId: String(row.requester_hr_id ?? ""),
+    status: row.status,
+    submittedAt: row.submitted_at ?? row.created_at,
+  }));
+  const twins = findMarketingRequestTwins(subject, candidates);
+  if (twins.length === 0) return twins;
+
+  // The rung holding each twin, so one waiting at Finance reads "approved · with finance" rather than
+  // "pending approval" (request-status-label.ts). A failed read keeps the bare status, never the twin.
+  const steps = await supabase
+    .from("marketing_request_approval_steps")
+    .select("request_id, step_code")
+    .in("request_id", twins.map((twin) => twin.requestId))
+    .eq("status", "current");
+  if (steps.error) return twins;
+  const stepByRequest = new Map(
+    ((steps.data ?? []) as Array<{ request_id: string; step_code: string | null }>).map((row) => [row.request_id, row.step_code] as const),
+  );
+  return twins.map((twin) => ({ ...twin, currentStepCode: stepByRequest.get(twin.requestId) ?? null }));
 }
 
 /** One earlier request against the same customer. */
