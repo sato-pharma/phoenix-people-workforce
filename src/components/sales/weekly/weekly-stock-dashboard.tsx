@@ -12,6 +12,7 @@ import {
   Layers,
   MapPin,
   Package,
+  PackageX,
   RefreshCw,
   RotateCcw,
   SlidersHorizontal,
@@ -77,12 +78,14 @@ const STATUS_OPTIONS: MultiSelectFilterOption[] = (Object.keys(WEEKLY_STOCK_STAT
 }));
 
 const STATUS_BADGE: Record<WeeklyStockStatus, string> = {
+  out_of_stock: "border-slate-800 bg-slate-900 text-white",
   low: "border-rose-200 bg-rose-50 text-rose-700",
   healthy: "border-emerald-200 bg-emerald-50 text-emerald-700",
   over: "border-amber-200 bg-amber-50 text-amber-800",
   no_sales: "border-slate-200 bg-slate-100 text-slate-600",
 };
 const STATUS_RAIL: Record<WeeklyStockStatus, string> = {
+  out_of_stock: "bg-slate-900",
   low: "bg-rose-500",
   healthy: "bg-emerald-500",
   over: "bg-amber-500",
@@ -456,7 +459,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
       ) : (
         <>
           {/* KPIs — every total here is a value, never a unit count across products. */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <Kpi accent="#F97316" icon={Coins} label="Stock value" value={formatEgp(kpis.stockValue)} sub="Units × factory price" />
             <Kpi
               accent="#0EA5E9"
@@ -474,6 +477,14 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             />
             <Kpi accent="#0F172A" icon={Building2} label="Branches" value={formatUnits(kpis.depotCount)} sub={`${formatUnits(kpis.productCount)} products`} />
             <Kpi
+              accent="#0F172A"
+              icon={PackageX}
+              label="Out of stock"
+              value={formatUnits(kpis.outOfStockCount)}
+              sub="No units on hand"
+              onClick={() => drill("statuses", "out_of_stock")}
+            />
+            <Kpi
               accent="#E11D48"
               icon={TriangleAlert}
               label="Low stock"
@@ -485,7 +496,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               accent="#10B981"
               icon={Boxes}
               label="Healthy"
-              value={formatUnits(Math.max(0, view.cells.length - kpis.lowCount - kpis.overCount - kpis.noSalesCount))}
+              value={formatUnits(kpis.healthyCount)}
               sub={`${WEEKLY_STOCK_COVER_LOW_WEEKS} to ${WEEKLY_STOCK_COVER_OVER_WEEKS} weeks`}
               onClick={() => drill("statuses", "healthy")}
             />
@@ -504,6 +515,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               value={formatUnits(kpis.noSalesCount)}
               sub="Stock, nothing sold"
               onClick={() => drill("statuses", "no_sales")}
+              className="col-span-2 lg:col-span-1"
             />
           </div>
 
@@ -600,7 +612,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
 
           <p className="text-phx-xs font-semibold leading-relaxed text-slate-500">
             Stock is each distributor&apos;s latest stock file on or before the date chosen, never added across weeks. Weeks of cover is
-            stock divided by average weekly net sales over the last {WEEKLY_STOCK_SALES_WINDOW_WEEKS} weeks: low stock under{" "}
+            stock divided by average weekly net sales over the last {WEEKLY_STOCK_SALES_WINDOW_WEEKS} weeks: out of stock when no units are on hand, low stock under{" "}
             {WEEKLY_STOCK_COVER_LOW_WEEKS} weeks, healthy {WEEKLY_STOCK_COVER_LOW_WEEKS} to {WEEKLY_STOCK_COVER_OVER_WEEKS}, overstock over{" "}
             {WEEKLY_STOCK_COVER_OVER_WEEKS}. Units are one product&apos;s only: every total across products is a value, and beside a branch, area,
             region or distributor&apos;s value the Stock units column is the one product picked in Units for. Head Office products are not
@@ -650,6 +662,7 @@ function Kpi({
   value,
   sub,
   onClick,
+  className: extraClassName = "",
 }: {
   accent: string;
   icon: typeof Coins;
@@ -657,6 +670,7 @@ function Kpi({
   value: string;
   sub: string;
   onClick?: () => void;
+  className?: string;
 }) {
   const body = (
     <>
@@ -672,7 +686,7 @@ function Kpi({
     </>
   );
   const className =
-    "relative block w-full overflow-hidden rounded-sm border border-slate-200 bg-white text-left shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60";
+    `relative block w-full overflow-hidden rounded-sm border border-slate-200 bg-white text-left shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 ${extraClassName}`.trim();
   return onClick ? (
     <button type="button" onClick={onClick} className={`${className} transition hover:border-orange-300`} title={`Show ${label.toLowerCase()} rows`}>
       {body}
@@ -834,7 +848,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.depotCount)}</p>
                   <p className="break-words">
-                    {row.lowDepots} low · {row.overDepots} over · {row.noSalesDepots} no sales
+                    {row.outDepots} out · {row.lowDepots} low · {row.overDepots} over · {row.noSalesDepots} no sales
                   </p>
                 </td>
               </tr>
@@ -851,7 +865,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
                 <div className="min-w-0">
                   <DrillName name={row.productName} onClick={() => onDrill(row.productCode)} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                    {row.line} · {row.depotCount} branches · {row.lowDepots} low · {row.overDepots} over
+                    {row.line} · {row.depotCount} branches · {row.outDepots} out · {row.lowDepots} low · {row.overDepots} over
                   </p>
                 </div>
                 <StatusBadge status={row.status} />
@@ -870,15 +884,21 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
   );
 }
 
+/** Joins the parts that exist with " · " — an empty region or parent never leaves a bare separator. */
+function joinParts(parts: readonly (string | null | undefined)[]): string {
+  return parts
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** "Area · Region · Distributor" under a depot's name, in the screen's labels (display only). */
 function cellPlace(cell: WeeklyStockCell): string {
-  return [
+  return joinParts([
     cell.areaName ? weeklyAreaLabel(cell.areaName) : "",
     cell.regionName ? weeklyRegionLabel(cell.regionName) : "",
     weeklyDistributorLabel(cell.distributorName, cell.distributorCode),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  ]);
 }
 
 /** A group row's name for the screen: distributors, areas and regions are relabelled, a branch is as filed. */
@@ -961,7 +981,7 @@ function GroupTable({
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.productCount)}</p>
                   <p className="break-words">
-                    {row.lowCount} low · {row.overCount} over · {row.noSalesCount} no sales
+                    {row.outOfStockCount} out · {row.lowCount} low · {row.overCount} over · {row.noSalesCount} no sales
                   </p>
                 </td>
               </tr>
@@ -978,9 +998,7 @@ function GroupTable({
                 <div className="min-w-0">
                   <DrillName name={groupName(nameLabel, row)} onClick={onDrill ? () => onDrill(row.code) : undefined} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                    {[groupSubline(row), `${row.productCount} products`, `${row.lowCount} low`, `${row.overCount} over`]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {joinParts([groupSubline(row), `${row.productCount} products`, `${row.outOfStockCount} out`, `${row.lowCount} low`, `${row.overCount} over`])}
                   </p>
                   {"stale" in row && row.stale ? (
                     <span className="mt-1 inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-800">

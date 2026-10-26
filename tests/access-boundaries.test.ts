@@ -12,7 +12,7 @@ import {
 } from "../src/lib/auth/seat-page-fences.ts";
 import { SIGN_OUT_FAILED_MESSAGE, signOutAndLeave } from "../src/lib/auth/sign-out-client.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
-import { clientAddress, isInternalAddress } from "../src/lib/security/client-address.ts";
+import { clientAddress, isCloudflareAddress, isInternalAddress } from "../src/lib/security/client-address.ts";
 import { ilikeContainsValue, ilikeExactValue } from "../src/lib/supabase/search-filter.ts";
 
 /**
@@ -147,6 +147,33 @@ export async function runAccessBoundariesTests() {
   }
   for (const address of ["41.33.10.7", "172.32.0.1", "100.128.0.1", "2001:db8::1"]) {
     assert.equal(isInternalAddress(address), false, `${address} is public`);
+  }
+  // Behind Cloudflare (2026-10-26): the visitor is CF-Connecting-IP only when Railway's edge saw a Cloudflare server.
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": "197.36.104.183, 172.70.40.12", "cf-connecting-ip": "197.36.104.183" })),
+    "197.36.104.183",
+    "HEADLINE: behind Cloudflare the visitor is CF-Connecting-IP, not the Cloudflare server",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": "9.9.9.9, 2a06:98c0:3600::103", "cf-connecting-ip": "2001:db8::7" })),
+    "2001:db8::7",
+    "a Cloudflare IPv6 server is recognised too",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": "41.33.10.7", "cf-connecting-ip": "1.2.3.4" })),
+    "41.33.10.7",
+    "HEADLINE: a caller reaching Railway directly cannot choose its address with CF-Connecting-IP",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": "172.70.40.12", "cf-connecting-ip": "not an address" })),
+    "172.70.40.12",
+    "a malformed CF-Connecting-IP is ignored",
+  );
+  for (const address of ["172.70.40.12", "104.16.0.1", "162.159.38.211", "2606:4700::6810:84e5", "2a06:98c0:3600::103", "::ffff:141.101.64.9"]) {
+    assert.equal(isCloudflareAddress(address), true, `${address} is Cloudflare`);
+  }
+  for (const address of ["69.46.46.36", "197.36.104.183", "172.80.0.1", "104.32.0.1", "2001:db8::1", "2606:4701::1", "garbage", ""]) {
+    assert.equal(isCloudflareAddress(address), false, `${address} is not Cloudflare`);
   }
   const readers = [...walk("app", "route.ts"), ...walk("src", "route.ts")]
     .concat(walk("src", "audit.ts"), walk("src", "log.ts"), walk("src", "api-rate-limit.ts"))

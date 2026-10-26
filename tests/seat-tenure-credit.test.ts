@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 
-import { repBoardRows, repMembersFromRows } from "../src/lib/employee-portal/sos-team-performance.ts";
+import { dmBoardRows, repBoardRows, repMembersFromRows } from "../src/lib/employee-portal/sos-team-performance.ts";
 import { reconcileUnattributed } from "../src/lib/employee-portal/performance-reconciliation.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 import { indexSalesSeats } from "../src/lib/sales/seat-hierarchy.ts";
-import { creditRepRowsByTenure, seatHolderOn, type SeatTenure } from "../src/lib/sales/seat-tenure-credit.ts";
+import { creditDmRowsByTenure, creditRepRowsByTenure, seatHolderOn, type SeatTenure } from "../src/lib/sales/seat-tenure-credit.ts";
 import { totalRows } from "../src/lib/sales/vs-target.ts";
 
 /**
@@ -138,4 +138,37 @@ export function runSeatTenureCreditTests() {
 
   // ── Off (the expense forms' rep list): today's holders, exactly as before ──
   assert.equal(repBoardRows(rows, null), rows, "with no seat history the rows are returned untouched");
+
+  // ── One level up: the District Manager boards (DSMs Performance, the NSM's district list) ──
+  // Live Pedia D2: Mohamed (B-5) to 1 Aug, then PD-0010 to 1 Oct, then PD-0028 seated 9 Oct and
+  // hired 24 Oct. The engine credits all of July–September to PD-0028, today's holder.
+  const dmTenure: SeatTenure = {
+    stretches: [
+      { seatId: "SEAT-PED-DM-D2", occupantHrId: "B-5", effectiveFrom: "2023-10-11", effectiveTo: "2026-08-01" },
+      { seatId: "SEAT-PED-DM-D2", occupantHrId: "PD-0010", effectiveFrom: "2026-08-08", effectiveTo: "2026-10-01" },
+      { seatId: "SEAT-PED-DM-D2", occupantHrId: "PD-0028", effectiveFrom: "2026-10-09", effectiveTo: null },
+    ],
+    employment: new Map([
+      ["b-5", { hireDate: "2019-01-01", lastWorkingDate: "2026-07-31" }],
+      ["pd-0010", { hireDate: "2026-08-08", lastWorkingDate: "2026-09-30" }],
+      ["pd-0028", { hireDate: "2026-10-24", lastWorkingDate: null }],
+    ]),
+  };
+  const dmRows = ["2026-07", "2026-08", "2026-09", "2026-10"].map((period) => ({
+    ...engineRow(period, "SEAT-PED-REP-D21", "B-58", 500, 600),
+    dmSeatId: "SEAT-PED-DM-D2",
+    dmHrId: "PD-0028",
+  }));
+  assert.deepEqual(
+    dmBoardRows(dmRows, dmTenure).map((row) => `${row.period}:${row.dmHrId}`),
+    ["2026-07:B-5", "2026-08:PD-0010", "2026-09:PD-0010", "2026-10:PD-0028"],
+    "a district manager hired in October must not rank for July–September; each month goes to the manager who held the seat",
+  );
+  const dmCredited = creditDmRowsByTenure(dmRows, dmTenure);
+  assert.deepEqual(
+    dmCredited.map((row) => [row.actualValue, row.targetValue, row.repHrId, row.repSeatId, row.dmSeatId]),
+    dmRows.map((row) => [row.actualValue, row.targetValue, row.repHrId, row.repSeatId, row.dmSeatId]),
+    "the district credit moves only the manager — never a number, never the rep",
+  );
+  assert.equal(dmBoardRows(dmRows, null), dmRows, "with no seat history the district rows are returned untouched");
 }

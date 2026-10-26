@@ -112,18 +112,28 @@ export async function loadRegionsForLine(lineCode: string): Promise<MarketAwaren
   return [...byRegion.values()].sort((a, b) => a.regionName.localeCompare(b.regionName));
 }
 
+/**
+ * One area out of regions already loaded — case-insensitive and trimmed, exactly as `findArea` reads
+ * it. Pure, so a list of activities can resolve every area from ONE load per line instead of one
+ * `phx_market_awareness_areas` round trip per row.
+ */
+export function areaIn(
+  regions: MarketAwarenessRegion[],
+  areaCode: string,
+): MarketAwarenessArea | null {
+  const wanted = areaCode.trim().toLowerCase();
+  for (const region of regions) {
+    const match = region.areas.find((area) => area.areaCode.toLowerCase() === wanted);
+    if (match) return match;
+  }
+  return null;
+}
+
 export async function findArea(
   lineCode: string,
   areaCode: string,
 ): Promise<MarketAwarenessArea | null> {
-  const regions = await loadRegionsForLine(lineCode);
-  for (const region of regions) {
-    const match = region.areas.find(
-      (area) => area.areaCode.toLowerCase() === areaCode.trim().toLowerCase(),
-    );
-    if (match) return match;
-  }
-  return null;
+  return areaIn(await loadRegionsForLine(lineCode), areaCode);
 }
 
 /**

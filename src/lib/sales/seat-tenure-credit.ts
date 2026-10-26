@@ -70,27 +70,45 @@ export function seatHolderOn(tenure: SeatTenure, seatId: string, asOf: string): 
   return stretch?.occupantHrId ?? null;
 }
 
+/** Which seat and which person on a row a board credits — the rep's, or the district manager's. */
+type SeatGrain = { seat: "repSeatId" | "dmSeatId"; holder: "repHrId" | "dmHrId" };
+
+function creditByTenure(rows: readonly AchievementRow[], tenure: SeatTenure, grain: SeatGrain): AchievementRow[] {
+  const cache = new Map<string, string | null>();
+  return rows.map((row) => {
+    const seatId = row[grain.seat];
+    if (!seatId) return row;
+    const asOf = periodEndDate(row.period);
+    if (!asOf) return row;
+    const cacheKey = `${seatId}|${asOf}`;
+    let holder = cache.get(cacheKey);
+    if (holder === undefined) {
+      holder = seatHolderOn(tenure, seatId, asOf);
+      cache.set(cacheKey, holder);
+    }
+    const current = row[grain.holder];
+    if (holder && current && canonicalHrIdKey(holder) === canonicalHrIdKey(current)) return row;
+    if (!holder && !current) return row;
+    return { ...row, [grain.holder]: holder };
+  });
+}
+
 /**
  * The rows with each rep-seat month credited to the person who held the seat that month. Values,
  * targets and every other field are untouched; a row with no rep seat is returned as it is. Feed the
  * result to the rep LEADERBOARD only — never to a headline total. Pure.
  */
 export function creditRepRowsByTenure(rows: readonly AchievementRow[], tenure: SeatTenure): AchievementRow[] {
-  const cache = new Map<string, string | null>();
-  return rows.map((row) => {
-    if (!row.repSeatId) return row;
-    const asOf = periodEndDate(row.period);
-    if (!asOf) return row;
-    const cacheKey = `${row.repSeatId}|${asOf}`;
-    let holder = cache.get(cacheKey);
-    if (holder === undefined) {
-      holder = seatHolderOn(tenure, row.repSeatId, asOf);
-      cache.set(cacheKey, holder);
-    }
-    if (holder && row.repHrId && canonicalHrIdKey(holder) === canonicalHrIdKey(row.repHrId)) return row;
-    if (!holder && !row.repHrId) return row;
-    return { ...row, repHrId: holder };
-  });
+  return creditByTenure(rows, tenure, { seat: "repSeatId", holder: "repHrId" });
+}
+
+/**
+ * The same, one level up: each district-manager-seat month credited to the manager who held that
+ * seat then (owner, 26 Oct 2026 — the DSMs boards follow the rep rule). Only `dmHrId` changes; a
+ * month nobody held leaves the row with no manager, so it falls to "not attributed". Pure.
+ */
+export function creditDmRowsByTenure(rows: readonly AchievementRow[], tenure: SeatTenure): AchievementRow[] {
+  return creditByTenure(rows, tenure, { seat: "dmSeatId", holder: "dmHrId" });
 }
 
 /** Every person-seat stretch and every employee's hire and last working dates, leavers included. */

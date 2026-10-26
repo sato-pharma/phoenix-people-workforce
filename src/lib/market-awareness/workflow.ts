@@ -185,10 +185,14 @@ export function canReleaseHold(input: {
  * viewer may SEE, not only the ones he can answer — the informed roles see all of them — and the
  * header used to read the status back, so a Pedia National Sales Manager opened the page and was
  * told "Waiting on your approval" twice over two Anti Infective conferences he holds no slot on.
- * The summary line directly above already said "2 moving, none waiting on you", and the page's own
- * description promises "only the decisions that are actually yours appear here", so the card
- * contradicted both its neighbours at once. Worse in the CEO case, where every viewer was told
- * "Waiting on you as the CEO".
+ * The summary line directly above already said "2 moving, none waiting on you", and the page's
+ * description (then) promised that only the decisions that are actually yours appear, so the card
+ * contradicted both its neighbours at once; the description now says what the page lists instead.
+ * Worse in the CEO case, where every viewer was told "Waiting on you as the CEO".
+ *
+ * The History tab lists answered activities too, and those used to fall through to "Moving through
+ * the chain" — an approved, rejected or withdrawn conference told the National Sales Manager it was
+ * still moving (audit, 2026-10-26). Every status now names the stage it is actually in.
  *
  * Nothing here grants anything. `canDecide` is computed server-side by canDecideStep and is the same
  * flag that decides whether the buttons are drawn; this only makes the words match what the buttons
@@ -203,5 +207,73 @@ export function describeInboxStep(input: { status: string; canDecide: boolean })
   }
   if (input.status === "pending_group") return "Waiting on the approval group";
   if (input.status === "pending_ceo") return "Waiting on the CEO";
+  const settled = SETTLED_STAGE_LABELS[input.status];
+  if (settled) return settled;
   return "Moving through the chain";
+}
+
+/** The stage name for every status that is not waiting on a decision. */
+const SETTLED_STAGE_LABELS: Record<string, string> = {
+  approved: "Approved",
+  closed: "Closed",
+  draft: "Draft",
+  executed: "Executed",
+  rejected: "Rejected",
+  returned: "Returned for changes",
+  withdrawn: "Withdrawn",
+};
+
+/**
+ * The chip beside an inbox card's title: how long an OPEN row has been sitting, or when a settled
+ * one was answered.
+ *
+ * It used to count days from submission to now for every row, so an activity approved a month ago
+ * read "Waiting 31 days" in History — a wait nobody is in. A wait is shown only while the activity
+ * is still open (`pending_group`, `pending_ceo`); a held or returned one is not waiting on a
+ * decision, and a settled one reports its own outcome date. `now` is a parameter so the words are
+ * testable.
+ */
+export function describeInboxWait(
+  input: {
+    status: string;
+    submittedAt: string | null;
+    approvedAt?: string | null;
+    rejectedAt?: string | null;
+    withdrawnAt?: string | null;
+    executedAt?: string | null;
+    closedAt?: string | null;
+    updatedAt?: string | null;
+  },
+  now: Date = new Date(),
+): string {
+  const days = (from: string | null | undefined): number | null => {
+    if (!from) return null;
+    const parsed = new Date(from).getTime();
+    if (Number.isNaN(parsed)) return null;
+    return Math.max(0, Math.floor((now.getTime() - parsed) / 86_400_000));
+  };
+  const since = (label: string, from: string | null | undefined): string => {
+    const elapsed = days(from);
+    if (elapsed === null) return label;
+    if (elapsed === 0) return `${label} today`;
+    if (elapsed === 1) return `${label} 1 day ago`;
+    return `${label} ${elapsed} days ago`;
+  };
+
+  if (input.status === "pending_group" || input.status === "pending_ceo") {
+    if (!input.submittedAt) return "Just submitted";
+    const elapsed = days(input.submittedAt);
+    if (elapsed === null || elapsed === 0) return "Submitted today";
+    if (elapsed === 1) return "Waiting 1 day";
+    return `Waiting ${elapsed} days`;
+  }
+  if (input.status === "on_hold") return "Frozen on hold";
+  if (input.status === "returned") return "With the requester";
+  if (input.status === "draft") return "Not submitted";
+  if (input.status === "approved") return since("Approved", input.approvedAt ?? input.updatedAt);
+  if (input.status === "rejected") return since("Rejected", input.rejectedAt ?? input.updatedAt);
+  if (input.status === "withdrawn") return since("Withdrawn", input.withdrawnAt ?? input.updatedAt);
+  if (input.status === "executed") return since("Executed", input.executedAt ?? input.updatedAt);
+  if (input.status === "closed") return since("Closed", input.closedAt ?? input.updatedAt);
+  return input.submittedAt ? "Submitted" : "Just submitted";
 }

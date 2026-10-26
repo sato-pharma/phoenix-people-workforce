@@ -13,6 +13,7 @@ import {
   planApproverSlots,
   summarizeApproverProgress,
 } from "../src/lib/market-awareness/approvers.ts";
+import { areaIn } from "../src/lib/market-awareness/geography.ts";
 import { isTrackableProductLine } from "../src/lib/market-awareness/lines.ts";
 import { MARKET_AWARENESS_STATUSES } from "../src/lib/market-awareness/types.ts";
 import {
@@ -37,6 +38,7 @@ import {
   canReleaseHold,
   currentStep,
   describeInboxStep,
+  describeInboxWait,
   findTransition,
   resolveGroupApproval,
   statusAfterResubmit,
@@ -977,4 +979,94 @@ export function runMarketAwarenessTests() {
       "a hold is frozen for everyone, so it reads the same to everyone",
     );
   }
+
+  // ── History rows name the stage they are in, never "Moving through the chain" ───────────────
+  //
+  // Audit 2026-10-26: the National Sales Manager's History tab listed approved, rejected and
+  // withdrawn activities under a header reading "Moving through the chain", because only the three
+  // pending/held statuses had a label. A settled row is not moving anywhere.
+  const settledLabels: Array<[string, string]> = [
+    ["approved", "Approved"],
+    ["closed", "Closed"],
+    ["draft", "Draft"],
+    ["executed", "Executed"],
+    ["rejected", "Rejected"],
+    ["returned", "Returned for changes"],
+    ["withdrawn", "Withdrawn"],
+  ];
+  // `canDecide` is false for every settled status (no step is open), so that is the case that matters.
+  for (const [status, label] of settledLabels) {
+    assert.equal(
+      describeInboxStep({ canDecide: false, status }),
+      label,
+      `a ${status} activity must be headed "${label}", not as if it were still moving`,
+    );
+  }
+  assert.equal(
+    describeInboxStep({ canDecide: false, status: "something_new" }),
+    "Moving through the chain",
+    "an unknown status keeps the neutral fallback rather than guessing a stage",
+  );
+
+  // ── The chip beside the title reads the CURRENT step's wait, never the viewer's own step ────
+  //
+  // The component derived `waitingFor` from the viewer, so a settled row read "Waiting 31 days".
+  // A wait is shown only while the activity is open; a settled row reports when it was answered.
+  const now = new Date("2026-10-26T12:00:00.000Z");
+  const longAgo = "2026-09-25T12:00:00.000Z";
+  const base = { submittedAt: longAgo, updatedAt: "2026-10-24T12:00:00.000Z" };
+  assert.equal(describeInboxWait({ ...base, status: "pending_group" }, now), "Waiting 31 days");
+  assert.equal(describeInboxWait({ ...base, status: "pending_ceo" }, now), "Waiting 31 days");
+  assert.equal(
+    describeInboxWait({ ...base, status: "pending_ceo", submittedAt: "2026-10-25T12:00:00.000Z" }, now),
+    "Waiting 1 day",
+  );
+  assert.equal(
+    describeInboxWait({ ...base, status: "pending_group", submittedAt: "2026-10-26T08:00:00.000Z" }, now),
+    "Submitted today",
+  );
+  assert.equal(describeInboxWait({ ...base, status: "on_hold" }, now), "Frozen on hold");
+  assert.equal(describeInboxWait({ ...base, status: "returned" }, now), "With the requester");
+  for (const [status, key, word] of [
+    ["approved", "approvedAt", "Approved"],
+    ["rejected", "rejectedAt", "Rejected"],
+    ["withdrawn", "withdrawnAt", "Withdrawn"],
+    ["executed", "executedAt", "Executed"],
+    ["closed", "closedAt", "Closed"],
+  ] as const) {
+    const chip = describeInboxWait({ ...base, status, [key]: "2026-10-23T12:00:00.000Z" }, now);
+    assert.equal(chip, `${word} 3 days ago`, `${status} reports its own outcome date`);
+    assert.ok(!/waiting/i.test(chip), `a ${status} row is not waiting on anyone`);
+    // With no outcome stamp it falls back to the last update, still never a wait.
+    assert.equal(describeInboxWait({ ...base, status }, now), `${word} 2 days ago`);
+  }
+
+  // ── The loader resolves every area from ONE load per line, not one RPC per row ──────────────
+  const regions = [
+    {
+      regionCode: "r1",
+      regionName: "Cairo",
+      areas: [{ areaCode: "CA1" }, { areaCode: "ca2" }],
+    },
+    { regionCode: "r2", regionName: "Delta", areas: [{ areaCode: "DE1" }] },
+  ] as unknown as Parameters<typeof areaIn>[0];
+  assert.equal(areaIn(regions, " ca1 ")?.areaCode, "CA1", "lookup is trimmed and case-insensitive");
+  assert.equal(areaIn(regions, "CA2")?.areaCode, "ca2");
+  assert.equal(areaIn(regions, "DE1")?.areaCode, "DE1", "it searches every region");
+  assert.equal(areaIn(regions, "nope"), null);
+  assert.equal(areaIn([], "CA1"), null);
+
+  const serviceSource = readFileSync(new URL("../src/lib/market-awareness/service.ts", import.meta.url), "utf8");
+  const hydrateStart = serviceSource.indexOf("async function hydrate(");
+  const hydrateEnd = serviceSource.indexOf("\nexport async function ", hydrateStart);
+  assert.ok(hydrateStart > 0 && hydrateEnd > hydrateStart, "hydrate must be found in service.ts");
+  const hydrateBody = serviceSource.slice(hydrateStart, hydrateEnd);
+  assert.ok(
+    !hydrateBody.includes("findArea("),
+    "hydrate must not call findArea per row — that is one serial RPC per activity",
+  );
+  assert.ok(
+    hydrateBody.includes("loadRegionsForLine(") && hydrateBody.includes("areaIn("),
+    "hydrate resolves areas from one load per line",
+  );
 }

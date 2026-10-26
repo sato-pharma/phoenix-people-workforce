@@ -290,7 +290,11 @@ export type HistoricalApprovalItem = {
   employeeName: string;
   employeeHrId: string;
   title: string;
+  // The request's FINAL state when it has ended; otherwise what the viewer did.
   decision: "approved" | "rejected" | "returned";
+  // The line under the badge when the final state differs from the viewer's own step, e.g.
+  // "Approved by you · rejected later" or "Approved by you · waiting for HR". Null/absent = none.
+  outcomeNote?: string | null;
   decidedAt: string;
   // Deep-link back to the original request. MUST be a real internal URL (the list renders a
   // "View request" button only when present) or explicit null. Never an empty string.

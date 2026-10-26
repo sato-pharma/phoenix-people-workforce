@@ -33,6 +33,7 @@ import type {
   DirectOrderOrdersFilterKey,
   DirectOrderWorkspaceTabKey,
 } from "@/lib/direct-orders/workspace-data";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminThumbBarDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -152,7 +153,8 @@ function DeskGroup({
 // shell and this component cannot disagree about what a tab is called.
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
-const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
+// `createdAt` is an instant: read it on the Cairo calendar, never the first ten characters of its UTC text.
+const shortDate = (value: string | null) => cairoDate(value);
 
 /** The two visual families the owner's rule preserves: square admin, rounded portal. */
 const surface = (variant: Variant) =>
@@ -457,12 +459,12 @@ function OrderRow({
             {orderRowLines(row).map((item, index) => (
               <p
                 key={`${item.productCode || item.productName}-${index}`}
-                className="truncate text-sm font-bold text-slate-900"
+                className="break-words text-sm font-bold text-slate-900"
               >
                 {describeDirectOrderBasketUnits(item)}
               </p>
             ))}
-            <p className="truncate text-phx-xs text-slate-500">
+            <p className="break-words text-phx-xs text-slate-500">
               {row.requesterName} · {row.pharmacyName}
             </p>
           </div>
@@ -595,28 +597,28 @@ function OrdersList({
         />
       </label>
 
-      <div className="-mx-1 overflow-x-auto px-1">
-        <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
-          {FILTERS.map((entry) => (
-            <button
-              key={entry.key}
-              type="button"
-              role="tab"
-              aria-selected={filter === entry.key}
-              onClick={() => {
-                setLocalFilter(entry.key);
-                setShown(PAGE_SIZE);
-                server?.onGroupChange(entry.key);
-              }}
-              className={`min-h-[36px] whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control(variant)} ${
-                filter === entry.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
-              }`}
-            >
-              {entry.label}
-              {counts ? <span className="ml-1 opacity-70">{counts[entry.key] ?? 0}</span> : null}
-            </button>
-          ))}
-        </div>
+      {/* The status chips WRAP onto a second row. A scrolling strip measured 468px in 359px at 375px
+          and cut the last chip off (fits-the-screen golden rule). */}
+      <div className={`inline-flex max-w-full flex-wrap border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
+        {FILTERS.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            role="tab"
+            aria-selected={filter === entry.key}
+            onClick={() => {
+              setLocalFilter(entry.key);
+              setShown(PAGE_SIZE);
+              server?.onGroupChange(entry.key);
+            }}
+            className={`min-h-[36px] px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control(variant)} ${
+              filter === entry.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+            }`}
+          >
+            {entry.label}
+            {counts ? <span className="ml-1 opacity-70">{counts[entry.key] ?? 0}</span> : null}
+          </button>
+        ))}
       </div>
 
       {filtered.length === 0 ? (
