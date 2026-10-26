@@ -64,6 +64,7 @@ import {
   parseStoredDraft,
   restoreDraft,
   type MarketingValidationDraft,
+  unsendableEntriesToKeep,
 } from "@/lib/marketing-requests/validation-draft";
 import {
   clearValidationDraft,
@@ -175,22 +176,25 @@ type QueuedSubmission = {
 
 /**
  * The queue is per BROWSER and a tablet is shared, so only `viewerHrId`'s own entries are replayed,
- * counted or added; everyone's entries stay mirrored to disk for their owners. `viewerHrId` arrives
- * with the workspace load, and until it does nothing is replayed or queued.
+ * counted or added; everyone else's entries, aged ones included, stay mirrored to disk for their
+ * owners. `viewerHrId` arrives with the workspace load, and until it does nothing is replayed or queued.
  */
 function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHrId: string) {
   const [queue, setQueue] = useState<QueuedSubmission[]>([]);
   // Always start `true` to match SSR output --- sync real value in useEffect
   const [isOnline, setIsOnline] = useState(true);
   /**
-   * The owners of the offline submissions found on disk that can no longer be sent: too old, or
-   * queued before entries said whose they are ("" for those). Surfaced, never dropped quietly.
+   * The offline submissions found on disk that can no longer be sent: too old, or queued before
+   * entries said whose they are. Surfaced, never dropped quietly.
    */
-  const [unsendableOwners, setUnsendableOwners] = useState<string[]>([]);
+  const [unsendableEntries, setUnsendableEntries] = useState<QueuedSubmission[]>([]);
   const replayingRef = useRef(false);
   // Set once the stored queue has been read back, so the persist effect below cannot write its
   // empty initial state over a real queue in the moment before the read returns.
   const hydratedRef = useRef(false);
+  // The ids last read from or written to disk, so a render that changes nothing writes nothing —
+  // above all on a page that found the store empty, where a write could wipe what another tab queued.
+  const storedIdsRef = useRef("");
 
   // Reload the queue left behind by a previous tab.
   //
@@ -211,6 +215,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHr
       if (cancelled) return;
       if (Array.isArray(stored) && stored.length > 0) {
         const entries = stored as QueuedSubmission[];
+        storedIdsRef.current = entries.map((entry) => entry.id).join(",");
         const cutoff = Date.now() - MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS;
         const usable = entries.filter(
           (entry) => Number(entry.timestamp) >= cutoff && normalizeOwnerHrId(entry.ownerHrId) !== "",
@@ -219,9 +224,7 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHr
           setQueue(usable);
         }
         if (usable.length < entries.length) {
-          setUnsendableOwners(
-            entries.filter((entry) => !usable.includes(entry)).map((entry) => normalizeOwnerHrId(entry.ownerHrId)),
-          );
+          setUnsendableEntries(entries.filter((entry) => !usable.includes(entry)));
         }
       }
       hydratedRef.current = true;
@@ -232,14 +235,24 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHr
   }, []);
 
   // Mirror every change to disk. Runs after the read above has settled.
+  //
+  // An unsendable entry the banner has shown this viewer is not written back, so it is gone from the
+  // device once reported. Until 26 Oct 2026 a page whose stored entries were ALL unsendable never
+  // wrote at all, so they stayed on disk and the same banner came back on every visit; and the first
+  // write after a save kept only `queue`, which dropped another rep's aged entries before that rep
+  // was ever told.
   useEffect(() => {
     if (!hydratedRef.current) return;
-    if (queue.length === 0) {
+    const keep = [...queue, ...unsendableEntriesToKeep(unsendableEntries, viewerHrId)];
+    const ids = keep.map((entry) => entry.id).join(",");
+    if (ids === storedIdsRef.current) return;
+    storedIdsRef.current = ids;
+    if (keep.length === 0) {
       void clearValidationQueue();
       return;
     }
-    void saveValidationQueue(queue);
-  }, [queue]);
+    void saveValidationQueue(keep);
+  }, [queue, unsendableEntries, viewerHrId]);
 
   useEffect(() => {
     // Sync real browser state after hydration --- must live in useEffect to avoid SSR mismatch
@@ -296,8 +309,10 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHr
   }
 
   const viewer = normalizeOwnerHrId(viewerHrId);
+  const unsendableOwners = unsendableEntries.map((entry) => normalizeOwnerHrId(entry.ownerHrId));
   return {
-    dismissExpired: () => setUnsendableOwners([]),
+    // Hides the banner. What it reported is already off the disk; another rep's entries stay for them.
+    dismissExpired: () => setUnsendableEntries((current) => unsendableEntriesToKeep(current, viewerHrId)),
     enqueue,
     isOnline,
     queueLength: queue.filter((item) => isOwnedByViewer(item.ownerHrId, viewerHrId)).length,
