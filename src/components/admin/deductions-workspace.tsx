@@ -2742,6 +2742,12 @@ export function DeductionsWorkspace({
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [collectorRuns, setCollectorRuns] = useState<CollectorRun[]>([]);
+  // Every panel below fetches on mount and on a month change only, so a run that wrote rows left the
+  // page reading 0 until a manual reload (owner, 2026-10-26: "it's not pulling any deduction" — the
+  // October Head Office run had written 28). Bumping this after every run re-keys the panels, and each
+  // one remounts and re-reads what the run just wrote.
+  const [dataVersion, setDataVersion] = useState(0);
+  const panelKey = `${monthKey}:${dataVersion}`;
 
   // `isCollectableMonth` on the server is the real enforcement and stays that way — this is only the
   // matching UI. Without it the page was a trap. The month selector is seeded to the CURRENT Cairo
@@ -2831,6 +2837,7 @@ export function DeductionsWorkspace({
       setCollectMessage({ tone: "error", text: error instanceof Error ? error.message : "Collection run failed." });
     } finally {
       setCollecting(false);
+      setDataVersion((version) => version + 1);
     }
   }
 
@@ -2887,7 +2894,7 @@ export function DeductionsWorkspace({
           detail sheet (Line, Region and Direct Manager), narrowable to one line
           and/or one region. Sits BESIDE the per-category "Download XLSX" on each
           tab, never replacing it. */}
-      <MasterExportBar monthKey={monthKey} />
+      <MasterExportBar key={panelKey} monthKey={monthKey} />
 
       {canDecide && !windowHasFinished && officeWindow ? (
         <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
@@ -2911,7 +2918,7 @@ export function DeductionsWorkspace({
         </div>
       ) : null}
 
-      {canDecide && !monthHasFinished ? <LeaverSettlementPanel monthKey={monthKey} /> : null}
+      {canDecide && !monthHasFinished ? <LeaverSettlementPanel key={panelKey} monthKey={monthKey} /> : null}
 
       {collectMessage ? (
         <div
@@ -2980,11 +2987,11 @@ export function DeductionsWorkspace({
         ))}
       </div>
 
-      {activeTab === "overview" ? <OverviewTab canDecide={canDecide} monthKey={monthKey} /> : null}
-      {activeTab === "by_employee" ? <ByEmployeeTab monthKey={monthKey} /> : null}
+      {activeTab === "overview" ? <OverviewTab key={panelKey} canDecide={canDecide} monthKey={monthKey} /> : null}
+      {activeTab === "by_employee" ? <ByEmployeeTab key={panelKey} monthKey={monthKey} /> : null}
       {activeTab === "disputes" ? <DisputesTab canReply={canDecide} highlightCandidateId={highlightCandidateId} /> : null}
       {activeTab !== "overview" && activeTab !== "by_employee" && activeTab !== "disputes" ? (
-        <CategoryTab canDecide={canDecide} category={activeTab} monthKey={monthKey} />
+        <CategoryTab key={panelKey} canDecide={canDecide} category={activeTab} monthKey={monthKey} />
       ) : null}
     </section>
   );
