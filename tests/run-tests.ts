@@ -786,6 +786,7 @@ import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts"
 import { runSosNormalizerSuggestSpeedTests } from "./sos-normalizer-suggest-speed.test.ts";
 import { runSosAmbiguousAliasTests } from "./sos-ambiguous-alias.test.ts";
 import { runSosNormalizerTests } from "./sos-normalizer.test.ts";
+import { runProductSuggestTests } from "./product-suggest.test.ts";
 import { runSalesRecognizeTests } from "./sales-recognize.test.ts";
 import { runSalesDistributorRegistryTests } from "./sales-distributor-registry.test.ts";
 import { runSalesProfilesTests } from "./sales-profiles.test.ts";
@@ -4560,6 +4561,7 @@ await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-st
 await runTest("sos normalizer suggest speed (concurrent customer-map walks leave no gap; no crosswalk per group)", runSosNormalizerSuggestSpeedTests);
 await runTest("sos ambiguous alias (same name -> resolves to nothing)", runSosAmbiguousAliasTests);
 await runTest("sos normalizer", runSosNormalizerTests);
+await runTest("product suggest (sister item code, held to strength, AI answers checked)", runProductSuggestTests);
 await runTest("sales recognize (single recognizer)", runSalesRecognizeTests);
 await runTest("sales distributor registry", runSalesDistributorRegistryTests);
 await runTest("sales profiles invariants", runSalesProfilesTests);

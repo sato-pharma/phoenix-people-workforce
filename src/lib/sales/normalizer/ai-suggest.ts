@@ -30,7 +30,8 @@ export type AiCandidate = { code: string; label: string };
 // rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
 // the customer's postal address and the distributor's own governorate/area text.
 export type AiUnknown = { raw: string; rawName?: string; rawAddress?: string; rawTerritory?: string };
-export type AiSuggestion = { code: string; raw: string; confidence?: number };
+// reason is the model's one-line "why" — asked for product matches, so the page can show it.
+export type AiSuggestion = { code: string; raw: string; confidence?: number; reason?: string };
 export type AiKind = "product" | "territory" | "customer";
 
 // Provider resolution is shared (src/lib/sales/ai/provider.ts). ai-suggest keeps GPT-4o (the heavier
@@ -52,7 +53,14 @@ export function aiSuggestModel(): string | null {
 
 function systemPrompt(kind: AiKind): string {
   if (kind === "product") {
-    return "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only.";
+    return `You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Each catalog line shows the product, its family and line, and the names distributors already use for it — treat those names as the strongest evidence.
+
+Rules:
+- Same medicine AND same strength AND same form. 40 mg is never 80 mg; drops or syrup are never tablets; FORTE, INTENS, MAX, UPA, ADVANCED and BASIC are different products.
+- Pack size, tablet count, spelling slips and tags such as (O.P), (OLD PRICE), (HOSP) or a "TN" prefix do not matter.
+- A brand Phoenix does not sell, or a Phoenix brand at a strength or form not in the list, is code IGNORE when IGNORE is in the list; otherwise null.
+- When unsure, use null. A wrong match books sales to the wrong product.
+Reply with JSON only.`;
   }
   if (kind === "customer") {
     return `You are an expert in Egyptian geography and pharmaceutical sales territories. Your task is to geo-locate each pharmacy to the correct Phoenix brick territory.
@@ -113,7 +121,9 @@ ${items}
 
 Return ONLY JSON of this exact shape: ${kind === "customer"
     ? `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>","confidence":<integer 0-100, omit when code is null>}]}`
-    : `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>"}]}`}. Use a code only if it appears verbatim in the official list.`;
+    : kind === "product"
+      ? `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>","confidence":<integer 0-100>,"why":"<one short sentence>"}]}`
+      : `{"matches":[{"id":<id>,"code":"<official code from the list above, or null>"}]}`}. Use a code only if it appears verbatim in the official list.`;
 }
 
 function shortReason(raw: string): string {
@@ -292,7 +302,8 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
     const chunk = unknowns.slice(i, i + BATCH);
     try {
       const text = await generate(kind, chunk, candidates, referenceAliases);
-      const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number; confidence?: number | null }[] } | { code?: string | null; id?: number; confidence?: number | null }[];
+      type Match = { code?: string | null; id?: number; confidence?: number | null; why?: string | null };
+      const parsed = JSON.parse(text) as { matches?: Match[] } | Match[];
       if (parsed === null || typeof parsed !== "object") throw new SyntaxError("The AI reply was not a JSON object.");
       const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {
@@ -302,7 +313,8 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
         const confidence = typeof item.confidence === "number"
           ? Math.max(0, Math.min(100, Math.round(item.confidence)))
           : undefined;
-        if (u && code) out.push({ code, raw: u.raw, confidence });
+        const reason = typeof item.why === "string" && item.why.trim() ? item.why.trim().slice(0, 240) : undefined;
+        if (u && code) out.push({ code, raw: u.raw, confidence, ...(reason ? { reason } : {}) });
       }
     } catch (e) {
       lastError = e instanceof SyntaxError ? UNREADABLE_MESSAGE : e instanceof Error ? e.message : "AI error.";

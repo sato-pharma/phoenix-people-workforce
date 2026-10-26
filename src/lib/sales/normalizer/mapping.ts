@@ -7,6 +7,7 @@ import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { customerDetailRow, type CustomerDetailRow } from "@/lib/sales/normalizer/customer-details";
+import { sameStrengthMatches } from "@/lib/sales/normalizer/product-suggest";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
@@ -58,19 +59,27 @@ function tokens(value: string): Set<string> {
   return new Set(normalizeAliasKey(value).split(" ").filter((t) => t.length >= 2));
 }
 
-// Token-overlap fuzzy match of a raw item name against the Phoenix product names/families.
-// "TEBOFORTIN FORTE 30TAB" → Tebofortin (TE…). Cheap and high hit-rate for English item names.
+// The first guess for an unknown item, pre-ticked on the upload page. When the name belongs to one of
+// our families it must match form, variant and strength too ("TEBOFORTIN 40MG" → Tebofortine 40 mg,
+// never the drops or the 120 mg), and an ambiguous or off-strength item gets no guess. Only a name of
+// no known family falls back to plain token overlap, and only when one product clearly leads.
 export function suggestProduct(rawName: string, products: ProductRef[]): { code: string; label: string } | null {
   const rawTokens = tokens(rawName);
   if (rawTokens.size === 0) return null;
+  const { family, fits } = sameStrengthMatches(rawName, products);
+  if (family.length > 0) return fits.length === 1 ? { code: fits[0]!.code, label: fits[0]!.name } : null;
   let best: { code: string; label: string; score: number } | null = null;
+  let tied = false;
   for (const product of products) {
+    if (product.code === IGNORE_PRODUCT_CODE) continue;
     const productTokens = tokens(`${product.name} ${product.family ?? ""}`);
     let overlap = 0;
     for (const token of productTokens) if (rawTokens.has(token)) overlap += 1;
-    if (overlap > 0 && (!best || overlap > best.score)) best = { code: product.code, label: product.name, score: overlap };
+    if (overlap === 0) continue;
+    if (!best || overlap > best.score) { best = { code: product.code, label: product.name, score: overlap }; tied = false; }
+    else if (overlap === best.score) tied = true;
   }
-  return best ? { code: best.code, label: best.label } : null;
+  return best && !tied ? { code: best.code, label: best.label } : null;
 }
 
 export function distinctUnknowns(exceptions: NormalizeException[], products: ProductRef[]): DistinctUnknowns {

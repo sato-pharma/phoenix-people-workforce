@@ -275,11 +275,67 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
 type MapType = "product" | "customer" | "territory";
 const mapKey = (t: MapType, raw: string) => `${t}::${raw}`;
 
-function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, onIgnoresConfirmed }: { items: IgnoredItem[]; productOptions: MapOption[]; distributorCode: string; onSaved: () => void; onIgnoresConfirmed: (raws: string[]) => void }) {
+// One answer from /api/sales/monthly-import/ai-suggest. A product answer carries why it was chosen (a
+// sister distributor's mapping of the same item code, the same name mapped elsewhere, the one product of
+// that strength, or the AI's own reason) or, with no code, why nothing was safe to pick.
+type AiProductAnswer = { raw: string; code: string | null; confidence: number; source?: string | null; reason?: string | null };
+
+function AiAnswerNote({ answer, productOptions }: { answer: AiProductAnswer; productOptions: MapOption[] }) {
+  if (!answer.code) {
+    return <p className="mt-0.5 text-phx-xs text-phx-ink-soft">AI: no safe match{answer.reason ? ` — ${answer.reason}` : ""}</p>;
+  }
+  const label = answer.code === IGNORE_PRODUCT_CODE ? "keep as ignored" : (productOptions.find((o) => o.code === answer.code)?.name ?? answer.code);
+  return (
+    <p className="mt-0.5 text-phx-xs text-violet-700">
+      AI {answer.confidence}% → {label}{answer.reason ? ` — ${answer.reason}` : ""}
+    </p>
+  );
+}
+
+async function fetchAiProductAnswers(distributorCode: string, unknowns: { raw: string; rawName?: string }[]): Promise<AiProductAnswer[]> {
+  const res = await fetch("/api/sales/monthly-import/ai-suggest", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ distributorCode, kind: "product", unknowns }),
+  });
+  const payload = await readJson<{ success: boolean; data?: { suggestions: AiProductAnswer[] }; error?: string }>(res);
+  if (!payload.success) throw new Error(payload.error ?? "AI suggest failed.");
+  return payload.data?.suggestions ?? [];
+}
+
+function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, onIgnoresConfirmed, aiEnabled }: { items: IgnoredItem[]; productOptions: MapOption[]; distributorCode: string; onSaved: () => void; onIgnoresConfirmed: (raws: string[]) => void; aiEnabled: boolean }) {
   const [decisions, setDecisions] = useState<Record<string, "ignore" | "include">>({});
   const [productCodes, setProductCodes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAnswers, setAiAnswers] = useState<Record<string, AiProductAnswer>>({});
+
+  // AI suggest pre-fills each decision ("keep as ignored", or "include" with the product) and never
+  // applies it: Apply decisions stays the user's press. An item with no safe answer stays undecided.
+  async function runAiSuggest() {
+    setAiBusy(true); setErr(null);
+    try {
+      const answers = await fetchAiProductAnswers(distributorCode, items.map((i) => ({ raw: i.raw, rawName: i.displayName !== i.raw ? i.displayName : "" })));
+      const byRaw: Record<string, AiProductAnswer> = {};
+      for (const a of answers) byRaw[a.raw] = a;
+      setAiAnswers(byRaw);
+      setDecisions((prev) => {
+        const next = { ...prev };
+        for (const a of answers) if (a.code) next[a.raw] = a.code === IGNORE_PRODUCT_CODE ? "ignore" : "include";
+        return next;
+      });
+      setProductCodes((prev) => {
+        const next = { ...prev };
+        for (const a of answers) if (a.code) next[a.raw] = a.code === IGNORE_PRODUCT_CODE ? "" : a.code;
+        return next;
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "AI suggest failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
   // When all items are "keep" and applied, collapse the panel into a compact done banner.
   const [doneBanner, setDoneBanner] = useState<string | null>(null);
 
@@ -337,7 +393,21 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
 
   return (
     <div className="space-y-2 rounded-[6px] border border-slate-300 bg-slate-50/60 p-3">
-      <p className="text-sm font-bold text-phx-ink">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-phx-ink">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
+        {aiEnabled ? (
+          <button
+            className="inline-flex h-6 items-center gap-1 rounded-[6px] border border-violet-300 bg-violet-50 px-2 text-phx-xs font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={aiBusy || busy}
+            onClick={() => void runAiSuggest()}
+            title="Pre-fill each decision from what other distributors already map these items to"
+            type="button"
+          >
+            {aiBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            AI suggest
+          </button>
+        ) : null}
+      </div>
       <p className="text-xs text-phx-ink-2">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
       <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
         <table className="w-full text-sm">
@@ -387,6 +457,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                         </div>
                       ) : null}
                     </div>
+                    {aiAnswers[item.raw] ? <AiAnswerNote answer={aiAnswers[item.raw]} productOptions={productOptions} /> : null}
                   </td>
                 </tr>
               );
@@ -436,6 +507,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState<MapType | null>(null);
+  const [aiAnswers, setAiAnswers] = useState<Record<string, AiProductAnswer>>({});
 
   if (groups.length === 0) return null;
 
@@ -448,8 +520,24 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
     const group = allGroups.find((g) => g.type === type);
     const items = group?.items ?? [];
     if (items.length === 0) return;
-    setAiBusy(type); setErr(null);
+    setAiBusy(type); setErr(null); setMsg(null);
     try {
+      if (type === "product") {
+        // Products: every item comes back, matched with its reason, IGNORE (pre-set to Exclude), or with
+        // no code and the reason nothing was safe, which leaves the row blank rather than guessing.
+        const answers = await fetchAiProductAnswers(distributorCode, items.map((u) => ({ raw: u.raw, rawName: u.rawName })));
+        const notes: Record<string, AiProductAnswer> = {};
+        let filled = 0;
+        for (const a of answers) {
+          notes[mapKey("product", a.raw)] = a;
+          if (a.code === IGNORE_PRODUCT_CODE) { exclude("product", a.raw); filled += 1; }
+          else if (a.code) { setCode("product", a.raw, a.code); filled += 1; }
+          else setCode("product", a.raw, "");
+        }
+        setAiAnswers((p) => ({ ...p, ...notes }));
+        setMsg(`AI pre-filled ${filled} of ${items.length} — review, then save.`);
+        return;
+      }
       const res = await fetch("/api/sales/monthly-import/ai-suggest", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -632,7 +720,9 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                                 </button>
                               ) : null}
                             </div>
-                            {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
+                            {aiAnswers[k] && (selected[k] ?? "") === (aiAnswers[k].code ?? "") ? (
+                              <div className="pl-6"><AiAnswerNote answer={aiAnswers[k]} productOptions={g.options} /></div>
+                            ) : u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
                               <p className="mt-0.5 pl-6 text-phx-xs text-phx-ink-soft">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
                             ) : null}
                           </>
@@ -961,6 +1051,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
             ) : null}
             {ignoredItems.length > 0 ? (
               <IgnoredItemsReview
+                aiEnabled={aiEnabled}
                 distributorCode={distributorCode}
                 items={ignoredItems}
                 onIgnoresConfirmed={(raws) => setConfirmedIgnoreRaws((prev) => { const next = new Set(prev); raws.forEach((r) => next.add(r)); return next; })}
