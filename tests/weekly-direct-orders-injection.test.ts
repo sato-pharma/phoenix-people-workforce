@@ -207,16 +207,20 @@ function theUploadPathAsksTheGuardBeforeAnythingIsStored() {
   );
 }
 
-function theSqlAndTheTypescriptAgree() {
+/** The newest migration that (re)defines a function — the body production runs. LF, whatever the checkout. */
+function newestDefinitionOf(fn: string): string {
   const dir = new URL("../supabase/migrations/", import.meta.url);
   const definers = readdirSync(dir)
     .filter((name) => name.endsWith(".sql"))
-    .filter((name) =>
-      readFileSync(new URL(name, dir), "utf8").includes("create or replace function public.phx_rebuild_direct_order_weekly_batches"),
-    )
+    .filter((name) => readFileSync(new URL(name, dir), "utf8").includes(`create or replace function public.${fn}(`))
     .sort();
-  assert.ok(definers.length > 0, "a migration defines phx_rebuild_direct_order_weekly_batches");
-  const sql = readFileSync(new URL(definers[definers.length - 1], dir), "utf8");
+  assert.ok(definers.length > 0, `a migration defines ${fn}`);
+  return readFileSync(new URL(definers[definers.length - 1], dir), "utf8").replace(/\r\n/g, "\n");
+}
+
+function theSqlAndTheTypescriptAgree() {
+  const sql = newestDefinitionOf("phx_rebuild_direct_order_weekly_batches");
+  const trigger = newestDefinitionOf("phx_direct_order_weekly_sync");
 
   assert.ok(
     sql.includes(`template_key     = '${DIRECT_ORDERS_WEEKLY_TEMPLATE_KEY}'`),
@@ -231,13 +235,49 @@ function theSqlAndTheTypescriptAgree() {
     "the SQL floor is the month the upload guard starts refusing",
   );
   assert.ok(
-    /and p >= '2026-08'/.test(sql) && DIRECT_WEEKLY_FROM_ORDERS_CYCLE.startsWith("2026-08"),
+    /and p >= '2026-08'/.test(trigger) && DIRECT_WEEKLY_FROM_ORDERS_CYCLE.startsWith("2026-08"),
     "the trigger applies the same floor, so a re-booked order can never rebuild an uploaded month",
   );
   assert.match(
-    sql,
+    trigger,
     /exception when others then[\s\S]{0,900}weekly_sync_failed/,
     "the trigger swallows a weekly failure and records it — a reporting view must never roll back an approval",
+  );
+}
+
+/**
+ * A WEEKLY DIRECT ROW CARRIES ITS PHARMACY'S OWN AREA — never a region-wide row split evenly.
+ *
+ * Owner, 2026-10-26: "fix weekly direct orders to count at the pharmacy's own area". The writer used
+ * to hard-code area_code null, so "Direct – Giza" was read as the whole region and one pharmacy's
+ * order was shared by every rep there. Monthly Closing credits the pharmacy's area
+ * (phx_rebuild_direct_order_sos_batch writes ph.area_code); Weekly must read the same column, keep it
+ * in the grouping (or two areas' orders would merge into one row), and write it onto the row.
+ */
+function aWeeklyDirectRowCarriesThePharmacysOwnArea() {
+  const sql = newestDefinitionOf("phx_rebuild_direct_order_weekly_batches");
+  const closing = newestDefinitionOf("phx_rebuild_direct_order_sos_batch");
+  assert.match(closing, /\bph\.area_code,/, "the closing's injection credits the pharmacy's own area (the rule this mirrors)");
+
+  assert.match(
+    sql,
+    /nullif\(upper\(btrim\(coalesce\(ph\.area_code, ''\)\)\), ''\)\s+as area_code/,
+    "the weekly writer reads the area from the pharmacy, the same column the closing writes",
+  );
+  assert.match(
+    sql,
+    /group by week_number, region_code, area_code, product_code, official_line/,
+    "and keeps it in the grouping, so two areas' orders never merge into one region row",
+  );
+  assert.match(
+    sql,
+    /v_month_start, l\.week_number, l\.area_code\s*\n\s*from lines l/,
+    "and writes it onto the weekly row, so the region split never sees the order",
+  );
+  assert.doesNotMatch(
+    sql,
+    /v_month_start, l\.week_number, null\s*\n\s*from lines l/,
+    "the hard-coded null area is gone",
   );
 }
 
@@ -250,4 +290,5 @@ export async function runWeeklyDirectOrdersInjectionTests() {
   await theSystemBatchCannotBeRetaggedByHand();
   theUploadPathAsksTheGuardBeforeAnythingIsStored();
   theSqlAndTheTypescriptAgree();
+  aWeeklyDirectRowCarriesThePharmacysOwnArea();
 }

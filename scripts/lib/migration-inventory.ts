@@ -1833,6 +1833,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // No row is written: production holds 10 categories after. Pinned by tests/schema-shape-browser-
   // reachability.test.ts (the open-policy allowlist in scripts/check-schema-shape.ts is empty).
   "20261026120500_deductions_categories_is_server_only.sql",
+
+  // WEEKLY DIRECT ORDERS COUNT AT THE PHARMACY'S OWN AREA — applied 26 Oct 2026 on STAGING then PRODUCTION
+  // through scripts/apply-sql-file.mjs, the standing route of AGENTS.md §8: the Supabase MCP's apply_migration
+  // answered {"status":"declined"} on both projects for this body (it contains a `delete` and a `revoke`).
+  // The route writes no ledger row on either project, hence this entry rather than a ledger write.
+  //
+  // VERIFIED BY DIGEST ON BOTH PROJECTS: md5(pg_proc.prosrc) of phx_rebuild_direct_order_weekly_batches =
+  // 9b245448a8a4febbba047e2949fd60da on production AND staging, equal to the file's own body; prosecdef true,
+  // proacl {postgres=X/postgres,service_role=X/postgres}. Each month from 2026-08 was then rebuilt once:
+  // production 56 region-only rows (backup schema weekly_backup_20261026) became 81 rows, every one carrying
+  // its pharmacy's area, with every month's value and units unchanged (EGP 1,506,624.57 in all). Pinned by
+  // tests/weekly-direct-orders-injection.test.ts.
+  "20261026160001_weekly_direct_orders_count_at_the_pharmacys_area.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
