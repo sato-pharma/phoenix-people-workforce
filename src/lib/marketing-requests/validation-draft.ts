@@ -35,6 +35,8 @@
  * (`MARKETING_EVIDENCE_MAX_UPLOAD_BYTES`) and one submission can carry many.
  */
 
+import { normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
+
 /**
  * How long a capture stays usable as evidence across a reload.
  *
@@ -348,4 +350,19 @@ export function describeUnsendableQueue(counts: { noOwner: number; tooOld: numbe
     );
   }
   return sentences.length > 0 ? sentences.join(" ") : null;
+}
+
+/**
+ * Which of the unsendable offline submissions stay on the device once the viewer has been shown the
+ * banner. An entry with no owner is reported to whoever is signed in, and the viewer's own aged ones
+ * to the viewer — told once, so they are cleared, or the same banner came back on every visit. Another
+ * rep's aged entry is theirs to be told about, so it stays until they sign in on this device. While the
+ * page does not yet know who is signed in, every entry with an owner stays.
+ */
+export function unsendableEntriesToKeep<T extends { ownerHrId?: unknown }>(entries: readonly T[], viewerHrId: unknown): T[] {
+  const viewer = normalizeOwnerHrId(viewerHrId);
+  return entries.filter((entry) => {
+    const owner = normalizeOwnerHrId(entry.ownerHrId);
+    return owner !== "" && owner !== viewer;
+  });
 }

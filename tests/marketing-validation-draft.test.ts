@@ -11,6 +11,7 @@ import {
   restoreDraft,
   stripExpiredEvidence,
   type DraftCustomer,
+  unsendableEntriesToKeep,
 } from "../src/lib/marketing-requests/validation-draft.ts";
 import { evidenceStatusFromInput } from "../src/lib/marketing-requests/service.ts";
 
@@ -304,4 +305,27 @@ export async function runMarketingValidationDraftTests() {
   assert.doesNotMatch(aged, /without the name/, "and are not called ownerless");
   const both = describeUnsendableQueue({ noOwner: 2, tooOld: 1 }) ?? "";
   assert.match(both, /^1 offline submission was waiting to sync, .* on it are now too old .* Capture it again. 2 offline submissions on this device were saved without the name of the person who saved them, so they cannot be sent under anyone's name. If they were yours, capture them again.$/, "both reasons, each with its own count");
+
+  // What the banner reported is cleared from the device; another rep's aged entries stay for them.
+  // Until 26 Oct 2026 nothing was cleared, so the same banner came back on every visit.
+  const ownerlessEntry = { id: "q-ownerless" };
+  const ownAged = { id: "q-own", ownerHrId: " b-10 " };
+  const theirAged = { id: "q-theirs", ownerHrId: "MR-0412" };
+  const found = [ownerlessEntry, ownAged, theirAged];
+  assert.deepEqual(
+    unsendableEntriesToKeep(found, "B-10").map((entry) => entry.id),
+    ["q-theirs"],
+    "HEADLINE: once shown, the entry with no owner and the viewer's own aged entry leave the device; another rep's aged entry stays until they sign in",
+  );
+  assert.deepEqual(
+    unsendableEntriesToKeep(found, "").map((entry) => entry.id),
+    ["q-own", "q-theirs"],
+    "while the page does not know who is signed in, nobody has been told about an owned entry, so it stays",
+  );
+  assert.deepEqual(
+    unsendableEntriesToKeep([ownerlessEntry, { id: "q-blank", ownerHrId: "   " }], "B-10"),
+    [],
+    "an entry with no owner is reported to whoever is signed in, so it never stays",
+  );
+  assert.deepEqual(unsendableEntriesToKeep([theirAged], "mr-0412"), [], "letter case never decides whose an entry is");
 }

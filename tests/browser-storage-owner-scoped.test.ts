@@ -167,6 +167,22 @@ export function runBrowserStorageOwnerScopedTests() {
       "an entry with no owner is counted apart, so the banner never calls it too old",
     );
     assert.match(workspace, /describeUnsendableQueue\(unsendable\)/, "the banner's words come from the tested helper");
+    assert.match(
+      workspace,
+      /const keep = \[\.\.\.queue, \.\.\.unsendableEntriesToKeep\(unsendableEntries, viewerHrId\)\];/,
+      "every write keeps another rep's aged entries and drops the ones the banner has reported",
+    );
+    assert.match(
+      workspace,
+      /void saveValidationQueue\(keep\);\n  \}, \[queue, unsendableEntries, viewerHrId\]\);/,
+      "and the write runs when only the unsendable entries are found, so a reported entry leaves the device instead of returning on every visit",
+    );
+    assert.doesNotMatch(workspace, /void saveValidationQueue\(queue\);/, "never the queue alone, which dropped another rep's aged entries");
+    assert.match(
+      workspace,
+      /dismissExpired: \(\) => setUnsendableEntries\(\(current\) => unsendableEntriesToKeep\(current, viewerHrId\)\)/,
+      "dismissing the banner keeps another rep's entries for them",
+    );
   }
 
   // ── 6. The two unsaved-typing drafts ──────────────────────────────────────────────────────────────────
