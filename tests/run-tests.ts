@@ -633,6 +633,7 @@ import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldActivityReportTests } from "./field-activity-report.test.ts";
+import { runFieldActivityPhoenixLagTests } from "./field-activity-phoenix-lag.test.ts";
 import { runFieldAbsenceCalendarTests } from "./field-absence-calendar.test.ts";
 import { runVisitCountGoldenRuleTests } from "./visit-count-golden-rule.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -4271,6 +4272,11 @@ await runTest(
   + "fixes and only for the calls he is tagged on; a next-morning log is a positive lag; leave, the weekend "
   + "and an office day are named rather than read as idleness; and the Medical Rep never reaches the module)",
   runFieldActivityReportTests,
+);
+await runTest(
+  "field activity Phoenix lag (a Phoenix CRM stop's check-in is its log, so its lag is not measured and the day "
+  + "average is the iReports360 calls only; a leg from 1,000 m reads in km)",
+  runFieldActivityPhoenixLagTests,
 );
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);

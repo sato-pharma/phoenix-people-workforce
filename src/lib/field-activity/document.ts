@@ -38,6 +38,7 @@ import type {
   FieldActivityReport,
   FieldActivityStop,
 } from "@/lib/field-activity/model";
+import { legDistanceLabel, loggingWindowNote, stopLogNote } from "@/lib/field-activity/format";
 
 export type FieldActivityDayMap = { dateIso: string; svg: string; caption: string };
 
@@ -198,11 +199,8 @@ function dayFacts(day: FieldActivityDay): string[] {
     facts.push(fact("Time on territory", `${duration(day.onTerritoryMinutes)}<br><span class="thin">first to last check-in</span>`));
   }
   if (day.firstLog) {
-    const tail = day.logsLandedNextDay
-      ? `<br><span class="thin">the NEXT day &mdash; average ${((day.averageLogLagMinutes ?? 0) / 60).toFixed(1)} hours after the door</span>`
-      : day.averageLogLagMinutes != null
-        ? `<br><span class="thin">average ${day.averageLogLagMinutes} min after the door</span>`
-        : "";
+    const note = loggingWindowNote(day);
+    const tail = note ? `<br><span class="thin">${escapeHtml(note)}</span>` : "";
     facts.push(fact("Logging window", `${clock12(day.firstLog)} to ${clock12(day.lastLog)}${tail}`));
   }
   if (day.stops.length > 1) {
@@ -232,6 +230,12 @@ function dayFacts(day: FieldActivityDay): string[] {
   return facts;
 }
 
+/** The thin note beside a stop's log time: "+12m" for an iReports360 call, the shared Phoenix wording otherwise. */
+function stopLogLag(stop: FieldActivityStop): string {
+  if (stop.phoenixVisit) return escapeHtml(stopLogNote(stop));
+  return stop.logLagMinutes == null ? "" : `+${stop.logLagMinutes}m`;
+}
+
 function stopRowWide(stop: FieldActivityStop): string {
   return `<tr>
   <td class="num"><strong>${stop.index}</strong></td>
@@ -240,8 +244,8 @@ function stopRowWide(stop: FieldActivityStop): string {
       <div class="addr">${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}${stop.address ? ` &mdash; ${bidi(tidyAddress(stop.address))}` : ""}</div></td>
   <td>${escapeHtml(stop.speciality ?? "—")} <span class="thin">&middot; ${escapeHtml(stop.grade ?? "—")}</span></td>
   <td class="num">${escapeHtml(stop.ampm ?? "—")}</td>
-  <td>${clock12(stop.savedAt)} <span class="thin">${stop.logLagMinutes == null ? "" : `+${stop.logLagMinutes}m`}</span></td>
-  <td class="num">${stop.legMetres == null ? "&mdash;" : `${stop.legMetres} m`}</td>
+  <td>${clock12(stop.savedAt)} <span class="thin">${stopLogLag(stop)}</span></td>
+  <td class="num">${stop.legMetres == null ? "&mdash;" : legDistanceLabel(stop.legMetres)}</td>
 </tr>`;
 }
 
@@ -250,8 +254,8 @@ function stopRowNarrow(stop: FieldActivityStop): string {
   <td class="num"><strong>${stop.index}</strong></td>
   <td>${clock12(stop.checkedAt)}</td>
   <td>${bidi(stop.customerName)} <span class="thin">&middot; ${escapeHtml(stop.speciality ?? "—")} ${escapeHtml(stop.grade ?? "")} &middot; ${escapeHtml(stop.ampm ?? "")}</span>
-      <div class="addr">${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}${stop.address ? ` &mdash; ${bidi(tidyAddress(stop.address))}` : ""}${stop.legMetres == null ? "" : ` &mdash; ${stop.legMetres} m from the last stop`}</div></td>
-  <td class="num">${clock12(stop.savedAt)} <span class="thin">${stop.logLagMinutes == null ? "" : `+${stop.logLagMinutes}m`}</span></td>
+      <div class="addr">${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}${stop.address ? ` &mdash; ${bidi(tidyAddress(stop.address))}` : ""}${stop.legMetres == null ? "" : ` &mdash; ${legDistanceLabel(stop.legMetres)} from the last stop`}</div></td>
+  <td class="num">${clock12(stop.savedAt)} <span class="thin">${stopLogLag(stop)}</span></td>
 </tr>`;
 }
 
