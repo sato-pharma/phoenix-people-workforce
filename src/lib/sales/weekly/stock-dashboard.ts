@@ -29,9 +29,10 @@ export const WEEKLY_STOCK_STALE_AFTER_DAYS = 14;
 export const WEEKLY_STOCK_UNMAPPED_AREA = "__unmapped__";
 export const WEEKLY_STOCK_UNMAPPED_AREA_LABEL = "Area not mapped";
 
-export type WeeklyStockStatus = "low" | "healthy" | "over" | "no_sales";
+export type WeeklyStockStatus = "out_of_stock" | "low" | "healthy" | "over" | "no_sales";
 
 export const WEEKLY_STOCK_STATUS_LABELS: Record<WeeklyStockStatus, string> = {
+  out_of_stock: "Out of stock",
   low: "Low stock",
   healthy: "Healthy",
   over: "Overstock",
@@ -108,6 +109,7 @@ export type WeeklyStockProductRow = {
   lowDepots: number;
   overDepots: number;
   noSalesDepots: number;
+  outDepots: number;
 };
 
 /** Any grouping that spans several products — value only, never units. */
@@ -125,6 +127,7 @@ export type WeeklyStockGroupRow = {
   lowCount: number;
   overCount: number;
   noSalesCount: number;
+  outOfStockCount: number;
 };
 
 export type WeeklyStockDistributorRow = WeeklyStockGroupRow & {
@@ -144,6 +147,8 @@ export type WeeklyStockView = {
     lowCount: number;
     overCount: number;
     noSalesCount: number;
+    outOfStockCount: number;
+    healthyCount: number;
     priceMissingCount: number;
   };
   cells: WeeklyStockCell[];
@@ -221,12 +226,36 @@ export function weeklyStockUnitProduct(
   return [...products].sort((a, b) => b.stockValue - a.stockValue || a.productName.localeCompare(b.productName))[0] ?? null;
 }
 
+/**
+ * Cover bands for a figure that may be stock VALUE (a grouping across products) — where 0 can mean a
+ * missing price, so it is never read as "out of stock". Only real units say that (classifyWeeklyStock).
+ */
+function classifyCover(stock: number, avgWeekly: number): {
+  coverWeeks: number | null;
+  status: WeeklyStockStatus;
+} {
+  if (!(avgWeekly > 0)) {
+    return { coverWeeks: null, status: stock > 0 ? "no_sales" : "healthy" };
+  }
+  const coverWeeks = Math.max(0, stock) / avgWeekly;
+  if (coverWeeks < WEEKLY_STOCK_COVER_LOW_WEEKS) return { coverWeeks: round2(coverWeeks), status: "low" };
+  if (coverWeeks > WEEKLY_STOCK_COVER_OVER_WEEKS) return { coverWeeks: round2(coverWeeks), status: "over" };
+  return { coverWeeks: round2(coverWeeks), status: "healthy" };
+}
+
+/**
+ * One product at one depot (or one product code across depots), in UNITS. No units is "out of stock"
+ * whether or not it sells; units that never sell are "no sales"; the rest reads by weeks of cover.
+ */
 export function classifyWeeklyStock(stockUnits: number, avgWeeklyUnits: number): {
   coverWeeks: number | null;
   status: WeeklyStockStatus;
 } {
+  if (!(stockUnits > 0)) {
+    return { coverWeeks: avgWeeklyUnits > 0 ? 0 : null, status: "out_of_stock" };
+  }
   if (!(avgWeeklyUnits > 0)) {
-    return { coverWeeks: null, status: stockUnits > 0 ? "no_sales" : "healthy" };
+    return { coverWeeks: null, status: "no_sales" };
   }
   const coverWeeks = Math.max(0, stockUnits) / avgWeeklyUnits;
   if (coverWeeks < WEEKLY_STOCK_COVER_LOW_WEEKS) return { coverWeeks: round2(coverWeeks), status: "low" };
@@ -283,25 +312,33 @@ type GroupAccumulator = {
   lowCount: number;
   overCount: number;
   noSalesCount: number;
+  outOfStockCount: number;
+  cellCount: number;
 };
 
 function accumulate(map: Map<string, GroupAccumulator>, code: string, name: string, parentName: string, cell: WeeklyStockCell, avgWeeklyValue: number) {
   const current =
     map.get(code) ??
-    { code, name, parentName, stockValue: 0, avgWeeklyValue: 0, products: new Set<string>(), lowCount: 0, overCount: 0, noSalesCount: 0 };
+    { code, name, parentName, stockValue: 0, avgWeeklyValue: 0, products: new Set<string>(), lowCount: 0, overCount: 0, noSalesCount: 0, outOfStockCount: 0, cellCount: 0 };
   current.stockValue += cell.stockValue;
   current.avgWeeklyValue += avgWeeklyValue;
   current.products.add(cell.productCode);
   if (cell.status === "low") current.lowCount += 1;
   if (cell.status === "over") current.overCount += 1;
   if (cell.status === "no_sales") current.noSalesCount += 1;
+  if (cell.status === "out_of_stock") current.outOfStockCount += 1;
+  current.cellCount += 1;
   map.set(code, current);
 }
 
 function finishGroups(map: Map<string, GroupAccumulator>): WeeklyStockGroupRow[] {
   return [...map.values()]
     .map((group) => {
-      const { coverWeeks, status } = classifyWeeklyStock(group.stockValue, group.avgWeeklyValue);
+      // Out of stock only when EVERY product in the grouping is — a value of 0 can also be a missing price.
+      const allOut = group.cellCount > 0 && group.outOfStockCount === group.cellCount;
+      const cover = classifyCover(group.stockValue, group.avgWeeklyValue);
+      const coverWeeks = allOut ? (group.avgWeeklyValue > 0 ? 0 : null) : cover.coverWeeks;
+      const status: WeeklyStockStatus = allOut ? "out_of_stock" : cover.status;
       return {
         code: group.code,
         name: group.name,
@@ -314,6 +351,7 @@ function finishGroups(map: Map<string, GroupAccumulator>): WeeklyStockGroupRow[]
         lowCount: group.lowCount,
         overCount: group.overCount,
         noSalesCount: group.noSalesCount,
+        outOfStockCount: group.outOfStockCount,
       };
     })
     .sort((a, b) => b.stockValue - a.stockValue || a.name.localeCompare(b.name));
@@ -470,6 +508,7 @@ export function buildWeeklyStockView(
         lowDepots: 0,
         overDepots: 0,
         noSalesDepots: 0,
+        outDepots: 0,
         price,
       };
     product.stockUnits += cell.stockUnits;
@@ -479,6 +518,7 @@ export function buildWeeklyStockView(
     if (cell.status === "low") product.lowDepots += 1;
     if (cell.status === "over") product.overDepots += 1;
     if (cell.status === "no_sales") product.noSalesDepots += 1;
+    if (cell.status === "out_of_stock") product.outDepots += 1;
     products.set(cell.productCode, product);
 
     accumulate(depots, weeklyStockGroupKey(cell, "depots"), cell.branchName, cell.regionName, cell, avgWeeklyValue);
@@ -517,7 +557,7 @@ export function buildWeeklyStockView(
     const price = productPrice.get(cell.productCode);
     return sum + (price == null ? 0 : cell.avgWeeklyUnits * price);
   }, 0);
-  const totalCover = classifyWeeklyStock(stockValue, avgWeeklyValue);
+  const totalCover = classifyCover(stockValue, avgWeeklyValue);
 
   return {
     asOfWeekStart: asOf ?? newestSnapshot,
@@ -530,6 +570,8 @@ export function buildWeeklyStockView(
       lowCount: cells.filter((cell) => cell.status === "low").length,
       overCount: cells.filter((cell) => cell.status === "over").length,
       noSalesCount: cells.filter((cell) => cell.status === "no_sales").length,
+      outOfStockCount: cells.filter((cell) => cell.status === "out_of_stock").length,
+      healthyCount: cells.filter((cell) => cell.status === "healthy").length,
       priceMissingCount: cells.filter((cell) => cell.priceMissing).length,
     },
     cells,
