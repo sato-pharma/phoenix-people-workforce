@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChequePayee } from "@/lib/spotlight/cheque-people";
 import { CHEQUE_MAX_PER_REQUEST, blankChequeInput, type ChequeInput } from "@/lib/spotlight/cheque-request";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { useCspNonce } from "@/components/security/csp-nonce-provider";
+import { withScriptNonce } from "@/lib/security/csp-nonce";
 import { cn } from "@/lib/utils";
 
 /**
@@ -115,6 +117,10 @@ export function ChequeWorkspace({ payees }: Props) {
   const [rows, setRows] = useState<Row[]>(() => [{ id: newId(), data: blankChequeInput() }]);
   const [selectedId, setSelectedId] = useState<string>(() => "");
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  // A srcdoc frame inherits the page policy, so the cheque's fitting script runs only with the page
+  // nonce (src/lib/security/csp-nonce.ts). The cheque is rendered by our server, every value escaped.
+  const nonce = useCspNonce();
+  const framedPreviewHtml = useMemo(() => withScriptNonce(previewHtml ?? "", nonce), [previewHtml, nonce]);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -554,7 +560,7 @@ export function ChequeWorkspace({ payees }: Props) {
               <iframe
                 className="absolute left-0 top-0 origin-top-left border-0 bg-white"
                 sandbox="allow-scripts"
-                srcDoc={previewHtml}
+                srcDoc={framedPreviewHtml}
                 style={{ height: SHEET_H, transform: `scale(${scale})`, width: SHEET_W }}
                 title="Cheque preview"
               />

@@ -4,7 +4,7 @@ Technical audit, 2026-10-23 (PR #6289). The rule line in `.claude/rules/payroll.
 
 ## The rule
 
-🔴 **EVERY FILE THAT PAYS PART 2, AND PUBLISH, MUST MATCH THE PART 2 STAMP — AND A MISSING STAMP REFUSES, IT NEVER PASSES** (technical audit, 2026-10-23). `assertMatchesPart2Confirm` (`publish-guard.ts`) is the one check: publish, the full finance sheet and the Part 2 FAB and CIB files all run it on the rows they are about to write — the files only while the run is `ready`, so a published month's re-download is never refused by a later salary edit, and publish skips it only for a run confirmed before the stamp existed (`PART2_STAMP_FIRST_WRITTEN_AT`, 11 Sep 2026), recording `totalsComparedToConfirm: false`. The stamp is a REQUIRED audit row (`part2_totals_stamped`), written inside Part 2 confirm's claim before the carry-forward ledger and the phase write, and the confirm re-assembles under that claim and refuses if anything moved. A run with no stamp is fixed by reopening and re-confirming Part 2, never by letting it through. Publish finalises its own leftover batch only after `compareSalaryBatchRecords` proves every record, every column and nobody extra; it rewrites a still-replaceable batch and refuses an approved or locked one only when pay, payment mode or the people differ (`SALARY_RECORD_MONEY_COLUMNS`) — a renamed title is recorded, not refused. Step saves, step confirms, exclusions and both resyncs write under the run's hold (`run-hold.ts`); a resync whose 5-second wait runs out while the run is still in Part 1 or Part 2 goes ahead unheld (`whenWaitRunsOut: "proceed"`) rather than leave the old figure in payroll. Pinned by `tests/automated-payroll-money-integrity.test.ts`.
+🔴 **EVERY FILE THAT PAYS PART 2, AND PUBLISH, MUST MATCH THE PART 2 STAMP — AND A MISSING STAMP REFUSES, IT NEVER PASSES** (technical audit, 2026-10-23). `assertMatchesPart2Confirm` (`publish-guard.ts`) is the one check: publish, the full finance sheet and the Part 2 FAB and CIB files all run it on the rows they are about to write — the files only while the run is `ready`, so a published month's re-download is never refused by a later salary edit, and publish skips it only for a run confirmed before the stamp existed (`PART2_STAMP_FIRST_WRITTEN_AT`, 11 Sep 2026), recording `totalsComparedToConfirm: false`. The stamp is a REQUIRED audit row (`part2_totals_stamped`), written inside Part 2 confirm's claim before the carry-forward ledger and the phase write, and the confirm re-assembles under that claim and refuses if anything moved. A run with no stamp is fixed by reopening and re-confirming Part 2, never by letting it through. Publish finalises its own leftover batch only after `compareSalaryBatchRecords` proves every record, every column and nobody extra; it rewrites a still-replaceable batch and refuses an approved or locked one only when pay, payment mode or the people differ (`SALARY_RECORD_MONEY_COLUMNS`) — a renamed title is recorded, not refused. Step saves, step confirms, exclusions and both resyncs write under the run's hold (`run-hold.ts`); a resync whose 5-second wait runs out is refused like any other write and parked in `automated_payroll_resync_outbox`, which retries it under the hold (audit 2026-10-26, P2-02) — never unheld. Pinned by `tests/automated-payroll-money-integrity.test.ts`.
 
 ## The conditions the risk review added
 
@@ -17,10 +17,18 @@ Technical audit, 2026-10-23 (PR #6289). The rule line in `.claude/rules/payroll.
 - **A live (approved or locked) batch is compared on pay only.** Pay means `SALARY_RECORD_MONEY_COLUMNS` (every amount, plus
   payment mode) and who is paid. A difference in a descriptive field, such as a job title renamed between two attempts, is
   recorded in `batchNotes.liveBatchDescriptiveDifferences` and is not refused.
-- **A resync proceeds after its wait runs out.** Both resyncs wait 5 seconds for the run's hold. When the wait expires and the
-  run is still in Part 1 or Part 2, the resync goes ahead unheld (`whenWaitRunsOut: "proceed"`) and logs
-  `automated_payroll_run_hold_wait_expired`. Failing instead would leave the old figure in payroll. A run that has moved past
-  those phases is still refused.
+- **A resync whose wait runs out is queued, never run unheld** (audit 2026-10-26, P2-02). Both resyncs wait 5 seconds for the
+  run's hold. Until 26 Oct an expired wait went ahead WITHOUT the hold (`whenWaitRunsOut: "proceed"`), so a clear could land
+  inside a Part confirm. Now the wait refuses, and the refused resync is parked with its whole target in
+  `automated_payroll_resync_outbox` (`resync-outbox.ts`, the shared `write-outbox.ts` mechanism) and retried under the hold —
+  drained off the run page and off every resync that succeeds, no cron. The save says the decision is queued. A retry
+  re-checks everything.
+- 🔴 **No parked decision is left behind** (risk review, 26 Oct). A retry that finds Part 2 already confirmed KEEPS its row —
+  it used to count as landed, so the row was deleted and the decision vanished while the run paid the old figure. Confirming
+  Part 2 lands the month's parked rows first, back-off ignored (`landQueuedPayrollResyncsForPeriod`), then refuses under its
+  claim while any remain or the queue cannot be read (`describeParkedResyncRefusal`, a 409). Reopening Part 2 lands what was
+  waiting for it, and the run page lists every parked decision (`RunView.parkedResyncs`, null when unreadable). A row whose
+  month has no open run any more is dropped with an `automated_payroll_queued_resync_no_open_run` log.
 - **A claim is retried when its holder has let go.** `claimTransition` also retries when the holder released the run
   (`transitionInProgress`).
 

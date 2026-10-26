@@ -16,8 +16,9 @@ import {
   registerFailedLoginAttempt,
   writeAuthAudit,
 } from "@/lib/auth/audit";
+import { CI_SMOKE_LOGIN_ID, isCiSmokeLoginEnabled } from "@/lib/auth/ci-smoke-login";
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
-import { isIpBlocked } from "@/lib/auth/ip-blocklist";
+import { readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import {
@@ -164,9 +165,9 @@ function serializeLoginError(error: unknown) {
   };
 }
 
-// Hardcoded CI test account: only active when PHOENIX_CI_SMOKE_LOGIN=true.
-// This account matches the credentials used in tests/e2e/auth.setup.ts.
-const CI_SMOKE_LOGIN_ID = "a-12";
+// Hardcoded CI test account: only active when isCiSmokeLoginEnabled() (APP_ENV=ci AND
+// PHOENIX_CI_SMOKE_LOGIN=true, src/lib/auth/ci-smoke-login.ts). This account matches the credentials
+// used in tests/e2e/auth.setup.ts.
 const CI_SMOKE_PASSWORD = "12345678";
 
 function resolveCiSmokeUser(loginId: string, password: string) {
@@ -197,17 +198,14 @@ export async function POST(request: Request) {
     const payload = await readLoginPayload(request);
     const loginId = normalizeLoginId(payload.loginId ?? "");
     const ip = getRequestIp(request);
-    // PHOENIX_CI_SMOKE_LOGIN=true bypasses ALL Supabase DB calls (rate-limit checks,
-    // credential lookup, session insert). Only accepts the hardcoded CI test account.
-    // Set by the login smoke test step in ci.yml's `validate` job, to guarantee login
-    // succeeds there without requiring DB access. (That step used to be its own
-    // `preview-smoke` job; it moved into `validate` and the separate job is gone.)
-    // Gated on APP_ENV rather than NODE_ENV: Next.js inlines NODE_ENV to the literal
-    // "production" at build time for every `next build` output -- including the build
-    // that job's smoke test runs against -- so a NODE_ENV check would be dead code that
-    // always resolves to false and would silently break that smoke test.
-    const ciSmokeMode =
-      process.env.APP_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true";
+    // CI smoke mode bypasses ALL Supabase DB calls (rate-limit checks, credential lookup,
+    // session insert). Only accepts the hardcoded CI test account. Switched on by the login
+    // smoke test step in ci.yml's `validate` job, to guarantee login succeeds there without
+    // requiring DB access. It needs APP_ENV to be exactly "ci" AND PHOENIX_CI_SMOKE_LOGIN=true
+    // (src/lib/auth/ci-smoke-login.ts): the old `APP_ENV !== "production"` gate opened this
+    // published password on any deployment whose APP_ENV was unset (audit point 16, 2026-10-26).
+    // Never NODE_ENV: Next.js inlines it to "production" in every `next build` output.
+    const ciSmokeMode = isCiSmokeLoginEnabled();
     const originRejection = rejectUntrustedForwardedOrigin(request);
 
     if (originRejection) {
@@ -270,7 +268,9 @@ export async function POST(request: Request) {
         (limited) => ({ limited }),
         (error: unknown) => ({ error, limited: false }),
       );
-      const blocklistCheck = isIpBlocked(ip).catch(() => false);
+      // Fail-CLOSED (audit point 15, 2026-10-26): an unreadable blocklist refuses the sign-in. It
+      // never throws; the catch only keeps a surprise from becoming an unhandled rejection.
+      const blocklistCheck = readIpBlock(ip).catch((): "unreadable" => "unreadable");
 
       const lockout = await lockoutCheck;
       if ("error" in lockout) throw lockout.error;
@@ -291,10 +291,29 @@ export async function POST(request: Request) {
         );
       }
 
-      // Admin-managed IP blocklist (System Issues security lens). Fail-open (isIpBlocked
-      // never throws), and returns the SAME generic rate-limited response so a blocked
-      // attacker gets no signal that their IP specifically is denied.
-      if (await blocklistCheck) {
+      // Admin-managed IP blocklist (System Issues security lens). A blocked address gets the SAME
+      // generic rate-limited response, so a blocked attacker gets no signal that their IP
+      // specifically is denied. Fail-closed since 2026-10-26: an unreadable blocklist refuses the
+      // sign-in too, but as what it is — a 503 "temporarily unavailable", audited on its own line
+      // (risk review, 26 Oct) — never as a block nobody made.
+      const blocklist = await blocklistCheck;
+      if (blocklist === "unreadable") {
+        await writeAuthAudit({
+          actorLoginId: loginId || null,
+          entityId: loginId || null,
+          newValues: { ip, reason: "ip_blocklist_unreadable" },
+          summary: "Login refused: IP blocklist could not be read",
+        }).catch(() => undefined);
+
+        return loginFailureResponse(
+          request,
+          payload,
+          "sign_in_unavailable",
+          "Sign-in is temporarily unavailable. Please try again in a few minutes.",
+          503,
+        );
+      }
+      if (blocklist === "blocked") {
         await writeAuthAudit({
           actorLoginId: loginId || null,
           entityId: loginId || null,

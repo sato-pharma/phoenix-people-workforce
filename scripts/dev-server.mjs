@@ -288,6 +288,25 @@ else delete childEnv.NODE_OPTIONS;
 
 const args = ["dev", `--${bundler}`, ...passthrough.filter((arg) => arg !== bundlerFlag)];
 
+// LOOPBACK ONLY (owner-approved audit fix, 2026-10-26). A bare `next dev` listens on every interface,
+// so anyone on the same Wi-Fi could reach this laptop's dev server — and through it the dev-preview
+// sign-in, which mints a session as any role, against the PRODUCTION database .env.local points at.
+// `-H 127.0.0.1` keeps it to this machine; `http://localhost:3000` still reaches it (Node and the
+// browsers fall back from ::1 to 127.0.0.1). The header check behind it is
+// `isLoopbackDevRequestHeaders` in src/lib/auth/dev-preview.ts.
+// Opt-out, for a deliberate LAN test only: PHOENIX_DEV_BIND_ALL=1. A -H / --hostname the caller
+// passed is kept as given and never doubled.
+const callerChoseHost = passthrough.some(
+  (arg) => arg === "-H" || arg === "--hostname" || arg.startsWith("--hostname=") || arg.startsWith("-H="),
+);
+const bindAll = process.env.PHOENIX_DEV_BIND_ALL === "1";
+if (!callerChoseHost && !bindAll) args.push("-H", "127.0.0.1");
+const bindNote = callerChoseHost
+  ? "host from the caller"
+  : bindAll
+    ? "listening on EVERY interface (PHOENIX_DEV_BIND_ALL=1)"
+    : "loopback only (127.0.0.1)";
+
 // Resolve Next's bin through the filesystem, NOT through PATH. `pnpm run dev` happens to put
 // node_modules/.bin on PATH, so `spawnSync("next", ...)` works under pnpm and fails with
 // "'next' is not recognized" the moment anyone runs `node scripts/dev-server.mjs` directly -
@@ -305,6 +324,7 @@ console.log(
   `[dev-server] ${process.platform} -> ${bundler}` +
     (bundlerFlag ? ` (${bundlerFlag} flag)` : override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
     `  | ${heap.note}` +
+    `  | ${bindNote}` +
     `  | next ${args.join(" ")}` +
     (haveBin ? "" : "  (next not found in node_modules - falling back to PATH)"),
 );

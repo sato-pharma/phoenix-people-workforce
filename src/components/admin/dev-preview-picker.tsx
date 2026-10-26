@@ -154,7 +154,9 @@ export function DevPreviewPicker({
     if (region) previewParams.set("region", region);
     if (area) previewParams.set("area", area);
   }
-  const previewHref = `/api/dev-auth/preview?${previewParams.toString()}`;
+  // The switch is a POST (audit point 17, 2026-10-26): it ends this browser's real session, so it is
+  // never a link a page elsewhere could fire. The fields travel as hidden inputs of one form.
+  const previewFields = [...previewParams.entries()];
   const pickedName = nameOptions.find((candidate) => candidate.hrId === hrId);
   const launchLabel = pickedName ? pickedName.fullName : `an auto-picked ${role}`;
 
@@ -258,13 +260,10 @@ export function DevPreviewPicker({
           {isLoading ? <p className="mt-1 text-xs text-slate-400">Loading {role} candidates…</p> : null}
         </div>
 
-        <a
-          aria-disabled={launching || undefined}
-          className={`inline-flex items-center justify-center bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition ${
-            launching ? "cursor-wait opacity-70" : "hover:bg-orange-700"
-          }`}
-          href={previewHref}
-          onClick={(event) => {
+        <form
+          action="/api/dev-auth/preview"
+          method="post"
+          onSubmit={(event) => {
             if (launching) {
               event.preventDefault();
               return;
@@ -272,8 +271,19 @@ export function DevPreviewPicker({
             setLaunching(true);
           }}
         >
-          {launching ? `Opening preview as ${launchLabel}…` : `Launch preview as ${launchLabel}`}
-        </a>
+          {previewFields.map(([name, value]) => (
+            <input key={name} name={name} type="hidden" value={value} />
+          ))}
+          <button
+            aria-disabled={launching || undefined}
+            className={`inline-flex items-center justify-center bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition ${
+              launching ? "cursor-wait opacity-70" : "hover:bg-orange-700"
+            }`}
+            type="submit"
+          >
+            {launching ? `Opening preview as ${launchLabel}…` : `Launch preview as ${launchLabel}`}
+          </button>
+        </form>
 
         {launching ? (
           <p aria-live="polite" className="text-xs font-semibold text-slate-600">

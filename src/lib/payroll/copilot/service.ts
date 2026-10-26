@@ -1,3 +1,4 @@
+import { systemAccessContext } from "@/lib/auth/permissions";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryRow,
@@ -147,7 +148,7 @@ export async function assembleDraft(
       getPayrollSalarySourcesByHrId(period),
       listRecurringForPeriod(period),
       buildFeederStates(period),
-      getLatestSalaryRecordsBefore(period.month, period.year),
+      getLatestSalaryRecordsBefore(period.month, period.year, systemAccessContext),
       getStatutoryConfigForPeriod(period),
       loadInsuranceWages(),
       buildSettledSalaryDeductionTotals(period),

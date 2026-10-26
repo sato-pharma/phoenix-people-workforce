@@ -42,6 +42,7 @@ import type {
 import { completedReportStatuses as completedStatuses } from "@/lib/coaching/analytics";
 import { getCoachingScoreColor as getScoreColor } from "@/lib/coaching/landing-insights";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   PortalRecordCard,
@@ -274,10 +275,9 @@ function exportCSV(reports: CoachingReportSummaryRow[], isTeamMode: boolean) {
     ...(isTeamMode ? [r.teamName ?? "", r.areaName ?? ""] : []),
   ]);
 
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
-  ].join("\n");
+  // The shared guard quotes each cell and neutralises a formula lead (= + - @) — names and team
+  // labels are typed text, and the sheet opens in Excel.
+  const csvContent = CSV_BOM + [csvLine(headers), ...rows.map((row) => csvLine(row))].join("\n");
 
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

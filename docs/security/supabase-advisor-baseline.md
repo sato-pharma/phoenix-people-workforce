@@ -106,6 +106,16 @@ So a revoke turns the real-auth smokes red, and it closes nothing: all 11 are al
 live policies between them. The advisor WARN stays **accepted at 11** — the fix for this category
 is the audit, written down, not a migration.
 
+🔴 **2026-10-26 — the grant on `current_access_can_see_employee` stays; its BODY was wrong.** The
+2026-07-11 body compared `lower(coalesce(employee_hr_id, ''))` with
+`lower(coalesce(current_access_hr_id(), ''))`, so a caller with no HR id (no session, or an account
+linked to no employee) matched every row with no HR id: called as `authenticated` on staging,
+`(null, null)` and `('', '')` both answered **true**. `20261026120400` reads the caller's id once,
+treats a blank one as null, requires it on the own-row and manager branches, and wraps the answer
+in `coalesce(..., false)`. Staging then answered false for every blank shape and kept own-row and
+manager matches for real users; the function's ACL is unchanged, so the count stays 11.
+`tests/can-see-employee-blank-id.test.ts` pins the latest definition.
+
 **Why the count fell 14 → 11.** PR
 [#5489](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5489), merged **2026-10-08
 at 10:14:50 Cairo**. Its migration
@@ -140,7 +150,27 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (260 as of 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (272 as of 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 260 to 272 on 2026-10-26 — 7 that joined, and 5 added on purpose by the audit fixes.**
+Production read **267** that day. The 7 that joined since 2026-10-23 are all new server-only tables
+in `public` with no browser grant: `notification_write_outbox`, `audit_log_outbox`,
+`crm_agent_crm_ids_cache`, `phoenix_crm_removed_plans`, `crm_person_by_hr_key_cache`,
+`crm_contact_phoenix_truth_cache`, `phoenix_crm_rep_entry_days_cache` (its creating migration never
+revoked the browser roles; `20261026120200` now does so explicitly — it held none live). The audit change set then adds 5, each a table moving INTO the
+deny-all shape:
+
+| Migration | Count | What |
+| --- | --- | --- |
+| `20261026120000` | 1 | the automated-payroll resync outbox, a new server-only table |
+| `20261026120100` | 3 | the tables of `notification_backup_20261023`: row security switched on, every browser grant revoked, schema revoked |
+| `20261026120500` | 1 | `public.deductions_categories`: its `using (true)` read policy dropped and its grants revoked — closed instead of open to every signed-in user |
+
+`20261026120600` refuses to apply if any table with row security on and no policy, any table with
+row security off, or any backup-named schema still grants `anon` or `authenticated` anything. The
+same three counts read **0 / 0 / 0** on production (read-only) that day, and the guard ran clean on
+staging. `scripts/check-migrations.mjs` rule 6 now
+refuses a migration that creates a schema without revoking it from both browser roles.
 
 **Raised 212 to 260 on 2026-10-23 — 48 tables, triaged by oid against live production.** The nightly
 drift check read 260 against an accepted 212 from mid-October, and it now goes red on that. Of the 48

@@ -39,6 +39,7 @@ import {
   adminSoftDepthClassName,
 } from "@/components/admin/admin-design-tokens";
 import { patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import { useCspNonce } from "@/components/security/csp-nonce-provider";
 import { CheckTile, FormError, FormField } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
@@ -62,6 +63,7 @@ import {
   type JobPostTemplateKey,
 } from "@/lib/recruitment/job-posts/templates";
 import { layerEdits, readPictureEdit, writeBack, type PictureEdit } from "@/lib/recruitment/job-posts/picture-edit";
+import { withScriptNonce } from "@/lib/security/csp-nonce";
 import {
   JOB_POST_MAX_LINES,
   contentFromDraft,
@@ -197,6 +199,10 @@ function PostFrame({
   boxClassName?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  // A srcdoc frame inherits the page policy, so the picture's fitting script runs only with the page
+  // nonce (src/lib/security/csp-nonce.ts). The picture is our own template, every value escaped.
+  const nonce = useCspNonce();
+  const framedHtml = useMemo(() => withScriptNonce(html, nonce), [html, nonce]);
   const frame = useRef<HTMLIFrameElement>(null);
   const report = useRef(onFit);
   const typed = useRef(onEdit);
@@ -236,7 +242,7 @@ function PostFrame({
           className={cn("absolute left-0 top-0 border-0", !onEdit && "pointer-events-none")}
           ref={frame}
           sandbox="allow-scripts"
-          srcDoc={html}
+          srcDoc={framedHtml}
           style={{ height: JOB_POST_HEIGHT, maxHeight: "none", maxWidth: "none", transform: `scale(${scale})`, transformOrigin: "0 0", width: JOB_POST_WIDTH }}
           tabIndex={onEdit ? 0 : -1}
           title={label}

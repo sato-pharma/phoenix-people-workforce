@@ -52,14 +52,13 @@ export async function holdRun<T>(
     runId: string;
     expected: RunPhase[];
     action: string;
-    waitMs?: number;
     /**
-     * "refuse" (the default) throws when the wait runs out. "proceed" runs the work WITHOUT the hold
-     * instead, exactly as it ran before holds existed — for a resync, whose decision has already been
-     * saved and must still reach payroll. A claim that outlasts the wait is almost always one a dead
-     * request left behind, and a live confirm it might overlap is caught by the Part 2 stamp anyway.
+     * A wait that runs out ALWAYS refuses — there is no going ahead unheld (audit 2026-10-26, P2-02).
+     * The two resyncs used to run their clears WITHOUT the hold after 5 seconds, which reopened the
+     * race the hold exists to close. A resync refused here is queued instead and retried under the
+     * hold (resync-outbox.ts), so its saved decision still reaches payroll.
      */
-    whenWaitRunsOut?: "refuse" | "proceed";
+    waitMs?: number;
   },
   work: () => Promise<T>,
   deps: RunHoldDeps = defaultDeps,
@@ -73,17 +72,6 @@ export async function holdRun<T>(
     const stillAllowed = Boolean(current && input.expected.includes(current.phase));
     // Wait only for something that will end: another holder on a run still in an allowed phase. A
     // run that has MOVED is refused at once — waiting cannot bring it back.
-    if (stillAllowed && deps.now() >= deadline && input.whenWaitRunsOut === "proceed") {
-      logError("Automated payroll: a write went ahead without the run's hold after waiting for it", {
-        labels: {
-          event: "automated_payroll_run_hold_wait_expired",
-          runId: input.runId,
-          action: input.action,
-          heldBy: current?.transitionAction ?? null,
-        },
-      });
-      return work();
-    }
     if (!stillAllowed || deps.now() >= deadline) {
       throw new Error(describeTransitionRefusal(current, input.expected));
     }

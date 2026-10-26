@@ -245,6 +245,10 @@ const nextConfig: NextConfig = {
   // there. Disable Next's own AGENTS.md/CLAUDE.md generation instead of relying on everyone to
   // notice and revert it.
   agentRules: false,
+  // No `X-Powered-By: Next.js` on any response. It tells nobody anything they need, and it tells a
+  // scanner which framework (and so which advisories) to try first. Pinned by
+  // tests/public-surface-hardening.test.ts.
+  poweredByHeader: false,
   // `typecheck` already runs as a required, separate step ahead of `build` in both
   // the `pnpm run ci` script and the required `typecheck` CI job. Next.js 16
   // has no built-in ESLint-during-build integration anymore (no `eslint` NextConfig

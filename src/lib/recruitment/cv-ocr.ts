@@ -39,6 +39,7 @@
 import path from "node:path";
 
 import { logError } from "@/lib/observability/log";
+import { extractPdfPageImagesInWorker } from "@/lib/recruitment/cv-text-isolation";
 
 /**
  * Tesseract's mean per-word confidence, 0-100, below which the read is discarded.
@@ -105,25 +106,15 @@ function readableChars(text: string): number {
  * because the caller below turns any failure into a null and falls back to the model. The addon is
  * traced explicitly now; see the outputFileTracingIncludes note in next.config.ts, and keep those
  * entries in step if this file ever moves.
+ *
+ * It runs in cv-text-isolation.ts's bounded worker thread, not in this process (audit, 2026-10-26,
+ * point 33): getImage() decodes images out of a PDF a stranger sent, and it ran here with no memory
+ * ceiling while every CV TEXT read was already isolated. Same call, same first-image-per-page rule,
+ * same MAX_OCR_PAGES; a thread that breaks its ceiling or deadline, or cannot start, rejects, and the
+ * catch in readByOcr turns that into a null, so the CV goes to the model exactly as on any failure.
  */
-async function pdfPageImages(bytes: Buffer): Promise<Buffer[]> {
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: bytes });
-  try {
-    const result = await parser.getImage({});
-    const images: Buffer[] = [];
-    for (const page of result.pages ?? []) {
-      const first = page.images?.[0];
-      const dataUrl = first?.dataUrl;
-      if (typeof dataUrl === "string" && dataUrl.includes(",")) {
-        images.push(Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"));
-      }
-      if (images.length >= MAX_OCR_PAGES) break;
-    }
-    return images;
-  } finally {
-    await parser.destroy();
-  }
+function pdfPageImages(bytes: Buffer): Promise<Buffer[]> {
+  return extractPdfPageImagesInWorker(bytes, MAX_OCR_PAGES);
 }
 
 /**

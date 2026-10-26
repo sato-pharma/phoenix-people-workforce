@@ -810,6 +810,10 @@ export async function healAddressCorrectionHistory(
   // queued: the totals kept crediting the old bricks and nothing ever rebuilt them, with no alarm.
   // Now a correction's re-point and its queue entries are written back to back, so whatever has
   // moved is always already queued, and a queue write that fails stops the loop loudly.
+  // Since 20261026021700 the RPC itself queues every file it moved, in the same transaction as the
+  // move, which closes the gap between the two calls. This write stays: the same idempotent upsert,
+  // it lands on that row whenever the pharmacy's previous brick is the brick its rows left, and it
+  // covers the files on any database the migration has not reached yet (a deploy applies none).
   const queued = new Map<string, { batch_id: string; moved_rows: number; old_brick_id: string }>();
   let rows = 0;
   for (const c of corrections) {

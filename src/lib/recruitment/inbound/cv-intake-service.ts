@@ -44,7 +44,7 @@ import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import {
   cvContentFingerprint,
-  findCandidateIdByContentFingerprint,
+  findContentFingerprintOwner,
   uploadCandidateFile,
 } from "@/lib/recruitment/files";
 import { inboxCvGate } from "@/lib/recruitment/inbound/email-mailboxes-config";
@@ -386,6 +386,54 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { outcome: "ignored_unsupported_attachment" };
     }
 
+    // On a re-claim, a prior attempt may already have created or matched a candidate for this exact
+    // event (e.g. it got past createCandidate but died at the upload below). Reuse that candidate
+    // rather than running createCandidate's fuzzy dedup a second time — re-deriving it is what would
+    // otherwise spawn a duplicate candidate on retry. A prior match_reason means that attempt
+    // MATCHED an existing candidate (created = false); its absence means it CREATED one
+    // (created = true). If the prior candidate has since been deleted, fall back to normal resolution.
+    const priorCandidate = claimedCandidateId ? await getCandidate(claimedCandidateId) : null;
+
+    // A CV that is byte-for-byte one we already hold belongs to whoever already holds it.
+    //
+    // This runs BEFORE the CV read below, and that is the whole saving: identical bytes already filed
+    // as a CV were already accepted as one, so the paid read is skipped for them (with it the is_cv
+    // and per-inbox gates, which that file already passed). Bytes filed as anything else — an ID
+    // scan, a certificate — were never judged as a CV, so they are still read. A re-claim keeps the
+    // read: its prior attempt may have died before the extraction was saved.
+    //
+    // It also runs BEFORE createCandidate because createCandidate cannot be taken back: it resolves on
+    // national ID, then email, and candidate-matching.ts keeps phone OUT of that decision on purpose
+    // (phone matching once merged three different applicants into one record). A WhatsApp CV usually
+    // carries no national ID and no email, and the phone on it belongs to whoever FORWARDED it — so
+    // without this check the identical document CREATES a second person, every time. Measured on
+    // production 2026-09-05: 986 CV files held 739 distinct documents, and 21 candidate records
+    // existed only because of this. One had already been sent to a hiring manager under one record
+    // while the identical CV sat untouched under the other.
+    //
+    // The bytes are proof in a way the phone and the name are not, which is the distinction
+    // 20260905051500's duplicate shelf exists to record: a resemblance gets filed for a human to
+    // judge, an identity is simply the same person. Oldest owner wins, so a late arrival attaches to
+    // the record already in the pipeline rather than dragging it to a new one.
+    //
+    // A failed lookup must never cost us the CV — fall through to identity matching, which is
+    // exactly today's behaviour.
+    const contentFingerprint = cvContentFingerprint(input.attachment.bytes);
+    let sameCvCandidate: Awaited<ReturnType<typeof getCandidate>> = null;
+    let sameCvAlreadyFiledAsCv = false;
+    if (!priorCandidate) {
+      try {
+        const owner = await findContentFingerprintOwner(contentFingerprint);
+        sameCvCandidate = owner ? await getCandidate(owner.candidateId) : null;
+        sameCvAlreadyFiledAsCv = sameCvCandidate !== null && owner?.kind === "cv";
+      } catch (fingerprintError) {
+        logError("CV fingerprint lookup failed; falling back to identity matching", {
+          error: fingerprintError,
+          labels: { channel: input.channel, event: "cv_fingerprint_lookup_failed" },
+        });
+      }
+    }
+
     // ONE AI call both SCREENS (is_cv) and EXTRACTS the fields — see extractCvFieldsFromBytes.
     // Runs on the bytes before the candidate exists so a bulk forward-import can build the profile
     // from the CV's own name/email/phone rather than the forwarding account's. Best-effort: a
@@ -403,48 +451,51 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     // whatever the CV contains, and supporting a new role costs no code change at all.
     let extraction: CvFieldExtraction | null = null;
     let extractionError: string | null = null;
-    try {
-      extraction = await extractCvFieldsFromBytes({
-        bytes: input.attachment.bytes,
-        // What they WROTE when they sent it. The same call that reads the CV also reads the
-        // covering note, so answering "which job did they apply for" costs no second AI call.
-        coverMessage: input.coverMessage ?? null,
-        aiBudget: input.aiBudget,
-        fileName: input.attachment.fileName,
-        mimeType: input.attachment.mimeType,
-        // For the free RULE pass.
-        //
-        // The subject is always safe to pass: it describes the JOB, not the person, and in this
-        // inbox it is the vacancy name the great majority of the time because that is what our own
-        // job ads tell applicants to write. It answers appliedForJobTitle with no model involved.
-        //
-        // The sender's name and address are WITHHELD on a bulk forward-import, and that is not a
-        // detail. The rule engine falls back to the sender's address when the CV body contains no
-        // email, and on identitySource "cv" the candidate's whole identity is built from the
-        // extracted fields (see below) — so passing the forwarder's address here would stamp it onto
-        // every candidate in the import and collapse them into one. That is not hypothetical: it is
-        // the WhatsApp forwarder incident, and it is why identitySource exists at all.
-        senderEmail: input.identitySource === "cv" ? null : input.senderIdentifier,
-        senderName: input.identitySource === "cv" ? null : (input.senderDisplayName ?? null),
-        subject: input.subject ?? null,
-      });
-    } catch (error) {
-      // Still fails OPEN — the candidate and their CV file are created either way, because a real
-      // applicant must never be lost to an AI hiccup. What changed on 2026-08-15 is that the
-      // failure is now RECORDED. This catch used to be an empty block: the CV was silently never
-      // read, the candidate landed with a name and nothing else, and there was no error row, no
-      // log line and no flag anywhere. Production carried 226 candidates against 177 extractions
-      // and 0 intake errors — 49 unread CVs that looked, from every surface, like successes.
-      extractionError = error instanceof Error ? error.message : "CV extraction failed.";
-      logError("Inbound CV extraction failed; the candidate was created without extracted fields", {
-        error,
-        labels: {
-          channel: input.channel,
-          event: "inbound_cv_extraction_failed",
-          file_name: input.attachment.fileName,
-          provider_message_id: input.providerMessageId,
-        },
-      });
+    // Skipped only for bytes already filed as a CV (see the fingerprint lookup above).
+    if (!sameCvAlreadyFiledAsCv) {
+      try {
+        extraction = await extractCvFieldsFromBytes({
+          bytes: input.attachment.bytes,
+          // What they WROTE when they sent it. The same call that reads the CV also reads the
+          // covering note, so answering "which job did they apply for" costs no second AI call.
+          coverMessage: input.coverMessage ?? null,
+          aiBudget: input.aiBudget,
+          fileName: input.attachment.fileName,
+          mimeType: input.attachment.mimeType,
+          // For the free RULE pass.
+          //
+          // The subject is always safe to pass: it describes the JOB, not the person, and in this
+          // inbox it is the vacancy name the great majority of the time because that is what our own
+          // job ads tell applicants to write. It answers appliedForJobTitle with no model involved.
+          //
+          // The sender's name and address are WITHHELD on a bulk forward-import, and that is not a
+          // detail. The rule engine falls back to the sender's address when the CV body contains no
+          // email, and on identitySource "cv" the candidate's whole identity is built from the
+          // extracted fields (see below) — so passing the forwarder's address here would stamp it onto
+          // every candidate in the import and collapse them into one. That is not hypothetical: it is
+          // the WhatsApp forwarder incident, and it is why identitySource exists at all.
+          senderEmail: input.identitySource === "cv" ? null : input.senderIdentifier,
+          senderName: input.identitySource === "cv" ? null : (input.senderDisplayName ?? null),
+          subject: input.subject ?? null,
+        });
+      } catch (error) {
+        // Still fails OPEN — the candidate and their CV file are created either way, because a real
+        // applicant must never be lost to an AI hiccup. What changed on 2026-08-15 is that the
+        // failure is now RECORDED. This catch used to be an empty block: the CV was silently never
+        // read, the candidate landed with a name and nothing else, and there was no error row, no
+        // log line and no flag anywhere. Production carried 226 candidates against 177 extractions
+        // and 0 intake errors — 49 unread CVs that looked, from every surface, like successes.
+        extractionError = error instanceof Error ? error.message : "CV extraction failed.";
+        logError("Inbound CV extraction failed; the candidate was created without extracted fields", {
+          error,
+          labels: {
+            channel: input.channel,
+            event: "inbound_cv_extraction_failed",
+            file_name: input.attachment.fileName,
+            provider_message_id: input.providerMessageId,
+          },
+        });
+      }
     }
     if (extraction && extraction.isCv === false) {
       await finalizeIntakeEvent(eventId, {
@@ -503,46 +554,6 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       input.identitySource === "cv"
         ? cvIdentity
         : { email: input.candidate.email ?? null, fullName: cvIdentity.fullName, phone: input.candidate.phone ?? null };
-
-    // On a re-claim, a prior attempt may already have created or matched a candidate for this exact
-    // event (e.g. it got past createCandidate but died at the upload below). Reuse that candidate
-    // rather than running createCandidate's fuzzy dedup a second time — re-deriving it is what would
-    // otherwise spawn a duplicate candidate on retry. A prior match_reason means that attempt
-    // MATCHED an existing candidate (created = false); its absence means it CREATED one
-    // (created = true). If the prior candidate has since been deleted, fall back to normal resolution.
-    const priorCandidate = claimedCandidateId ? await getCandidate(claimedCandidateId) : null;
-
-    // A CV that is byte-for-byte one we already hold belongs to whoever already holds it.
-    //
-    // This runs BEFORE createCandidate because createCandidate cannot be taken back: it resolves on
-    // national ID, then email, and candidate-matching.ts keeps phone OUT of that decision on purpose
-    // (phone matching once merged three different applicants into one record). A WhatsApp CV usually
-    // carries no national ID and no email, and the phone on it belongs to whoever FORWARDED it — so
-    // without this check the identical document CREATES a second person, every time. Measured on
-    // production 2026-09-05: 986 CV files held 739 distinct documents, and 21 candidate records
-    // existed only because of this. One had already been sent to a hiring manager under one record
-    // while the identical CV sat untouched under the other.
-    //
-    // The bytes are proof in a way the phone and the name are not, which is the distinction
-    // 20260905051500's duplicate shelf exists to record: a resemblance gets filed for a human to
-    // judge, an identity is simply the same person. Oldest owner wins, so a late arrival attaches to
-    // the record already in the pipeline rather than dragging it to a new one.
-    //
-    // A failed lookup must never cost us the CV — fall through to identity matching, which is
-    // exactly today's behaviour.
-    const contentFingerprint = cvContentFingerprint(input.attachment.bytes);
-    let sameCvCandidate: Awaited<ReturnType<typeof getCandidate>> = null;
-    if (!priorCandidate) {
-      try {
-        const ownerId = await findCandidateIdByContentFingerprint(contentFingerprint);
-        sameCvCandidate = ownerId ? await getCandidate(ownerId) : null;
-      } catch (fingerprintError) {
-        logError("CV fingerprint lookup failed; falling back to identity matching", {
-          error: fingerprintError,
-          labels: { channel: input.channel, event: "cv_fingerprint_lookup_failed" },
-        });
-      }
-    }
 
     const { candidate, created, matchReason } = priorCandidate
       ? { candidate: priorCandidate, created: !claimedMatchReason, matchReason: claimedMatchReason }

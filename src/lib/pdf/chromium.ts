@@ -184,6 +184,12 @@ export type ChromiumPage = {
   // that URL, so the referrer matches and the key is accepted. Nothing else here needs it.
   goto: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
   pdf: (options: Record<string, unknown>) => Promise<Uint8Array>;
+  // Ignore the Content-Security-Policy of the document the page navigates to. Only the street map
+  // needs it: it borrows the app's /login page for its ORIGIN (see `goto`), and that page's policy
+  // admits only scripts carrying its own per-request nonce — so the map's inline script and the Maps
+  // API script would be refused and the PDF would fall back to the plain diagram. Puppeteer applies
+  // it to later navigations, so it is called BEFORE `goto`.
+  setBypassCSP: (enabled: boolean) => Promise<void>;
   // A raster of the page, for the documents somebody needs as a PICTURE rather than as paper — a
   // keepsake to send in a message, a card to put in a slide. The resolution comes from the
   // viewport's `deviceScaleFactor`, never from the screenshot options, which is why `setViewport`

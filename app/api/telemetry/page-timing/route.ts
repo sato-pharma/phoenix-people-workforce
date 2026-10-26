@@ -9,6 +9,7 @@ import {
 } from "@/lib/observability/page-timing-intake";
 import { recordTiming } from "@/lib/observability/timings";
 import { clientAddress } from "@/lib/security/client-address";
+import { createMemoryRateBuckets } from "@/lib/security/memory-rate-buckets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,21 +24,15 @@ export const dynamic = "force-dynamic";
 // refused, one address gets PAGE_TIMING_RATE_LIMIT beacons a minute, and at most PAGE_TIMING_MAX_NAMES
 // distinct page shapes are ever recorded. The answer is an empty 204 — the page does not wait on it.
 const knownNames = new Set<string>();
-const addressBuckets = new Map<string, { count: number; resetAt: number }>();
+
+// At most this many addresses are counted at once. A FULL map makes room by dropping the oldest
+// window (memory-rate-buckets.ts) — it used to refuse every caller instead, so 5,000 rotating
+// addresses switched the beacon off for everybody until the next restart (audit, 2026-10-26, point 23).
+const PAGE_TIMING_MAX_ADDRESSES = 5_000;
+const addressBuckets = createMemoryRateBuckets(PAGE_TIMING_MAX_ADDRESSES);
 
 function withinRateLimit(address: string): boolean {
-  const now = Date.now();
-  if (addressBuckets.size > 5_000) {
-    for (const [key, bucket] of addressBuckets) if (bucket.resetAt <= now) addressBuckets.delete(key);
-    if (addressBuckets.size > 5_000) return false;
-  }
-  const bucket = addressBuckets.get(address);
-  if (!bucket || bucket.resetAt <= now) {
-    addressBuckets.set(address, { count: 1, resetAt: now + PAGE_TIMING_RATE_WINDOW_MS });
-    return true;
-  }
-  bucket.count += 1;
-  return bucket.count <= PAGE_TIMING_RATE_LIMIT;
+  return addressBuckets.consume(address, PAGE_TIMING_RATE_LIMIT, PAGE_TIMING_RATE_WINDOW_MS) === 0;
 }
 
 export async function POST(request: Request) {

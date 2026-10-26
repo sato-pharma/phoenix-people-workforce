@@ -1,5 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
-
 import {
   assertPermission,
   normalizeHrId,
@@ -87,12 +85,18 @@ type ExcuseRequestRow = {
   status: EmployeeExcuseStatus;
 };
 
-type ExcuseTokenRow = {
-  expires_at: string;
-  manager_hr_id: string | null;
-  token_hash: string;
-  used_at: string | null;
-};
+/*
+ * NO EMAILED APPROVE/REJECT LINK — a manager decides an excuse signed in, in the Action Center
+ * (`decideExcuseRequestAsManager`), and nowhere else. The one-click link was removed on 2026-10-26,
+ * as the vacation link was in #3274: each new request minted a token, stored only its hash in
+ * `v2_excuse_email_tokens` and put the raw value in no email (the manager email's only button is
+ * "Review in Action Center"), so the unauthenticated GET that consumed it —
+ * `decideExcuseRequestByToken` — could not be reached honestly, and a decision taken by a GET is one
+ * a link preview or a mail scanner can take.
+ *
+ * The TABLE stays, with the rows already in it: no migration came with the removal, and nothing
+ * writes to or reads it any more. Dropping it is a separate decision.
+ */
 
 const excuseDurationHours = 2;
 const monthlyAllowance = Math.max(
@@ -153,15 +157,10 @@ function isExcusesSchemaMissingMessage(error: unknown) {
   const message = excuseErrorMessage(error).toLowerCase();
   return (
     message.includes("v2_excuse_requests") ||
-    message.includes("v2_excuse_email_tokens") ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
-}
-
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 function findEmployeeByHrId(
@@ -650,9 +649,9 @@ export async function createExcuseRequest(
     throw new Error("Direct manager work email is missing. Please contact HR.");
   }
   const managerHrId = resolveStoredHrId(manager.hrId, byHrId) ?? manager.hrId;
-  // Refuse UP FRONT rather than minting a request (and an emailed approve/reject token) that the
-  // assigned manager is no longer allowed to decide. Without this the row would sit at
-  // pending_manager forever, only recoverable via reassignExcuseManager.
+  // Refuse UP FRONT rather than minting a request that the assigned manager is no longer allowed
+  // to decide. Without this the row would sit at pending_manager forever, only recoverable via
+  // reassignExcuseManager.
   if (await hrIdHoldsExcuseExcludedRole(managerHrId)) {
     throw new Error("Your direct manager cannot decide excuse requests. Please contact HR.");
   }
@@ -692,17 +691,6 @@ export async function createExcuseRequest(
   if (error) throw error;
 
   const request = mapExcuseRequestRow(data as ExcuseRequestRow);
-  const token = randomBytes(32).toString("base64url");
-  const { error: tokenError } = await getSupabaseAdmin()
-    .from("v2_excuse_email_tokens")
-    .insert({
-      expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      manager_hr_id: request.managerHrId,
-      request_id: request.id,
-      token_hash: hashToken(token),
-    });
-
-  if (tokenError) throw tokenError;
 
   await notifyManagerOfExcuse({ directory, employee, manager, request, type: "submitted" });
 
@@ -721,85 +709,6 @@ async function fetchRequestById(requestId: string) {
 
   if (error) throw error;
   return data as (ExcuseRequestRow & { employee_work_email?: string | null }) | null;
-}
-
-export async function decideExcuseRequestByToken(input: {
-  decision: EmployeeExcuseDecision;
-  requestId: string;
-  token: string;
-}) {
-  if (input.decision === "return") {
-    throw new Error("Returning an excuse request requires a reply. Open Action Center to return it with a manager reply.");
-  }
-
-  const requestRow = await fetchRequestById(input.requestId);
-  if (!requestRow) throw new Error("Excuse request was not found.");
-  if (requestRow.status !== "pending_manager") {
-    throw new Error("This excuse request has already been decided.");
-  }
-
-  const tokenHash = hashToken(input.token);
-  const { data: tokenRow, error: tokenError } = await getSupabaseAdmin()
-    .from("v2_excuse_email_tokens")
-    .select("token_hash,request_id,manager_hr_id,expires_at,used_at")
-    .eq("request_id", input.requestId)
-    .eq("token_hash", tokenHash)
-    .maybeSingle();
-
-  if (tokenError) throw tokenError;
-  const tokenData = tokenRow as ExcuseTokenRow | null;
-  if (!tokenData) throw new Error("Approval link is invalid.");
-  if (tokenData.used_at) throw new Error("Approval link was already used.");
-  if (new Date(tokenData.expires_at).getTime() < Date.now()) {
-    throw new Error("Approval link has expired.");
-  }
-  if (normalizeHrId(tokenData.manager_hr_id) !== normalizeHrId(requestRow.manager_hr_id)) {
-    throw new Error("Approval link does not match this request manager.");
-  }
-  // The emailed approve/reject link carries no session, so the role check cannot come from an
-  // AccessContext — resolve the assigned manager's access role directly. Requests are no longer
-  // created for an excluded manager, but a link minted before this rule shipped is still live for
-  // up to 14 days, and that link must not be a way around the block.
-  if (await hrIdHoldsExcuseExcludedRole(requestRow.manager_hr_id)) {
-    throw new Error("Forbidden: District and Regional Managers cannot decide excuse requests.");
-  }
-
-  const status = decisionToStatus(input.decision);
-  const now = new Date().toISOString();
-  const { data: updated, error: updateError } = await getSupabaseAdmin()
-    .from("v2_excuse_requests")
-    .update({
-      manager_decision: status,
-      manager_decision_at: now,
-      manager_decision_by_hr_id: requestRow.manager_hr_id,
-      status,
-      updated_at: now,
-    })
-    .eq("id", input.requestId)
-    .eq("status", "pending_manager")
-    .select(excuseColumnsWithEmail)
-    .maybeSingle();
-
-  if (updateError) throw updateError;
-  if (!updated) throw conflictError("This excuse request has already been decided.");
-
-  await getSupabaseAdmin()
-    .from("v2_excuse_email_tokens")
-    .update({ used_at: now })
-    .eq("request_id", input.requestId)
-    .eq("token_hash", tokenHash);
-
-  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
-  const directory = await getEmployeeDirectory();
-  await notifyDecisionRecipients({
-    directory,
-    request: {
-      ...request,
-      employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
-    },
-  });
-
-  return request;
 }
 
 export async function getManagerPendingExcuses(access: AccessContext): Promise<EmployeeExcuseRequest[]> {

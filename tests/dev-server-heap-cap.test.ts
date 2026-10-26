@@ -88,13 +88,16 @@ function makeLauncherSandbox(): { root: string; launcher: string } {
   return { root, launcher: join(root, "scripts", "dev-server.mjs") };
 }
 
+/** The launcher binds loopback by default since 2026-10-26 (tests/dev-preview-loopback-gate.test.ts). */
+const LOOPBACK = ["-H", "127.0.0.1"];
+
 type Launched = { nodeOptions: string | null; argv: string[]; line: string; stderr: string };
 
 function launch(launcher: string, args: string[], extraEnv: Record<string, string> = {}): Launched {
   const env: NodeJS.ProcessEnv = { ...process.env };
   // CI sets its own NODE_OPTIONS heap flag; inherited here it would win (by design) and every
   // default-case assertion below would be testing the caller-wins branch instead.
-  for (const key of ["NODE_OPTIONS", "PHOENIX_DEV_HEAP_MB", "PHOENIX_DEV_BUNDLER", "NEXT_DISABLE_MEM_OVERRIDE"]) delete env[key];
+  for (const key of ["NODE_OPTIONS", "PHOENIX_DEV_HEAP_MB", "PHOENIX_DEV_BUNDLER", "NEXT_DISABLE_MEM_OVERRIDE", "PHOENIX_DEV_BIND_ALL"]) delete env[key];
   // Skips the machine-wide scan for a running dev server: it would refuse on a laptop that has one.
   env.PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS = "1";
   Object.assign(env, extraEnv);
@@ -116,7 +119,7 @@ function testTheLauncher() {
   try {
     const plain = launch(launcher, ["--webpack", "--port", "3999"]);
     assert.equal(plain.nodeOptions, "--max-old-space-size=4096", "Next's process must receive the cap in its own environment");
-    assert.deepEqual(plain.argv, ["dev", "--webpack", "--port", "3999"], "the bundler flag reaches Next once, never twice");
+    assert.deepEqual(plain.argv, ["dev", "--webpack", "--port", "3999", "-H", "127.0.0.1"], "the bundler flag reaches Next once, never twice");
     assert.match(plain.line, /heap cap 4096 MB/, "the launcher says which cap it applied");
 
     assert.equal(launch(launcher, [], { PHOENIX_DEV_HEAP_MB: "3072" }).nodeOptions, "--max-old-space-size=3072");
@@ -135,15 +138,15 @@ function testTheLauncher() {
     assert.match(bad.stderr, /PHOENIX_DEV_HEAP_MB=abc ignored/, "a bad override is reported where the person starting the server sees it");
 
     // `dev:turbopack` is the launcher plus --turbopack: the caller's flag beats the variable.
-    assert.deepEqual(launch(launcher, ["--turbopack"], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--turbopack"]);
-    assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--webpack"]);
+    assert.deepEqual(launch(launcher, ["--turbopack"], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--turbopack", ...LOOPBACK]);
+    assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "webpack" }).argv, ["dev", "--webpack", ...LOOPBACK]);
 
     // 🔴 WEBPACK ON EVERY PLATFORM (2026-10-13). On turbopack the Hetzner box answered /api/healthz
     // once while cold and then nothing at all — not the page shipped that morning, not a months-old
     // admin page, not a plain API route. Three servers in a row, 400 s / 420 s / 560 s, every one 000.
     assert.deepEqual(
       launch(launcher, []).argv,
-      ["dev", "--webpack"],
+      ["dev", "--webpack", ...LOOPBACK],
       "the default is webpack everywhere: the box has two dev servers and only one of them sets an env var of its own",
     );
     // 🔴 AND THE ASSERTION ABOVE IS VACUOUS ON WINDOWS, where the default has always been webpack —
@@ -155,8 +158,8 @@ function testTheLauncher() {
       "the bundler default must be webpack outright: a platform ternary here sends the box back to turbopack, where it serves nothing",
     );
     // Both escape hatches survive it — the flag and the variable still reach turbopack on purpose.
-    assert.deepEqual(launch(launcher, ["--turbopack"]).argv, ["dev", "--turbopack"]);
-    assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "turbopack" }).argv, ["dev", "--turbopack"]);
+    assert.deepEqual(launch(launcher, ["--turbopack"]).argv, ["dev", "--turbopack", ...LOOPBACK]);
+    assert.deepEqual(launch(launcher, [], { PHOENIX_DEV_BUNDLER: "turbopack" }).argv, ["dev", "--turbopack", ...LOOPBACK]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

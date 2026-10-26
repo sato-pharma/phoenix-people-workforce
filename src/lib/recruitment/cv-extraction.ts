@@ -54,7 +54,12 @@ import {
   type CvPositionSchema,
 } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind, isLegacyDocBytes } from "@/lib/recruitment/cv-file-kind";
-import { CvParseLimitError, extractCvTextIsolated } from "@/lib/recruitment/cv-text-isolation";
+import {
+  CvParseIsolationUnavailableError,
+  CvParseLimitError,
+  extractCvTextIsolated,
+  type IsolatedParseOptions,
+} from "@/lib/recruitment/cv-text-isolation";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import {
   aiFieldsWorthAsking,
@@ -380,21 +385,35 @@ const CV_EXTRACTION_CLASSIFICATION_PREAMBLE =
 
 // Since 23 Oct 2026 (audit P5-04) the parse runs in a bounded worker thread (cv-text-isolation.ts):
 // a file that needs more than its memory ceiling or its deadline is refused as unreadable instead of
-// stalling or exhausting the web process. The in-process reader below is unchanged, and it is still
-// what runs if the thread cannot load its library.
-export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
+// stalling or exhausting the web process. The in-process reader below is unchanged and is now only the
+// tests' reference text: a thread that cannot load its library is a failed read the recruiter can
+// retry ("ai_failed", answered 502 — the server's fault, never "unsupported_file", which tells them
+// the FILE is bad), and never an unbounded in-process parse (audit, 2026-10-26, point 33).
+// `isolation` is the thread's test seam (cv-text-isolation.ts); production never passes it.
+export async function extractRawTextFromFile(
+  bytes: Buffer,
+  mimeType: string,
+  fileName: string,
+  isolation: IsolatedParseOptions = {},
+): Promise<string> {
   const kind = detectCvFileKind(mimeType, fileName);
   if (kind !== "pdf" && kind !== "docx") return extractRawTextInProcess(bytes, mimeType, fileName);
   const isolatedKind = kind === "pdf" ? "pdf" : isLegacyDocBytes(bytes) ? "doc" : "docx";
   try {
-    return await extractCvTextIsolated(bytes, isolatedKind, () => extractRawTextInProcess(bytes, mimeType, fileName));
+    return await extractCvTextIsolated(bytes, isolatedKind, isolation);
   } catch (error) {
     if (error instanceof CvParseLimitError) throw new CvExtractionError("unsupported_file", error.message);
+    if (error instanceof CvParseIsolationUnavailableError) {
+      throw new CvExtractionError("ai_failed", "This CV could not be read right now: the server's isolated CV reader is unavailable. Read it again later.");
+    }
     throw error;
   }
 }
 
-/** The pre-isolation reader, unchanged. Runs in-process: only as the fallback, and in tests as the reference text. */
+/**
+ * The pre-isolation reader, unchanged. Runs in-process only for a file kind it cannot read (to throw
+ * "unsupported_file") and in tests, as the reference text the thread must match.
+ */
 export async function extractRawTextInProcess(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
   const kind = detectCvFileKind(mimeType, fileName);
 

@@ -246,8 +246,8 @@ export function runVacationModuleTests() {
   // with it. Inverted rather than deleted, because the invariant is stronger now and still needs a
   // guard: email approval is off for EVERY vacation type, not just the sequential ones.
   //
-  // The same mechanism stays live for EXCUSES (21 tokens in production, newest 2026-09-03), so this
-  // asserts on the vacation service only — it is not a ban on the pattern.
+  // The excuse copy went the same way on 2026-10-26 (it minted tokens but emailed none) and has its
+  // own guard in tests/excuses.test.ts, so this asserts on the vacation service only.
   // Matched with a trailing "(" ON PURPOSE, so this catches the DEFINITION and any CALL while
   // still allowing prose to name the thing that was removed. The bare-name form forbade the symbol
   // appearing anywhere at all, which made the removal impossible to document: the comment on

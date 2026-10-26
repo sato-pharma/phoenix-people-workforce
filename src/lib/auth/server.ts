@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/app-sessions";
 import {
   accessContextFromDevPreviewToken,
+  isLoopbackDevRequestHeaders,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
 import { bearerTokenFromRequest } from "@/lib/auth/native-session";
@@ -29,6 +30,7 @@ import {
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
+import { CI_SMOKE_LOGIN_ID, isCiSmokeLoginEnabled } from "@/lib/auth/ci-smoke-login";
 import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
 import {
   evaluateEmployeeLifecycleGate,
@@ -99,20 +101,6 @@ function describeBundleFailure(error: unknown): string {
   return message.toLowerCase().includes("<!doctype html") ? "edge error page (html)" : message.slice(0, 200);
 }
 
-function isLocalHostname(value: string | null | undefined) {
-  const hostname = String(value ?? "")
-    .trim()
-    .replace(/:\d+$/, "")
-    .replace(/^\[(.*)\]$/, "$1")
-    .toLowerCase();
-
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1"
-  );
-}
-
 function isLocalDevHeaderRequest(headerStore: Pick<Headers, "get">) {
   if (!isDevHeaderEnabled() || !isLocalDevelopment()) {
     return false;
@@ -121,15 +109,16 @@ function isLocalDevHeaderRequest(headerStore: Pick<Headers, "get">) {
   return isLocalDevelopmentRequest(headerStore);
 }
 
+// The ONE loopback gate (src/lib/auth/dev-preview.ts): a loopback Host, and every forwarded host and
+// forwarded-for entry loopback too. Until 2026-10-26 this file kept its own copy that accepted when
+// EITHER the Host or the forwarded host was loopback, so a LAN caller sending `Host: localhost`
+// reached the dev-preview cookie and the dev-auth headers.
 function isLocalDevelopmentRequest(headerStore: Pick<Headers, "get">) {
   if (!isLocalDevelopment()) {
     return false;
   }
 
-  const forwardedHost = headerStore.get("x-forwarded-host");
-  const host = headerStore.get("host");
-
-  return isLocalHostname(forwardedHost) || isLocalHostname(host);
+  return isLoopbackDevRequestHeaders(headerStore);
 }
 
 const anonymousAccessContext = createAccessContext({
@@ -329,10 +318,11 @@ export async function resolveSessionState(
   // not found, missing key, etc.). Short-circuit here using the already-verified
   // JWT payload — verifySessionToken above has already checked the HMAC
   // signature and token expiry, so the payload is trustworthy.
-  // Gated identically to the ciSmokeMode check in app/api/auth/login/route.ts
-  // (APP_ENV !== "production" && PHOENIX_CI_SMOKE_LOGIN === "true") so it can
-  // never activate in a real production deployment.
-  if (process.env.APP_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true") {
+  // Gated by the same isCiSmokeLoginEnabled() as the login route (APP_ENV exactly "ci"
+  // AND PHOENIX_CI_SMOKE_LOGIN=true, src/lib/auth/ci-smoke-login.ts), and narrowed to the
+  // one CI account that route signs in: any other token still goes to app_sessions, so a
+  // stray flag can never wave a real person's session past revocation (audit point 16).
+  if (isCiSmokeLoginEnabled() && payload.loginId === CI_SMOKE_LOGIN_ID) {
     const now = new Date().toISOString();
     const syntheticAppSession: AppSessionRow = {
       absolute_expires_at: new Date(payload.exp * 1000).toISOString(),

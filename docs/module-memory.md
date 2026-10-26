@@ -125,7 +125,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `recruitment-inbound` — Recruitment — the WhatsApp bot, the screening questions and the careers form | `src/lib/recruitment/inbound/**` and 4 more |
 | `recruitment-interviews` — Recruitment — the interview calendar and interview outcomes | `src/lib/recruitment/interview*` and 3 more |
 | `recruitment-offers` — Recruitment — the job offer letter, its email and the hand-off to the Employee Master | `src/lib/offers/**` and 4 more |
-| `recruitment-cv-reading` — Recruitment — reading a CV file: its text, OCR, the rule pass and the model read | `src/lib/recruitment/cv-*` and 1 more |
+| `recruitment-cv-reading` — Recruitment — reading a CV file: its text, OCR, the rule pass and the model read | `src/lib/recruitment/cv-*` and 2 more |
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,email-signature,spotlight,pdf,export}/**` and 4 more |
 | `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,hr-ops-reports,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
 | `probation` — Probation and employee milestones | `src/lib/{probation,milestones}/**` and 4 more |

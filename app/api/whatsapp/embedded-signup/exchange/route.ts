@@ -53,13 +53,15 @@ export async function POST(request: Request) {
   }
 
   // Public, unauthenticated endpoint — rate-limit by IP so it cannot be hammered to burn the Meta
-  // app's OAuth budget or hold workers open. Fail OPEN on any rate-limit *infrastructure* error: a
-  // one-time onboarding the owner runs on a phone must never be blocked because the bucket store
-  // hiccuped. A genuine over-limit still returns 429.
+  // app's OAuth budget or hold workers open. A one-time onboarding the owner runs on a phone must
+  // never be blocked because the bucket store hiccuped, so a store error counts this address in this
+  // process instead (onStoreError "memory", a bounded map). It used to let the request through with
+  // no limit at all (audit, 2026-10-26, point 21). A genuine over-limit returns 429 either way.
   try {
     await assertApiRateLimit({
       identifier: rateLimitIdentity({ request }),
       limit: 10,
+      onStoreError: "memory",
       scope: "whatsapp-embedded-signup-exchange",
       windowMs: 60_000,
     });
@@ -70,10 +72,13 @@ export async function POST(request: Request) {
         { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
       );
     }
-    logWarning("WhatsApp embedded-signup rate-limit check failed open", {
+    // A store outage never reaches here (it is counted in memory above), so this is the limiter
+    // failing in a way nothing anticipated — refused, never waved through.
+    logWarning("WhatsApp embedded-signup rate-limit check failed; refused", {
       error,
       labels: { event: "embedded_signup_rate_limit_error" },
     });
+    return NextResponse.json({ ok: false, error: "rate_limit_unavailable" }, { status: 503 });
   }
 
   let body: { code?: unknown; wabaId?: unknown };

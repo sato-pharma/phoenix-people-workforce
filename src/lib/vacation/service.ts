@@ -155,8 +155,8 @@ const vacationSlaSettingsTable = "v2_vacation_sla_settings";
  * cleanup too, and a nightly-failing cron alerts nobody here. It would need a code PR, a deploy, a
  * production DDL and a second migration for the vestigial 'decision_tokens' retention policy row.
  *
- * The same mechanism IS live for excuses (`v2_excuse_email_tokens`) — this is not a dead pattern,
- * only a dead copy.
+ * The excuse copy (`v2_excuse_email_tokens`) went the same way on 2026-10-26: it minted tokens but
+ * put none in an email. Its table stays too.
  */
 const vacationTokensTable = "v2_vacation_email_tokens";
 const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";

@@ -153,6 +153,12 @@ export async function renderRouteStreetMap(input: {
       // HTML, unauthenticated, and its React is handled by building the map container in the
       // callback rather than in the markup.
       const origin = String(input.origin ?? "").trim().replace(/\/+$/, "");
+      // 🔴 THE POLICY OF THE BORROWED PAGE MUST NOT APPLY (audit, 2026-10-26, point 29). /login now
+      // sends a nonce Content-Security-Policy with 'strict-dynamic', and `setContent` keeps the
+      // document it replaced — its policy included — so the map's inline script, the Maps API script
+      // and its onerror would all be refused. The map is our own markup in our own headless browser,
+      // so the page ignores that policy; puppeteer applies it to the NEXT navigation, hence here.
+      await page.setBypassCSP(true);
       if (origin) {
         try {
           await page.goto(`${origin}/login`, { timeout: 15_000, waitUntil: "domcontentloaded" });

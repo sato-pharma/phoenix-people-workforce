@@ -23,13 +23,17 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
+import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 
 // applyEmployeeHrIdInFilter, NOT applyHrIdInFilter: the latter hardcodes `hr_id`, which is the
 // legacy ledger's column. `expense_claims` keys on `employee_hr_id`.
-import { applyEmployeeHrIdInFilter, resolveExpenseAccessFilter } from "@/lib/outstation/expenses";
+import {
+  applyEmployeeHrIdInFilter,
+  keepExpenseRowsInScope,
+  resolveExpenseAccessFilter,
+} from "@/lib/outstation/expenses";
 
 /** Column list kept explicit: a `select *` here would silently pick up phase-3 columns. */
 const CLAIM_COLUMNS = [
@@ -157,7 +161,7 @@ export async function listExpenseClaims(
   accessContext: AccessContext,
 ): Promise<PayrollExpenseApproval[]> {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
-  const supabase = (await getSupabaseRlsClientIfAvailable()) ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.listExpenseClaims");
 
   let query = supabase
     .from("expense_claims")
@@ -182,7 +186,9 @@ export async function listExpenseClaims(
 
   // Double cast: CLAIM_COLUMNS is a joined constant rather than a string literal, so PostgREST's
   // generic cannot infer the row shape and falls back to GenericStringError[].
-  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map(mapClaimToPayrollApproval);
+  return keepExpenseRowsInScope((data ?? []) as unknown as Array<Record<string, unknown>>, accessFilter, "employee_hr_id").map(
+    mapClaimToPayrollApproval,
+  );
 }
 
 /** Parity row as `v_expense_claims_parity` exposes it. */

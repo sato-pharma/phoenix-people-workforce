@@ -850,9 +850,10 @@ export const MODULES = [
   {
     id: "recruitment-cv-reading",
     title: "Recruitment — reading a CV file: its text, OCR, the rule pass and the model read",
-    scope: "How a CV file becomes fields: text extraction and its isolated worker thread, scanned-CV OCR, the free rule pass, the paid model read and its limits.",
+    scope: "How a CV file becomes fields: text extraction and its isolated worker thread, scanned-CV OCR, the free rule pass, the paid model read and its limits — and the size limits on a CV the application PDF opens.",
     globs: [
       "src/lib/recruitment/cv-*",
+      "src/lib/recruitment/whatsapp-application-pdf.ts",
       "tests/*{cv-extraction,cv-text,rule-extraction}*",
     ],
     keywords: ["cv extraction", "cv parsing", "cv text", "pdf-parse", "mammoth", "ocr", "tesseract", "rule extraction"],

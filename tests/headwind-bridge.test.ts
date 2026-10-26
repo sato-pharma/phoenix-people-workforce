@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
+import { POST as recordingUploadPost } from "../app/api/devices/recordings/upload/route.ts";
 import {
   getHeadwindToken,
   headwindAccessHeaders,
@@ -72,12 +75,17 @@ import {
 import {
   clampRecordingDuration,
   hashRecordingToken,
+  recordingSlotOpenDecision,
   recordingUploadDecision,
+  recordingUploadLengthDecision,
+  recordingUploadUrl,
   RECORDING_DEFAULT_SECONDS,
   RECORDING_MAX_BYTES,
   RECORDING_MAX_SECONDS,
   RECORDING_MIN_SECONDS,
   RECORDING_TOKEN_TTL_SECONDS,
+  RECORDING_UPLOAD_ID_PARAM,
+  RECORDING_UPLOAD_MAX_REQUEST_BYTES,
 } from "../src/lib/devices/headwind/recordings.ts";
 import {
   uploadHeadwindApp,
@@ -3641,8 +3649,29 @@ function runRecordingTests() {
   assert.equal(recordingUploadDecision({ contentType: "video/mp4", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: RECORDING_MAX_BYTES + 1 }).ok, false, "over the byte cap is refused");
   assert.equal(recordingUploadDecision({ contentType: "image/png", nowMs: now, presentedToken: token, row: freshRow, sizeBytes: 10 }).ok, false, "a non-video type is refused");
 
+  // recordingSlotOpenDecision — what the door refuses on the row alone, before it reads a body.
+  const slotStatus = (row: Parameters<typeof recordingSlotOpenDecision>[0], nowMs = now) => {
+    const decision = recordingSlotOpenDecision(row, nowMs);
+    return decision.ok ? 200 : decision.status;
+  };
+  assert.equal(slotStatus(freshRow), 200, "a fresh slot is open");
+  assert.equal(slotStatus(null), 404, "a slot that does not exist is refused 404");
+  assert.equal(slotStatus({ ...freshRow, status: "ready" }), 409, "a slot already handled is refused 409");
+  assert.equal(slotStatus({ ...freshRow, uploadTokenHash: null }), 410, "a slot whose token is spent is refused 410");
+  assert.equal(slotStatus(freshRow, now + RECORDING_TOKEN_TTL_SECONDS * 1000 + 1), 410, "a slot past its window is refused 410");
+
+  // The address the tablet is told to upload to names its slot, so the door can check it first.
+  const slotUrl = new URL(recordingUploadUrl("https://phoenix-hr.satopharma.com/", "11111111-2222-4333-8444-555555555555"));
+  assert.equal(slotUrl.origin + slotUrl.pathname, "https://phoenix-hr.satopharma.com/api/devices/recordings/upload", "the upload address is the door, one slash");
+  assert.equal(slotUrl.searchParams.get(RECORDING_UPLOAD_ID_PARAM), "11111111-2222-4333-8444-555555555555", "and it carries the recording's id");
+
   // SOURCE FINGERPRINTS — the capture is driven to the RustDesk fork, never the frozen Expo app.
   const recordings = stripComments(source("src/lib/devices/headwind/recordings.ts"));
+  assert.match(
+    recordings,
+    /const uploadUrl = recordingUploadUrl\(input\.uploadBaseUrl, id\)/,
+    "the record push hands the tablet the address that names its slot",
+  );
   assert.match(recordings, /messageType: "intent"/, "the record push uses the agent's intent door");
   assert.match(recordings, /pkg: rustDeskPackageName\(env\)/, "aimed at the RustDesk-fork launcher's package");
   assert.doesNotMatch(
@@ -3686,6 +3715,242 @@ function runRecordingTests() {
   assert.match(panel, /view=recordings/, "and reads the recordings view");
 }
 
+/**
+ * The recording upload door (audit, 2026-10-26, point 24). It used to buffer a whole multipart body of
+ * up to 256 MB before it looked at anything, with no rate limit; then it read the slot, stored the file
+ * with an overwrite and marked the row by id alone, so two uploads on one token both passed and the
+ * second replaced the first. No database is reached: the Supabase settings are either removed (the
+ * client cannot be built) or pointed at a stand-in PostgREST on 127.0.0.1.
+ */
+async function runRecordingUploadDoorTests() {
+  // ── the length gate, pure ──
+  const lengthStatus = (value: string | null) => {
+    const decision = recordingUploadLengthDecision(value);
+    return decision.ok ? 200 : decision.status;
+  };
+  assert.equal(lengthStatus(null), 411, "no Content-Length (a chunked body) is refused 411 — its size is unknown until it is read");
+  assert.equal(lengthStatus("  "), 411, "a blank Content-Length is the same as none");
+  assert.equal(lengthStatus("12abc"), 400, "a Content-Length that is not digits is refused");
+  assert.equal(lengthStatus("1e9"), 400, "an exponent is not a Content-Length");
+  assert.equal(lengthStatus("-5"), 400, "a negative Content-Length is refused");
+  assert.equal(lengthStatus("0"), 400, "an empty body is refused");
+  assert.equal(lengthStatus("1"), 200);
+  assert.equal(lengthStatus(String(RECORDING_UPLOAD_MAX_REQUEST_BYTES)), 200, "a body exactly at the cap is read");
+  assert.equal(lengthStatus(String(RECORDING_UPLOAD_MAX_REQUEST_BYTES + 1)), 413, "one byte over the cap is refused 413");
+  assert.ok(RECORDING_UPLOAD_MAX_REQUEST_BYTES > RECORDING_MAX_BYTES, "the request cap leaves room for the multipart framing around a full-size file");
+
+  /** A body that records whether anything ever read it. highWaterMark 0: nothing is pulled until a read. */
+  const probeBody = () => {
+    const probe = { pulled: false };
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          probe.pulled = true;
+          controller.enqueue(new Uint8Array(16));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return { probe, stream };
+  };
+  const probeRequest = (stream: ReadableStream<Uint8Array>, contentLength: string | null, slotId?: string) =>
+    new Request(slotId === undefined ? "https://phoenix.test/api/devices/recordings/upload" : recordingUploadUrl("https://phoenix.test", slotId), {
+      body: stream,
+      duplex: "half",
+      headers: {
+        "content-type": "multipart/form-data; boundary=x",
+        "x-forwarded-for": "8.8.4.4",
+        ...(contentLength === null ? {} : { "content-length": contentLength }),
+      },
+      method: "POST",
+    } as RequestInit);
+
+  const SUPABASE_SETTINGS = ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+  const saved = SUPABASE_SETTINGS.map((name) => [name, process.env[name]] as const);
+  const restore = () => {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+
+  let standRpcAllowed = true;
+  let standClaimRows = 1;
+  let standSlot: "open" | "none" | "handled" | "closed" | "unreadable" = "open";
+  let rowReads = 0;
+  let storageCalls = 0;
+  const patches: string[] = [];
+  const upserts: string[] = [];
+  const token = "c".repeat(64);
+  const hash = hashRecordingToken(token);
+  const recordingId = "11111111-2222-4333-8444-555555555555";
+  const stand = createServer((request, response) => {
+    const url = request.url ?? "";
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const json = (status: number, body: unknown) => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify(body));
+      };
+      if (url.includes("/rpc/api_rate_limit_consume")) {
+        return json(200, [{ allowed: standRpcAllowed, retry_after_seconds: standRpcAllowed ? 0 : 30 }]);
+      }
+      if (url.startsWith("/storage/v1/object/")) {
+        storageCalls += 1;
+        upserts.push(String(request.headers["x-upsert"]));
+        return json(200, { Id: "stand-in", Key: url.slice("/storage/v1/object/".length) });
+      }
+      if (url.startsWith("/rest/v1/device_screen_recordings")) {
+        if (request.method === "GET") {
+          rowReads += 1;
+          if (standSlot === "unreadable") return json(500, { code: "XX000", message: "stand-in read failure" });
+          if (standSlot === "none") return json(200, []);
+          return json(200, [
+            {
+              id: recordingId,
+              requested_at: new Date().toISOString(),
+              status: standSlot === "handled" ? "ready" : "requested",
+              storage_path: `7/${recordingId}.mp4`,
+              upload_token_hash: standSlot === "closed" ? null : hash,
+            },
+          ]);
+        }
+        if (request.method === "PATCH") {
+          patches.push(decodeURIComponent(url));
+          if (patches.length === 1) return json(200, standClaimRows === 1 ? [{ id: recordingId }] : []);
+          response.writeHead(204);
+          return response.end();
+        }
+      }
+      json(404, { message: `stand-in has no answer for ${request.method} ${url}` });
+    });
+  });
+
+  /** A real multipart upload, sent with the Content-Length a tablet sends. */
+  const multipartUpload = async (address: string, formRecordingId = recordingId) => {
+    const form = new FormData();
+    form.set("recordingId", formRecordingId);
+    form.set("token", token);
+    form.set("capturedSeconds", "42");
+    form.set("file", new File([new Uint8Array(2048)], "screen.mp4", { type: "video/mp4" }));
+    const encoded = new Response(form);
+    const bytes = new Uint8Array(await encoded.arrayBuffer());
+    return new Request(recordingUploadUrl("https://phoenix.test", recordingId), {
+      body: bytes,
+      headers: {
+        "content-length": String(bytes.byteLength),
+        "content-type": encoded.headers.get("content-type") ?? "",
+        "x-forwarded-for": address,
+      },
+      method: "POST",
+    });
+  };
+
+  await new Promise<void>((resolve) => stand.listen(0, "127.0.0.1", () => resolve()));
+  try {
+    // ── 1. refused on the header alone, before a byte of the body is read ──
+    for (const name of SUPABASE_SETTINGS) delete process.env[name];
+    {
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, null));
+      assert.equal(response.status, 411, "an upload with no Content-Length is refused 411");
+      assert.equal(probe.pulled, false, "and its body is never read");
+    }
+    {
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, String(RECORDING_UPLOAD_MAX_REQUEST_BYTES + 1)));
+      assert.equal(response.status, 413, "an upload declaring more than the cap is refused 413");
+      assert.equal(probe.pulled, false, "and its body is never read — the door used to buffer all of it first");
+    }
+    {
+      // The limiter cannot reach its store (no settings): refused, never waved through, body unread.
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, "4096"));
+      assert.equal(response.status, 503, "a rate limit that cannot be checked refuses the upload (fails closed)");
+      assert.equal(probe.pulled, false, "and the body is never read");
+    }
+
+    // ── 2. against the stand-in store ──
+    const { port } = stand.address() as AddressInfo;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = `http://127.0.0.1:${port}`;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "stand-in-not-a-key";
+    {
+      standRpcAllowed = false;
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, "4096"));
+      assert.equal(response.status, 429, "an address over RECORDING_UPLOAD_RATE_LIMIT a minute is refused 429");
+      assert.equal(response.headers.get("retry-after"), "30", "with the store's Retry-After");
+      assert.equal(probe.pulled, false, "and its body is never read");
+      standRpcAllowed = true;
+    }
+    // 🔴 THE SLOT BEFORE THE BODY: the address names the slot, and an upload with no slot, a malformed
+    // one, or one that is gone, handled, spent or unreadable is refused before a byte of its body is
+    // pulled. Without this a caller holding no token made the door buffer up to 256 MB a request.
+    {
+      const readsBefore = rowReads;
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, "4096"));
+      assert.equal(response.status, 400, "an upload whose address names no slot is refused 400");
+      assert.equal(probe.pulled, false, "and its body is never read");
+      assert.equal(rowReads, readsBefore, "and no row is read for it");
+    }
+    {
+      const readsBefore = rowReads;
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, "4096", "not-a-recording"));
+      assert.equal(response.status, 400, "a malformed recordingId is refused 400");
+      assert.equal(probe.pulled, false, "and its body is never read");
+      assert.equal(rowReads, readsBefore, "and no row is read for it");
+    }
+    for (const [slot, status, label] of [
+      ["none", 404, "a slot that does not exist"],
+      ["handled", 409, "a slot already handled"],
+      ["closed", 410, "a slot whose token is spent"],
+      ["unreadable", 503, "a slot that cannot be read"],
+    ] as const) {
+      standSlot = slot;
+      const readsBefore = rowReads;
+      const { probe, stream } = probeBody();
+      const response = await recordingUploadPost(probeRequest(stream, "4096", recordingId));
+      assert.equal(response.status, status, `${label} is refused ${status}`);
+      assert.equal(probe.pulled, false, `${label}: the body is never read`);
+      assert.equal(rowReads, readsBefore + 1, `${label}: on one row read`);
+    }
+    standSlot = "open";
+    {
+      // The form may repeat the id, but never name a slot other than the one the address was checked on.
+      const response = await recordingUploadPost(await multipartUpload("8.8.4.7", "99999999-2222-4333-8444-555555555555"));
+      assert.equal(response.status, 400, "a form recordingId that differs from the address's is refused 400");
+      assert.equal(storageCalls, 0, "and it never reaches storage");
+      assert.equal(patches.length, 0, "or claims anything");
+    }
+    {
+      // 🔴 THE RACE: the slot was claimed by another upload in between this one's read and its claim.
+      standClaimRows = 0;
+      const response = await recordingUploadPost(await multipartUpload("8.8.4.5"));
+      assert.equal(response.status, 409, "an upload that loses the claim is refused 409");
+      assert.equal(storageCalls, 0, "and it never reaches storage — the loser used to overwrite the winner's file");
+      assert.match(patches[0] ?? "", /status=eq\.requested/, "the claim only matches a row still requested");
+      assert.match(patches[0] ?? "", new RegExp(`upload_token_hash=eq\\.${hash}`), "and still holding the hash this token matched");
+    }
+    {
+      patches.length = 0;
+      standClaimRows = 1;
+      const response = await recordingUploadPost(await multipartUpload("8.8.4.6"));
+      assert.equal(response.status, 200, "the upload that wins the claim is stored");
+      assert.equal(storageCalls, 1, "once");
+      assert.deepEqual(upserts, ["false"], "and never with an overwrite");
+      assert.equal(patches.length, 2, "the claim, then the ready mark");
+      assert.match(patches[1] ?? "", /status=eq\.requested/, "the ready mark only lands on a row still requested");
+    }
+  } finally {
+    restore();
+    await new Promise<void>((resolve) => stand.close(() => resolve()));
+  }
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -3702,6 +3967,7 @@ export async function runHeadwindBridgeTests() {
   await runRemoteScreenIdTests();
   await runCorporateWipeTests();
   runRecordingTests();
+  await runRecordingUploadDoorTests();
   await runConfigurationTests();
   await runUploadTests();
   await runLocationTests();

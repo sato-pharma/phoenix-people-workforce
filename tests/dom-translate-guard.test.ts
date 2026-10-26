@@ -251,8 +251,11 @@ export async function runDomTranslateGuardTests() {
   // ---------------------------------------------------------------- it runs before React
 
   const layout = stripComments(readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8"));
-  const guardTag = layout.indexOf("<script dangerouslySetInnerHTML={{ __html: DOM_TRANSLATE_GUARD_BOOT_SCRIPT }} />");
-  assert.ok(guardTag > 0, "app/layout.tsx must render the guard as an inline script");
+  const guardTag = layout.indexOf("<script nonce={nonce} dangerouslySetInnerHTML={{ __html: DOM_TRANSLATE_GUARD_BOOT_SCRIPT }} />");
+  assert.ok(
+    guardTag > 0,
+    "app/layout.tsx must render the guard as an inline script carrying the page nonce — without it the page policy blocks it",
+  );
   for (const later of ["<GlobalErrorReporter", "<ThemeProvider", "<ReportingErrorBoundary"]) {
     const at = layout.indexOf(later);
     assert.ok(at > guardTag, `the guard must render before ${later} — React's first DOM write has to see it`);

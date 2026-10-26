@@ -17,6 +17,12 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
 import { holdRun } from "./run-hold.ts";
+import {
+  landQueuedPayrollResyncsForPeriod,
+  maybeDrainPayrollResyncOutbox,
+  type ParkedPayrollResync,
+  queuedPayrollResyncsForPeriod,
+} from "./resync-outbox.ts";
 import { recordPaidExpenseStamp } from "./expense-stamp.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
 import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "./exports/cib-sheet.ts";
@@ -243,6 +249,12 @@ export type RunView = {
    * about — against the standing rule that a screen shows names, never codes.
    */
   excludedPeople: Array<{ hrId: string; fullName: string; reason: string | null }>;
+  /**
+   * Deduction and expense decisions parked while the run was busy, that have NOT reached its figures
+   * yet (resync-outbox.ts). Null when the queue could not be read — said on screen, never shown as
+   * none. After Part 2 is confirmed they stay parked until Part 2 is reopened.
+   */
+  parkedResyncs: ParkedPayrollResync[] | null;
 };
 
 function nowIso(): string {
@@ -553,14 +565,26 @@ export async function startOrResumeRun(
 
 export async function getRunView(access: AccessContext, runId: string): Promise<RunView> {
   assertAutomatedPayrollHrActor(access);
+  // HR opening the run is the moment a resync parked while the run was busy should land (resync-outbox.ts).
+  maybeDrainPayrollResyncOutbox();
   const run = await requireRun(runId);
-  const [stepStates, draftRows] = await Promise.all([listStepStates(runId), listDraftRows(runId)]);
+  const [stepStates, draftRows, parkedResyncs] = await Promise.all([
+    listStepStates(runId),
+    listDraftRows(runId),
+    queuedPayrollResyncsForPeriod(run.month, run.year).catch(() => null),
+  ]);
+  // A run that can still take them lands this month's parked decisions now, back-off ignored, so the
+  // next look shows them applied rather than an hour later.
+  if (parkedResyncs && parkedResyncs.length > 0 && (run.phase === "part1" || run.phase === "part2")) {
+    void landParkedResyncs(run);
+  }
   const excluded = draftRows.filter((row) => row.excluded);
   const names = excluded.length > 0 ? await employeeNamesByCompactKey() : new Map<string, string>();
   return {
     run,
     stepStates,
     draftRows,
+    parkedResyncs,
     excludedPeople: excluded.map((row) => ({
       hrId: row.employeeHrId,
       // The code is the fallback, never the label: a person missing from `employees` still has to
@@ -569,6 +593,43 @@ export async function getRunView(access: AccessContext, runId: string): Promise<
       reason: row.excludedReason ?? null,
     })),
   };
+}
+
+/**
+ * Land the month's parked payroll decisions now (resync-outbox.ts), each under the run's hold. Never
+ * throws: one that fails again stays parked, and confirmPart2's own check under its claim refuses on it.
+ */
+async function landParkedResyncs(run: MonthlySalaryRun): Promise<void> {
+  try {
+    await landQueuedPayrollResyncsForPeriod(run.month, run.year);
+  } catch (error) {
+    logError("Automated payroll: could not land the queued payroll decisions for a run", {
+      labels: { event: "automated_payroll_queued_resync_land_failed", runId: run.id },
+      error,
+    });
+  }
+}
+
+/** "2 deduction decisions and 1 expense decision" — exported for the money-integrity test. */
+export function describeParkedResyncs(parked: ParkedPayrollResync[]): string {
+  const count = (kind: ParkedPayrollResync["kind"]) => parked.filter((entry) => entry.kind === kind).length;
+  const phrase = (n: number, kind: string) => `${n} ${kind} decision${n === 1 ? "" : "s"}`;
+  const parts = [];
+  if (count("deduction") > 0) parts.push(phrase(count("deduction"), "deduction"));
+  if (count("expense") > 0) parts.push(phrase(count("expense"), "expense"));
+  return parts.join(" and ");
+}
+
+/**
+ * The refusal while decisions for the month are still parked, or null when none is. Exported for
+ * tests/automated-payroll-money-integrity.test.ts.
+ */
+export function describeParkedResyncRefusal(parked: ParkedPayrollResync[]): string | null {
+  if (parked.length === 0) return null;
+  return (
+    `Conflict: ${describeParkedResyncs(parked)} made while this run was busy ${parked.length === 1 ? "has" : "have"} ` +
+    "not reached it yet. Nothing was confirmed; confirm Part 2 again in a minute."
+  );
 }
 
 /** The active/most-recent run for a period (or null), for the page loader. */
@@ -1455,6 +1516,8 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
     action: "part2_unconfirmed",
     detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
   });
+  // A decision parked after Part 2 was confirmed was waiting for exactly this (resync-outbox.ts).
+  await landParkedResyncs(updated);
   return updated;
 }
 
@@ -1517,6 +1580,13 @@ export async function confirmPart2(
   if (run.phase !== "part2") {
     throw new Error("Conflict: confirm Part 1 before Part 2 (or Part 2 is already confirmed).");
   }
+
+  // NO DECISION LEFT BEHIND (risk review, 26 Oct). A deduction or expense resync that could not take
+  // the run's hold is parked and retried on a back-off of up to an hour, so it can still be waiting
+  // when HR confirms. Land this month's parked ones NOW, before any gate reads the steps: one that
+  // re-opens a step is then refused by the step check below like any other re-opened step, and one
+  // still parked after this is refused under the claim.
+  await landParkedResyncs(run);
 
   const states = await listStepStates(runId);
   assertAllStepsConfirmed(states, PART2_STEP_KEYS);
@@ -1686,6 +1756,21 @@ export async function confirmPart2(
   const confirmedTotals = part2Totals(rows.length, totals);
   const confirmedBankDetails = part2BankDetails(runId, rows);
   const { carryForwardRecorded, updated } = await whileClaimed(runId, transition, async () => {
+    // Under the claim nothing can land or be parked against this run's hold, so this is the last word: a
+    // decision still parked (it failed again, or arrived after the landing above) has NOT reached these
+    // figures, and confirming would pay the old ones. A queue that cannot be read refuses too.
+    let parked: ParkedPayrollResync[];
+    try {
+      parked = await queuedPayrollResyncsForPeriod(run.month, run.year);
+    } catch {
+      throw new Error(
+        "Conflict: could not check whether a deduction or expense decision is still waiting to reach this run. " +
+          "Nothing was confirmed; confirm Part 2 again in a minute.",
+      );
+    }
+    const parkedRefusal = describeParkedResyncRefusal(parked);
+    if (parkedRefusal) throw new Error(parkedRefusal);
+
     // THE STAMP IS THE SHEET THE RUN HOLDS NOW (audit 2026-10-23, F-08a). The gates above read the run
     // before the claim; a step save or a Deductions resync that finished in between would leave the
     // stamp describing a month the run no longer holds. Under the claim nothing else can write, so one

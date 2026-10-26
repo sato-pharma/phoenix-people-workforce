@@ -52,6 +52,7 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
 import { cairoDateTime12h } from "@/lib/format/cairo-datetime";
+import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   phxButtonApproveDenseClassName,
@@ -298,13 +299,11 @@ function RowEvidence({
 /* ─── CSV Export ──────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function csvEscape(v: string | number | null | undefined): string {
-  const s = String(v ?? "");
-  return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
+// Every cell goes through the shared spreadsheet guard (`csvLine`): it quotes a comma, quote or line
+// break AND neutralises a formula lead (= + - @), because names, departments and review flags are typed
+// text and HR opens the file in Excel. Numbers pass through as numbers, so a negative balance stays one.
 function downloadCsv(filename: string, csvContent: string) {
-  const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([CSV_BOM + csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -317,28 +316,28 @@ function downloadCsv(filename: string, csvContent: string) {
 
 function exportEntitlementsCSV(data: VacationEmployeeEligibilityRow[]) {
   const header = ["HR ID", "Full Name", "Department", "Line", "Hire Date", "Days Since Hire", "6-Month Date", "Eligibility", "Entitlement Days", "Used Days", "Balance Days", "Manager", "Review Flags"];
-  const rows = data.map((r) => [
-    csvEscape(r.hrId), csvEscape(r.displayName), csvEscape(r.departmentName), csvEscape(r.lineName),
-    csvEscape(r.hireDate), csvEscape(r.daysSinceHire), csvEscape(r.sixMonthAnniversary),
-    csvEscape(eligibilityStatusLabel(r.eligibilityStatus)),
-    csvEscape(r.annualEntitlementDays), csvEscape(r.annualUsedDays), csvEscape(r.annualBalanceDays),
-    csvEscape(r.managerName), csvEscape(r.reviewFlags.join("; ")),
-  ].join(","));
-  downloadCsv(`entitlements-${new Date().toISOString().slice(0, 10)}.csv`, [header.join(","), ...rows].join("\n"));
+  const rows = data.map((r) => csvLine([
+    r.hrId, r.displayName, r.departmentName, r.lineName,
+    r.hireDate, r.daysSinceHire, r.sixMonthAnniversary,
+    eligibilityStatusLabel(r.eligibilityStatus),
+    r.annualEntitlementDays, r.annualUsedDays, r.annualBalanceDays,
+    r.managerName, r.reviewFlags.join("; "),
+  ]));
+  downloadCsv(`entitlements-${new Date().toISOString().slice(0, 10)}.csv`, [csvLine(header), ...rows].join("\n"));
 }
 
 function exportRequestsCSV(data: VacationRequestRecord[]) {
   const header = ["Request ID", "HR ID", "Employee", "Department", "Line", "Type", "Day Part", "Start", "End", "Duration", "Balance Before", "Balance After", "Status", "Payment", "Paid Days", "Unpaid Days", "Submitted", "Manager"];
-  const rows = data.map((r) => [
-    csvEscape(r.requestCode), csvEscape(r.employeeHrId), csvEscape(r.employeeName),
-    csvEscape(r.departmentName), csvEscape(r.lineName), csvEscape(vacationTypeLabel(r.vacationType)),
-    csvEscape(vacationDayPartLabel(r.dayPart)), csvEscape(r.startDate), csvEscape(r.endDate),
-    csvEscape(r.durationDays), csvEscape(r.balanceBeforeDays), csvEscape(r.balanceAfterDays),
-    csvEscape(statusLabel(r.status)), csvEscape(paymentStatusLabel(r.paymentStatus)),
-    csvEscape(r.paidDurationDays), csvEscape(r.unpaidDurationDays),
-    csvEscape(r.createdAt), csvEscape(r.managerName),
-  ].join(","));
-  downloadCsv(`vacation-requests-${new Date().toISOString().slice(0, 10)}.csv`, [header.join(","), ...rows].join("\n"));
+  const rows = data.map((r) => csvLine([
+    r.requestCode, r.employeeHrId, r.employeeName,
+    r.departmentName, r.lineName, vacationTypeLabel(r.vacationType),
+    vacationDayPartLabel(r.dayPart), r.startDate, r.endDate,
+    r.durationDays, r.balanceBeforeDays, r.balanceAfterDays,
+    statusLabel(r.status), paymentStatusLabel(r.paymentStatus),
+    r.paidDurationDays, r.unpaidDurationDays,
+    r.createdAt, r.managerName,
+  ]));
+  downloadCsv(`vacation-requests-${new Date().toISOString().slice(0, 10)}.csv`, [csvLine(header), ...rows].join("\n"));
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */

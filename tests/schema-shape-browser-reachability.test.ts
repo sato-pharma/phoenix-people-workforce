@@ -18,8 +18,10 @@ import {
 // count in that script green:
 //
 //   1. A PERMISSIVE `true` read policy. The policy exists, so `rls_enabled_without_policy` is
-//      quiet; it filters nothing, so the role reads every row. One is live right now:
-//      public.deductions_categories, readable by any logged-in user.
+//      quiet; it filters nothing, so the role reads every row. One was live until 2026-10-26:
+//      public.deductions_categories, readable by any logged-in user. It was allowlisted as a
+//      static lookup; 20261026120500 removed the policy and the grant, and the allowlist is now
+//      EMPTY, so the default reading below fires on it again.
 //
 //   2. A GRANTED VIEW THAT IS NOT `security_invoker`. It runs as its OWNER, so it reads past
 //      the RLS of every table beneath it and the grant on the view is the only gate. Eleven
@@ -37,7 +39,7 @@ import {
 // arrived — or one later altered with `reset (security_invoker)`, passes every one of them.
 //
 // Both detectors were fired against production before this test was written: the first by
-// emptying the allowlist, the second against a real throwaway view (`select 1 as x`, granted,
+// emptying the allowlist (its standing state since 2026-10-26), the second against a real throwaway view (`select 1 as x`, granted,
 // non-invoker) which was then dropped.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -69,8 +71,6 @@ function healthyShape(): SchemaShape {
       view("v_employee_portal_payslips", { anon: true, invoker: true }),
       view("v_payroll_eligible_employees", { anon: true, invoker: true }),
       view("v_employee_portal_sales", { anon: true, invoker: true }),
-      // The one live `true` policy — allowlisted with a reason, so it must NOT fire.
-      table("deductions_categories", { auth: true, policies: 1, openPolicy: "authenticated" }),
       // An ordinary authenticated-granted table behind a real policy.
       table("expense_claims", { auth: true, policies: 4 }),
     ],
@@ -119,7 +119,7 @@ export function runSchemaShapeBrowserReachabilityTests() {
   const healthy = codes(healthyShape());
   assert.ok(
     !healthy.includes("browser_readable_via_true_policy"),
-    `the allowlisted deductions_categories lookup must not fire; got ${healthy.join(", ")}`,
+    `a database with no open policy must not fire; got ${healthy.join(", ")}`,
   );
   assert.ok(
     !healthy.includes("granted_view_bypasses_rls"),
@@ -135,29 +135,61 @@ export function runSchemaShapeBrowserReachabilityTests() {
   assert.ok(openV, "a permissive `true` read policy on a new table must be an error");
   assert.equal(openV!.severity, "error");
   assert.match(openV!.message, /salary_records:authenticated/);
+
+  // 🔴 THE ALLOWLIST IS EMPTY (audit 2026-10-26, point 12). The table it used to excuse must fire
+  // again if its open policy ever comes back — with the default allowlist, no options passed.
+  const deductionsBack = healthyShape();
+  deductionsBack.browser_reachable!.push(
+    table("deductions_categories", { auth: true, policies: 1, openPolicy: "authenticated" }),
+  );
+  const backV = find(deductionsBack, "browser_readable_via_true_policy");
+  assert.ok(backV, "the open deductions_categories policy is no longer allowlisted and must fire");
+  assert.match(backV!.message, /deductions_categories:authenticated/);
+
+  // The allowlist's own behaviour, through an explicit list, so emptying the real one does not
+  // leave the per-role keying untested.
+  const allow = new Map([["static_lookup:authenticated", "test entry"]]);
+  const openWith = (s: SchemaShape) =>
+    evaluateSchemaShape(s, { truePolicyAllowed: allow }).find(
+      (v) => v.code === "browser_readable_via_true_policy",
+    );
+
+  const allowedBeside = healthyShape();
+  allowedBeside.browser_reachable!.push(
+    table("static_lookup", { auth: true, policies: 1, openPolicy: "authenticated" }),
+    table("salary_records", { auth: true, policies: 1, openPolicy: "authenticated" }),
+  );
+  const allowedV = openWith(allowedBeside);
+  assert.ok(allowedV, "an entry that is NOT on the list must still fire beside one that is");
   assert.ok(
-    !openV!.message.includes("deductions_categories"),
+    !allowedV!.message.includes("static_lookup"),
     "an allowlisted entry must be filtered out, not merely out-counted",
   );
+
+  const allowedAlone = healthyShape();
+  allowedAlone.browser_reachable!.push(
+    table("static_lookup", { auth: true, policies: 1, openPolicy: "authenticated" }),
+  );
+  assert.equal(openWith(allowedAlone), undefined, "an allowlisted pair on its own must not fire");
 
   // 🔴 Allowing a table for `authenticated` must NEVER also allow it for `anon`. The allowlist
   // is keyed per role for exactly this reason: anon is the PUBLIC key.
   const anonToo = healthyShape();
-  anonToo.browser_reachable = anonToo.browser_reachable!.map((r) =>
-    r.relname === "deductions_categories" ? { ...r, open_policy: "anon,authenticated" } : r,
+  anonToo.browser_reachable!.push(
+    table("static_lookup", { auth: true, policies: 1, openPolicy: "anon,authenticated" }),
   );
-  const anonV = find(anonToo, "browser_readable_via_true_policy");
+  const anonV = openWith(anonToo);
   assert.ok(anonV, "the same table opening to anon must fire even though authenticated is allowed");
-  assert.match(anonV!.message, /deductions_categories:anon/);
+  assert.match(anonV!.message, /static_lookup:anon/);
   assert.match(anonV!.message, /reach ANON/, "an anon-reachable open policy must be called out as such");
 
   // A PUBLIC policy reaches anon, so it can never be covered by an `authenticated` entry.
   const publicPolicy = healthyShape();
-  publicPolicy.browser_reachable = publicPolicy.browser_reachable!.map((r) =>
-    r.relname === "deductions_categories" ? { ...r, open_policy: "PUBLIC" } : r,
+  publicPolicy.browser_reachable!.push(
+    table("static_lookup", { auth: true, policies: 1, openPolicy: "PUBLIC" }),
   );
   assert.ok(
-    find(publicPolicy, "browser_readable_via_true_policy"),
+    openWith(publicPolicy),
     "a PUBLIC `true` policy reaches anon and must not be satisfied by the authenticated entry",
   );
 

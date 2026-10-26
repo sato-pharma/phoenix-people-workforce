@@ -328,7 +328,7 @@ export const ARABIC_FONT_STACK =
 export function printBanner(lines: string[]): string {
   const items = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
   return `<div class="print-banner no-print">
-    <button type="button" class="print-banner__action" onclick="window.print()">Print</button>
+    <button type="button" class="print-banner__action" id="phx-print">Print</button>
     <a class="print-banner__action print-banner__action--ghost" id="phx-pdf" hidden download>Download PDF</a>
     <ul class="print-banner__list">${items}</ul>
   </div>
@@ -354,6 +354,16 @@ export function printBanner(lines: string[]): string {
  */
 const DOWNLOAD_LINK_SCRIPT = `<script>
   (function () {
+    // The Print button is wired here, never with an inline onclick: a paper framed inside a page
+    // (the hand-typed paper) runs under the page policy, which blocks every inline event handler
+    // even when the script itself carries the page nonce.
+    var printButton = document.getElementById("phx-print");
+    if (printButton) {
+      printButton.addEventListener("click", function () {
+        window.print();
+      });
+    }
+
     // "clearanceEmployee-A-12.pdf". Built from the URL rather than the document's Arabic title:
     // Windows rejects a colon, which every uploaded company template carries in its custom:<uuid>
     // key, and a browser that cannot read the name falls back to the last path segment — which

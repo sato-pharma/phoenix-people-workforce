@@ -17,16 +17,18 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 import { Building2, Loader2, Printer, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
 import { PrintOptionsDialog, type PrintAnswer } from "@/components/hiring-pack/print-options-dialog";
+import { useCspNonce } from "@/components/security/csp-nonce-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { documentDefaultCopies } from "@/lib/hiring-pack/document-registry";
 import type { FormsDriveEntry } from "@/lib/hiring-pack/forms-drive";
 import { stampPaperReferenceInDocument } from "@/lib/hiring-pack/paper-reference";
 import { documentTakesAddressChoice, type PrintAddressChoice } from "@/lib/hiring-pack/print-address";
+import { withScriptNonce } from "@/lib/security/csp-nonce";
 
 /** One box, as the manual route describes it. Mirrors `ManualPaperInput` without importing a server module. */
 type ManualInput = {
@@ -75,6 +77,10 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
   const [copies, setCopies] = useState(() => String(documentDefaultCopies(entry.document)));
   const [inputs, setInputs] = useState<ManualInput[]>([]);
   const [html, setHtml] = useState<string | null>(null);
+  // The frame inherits the page policy, so the paper's own fitting script runs only with the page nonce
+  // (src/lib/security/csp-nonce.ts). The paper is rendered by our server from escaped values.
+  const nonce = useCspNonce();
+  const framedHtml = useMemo(() => withScriptNonce(html ?? "", nonce), [html, nonce]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawing, setDrawing] = useState(true);
@@ -349,7 +355,7 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
               className="block bg-white"
               onLoad={onFrameLoad}
               ref={frameRef}
-              srcDoc={html}
+              srcDoc={framedHtml}
               style={{
                 border: 0,
                 height: paperSize.height,

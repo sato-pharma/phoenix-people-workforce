@@ -754,7 +754,9 @@ import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedenc
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
 import {
   runAddressCorrectionQueueTests,
+  runReconcileQueuesItsFilesTests,
   runFinalizeRecoveryTests,
+  runImportTailRepairNoteTests,
   runMappingBackfillRebuildTests,
   runOldSalesUploadNumberTests,
   runPeriodLockReadTests,
@@ -1036,6 +1038,7 @@ import { runResignationsDashboardScopeTests } from "./resignations-dashboard-sco
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runResignationsHistoryExportTests } from "./resignations-history-export.test.ts";
 import { runResignationsTabExportFailureTests } from "./resignations-tab-export-failure.test.ts";
+import { runTableExportLimitsTests } from "./table-export-limits.test.ts";
 import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
 import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identity-release.test.ts";
 import { runProbationLegacyFeedbackRetiredTests } from "./probation-legacy-feedback-retired.test.ts";
@@ -1248,6 +1251,7 @@ import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
 import { runExcuseManagerGapTests } from "./excuse-manager-gap.test.ts";
 import { runExpenseAccessScopeTests } from "./expense-access-scope.test.ts";
+import { runRlsFallbackDoorTests } from "./rls-fallback-door.test.ts";
 import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-scope.test.ts";
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
@@ -1640,6 +1644,8 @@ import { runAutomatedPayrollNewHireWorkingDaysTotalTests } from "./automated-pay
 import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
 import { runMigrationExceptionStalenessTests } from "./migration-exception-staleness.test.ts";
 import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
+import { runMigrationSchemaRevokeRuleTests } from "./migration-schema-revoke-rule.test.ts";
+import { runCanSeeEmployeeBlankIdTests } from "./can-see-employee-blank-id.test.ts";
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
 import { runMigrationDriftCheckFlagsTests } from "./migration-drift-check-flags.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
@@ -2523,7 +2529,7 @@ import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.te
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
 import { runInterviewManagerShareTests } from "./interview-manager-share.test.ts";
-import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
+import { runWhatsAppApplicationCvCapTests, runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
@@ -2783,6 +2789,7 @@ import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
 import { runErrorScreenPictureFilterTests } from "./error-screenshot-picture-filter.test.ts";
 import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
+import { runMemoryRateBucketsTests } from "./memory-rate-buckets.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import {
@@ -2804,6 +2811,14 @@ import { runWeakPasswordBridgeTests } from "./weak-password-bridge.test.ts";
 import { runLoginSuccessAuditBeforeReplyTests } from "./login-success-audit-before-reply.test.ts";
 import { runFunctionBodiesNeedAWhereClauseTests } from "./function-bodies-need-a-where-clause.test.ts";
 import { runAdminResetModuleDataTests } from "./admin-reset-module-data.test.ts";
+import { runDevPreviewLoopbackGateTests } from "./dev-preview-loopback-gate.test.ts";
+import { runInternalMessageRecipientWorkEmailTests } from "./internal-message-recipient-work-email.test.ts";
+import { runIpBlocklistFailClosedTests } from "./ip-blocklist-fail-closed.test.ts";
+import { runCiSmokeLoginGateTests } from "./ci-smoke-login-gate.test.ts";
+import { runInterviewCalendarFeedHolderTests } from "./interview-calendar-feed-holder.test.ts";
+import { runDirectOrderShareLiveRateLimitTests } from "./direct-order-share-live-rate-limit.test.ts";
+import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test.ts";
+import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4461,7 +4476,9 @@ await runTest("monthly import period lock (an unreadable lock refuses with a 503
 await runTest("spreadsheet upload limits (the message is the limit enforced; a stored workbook gets the bucket's 20 MB)", runUploadLimitTests);
 await runTest("mapping save rebuilds through refreshBatchRollups and queues a file it could not rebuild", runMappingBackfillRebuildTests);
 await runTest("address corrections queue their files as each one lands", runAddressCorrectionQueueTests);
+await runTest("the history correction queues the files it moves in the same transaction", runReconcileQueuesItsFilesTests);
 await runTest("sales import finalize recovery (a finalize that committed after an error is treated as landed)", runFinalizeRecoveryTests);
+await runTest("sales import repair note (written before finalize, crossed off after the tail)", runImportTailRepairNoteTests);
 await runTest("closing publish refuses a stale city split and rebuilds it", runPublishSplitGateTests);
 await runTest("crm check-in reconcile guard (a check-in an overlapping sync wrote is never deleted)", runCrmCheckinReconcileGuardTests);
 await runTest("crm plan prune (guarded against an overlapping sync, every row recorded before delete)", runCrmPlanPruneArchiveTests);
@@ -5228,6 +5245,7 @@ await runTest("resignations dashboard scope (unscoped-read fix)", runResignation
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignations full-history export (every record regardless of tab or filter, names not ids, Cairo times, gated on resignations:export)", runResignationsHistoryExportTests);
 await runTest("resignations per-tab Export (busy while it runs, a failure is shown and reported, the HTTP status is named)", runResignationsTabExportFailureTests);
+await runTest("table export limits (10 a minute per person, 10 MB body refused before it is read, 20,000 rows, no permission gate)", runTableExportLimitsTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation CRM identity release (a leaver releases crm_id for their successor but KEEPS crm_username so their own trailing visits stay attributable)", runResignationCrmIdentityReleaseTests);
 await runTest("legacy probation feedback stays retired (its files, its identifiers, the dead cron tick — and the live per-DV-Day path that replaced it is still wired)", runProbationLegacyFeedbackRetiredTests);
@@ -5397,6 +5415,7 @@ await runTest("system cleanup center", runSystemCleanupCenterTests);
 await runTest("excuses", runExcusesTests);
 await runTest("excuse manager gap listing (stuck-approval detection + daily cron)", runExcuseManagerGapTests);
 await runTest("expense access scope (PM/GPM/TM self+reports)", runExpenseAccessScopeTests);
+await runTest("payroll and outstation reads go through one logged row-security door and re-narrow their rows (audit L10)", runRlsFallbackDoorTests);
 await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver adoption)", runSalesPayrollHierarchyScopeTests);
 await runTest("internal messages", runInternalMessagesTests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
@@ -6004,6 +6023,14 @@ await runTest(
   "grandfathered duplicate timestamps must still name a real duplicate (a dead exemption re-opens the "
   + "prefix and lies to every reader; three of four were already stale, and the fast check must fail on one)",
   runMigrationGrandfatherStalenessTests,
+);
+await runTest(
+  "a migration that creates a schema revokes it from anon and authenticated in the same file (check-migrations rule 6; the gap that left notification_backup_20261023 unrevoked, audit 2026-10-26)",
+  runMigrationSchemaRevokeRuleTests,
+);
+await runTest(
+  "current_access_can_see_employee never lets a caller with no HR id match a row with no HR id, and keeps its grant (audit 2026-10-26)",
+  runCanSeeEmployeeBlankIdTests,
 );
 await runTest(
   "acknowledged migration exceptions must still name a real migration (a dead entry silently excuses the "
@@ -10279,6 +10306,10 @@ await runTest(
   "WhatsApp Applicants gets Download application and Print application beside the CV download it already had: the sheet is every question the bot asked and every answer, in the bot's order, on ONE A4 page that shrinks its type to fit and never puts a CV-derived region in the bot's mouth; the route, the registry entry and the print page carry the list's own gate, and the raw chat store is never read",
   runWhatsAppApplicationPrintTests,
 );
+await runTest(
+  "the application PDF sizes a stranger's CV before pdf-lib, mammoth or sharp opens it: a file over the inbound intake's own 15 MB limit, or a CV past 50 pages, is left out and the sheet's footer says why, and the byte limit is the intake's knob, never a second number",
+  runWhatsAppApplicationCvCapTests,
+);
 
 await runTest(
   "the candidate page's Print record prints every section the page draws, in its order, except Where they stand (the owner's removal); nothing unpopulated prints; the salary and the questions HR itself added come before the five the bot always asks; the name is plain body ink; a stranger's name and notes are escaped; the sheet has no fill and no rounded corner; and the print page repeats the shell's gate read-only",
@@ -10321,7 +10352,7 @@ await runTest(
 );
 
 await runTest(
-  "a repeated dev-preview launch lands on the preview, never on a raw forbidden page: /api/dev-auth/preview answers a preview session asking for the very preview it is already in with that preview's landing page, minting nothing, and every other non-Super-Admin caller still gets the 403; the picker locks Launch after the first click (the 2026-09-21 double launch during a slow first compile)",
+  "a repeated dev-preview launch lands on the preview, never on a raw forbidden page: /api/dev-auth/preview answers a preview session asking for the very preview it is already in with that preview's landing page, minting nothing, and every other non-Super-Admin caller still gets the 403; the picker locks Launch after the first click (the 2026-09-21 double launch during a slow first compile); and the switch is a same-origin POST from a form, answered 303, with no GET a link or an <img> could fire (audit point 17)",
   runDevPreviewLaunchReplayTests,
 );
 
@@ -11021,6 +11052,10 @@ await runTest(
   runPublicIntakeLimitsTests,
 );
 await runTest(
+  "the in-process rate limits are bounded and never lock everybody out: a full map evicts the oldest window instead of refusing, the crash report and the WhatsApp connection count a caller in memory when the bucket store is down (every other caller has the store error thrown at it), and 5,000 rotating addresses no longer switch the page-timing beacon off",
+  runMemoryRateBucketsTests,
+);
+await runTest(
   "the crash-screenshot door is bounded and fails closed: 2 MB a body, a tighter rate than the text report, WebP sniffed from its own magic bytes so a PNG or an HTML page is refused, one object per error row partitioned by Cairo day, and a two-minute signed ticket that cannot be forged, re-aimed at another row, replayed late, or minted at all without a signing secret",
   runErrorScreenshotIntakeTests,
 );
@@ -11029,7 +11064,7 @@ await runTest(
   runErrorScreenPictureFilterTests,
 );
 await runTest(
-  "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, and a thread that cannot load its library falls back to the in-process reader",
+  "CV files from strangers are parsed in a worker thread with a heap ceiling and a deadline, a real PDF and a real .docx read to the identical text they gave in-process, a parse past either limit is refused as unreadable and never retried without one, a thread that cannot load its library is refused as a failed read, never parsed in-process without limits, and the scanned-CV OCR's page images come out of the same bounded thread",
   runCvTextIsolationTests,
 );
 await runTest(
@@ -11099,6 +11134,38 @@ await runTest(
 await runTest(
   "the admin Reset module data button actually deletes — every statement batch-scoped so safeupdate cannot abort it and a locked closing keeps its whole batch, all 27 tables declared to the confirmation card, the append-only request audit never a delete target, and the caller loops across passes and reports a partial reset honestly",
   runAdminResetModuleDataTests,
+);
+await runTest(
+  "the dev server listens on 127.0.0.1 only (PHOENIX_DEV_BIND_ALL=1 is the one opt-out) and the ONE dev-preview gate, shared by dev-auth, server.ts and the heartbeat, needs a loopback Host and every forwarded host and forwarded-for entry loopback, so a LAN caller sending Host: localhost is refused",
+  runDevPreviewLoopbackGateTests,
+);
+await runTest(
+  "an internal message typed to an email reaches the work-email owner and nobody rewrites their own sign-in email",
+  runInternalMessageRecipientWorkEmailTests,
+);
+await runTest(
+  "the IP blocklist fails closed at the password and both biometric sign-in doors: an unreadable blocklist answers 503 sign-in unavailable (never reported as a block), every other caller keeps fail-open",
+  runIpBlocklistFailClosedTests,
+);
+await runTest(
+  "The CI smoke login needs APP_ENV=ci AND its flag, and its session short-circuit covers the CI account only",
+  runCiSmokeLoginGateTests,
+);
+await runTest(
+  "the interview calendar's .ics feed serves nothing once its holder has left or lost their login (the unknown-token answer; a failed read answers 503 so the calendar app keeps its copy), and the feed route is rate-limited per address and per link before the token is looked up",
+  runInterviewCalendarFeedHolderTests,
+);
+await runTest(
+  "the public Direct Orders live link is rate-limited per address and per link before its passcode is read (429 with Retry-After), and a limiter that cannot reach its database fails closed with a 503",
+  runDirectOrderShareLiveRateLimitTests,
+);
+await runTest(
+  "brevo webhook takes its secret from Authorization: Bearer; a ?token= alone is refused, and a leftover ?token= beside a valid Bearer is logged during the cut-over",
+  runBrevoWebhookBearerAuthTests,
+);
+await runTest(
+  "the public surface answers less and costs less: /api/readyz reads one id instead of an exact count and reuses a successful workflow-registry audit for a minute (never a failed one), /api/health/email tells an anonymous caller only its status, and no response carries X-Powered-By",
+  runPublicSurfaceHardeningTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

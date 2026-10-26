@@ -739,3 +739,92 @@ export function runWhatsAppApplicationPrintTests() {
   runPrintCssTests();
   runGateTests();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. THE CV IS SIZED BEFORE ANYTHING OPENS IT (audit, 2026-10-26, point 34). The application PDF opens a
+//    stranger's CV with pdf-lib, mammoth and sharp inside the web process. A file over the inbound intake's
+//    own byte limit, or a PDF past MAX_APPLICATION_CV_PAGES, is left out — the sheet is still made, and its
+//    footer says why — and the byte limit is the intake's knob, never a second number.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function pdfWithPages(count: number, useObjectStreams: boolean): Promise<Uint8Array> {
+  const { PDFDocument } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  for (let index = 0; index < count; index++) doc.addPage([595, 842]);
+  return doc.save({ useObjectStreams });
+}
+
+export async function runWhatsAppApplicationCvCapTests() {
+  const builder = await import("../src/lib/recruitment/whatsapp-application-pdf.ts");
+  const { maxInboundCvBytes } = await import("../src/lib/recruitment/inbound/cv-intake-service.ts");
+  const { MAX_APPLICATION_CV_PAGES, countPlainPdfPageObjects, cvRefusedBeforeOpening, pdfCv } = builder;
+  const limit = maxInboundCvBytes();
+  assert.equal(limit, 15 * 1024 * 1024, "the byte limit is the inbound intake's 15 MB");
+  assert.equal(MAX_APPLICATION_CV_PAGES, 50, "an application prints at most 50 CV pages");
+
+  // Over the byte limit: left out before pdf-lib, mammoth or sharp — whatever kind of file it is.
+  const kinds: Array<[string, string]> = [
+    ["application/pdf", "cv.pdf"],
+    ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "cv.docx"],
+    ["image/jpeg", "cv.jpg"],
+  ];
+  for (const [mimeType, fileName] of kinds) {
+    const over = cvRefusedBeforeOpening({ bytes: new Uint8Array(limit + 1), fileName, mimeType });
+    assert.ok(over && over.startsWith("CV not included: the file is 15 MB, over the 15 MB a CV may be."), `a ${fileName} one byte over the limit is left out, and the footer says so (${over})`);
+    assert.equal(cvRefusedBeforeOpening({ bytes: new Uint8Array(limit), fileName: fileName.replace(".pdf", ".jpg"), mimeType: mimeType === "application/pdf" ? "image/jpeg" : mimeType }), null, `a ${fileName} exactly at the limit may be opened`);
+  }
+
+  // The limit is the intake's own knob: move it and the application moves with it.
+  const saved = process.env.RECRUITMENT_INBOUND_CV_MAX_BYTES;
+  try {
+    process.env.RECRUITMENT_INBOUND_CV_MAX_BYTES = "1000";
+    assert.ok(cvRefusedBeforeOpening({ bytes: new Uint8Array(1001), fileName: "cv.jpg", mimeType: "image/jpeg" }), "RECRUITMENT_INBOUND_CV_MAX_BYTES moves the application's limit too");
+    assert.equal(cvRefusedBeforeOpening({ bytes: new Uint8Array(1000), fileName: "cv.jpg", mimeType: "image/jpeg" }), null);
+  } finally {
+    if (saved === undefined) delete process.env.RECRUITMENT_INBOUND_CV_MAX_BYTES;
+    else process.env.RECRUITMENT_INBOUND_CV_MAX_BYTES = saved;
+  }
+
+  // A PDF whose page objects are written in the open is counted before pdf-lib opens it.
+  const plainOver = await pdfWithPages(MAX_APPLICATION_CV_PAGES + 1, false);
+  assert.equal(countPlainPdfPageObjects(plainOver), MAX_APPLICATION_CV_PAGES + 1, "every /Type /Page is counted, and the /Pages tree is not");
+  assert.equal(
+    cvRefusedBeforeOpening({ bytes: plainOver, fileName: "cv.pdf", mimeType: "application/pdf" }),
+    "CV not included: it has 51 pages, more than the 50 an application prints. Open it from the candidate's page.",
+    "a 51-page PDF is left out before pdf-lib opens it",
+  );
+  const plainAtCap = await pdfWithPages(MAX_APPLICATION_CV_PAGES, false);
+  assert.equal(cvRefusedBeforeOpening({ bytes: plainAtCap, fileName: "cv.pdf", mimeType: "application/pdf" }), null, "a 50-page PDF may be opened");
+  const atCap = await pdfCv(plainAtCap);
+  assert.equal(atCap.pdf?.getPageCount(), 50, "and all 50 of its pages are carried, untouched");
+  assert.equal(atCap.line, "CV: PDF, 50 pages, exactly as sent.");
+
+  // A PDF that keeps its pages in compressed object streams counts low on the raw bytes — so pdf-lib's own
+  // count stops it before a single page is copied.
+  const hiddenOver = await pdfWithPages(MAX_APPLICATION_CV_PAGES + 1, true);
+  assert.ok(countPlainPdfPageObjects(hiddenOver) < MAX_APPLICATION_CV_PAGES, "the fixture really hides its page objects from the raw count");
+  assert.equal(cvRefusedBeforeOpening({ bytes: hiddenOver, fileName: "cv.pdf", mimeType: "application/pdf" }), null);
+  const hidden = await pdfCv(hiddenOver);
+  // assert.ok, not assert.equal: a failing strict equal prints a diff of the whole PDFDocument graph.
+  assert.ok(hidden.pdf === null, "a 51-page PDF hidden in object streams carries no pages, got " + hidden.pdf?.getPageCount());
+  assert.equal(hidden.line, "CV not included: it has 51 pages, more than the 50 an application prints. Open it from the candidate's page.");
+
+  // An ordinary CV is untouched by all of this.
+  const ordinary = await pdfWithPages(2, true);
+  assert.equal(cvRefusedBeforeOpening({ bytes: ordinary, fileName: "cv.pdf", mimeType: "application/pdf" }), null);
+  assert.equal((await pdfCv(ordinary)).line, "CV: PDF, 2 pages, exactly as sent.");
+
+  // The gate runs FIRST in cvPart — before the switch hands the bytes to pdf-lib, mammoth or sharp — and
+  // the Word branch counts Chromium's pages before it hands any back.
+  const source = stripComments(read("src/lib/recruitment/whatsapp-application-pdf.ts"));
+  const cvPartBody = source.slice(source.indexOf("async function cvPart("), source.indexOf("export type BuiltApplicationPdf"));
+  const gateAt = cvPartBody.indexOf("cvRefusedBeforeOpening(cv)");
+  assert.ok(gateAt > 0 && gateAt < cvPartBody.indexOf("switch (detectCvFileKind("), "cvPart refuses an oversized CV before the switch opens it");
+  const wordBody = source.slice(source.indexOf("async function wordCv("), source.indexOf("async function cvPart("));
+  assert.ok(
+    wordBody.indexOf("doc.getPageCount() > MAX_APPLICATION_CV_PAGES") > wordBody.indexOf("PDFDocument.load(drawn)") &&
+      wordBody.indexOf("doc.getPageCount() > MAX_APPLICATION_CV_PAGES") < wordBody.indexOf("pdf: doc"),
+    "a Word CV is counted once Chromium has drawn it, before its pages are handed back",
+  );
+  assert.ok(!/15\s*\*\s*1024\s*\*\s*1024/.test(source) && source.includes("maxInboundCvBytes()"), "the byte limit is read from maxInboundCvBytes(), never written a second time");
+}

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import Script from "next/script";
 
+import { useCspNonce } from "@/components/security/csp-nonce-provider";
 import { detectDeviceType, onesignalAppId, withOneSignal } from "@/lib/notifications/onesignal-client";
 
 function reportSubscriptionState(optedIn: boolean, subscriptionId: string | null) {
@@ -34,6 +35,8 @@ function reportSubscriptionState(optedIn: boolean, subscriptionId: string | null
 export function OneSignalProvider() {
   const appId = onesignalAppId();
   const initialized = useRef(false);
+  // The page policy runs a script tag only with this request's nonce (src/lib/security/content-security-policy.ts).
+  const nonce = useCspNonce();
 
   useEffect(() => {
     if (!appId || initialized.current) return;
@@ -80,5 +83,5 @@ export function OneSignalProvider() {
 
   if (!appId) return null;
 
-  return <Script defer id="onesignal-sdk" src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" strategy="afterInteractive" />;
+  return <Script defer id="onesignal-sdk" nonce={nonce} src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" strategy="afterInteractive" />;
 }

@@ -39,6 +39,10 @@ export async function POST(request: Request) {
     await assertApiRateLimit({
       identifier: rateLimitIdentity({ request }),
       limit: CLIENT_ERROR_RATE_LIMIT,
+      // A crash report must not depend on the database being up — but it must not go unlimited while
+      // the database is down either (audit, 2026-10-26, point 22). When the bucket store cannot be
+      // read, this address is counted in this process instead, in a bounded map.
+      onStoreError: "memory",
       scope: "client_error_report",
       windowMs: CLIENT_ERROR_RATE_WINDOW_MS,
     });
@@ -49,9 +53,11 @@ export async function POST(request: Request) {
         { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
       );
     }
-    // The limiter itself could not be read (the database is down). A crash report must not depend on
-    // it, and the insert below meets the same outage and is caught there.
-    console.error("Error-report rate limit unavailable:", error);
+    // With onStoreError "memory" a store outage never reaches here, so this is the limiter failing in
+    // a way nothing anticipated. Refused, as the screenshot route beside this one is: an unchecked
+    // limit is not a pass.
+    console.error("Error-report rate limit failed:", error);
+    return NextResponse.json({ ok: false, error: "rate_limit_unavailable" }, { status: 503 });
   }
 
   // Handed back ONLY when a row was really written, and it names that row and nothing else — never

@@ -69,7 +69,10 @@ async function runDailyNotifications(request: Request) {
 
   function onJobFailure<T>(job: string, fallback: (message: string) => T): (error: unknown) => T {
     return (error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
+      // The run summary and the cron response carry the REDACTED message: a database or network
+      // error's raw text is a map of the inside. The real error is logged on the next line, so the
+      // redaction itself is not reported a second time ({ report: false }).
+      const message = clientSafeErrorMessage(error, `${job} failed.`, { report: false });
       failures.push({ job, message });
       logError(`Daily cron sub-job failed: ${job}`, { labels: { event: "cron_failed", job }, error });
       return fallback(message);
@@ -487,8 +490,9 @@ export async function GET(request: Request) {
     // A total dispatcher crash never reaches the per-run ping inside runDailyNotifications above,
     // so it needs its own — this is the single most important case for the external monitor to
     // catch (nothing about this run's outcome would otherwise leave the app at all).
-    await pingDeadMansSwitch("phoenix-notify-daily", "fail", error instanceof Error ? error.message : String(error));
+    // The external monitor gets the same redacted text as the response; the real error is in the log above.
     const message = clientSafeErrorMessage(error, "Daily notification run failed.");
+    await pingDeadMansSwitch("phoenix-notify-daily", "fail", message);
     return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
   }
 }

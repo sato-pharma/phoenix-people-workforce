@@ -2,7 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
-import { ilikeContainsValue, ilikeExactValue, quotedOrClause } from "@/lib/supabase/search-filter";
+import { ilikeContainsValue, ilikeExactValue, quotedOrClause, searchableTerm } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type AuthUserRow = {
@@ -156,17 +156,87 @@ async function loadEmployeeByHrId(hrId: string | null | undefined) {
   return (data as EmployeeContactRow | null) ?? null;
 }
 
-async function loadEmployeeByEmail(email: string) {
-  if (!isEmail(email)) return null;
+/**
+ * The ONE employee a typed work email names, or why there is none. Exact (case-insensitive) match
+ * only — `_` is still a one-character wildcard inside `ilike`, so the rows are filtered again here.
+ * Two current employees sharing one work email is answered "ambiguous", never a coin toss.
+ */
+export function pickWorkEmailEmployee(
+  rows: ReadonlyArray<EmployeeContactRow>,
+  email: string,
+): { kind: "one"; employee: EmployeeContactRow } | { kind: "ambiguous" } | { kind: "none" } {
+  const wanted = lower(email);
+  const byHrId = new Map<string, EmployeeContactRow>();
+  for (const row of rows) {
+    const hrId = normalizeHrId(row.hr_id);
+    if (hrId && lower(row.work_email) === wanted && !byHrId.has(hrId)) byHrId.set(hrId, row);
+  }
+  if (byHrId.size === 0) return { kind: "none" };
+  if (byHrId.size > 1) return { kind: "ambiguous" };
+  return { kind: "one", employee: [...byHrId.values()][0] };
+}
+
+/**
+ * The ONE sign-in a recipient value names, the same one on every call (audit point 3, 2026-10-26).
+ * An exact login id wins outright; otherwise the rows holding the HR id, an active login first,
+ * then the lowest login id. It replaces `.limit(1)` with no order, which let Postgres choose.
+ */
+export function pickInternalRecipientUser(
+  rows: ReadonlyArray<AuthUserRow>,
+  match: { hrId?: string | null; loginId?: string | null },
+): AuthUserRow | null {
+  const wantedLogin = lower(match.loginId);
+  if (wantedLogin) {
+    const exact = rows.find((row) => lower(row.login_id) === wantedLogin);
+    if (exact) return exact;
+  }
+  const wantedHrId = normalizeHrId(match.hrId);
+  if (!wantedHrId) return null;
+  const holders = rows
+    .filter((row) => normalizeHrId(row.hr_id) === wantedHrId)
+    .sort((a, b) => {
+      const active = Number(b.is_active === true) - Number(a.is_active === true);
+      return active !== 0 ? active : lower(a.login_id).localeCompare(lower(b.login_id), "en");
+    });
+  return holders[0] ?? null;
+}
+
+/**
+ * A recipient typed as an email is found by the employee record's WORK email and nothing else.
+ * `app_auth_users.email` / `auth_email` are never matched: until 2026-10-26 anyone could set their
+ * own `auth_email` to a colleague's address on the profile screen, and a message typed to that
+ * colleague then landed in the impostor's inbox (`limit(1)` over `email` OR `auth_email`).
+ */
+async function loadEmployeeByWorkEmail(email: string) {
+  const term = isEmail(email) ? searchableTerm(email) : null;
+  if (!term) return { kind: "none" } as const;
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id,full_name,work_email")
-    .ilike("work_email", email)
-    .maybeSingle();
+    .ilike("work_email", term)
+    // Current employees only, as in searchInternalMessageRecipients below.
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
+    .order("hr_id", { ascending: true })
+    .limit(10);
 
   if (error) throw error;
-  return (data as EmployeeContactRow | null) ?? null;
+  return pickWorkEmailEmployee((data ?? []) as EmployeeContactRow[], email);
+}
+
+async function loadAuthUsersForHrId(hrId: string | null | undefined) {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return null;
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("login_id,hr_id,name,email,auth_email,role,is_active")
+    .eq("hr_id", normalized.toUpperCase())
+    .order("login_id", { ascending: true })
+    .limit(20);
+
+  if (error) throw error;
+  return pickInternalRecipientUser((data ?? []) as AuthUserRow[], { hrId: normalized });
 }
 
 async function loadAuthUserByAccess(access: AccessContext) {
@@ -224,39 +294,34 @@ async function resolveRecipient(value: string): Promise<InternalRecipientView> {
   const normalizedHrId = normalizeHrId(query);
   const email = lower(query);
 
-  // Every value below is quoted, as in searchInternalMessageRecipients (audit F-02).
-  const quotedEmail = ilikeExactValue(email);
-  if (isEmail(email) && quotedEmail) {
-    const [{ data: userData, error: userError }, employee] = await Promise.all([
-      supabase
-        .from("app_auth_users")
-        .select("login_id,hr_id,name,email,auth_email,role,is_active")
-        .or(`email.ilike.${quotedEmail},auth_email.ilike.${quotedEmail}`)
-        .limit(1)
-        .maybeSingle(),
-      loadEmployeeByEmail(email),
-    ]);
-
-    if (userError) throw userError;
-    const recipient = mapRecipient((userData as AuthUserRow | null) ?? null, employee);
-    if (recipient) return recipient;
+  // A typed email is the employee's WORK email — never a sign-in's own email or auth_email.
+  if (isEmail(email)) {
+    const byWorkEmail = await loadEmployeeByWorkEmail(email);
+    if (byWorkEmail.kind === "ambiguous") {
+      throw new Error("That work email belongs to more than one employee. Use their HR ID instead.");
+    }
+    if (byWorkEmail.kind === "one") {
+      const recipient = mapRecipient(await loadAuthUsersForHrId(byWorkEmail.employee.hr_id), byWorkEmail.employee);
+      if (recipient) return recipient;
+    }
   }
 
+  // Every value below is quoted, as in searchInternalMessageRecipients (audit F-02).
   const quotedLogin = ilikeExactValue(query);
   const quotedHrId = ilikeExactValue(normalizedHrId || query);
   if (!quotedLogin || !quotedHrId) {
     throw new Error("Recipient was not found. Use a Phoenix login ID, HR ID, or work email.");
   }
-  const { data: userData, error: userError } = await supabase
+  const { data: userRows, error: userError } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,name,email,auth_email,role,is_active")
     .or(`login_id.ilike.${quotedLogin},hr_id.ilike.${quotedHrId}`)
-    .limit(1)
-    .maybeSingle();
+    .order("login_id", { ascending: true })
+    .limit(20);
 
   if (userError) throw userError;
 
-  const user = (userData as AuthUserRow | null) ?? null;
+  const user = pickInternalRecipientUser((userRows ?? []) as AuthUserRow[], { hrId: normalizedHrId, loginId: query });
   const employee = await loadEmployeeByHrId(user?.hr_id ?? normalizedHrId);
   const recipient = mapRecipient(user, employee);
 

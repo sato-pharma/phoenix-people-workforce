@@ -19,10 +19,14 @@ import { NextResponse } from "next/server";
  * It lives in its own module on purpose: `dev-preview.ts` is pulled in by `src/lib/auth/server.ts`
  * and therefore by most of the app, and `next/server` does not belong in that graph. The two route
  * handlers that call this already import `next/server` themselves.
+ *
+ * `status` is 307 for a GET hop (`/api/dev-auth`), and 303 from the preview switch, which is a POST
+ * (audit point 17, 2026-10-26): a 307 would replay the POST onto the next hop, and only a 303 turns
+ * the browser's next request into a plain GET.
  */
-export function devRelativeRedirect(target: URL) {
+export function devRelativeRedirect(target: URL, status: 303 | 307 = 307) {
   return new NextResponse(null, {
     headers: { Location: `${target.pathname}${target.search}` },
-    status: 307,
+    status,
   });
 }

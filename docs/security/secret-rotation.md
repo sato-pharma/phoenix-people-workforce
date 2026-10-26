@@ -28,6 +28,13 @@ The value lives in **two** places. Rotating one alone guarantees an outage.
      guard is an in-process lock, not a DB lock — see AGENTS.md §3.)
    - Other secrets have their own second half — a webhook registered with Resend/Brevo, the
      attendance agent's config, and so on.
+   - `BREVO_WEBHOOK_SECRET`: the second half is the transactional webhook registered in Brevo,
+     whose authentication must be a **Bearer token** (the `auth: { type: "bearer", token }` field of
+     Brevo's webhook API) set to the new value, on a URL with no `?token=` on it. Since 2026-10-26
+     (audit point 20) the route reads the secret from `Authorization: Bearer` ONLY: a webhook URL
+     that still ends in `?token=…` is refused with 401 even when its Bearer token is right, and the
+     old `x-brevo-token` header is ignored. The refusal is logged as `webhook_token_invalid` with
+     `reason` = `secret_in_url`, `bearer_missing` or `bearer_mismatch` (never the token itself).
 
 ## Sequence (Railway)
 

@@ -51,17 +51,27 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
     }
 
-    const body = await request.json() as { name?: string; email?: string };
-    const updates: Record<string, string> = {};
+    // The display NAME is the only field a person changes here (audit point 3, 2026-10-26). The
+    // sign-in email is not theirs to set: until this fix any signed-in user could write a colleague's
+    // address into their own `auth_email`, and internal messages typed to that address were
+    // delivered to them. A sent `email` is ignored; the sign-in email is managed from the users screen.
+    const body = await request.json() as { name?: unknown };
+    const updates: { name?: string } = {};
     if (typeof body.name === "string" && body.name.trim()) {
       updates.name = body.name.trim();
     }
-    if (typeof body.email === "string" && body.email.trim()) {
-      updates.auth_email = body.email.trim();
-    }
 
     if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ message: "No valid fields to update." }, { status: 400 });
+      // A blank name is the common case here; the email wording is only for a caller that sent one.
+      const sentEmail = Object.prototype.hasOwnProperty.call(body, "email");
+      return NextResponse.json(
+        {
+          message: sentEmail && body.name === undefined
+            ? "Only the display name can be changed here. Ask HR to change your sign-in email."
+            : "Enter a display name.",
+        },
+        { status: 400 },
+      );
     }
 
     const supabase = getSupabaseAdmin();

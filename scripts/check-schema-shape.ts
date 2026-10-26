@@ -70,16 +70,13 @@ const EXPOSED_WITHOUT_RLS_ALLOWED = new Set<string>([]);
 // Here RLS is ON and a policy EXISTS, so every count in this script reads green while the role
 // named can select every row. An entry is justified only when the contents are genuinely public
 // to that audience — a static lookup, never a person, an amount or a date.
-const TRUE_POLICY_ALLOWED = new Map<string, string>([
-  [
-    "deductions_categories:authenticated",
-    // 7 static rows: category, label, detection_engine, requires_approval,
-    // salary_records_column, sort_order. It is the vocabulary the deductions UI renders —
-    // no employee, no amount, no month. An employee already sees these labels on their own
-    // payslip. Checked against production 2026-09-29.
-    "static 7-row lookup of deduction category names; no person, no amount",
-  ],
-]);
+//
+// 🔴 EMPTY since 2026-10-26. Its one entry, `deductions_categories:authenticated`, was removed with
+// the policy itself (20261026120500_deductions_categories_is_server_only.sql): no app code read the
+// table, and the same grant handed every signed-in browser INSERT, UPDATE, DELETE and TRUNCATE on it.
+// A `true` policy anywhere now fails this check again. The fix for a new one is to narrow the policy
+// or revoke the grant, not to add a name here.
+const TRUE_POLICY_ALLOWED: ReadonlyMap<string, string> = new Map<string, string>([]);
 
 // Views/matviews a browser role may hold SELECT on WITHOUT `security_invoker`.
 //
@@ -294,7 +291,11 @@ export type Violation = { severity: "error" | "warning"; code: string; message: 
  * Pure assertion logic, separated from I/O so it can be tested against the real
  * numbers from both 2026-07-31 faults without touching a database.
  */
-export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
+export function evaluateSchemaShape(
+  shape: SchemaShape,
+  options: { truePolicyAllowed?: ReadonlyMap<string, string> } = {},
+): Violation[] {
+  const truePolicyAllowed = options.truePolicyAllowed ?? TRUE_POLICY_ALLOWED;
   const v: Violation[] = [];
 
   // --- The security invariant -------------------------------------------------
@@ -676,7 +677,7 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
       for (const role of r.open_policy.split(",")) {
         const key = `${r.relname}:${role}`;
         // A PUBLIC policy reaches anon too, so it is never covered by an `authenticated` entry.
-        if (!TRUE_POLICY_ALLOWED.has(key)) openToRole.push(key);
+        if (!truePolicyAllowed.has(key)) openToRole.push(key);
       }
     }
     if (openToRole.length > 0) {

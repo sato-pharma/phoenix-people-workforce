@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestIp } from "@/lib/auth/audit";
-import { isIpBlocked } from "@/lib/auth/ip-blocklist";
+import { readIpBlock } from "@/lib/auth/ip-blocklist";
 import { buildAuthenticationOptions, resolveRelyingParty } from "@/lib/auth/webauthn";
 import {
   assertApiRateLimit,
@@ -46,7 +46,16 @@ export async function POST(request: Request) {
     }
 
     // Same generic response as the rate limit above, so a blocked IP learns nothing about why.
-    if (await isIpBlocked(getRequestIp(request))) {
+    // Fail-closed, as at the password door: an unreadable blocklist refuses the sign-in (point 15),
+    // as "temporarily unavailable" — it is an outage, not a block (risk review, 26 Oct).
+    const blocklist = await readIpBlock(getRequestIp(request));
+    if (blocklist === "unreadable") {
+      return NextResponse.json(
+        { error: "sign_in_unavailable", message: "Sign-in is temporarily unavailable. Please try again in a few minutes." },
+        { status: 503 },
+      );
+    }
+    if (blocklist === "blocked") {
       return NextResponse.json(
         { error: "rate_limited", message: "Too many sign-in attempts. Please try again later." },
         { status: 429 },

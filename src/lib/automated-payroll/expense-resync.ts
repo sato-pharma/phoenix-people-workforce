@@ -3,6 +3,7 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 
 import { clearDraftExpenses, findActiveRun, listStepStates, upsertStepState } from "./draft-store.ts";
+import { maybeDrainPayrollResyncOutbox, queuePayrollResyncRetry } from "./resync-outbox.ts";
 import { holdRun } from "./run-hold.ts";
 import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
@@ -67,7 +68,14 @@ export type ExpenseResyncOutcome =
       reopenedStep: boolean;
     }
   | { action: "skip"; month: number; year: number; reason: ExpenseResyncSkipReason }
-  | { action: "failed"; month: number; year: number; message: string };
+  | {
+      action: "failed";
+      month: number;
+      year: number;
+      message: string;
+      /** Parked in the resync outbox and retried under the hold (resync-outbox.ts). */
+      queued?: boolean;
+    };
 
 /** Currency comparison tolerance — the figure round-trips through a number input and rounding. */
 const AMOUNT_EPSILON = 0.005;
@@ -192,8 +200,14 @@ export function planExpenseResync(run: MonthlySalaryRun | null): { ok: boolean; 
  */
 export async function resyncPayrollExpenseStep(
   target: ExpenseResyncTarget,
+  /**
+   * `fromOutbox`: this IS the queued retry, so a failure must not park a second copy of it.
+   * `queueRetry`: a test passes one that records the parked resync instead of writing it.
+   */
+  options: { fromOutbox?: boolean; queueRetry?: typeof queuePayrollResyncRetry } = {},
 ): Promise<ExpenseResyncOutcome[]> {
   if (target.byPeriod.length === 0) return [];
+  const queueRetry = options.queueRetry ?? queuePayrollResyncRetry;
 
   const outcomes: ExpenseResyncOutcome[] = [];
   for (const period of target.byPeriod) {
@@ -224,15 +238,15 @@ export async function resyncPayrollExpenseStep(
       // Under the run's hold (audit 2026-10-23, S-PAY-06): a Part 2 confirm landing between the check
       // above and these writes used to have the clear arrive after its stamp. The hold re-checks the
       // phase as it is taken; a run that reached `ready` meanwhile is reported as the skip below.
+      // A wait that runs out is refused too — never cleared unheld (audit 2026-10-26, P2-02) — and the
+      // catch below parks this period in the outbox, which retries it under the hold.
       let held: { clearedHrIds: string[]; reopenedStep: boolean };
       try {
         held = await holdRun({
             runId: run.id,
             expected: ["part1", "part2"],
             action: RUN_HOLD_ACTIONS.expenseResync,
-            // A decision that has been saved must still reach payroll: wait briefly, then go ahead.
             waitMs: 5_000,
-            whenWaitRunsOut: "proceed",
           }, async () => {
           const clearedHrIds = await clearDraftExpenses(run.id, period.hrIds);
 
@@ -269,6 +283,8 @@ export async function resyncPayrollExpenseStep(
         continue;
       }
       const { clearedHrIds, reopenedStep } = held;
+      // The run's hold was free just now, which is the best moment for a resync parked earlier.
+      if (!options.fromOutbox) maybeDrainPayrollResyncOutbox();
 
       outcomes.push({
         action: "resync",
@@ -280,15 +296,31 @@ export async function resyncPayrollExpenseStep(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      // Parked with ONLY this period and its own people, so the retry clears nothing the save did not move.
+      const queued = options.fromOutbox
+        ? false
+        : await queueRetry(
+            {
+              kind: "expense",
+              target: {
+                hrIds: period.hrIds,
+                periods: [{ month: period.month, year: period.year }],
+                byPeriod: [period],
+              },
+            },
+            error,
+          ).catch(() => false);
       logError("Automated payroll: expense step resync failed", {
         labels: {
           event: "automated_payroll_expense_resync_failed",
           month: period.month,
           year: period.year,
+          queued,
+          retry: Boolean(options.fromOutbox),
         },
         error,
       });
-      outcomes.push({ action: "failed", month: period.month, year: period.year, message });
+      outcomes.push({ action: "failed", month: period.month, year: period.year, message, queued });
     }
   }
   return outcomes;
@@ -307,6 +339,11 @@ export function describeExpenseResyncNotApplied(outcomes: ExpenseResyncOutcome[]
       lines.push(
         `Payroll for ${month} already has Part 2 confirmed, so this decision did not reach it. ` +
           "Reopen Part 2 in Automated Payroll for the change to apply.",
+      );
+    } else if (outcome.action === "failed" && outcome.queued) {
+      lines.push(
+        `Payroll for ${month} was busy, so this decision is queued and will reach it automatically ` +
+          "within a few minutes; until it does, the payroll run shows it as waiting. The decision itself is saved.",
       );
     } else if (outcome.action === "failed") {
       lines.push(`Payroll for ${month} could not be updated with this decision. The decision itself is saved.`);

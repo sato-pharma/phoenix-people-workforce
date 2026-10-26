@@ -432,7 +432,7 @@ jobs:
           # Identical to `localhost` on GitHub's runners, where it resolves to 127.0.0.1 anyway.
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
           # This test logs in as the hardcoded CI_SMOKE_LOGIN_ID account ("a-12", see
-          # app/api/auth/login/route.ts). PHOENIX_CI_SMOKE_LOGIN mode deliberately skips
+          # src/lib/auth/ci-smoke-login.ts). PHOENIX_CI_SMOKE_LOGIN mode deliberately skips
           # creating an app_sessions row, but SessionSecurityGuard still mounts for real on
           # the landed page and heartbeats that orphaned session — which correctly logs a
           # "Session rejected: app session not found" audit row wherever these Supabase
@@ -446,6 +446,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
+          # 🔴 BOTH lines switch the smoke login on, and neither works alone: isCiSmokeLoginEnabled()
+          # (src/lib/auth/ci-smoke-login.ts) needs APP_ENV to be exactly "ci" AND the flag. No real
+          # deployment carries APP_ENV=ci, so a stray PHOENIX_CI_SMOKE_LOGIN can never open the
+          # published a-12 password there. Side effect, intended: isProductionRuntime() is false for
+          # this run, so the production-only heartbeats, drift checks and Sentry stay off.
+          APP_ENV: ci
           PHOENIX_CI_SMOKE_LOGIN: "true"
 
       # Best-effort: feed the /admin/synthetic-journeys dashboard from CI. This runs

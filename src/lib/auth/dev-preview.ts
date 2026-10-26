@@ -41,31 +41,66 @@ export function devPreviewCookieMaxAgeSeconds() {
   return devPreviewSessionSeconds;
 }
 
+/**
+ * True for a loopback NAME or ADDRESS only: `localhost`, anything in 127.0.0.0/8, `::1`, and an
+ * IPv4-mapped loopback such as `::ffff:127.0.0.1`. Never a LAN address, never a public name.
+ */
 function isLoopbackHostname(hostname: string | null | undefined) {
-  const normalized = hostname?.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
-  return normalized === "localhost" || hostname === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+  const normalized = hostname?.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "") ?? "";
+  if (normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1") return true;
+  const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
+  return /^127(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(ipv4);
 }
 
-function hostnameFromHeader(value: string | null) {
-  const first = value?.split(",")[0]?.trim();
-  if (!first) return null;
-  const withoutPort = first.startsWith("[")
-    ? first.slice(1, first.indexOf("]"))
-    : first.split(":")[0];
-  return withoutPort || null;
+/** The host part of one `host` / `x-forwarded-host` / `x-forwarded-for` entry, without its port. */
+function hostnameFromEntry(entry: string) {
+  const value = entry.trim();
+  if (!value) return null;
+  if (value.startsWith("[")) {
+    const close = value.indexOf("]");
+    return close > 0 ? value.slice(1, close) : null;
+  }
+  // Two or more colons is a bare IPv6 address (`::1`, `::ffff:127.0.0.1`), which carries no port.
+  const colons = value.split(":").length - 1;
+  return colons === 1 ? value.split(":")[0] || null : value;
 }
 
-/** True only for a request hitting a loopback hostname while NODE_ENV=development — the same gate `/api/dev-auth` uses to stay unreachable outside local dev. Shared here so every dev-preview entry point (the bootstrap route and the Super-Admin "preview as role" picker) enforces the identical rule. */
+/**
+ * The dev-preview gate, read from the request HEADERS alone (owner-approved audit fix, 2026-10-26).
+ *
+ * Every condition must hold:
+ *   - `host` is present and loopback;
+ *   - `x-forwarded-host`, when present, is loopback in EVERY comma-separated entry;
+ *   - `x-forwarded-for`, when present, is loopback in EVERY comma-separated entry.
+ *
+ * Why it changed: the old gate accepted when ANY ONE of the URL host, `host` or `x-forwarded-host`
+ * was loopback, so a request from the LAN with `Host: localhost` passed, and so did a forged
+ * forwarded host. Next fills an ABSENT `x-forwarded-for` with the socket's real remote address
+ * (next/dist/server/base-server.js), so a LAN caller is refused here even when it sends no header.
+ * The URL is never read: Next builds it from the same Host header, so it adds nothing but a second
+ * way to be fooled. The real wall is `scripts/dev-server.mjs` binding 127.0.0.1; this is the check
+ * behind it (DNS rebinding cannot set either header).
+ */
+export function isLoopbackDevRequestHeaders(headers: Pick<Headers, "get">) {
+  const host = headers.get("host");
+  if (!host || !isLoopbackHostname(hostnameFromEntry(host.split(",")[0] ?? ""))) return false;
+
+  for (const name of ["x-forwarded-host", "x-forwarded-for"]) {
+    const value = headers.get(name);
+    if (value === null) continue;
+    const entries = value.split(",");
+    if (entries.some((entry) => !isLoopbackHostname(hostnameFromEntry(entry)))) return false;
+  }
+  return true;
+}
+
+/** True only for a loopback request (see `isLoopbackDevRequestHeaders`) while NODE_ENV=development — the same gate `/api/dev-auth` uses to stay unreachable outside local dev. Shared here so every dev-preview entry point (the bootstrap route, the Super-Admin "preview as role" picker, the heartbeat and `src/lib/auth/server.ts`) enforces the identical rule. */
 export function isLocalDevelopmentRequest(request: Request) {
   if (process.env.NODE_ENV !== "development") {
     return false;
   }
 
-  const hostname = new URL(request.url).hostname.toLowerCase();
-  const hostHeader = hostnameFromHeader(request.headers.get("host"));
-  const forwardedHost = hostnameFromHeader(request.headers.get("x-forwarded-host"));
-
-  return [hostname, hostHeader, forwardedHost].some(isLoopbackHostname);
+  return isLoopbackDevRequestHeaders(request.headers);
 }
 
 /** One person, however the HR id is written: `pd-0014`, `PD-0014` and `PD0014` share a key. */

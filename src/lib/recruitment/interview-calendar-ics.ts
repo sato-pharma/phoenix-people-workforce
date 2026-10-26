@@ -6,12 +6,17 @@
 //
 // The feed is reached by a bearer token, because a calendar app cannot sign in to Phoenix. The token
 // resolves to one hr id and the feed carries ONLY that person's own interviews — never anyone
-// else's. An unknown or retired token returns a valid EMPTY calendar, never an error, so a stale
-// subscription just goes quiet instead of breaking the person's calendar app.
+// else's, and only while that person may still sign in (isCalendarFeedHolderActive). An unknown or
+// retired token, or a token whose holder has left or lost their login, returns a valid EMPTY
+// calendar, never an error, so a stale subscription just goes quiet instead of breaking the app.
+// A read that FAILS is different: it throws CalendarFeedUnavailableError and the route answers 503,
+// so the calendar app keeps the copy it has instead of wiping every interview on a database blip.
 
 import { randomBytes } from "node:crypto";
 
+import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import {
   isSignedInCaller,
@@ -57,17 +62,109 @@ export async function getOrCreateMyCalendarFeedToken(caller: InterviewCalendarCa
   return inserted.data.token as string;
 }
 
-/** The .ics text for a feed token: that person's interviews from a month back to six months on. */
+/**
+ * A read the feed depends on failed — the token, its holder or the interviews. The route answers it
+ * with a 503: it serves nothing (fail closed), and unlike an empty calendar it does not tell the
+ * subscriber's calendar app that every interview was cancelled (risk review, 26 Oct).
+ */
+export class CalendarFeedUnavailableError extends Error {
+  constructor(what: string) {
+    super(`The interview calendar feed could not read ${what}.`);
+    this.name = "CalendarFeedUnavailableError";
+  }
+}
+
+/**
+ * The .ics text for a feed token: that person's interviews from a month back to six months on —
+ * served only while that person may still sign in to Phoenix (isCalendarFeedHolderActive). Throws
+ * CalendarFeedUnavailableError when a read fails, so a blip is never mistaken for "no interviews".
+ */
 export async function buildCalendarFeedForToken(token: string, now: Date = new Date()): Promise<string> {
   const hrId = await hrIdForFeedToken(token);
-  const interviews = hrId ? await listInterviewsForCalendarFeed(hrId, new Date(now.getTime() - 30 * DAY_MS), new Date(now.getTime() + 180 * DAY_MS)) : [];
+  const servable = hrId ? await feedHolderIsActive(hrId, now) : false;
+  let interviews: FeedInterview[] = [];
+  if (hrId && servable) {
+    try {
+      interviews = await listInterviewsForCalendarFeed(hrId, new Date(now.getTime() - 30 * DAY_MS), new Date(now.getTime() + 180 * DAY_MS));
+    } catch {
+      throw new CalendarFeedUnavailableError("the interviews");
+    }
+  }
   return renderCalendarFeed(interviews, now);
+}
+
+/**
+ * Whether the person a feed token belongs to may still be served their interviews (audit point 18,
+ * owner-approved 2026-10-26).
+ *
+ * A token used to outlive its holder: it is minted once and kept, so after someone was offboarded or
+ * their login was disabled, the calendar app they had subscribed kept pulling candidate names, Zoom
+ * links and notes indefinitely. Now the feed follows the same two facts a Phoenix session follows:
+ *   - an ACTIVE login for that hr id (`app_auth_users.is_active`) — the immediate kill switch;
+ *   - an employee record that does not revoke access (`isEmploymentAccessRevoked`, the session's own
+ *     rule, so a departure filed for a future last working day keeps the notice period working).
+ * No employee row at all is allowed when the login is active, exactly as a session allows it.
+ *
+ * A holder who fails either gets EXACTLY what an unknown token gets — a valid empty calendar — so the
+ * answer says nothing about whether the token was ever real, and the subscriber's calendar app drops
+ * the interviews it had synced instead of keeping its last copy (which a 404 would leave in place).
+ */
+export function isCalendarFeedHolderActive(input: {
+  hasActiveLogin: boolean;
+  employmentStatus: string | null | undefined;
+  lastWorkingDate?: string | null;
+  todayCairo: string;
+}): boolean {
+  if (!input.hasActiveLogin) return false;
+  return !isEmploymentAccessRevoked({
+    employmentStatus: input.employmentStatus,
+    lastWorkingDate: input.lastWorkingDate ?? null,
+    todayCairo: input.todayCairo,
+  });
+}
+
+/**
+ * Reads both facts for the holder. A failed read throws CalendarFeedUnavailableError: no feed when it
+ * cannot tell, and a 503 rather than the empty calendar, which would wipe the subscriber's copy. Only a
+ * real token reaches this read, so during an outage a 503 here does tell a real token from a guessed
+ * one; the caller cannot cause the outage, and the limits still bound the guessing.
+ */
+async function feedHolderIsActive(hrId: string, now: Date): Promise<boolean> {
+  // Matched case-insensitively, with the LIKE wildcards escaped, so the token row's stored form of
+  // the id finds the login and the employee whatever case they were written in.
+  const hrPattern = hrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`);
+  if (!hrPattern) return false;
+  let facts;
+  try {
+    const db = recruitmentDb();
+    facts = await Promise.all([
+      db.from("app_auth_users").select("login_id").ilike("hr_id", hrPattern).eq("is_active", true).limit(1),
+      db.from("employees").select("employment_status, last_working_date").ilike("hr_id", hrPattern).limit(1).maybeSingle(),
+    ]);
+  } catch {
+    throw new CalendarFeedUnavailableError("its holder");
+  }
+  const [login, employee] = facts;
+  if (login.error || employee.error) throw new CalendarFeedUnavailableError("its holder");
+  const row = employee.data as { employment_status?: string | null; last_working_date?: string | null } | null;
+  return isCalendarFeedHolderActive({
+    employmentStatus: row?.employment_status ?? null,
+    hasActiveLogin: (login.data ?? []).length > 0,
+    lastWorkingDate: row?.last_working_date ?? null,
+    todayCairo: currentCairoDateOnlyIso(now),
+  });
 }
 
 async function hrIdForFeedToken(token: string): Promise<string | null> {
   if (!token || token.length < 32 || token.length > 128) return null;
-  const { data } = await recruitmentDb().from(TOKENS).select("hr_id").eq("token", token).maybeSingle();
-  const hrId = data?.hr_id;
+  let lookup;
+  try {
+    lookup = await recruitmentDb().from(TOKENS).select("hr_id").eq("token", token).maybeSingle();
+  } catch {
+    throw new CalendarFeedUnavailableError("the token");
+  }
+  if (lookup.error) throw new CalendarFeedUnavailableError("the token");
+  const hrId = lookup.data?.hr_id;
   return typeof hrId === "string" && hrId.trim() ? hrId : null;
 }
 

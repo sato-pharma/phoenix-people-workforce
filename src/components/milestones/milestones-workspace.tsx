@@ -22,6 +22,7 @@ import {
   type PlainDate,
 } from "@/lib/milestones/periods";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import { documentScriptNonce, withScriptNonce } from "@/lib/security/csp-nonce";
 import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry } from "@/lib/milestones/service";
 import {
   phxFieldClassName,
@@ -807,7 +808,9 @@ export function MilestonesWorkspace({
         throw new Error(payload?.error ?? "The preview could not be built.");
       }
       const html = await response.text();
-      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      // A blob: document inherits the page policy, so the card's layout script runs only with the nonce
+      // this page was served with (src/lib/security/csp-nonce.ts). The card is our own escaped render.
+      const url = URL.createObjectURL(new Blob([withScriptNonce(html, documentScriptNonce())], { type: "text/html" }));
       // The pane may be showing a landscape group picture; put it back to the card's own sheet.
       setPreviewSheet({ w: SHEET_W, h: SHEET_H });
       setPreviewUrl((current) => {
@@ -1040,7 +1043,8 @@ export function MilestonesWorkspace({
         throw new Error(payload?.error ?? "The preview could not be built.");
       }
       const html = await response.text();
-      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      // As above: the group picture's layout script needs the page nonce.
+      const url = URL.createObjectURL(new Blob([withScriptNonce(html, documentScriptNonce())], { type: "text/html" }));
       setPreviewSheet({ w: GROUP_SHEET_W, h: GROUP_SHEET_H });
       setPreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);

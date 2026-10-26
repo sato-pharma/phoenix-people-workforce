@@ -8,6 +8,7 @@ import { AUDIT_ENTITY_TYPES } from "@/lib/admin/audit-entity-types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -113,10 +114,12 @@ export function AuditLogViewer({
       log.actorRole ?? "",
       log.entityType ?? "",
       log.entityId ?? "",
-      (log.summary ?? "").replace(/,/g, ";"),
+      log.summary ?? "",
       log.requestIp ?? "",
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+    // Every cell through the shared guard: an audit summary carries text people typed (names, notes),
+    // and a cell that opens with = + - @ would run as a formula in the sheet a Super Admin opens.
+    const csv = CSV_BOM + [headers, ...rows].map((r) => csvLine(r)).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

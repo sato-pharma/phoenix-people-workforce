@@ -45,7 +45,8 @@ unchanged across the cutover. No secret values appear in this document._
 1. **Confirm scope:** `https://phoenix-hr.satopharma.com/api/healthz` (liveness — 200 plus
    `revision`, the running commit SHA) and `/api/readyz` (readiness — `{database:true, env:true}`
    plus a `warnings: []` array for non-fatal notification-config drift; HTTP 503 when a required
-   dependency isn't ready). For email specifically: `/api/health/email` → 200 `healthy`.
+   dependency isn't ready). For email specifically: `/api/health/email` → 200 `healthy` (anonymously only
+   `{status, timestamp}`; the full report needs the `CRON_SECRET` bearer or a Super Admin session).
 2. **Check alerts:** 🔴 **there is no alerting layer any more.** All five GCP Cloud Monitoring
    policies (5xx rate, p95 latency, uptime, scheduler failure, auth-failure spike, config drift) died
    with the GCP shutdown and nothing has replaced them; Sentry was separately retired 2026-07-31.

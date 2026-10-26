@@ -76,13 +76,37 @@ export async function runCvContentFingerprintTests() {
   //    after. If a later edit moves the lookup below the call, the feature still "works" in a unit
   //    test and still creates a duplicate in production.
   const intakeSource = readSource("src/lib/recruitment/inbound/cv-intake-service.ts");
-  const lookupAt = intakeSource.indexOf("findCandidateIdByContentFingerprint(");
+  const lookupAt = intakeSource.indexOf("await findContentFingerprintOwner(");
   const createAt = intakeSource.indexOf("await createCandidate(");
   assert.ok(lookupAt > 0, "the intake must consult the CV fingerprint");
   assert.ok(createAt > 0, "the intake must still be able to create a candidate");
   assert.ok(
     lookupAt < createAt,
     "the fingerprint lookup must run BEFORE createCandidate — after it, the duplicate record already exists",
+  );
+
+  // 7b. And BEFORE the paid CV read (audit 2026-10-26, point 5). The lookup used to sit below the
+  //     read, so a byte-identical CV that was going to be matched to its owner anyway paid for a
+  //     whole AI read first. The read is skipped exactly when the identical bytes are already filed
+  //     as a CV — anything else filed under those bytes was never judged as a CV and is still read.
+  const readAt = intakeSource.indexOf("await extractCvFieldsFromBytes(");
+  assert.ok(readAt > 0, "the intake must still read a CV it does not already hold");
+  assert.ok(
+    lookupAt < readAt,
+    "the fingerprint lookup must run BEFORE extractCvFieldsFromBytes — after it, a duplicate CV has already paid for a read",
+  );
+  const guardAt = intakeSource.lastIndexOf("if (!sameCvAlreadyFiledAsCv) {", readAt);
+  assert.ok(
+    guardAt > lookupAt && intakeSource.slice(guardAt, readAt).split("\n").length <= 4,
+    "the CV read must be guarded by the same-CV result, directly — otherwise the earlier lookup saves nothing",
+  );
+  assert.ok(
+    /sameCvAlreadyFiledAsCv = sameCvCandidate !== null && owner\?\.kind === "cv";/.test(intakeSource),
+    "only bytes already filed as a CV may skip the read — an ID scan with the same bytes was never judged as a CV",
+  );
+  assert.ok(
+    /findCandidateIdByContentFingerprint\([\s\S]{0,160}\)\s*:\s*Promise<string \| null> \{\s*return \(await findContentFingerprintOwner\(/.test(filesSource),
+    "findCandidateIdByContentFingerprint must stay a thin wrapper over findContentFingerprintOwner, so the two can never answer differently",
   );
 
   // 8. The reason has to survive the round trip through match_reason, which is a free-text column
