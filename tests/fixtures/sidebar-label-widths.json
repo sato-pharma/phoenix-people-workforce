@@ -293,6 +293,7 @@
     "Probation": 57,
     "ROI Dashboard": 86,
     "ROI Tracker": 66,
+    "Rep Achievement": 102,
     "Report It": 50,
     "Reports Dashboard": 108,
     "Reps List": 50,
@@ -320,6 +321,7 @@
   "bottom-bar": {
     "360": 18,
     "Absence": 40,
+    "Achieve": 38,
     "All": 13,
     "Analytics": 43,
     "Approvals": 48,

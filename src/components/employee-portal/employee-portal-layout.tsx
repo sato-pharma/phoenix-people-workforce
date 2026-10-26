@@ -434,6 +434,7 @@ function buildEmployeePortalSections({
         ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
         ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
         ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/rep-achievement", label: "Rep Achievement", icon: Trophy }] : []),
         // Her Phoenix CRM weekly plan (owner, 2026-10-24: "she doesnt have a phx crm from where does she
         // make the plan"). She holds no territory, so the Phoenix CRM row never shows for her; the Plan
         // module page itself opens for her planner kind, and this is its door.

@@ -639,6 +639,7 @@ import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldActivityReportTests } from "./field-activity-report.test.ts";
 import { runFieldActivityPhoenixLagTests } from "./field-activity-phoenix-lag.test.ts";
 import { runFieldAbsenceCalendarTests } from "./field-absence-calendar.test.ts";
+import { runRepProductAchievementTests } from "./rep-product-achievement.test.ts";
 import { runVisitCountGoldenRuleTests } from "./visit-count-golden-rule.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
@@ -11124,6 +11125,10 @@ await runTest(
 await runTest(
   "the Field Absence Calendar lists a field person on a working day only when no source recorded anything — Friday, a Saturday off for an RSM or NSM, a holiday and a future day list nobody, Thursday is a half day, today is so far, a joiner, a leaver and a transfer are judged only on their own seat days, a fingerprint punch counts, an unreadable source lists nobody, and only the owner's four roles reach it, an NSM on his own line alone",
   runFieldAbsenceCalendarTests,
+);
+await runTest(
+  "Rep Achievement by Product reads each rep's published achievement per product in her order — Jul, Aug, Sep, Q3, Oct, Nov, Dec, Q4, S2 — a quarter and the semester summed and divided once, never averaged, an unpublished month reads Not published and never 0%, a product with no target reads No target, products added by value and never by units, the line, product, manager, status and search filters, a cell with no percentage sinking in both sort directions, the locked workbook storing ratios with a percent format, and only the Training Manager and the Super Admin reaching it",
+  runRepProductAchievementTests,
 );
 await runTest(
   "deleting a candidate removes the bytes behind their files from the recruitment bucket through the Storage API after the record delete succeeds — the paths are read before the cascade, a path a surviving row still names is kept, an unconfirmed one is never deleted, a storage failure is logged and never raised, and the comments and manager shelves go with the filings while a merge moves files and drops none",

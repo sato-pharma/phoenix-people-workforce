@@ -68,6 +68,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   deductions: "Deductions",
   direct_orders: "Direct Orders",
   double_visit_analytics: "Double Visit Analytics",
+  rep_product_achievement: "Rep Achievement by Product",
   early_birds: "Early Birds",
   field_absence: "Field Absence Calendar",
   employee_documents: "Employee Documents",

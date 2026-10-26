@@ -1718,6 +1718,8 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
+      // Every rep's published achievement % per product — month, quarter, semester (owner, 2026-10-26).
+      { href: "/employee-portals/training-manager/rep-achievement", icon: Trophy, label: "Rep Achievement", permissions: [{ resource: "rep_product_achievement", action: "read" }], roles: ["Training Manager"] },
       // Her Phoenix CRM weekly plan (owner, 2026-10-24) — the Plan module page, from her own section.
       { href: "/employee-portals/field-crm/plan", icon: CalendarRange, label: "Weekly Plan", permissions: [{ resource: "phoenix_crm", action: "read" }], roles: ["Training Manager"] },
       { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "My Coaching Reports", permissions: [{ resource: "coaching" }], roles: ["Medical Rep"] },
