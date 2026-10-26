@@ -9,6 +9,10 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
+import {
+  formatVacancyDate,
+  formatVacancyLabel,
+} from "@/lib/employees/vacancy-display";
 import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
@@ -31,16 +35,6 @@ const printStyles = `
 function normalizeFilter(value: string | undefined) {
   const normalized = String(value ?? "").trim();
   return normalized || "";
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "N/A";
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(date);
 }
 
 function statusStyle(status: string) {
@@ -80,24 +74,6 @@ function titleCaseWords(value: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
-}
-
-function formatVacancyCode(code: string) {
-  const parts = String(code).trim().split("_").filter(Boolean);
-  if (parts.length === 0) return { label: code, meta: "" };
-
-  const numberMatch = code.match(/vacancy_(?:vac_)?(\d+)/i);
-  const label = numberMatch ? `VAC-${numberMatch[1].padStart(3, "0")}` : code;
-
-  const detailParts = parts.slice(numberMatch ? 2 : 1).map((part) => {
-    if (/^\d+$/.test(part)) return `#${part}`;
-    return titleCaseWords(part.replace(/-/g, " "));
-  });
-
-  return {
-    label,
-    meta: detailParts.join(" · "),
-  };
 }
 
 /* ---------- stat card border map ---------- */
@@ -150,6 +126,13 @@ export default async function EmployeePortalVacanciesPage({
   // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
   // the master but does not add to it, and POST /api/employees asserts create on every add.
   const canAddEmployee = await canAccess(access, "employees", "create");
+
+  // `note` is the vacancy ENGINE's own journal — raw HR codes, ISO dates and wording written for
+  // whoever maintains the organogram, never for the manager reading this page (owner, 2026-10-26).
+  // Managers read `reason` instead; the journal is shown only to the seats holding
+  // `vacancies:create`, which is exactly Super Admin and the HR offboarding function — every other
+  // role holds `read` (or `read,export`) alone.
+  const canSeeVacancyJournal = await canAccess(access, "vacancies", "create");
 
   const isNsm = data.roleView === "nsm";
   const params = await searchParams;
@@ -234,11 +217,11 @@ export default async function EmployeePortalVacanciesPage({
       >
         {/* ── Filters Card ── */}
         <Card
-          className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none"
+          className="rounded-none border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none"
           data-no-print
         >
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
+            <span className="inline-flex border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
               Filters
             </span>
             <span className="text-phx-xs font-medium text-slate-400">
@@ -297,13 +280,13 @@ export default async function EmployeePortalVacanciesPage({
 
             <div className="flex items-end gap-2">
               <button
-                className="rounded-md bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600"
+                className="bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600"
                 type="submit"
               >
                 Apply
               </button>
               <a
-                className="inline-flex items-center rounded-md border border-gray-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                className="inline-flex items-center border border-gray-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                 href="/employee-portals/vacancies"
               >
                 Reset
@@ -313,7 +296,7 @@ export default async function EmployeePortalVacanciesPage({
         </Card>
 
         {/* ── Stat Cards ── */}
-        <Card className="rounded-lg border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none">
+        <Card className="rounded-none border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none">
           <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 lg:grid-cols-4">
             {stats.map((stat) => (
               <div
@@ -336,7 +319,7 @@ export default async function EmployeePortalVacanciesPage({
 
         {/* ── Vacancy Table or Empty State ── */}
         {filteredVacancies.length === 0 ? (
-          <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
+          <Card className="rounded-none border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
             <p className="text-base font-semibold text-slate-700">
               No matching vacancies
             </p>
@@ -345,7 +328,7 @@ export default async function EmployeePortalVacanciesPage({
             </p>
           </Card>
         ) : (
-          <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none">
+          <Card className="overflow-hidden rounded-none border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none">
             <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
               <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 Open Positions
@@ -403,9 +386,6 @@ export default async function EmployeePortalVacanciesPage({
                 </thead>
                 <tbody>
                   {filteredVacancies.map((vacancy) => {
-                    const formattedCode = formatVacancyCode(
-                      vacancy.vacancyCode,
-                    );
                     const style = statusStyle(vacancy.status);
                     return (
                       <tr
@@ -415,20 +395,14 @@ export default async function EmployeePortalVacanciesPage({
                         {/* `break-words` because a vacancy code is one unbroken token — the one
                             kind of content a fixed column cannot wrap on its own. */}
                         <td className="border-r border-slate-100 px-3 py-3 break-words sm:px-4">
+                          {/* The code ONCE (owner, 2026-10-26). It used to print the label and
+                              then the same code again underneath — either as the raw string or
+                              exploded into dot-separated words. */}
                           <p className="font-semibold text-slate-900">
-                            {formattedCode.label}
+                            {formatVacancyLabel(vacancy.vacancyCode)}
                           </p>
-                          {formattedCode.meta ? (
-                            <p className="mt-0.5 text-phx-xs text-slate-400">
-                              {formattedCode.meta}
-                            </p>
-                          ) : (
-                            <p className="mt-0.5 text-phx-xs text-slate-400">
-                              {vacancy.vacancyCode}
-                            </p>
-                          )}
                           {vacancy.lineName ? (
-                            <span className="mt-1 inline-block rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                            <span className="mt-1 inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                               {vacancy.lineName}
                             </span>
                           ) : null}
@@ -439,13 +413,18 @@ export default async function EmployeePortalVacanciesPage({
                               vacancy.jobTitle ??
                               "Unspecified Position"}
                           </p>
-                          {vacancy.note ? (
-                            <p className="mt-0.5 text-phx-xs text-slate-400">
+                          {vacancy.reason ? (
+                            <p className="mt-0.5 text-phx-xs text-slate-500">
+                              {vacancy.reason}
+                            </p>
+                          ) : null}
+                          {canSeeVacancyJournal && vacancy.note ? (
+                            <p className="mt-0.5 text-phx-2xs text-slate-400">
                               {vacancy.note}
                             </p>
                           ) : null}
                           {vacancy.isDistrictManagerVacancy ? (
-                            <span className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
+                            <span className="mt-1 inline-block border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
                               DSM Vacancy
                             </span>
                           ) : null}
@@ -469,7 +448,7 @@ export default async function EmployeePortalVacanciesPage({
                             the comment above the table warns about. */}
                         <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                           <span
-                            className={`inline-block rounded border ${style.border} ${style.bg} px-2 py-0.5 text-phx-xs font-semibold ${style.text}`}
+                            className={`inline-block border ${style.border} ${style.bg} px-2 py-0.5 text-phx-xs font-semibold ${style.text}`}
                           >
                             {titleCaseWords(vacancy.status)}
                           </span>
@@ -483,7 +462,7 @@ export default async function EmployeePortalVacanciesPage({
                           ) : null}
                         </td>
                         <td className="px-3 py-3 text-slate-500 sm:px-4">
-                          {formatDate(vacancy.createdAt)}
+                          {formatVacancyDate(vacancy.createdAt)}
                         </td>
                       </tr>
                     );
@@ -495,7 +474,6 @@ export default async function EmployeePortalVacanciesPage({
             {/* Mobile Card View */}
             <div className="divide-y divide-gray-100 md:hidden">
               {filteredVacancies.map((vacancy) => {
-                const formattedCode = formatVacancyCode(vacancy.vacancyCode);
                 const style = statusStyle(vacancy.status);
                 return (
                   <div
@@ -505,7 +483,7 @@ export default async function EmployeePortalVacanciesPage({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">
-                          {formattedCode.label}
+                          {formatVacancyLabel(vacancy.vacancyCode)}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-600">
                           {vacancy.positionTitle ??
@@ -514,7 +492,7 @@ export default async function EmployeePortalVacanciesPage({
                         </p>
                       </div>
                       <span
-                        className={`shrink-0 rounded border ${style.border} ${style.bg} px-2 py-0.5 text-phx-2xs font-semibold ${style.text}`}
+                        className={`shrink-0 border ${style.border} ${style.bg} px-2 py-0.5 text-phx-2xs font-semibold ${style.text}`}
                       >
                         {titleCaseWords(vacancy.status)}
                       </span>
@@ -522,22 +500,22 @@ export default async function EmployeePortalVacanciesPage({
 
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {vacancy.areaName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.areaName}
                         </span>
                       ) : null}
                       {vacancy.regionName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.regionName}
                         </span>
                       ) : null}
                       {vacancy.lineName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.lineName}
                         </span>
                       ) : null}
                       {vacancy.isDistrictManagerVacancy ? (
-                        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
+                        <span className="border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
                           DSM
                         </span>
                       ) : null}
@@ -549,11 +527,17 @@ export default async function EmployeePortalVacanciesPage({
                           vacancy.managerHrId ??
                           "Unassigned"}
                       </span>
-                      <span>{formatDate(vacancy.createdAt)}</span>
+                      <span>{formatVacancyDate(vacancy.createdAt)}</span>
                     </div>
 
-                    {vacancy.note ? (
-                      <p className="mt-1.5 text-phx-xs text-slate-400">
+                    {vacancy.reason ? (
+                      <p className="mt-1.5 text-phx-xs text-slate-500">
+                        {vacancy.reason}
+                      </p>
+                    ) : null}
+
+                    {canSeeVacancyJournal && vacancy.note ? (
+                      <p className="mt-1 text-phx-2xs text-slate-400">
                         {vacancy.note}
                       </p>
                     ) : null}
