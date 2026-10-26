@@ -1817,6 +1817,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // with_senior half-days before. A rolled-back staging test answered nsm=t, tm=manager_plan_bad_kind and a
   // product manager without a district bad_input. Pinned by tests/phoenix-crm-manager-plan.test.ts.
   "20261025020000_phoenix_crm_manager_plan_double_visit_partners.sql",
+
+  // DEDUCTIONS CATEGORIES IS SERVER-ONLY (audit 2026-10-26, point 12) — applied 26 Oct 2026 ~10:28 Cairo on
+  // PRODUCTION through scripts/apply-sql-file.mjs, the standing route of AGENTS.md §8: the production
+  // Supabase MCP's apply_migration answered {"status":"declined"} twice, the second right after the owner
+  // chose "Apply it now". Production (ozucdzovmcqvepbozvqf) returned {"applied":true,"count":0} and holds NO
+  // ledger row for 20261026120500, hence this entry rather than a ledger write; staging (cifwmndunmlxjhyjugxa)
+  // carries its own row, 20261026120500 deductions_categories_is_server_only, recorded by the MCP.
+  //
+  // The file defines no function, so there is no prosrc digest to compare; the evidence is the end state it
+  // asserts, read live on BOTH projects after the apply, identical on each: anon and authenticated hold none
+  // of SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER on public.deductions_categories;
+  // pg_policies for the table = 0 (production read 1 — the using(true) deductions_categories_authenticated_
+  // select — and authenticated SELECT = true just before); relrowsecurity true; service_role holds all seven.
+  // No row is written: production holds 10 categories after. Pinned by tests/schema-shape-browser-
+  // reachability.test.ts (the open-policy allowlist in scripts/check-schema-shape.ts is empty).
+  "20261026120500_deductions_categories_is_server_only.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
