@@ -157,9 +157,9 @@ export function activePeriodsOf(rows: AchievementRow[], publishedKeys: ReadonlyS
 /**
  * The bound one viewer's performance rows are cut to. The vs-target bound, with one narrowing: a
  * Regional Manager reads these pages ONLY through his seat's areas (owner, 2026-10-20, when MRs and
- * DSMs Performance opened to him). An RM whose seat did not resolve falls through
- * resolveVsTargetBound to his whole LINE — the National Sales Manager's view — so that case fails
- * CLOSED here, the same rule getRmRegionalPerformance keeps for his landing page.
+ * DSMs Performance opened to him). resolveVsTargetBound already answers "none" for an RM whose seat
+ * did not resolve (2026-10-26); this keeps any other non-area bound closed too, the same rule
+ * getRmRegionalPerformance keeps for his landing page.
  */
 export function performanceBoundFor(role: AccessContext["role"], bound: VsTargetBound): VsTargetBound {
   if (role === "Regional Manager" && bound.kind !== "areas") return { kind: "none" };

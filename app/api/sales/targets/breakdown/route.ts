@@ -19,8 +19,9 @@ export const dynamic = "force-dynamic";
 //
 // `area` is caller-supplied, so the permission relaxation MUST be paired with an area-scope check:
 // without assertTargetsAreaInScope, any District Manager could enumerate every other area's
-// distributor/brick/customer detail simply by editing the query string. Company-scope roles pass
-// straight through. The four WRITE/authoring routes beside this one stay on `sales:import`.
+// distributor/brick/customer detail simply by editing the query string. The LINE is checked with the
+// area, because an area code repeats across lines (CA1 is CNS and Pedia) and `line` is passed straight
+// to the reads below. Company-scope roles pass straight through. The four WRITE/authoring routes beside this one stay on `sales:import`.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     if (!period || !line || !area) {
       return NextResponse.json({ success: false, error: "period, line and area are required." }, { status: 400 });
     }
-    await assertTargetsAreaInScope(access, area);
+    await assertTargetsAreaInScope(access, area, line);
 
     const [rows, trend] = await Promise.all([
       loadSourceBreakdownDetail(period, line, area, product ?? ""),

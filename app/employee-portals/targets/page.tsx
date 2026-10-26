@@ -32,6 +32,7 @@ import {
   isPortalRepTargetsRole,
   isPortalTargetsRole,
   resolvePortalTargetsBound,
+  TARGETS_TERRITORY_UNRESOLVED_MESSAGE,
 } from "@/lib/sales/portal-targets";
 import { loadRepTargets } from "@/lib/sales/rep-targets";
 
@@ -128,6 +129,9 @@ export default async function PortalTargetsPage({
       loadEmployeeNameMap(),
     ]);
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
+    // A District / Regional Manager whose organogram seat gave no areas gets an empty bound (no rows),
+    // never his whole line — and the page says why in words instead of showing a blank grid.
+    if (bound.territoryUnresolved) error = TARGETS_TERRITORY_UNRESOLVED_MESSAGE;
 
     // Restrict the line switcher to the viewer's own line(s). `bound.lineCodes` carries the SALES_LINES
     // codes the viewer is scoped to (a single line for District / Regional / National Sales Manager);

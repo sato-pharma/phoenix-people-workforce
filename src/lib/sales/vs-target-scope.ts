@@ -24,8 +24,8 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSalesScope } from "@/lib/auth/permissions";
-import { resolveSalesAccessScope, resolveSalesGeographyBound } from "@/lib/sales/access-scope";
-import { salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
+import { resolveSalesAccessScope, resolveSalesGeographyBound, type SalesAccessScope } from "@/lib/sales/access-scope";
+import { isAreaBoundSalesScope, salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import type { BrickSalesRow } from "@/lib/sales/vs-target";
 
@@ -74,7 +74,14 @@ function normalizeIdentity(value: string | null | undefined): string {
  * line and a region and would otherwise be silently widened to both.
  */
 export async function resolveVsTargetBound(ctx: AccessContext): Promise<VsTargetBound> {
-  const scope = await resolveSalesAccessScope(ctx);
+  return vsTargetBoundFromSalesScope(await resolveSalesAccessScope(ctx), ctx);
+}
+
+/** The pure half of resolveVsTargetBound — no DB, directly unit-tested. */
+export function vsTargetBoundFromSalesScope(
+  scope: SalesAccessScope,
+  ctx: Pick<AccessContext, "role" | "scope" | "hrId">,
+): VsTargetBound {
   if (scope.canViewAllSales) return { kind: "company" };
 
   const businessScope = ctx.scope === "system" ? "COMPANY" : getSalesScope({ role: ctx.role });
@@ -107,6 +114,12 @@ export async function resolveVsTargetBound(ctx: AccessContext): Promise<VsTarget
       lineCodes: lineCodes && lineCodes.size > 0 ? lineCodes : null,
     };
   }
+
+  // A District / Regional Manager whose seat gave no areas (unseated, a seat with no mapped areas, or
+  // an organogram read that failed) is NOT a line viewer. Handing him the line bound showed him every
+  // sibling district's sales (2026-10-26). Only a genuinely line-scoped role — National Sales
+  // Manager, Product Manager, Group Product Manager, Marketing Manager — takes the line below.
+  if (isAreaBoundSalesScope(scope.businessScope)) return { kind: "none" };
 
   if (lineCodes && lineCodes.size > 0) return { kind: "line", lineCodes };
 

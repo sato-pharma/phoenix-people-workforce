@@ -1359,6 +1359,7 @@ import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
 import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
+import { runDmSalesScopeFailClosedTests } from "./dm-sales-scope-fail-closed.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
@@ -5704,6 +5705,7 @@ await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeT
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
 await runTest("the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money", runSosMonthPaceAreaNamesTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
+await runTest("District Manager sales scope never widens to the region or the line (targets line check, closing no-fallback, unseated fail-closed, read error not cached)", runDmSalesScopeFailClosedTests);
 await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("SQL p_exclude_codes defaults are fail-closed (and match RESTRICTED_PRODUCT_CODES)", runSqlExcludeCodesFailClosedTests);

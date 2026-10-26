@@ -4,9 +4,8 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 import {
   pickPortalClosingLine,
   resolvePortalClosingScope,
-  scopeMatrixToAreaCodes,
+  scopeMatrixToGeographyNoFallback,
   scopeMatrixToProducts,
-  scopeMatrixToRegionNames,
   stripRestrictedColumns,
 } from "@/lib/sales/monthly-closing-portal";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
@@ -71,33 +70,28 @@ export async function resolvePerformanceReviewViewerScope(
  * shows NO ROWS, never the un-narrowed line.
  *
  * 🔴 **THIS IS WHY THE REVIEW DOES NOT CALL `applyRegionScope`, THE SHARED HELPER THE PORTAL MONTHLY
- * CLOSING USES.** That helper has two deliberate fallbacks for a bound that matched nothing — it
- * reads them as a data gap and hands back the WHOLE matrix (`monthly-closing-portal.ts`, "a NON-empty
- * set that simply matches no region in THIS matrix is a data gap"). Three live shapes reach them:
- * the one blank-region District Manager whose seat owns six areas (`access-scope.ts` measured him in
- * production), any seat whose areas are simply absent from a month's matrix, and the 26 employees
- * labelled "Upper Egypt" against Anti Infective's "Upper Egypt 1"/"Upper Egypt 2" groups.
+ * CLOSING USES.** That helper keeps ONE deliberate fallback for a region-level viewer whose region
+ * label matched nothing — it reads it as a data gap and hands back the WHOLE matrix
+ * (`monthly-closing-portal.ts`, the aggregate "Alexandria + Delta" label). The live shape that reaches
+ * it is the 26 employees labelled "Upper Egypt" against Anti Infective's "Upper Egypt 1"/"Upper
+ * Egypt 2" groups. (Its second fallback — seat areas that match nothing dropping to the region and
+ * then the line — was removed from the portal closing on 2026-10-26, so both screens now share
+ * `scopeMatrixToGeographyNoFallback` for that case.)
  *
  * On a closing GRID a widened fallback is a legibility problem. Here it is a disclosure: this review
  * ranks named reps against one another, carries each one's manager, and downloads as a workbook — and
  * `scopeIsBounded` would then label the whole company's ranking "own territory · 58 areas". An empty
  * sheet is the truth about a territory we could not match, so an empty sheet is what it shows.
  *
- * It uses the same two scopers `applyRegionScope` uses, so the area-code and region-name matching —
- * including the re-homed-area rule that keeps UE1..UE8 with an "Upper Egypt" viewer — is identical.
- * Only the fallbacks are gone.
+ * It IS the portal's own no-fallback rule (`scopeMatrixToGeographyNoFallback`), so the area-code and
+ * region-name matching — including the re-homed-area rule that keeps UE1..UE8 with an "Upper Egypt"
+ * viewer — is identical. Only the aggregate-label fallback is absent.
  */
 function narrowGeographyWithNoFallback(
   matrix: MonthlyClosingMatrix,
   scope: PerformanceReviewViewerScope,
 ): MonthlyClosingMatrix {
-  // The seat's own areas are authoritative when it resolved any (same precedence as applyRegionScope).
-  if (scope.areaCodes && scope.areaCodes.size > 0) return scopeMatrixToAreaCodes(matrix, scope.areaCodes);
-  // A seat that resolved to an EMPTY set with no region label is "no geography at all" ⇒ no rows.
-  if (!scope.regionNames) return scope.areaCodes ? scopeMatrixToAreaCodes(matrix, new Set()) : matrix;
-  // An empty region set is the engine's own fail-closed answer; a non-empty one that matches nothing
-  // yields zero regions here, where the shared helper would have returned the whole line.
-  return scopeMatrixToRegionNames(matrix, scope.regionNames);
+  return scopeMatrixToGeographyNoFallback(matrix, scope.regionNames, scope.areaCodes);
 }
 
 /**

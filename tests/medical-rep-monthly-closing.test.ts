@@ -192,8 +192,8 @@ export function runMedicalRepMonthlyClosingTests() {
   assert.equal(twoAreas.grandTotal.cells[0]?.salesValue, 400, "grand total is their two areas' 100 + 300");
 
   // 🔴 Their area matches no row in this closing: NOTHING — never their region, never the whole line.
-  // Same area set with a NULL region bound (a District Manager's seat semantics) fails OPEN to the
-  // line on purpose; the empty region set is the only thing that makes the rep's answer different.
+  // The same area set with a NULL region bound (a District Manager's seat semantics) is empty too since
+  // 2026-10-26 — it used to fail open to the whole line.
   const unmatched = medicalRepClosingGeography(["ZZ9"]);
   const unmatchedMatrix = applyRegionScope(buildMatrix(), unmatched.regionNames, unmatched.areaCodes);
   assert.equal(
@@ -204,8 +204,8 @@ export function runMedicalRepMonthlyClosingTests() {
   assert.equal(unmatchedMatrix.grandTotal.rowTotal.salesValue, 0, "and a zero total, not the line's");
   assert.equal(
     applyRegionScope(buildMatrix(), null, unmatched.areaCodes).regions.length,
-    2,
-    "control: the same unmatched area with a NULL region bound fails open — the empty set is what closes it",
+    0,
+    "🔴 the same unmatched area with a NULL region bound is empty too — a seat-scoped viewer never widens",
   );
 
   // No area on file: unresolved, both bounds empty, no rows — and the page shows a message.

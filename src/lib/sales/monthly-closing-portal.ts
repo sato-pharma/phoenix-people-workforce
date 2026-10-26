@@ -592,26 +592,52 @@ export function scopeMatrixToAreaCodes(
 }
 
 /**
+ * The ONE geography rule with no widening fallback (owner, 2026-10-26: a District Manager's closing
+ * must never fall back to his region or the whole line). Shared by applyRegionScope below and the
+ * Performance Review (closing-performance-review-scope.ts), so the two screens cannot drift apart.
+ *
+ *  • Seat AREA codes, when the seat resolved any, are authoritative — and if they match no row the
+ *    answer is "no rows", never the region they sit in.
+ *  • An EMPTY area set with no region label is "no geography at all" ⇒ no rows.
+ *  • Otherwise the region names narrow it; an empty region set is the engine's own fail-closed answer,
+ *    and a non-empty one that matches nothing yields zero regions.
+ *  • Both null — a line-scoped or company viewer — is the whole (already line-locked) matrix.
+ */
+export function scopeMatrixToGeographyNoFallback(
+  matrix: MonthlyClosingMatrix,
+  regionNames: Set<string> | null,
+  areaCodes: Set<string> | null | undefined,
+): MonthlyClosingMatrix {
+  if (areaCodes && areaCodes.size > 0) return scopeMatrixToAreaCodes(matrix, areaCodes);
+  if (!regionNames) return areaCodes ? scopeMatrixToAreaCodes(matrix, new Set()) : matrix;
+  return scopeMatrixToRegionNames(matrix, regionNames);
+}
+
+/**
  * Apply the viewer's geography scope to a matrix. A seat-scoped viewer (District / Regional Manager
  * whose organogram seat resolved) is narrowed to their own AREAS; otherwise a region-bound viewer is
  * narrowed to their region. The line filter still applies upstream, so nothing here can ever reach
  * outside the viewer's own line.
  *
- * Two DIFFERENT "the bound matched nothing" cases, which must not be conflated:
+ * It is scopeMatrixToGeographyNoFallback plus exactly ONE exception, and only where the scope really
+ * is region-level — no area bound at all:
  *
- *  • An EMPTY `regionNames` set is the scope engine saying "this viewer has no geography at all"
- *    (see computeSalesAccessScope: no region label AND no seat areas ⇒ deliberate empty set). That
- *    is an authorization answer and is honoured as-is ⇒ no rows.
- *  • A NON-empty set that simply matches no region in THIS matrix is a data gap — e.g. a Regional
+ *  • A NON-empty region set that matches no region in THIS matrix is a data gap — e.g. a Regional
  *    Manager whose region label is the aggregate "Alexandria + Delta" rather than a single SoS
  *    region. There we still fall back to the un-narrowed matrix rather than show a blank sheet.
  *
- * Collapsing the two is what previously turned the engine's fail-CLOSED empty set straight back into
- * the whole line: an empty Set is truthy, so it cleared the null guard, narrowed to zero regions,
- * and then hit the fallback below.
+ * Everything else that matches nothing is "no rows":
+ *
+ *  • Seat AREAS that match no row (a District Manager whose areas sold nothing this month, or whose
+ *    seat map lags the closing). This used to drop to his REGION and then to the whole line — every
+ *    sibling manager's areas under his own heading (fixed 2026-10-26). The page says so in words
+ *    (PORTAL_CLOSING_AREAS_EMPTY_MESSAGE) instead.
+ *  • An EMPTY `regionNames` set — the scope engine saying "this viewer has no geography at all" (see
+ *    computeSalesAccessScope: no region label AND no seat areas ⇒ deliberate empty set). An empty Set
+ *    is truthy, so it must never clear a null guard and reach the fallback.
  *
  * A Medical Rep arrives with their own area codes and an EMPTY region set (resolvePortalClosingScope).
- * That is what keeps the rep inside their areas: when those match no row the empty set answers "no rows",
+ * That is what keeps the rep inside their areas: when those match no row the answer is "no rows",
  * where their region label would have handed them every sibling rep's area.
  */
 export function applyRegionScope(
@@ -619,15 +645,26 @@ export function applyRegionScope(
   regionNames: Set<string> | null,
   areaCodes?: Set<string> | null,
 ): MonthlyClosingMatrix {
-  if (areaCodes && areaCodes.size > 0) {
-    const narrowedToAreas = scopeMatrixToAreaCodes(matrix, areaCodes);
-    if (narrowedToAreas.regions.length > 0) return narrowedToAreas;
-  }
-  if (!regionNames) return matrix;
-  const narrowed = scopeMatrixToRegionNames(matrix, regionNames);
-  // Explicit "no geography" ⇒ no rows. Never widen this back to the full line.
-  if (regionNames.size === 0) return narrowed;
-  return narrowed.regions.length > 0 ? narrowed : matrix;
+  const narrowed = scopeMatrixToGeographyNoFallback(matrix, regionNames, areaCodes);
+  // The aggregate region label — region-level scope only, never once a seat gave us areas.
+  const regionLevelOnly = areaCodes == null && regionNames != null && regionNames.size > 0;
+  if (regionLevelOnly && narrowed.regions.length === 0) return matrix;
+  return narrowed;
+}
+
+/**
+ * Shown above the closing when an AREA-bound viewer's areas have no rows in the selected month. The
+ * sheet stays (its month picker is how he reaches another month); it is simply empty, and says why.
+ */
+export const PORTAL_CLOSING_AREAS_EMPTY_MESSAGE =
+  "Your areas have no rows in this month's closing, so there is nothing to show for it. Pick another month, or ask Sales Operations if your areas should be here.";
+
+/** True when an area-bound viewer's narrowed matrix came back with no regions at all. */
+export function isAreaBoundMatrixEmpty(
+  matrix: MonthlyClosingMatrix,
+  areaCodes: Set<string> | null | undefined,
+): boolean {
+  return areaCodes != null && matrix.regions.length === 0;
 }
 
 export type PortalClosingResult = {
@@ -654,6 +691,11 @@ export type PortalClosingResult = {
    * file. The plain-words reason there is nothing to show; `matrix` is null alongside it.
    */
   scopeMessage?: string | null;
+  /**
+   * Set when an AREA-bound viewer (District / Regional Manager on a seat, Medical Rep) has no rows in
+   * the loaded month. Unlike `scopeMessage` the sheet still renders — empty, with its month picker.
+   */
+  areasEmptyMessage?: string | null;
   /** Live monthly only: distinct distributors uploaded this period + the fixed expected total (completion bar). */
   distributorsUploaded?: number;
   distributorsExpected?: number;
@@ -788,6 +830,7 @@ export async function loadPortalMonthlyClosing(input: {
     availablePeriods: offeredPeriods,
     selectedPeriod,
     awaitingPublish: false,
+    areasEmptyMessage: isAreaBoundMatrixEmpty(matrix, scope.areaCodes) ? PORTAL_CLOSING_AREAS_EMPTY_MESSAGE : null,
   };
 }
 
@@ -896,5 +939,6 @@ export async function loadPortalLiveMonthly(input: {
     availablePeriods,
     selectedPeriod,
     awaitingPublish: false,
+    areasEmptyMessage: isAreaBoundMatrixEmpty(matrix, scope.areaCodes) ? PORTAL_CLOSING_AREAS_EMPTY_MESSAGE : null,
   };
 }
