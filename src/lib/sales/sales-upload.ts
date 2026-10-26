@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
 import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
@@ -18,6 +20,20 @@ import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { CodedRow, NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { repriceValue, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import {
+  MAX_UPLOAD_FILES,
+  combineMonthReports,
+  combinedFileName,
+  findRepeatedSheet,
+  labelFindingRows,
+  labelPreviewRows,
+  labelReportRows,
+  mergeNormalizeResults,
+  planUploadFiles,
+  type UploadFileFacts,
+  type UploadFileFingerprint,
+  type UploadFileGroup,
+} from "@/lib/sales/sales-upload-files";
 import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationFinding, type ValidationReport, type ValidationSeverity } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -302,9 +318,10 @@ export function withRefusedRowsFinding(report: ValidationReport, exceptions: rea
 }
 
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean }
-  | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation }
-  | { status: "coded_sheet"; distributorName: string };
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean; files?: UploadFileSummary[]; batches?: UploadBatchSummary[] }
+  // fileName: which of several chosen files it is about (absent for one file).
+  | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation; fileName?: string }
+  | { status: "coded_sheet"; distributorName: string; fileName?: string };
 
 // Current calendar month as YYYY-MM (Africa/Cairo business time — see currentCairoDateParts).
 // Used by the temporal validations. A server running in UTC and a Cairo browser can otherwise
@@ -463,7 +480,8 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
 }
 
 export type CommitResult =
-  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string; validation: ValidationReport }
+  // batches: one per month when several files were confirmed together (batchId is then the first).
+  | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string; validation: ValidationReport; batches?: { batchId: string; period: string; importedRows: number; fileNames: string[] }[] }
   // blockingRows: the rows that stopped the import (unknown products do not). refused: set when rows no
   // mapping can fix are among them, so the refusal names each one.
   | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; blockingRows: number; refused: ValidationFinding | null }
@@ -571,6 +589,286 @@ export async function commitMonthlyUpload(input: {
   // pick it up now rather than at the next TTL.
   invalidateClosingStoreSplitCache(`monthly closing import — ${input.distributorCode}/${period}`);
   return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, validation, ...persisted };
+}
+
+// ── Several sheets of ONE distributor, validated and confirmed once ─────────────────────────────
+// The owner, 2026-10-26: "I choose 5 or 6 same distributor sheet, and then do a once validate for the
+// bulk." The pure rules — how rows are combined, which files share a batch, the same-sheet-twice
+// refusal, naming a row by its file — live in sales-upload-files.ts; this is the recognizing,
+// validating and storing around them. One file never reaches this code: it goes through
+// analyzeMonthlyUpload / commitMonthlyUpload exactly as before.
+
+type RecognizedUpload = Extract<NormalizeFileResult, { status: "ok" }>;
+
+/** One chosen file, as analyze reports it back. */
+export type UploadFileSummary = { fileName: string; months: string[]; rows: number };
+/** One batch the files will be stored as: a month and the files in it. */
+export type UploadBatchSummary = { period: string | null; fileNames: string[] };
+
+type PreparedUploadFiles =
+  | { status: "header_error"; fileName: string; rec: Extract<NormalizeFileResult, { status: "header_error" }> }
+  | { status: "coded_sheet"; fileName: string; distributorName: string }
+  | {
+      status: "ready";
+      fileNames: string[];
+      recognized: RecognizedUpload[];
+      merged: RecognizedUpload;
+      groups: UploadFileGroup[];
+      files: UploadFileSummary[];
+      batches: UploadBatchSummary[];
+    };
+
+function refuseUnsupportedMultiFile(distributorCode: string, count: number): void {
+  if (count > MAX_UPLOAD_FILES) {
+    throw new SalesWorkflowError("too_many_files", `Choose at most ${MAX_UPLOAD_FILES} files at a time (${count} were chosen).`, 400);
+  }
+  // The Office pivot and the coded Direct sheet are each one whole month in one file; their importers
+  // take one file, and there is no second file to combine with.
+  if (normalizeCodeKey(distributorCode) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE) || isCodedSystemChannel(distributorCode)) {
+    throw new SalesWorkflowError("one_file_only", "This channel is uploaded one file at a time. Choose a single file.", 400);
+  }
+}
+
+// The figures one recognized sheet is fingerprinted by, for the same-sheet-twice refusal.
+async function fingerprintUpload(file: File, rec: RecognizedUpload): Promise<UploadFileFingerprint> {
+  const digest = createHash("sha256").update(Buffer.from(await file.arrayBuffer())).digest("hex");
+  const qty = rec.result.coded.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
+  const value = rec.result.coded.reduce((sum, r) => sum + (Number.isFinite(r.value) ? r.value : 0), 0);
+  return { fileName: file.name, digest, rows: rec.result.coded.length, qty: Number(qty.toFixed(6)), value: Number(value.toFixed(6)) };
+}
+
+// The combined recognition of some of the files: their rows in one result, with the facts the
+// validator reads taken so they hold for EVERY file (a date column only when every file has one).
+function mergeRecognized(distributorCode: string, recognized: readonly RecognizedUpload[], members: readonly number[]): RecognizedUpload {
+  return {
+    ...recognized[members[0]],
+    result: mergeNormalizeResults(distributorCode, members.map((i) => ({ fileIndex: i, result: recognized[i].result }))),
+    period: null,
+    hasDateColumn: members.every((i) => recognized[i].hasDateColumn),
+    regionOnly: members.some((i) => recognized[i].regionOnly),
+  };
+}
+
+// Recognize every file one by one (one workbook in memory at a time), refuse the same sheet twice, and
+// decide the batches. Analyze and commit both start here, so what analyze shows is what commit stores.
+async function prepareUploadFiles(distributorCode: string, files: readonly File[], periodOverride: string): Promise<PreparedUploadFiles> {
+  refuseUnsupportedMultiFile(distributorCode, files.length);
+  const recognized: RecognizedUpload[] = [];
+  const fingerprints: UploadFileFingerprint[] = [];
+  for (const file of files) {
+    const rec = await recognizeDistributorWorkbook(distributorCode, file);
+    if (rec.status === "coded_sheet") return { status: "coded_sheet", fileName: file.name, distributorName: rec.distributorName };
+    if (rec.status === "header_error") return { status: "header_error", fileName: file.name, rec };
+    if (rec.status === "template_error") throw new SalesWorkflowError("template_error", `"${file.name}": ${rec.message}`, 422);
+    recognized.push(rec);
+    fingerprints.push(await fingerprintUpload(file, rec));
+  }
+  const repeated = findRepeatedSheet(fingerprints);
+  if (repeated) throw new SalesWorkflowError("repeated_sales_sheet", repeated, 422);
+
+  const fileNames = files.map((f) => f.name);
+  const facts: UploadFileFacts[] = recognized.map((rec, i) => ({
+    fileName: fileNames[i],
+    months: [...new Set(rec.result.coded.map((r) => r.invoiceDate).filter((p): p is string => Boolean(p)))].sort(),
+    dominantMonth: rec.period,
+  }));
+  const plan = planUploadFiles(facts, periodOverride);
+  if (!plan.ok) throw new SalesWorkflowError("mixed_month_files", plan.message, 400);
+  return {
+    status: "ready",
+    fileNames,
+    recognized,
+    merged: mergeRecognized(distributorCode, recognized, recognized.map((_, i) => i)),
+    groups: plan.groups,
+    files: facts.map((f, i) => ({ fileName: f.fileName, months: f.months, rows: recognized[i].result.coded.length })),
+    batches: plan.groups.map((g) => ({
+      period: g.decision.kind === "ok" ? g.decision.period : null,
+      fileNames: g.members.map((i) => fileNames[i]),
+    })),
+  };
+}
+
+// The verify-against-pick check over every file: the first file the detector confidently places with
+// another distributor is the one reported (and named, so the person knows which file to take out);
+// otherwise the first file's reading.
+async function crossCheckUploadFiles(distributorCode: string, distributorName: string, files: readonly File[]): Promise<{ crossCheck: DistributorCrossCheck | null; fileName: string | null }> {
+  let first: DistributorCrossCheck | null = null;
+  for (const file of files) {
+    const cc = await buildDistributorCrossCheck(distributorCode, distributorName, file);
+    first ??= cc;
+    if (cc && cc.confidence === "high" && cc.bestCode && cc.bestCode.trim().toLowerCase() !== distributorCode.trim().toLowerCase()) {
+      return { crossCheck: cc, fileName: file.name };
+    }
+  }
+  return { crossCheck: first, fileName: null };
+}
+
+function nameCrossCheckFile(report: ValidationReport, fileName: string | null): ValidationReport {
+  if (!fileName) return report;
+  return {
+    ...report,
+    findings: report.findings.map((f) => (f.code === "detector_disagrees_with_pick" ? { ...f, detail: `"${fileName}": ${f.detail}` } : f)),
+  };
+}
+
+// Strict validation of one batch: the same chain one file runs at analyze (the period gate and the
+// refused rows folded in), so the report says what commit will do.
+async function validateUploadGroup(
+  distributorCode: string,
+  prepared: Extract<PreparedUploadFiles, { status: "ready" }>,
+  group: UploadFileGroup,
+  crossCheck: DistributorCrossCheck | null,
+): Promise<{ period: string | null; stamped: NormalizeResult; report: ValidationReport }> {
+  const groupRec = mergeRecognized(distributorCode, prepared.recognized, group.members);
+  const period = group.decision.kind === "ok" ? group.decision.period : null;
+  const stamped = applyPeriodConsolidation(groupRec.result, group.decision, groupRec.prices);
+  const report = withPeriodGateFinding(
+    withRefusedRowsFinding(await runStrictValidation(distributorCode, groupRec, stamped, period, crossCheck), groupRec.result.exceptions),
+    group.decision,
+    groupRec.result.coded,
+  );
+  return { period, stamped, report };
+}
+
+/** Analyze several files of one distributor as one upload. One file is analyzeMonthlyUpload, unchanged. */
+export async function analyzeMonthlyUploadFiles(distributorCode: string, files: readonly File[], periodOverride = "", excludeProductCodes: readonly string[] = []): Promise<AnalyzeResult> {
+  if (files.length === 1) return analyzeMonthlyUpload(distributorCode, files[0], periodOverride, excludeProductCodes);
+  const prepared = await prepareUploadFiles(distributorCode, files, String(periodOverride ?? "").trim());
+  if (prepared.status === "coded_sheet") return { status: "coded_sheet", distributorName: prepared.distributorName, fileName: prepared.fileName };
+  if (prepared.status === "header_error") {
+    const { rec } = prepared;
+    const aiExplanation = await explainHeaderMismatch({ distributorName: rec.distributorName, observedHeaders: rec.observedHeaders, missingGroups: rec.missingGroups });
+    return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning, aiExplanation, fileName: prepared.fileName };
+  }
+  const { merged, fileNames } = prepared;
+  const preview = labelPreviewRows(summarizePreview(distributorCode, merged.distributorName, merged.result, merged.products, excludeProductCodes), fileNames);
+  const reconciliation = buildReconciliation(merged.result, excludeProductCodes);
+  const breakdowns = buildPreviewBreakdowns(merged.result.coded, excludeProductCodes, merged.result.ignoredRows);
+  const { crossCheck, fileName: crossCheckFile } = await crossCheckUploadFiles(distributorCode, merged.distributorName, files);
+  const reports: { period: string | null; report: ValidationReport }[] = [];
+  for (const group of prepared.groups) {
+    const { period, report } = await validateUploadGroup(distributorCode, prepared, group, crossCheck);
+    reports.push({ period, report });
+  }
+  const validation = labelReportRows(nameCrossCheckFile(combineMonthReports(reports), crossCheckFile), fileNames);
+  const only = prepared.groups.length === 1 ? prepared.groups[0] : null;
+  return {
+    status: "ok",
+    preview,
+    reconciliation,
+    breakdowns,
+    period: only && only.decision.kind === "ok" ? only.decision.period : null,
+    needsPeriod: only !== null && only.decision.kind === "missing",
+    engineVersion: RECOGNITION_ENGINE_VERSION,
+    validation,
+    files: prepared.files,
+    batches: prepared.batches,
+  };
+}
+
+/**
+ * Store several files of one distributor: one batch per month, every batch validated before any is
+ * stored. One file is commitMonthlyUpload, unchanged.
+ *
+ * Files of one month are ONE batch, so a confirm never supersedes the month's other files the way six
+ * separate confirms did. Different months are separate batches stored one after another; should a later
+ * one fail (a race on the one-batch-per-month index), the refusal names the months already stored.
+ */
+export async function commitMonthlyUploadFiles(input: {
+  distributorCode: string;
+  files: readonly File[];
+  periodOverride?: string;
+  uploadedBy: string;
+  excludeProductCodes?: readonly string[];
+}): Promise<CommitResult> {
+  const { distributorCode, files } = input;
+  if (files.length === 1) {
+    return commitMonthlyUpload({ distributorCode, file: files[0], periodOverride: input.periodOverride, uploadedBy: input.uploadedBy, excludeProductCodes: input.excludeProductCodes });
+  }
+  const excludeProductCodes = input.excludeProductCodes ?? [];
+  const prepared = await prepareUploadFiles(distributorCode, files, String(input.periodOverride ?? "").trim());
+  if (prepared.status === "coded_sheet") {
+    throw new SalesWorkflowError("coded_sheet", `"${prepared.fileName}" is already coded — upload the raw distributor export instead.`, 400);
+  }
+  if (prepared.status === "header_error") {
+    throw new SalesWorkflowError("header_validation_error", `"${prepared.fileName}": ${headerErrorMessage(prepared.rec.distributorName, prepared.rec.missingGroups)}`, 422);
+  }
+  const { merged, fileNames } = prepared;
+  const reconciliation = buildReconciliation(merged.result, excludeProductCodes);
+  const preview = () => labelPreviewRows(summarizePreview(distributorCode, merged.distributorName, merged.result, merged.products, excludeProductCodes), fileNames);
+
+  const blockingExceptions = merged.result.exceptions.filter(blocksImport);
+  if (blockingExceptions.length > 0) {
+    const refused = refusedRowsFinding(blockingExceptions);
+    return { status: "blocked", reconciliation, preview: preview(), blockingRows: blockingExceptions.length, refused: refused ? labelFindingRows(refused, fileNames) : null };
+  }
+
+  for (const group of prepared.groups) {
+    if (group.decision.kind === "missing") {
+      throw new SalesWorkflowError("missing_period", "At least one of these sheets has no date column — pick the period before importing.", 400);
+    }
+    if (group.decision.kind === "multi") {
+      throw new SalesWorkflowError(
+        "multi_period",
+        `These sheets span ${group.decision.periods.length} months (${group.decision.periods.join(", ")}) and at least one of them holds more than one. Pick a period above to import them all under one month, or upload one month per file.`,
+        400,
+      );
+    }
+  }
+
+  // Every batch is validated before the first is stored: a refusal in the third month must not leave
+  // the first two imported.
+  const { crossCheck, fileName: crossCheckFile } = await crossCheckUploadFiles(distributorCode, merged.distributorName, files);
+  const checked: { group: UploadFileGroup; period: string; stamped: NormalizeResult; report: ValidationReport }[] = [];
+  for (const group of prepared.groups) {
+    const { period, stamped, report } = await validateUploadGroup(distributorCode, prepared, group, crossCheck);
+    if (!period) throw new SalesWorkflowError("missing_period", "Pick the period before importing.", 400); // unreachable: refused above
+    checked.push({ group, period, stamped, report });
+  }
+  const validation = labelReportRows(nameCrossCheckFile(combineMonthReports(checked), crossCheckFile), fileNames);
+  if (!validation.ok) return { status: "blocked_validation", reconciliation, preview: preview(), validation };
+
+  const stored: { batchId: string; period: string; importedRows: number; fileNames: string[] }[] = [];
+  for (const { group, period, stamped } of checked) {
+    const memberNames = group.members.map((i) => fileNames[i]);
+    let persisted: Awaited<ReturnType<typeof persistNormalizedBatch>>;
+    try {
+      persisted = await persistNormalizedBatch({
+        distributorCode,
+        distributorName: merged.distributorName,
+        fileName: combinedFileName(memberNames),
+        result: stamped,
+        uploadedBy: input.uploadedBy,
+        period,
+      });
+    } catch (error) {
+      const landed = stored.length > 0 ? ` Already imported: ${stored.map((s) => s.period).join(", ")}.` : "";
+      if (isPostgresUniqueViolation(error)) {
+        throw new SalesWorkflowError(
+          "duplicate_sales_batch",
+          `A validated ${merged.distributorName} sheet for ${period} is already imported. Delete it first, then re-upload — this keeps the month from being double-counted.${landed}`,
+          409,
+        );
+      }
+      if (!landed) throw error;
+      // Months already stored stay stored (each is a whole, validated batch); the person needs to know
+      // which, so the rest can be uploaded again without re-sending them.
+      if (error instanceof SalesWorkflowError) throw new SalesWorkflowError(error.code, `${error.message}${landed}`, error.status);
+      throw new SalesWorkflowError("partial_sales_import", `Storing ${period} failed.${landed} Upload the remaining months again.`, 500);
+    }
+    stored.push({ batchId: persisted.batchId, period, importedRows: persisted.importedRows, fileNames: memberNames });
+    invalidateClosingStoreSplitCache(`monthly closing import — ${distributorCode}/${period}`);
+  }
+  return {
+    status: "imported",
+    batchId: stored[0].batchId,
+    period: stored.length === 1 ? stored[0].period : null,
+    importedRows: stored.reduce((n, s) => n + s.importedRows, 0),
+    reconciliation,
+    engineVersion: RECOGNITION_ENGINE_VERSION,
+    validation,
+    batches: stored,
+  };
 }
 
 // ── Coded system channels (Direct) on the Sales Upload hub ──────────────────────────────────────

@@ -37,7 +37,8 @@ type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: s
 type IgnoredItem = { raw: string; displayName: string; count: number; totalQty: number };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null; periods?: { period: string; rows: number }[] };
 type Severity = "error" | "warning" | "info";
-type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleProducts?: string[]; fixHint?: string };
+// sampleRowLabels: with several files, each cited row named by its file ("branch-2.xlsx row 14").
+type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleRowLabels?: string[]; sampleProducts?: string[]; fixHint?: string };
 export type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
 export type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
 export type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
@@ -58,8 +59,10 @@ export type BulkSlotStatus = {
 };
 export type MonthlyUploadHandle = { commit: () => Promise<void> };
 type AiExplanation = { aiUsed: boolean; summary: string; suggestions: { expected: string; suggestedHeader: string | null; note?: string }[] };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean };
-type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean; files?: UploadFileSummary[] | null; batches?: { period: string | null; fileNames: string[] }[] | null };
+// Several sheets of one distributor: what each file holds, and the batch each month lands in.
+type UploadFileSummary = { fileName: string; months: string[]; rows: number };
+type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string; batches?: { batchId: string; period: string; importedRows: number; fileNames: string[] }[] | null };
 type DetectResponse = { success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string }; error?: string };
 
 const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
@@ -150,16 +153,13 @@ async function readJson<T>(res: Response): Promise<T> {
 // bucket via a short-lived signed URL, then the endpoint is called by reference (storagePath JSON).
 // Small files keep the original direct multipart POST. Mirrors the proven /sales/import path; the
 // server resolves both shapes via resolveUploadedSpreadsheet and deletes the temp object afterwards.
+// Several sheets of one distributor go together: one multipart form repeating "file" while they fit
+// under the cap together, otherwise each goes to the bucket and the endpoint gets storagePaths[].
 const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024;
+// The most sheets one upload takes (MAX_UPLOAD_FILES in sales-upload-files.ts refuses more).
+const MAX_SHEETS_PER_UPLOAD = 12;
 
-async function postSalesUpload(endpoint: string, file: File, fields: Record<string, string | undefined>): Promise<Response> {
-  const entries = Object.entries(fields).filter(([, v]) => v != null && v !== "") as [string, string][];
-  if (file.size <= LARGE_FILE_THRESHOLD) {
-    const fd = new FormData();
-    fd.append("file", file);
-    for (const [key, value] of entries) fd.append(key, value);
-    return fetch(endpoint, { body: fd, method: "POST" });
-  }
+async function uploadToSalesBucket(file: File): Promise<string> {
   const urlRes = await fetch("/api/sales/monthly-import/upload-url", {
     body: JSON.stringify({ fileName: file.name }),
     headers: { "content-type": "application/json" },
@@ -167,7 +167,7 @@ async function postSalesUpload(endpoint: string, file: File, fields: Record<stri
   });
   const urlPayload = (await urlRes.json().catch(() => ({}))) as { signedUrl?: string; path?: string; error?: string };
   if (!urlRes.ok || !urlPayload.signedUrl || !urlPayload.path) {
-    throw new Error(urlPayload.error ?? "Could not start the upload for this large file.");
+    throw new Error(urlPayload.error ?? `Could not start the upload for "${file.name}".`);
   }
   const putRes = await fetch(urlPayload.signedUrl, {
     body: file,
@@ -177,9 +177,24 @@ async function postSalesUpload(endpoint: string, file: File, fields: Record<stri
     },
     method: "PUT",
   });
-  if (!putRes.ok) throw new Error("The file could not be uploaded. Please try again.");
+  if (!putRes.ok) throw new Error(`"${file.name}" could not be uploaded. Please try again.`);
+  return urlPayload.path;
+}
+
+async function postSalesUpload(endpoint: string, files: readonly File[], fields: Record<string, string | undefined>): Promise<Response> {
+  const entries = Object.entries(fields).filter(([, v]) => v != null && v !== "") as [string, string][];
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+  if (totalBytes <= LARGE_FILE_THRESHOLD) {
+    const fd = new FormData();
+    for (const f of files) fd.append("file", f);
+    for (const [key, value] of entries) fd.append(key, value);
+    return fetch(endpoint, { body: fd, method: "POST" });
+  }
+  const storagePaths: string[] = [];
+  for (const f of files) storagePaths.push(await uploadToSalesBucket(f));
+  const reference = storagePaths.length === 1 ? { storagePath: storagePaths[0] } : { storagePaths };
   return fetch(endpoint, {
-    body: JSON.stringify({ storagePath: urlPayload.path, ...Object.fromEntries(entries) }),
+    body: JSON.stringify({ ...reference, ...Object.fromEntries(entries) }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -249,15 +264,16 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
         {sorted.map((f) => {
           const st = SEVERITY_STYLE[f.severity];
           const Icon = st.icon;
+          // Several months each carry their own findings, so one code can appear once per month.
           return (
-            <li className={cn("rounded-r-md border border-[#EEF2F7] border-l-4 px-3 py-2", st.row)} key={f.code}>
+            <li className={cn("rounded-r-md border border-[#EEF2F7] border-l-4 px-3 py-2", st.row)} key={`${f.code}·${f.title}`}>
               <div className="flex items-start gap-2">
                 <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", st.iconClass)} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-phx-ink">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-phx-ink-soft">×{f.count.toLocaleString()}</span> : null}</p>
                   <p className="text-xs text-phx-ink-2">{f.detail}</p>
                   {f.fixHint ? <p className="mt-0.5 text-xs italic text-phx-ink-soft">{f.fixHint}</p> : null}
-                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-phx-xs text-phx-ink-faint">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                  {f.sampleRows.length > 0 ? <p className="mt-0.5 break-words font-mono text-phx-xs text-phx-ink-faint">rows: {f.sampleRows.map((row, i) => { const where = f.sampleRowLabels?.[i] ?? String(row); return f.sampleProducts?.[i] ? `${where} (${f.sampleProducts[i]})` : where; }).join(", ")}{f.count > f.sampleRows.length ? ` and ${(f.count - f.sampleRows.length).toLocaleString()} more` : ""}</p> : null}
                 </div>
               </div>
             </li>
@@ -758,7 +774,9 @@ type MonthlyUploadProps = {
 export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>(function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded, productOptions, brickOptions, aiEnabled, initialPeriod, onStatusChange }, ref) {
   const fileRef = useRef<HTMLInputElement>(null);
   const analyzingRef = useRef(false);
-  const [file, setFile] = useState<File | null>(null);
+  // One raw sheet, or several sheets of this same distributor validated and uploaded as one.
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
   const initialParts = initialPeriod && /^\d{4}-\d{2}$/.test(initialPeriod) ? initialPeriod.split("-") : null;
   const [period, setPeriod] = useState(initialPeriod && initialParts ? initialPeriod : "");
   const [periodMonth, setPeriodMonth] = useState(initialParts ? initialParts[1] : "");
@@ -780,7 +798,17 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
   function changePeriod(value: string) { setPeriod(value); setPeriodAutoDetected(false); setAnalysis(null); setCommitted(null); }
   function onMonthChange(m: string) { setPeriodMonth(m); changePeriod(m && periodYear ? `${periodYear}-${m}` : ""); }
   function onYearChange(y: string) { setPeriodYear(y); changePeriod(y && periodMonth ? `${y}-${periodMonth}` : ""); }
-  function onPickFile(f: File | null) { setFile(f); setDetected(null); resetDownstream(); setPeriodAutoDetected(false); if (f) void detect(f); }
+  function onPickFiles(list: File[]) {
+    setDetected(null); resetDownstream(); setPeriodAutoDetected(false);
+    if (list.length > MAX_SHEETS_PER_UPLOAD) {
+      setFiles([]);
+      setError(`Choose at most ${MAX_SHEETS_PER_UPLOAD} sheets at once — ${list.length} were chosen.`);
+      return;
+    }
+    setFiles(list);
+    // Verification reads the first sheet's headers; Validate then checks every sheet, column by column.
+    if (list[0]) void detect(list[0]);
+  }
 
   function applyAutoDetectedPeriod(detectedPeriod: string) {
     const [y, m] = detectedPeriod.split("-");
@@ -844,14 +872,14 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
 
   // ── Step 2 — Strict validation (dry run; persists nothing) ──
   async function analyze() {
-    if (!file) { setError("Choose a file first."); return; }
+    if (files.length === 0) { setError("Choose a file first."); return; }
     // Refs are synchronous — this blocks re-entry even when onSaved() auto-triggers and the
     // user also presses Validate in the same render cycle (before busy state propagates).
     if (analyzingRef.current) return;
     analyzingRef.current = true;
     setBusy("analyze"); setError(null); setAnalysis(null); setCommitted(null);
     try {
-      const res = await postSalesUpload("/api/sales/sales-upload/analyze", file, { distributorCode, period });
+      const res = await postSalesUpload("/api/sales/sales-upload/analyze", files, { distributorCode, period });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
       // Auto-fill the period dropdowns when the sheet holds one month and the user hasn't set one yet.
@@ -867,17 +895,17 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
   // (bulk mode's "Confirm & Import All") only gets a new commit reference when something it actually
   // closes over changes, instead of on every render.
   const commit = useCallback(async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setBusy("commit"); setError(null);
     try {
-      const res = await postSalesUpload("/api/sales/sales-upload/commit", file, { distributorCode, period });
+      const res = await postSalesUpload("/api/sales/sales-upload/commit", files, { distributorCode, period });
       const payload = await readJson<CommitResponse>(res);
       setCommitted(payload);
       if (!payload.success) setError(payload.error ?? "Import failed.");
       else onUploaded?.();
     } catch (e) { setError(e instanceof Error ? e.message : "Import failed."); }
     finally { setBusy(null); }
-  }, [file, distributorCode, period, onUploaded]);
+  }, [files, distributorCode, period, onUploaded]);
 
   const rec = analysis?.success ? (analysis.reconciliation ?? null) : null;
 
@@ -900,11 +928,11 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       breakdowns,
       canImport,
       error,
-      fileName: file?.name ?? null,
+      fileName: files.length > 0 ? files.map((f) => f.name).join(" + ") : null,
       reconciliation: rec,
       stage,
     });
-  }, [committed, analysis, canImport, blockerUnknowns, validationBlocks, file, rec, breakdowns, error, onStatusChange]);
+  }, [committed, analysis, canImport, blockerUnknowns, validationBlocks, file, files, rec, breakdowns, error, onStatusChange]);
 
   return (
     <div className="space-y-4">
@@ -927,10 +955,34 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
           </div>
         </div>
         <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={!hasProfile || busy !== null} onClick={() => fileRef.current?.click()} type="button">
-          <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
+          <FileText className="h-4 w-4" />{files.length > 1 ? `${files.length} sheets chosen` : file ? file.name.slice(0, 28) : "Choose raw sheet(s)"}
         </Button>
-        <input accept=".xlsx" className="hidden" onChange={(e) => onPickFile(e.target.files?.[0] ?? null)} ref={fileRef} type="file" />
+        <input
+          accept=".xlsx"
+          className="hidden"
+          multiple
+          onChange={(e) => { onPickFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
+          ref={fileRef}
+          type="file"
+        />
       </div>
+      {files.length > 1 ? (
+        <div className="rounded-[6px] border border-phx-line bg-[#FCFDFE] px-3 py-2">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{files.length} {distributorName} sheets — validated and uploaded together</p>
+          <ul className="mt-1 space-y-0.5">
+            {files.map((f, i) => (
+              <li className="break-words text-xs font-semibold text-phx-ink" key={`${f.name}-${i}`}>
+                {f.name}
+                {(() => {
+                  const facts = analysis?.files?.[i];
+                  return facts ? <span className="ml-1 font-medium text-phx-ink-soft">· {facts.months.length > 0 ? facts.months.join(", ") : "no date column"} · {num(facts.rows)} rows</span> : null;
+                })()}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-phx-ink-soft">Every sheet must be this distributor&apos;s raw export. Sheets of one month become that month&apos;s upload; sheets of different months are each filed under their own month. The same sheet twice is refused.</p>
+        </div>
+      ) : null}
 
       {error ? <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></AdminCallout> : null}
 
@@ -946,6 +998,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
             {busy === "verify" ? "Analyzing…" : verifyRan ? "Re-run verification" : "Run AI verification"}
           </button>
           {!file && <span className="text-xs font-medium text-phx-ink-faint">Pick the raw sheet above first.</span>}
+          {files.length > 1 && <span className="text-xs font-medium text-phx-ink-faint">Reads the first sheet; Validate checks every sheet.</span>}
         </div>
 
         {/* Verification result — one block, three outcomes. The Confirm control is driven by
@@ -1102,7 +1155,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
                 <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                 <div>
                   <p className="text-sm font-black text-emerald-700">{committed.message}</p>
-                  <p className="mt-0.5 text-xs font-medium text-emerald-600">Any earlier upload for {committed.period} was replaced — no double count.</p>
+                  <p className="mt-0.5 text-xs font-medium text-emerald-600">Any earlier upload for {committed.batches && committed.batches.length > 1 ? committed.batches.map((b) => b.period).join(", ") : committed.period} was replaced — no double count.</p>
                 </div>
               </div>
             ) : canImport ? (

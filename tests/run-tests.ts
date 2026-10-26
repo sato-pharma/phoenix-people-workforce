@@ -820,6 +820,7 @@ import { runSalesUploadValidationTests } from "./sales-upload-validation.test.ts
 import { runSalesUploadRefusedRowsTests } from "./sales-upload-refused-rows.test.ts";
 import { runSosNumberCellsAutoFixTests } from "./sos-number-cells-auto-fix.test.ts";
 import { runSalesUploadRedatedRowsTests } from "./sales-upload-redated-rows.test.ts";
+import { runSalesUploadMultiFileTests } from "./sales-upload-multi-file.test.ts";
 import { runSosEuropeanDecimalMisreadTests } from "./sos-european-decimal-misread.test.ts";
 import { runProductSourceRowNumberCommaTests, runSosMonthlyImportCommaMisreadTests } from "./sos-monthly-import-comma-misread.test.ts";
 import { runSalesUploadVerificationTests } from "./sales-upload-verification.test.ts";
@@ -4619,6 +4620,10 @@ await runTest(
 await runTest(
   "sales upload names every row a picked month re-dates, and never fills in a multi-month sheet's majority month for the operator",
   runSalesUploadRedatedRowsTests,
+);
+await runTest(
+  "several sheets of one distributor validate and upload as one: every row kept and named by its file, one batch per month, the same sheet twice refused",
+  runSalesUploadMultiFileTests,
 );
 await runTest(
   "sales upload reads a European \"1.234,56\" as 1234.56 and lists it, never as 1.23456; a text \"1.234\" or \"12,5\" it would have to guess at is refused and named",
