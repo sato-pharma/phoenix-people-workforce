@@ -35,9 +35,10 @@ role reads every row:
 RLS on. A policy exists, so `rls_enabled_without_policy` is quiet. The policy's `USING` clause is
 literally `true`, so it filters nothing.
 
-One is live: **`public.deductions_categories`**, readable by any logged-in user. It is allowlisted
-with a reason — 7 static rows of category names, detection engine and sort order; no employee, no
-amount, no month, and an employee already sees these labels on their own payslip.
+**None is live, and the allowlist is EMPTY** (2026-10-26). The one there was,
+**`public.deductions_categories`** (7 static rows of category names, read by no app code), was
+allowlisted until the 2026-10-26 audit; `20261026120500` dropped its `using (true)` policy and
+revoked its grants, so it is server-only and the detector fires again if the policy ever comes back.
 
 **The allowlist is keyed `relation:role`**, so allowing a table for `authenticated` never silently
 also allows it for `anon`. A `PUBLIC` policy reaches `anon` and is never covered by an
@@ -141,7 +142,8 @@ keeps.
 Neither was trusted because it was green:
 
 - The `true`-policy detector was fired against **production** by emptying the allowlist; it named
-  `deductions_categories:authenticated`.
+  `deductions_categories:authenticated`. The allowlist has stayed empty since 2026-10-26, so
+  that table now fires under the default list (pinned in the test below).
 - The view detector was fired against a **real throwaway view** created on production —
   `create view public._invoker_selftest as select 1 as x`, granted to `anon, authenticated`,
   deliberately non-invoker. It selects a literal, so it exposed nothing. The check reported it,

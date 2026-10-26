@@ -23,6 +23,7 @@ import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, reco
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
+import { holdImportTailRepair, releaseImportTailRepair } from "@/lib/sales/import-tail-repair";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
 // here so existing import sites (`@/lib/sales/normalizer/service`) keep working unchanged.
@@ -602,6 +603,15 @@ export async function persistNormalizedBatch(input: {
     if (error) throw error;
   }
 
+  // 🔴 THE REPAIR NOTE GOES IN BEFORE FINALIZE (audit P4-03; src/lib/sales/import-tail-repair.ts).
+  // Finalize commits this batch live, and the tail below runs outside that transaction, so a process
+  // that died between the two used to leave a live batch built on the previous import's split net
+  // with nothing that would ever rebuild it. The note is a claimed row in the brick-move queue: the
+  // 20-minute drain rebuilds the file only if the tail never crosses it off, so the normal path
+  // still does the work once. Written here, after the rows and before finalize, so a finalize that
+  // commits after this process is gone is covered too.
+  const tailRepair = await holdImportTailRepair(supabase, batchId, inserts.map((row) => row.brick_id));
+
   // Promote this batch to validated, supersede any other batch for this distributor + period, and
   // refresh every dependent rollup — all inside ONE atomic transaction (phx_finalize_sos_batch), so
   // a failure anywhere leaves the previous good batch untouched instead of deleting it up front.
@@ -662,6 +672,8 @@ export async function persistNormalizedBatch(input: {
   // dashboard read re-cached the attribution the net had not reached yet and held it for the
   // full TTL. Those earlier busts are harmless and stay; this one is the one that matters.
   invalidateSalesDashboardCache("source of sales import — split net written, attribution refreshed");
+  // The tail landed: cross the repair note off, so the drain never rebuilds this file again.
+  await releaseImportTailRepair(supabase, tailRepair);
 
   // Self-heal the customer->brick crosswalk from what this CONFIRMED import's sheet itself resolved
   // (see engine.ts's customerBrickCorrections) — only after the batch is validated, never on a preview.

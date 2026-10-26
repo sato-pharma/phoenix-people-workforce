@@ -18,8 +18,20 @@
  * request instead mints a random token, stores only its SHA-256 on the row, and sends the plaintext to
  * the one tablet in the push payload. The upload endpoint matches the token against that hash, once,
  * inside a short window; the hash is cleared the moment the file lands. The worst a leaked token buys
- * is one capture slot, for minutes. The ingest re-reads the stored object's real size — never the
- * tablet's claim — the same discipline the CRM visit recording keeps.
+ * is one capture slot, for minutes. The size filed is the byte count of the file that actually arrived
+ * on the request — never a number the tablet sends (audit, 2026-10-26, point 24: this sentence used to
+ * say the stored object was re-read, which it never was).
+ *
+ * ONE UPLOAD PER SLOT, EVEN WHEN TWO ARRIVE AT ONCE (same point). The token is claimed by a
+ * compare-and-set — the hash is cleared on the one row that is still `requested` AND still holds that
+ * hash — and only the request that cleared it may store a file, with `upsert: false`. It used to be a
+ * read, then a store that overwrote, then an update by id alone, so two uploads with one token both
+ * passed and the second silently replaced the first.
+ *
+ * THE SLOT IS FOUND BEFORE THE BODY IS READ (same point). The address the tablet is told to upload to
+ * carries the recording's id (`?recordingId=`), so the door reads that one row and refuses an unknown,
+ * handled, closed or expired slot before it buffers a byte of a video of up to 256 MB. Without it, a
+ * caller with no token at all could make the server hold 256 MB per request, ten a minute per address.
  *
  * THE SECURITY BOUNDARY IS THE ROUTE, NOT THIS MODULE. `requestRecording` and `listRecordings` run
  * only behind `company_devices:approve` in their route handlers; `ingestRecording` is the device's
@@ -32,6 +44,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
+import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const TABLET_RECORDING_BUCKET = "device-screen-recordings";
@@ -47,6 +60,19 @@ export const RECORDING_SIGNED_URL_TTL_SECONDS = 60 * 60;
 /** The bucket's own ceiling, matched here so an oversize upload is refused before it is stored. */
 export const RECORDING_MAX_BYTES = 268_435_456;
 export const RECORDING_ALLOWED_MIME = ["video/mp4", "video/webm"] as const;
+/**
+ * The largest REQUEST the upload door reads: the file's own cap plus room for the multipart framing
+ * and the three small form fields. Judged on `Content-Length` before a byte of the body is read
+ * (point 24), and the reason this one route is left out of the proxy matcher: the proxy copies a
+ * matched body only up to 10 MB, so every recording longer than a few seconds used to arrive cut off.
+ * Pinned against the proxy in tests/proxy-upload-body-limit.test.ts.
+ */
+export const RECORDING_UPLOAD_MAX_REQUEST_BYTES = RECORDING_MAX_BYTES + 64 * 1024;
+/** Upload attempts one address may make a minute. A tablet makes one per recording. */
+export const RECORDING_UPLOAD_RATE_LIMIT = 10;
+export const RECORDING_UPLOAD_RATE_WINDOW_MS = 60_000;
+/** The query parameter on the upload address that names the slot, read before the body is. */
+export const RECORDING_UPLOAD_ID_PARAM = "recordingId";
 
 /**
  * The intent the Phoenix RustDesk-fork launcher handles to start a capture.
@@ -118,25 +144,38 @@ function normaliseContentType(value: string | null): string {
 
 export type UploadDecision = { ok: true } | { ok: false; status: number; reason: string };
 
+type SlotRow = { status: string; requestedAtMs: number; uploadTokenHash: string | null } | null;
+
 /**
- * Whether one upload may be accepted. PURE — no I/O — so every refusal is proven without a database.
- * Caller supplies the row it read, the presented token, the clock, the byte count and the content type.
+ * Whether a slot can still take an upload, judged on its row alone — before any token or body. PURE.
+ * These are the first four refusals of `recordingUploadDecision`, which calls this.
  */
-export function recordingUploadDecision(input: {
-  row: { status: string; requestedAtMs: number; uploadTokenHash: string | null } | null;
-  presentedToken: string;
-  nowMs: number;
-  sizeBytes: number;
-  contentType: string | null;
-}): UploadDecision {
-  const { row, presentedToken, nowMs, sizeBytes, contentType } = input;
+export function recordingSlotOpenDecision(row: SlotRow, nowMs: number): UploadDecision {
   if (!row) return { ok: false, reason: "No such recording request.", status: 404 };
   if (row.status !== "requested") return { ok: false, reason: "This recording has already been handled.", status: 409 };
   if (!row.uploadTokenHash) return { ok: false, reason: "This recording slot is already closed.", status: 410 };
   if (nowMs > row.requestedAtMs + RECORDING_TOKEN_TTL_SECONDS * 1000) {
     return { ok: false, reason: "This recording slot has expired.", status: 410 };
   }
-  if (!presentedToken || !tokensMatch(presentedToken, row.uploadTokenHash)) {
+  return { ok: true };
+}
+
+/**
+ * Whether one upload may be accepted. PURE — no I/O — so every refusal is proven without a database.
+ * Caller supplies the row it read, the presented token, the clock, the byte count and the content type.
+ */
+export function recordingUploadDecision(input: {
+  row: SlotRow;
+  presentedToken: string;
+  nowMs: number;
+  sizeBytes: number;
+  contentType: string | null;
+}): UploadDecision {
+  const { row, presentedToken, nowMs, sizeBytes, contentType } = input;
+  const open = recordingSlotOpenDecision(row, nowMs);
+  if (!open.ok) return open;
+  const storedHash = row?.uploadTokenHash ?? "";
+  if (!presentedToken || !storedHash || !tokensMatch(presentedToken, storedHash)) {
     return { ok: false, reason: "The upload token does not match.", status: 403 };
   }
   if (!Number.isFinite(sizeBytes) || sizeBytes < 1) return { ok: false, reason: "The upload is empty.", status: 400 };
@@ -146,6 +185,52 @@ export function recordingUploadDecision(input: {
     return { ok: false, reason: "Only mp4 or webm video is accepted.", status: 415 };
   }
   return { ok: true };
+}
+
+/**
+ * Whether the upload door may read this request's body at all, judged on its `Content-Length` alone.
+ * PURE. A body with no declared length (chunked) is refused 411 — the door would otherwise have to read
+ * it to learn how big it is, which is the buffering this check exists to prevent. Node frames the body
+ * by that header, so a declared length is the most it can carry.
+ */
+export function recordingUploadLengthDecision(contentLength: string | null): UploadDecision {
+  const raw = (contentLength ?? "").trim();
+  if (!raw) return { ok: false, reason: "Send the file with a Content-Length.", status: 411 };
+  if (!/^\d+$/.test(raw)) return { ok: false, reason: "The Content-Length is not a number.", status: 400 };
+  const length = Number(raw);
+  if (length < 1) return { ok: false, reason: "The upload is empty.", status: 400 };
+  if (length > RECORDING_UPLOAD_MAX_REQUEST_BYTES) {
+    return { ok: false, reason: "The recording is larger than the limit.", status: 413 };
+  }
+  return { ok: true };
+}
+
+/**
+ * Whether the slot named on the upload address can still take an upload — one row read, before the
+ * door reads the body. A missing or malformed id is refused without a read (every id is a v4 UUID);
+ * a read that fails answers 503, so the tablet retries rather than being told the slot is gone.
+ */
+export async function checkRecordingSlotOpen(recordingId: string): Promise<UploadDecision> {
+  const id = recordingId.trim();
+  if (!id) return { ok: false, reason: "Upload to the address the recording request gave, with its recordingId.", status: 400 };
+  if (!isUuid(id)) return { ok: false, reason: "The recordingId is not a recording id.", status: 400 };
+  const read = await getSupabaseAdmin()
+    .from(TABLET_RECORDING_TABLE)
+    .select("status, requested_at, upload_token_hash")
+    .eq("id", id)
+    .maybeSingle();
+  if (read.error) return { ok: false, reason: "The recording slot could not be read.", status: 503 };
+  const row = read.data as { status: string; requested_at: string; upload_token_hash: string | null } | null;
+  return recordingSlotOpenDecision(
+    row ? { requestedAtMs: new Date(row.requested_at).getTime(), status: row.status, uploadTokenHash: row.upload_token_hash } : null,
+    Date.now(),
+  );
+}
+
+/** The address one tablet uploads one recording to; it names the slot so the door can check it first. */
+export function recordingUploadUrl(uploadBaseUrl: string, recordingId: string): string {
+  const base = `${uploadBaseUrl.replace(/\/+$/, "")}/api/devices/recordings/upload`;
+  return `${base}?${RECORDING_UPLOAD_ID_PARAM}=${encodeURIComponent(recordingId)}`;
 }
 
 function toRecording(row: RecordingDbRow, playbackUrl: string | null): TabletRecording {
@@ -207,7 +292,7 @@ export async function requestRecording(input: {
   });
   if (insert.error) throw new Error(`Could not open a recording slot: ${insert.error.message}`);
 
-  const uploadUrl = `${input.uploadBaseUrl.replace(/\/+$/, "")}/api/devices/recordings/upload`;
+  const uploadUrl = recordingUploadUrl(input.uploadBaseUrl, id);
   await callHeadwind(
     "/rest/private/push",
     {
@@ -312,15 +397,32 @@ export async function ingestRecording(input: {
   });
   if (!decision.ok) return { body: { error: decision.reason }, status: decision.status };
 
+  // CLAIM THE SLOT, ATOMICALLY: clear the hash on the one row still `requested` that still holds the
+  // hash this token matched. Of two uploads racing on one token, exactly one gets the row back; the
+  // other is refused here, before it can store anything (point 24).
+  const claim = await supabase
+    .from(TABLET_RECORDING_TABLE)
+    .update({ upload_token_hash: null })
+    .eq("id", id)
+    .eq("status", "requested")
+    .eq("upload_token_hash", row!.upload_token_hash!)
+    .select("id");
+  if (claim.error) return { body: { error: "claim_failed" }, status: 500 };
+  if ((claim.data ?? []).length !== 1) {
+    return { body: { error: "This recording has already been handled." }, status: 409 };
+  }
+
   const contentType = normaliseContentType(input.contentType) || "video/mp4";
+  // upsert: false — a file already at this path is never overwritten, whoever put it there.
   const upload = await supabase.storage
     .from(TABLET_RECORDING_BUCKET)
-    .upload(row!.storage_path, input.bytes, { contentType, upsert: true });
+    .upload(row!.storage_path, input.bytes, { contentType, upsert: false });
   if (upload.error) {
     await supabase
       .from(TABLET_RECORDING_TABLE)
-      .update({ error: `storage: ${upload.error.message}`, status: "failed", upload_token_hash: null })
-      .eq("id", id);
+      .update({ error: `storage: ${upload.error.message}`, status: "failed" })
+      .eq("id", id)
+      .eq("status", "requested");
     return { body: { error: "storage_failed" }, status: 502 };
   }
 
@@ -334,7 +436,8 @@ export async function ingestRecording(input: {
       upload_token_hash: null,
       uploaded_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("status", "requested");
   if (update.error) return { body: { error: "update_failed" }, status: 500 };
 
   return { body: { ok: true }, status: 200 };

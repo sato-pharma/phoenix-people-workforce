@@ -110,7 +110,7 @@ export async function runBirthdayNotifications(request: Request) {
       console.error(error, { tags: { cron: "birthday-notifications", employeeHrId: employee.hrId } });
       results.push({
         employeeHrId: employee.hrId,
-        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+        result: { error: clientSafeErrorMessage(error, "Birthday notification failed."), sent: false },
       });
     }
   }

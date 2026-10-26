@@ -21,7 +21,6 @@ type Profile = {
 
 export function AdminProfileForm({ profile }: { profile: Profile }) {
   const [name, setName] = React.useState(profile.name ?? "");
-  const [email, setEmail] = React.useState(profile.email ?? "");
   const [isSaving, setIsSaving] = React.useState(false);
   const [success, setSuccess] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -34,7 +33,8 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
 
     try {
       const response = await fetch("/api/admin/profile", {
-        body: JSON.stringify({ name, email }),
+        // The name only: the sign-in email is not editable here (the route ignores one).
+        body: JSON.stringify({ name }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
@@ -62,7 +62,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
         <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-phx-accent">Admin / Profile</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-phx-ink">My Profile</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-phx-ink-soft">
-          View your account details and update your display name or email address.
+          View your account details and update your display name. Your sign-in email is managed by HR.
         </p>
       </div>
 
@@ -103,7 +103,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
             </div>
             <div>
               <h2 className="font-bold text-phx-ink">Edit Profile</h2>
-              <p className="text-xs text-phx-ink-soft">Update your name and email address</p>
+              <p className="text-xs text-phx-ink-soft">Update your display name</p>
             </div>
           </div>
 
@@ -122,15 +122,20 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
 
             <div className="space-y-1.5">
               <label className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-email">
-                Email address
+                Email address (not editable)
               </label>
               <Input
+                aria-describedby="profile-email-note"
+                className="cursor-default read-only:bg-slate-50 read-only:text-slate-600"
                 id="profile-email"
-                onChange={(e) => { setEmail(e.target.value); setSuccess(false); }}
-                placeholder="your@email.com"
+                placeholder="No sign-in email on file"
+                readOnly
                 type="email"
-                value={email}
+                value={profile.email ?? ""}
               />
+              <p className="text-xs text-phx-ink-soft" id="profile-email-note">
+                Your sign-in email is managed by HR. Ask HR to change it.
+              </p>
             </div>
 
             {error && (

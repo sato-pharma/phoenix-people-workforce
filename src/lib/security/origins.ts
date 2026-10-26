@@ -1,4 +1,5 @@
 import { systemDeployment } from "@/config/system-settings";
+import { isCiSmokeLoginEnabled } from "@/lib/auth/ci-smoke-login";
 
 // Production + working-preview origins are single-sourced from system-settings so a
 // domain change has exactly one edit point. The two URL-bearing constants previously
@@ -92,7 +93,9 @@ export function isAllowedPhoenixOrigin(origin: string | null | undefined) {
   const normalized = normalizeOrigin(origin);
   if (!normalized) return false;
   if (allowedPhoenixOrigins().has(normalized)) return true;
-  return (process.env.NODE_ENV !== "production" || process.env.PHOENIX_CI_SMOKE_LOGIN === "true") && isLocalOrigin(normalized);
+  // A loopback origin is trusted in development, and on a production build only inside the CI
+  // login smoke test — APP_ENV exactly "ci" AND the flag, never the flag alone (audit point 16).
+  return (process.env.NODE_ENV !== "production" || isCiSmokeLoginEnabled()) && isLocalOrigin(normalized);
 }
 
 export function requestOriginCandidates(request: Pick<Request, "headers" | "url">) {

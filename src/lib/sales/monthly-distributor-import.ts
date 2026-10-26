@@ -41,6 +41,7 @@ import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-b
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
+import { holdImportTailRepair, releaseImportTailRepair } from "@/lib/sales/import-tail-repair";
 
 export type SalesDistributorOption = {
   code: string;
@@ -3445,6 +3446,16 @@ export async function persistDistributorSalesUpload(
     if (error) throw error;
   }
 
+  // 🔴 THE REPAIR NOTE GOES IN BEFORE FINALIZE (audit P4-03; src/lib/sales/import-tail-repair.ts).
+  // Finalize commits this batch live, and the tail below runs outside that transaction, so a process
+  // that died between the two used to leave a live batch built on the previous import's split net
+  // with nothing that would ever rebuild it. The note is a claimed row in the brick-move queue: the
+  // 20-minute drain rebuilds the file only if the tail never crosses it off, so the normal path
+  // still does the work once. Written here, after the rows and before finalize, so a finalize that
+  // commits after this process is gone is covered too. A rejected batch gets no note and no tail.
+  const tailRepair =
+    result.status === "validated" ? await holdImportTailRepair(supabase, batchId, parsedRows.map((row) => row.brickId)) : null;
+
   if (result.status === "validated" && result.period) {
     await finalizeSosBatchAndAuditSupersede({
       batchId,
@@ -3508,6 +3519,8 @@ export async function persistDistributorSalesUpload(
     // dashboard read re-cached the attribution the net had not reached yet and held it for the
     // full TTL. Those earlier busts are harmless and stay; this one is the one that matters.
     invalidateSalesDashboardCache("source of sales import — split net written, attribution refreshed");
+    // The tail landed: cross the repair note off, so the drain never rebuilds this file again.
+    await releaseImportTailRepair(supabase, tailRepair);
   }
 
   return {

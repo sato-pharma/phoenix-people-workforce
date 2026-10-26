@@ -108,7 +108,7 @@ export async function runHolidayConfirmationReminder(request: Request) {
     } catch (error) {
       results.push({
         holiday,
-        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+        result: { error: clientSafeErrorMessage(error, "Holiday confirmation reminder failed."), sent: false },
       });
     }
   }

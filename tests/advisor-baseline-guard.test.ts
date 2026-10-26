@@ -82,7 +82,11 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // 260, RAISED from 212 on 2026-10-23 — 48 joined, all triaged in the baseline document: 42 in
   // the dated schema phx_backup_20261017, 3 in au (bak_20261015*), and 3 new server-only public
   // tables. None grants anon or authenticated anything (0 of all 260, read live that day).
-  { category: "rls_enabled_no_policy", current_count: 260 },
+  // 272, RAISED from 260 on 2026-10-26 — production read 267 (7 new server-only public tables), and
+  // the audit change set adds 5 on purpose: the payroll resync outbox, the 3 notification-backup
+  // tables with row security switched on, and deductions_categories with its open policy dropped.
+  // 20261026120600 refuses to apply if any of them still grants a browser role anything.
+  { category: "rls_enabled_no_policy", current_count: 272 },
   { category: "function_search_path_mutable", current_count: 0 },
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
@@ -120,13 +124,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 261 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 273 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /261/);
+  assert.match(exceeded!.message, /273/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
   // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
   // `public` is growth, and fails.

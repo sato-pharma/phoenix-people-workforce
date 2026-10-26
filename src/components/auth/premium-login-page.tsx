@@ -33,6 +33,7 @@ const loginErrorMessages: Record<string, string> = {
   invalid_credentials: "Invalid login or password.",
   password_setup_required: "Set your password first using “Set or reset my password” below, then sign in.",
   rate_limited: "Too many failed login attempts. Please try again later.",
+  sign_in_unavailable: "Sign-in is temporarily unavailable. Please try again in a few minutes.",
 };
 
 type LoginErrorField = "form" | "loginId" | "password";

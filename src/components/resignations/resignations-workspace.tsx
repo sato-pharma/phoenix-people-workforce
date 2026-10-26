@@ -68,6 +68,12 @@ type Props = {
    */
   canExportHistory?: boolean;
   /**
+   * Whether the per-tab "Export" renders. That export is built in the browser from rows already on
+   * screen, so no route stands behind it — the page decides. False for the HR Operations Specialist,
+   * who exports nothing from Resignations (owner, 2026-10-20).
+   */
+  canExportTab?: boolean;
+  /**
    * resignations:create, resolved on the server by the page. It only decides whether "New
    * resignation" renders — the HR Operations Specialist follows resignations the owner submits and
    * never starts one; POST /api/resignations asserts the same permission itself.
@@ -110,6 +116,7 @@ function newForm(): CreateResignationInput {
 
 export function ResignationsWorkspace({
   canExportHistory = false,
+  canExportTab = true,
   canCreate = false,
   canDecide = false,
   canEditDates = false,
@@ -509,9 +516,11 @@ export function ResignationsWorkspace({
       <RgPanel
         action={
           <span className="inline-flex flex-wrap justify-end gap-1">
-            <RgButton disabled={busy === "export-tab"} kind="onDark" onClick={() => void exportCurrentTab()}>
-              {busy === "export-tab" ? "Exporting…" : "Export"}
-            </RgButton>
+            {canExportTab ? (
+              <RgButton disabled={busy === "export-tab"} kind="onDark" onClick={() => void exportCurrentTab()}>
+                {busy === "export-tab" ? "Exporting…" : "Export"}
+              </RgButton>
+            ) : null}
             {canExportHistory ? (
               <RgButton
                 disabled={busy === "export-history"}

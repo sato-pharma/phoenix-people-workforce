@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { accessRegistry, findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import {
   excuseErrorMessage,
   isExcuseExcludedRole,
@@ -97,22 +98,49 @@ export async function runExcusesTests() {
   // Only a pending request can be decided — guards against double-approval.
   assert.match(
     serviceSource,
-    /requestRow\.status !== "pending_manager"/,
-    "decideExcuseRequestByToken must reject requests that are not pending_manager",
+    /export async function decideExcuseRequestAsManager[\s\S]{0,1600}requestRow\.status !== "pending_manager"/,
+    "decideExcuseRequestAsManager must reject requests that are not pending_manager",
   );
-  // The approval token must be single-use, unexpired, and bound to the request's manager.
-  assert.match(serviceSource, /tokenData\.used_at/, "approval token must be rejected once used");
-  assert.match(serviceSource, /tokenData\.expires_at|expires_at\).getTime\(\)/, "approval token must honour expiry");
-  assert.match(
+  // NO SESSION-LESS DECISION. These lines used to pin the emailed one-click link's token as
+  // single-use, unexpired and bound to the manager. The link is gone (2026-10-26, as the vacation
+  // link went in #3274): its raw token was put in no email, so the unauthenticated GET that
+  // consumed it could not be reached honestly, and a decision by GET is one a link preview or a
+  // mail scanner can take. Inverted rather than deleted: the invariant is stronger now — an excuse
+  // is decided signed in, by its assigned manager, or not at all.
+  // Matched with a trailing "(" ON PURPOSE, as the vacation guard is, so prose may still name it.
+  assert.doesNotMatch(
     serviceSource,
-    /normalizeHrId\(tokenData\.manager_hr_id\) !== normalizeHrId\(requestRow\.manager_hr_id\)/,
-    "only the request's assigned manager may decide via the token link",
+    /decideExcuseRequestByToken\s*\(/,
+    "the token decision path must not come back — an excuse is decided signed in, in the Action Center",
   );
-  // After a decision, the token is burned so the link cannot be replayed.
-  assert.match(
+  assert.doesNotMatch(
     serviceSource,
-    /v2_excuse_email_tokens[\s\S]*used_at: now/,
-    "the approval token must be marked used after a decision",
+    /\.from\("v2_excuse_email_tokens"\)/,
+    "no excuse approval token is minted, read or burned any more — the table stays, untouched",
+  );
+  assert.doesNotMatch(serviceSource, /randomBytes\(/, "a new excuse request mints no token");
+  const decisionRouteSource = readFileSync("app/api/excuses/[id]/decision/route.ts", "utf8");
+  assert.doesNotMatch(
+    decisionRouteSource,
+    /export (async )?function GET\b|export const GET\b|export \{[^}]*\bGET\b/,
+    "the excuse decision route must answer no GET — a GET that decides is one a link preview can take",
+  );
+  assert.doesNotMatch(decisionRouteSource, /searchParams\.get\("token"\)/, "the decision route must read no token from the address");
+  assert.match(
+    decisionRouteSource,
+    /export async function POST[\s\S]*assertSameOriginMutation\(request\)[\s\S]*resolveAccessContext\(request\)[\s\S]*decideExcuseRequestAsManager\(access,/,
+    "the one decision path is the signed-in, same-origin POST that decides as the assigned manager",
+  );
+  // The registry describes the route as it is: a session POST, never a public token route.
+  const decisionEntries = accessRegistry.filter((entry) => entry.pattern === "/api/excuses/:id/decision");
+  assert.equal(decisionEntries.length, 1, "the excuse decision route has one registry entry");
+  assert.equal(decisionEntries[0]?.authMode, "session", "the excuse decision route is a session route, not a public-token one");
+  assert.deepEqual([...(decisionEntries[0]?.methods ?? [])], ["POST"], "the excuse decision entry declares POST only");
+  assert.equal(decisionEntries[0]?.csrf.required, true, "the excuse decision POST is CSRF-checked, as every decision route is");
+  assert.notEqual(
+    findAccessRegistryEntry("/api/excuses/:id/decision", "GET")?.authMode,
+    "public-token",
+    "no GET on the excuse decision address may be declared public",
   );
   // Access is restricted to the eligible roles or head-office employees.
   assert.match(
@@ -168,11 +196,9 @@ export async function runExcusesTests() {
     /export async function decideExcuseRequestAsManager[\s\S]{0,1400}isExcuseExcludedRole\(access\.role\)\) \{[\s\S]{0,200}Forbidden: District and Regional Managers cannot decide excuse requests\./,
     "decideExcuseRequestAsManager must throw a Forbidden for an excuse-excluded role",
   );
-  assert.match(
-    serviceSource,
-    /export async function decideExcuseRequestByToken[\s\S]{0,2200}await hrIdHoldsExcuseExcludedRole\(requestRow\.manager_hr_id\)/,
-    "the emailed approve/reject link carries no session, so it must resolve the manager's role itself rather than becoming a bypass",
-  );
+  // The emailed approve/reject link resolved the manager's role itself, because it carried no
+  // session. The link is gone (see NO SESSION-LESS DECISION above), so the only decision path left
+  // is decideExcuseRequestAsManager, whose excluded-role refusal is pinned just above.
 
   // Never mint a request (or a resubmit) routed to an excluded manager — it would sit at
   // pending_manager forever, recoverable only through reassignExcuseManager.
@@ -337,16 +363,8 @@ export async function runExcusesTests() {
     /import \{ conflictError \} from "@\/lib\/http\/api-errors"/,
     "excuses service must import conflictError for DB-level conflict detection",
   );
-  assert.match(
-    serviceSource,
-    /export async function decideExcuseRequestByToken[\s\S]*?\.eq\("id", input\.requestId\)\s*\.eq\("status", "pending_manager"\)/,
-    "decideExcuseRequestByToken status UPDATE must be guarded by a DB-level status compare-and-swap",
-  );
-  assert.match(
-    serviceSource,
-    /export async function decideExcuseRequestByToken[\s\S]*?\.maybeSingle\(\);\s*\n\s*if \(updateError\) throw updateError;\s*\n\s*if \(!updated\) throw conflictError\("This excuse request has already been decided\."\);/,
-    "decideExcuseRequestByToken must reject a lost status race with a conflict error instead of silently overwriting",
-  );
+  // (The token decision path had the same two guards; it was removed on 2026-10-26, so the
+  // manager path below is the one decision UPDATE left to pin.)
   assert.match(
     serviceSource,
     /export async function decideExcuseRequestAsManager[\s\S]*?\.eq\("id", input\.requestId\)\s*\.eq\("status", "pending_manager"\)/,

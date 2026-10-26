@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import { config } from "../proxy.ts";
+import { RECORDING_MAX_BYTES, RECORDING_UPLOAD_MAX_REQUEST_BYTES } from "../src/lib/devices/headwind/recordings.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -38,6 +39,17 @@ const EXCLUDED = [
   { pattern: "api/whatsapp-inbox/conversations/[^/]+/messages$", sample: "/api/whatsapp-inbox/conversations/abc123/messages", file: "app/api/whatsapp-inbox/conversations/[id]/messages/route.ts", auth: 'requireRecruitmentAccess(request, "recruitment", "update")' },
   { pattern: "api/employees/[^/]+/cv$", sample: "/api/employees/B-10/cv", file: "app/api/employees/[hrId]/cv/route.ts", auth: "assertCanManage(request, hrId)" },
   { pattern: "api/employees/cv-staging$", sample: "/api/employees/cv-staging", file: "app/api/employees/cv-staging/route.ts", auth: 'assertPermission(access, "employees", "update")' },
+] as const;
+
+/**
+ * Doors left out of the proxy that no browser ever uses and no cookie authorises (audit, 2026-10-26,
+ * point 24). A rep tablet files a screen recording of up to 256 MB with a single-use token it was
+ * pushed — no session, no Origin header, so there is no same-origin test to run. What makes the
+ * exclusion safe instead is pinned in section 3b: the route refuses on Content-Length and counts the
+ * address BEFORE it reads a byte of the body, and it reads no session at all.
+ */
+const TOKEN_EXCLUDED = [
+  { pattern: "api/devices/recordings/upload$", sample: "/api/devices/recordings/upload", file: "app/api/devices/recordings/upload/route.ts" },
 ] as const;
 
 /**
@@ -66,7 +78,7 @@ export function runProxyUploadBodyLimitTests() {
   const matchers = compileMatchers();
 
   // ── 1. every excluded route is invisible to the proxy, so its body is never cut at 10 MB ───────
-  for (const route of EXCLUDED) {
+  for (const route of [...EXCLUDED, ...TOKEN_EXCLUDED]) {
     assert.equal(
       proxyRuns(matchers, route.sample),
       false,
@@ -89,6 +101,9 @@ export function runProxyUploadBodyLimitTests() {
     // an exclusion anchored with `$` must not swallow a longer path that merely starts the same way
     "/api/devices/headwind/uploads",
     "/api/devices/headwind/upload/extra",
+    "/api/devices/recordings",
+    "/api/devices/recordings/uploads",
+    "/api/devices/recordings/upload/extra",
     "/api/hiring-documents",
     "/api/hiring-documents/files/extra",
     "/api/messages/mailbox",
@@ -114,8 +129,8 @@ export function runProxyUploadBodyLimitTests() {
   const excludedApiPatterns = [...source.matchAll(/\|(api\/[^|)]+\$)/g)].map((hit) => hit[1]).sort();
   assert.deepEqual(
     excludedApiPatterns,
-    EXCLUDED.map((route) => route.pattern).sort(),
-    "the only /api paths left out of the proxy matcher must be the routes listed in EXCLUDED",
+    [...EXCLUDED, ...TOKEN_EXCLUDED].map((route) => route.pattern).sort(),
+    "the only /api paths left out of the proxy matcher must be the routes listed in EXCLUDED and TOKEN_EXCLUDED",
   );
 
   // ── 3. an exclusion is safe because each route guards ITSELF, in order, before it reads the body ──
@@ -135,6 +150,43 @@ export function runProxyUploadBodyLimitTests() {
     assert.ok(csrf < auth, `${route.file} must check same-origin BEFORE auth, as the proxy's CSRF rule did`);
     assert.ok(auth < body, `${route.file} must turn an anonymous caller away BEFORE it reads the uploaded body — without the proxy's ceiling an unauthorised body is buffered whole`);
   }
+
+  // ── 3b. a token door guards itself without a session: length cap and rate limit before the body ──
+  for (const route of TOKEN_EXCLUDED) {
+    const whole = stripComments(readFileSync(route.file, "utf8"));
+    const start = whole.indexOf("export async function POST");
+    assert.ok(start >= 0, `${route.file} has no POST handler — this test's premise needs re-reading`);
+    const next = whole.indexOf("export async function", start + 1);
+    const code = whole.slice(start, next === -1 ? undefined : next);
+    const lengthCheck = code.indexOf('recordingUploadLengthDecision(request.headers.get("content-length"))');
+    const rateLimit = code.indexOf("assertApiRateLimit(");
+    const slotCheck = code.indexOf("checkRecordingSlotOpen(");
+    const body = code.indexOf(".formData()");
+    assert.ok(body >= 0, `${route.file} no longer reads the multipart body the way this test expects — its premise needs re-reading`);
+    assert.ok(lengthCheck >= 0 && lengthCheck < body, `${route.file} must refuse on Content-Length BEFORE it reads the body — without the proxy's ceiling an oversize body is buffered whole`);
+    assert.ok(rateLimit >= 0 && rateLimit < body, `${route.file} must count the address BEFORE it reads the body, so nobody can stream 256 MB bodies at it without end`);
+    assert.ok(slotCheck >= 0 && slotCheck < body, `${route.file} must find the slot its address names BEFORE it reads the body — a caller with no token could otherwise make it buffer 256 MB`);
+    assert.ok(!/onStoreError/.test(code), `${route.file} must fail closed when the rate limit cannot be checked`);
+    assert.ok(
+      !/resolveAccessContext|getSessionFromRequest|cookies\(\)/.test(whole),
+      `${route.file} must read no session — a token door has no cookie authority, which is the only reason it may skip the same-origin test`,
+    );
+  }
+
+  // The two limits this file is about, read from the code that sets them, never typed in here. The
+  // recording door's own cap must sit ABOVE the proxy's copy limit — which is the whole reason it is
+  // excluded — and must hold a full-size file.
+  const proxyLimit = (
+    createRequire(import.meta.url)("next/dist/server/config-shared") as {
+      defaultConfig: { experimental?: { proxyClientMaxBodySize?: number } };
+    }
+  ).defaultConfig.experimental?.proxyClientMaxBodySize;
+  assert.equal(typeof proxyLimit, "number", "Next's default proxyClientMaxBodySize moved — re-read node_modules/next/dist/server/config-shared.js");
+  assert.ok(
+    RECORDING_UPLOAD_MAX_REQUEST_BYTES > (proxyLimit as number),
+    `the recording door's request cap (${RECORDING_UPLOAD_MAX_REQUEST_BYTES} bytes) must sit above the proxy's ${proxyLimit}-byte copy limit — a full recording is far larger, and that is why the door is out of the matcher`,
+  );
+  assert.ok(RECORDING_UPLOAD_MAX_REQUEST_BYTES >= RECORDING_MAX_BYTES, "the recording door's request cap must hold a full-size recording");
 
   // ── 4. the global limit is NOT raised — that would be the unauthenticated-buffering hole ──────
   const nextConfig = stripComments(readFileSync("next.config.ts", "utf8"));

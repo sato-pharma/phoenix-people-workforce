@@ -145,13 +145,30 @@ export async function findCandidateIdByContentFingerprint(
   contentMd5: string,
   options: { excludeCandidateId?: string | null } = {},
 ): Promise<string | null> {
+  return (await findContentFingerprintOwner(contentMd5, options))?.candidateId ?? null;
+}
+
+/** Who owns a byte-identical file, and what that file was filed as ("cv" when it was filed as nothing). */
+export type ContentFingerprintOwner = { candidateId: string; kind: string };
+
+/**
+ * The same lookup as findCandidateIdByContentFingerprint, plus the KIND of the matching file.
+ *
+ * Inbound intake needs the kind to decide whether it may skip the paid CV read: identical bytes
+ * already filed as a CV were already accepted as one, so reading them again buys nothing. Identical
+ * bytes filed as something else (an ID scan, a certificate) were never judged as a CV, and still are.
+ */
+export async function findContentFingerprintOwner(
+  contentMd5: string,
+  options: { excludeCandidateId?: string | null } = {},
+): Promise<ContentFingerprintOwner | null> {
   const fingerprint = String(contentMd5 ?? "").trim();
   if (!fingerprint) return null;
 
   const supabase = recruitmentDb();
   let query = supabase
     .from("ats_files")
-    .select("candidate_id, created_at")
+    .select("candidate_id, kind, created_at")
     .eq("content_md5", fingerprint)
     .not("candidate_id", "is", null)
     .order("created_at", { ascending: true })
@@ -160,8 +177,11 @@ export async function findCandidateIdByContentFingerprint(
 
   const { data, error } = await query;
   if (error) throw error;
-  const owner = data?.[0]?.candidate_id;
-  return owner ? String(owner) : null;
+  const row = data?.[0] as { candidate_id?: unknown; kind?: unknown } | undefined;
+  if (!row?.candidate_id) return null;
+  // uploadCandidateFile files a blank kind as "cv", so a blank one read back means the same.
+  const kind = typeof row.kind === "string" && row.kind.trim() ? row.kind.trim().toLowerCase() : "cv";
+  return { candidateId: String(row.candidate_id), kind };
 }
 
 export async function uploadCandidateFile(

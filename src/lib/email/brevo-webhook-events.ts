@@ -4,8 +4,9 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Brevo transactional webhooks are NOT HMAC-signed (unlike Resend/svix). We authenticate them
-// with a shared secret carried in the URL (`?token=…`) or an `x-brevo-token` header, verified
-// timing-safely against BREVO_WEBHOOK_SECRET. Events are normalised into the SAME
+// with a shared secret carried ONLY in the `Authorization: Bearer` header, verified in constant
+// time against BREVO_WEBHOOK_SECRET; a secret in the URL (`?token=`) is never accepted (checkBrevoWebhookAuth).
+// Events are normalised into the SAME
 // `email_delivery_events` table the Resend webhook writes (provider = "brevo"), so opens/clicks/
 // bounces land in one place regardless of which provider actually sent the mail.
 
@@ -54,29 +55,65 @@ function firstText(...values: unknown[]) {
   return null;
 }
 
+/**
+ * Constant-time string comparison. Both sides are hashed to a fixed 32 bytes first, so neither the
+ * comparison nor an early length check tells a caller how long the secret is or how much of it matched.
+ */
 function timingSafeEqual(left: string, right: string) {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+  const leftDigest = crypto.createHash("sha256").update(left, "utf8").digest();
+  const rightDigest = crypto.createHash("sha256").update(right, "utf8").digest();
+  return crypto.timingSafeEqual(leftDigest, rightDigest);
+}
+
+export type BrevoWebhookAuthResult =
+  | { ok: true; warning?: "secret_in_url" }
+  | { ok: false; reason: "secret_not_configured" | "secret_in_url" | "bearer_missing" | "bearer_mismatch" };
+
+/** The token in `Authorization: Bearer <token>`, or "" when the header is absent or another scheme. */
+function bearerToken(header: string | null): string {
+  const match = /^\s*bearer\s+(.+)$/i.exec(header ?? "");
+  return match?.[1]?.trim() ?? "";
+}
+
+/** True when the URL carries a `token` query parameter (any value), or cannot be read at all. */
+function urlCarriesToken(url: string): boolean {
+  try {
+    return new URL(url).searchParams.has("token");
+  } catch {
+    return true;
+  }
 }
 
 /**
- * Authenticate a Brevo webhook via the shared secret in `?token=` or the `x-brevo-token`
- * header. Returns false when the secret is missing or does not match.
+ * Authenticate a Brevo webhook (audit point 20, owner-approved 2026-10-26).
+ *
+ * The secret travels ONLY in the `Authorization: Bearer <BREVO_WEBHOOK_SECRET>` header — Brevo's
+ * webhook "Bearer token" authentication — compared in constant time. It used to be accepted in the
+ * URL (`?token=`) or an `x-brevo-token` header. A secret in a URL is written into every access log,
+ * proxy log and error report the URL passes through, so `?token=` never authenticates anything and
+ * `x-brevo-token` is no longer read at all.
+ *
+ * THE CUT-OVER (risk review, 26 Oct). Brevo is switched to send the NEW secret as a Bearer header
+ * BEFORE this code ships, while the webhook address still carries the old `?token=` (the code then
+ * running reads it). So a request with a valid Bearer is ACCEPTED even when `?token=` is still on
+ * its URL — refusing it would drop every delivery event between the deploy and the moment the token
+ * is taken off the address — and it comes back with `warning: "secret_in_url"`, which the route logs
+ * until the address is clean. A request that carries `?token=` and no valid Bearer is refused as
+ * `secret_in_url`, so the old configuration on its own fails loudly instead of quietly.
  */
-export function verifyBrevoWebhookAuth(input: { url: string; headers: Headers; secret: string }): boolean {
+export function checkBrevoWebhookAuth(input: { url: string; headers: Headers; secret: string }): BrevoWebhookAuthResult {
   const secret = input.secret.trim();
-  if (!secret) return false;
-  let tokenFromQuery = "";
-  try {
-    tokenFromQuery = new URL(input.url).searchParams.get("token")?.trim() ?? "";
-  } catch {
-    tokenFromQuery = "";
-  }
-  const tokenFromHeader = input.headers.get("x-brevo-token")?.trim() ?? "";
-  const provided = tokenFromQuery || tokenFromHeader;
-  if (!provided) return false;
-  return timingSafeEqual(provided, secret);
+  if (!secret) return { ok: false, reason: "secret_not_configured" };
+  const tokenInUrl = urlCarriesToken(input.url);
+  const provided = bearerToken(input.headers.get("authorization"));
+  if (provided && timingSafeEqual(provided, secret)) return tokenInUrl ? { ok: true, warning: "secret_in_url" } : { ok: true };
+  if (tokenInUrl) return { ok: false, reason: "secret_in_url" };
+  return { ok: false, reason: provided ? "bearer_mismatch" : "bearer_missing" };
+}
+
+/** True only for a request whose `Authorization: Bearer` header carries the secret (checkBrevoWebhookAuth). */
+export function verifyBrevoWebhookAuth(input: { url: string; headers: Headers; secret: string }): boolean {
+  return checkBrevoWebhookAuth(input).ok;
 }
 
 // Brevo `event` → our shared status vocabulary.

@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { isForceTestingDelivery, isProductionRuntime, systemEmail } from "@/config/system-settings";
+import { resolveAccessContext } from "@/lib/auth/server";
+import { callerMayReadEmailHealthDetail, publicEmailHealthBody } from "@/lib/email/email-health-access";
 import { moduleSendingAccountStatus, resolveEmailProviders } from "@/lib/email/email-providers";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const truthy = (value?: string) => ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
 
-export async function GET() {
+// The address stays public so an uptime monitor can poll it, and every caller gets the same status
+// code (200 healthy, 503 degraded). Only the cron secret or a signed-in system administrator reads
+// the detail below; everyone else gets { status, timestamp } (src/lib/email/email-health-access.ts).
+export async function GET(request: Request) {
   // Value-aware, not presence-only: EMAIL_NOTIFICATIONS_ENABLED="false" is "present" but
   // disables all email, so it must read as a failed check. PHOENIX_AUTH_SECRET is required
   // to sign one-click unsubscribe tokens.
@@ -43,6 +49,17 @@ export async function GET() {
 
   const missing = checks.some((check) => !check.present);
   const degraded = missing || warnings.length > 0;
+  const status = degraded ? "degraded" : "healthy";
+  const timestamp = new Date().toISOString();
+  const init = { headers: { "cache-control": "no-store" }, status: degraded ? 503 : 200 };
+
+  const detail = await callerMayReadEmailHealthDetail(request, {
+    cronAuthorized: (req) => assertCronAuthorized(req, "health/email") === null,
+    resolveAccess: resolveAccessContext,
+  });
+  if (!detail) {
+    return NextResponse.json(publicEmailHealthBody({ status, timestamp }), init);
+  }
 
   return NextResponse.json(
     {
@@ -54,10 +71,10 @@ export async function GET() {
       moduleAccounts: moduleSendingAccountStatus(),
       deliveryMode,
       forceTesting,
-      status: degraded ? "degraded" : "healthy",
-      timestamp: new Date().toISOString(),
+      status,
+      timestamp,
       warnings,
     },
-    { status: degraded ? 503 : 200 },
+    init,
   );
 }

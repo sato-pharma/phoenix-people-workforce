@@ -7,11 +7,12 @@ import { logWarning } from "@/lib/observability/log";
 import { evaluateReleaseGate, type ReleaseGateDecision } from "@/lib/platform/release-gate";
 import { releaseGateHasRecord } from "@/lib/platform/release-gate-store";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { cachedWorkflowRegistryAudit } from "@/lib/workflow-registry/audit-cache";
 import { auditWorkflowRegistryModules } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 // Readiness probe: verifies the process can actually serve requests — required config is
-// present AND Supabase is reachable with a cheap head query. Returns 503 (not ready) when
+// present AND Supabase is reachable with a one-row existence read. Returns 503 (not ready) when
 // a dependency is down so orchestration/uptime checks can react. Public + unauthenticated,
 // so it returns only booleans/status — never data, error text or variable names. Not called per user
 // request, so a light DB ping is acceptable.
@@ -72,10 +73,12 @@ export async function GET() {
   let databaseOk = false;
   let databaseError: string | null = null;
   try {
-    // Cheap connectivity check: HEAD count on a small system table (no rows returned).
+    // Cheap connectivity check: read at most ONE id. Never `count: "exact"` — this address is public
+    // and polled through every deploy, and an exact count makes Postgres count the whole table on
+    // every call (a full scan of an append-only error log) just to prove the database answers.
     const { error } = await getSupabaseAdmin({ requestTimeoutMs: 4000 })
       .from("app_error_events")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .limit(1);
     if (error) {
       databaseError = error.message;
@@ -116,11 +119,14 @@ export async function GET() {
   //
   // Deliberately does NOT flip readiness to 503: one broken module does not stop the process
   // serving, and cycling the container would fix nothing while taking the rest of the app down.
+  //
+  // A SUCCESSFUL audit is reused for a minute (`cachedWorkflowRegistryAudit`), a failed one never is:
+  // the probe is public and polled through every deploy, and a module row only changes on an admin edit.
   let skippedModules: Array<{ moduleKey: string; reason: string }> = [];
   let registryCheckError: string | null = null;
   try {
     ({ skipped: skippedModules } = await withDeadline(
-      auditWorkflowRegistryModules(),
+      cachedWorkflowRegistryAudit(auditWorkflowRegistryModules),
       REGISTRY_AUDIT_DEADLINE_MS,
       "workflow registry audit",
     ));

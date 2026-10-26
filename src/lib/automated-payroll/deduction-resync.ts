@@ -11,6 +11,7 @@ import {
   upsertStepState,
 } from "./draft-store.ts";
 import { isSettledInPart1, loadStepContext } from "./recommend.ts";
+import { maybeDrainPayrollResyncOutbox, queuePayrollResyncRetry } from "./resync-outbox.ts";
 import { holdRun } from "./run-hold.ts";
 import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
@@ -83,7 +84,13 @@ export type DeductionResyncOutcome =
       keptSavedHrIds?: string[];
     }
   | { action: "skip"; monthKey: string; reason: DeductionResyncSkipReason }
-  | { action: "failed"; monthKey: string; message: string };
+  | {
+      action: "failed";
+      monthKey: string;
+      message: string;
+      /** Parked in the resync outbox and retried under the hold (resync-outbox.ts). */
+      queued?: boolean;
+    };
 
 /** One payroll step and the draft columns it freezes a module figure into. */
 export type DeductionStepColumns = { stepKey: StepKey; columns: readonly string[] };
@@ -192,6 +199,13 @@ export type ResyncDeps = {
   listLatestCellWrites: typeof listLatestCellWrites;
   /** Takes the run's hold for the clears (run-hold.ts). A test passes one that just runs the work. */
   holdRun: typeof holdRun;
+  /**
+   * Parks a resync that failed, to be retried under the hold (resync-outbox.ts), and drains what is
+   * parked. Only the default deps carry the real ones: a test that leaves them out queues and drains
+   * nothing, so the suite — which runs with production credentials — never touches the live queue.
+   */
+  queueRetry?: typeof queuePayrollResyncRetry;
+  drainQueued?: () => void;
 };
 
 const defaultResyncDeps: ResyncDeps = {
@@ -203,6 +217,8 @@ const defaultResyncDeps: ResyncDeps = {
   upsertStepState,
   listLatestCellWrites,
   holdRun,
+  queueRetry: queuePayrollResyncRetry,
+  drainQueued: maybeDrainPayrollResyncOutbox,
 };
 
 /**
@@ -221,6 +237,8 @@ const defaultResyncDeps: ResyncDeps = {
 export async function resyncPayrollDeductionSteps(
   target: DeductionResyncTarget,
   deps: ResyncDeps = defaultResyncDeps,
+  /** `fromOutbox`: this IS the queued retry, so a failure must not park a second copy of it. */
+  options: { fromOutbox?: boolean } = {},
 ): Promise<DeductionResyncOutcome> {
   const monthKey = target.monthKey;
   if (target.employees.length === 0) {
@@ -258,14 +276,14 @@ export async function resyncPayrollDeductionSteps(
     // a moment ago; a Part 2 confirm landing in between used to have these clears arrive after its
     // stamp. The hold re-checks the phase as it is taken, so a run that reached `ready` meanwhile is
     // refused here and reported below as the same skip as one that was already confirmed.
-    return await deps.holdRun(
+    // A wait that runs out is refused too — never cleared unheld (audit 2026-10-26, P2-02) — and the
+    // catch below parks the resync in the outbox, which retries it under the hold.
+    const held = await deps.holdRun(
       {
         runId: run.id,
         expected: ["part1", "part2"],
         action: RUN_HOLD_ACTIONS.deductionResync,
-        // A decision that has been saved must still reach payroll: wait briefly, then go ahead.
         waitMs: 5_000,
-        whenWaitRunsOut: "proceed",
       },
       async (): Promise<DeductionResyncOutcome> => {
         const states = await deps.listStepStates(run.id);
@@ -342,6 +360,9 @@ export async function resyncPayrollDeductionSteps(
         };
       },
     );
+    // The run's hold was free just now, which is the best moment for a resync parked earlier.
+    if (!options.fromOutbox) deps.drainQueued?.();
+    return held;
   } catch (error) {
     // A hold refused because Part 2 was confirmed in the meantime is the same skip as above, said the
     // same way, not a failure.
@@ -362,11 +383,16 @@ export async function resyncPayrollDeductionSteps(
       return { action: "skip", monthKey, reason: "part2_already_confirmed" };
     }
     const message = error instanceof Error ? error.message : "Unknown error";
+    // Parked, with its whole target, so the saved decision still reaches payroll — under the hold.
+    const queued =
+      !options.fromOutbox && deps.queueRetry
+        ? await deps.queueRetry({ kind: "deduction", target }, error).catch(() => false)
+        : false;
     logError("Automated payroll: deduction step resync failed", {
-      labels: { event: "automated_payroll_deduction_resync_failed", monthKey },
+      labels: { event: "automated_payroll_deduction_resync_failed", monthKey, queued, retry: Boolean(options.fromOutbox) },
       error,
     });
-    return { action: "failed", monthKey, message };
+    return { action: "failed", monthKey, message, queued };
   }
 }
 
@@ -455,6 +481,12 @@ export function describeDeductionResyncNotApplied(outcome: DeductionResyncOutcom
     ];
   }
   if (outcome.action === "failed") {
+    if (outcome.queued) {
+      return [
+        `Payroll for ${month} was busy, so this deduction is queued and will reach it automatically ` +
+          "within a few minutes; until it does, the payroll run shows it as waiting. The decision itself is saved.",
+      ];
+    }
     return [`Payroll for ${month} could not be updated with this deduction. The decision itself is saved.`];
   }
   if (outcome.action === "resync" && (outcome.keptSavedHrIds?.length ?? 0) > 0) {

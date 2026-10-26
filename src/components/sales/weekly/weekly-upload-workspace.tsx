@@ -19,6 +19,7 @@ import { weeklyProductKeysAreOne, weeklyUploadThisWeekUnits, weeklyUploadUnitSco
 import { weeklyVerifyAiBadge } from "@/lib/sales/weekly/verify-ai-state";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
@@ -1010,16 +1011,18 @@ function groupUnresolvedIssues(result: WeeklySalesValidationResult): IssueGroup[
 
 function downloadUnmapped(result: WeeklySalesValidationResult) {
   const seen = new Set<string>();
-  const lines = ["field,value,reason"];
+  const lines = [csvLine(["field", "value", "reason"])];
   for (const issue of result.issues) {
     if (issue.severity !== "failure") continue;
-    const value = (issue.value ?? "").replace(/"/g, "'");
+    const value = issue.value ?? "";
     const key = `${issue.field}|${value}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    lines.push(`${issue.field},"${value}","${issue.message.replace(/"/g, "'")}"`);
+    // The value is a cell read from a distributor's upload file: csvLine neutralises a formula lead
+    // (=, +, -, @) and quotes it, so the sheet the team opens in Excel never runs it.
+    lines.push(csvLine([issue.field, value, issue.message]));
   }
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob([CSV_BOM + lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

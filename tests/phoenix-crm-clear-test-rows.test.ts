@@ -72,6 +72,10 @@ const KNOWN_EDGES: readonly FkEdge[] = [
   { child: "phoenix_crm_manager_plan_edit_requests", parent: "phoenix_crm_manager_plans", onDelete: "c" },
   { child: "phoenix_crm_manager_plan_events", parent: "phoenix_crm_manager_plans", onDelete: "c" },
   { child: "phoenix_crm_manager_plan_slots", parent: "phoenix_crm_manager_plans", onDelete: "c" },
+  // Double-visit requests, read from production's `pg_constraint` on 2026-10-17 after Guard 2 aborted
+  // the sweep over the first: no cascade into the customers, and the people rows cascade from it.
+  { child: "phoenix_crm_double_visit_requests", parent: "phoenix_crm_customers", onDelete: "a" },
+  { child: "phoenix_crm_double_visit_request_people", parent: "phoenix_crm_double_visit_requests", onDelete: "c" },
 ];
 
 const stepFor = (table: string): Step => {
@@ -153,6 +157,21 @@ export async function runCrmClearTestRowsTests(): Promise<void> {
     DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_manager_customers") <
       DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_customers"),
     "Manager's own list goes with the rest of his plan, before the spine",
+  );
+
+  // ── Double-visit requests reference the customers with no cascade ────────────────────────────
+  // Without this step Guard 2 aborts every sweep, as it did on production on 2026-10-17.
+  const withoutDoubleVisitRequests = DELETE_PLAN.filter((step) => step.table !== "phoenix_crm_double_visit_requests");
+  assert.ok(
+    planProblems(KNOWN_EDGES, withoutDoubleVisitRequests).some((problem) =>
+      problem.startsWith("phoenix_crm_double_visit_requests references phoenix_crm_customers"),
+    ),
+    "double_visit_requests references the customers this clears, so the plan must clear it first",
+  );
+  assert.ok(
+    DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_double_visit_requests") <
+      DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_customers"),
+    "double-visit requests go before the customers they reference",
   );
 
   // ── The ten tables with no is_test column of their own ────────────────────────────────────────

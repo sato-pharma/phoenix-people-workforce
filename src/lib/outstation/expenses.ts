@@ -44,7 +44,7 @@ import { assertNoWorkflowTripIds } from "@/lib/outstation/workflow-trip-id-guard
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
-import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
+import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   assertPermission,
@@ -417,7 +417,7 @@ async function getVisibleExpenseReportIds(
   const buildQuery = () => {
     let query = supabase
       .from("outstation_expenses")
-      .select("report_id")
+      .select("report_id,hr_id")
       .not("report_id", "is", null)
       .order("id", { ascending: true });
 
@@ -436,8 +436,8 @@ async function getVisibleExpenseReportIds(
   }
 
   return new Set(
-    (data ?? [])
-      .map((row) => String((row as { report_id?: unknown }).report_id))
+    keepExpenseRowsInScope((data ?? []) as Array<Record<string, unknown>>, accessFilter, "hr_id")
+      .map((row) => String(row.report_id))
       .filter(Boolean),
   );
 }
@@ -545,6 +545,38 @@ function buildHrIdFilters(hrIds: string[]) {
   return Array.from(normalized);
 }
 
+/**
+ * The access filter's SECOND half (audit 2026-10-26, L10): the rows a scoped read returned, narrowed
+ * again in memory to the viewer's allowed HR ids.
+ *
+ * These reads may run on the service-role client (`rowSecurityClientFor`: a biometric or
+ * skip-bridge sign-in has no Supabase session), where nothing but the query's own `.or(ilike …)`
+ * stood between a scoped viewer and every row — one regression in that filter, or an allowed id
+ * that normalises to nothing (`applyHrIdInFilter` then returns the query UNFILTERED), and it failed
+ * open. This check fails closed instead.
+ *
+ * It never drops a row the query was meant to return: the query matches with `ilike` on exactly the
+ * forms `buildHrIdFilters` produces, which is case-insensitive equality, and a row is kept when its
+ * stored id lower-cased, or either normalised form of it, is one of those forms.
+ */
+export function keepExpenseRowsInScope<T extends Record<string, unknown>>(
+  rows: T[],
+  accessFilter: ExpenseAccessFilter,
+  column: "hr_id" | "employee_hr_id",
+): T[] {
+  if (accessFilter.all) return rows;
+  const allowed = new Set(
+    buildHrIdFilters(Array.from(accessFilter.allowedHrIds)).map((id) => id.toLowerCase()),
+  );
+  if (allowed.size === 0) return [];
+  return rows.filter((row) => {
+    const stored = String(row[column] ?? "");
+    return [stored.trim().toLowerCase(), normalizeHrId(stored), normalizeHrIdForAccess(stored)].some(
+      (id) => Boolean(id) && allowed.has(String(id).toLowerCase()),
+    );
+  });
+}
+
 // outstation_expenses only has hr_id — do NOT reference employee_hr_id or employee_code
 function applyHrIdInFilter<T extends { or: (value: string) => T; ilike: (column: string, value: string) => T }>(
   query: T,
@@ -580,7 +612,7 @@ export function applyEmployeeHrIdInFilter<T extends { or: (value: string) => T }
 }
 
 export async function listPayrollExpenseReports(accessContext: AccessContext) {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.listPayrollExpenseReports");
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
 
   if (accessFilter.all) {
@@ -648,7 +680,7 @@ export async function withLiveExpenseReportCounts(
 ): Promise<PayrollExpenseReport[]> {
   if (reports.length === 0) return reports;
 
-  const supabase = (await getSupabaseRlsClientIfAvailable()) ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.withLiveExpenseReportCounts");
   const reportIds = reports.map((report) => report.id).filter(Boolean);
   const rows: Record<string, unknown>[] = [];
 
@@ -686,7 +718,7 @@ export async function listPayrollExpenses(
   accessContext: AccessContext,
 ) {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.listPayrollExpenses");
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
   if (!accessFilter.all && allowedHrIds.length === 0) return [];
 
@@ -721,16 +753,16 @@ export async function listPayrollExpenses(
     throw error;
   }
 
-  return (data ?? [])
-    .filter((row) => !isDisposableExpenseRow(row as Record<string, unknown>))
-    .map((row) => mapExpense(row as Record<string, unknown>));
+  return keepExpenseRowsInScope((data ?? []) as Array<Record<string, unknown>>, accessFilter, "hr_id")
+    .filter((row) => !isDisposableExpenseRow(row))
+    .map((row) => mapExpense(row));
 }
 
 export async function listOutstationRequestExpenses(
   accessContext: AccessContext,
 ) {
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.listOutstationRequestExpenses");
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
   if (!accessFilter.all && allowedHrIds.length === 0) return [];
 
@@ -755,7 +787,9 @@ export async function listOutstationRequestExpenses(
     throw error;
   }
 
-  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRowToPayrollApproval);
+  const mapped = keepExpenseRowsInScope((data ?? []) as Array<Record<string, unknown>>, accessFilter, "employee_hr_id").map(
+    mapOutstationRequestRowToPayrollApproval,
+  );
   // Brick / area / region per row, so the approvals decision panel can show a place name
   // instead of the raw coordinate pair — same enrichment service.ts already does for the
   // admin request detail. One cached centroid load for the whole list either way.
@@ -1087,7 +1121,7 @@ export async function getApprovedExpenseTotalsForPayroll(
 ) {
   // Optimized narrow-query equivalent of getApprovedExpenseTotalsByHrId for payroll template generation.
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("outstation.getApprovedExpenseTotalsForPayroll");
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
   if (!accessFilter.all && allowedHrIds.length === 0) return new Map<string, number>();
 
@@ -1117,7 +1151,7 @@ export async function getApprovedExpenseTotalsForPayroll(
   }
 
   const totals = new Map<string, number>();
-  ((data ?? []) as Array<Record<string, unknown>>)
+  keepExpenseRowsInScope((data ?? []) as Array<Record<string, unknown>>, accessFilter, "hr_id")
     .filter((row) => !isDisposableExpenseRow(row))
     .forEach((row) => {
       const hrId = String(row.hr_id ?? "").trim();

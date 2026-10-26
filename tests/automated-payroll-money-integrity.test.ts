@@ -12,6 +12,19 @@ import {
   part2BankDetails,
   readConfirmedBankDetails,
 } from "../src/lib/automated-payroll/publish-guard.ts";
+import {
+  describeDeductionResyncNotApplied,
+  resyncPayrollDeductionSteps,
+  type ResyncDeps,
+} from "../src/lib/automated-payroll/deduction-resync.ts";
+import { describeExpenseResyncNotApplied } from "../src/lib/automated-payroll/expense-resync.ts";
+import {
+  queuedPayrollResyncIsForPeriod,
+  readQueuedPayrollResync,
+  settleQueuedPayrollResyncOutcome,
+  type QueuedPayrollResync,
+} from "../src/lib/automated-payroll/resync-outbox.ts";
+import { describeParkedResyncRefusal } from "../src/lib/automated-payroll/run-service.ts";
 import { holdRun, type RunHoldDeps } from "../src/lib/automated-payroll/run-hold.ts";
 import {
   assertNoTransitionInProgress,
@@ -344,32 +357,221 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
   );
   assert.ok(SALARY_RECORD_MONEY_COLUMNS.has("net_salary") && !SALARY_RECORD_MONEY_COLUMNS.has("job_title"));
 
-  // ==== A resync's saved decision still reaches payroll when the hold never frees ====================
+  // ==== P2-02 (audit 2026-10-26): a resync NEVER clears without the hold — it is queued instead =======
   {
     const clock = { t: 0 };
     const { deps, calls } = fakeHold([null], run("part2", "Confirming Part 2"), clock);
-    const out = await holdRun(
-      { runId: "run-1", expected: ["part1", "part2"], action: RUN_HOLD_ACTIONS.expenseResync, waitMs: 1000, whenWaitRunsOut: "proceed" },
-      async () => "cleared",
-      deps,
+    let ran = false;
+    await assert.rejects(
+      holdRun(
+        { runId: "run-1", expected: ["part1", "part2"], action: RUN_HOLD_ACTIONS.expenseResync, waitMs: 1000 },
+        async () => {
+          ran = true;
+          return "cleared";
+        },
+        deps,
+      ),
+      /Confirming Part 2/,
+      "HEADLINE: a resync whose wait runs out while a Part confirm holds the run is refused",
     );
-    assert.equal(out, "cleared", "HEADLINE: a resync goes ahead after its wait instead of failing and leaving the old figure");
+    assert.equal(ran, false, "HEADLINE: and its clear never runs unheld inside that confirm");
     assert.deepEqual(calls.releases, [], "with nothing to release, since it never held the run");
   }
   {
     const { deps } = fakeHold([null], run("ready"));
     await assert.rejects(
       holdRun(
-        { runId: "run-1", expected: ["part1", "part2"], action: RUN_HOLD_ACTIONS.expenseResync, waitMs: 1000, whenWaitRunsOut: "proceed" },
+        { runId: "run-1", expected: ["part1", "part2"], action: RUN_HOLD_ACTIONS.expenseResync, waitMs: 1000 },
         async () => "cleared",
         deps,
       ),
       /Part 2 confirmed/,
-      "but never onto a run that has moved past the phases it may write in",
+      "and never onto a run that has moved past the phases it may write in",
     );
   }
-  for (const path of ["src/lib/automated-payroll/deduction-resync.ts", "src/lib/automated-payroll/expense-resync.ts"]) {
-    assert.match(readFileSync(path, "utf8"), /whenWaitRunsOut: "proceed"/, `${path}: a resync proceeds rather than fails`);
+  for (const path of [
+    "src/lib/automated-payroll/run-hold.ts",
+    "src/lib/automated-payroll/deduction-resync.ts",
+    "src/lib/automated-payroll/expense-resync.ts",
+  ]) {
+    assert.doesNotMatch(readFileSync(path, "utf8"), /whenWaitRunsOut/, `${path}: there is no way left to clear without the hold`);
+  }
+
+  // The refused deduction resync is parked with its WHOLE target, and the person saving is told so.
+  {
+    const target = { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0001", categories: ["crm"] }] };
+    const parked: QueuedPayrollResync[] = [];
+    const busyDeps = {
+      findActiveRun: async () => ({ id: "run-1", phase: "part2", part2ConfirmedAt: null }) as unknown as MonthlySalaryRun,
+      listStepStates: async () => [],
+      loadStepContext: async () => ({ members: [], sources: new Map() }),
+      listDraftRows: async () => [],
+      clearDraftColumns: async () => {
+        throw new Error("a clear must never run when the hold was refused");
+      },
+      upsertStepState: async () => {
+        throw new Error("a step must never be reopened when the hold was refused");
+      },
+      listLatestCellWrites: async () => new Map(),
+      holdRun: async () => {
+        throw new Error("Another action is running on this payroll run: Confirming Part 2.");
+      },
+      queueRetry: async (payload: QueuedPayrollResync) => {
+        parked.push(payload);
+        return true;
+      },
+    } as unknown as ResyncDeps;
+    const outcome = await resyncPayrollDeductionSteps(target as never, busyDeps);
+    assert.equal(outcome.action, "failed");
+    assert.equal(outcome.action === "failed" && outcome.queued, true, "HEADLINE: a refused deduction resync is queued, not lost");
+    assert.deepEqual(parked, [{ kind: "deduction", target }], "with its whole target, so the retry clears exactly what this one would have");
+    assert.match(
+      describeDeductionResyncNotApplied(outcome).join(" "),
+      /October 2026 was busy, so this deduction is queued and will reach it automatically/,
+      "and the person saving is told it will land, not that it failed",
+    );
+
+    // The retry itself never parks a second copy of the row it is running.
+    parked.length = 0;
+    const retry = await resyncPayrollDeductionSteps(target as never, busyDeps, { fromOutbox: true });
+    assert.equal(retry.action === "failed" && retry.queued, false, "a failed retry stays in its own row");
+    assert.equal(parked.length, 0, "and never queues a duplicate");
+  }
+
+  // The expense side parks each period with only that period's people (finding 44 still holds).
+  {
+    const expenseSource = readFileSync("src/lib/automated-payroll/expense-resync.ts", "utf8");
+    const resyncBody = bodyOf(expenseSource, "export async function resyncPayrollExpenseStep(");
+    assert.match(
+      resyncBody,
+      /kind: "expense",\s*target: \{\s*hrIds: period\.hrIds,\s*periods: \[\{ month: period\.month, year: period\.year \}\],\s*byPeriod: \[period\],/,
+      "HEADLINE: a refused expense resync is queued for its own period and its own people only",
+    );
+    assert.match(resyncBody, /const queued = options\.fromOutbox\s*\? false/, "and a retry never queues a duplicate");
+    const lines = describeExpenseResyncNotApplied([
+      { action: "failed", month: 10, year: 2026, message: "busy", queued: true },
+      { action: "failed", month: 11, year: 2026, message: "connection reset" },
+    ]);
+    assert.match(lines[0], /October 2026 was busy, so this decision is queued and will reach it automatically/);
+    assert.match(lines[1], /November 2026 could not be updated/, "an unqueued failure still says it did not land");
+  }
+
+  // A stored payload is only replayed when it still carries a whole target.
+  {
+    const deduction = { kind: "deduction", target: { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0001", categories: ["crm"] }] } };
+    const expense = {
+      kind: "expense",
+      target: { hrIds: ["B-1"], periods: [{ month: 10, year: 2026 }], byPeriod: [{ month: 10, year: 2026, hrIds: ["B-1"] }] },
+    };
+    assert.deepEqual(readQueuedPayrollResync(deduction), deduction);
+    assert.deepEqual(readQueuedPayrollResync(expense), expense);
+    const broken: Array<[unknown, string]> = [
+      [null, "nothing"],
+      [{ kind: "payslip", target: deduction.target }, "an unknown kind"],
+      [{ kind: "deduction", target: { ...deduction.target, monthKey: "Oct 2026" } }, "a month key that is not YYYY-MM"],
+      [{ kind: "deduction", target: { ...deduction.target, employees: [] } }, "no employees"],
+      [{ kind: "deduction", target: { monthKey: "2026-10", employees: [{ hrIdCompact: 7, categories: [] }] } }, "an HR id that is not text"],
+      [{ kind: "expense", target: { ...expense.target, byPeriod: [] } }, "no period to clear"],
+      [{ kind: "expense", target: { ...expense.target, periods: [{ month: "10", year: 2026 }] } }, "a month that is not a number"],
+    ];
+    for (const [payload, why] of broken) {
+      assert.equal(readQueuedPayrollResync(payload), null, `a payload with ${why} is dropped, never replayed`);
+    }
+  }
+
+  // NO DECISION LEFT BEHIND (risk review, 26 Oct). A retry that found Part 2 already confirmed used to
+  // count as landed, so its row was deleted and the decision vanished while the run paid the old figure.
+  {
+    const deduction = { kind: "deduction", target: { monthKey: "2026-10", employees: [{ hrIdCompact: "ai0001", categories: ["crm"] }] } } as QueuedPayrollResync;
+    const expense = {
+      kind: "expense",
+      target: { hrIds: ["B-1"], periods: [{ month: 10, year: 2026 }], byPeriod: [{ month: 10, year: 2026, hrIds: ["B-1"] }] },
+    } as QueuedPayrollResync;
+
+    assert.throws(
+      () => settleQueuedPayrollResyncOutcome(deduction, [{ action: "skip", monthKey: "2026-10", reason: "part2_already_confirmed" }] as never),
+      /stays queued until Part 2 is reopened/,
+      "HEADLINE: a retry that finds Part 2 confirmed KEEPS its row — the decision has not reached payroll",
+    );
+    assert.throws(
+      () =>
+        settleQueuedPayrollResyncOutcome(expense, [
+          { action: "resync", month: 10, year: 2026, runId: "r", clearedHrIds: [], reopenedStep: false },
+          { action: "skip", month: 11, year: 2026, reason: "part2_already_confirmed" },
+        ] as never),
+      /stays queued until Part 2 is reopened/,
+      "one confirmed period among several keeps the expense row too",
+    );
+    assert.throws(
+      () => settleQueuedPayrollResyncOutcome(deduction, [{ action: "failed", monthKey: "2026-10", message: "busy again" }] as never),
+      /busy again/,
+      "a retry that fails again keeps its row",
+    );
+    assert.doesNotThrow(
+      () =>
+        settleQueuedPayrollResyncOutcome(deduction, [
+          { action: "resync", monthKey: "2026-10", runId: "r", clearedHrIds: [], reopenedSteps: [] },
+        ] as never),
+      "a retry that landed lets the drain delete its row",
+    );
+    assert.doesNotThrow(
+      () => settleQueuedPayrollResyncOutcome(deduction, [{ action: "skip", monthKey: "2026-10", reason: "no_active_run" }] as never),
+      "a month with no open run any more lets it go (logged)",
+    );
+
+    assert.equal(queuedPayrollResyncIsForPeriod(deduction, 10, 2026), true, "a deduction row is for its own month");
+    assert.equal(queuedPayrollResyncIsForPeriod(deduction, 11, 2026), false, "and no other");
+    assert.equal(queuedPayrollResyncIsForPeriod(deduction, 10, 2025), false, "and not the same month of another year");
+    assert.equal(queuedPayrollResyncIsForPeriod(expense, 10, 2026), true, "an expense row is for each period it carries");
+    assert.equal(queuedPayrollResyncIsForPeriod(expense, 9, 2026), false);
+
+    assert.equal(describeParkedResyncRefusal([]), null, "nothing parked, nothing refused");
+    const refusal = describeParkedResyncRefusal([
+      { kind: "deduction", people: 2, queuedAt: "2026-10-26T00:00:00Z", attempts: 1 },
+      { kind: "expense", people: 1, queuedAt: "2026-10-26T00:00:00Z", attempts: 0 },
+    ]);
+    assert.ok(refusal?.startsWith("Conflict: "), "the refusal is a 409, not a 500 (src/lib/http)");
+    assert.match(refusal ?? "", /1 deduction decision and 1 expense decision made while this run was busy have not reached it yet/);
+
+    const runService = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+    const confirm = bodyOf(runService, "export async function confirmPart2(");
+    const landing = confirm.indexOf("await landParkedResyncs(run);");
+    assert.ok(landing !== -1, "HEADLINE: confirming Part 2 lands the month's parked decisions first");
+    assert.ok(landing < confirm.indexOf("listStepStates(runId)"), "before any gate reads the steps, so a re-opened step is refused");
+    const claimed = confirm.slice(confirm.indexOf("await whileClaimed(runId, transition"));
+    const check = claimed.indexOf("queuedPayrollResyncsForPeriod(run.month, run.year)");
+    assert.ok(check !== -1, "HEADLINE: under the claim, a decision still parked refuses the confirm");
+    assert.ok(
+      check < claimed.indexOf("writeRequiredAutomatedPayrollAudit"),
+      "and the check runs before the stamp and the phase are written",
+    );
+    assert.match(claimed, /if \(parkedRefusal\) throw new Error\(parkedRefusal\);/, "a parked row is a refusal, not a warning");
+    assert.match(
+      bodyOf(runService, "export async function unconfirmPart2("),
+      /await landParkedResyncs\(updated\);/,
+      "reopening Part 2 lets what was waiting for it land",
+    );
+  }
+
+  // Drained where the hold is known to be free, and only by the real deps — a test drains nothing.
+  {
+    const deductionSource = readFileSync("src/lib/automated-payroll/deduction-resync.ts", "utf8");
+    assert.match(deductionSource, /if \(!options\.fromOutbox\) deps\.drainQueued\?\.\(\);/, "a deduction resync that held the run drains the queue");
+    assert.match(
+      deductionSource,
+      /const defaultResyncDeps: ResyncDeps = \{[\s\S]*?queueRetry: queuePayrollResyncRetry,\s*drainQueued: maybeDrainPayrollResyncOutbox,\s*\};/,
+      "only the default deps reach the live queue",
+    );
+    assert.match(
+      readFileSync("src/lib/automated-payroll/expense-resync.ts", "utf8"),
+      /if \(!options\.fromOutbox\) maybeDrainPayrollResyncOutbox\(\);/,
+      "so does an expense resync",
+    );
+    assert.match(
+      bodyOf(readFileSync("src/lib/automated-payroll/run-service.ts", "utf8"), "export async function getRunView("),
+      /maybeDrainPayrollResyncOutbox\(\);/,
+      "and HR opening the run drains it too",
+    );
   }
 
   // ==== Wiring: each rule is actually called where the money moves ===================================
@@ -446,7 +648,7 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
     /isRunHoldAction\(current\.transitionAction\) \|\| !transitionInProgress\(current\)/,
     "a confirm waits out a short hold instead of refusing over a one-second save",
   );
-  assert.match(readFileSync("src/lib/automated-payroll/deduction-resync.ts", "utf8"), /return await deps\.holdRun\(/, "the deduction resync clears under the hold");
+  assert.match(readFileSync("src/lib/automated-payroll/deduction-resync.ts", "utf8"), /const held = await deps\.holdRun\(/, "the deduction resync clears under the hold");
   assert.match(readFileSync("src/lib/automated-payroll/expense-resync.ts", "utf8"), /held = await holdRun\(/, "the expense resync clears under the hold");
 
   // ==== The old payroll bank file (M07b survived: read would have been enough) =======================

@@ -11,8 +11,10 @@ import { assertPeriodNotLocked } from "../src/lib/sales/monthly-distributor-impo
 import type { SalesReferenceData } from "../src/lib/sales/monthly-distributor-import.ts";
 import { healAddressCorrectionHistory } from "../src/lib/sales/normalizer/customer-map.ts";
 import { backfillCustomerRows } from "../src/lib/sales/normalizer/mapping.ts";
+import { IMPORT_TAIL_HOLD_MS, holdImportTailRepair, releaseImportTailRepair } from "../src/lib/sales/import-tail-repair.ts";
 import { FINALIZE_REQUEST_TIMEOUT_MS, runFinalizeWithRecovery } from "../src/lib/sales/source-of-sales-batch-supersede.ts";
 import { normalizeNumber, parseSalesRow } from "../src/lib/sales/validation.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 import type { WeeklyBranchRegionIndex } from "../src/lib/sales/weekly/branch-region-map.ts";
 import { normalizeCode, normalizeKey } from "../src/lib/sales/weekly/mapping-normalize.ts";
 import {
@@ -388,6 +390,79 @@ export async function runAddressCorrectionQueueTests() {
   assert.deepEqual(queuedBeforeCall, [0, 1, 2], "each correction's queue write happens before the next correction runs");
 }
 
+/**
+ * P4-06 — the history correction queues the files it re-points in the SAME transaction as the
+ * re-point, so no crash between two calls can leave rows moved and their files never rebuilt.
+ */
+export function runReconcileQueuesItsFilesTests() {
+  const name = "sos_reconcile_import_rows_from_customer_map";
+  const dir = join(ROOT, "supabase/migrations");
+  // Comments stripped first: the header quotes the very statements the assertions look for.
+  const sqlCode = (text: string) => stripSqlComments(text).replace(/(^|[^:])--[^\n]*/g, "$1");
+  const flat = (text: string) => text.replace(/\s+/g, " ");
+  // Migrations apply in filename order, so the LAST file creating the function is what runs.
+  let latest: { body: string; file: string; header: string; sql: string } | null = null;
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+    const sql = flat(sqlCode(readFileSync(join(dir, file), "utf8")));
+    const at = new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+public\\.${name}\\s*\\(`, "i").exec(sql);
+    if (!at) continue;
+    const from = sql.slice(at.index);
+    const open = from.indexOf("$function$");
+    const close = from.indexOf("$function$", open + 10);
+    latest = { body: from.slice(open + 10, close), file, header: from.slice(0, open), sql };
+  }
+  assert.ok(latest, `no migration creates ${name}`);
+  const { body, file, header, sql } = latest;
+
+  // HEADLINE: the queue write is part of the very statement that moves the rows.
+  const statementAt = body.indexOf("with updated as ( update public.source_of_sales_import_rows r");
+  assert.ok(statementAt > 0, `${file}: the re-point runs as a data-modifying WITH statement`);
+  const statement = body.slice(statementAt, body.indexOf(";", statementAt));
+  assert.ok(
+    statement.includes("insert into public.source_of_sales_brick_move_files as f (old_brick_id, batch_id, moved_rows)"),
+    `${file}: ${name} must queue the files it moved in the same statement as the move — a second call from the app `
+      + "could die after the move committed and leave the files never rebuilt",
+  );
+  // Each file once: one queue row per file, safe to repeat, and a file already waiting keeps its row.
+  assert.match(statement, /per_file as \( select u\.batch_id, count\(\*\)::integer as moved_rows from updated u group by u\.batch_id \)/,
+    `${file}: one queue row per FILE, never one per row`);
+  assert.ok(
+    statement.includes("on conflict (old_brick_id, batch_id) do update set moved_rows = f.moved_rows + excluded.moved_rows, moved_at = now(), refreshed_at = null"),
+    `${file}: a repeat re-stamps the queue row instead of failing, and a rebuild already running is not counted as covering the new move`,
+  );
+  assert.match(statement, /waiting as \( select distinct on \(q\.batch_id\) q\.batch_id, q\.old_brick_id from public\.source_of_sales_brick_move_files q join per_file pf on pf\.batch_id = q\.batch_id where q\.refreshed_at is null/,
+    `${file}: a file already waiting in the queue is re-stamped, not queued a second time`);
+  assert.ok(
+    statement.includes("select coalesce(w.old_brick_id, lb.left_brick_id, v_brick) as old_brick_id, pf.batch_id, pf.moved_rows from per_file pf")
+      && statement.includes("select k.old_brick_id, k.batch_id, k.moved_rows from keyed k on conflict"),
+    `${file}: keyed on the waiting row, else the brick the rows left, else the brick they joined (which always exists)`,
+  );
+  assert.match(statement, /join public\.source_of_sales_bricks b on b\.brick_id = u\.left_brick_id/,
+    `${file}: a left brick keys the row only when the brick master holds it — the queue's key references the master`);
+  assert.match(statement, /returning r\.batch_id, pre\.brick_id as left_brick_id/,
+    `${file}: the brick each row left is read from the row as the statement found it`);
+  assert.ok(!/refresh_started_at/.test(body), `${file}: a claim in progress is left alone, so two rebuilds never run at once`);
+  assert.ok(
+    statement.includes("array_agg(q.batch_id order by q.batch_id) from queued q"),
+    `${file}: every file the call reports as touched is a file it queued`,
+  );
+
+  // Nothing else changes: the same rows move, a locked file stays whole, and it is judged per file.
+  assert.ok(body.includes("from unnest(v_files) as f(batch_id) where public.sos_import_batch_touches_locked_closing(f.batch_id)"),
+    `${file}: the files are still judged once each`);
+  assert.ok(statement.includes("and not (r.batch_id = any (v_frozen))"), `${file}: a file touching a locked month is still left whole`);
+  assert.match(header, /returns table\(updated_rows integer, affected_batch_ids uuid\[\]\) language plpgsql security definer set search_path to 'public' as $/,
+    `${file}: the signature, return shape, security definer and pinned search_path stay`);
+  assert.ok(sql.includes(`revoke execute on function public.${name}(text, text) from public, anon, authenticated;`),
+    `${file}: execute stays revoked from PUBLIC and the browser roles`);
+  assert.ok(sql.includes(`grant execute on function public.${name}(text, text) to service_role;`), `${file}: the service role keeps it`);
+
+  // The app's own write after the call stays, on the same key, so the two land on one row.
+  const heal = source("src/lib/sales/normalizer/customer-map.ts");
+  assert.match(heal, /\.from\("source_of_sales_brick_move_files"\)\s*\.upsert\([\s\S]*?\{ onConflict: "old_brick_id,batch_id" \}/,
+    "the app's queue write keys the same conflict as the migration's");
+}
+
 /** P4-03 — a finalize that committed after the call failed is recognised and its tail runs. */
 export async function runFinalizeRecoveryTests() {
   const client = (status: string | null, rpcError: unknown) => ({
@@ -415,6 +490,128 @@ export async function runFinalizeRecoveryTests() {
     source("src/lib/sales/source-of-sales-batch-supersede.ts"),
     /getSupabaseAdmin\(\{ requestTimeoutMs: FINALIZE_REQUEST_TIMEOUT_MS \}\)/,
     "the finalize call uses the longer timeout",
+  );
+}
+
+/**
+ * P4-03 — an import writes its repair note BEFORE finalize and crosses it off after the tail, so a
+ * process that dies between the committed finalize and the split net still gets its file rebuilt.
+ */
+export async function runImportTailRepairNoteTests() {
+  const fakeClient = (options: { any?: string[]; finishError?: unknown; known?: string[]; upsertError?: unknown }) => {
+    const upserts: Array<{ onConflict: string; rows: Array<Record<string, unknown>> }> = [];
+    const rpcs: Array<{ args: Record<string, unknown>; fn: string }> = [];
+    const masterReads: string[][] = [];
+    const client = {
+      from: (table: string) => {
+        if (table === "source_of_sales_bricks") {
+          return {
+            select: (columns: string) => {
+              assert.equal(columns, "brick_id");
+              return {
+                in: (column: string, values: string[]) => {
+                  assert.equal(column, "brick_id");
+                  masterReads.push(values);
+                  const known = new Set(options.known ?? []);
+                  return Promise.resolve({ data: values.filter((v) => known.has(v)).map((brick_id) => ({ brick_id })), error: null });
+                },
+                limit: () => Promise.resolve({ data: (options.any ?? []).map((brick_id) => ({ brick_id })), error: null }),
+              };
+            },
+          };
+        }
+        assert.equal(table, "source_of_sales_brick_move_files", "the note goes to the queue the drain already empties");
+        return {
+          upsert: (rows: Array<Record<string, unknown>>, opts: { onConflict: string }) => {
+            upserts.push({ onConflict: opts.onConflict, rows });
+            return Promise.resolve({ error: options.upsertError ?? null });
+          },
+        };
+      },
+      rpc: (fn: string, args: Record<string, unknown>) => {
+        rpcs.push({ args, fn });
+        return Promise.resolve({ data: options.finishError ? null : true, error: options.finishError ?? null });
+      },
+    };
+    return { client, masterReads, rpcs, upserts };
+  };
+
+  // HEADLINE: the note is written already claimed, and the release crosses off exactly that row.
+  const now = new Date("2026-10-26T08:00:00.000Z");
+  const live = fakeClient({ known: ["B2"] });
+  const hold = await holdImportTailRepair(live.client, "batch-1", ["B9", "B9", "B9", "B2", null, "  "], now);
+  assert.deepEqual(hold, { batchId: "batch-1", brickId: "B2", movedAt: now.toISOString() }, "keyed on a brick the master holds");
+  assert.deepEqual(live.masterReads, [["B9", "B2"]], "the batch's own bricks are offered first, most rows first");
+  assert.equal(live.upserts.length, 1);
+  assert.equal(live.upserts[0]?.onConflict, "old_brick_id,batch_id");
+  const row = live.upserts[0]?.rows[0] ?? {};
+  assert.equal(row.batch_id, "batch-1");
+  assert.equal(row.old_brick_id, "B2");
+  assert.equal(row.moved_at, now.toISOString());
+  assert.equal(row.refreshed_at, null, "the file counts as NOT rebuilt until the tail crosses it off");
+  assert.equal(
+    Date.parse(String(row.refresh_started_at)) - now.getTime(),
+    IMPORT_TAIL_HOLD_MS,
+    "the claim is set ahead, so the drain leaves the file alone while the live tail runs",
+  );
+  // The drain takes a claim older than 5 minutes and fires every 20; a dead import's file must be
+  // rebuilt before the one-hour stuck-file alert, and never while a healthy tail is still running.
+  assert.ok(IMPORT_TAIL_HOLD_MS >= 20 * 60_000, "the hold outlasts any honest import tail");
+  assert.ok(IMPORT_TAIL_HOLD_MS + 5 * 60_000 + 20 * 60_000 <= 60 * 60_000, "a dead import is rebuilt inside the stuck-file hour");
+  assert.equal(await releaseImportTailRepair(live.client, hold), true);
+  assert.deepEqual(
+    live.rpcs,
+    [
+      {
+        args: { p_batch_id: "batch-1", p_moved_at: now.toISOString(), p_old_brick: "B2", p_refreshed: true },
+        fn: "sos_finish_brick_move_file",
+      },
+    ],
+    "the release marks the row rebuilt only if no brick move re-stamped it since the hold",
+  );
+
+  // A batch whose bricks the master does not know, or that has none, is keyed on any known brick.
+  const unknown = fakeClient({ any: ["B1"], known: [] });
+  assert.equal((await holdImportTailRepair(unknown.client, "batch-2", ["X1"], now))?.brickId, "B1");
+  const brickless = fakeClient({ any: ["B1"] });
+  assert.equal((await holdImportTailRepair(brickless.client, "batch-3", [null, ""], now))?.brickId, "B1");
+  assert.deepEqual(brickless.masterReads, [], "no brick to offer, so the master is read for any brick");
+
+  // A failed note never fails the import: it logs and the tail runs as it did before.
+  const refused = fakeClient({ known: ["B2"], upsertError: { message: "permission denied" } });
+  assert.equal(await holdImportTailRepair(refused.client, "batch-4", ["B2"], now), null);
+  assert.equal(await releaseImportTailRepair(refused.client, null), false);
+  assert.deepEqual(refused.rpcs, [], "no note, nothing to cross off");
+  const empty = fakeClient({});
+  assert.equal(await holdImportTailRepair(empty.client, "batch-5", [], now), null, "an empty brick master writes no note and throws nothing");
+  const stuck = fakeClient({ finishError: { message: "timeout" }, known: ["B2"] });
+  const stuckHold = await holdImportTailRepair(stuck.client, "batch-6", ["B2"], now);
+  assert.equal(await releaseImportTailRepair(stuck.client, stuckHold), false, "a failed release costs one extra rebuild, never an error");
+
+  // Both import paths: note, then finalize, then the split net, then the cross-off.
+  for (const [file, finalizeMarker] of [
+    ["src/lib/sales/monthly-distributor-import.ts", 'if (result.status === "validated" && result.period) {'],
+    ["src/lib/sales/normalizer/service.ts", "if (period) {\n    await finalizeSosBatchAndAuditSupersede"],
+  ] as const) {
+    const body = source(file);
+    const holdAt = body.indexOf("await holdImportTailRepair(supabase, batchId,");
+    const finalizeAt = body.indexOf(finalizeMarker);
+    const netAt = body.indexOf("await writeStoreSplitNetForBatch(supabase, batchId);");
+    const releaseAt = body.indexOf("await releaseImportTailRepair(supabase, tailRepair);");
+    assert.ok(holdAt > 0, `${file} writes the repair note`);
+    assert.ok(finalizeAt > holdAt, `${file} writes the note BEFORE finalize commits the batch`);
+    assert.ok(netAt > finalizeAt, `${file} still writes the split net after finalize`);
+    assert.ok(releaseAt > netAt, `${file} crosses the note off only after the tail`);
+    assert.ok(
+      releaseAt > body.indexOf('invalidateSalesDashboardCache("source of sales import — split net written'),
+      `${file} crosses the note off after the last step of the tail`,
+    );
+    assert.equal(body.split("holdImportTailRepair(").length - 1, 1, `${file} writes one note per import`);
+  }
+  assert.match(
+    source("src/lib/sales/monthly-distributor-import.ts"),
+    /const tailRepair =\s*result\.status === "validated" \? await holdImportTailRepair\(/,
+    "a rejected upload gets no note, as it gets no tail",
   );
 }
 

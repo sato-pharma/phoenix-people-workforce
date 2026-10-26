@@ -21,6 +21,14 @@
 // CHROMIUM DRAWS THE SHEET, not pdf-lib, because the sheet holds Arabic: pdf-lib's standard fonts have
 // no Arabic glyphs and it does no shaping, so an answer typed in Arabic would print as blanks. Chromium
 // shapes it and the container carries the Noto Arabic faces.
+//
+// THE CV IS SIZED BEFORE ANYTHING OPENS IT (audit, 2026-10-26, point 34). pdf-lib, mammoth and sharp run
+// here, inside the web process, on a file a stranger sent. A CV over the inbound intake's own byte limit
+// (maxInboundCvBytes, 15 MB — intake never takes a bigger one) is left out before any of them runs, and so
+// is a PDF whose page objects already count past MAX_APPLICATION_CV_PAGES. A PDF that keeps its pages in
+// compressed object streams is counted again once pdf-lib has opened it, and a Word file once Chromium has
+// drawn it — both BEFORE a page is copied. Either way the application sheet is still made, and its footer
+// says why the CV is missing.
 
 import { PDFDocument } from "pdf-lib";
 import * as mammoth from "mammoth";
@@ -28,6 +36,7 @@ import * as mammoth from "mammoth";
 import { satoLogoDataUri } from "@/lib/offers/brand";
 import { withChromiumPage, type ChromiumPage } from "@/lib/pdf/chromium";
 import { detectCvFileKind, isLegacyDocBytes } from "@/lib/recruitment/cv-file-kind";
+import { maxInboundCvBytes } from "@/lib/recruitment/inbound/cv-intake-service";
 import {
   buildApplicationSheet,
   buildApplicationSheetHtml,
@@ -44,11 +53,49 @@ const A4_SHORT = 595.28;
 const A4_LONG = 841.89;
 const OPEN_FROM_PAGE = "Open it from the candidate's page.";
 
+/** The most CV pages an application carries. A CV is a few pages; a file past this is not printed whole. */
+export const MAX_APPLICATION_CV_PAGES = 50;
+
 function pages(count: number): string {
   return `${count} ${count === 1 ? "page" : "pages"}`;
 }
 
-async function pdfCv(bytes: Uint8Array): Promise<CvPart> {
+function megabytes(bytes: number): string {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
+
+function tooManyPages(count: number): string {
+  return `CV not included: it has ${pages(count)}, more than the ${MAX_APPLICATION_CV_PAGES} an application prints. ${OPEN_FROM_PAGE}`;
+}
+
+/**
+ * Page objects written in the open (`/Type /Page`, never `/Pages`). It reads the raw bytes without
+ * parsing them, so it is cheap enough to run before pdf-lib; a PDF that keeps its page objects in
+ * compressed object streams counts low here and is counted properly once it has been opened.
+ */
+export function countPlainPdfPageObjects(bytes: Uint8Array): number {
+  const text = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("latin1");
+  return text.match(/\/Type\s*\/Page(?![A-Za-z])/g)?.length ?? 0;
+}
+
+/**
+ * Why this CV is left out before pdf-lib, mammoth or sharp opens it — or null when it may be opened.
+ * The byte limit is the inbound intake's own (maxInboundCvBytes), never a second number.
+ */
+export function cvRefusedBeforeOpening(cv: ApplicationCvSource): string | null {
+  const limit = maxInboundCvBytes();
+  if (cv.bytes.byteLength > limit) {
+    return `CV not included: the file is ${megabytes(cv.bytes.byteLength)}, over the ${megabytes(limit)} a CV may be. ${OPEN_FROM_PAGE}`;
+  }
+  if (detectCvFileKind(cv.mimeType, cv.fileName) === "pdf") {
+    const plainPages = countPlainPdfPageObjects(cv.bytes);
+    if (plainPages > MAX_APPLICATION_CV_PAGES) return tooManyPages(plainPages);
+  }
+  return null;
+}
+
+/** A PDF CV's pages, untouched, or the footer line that says why they are not there. */
+export async function pdfCv(bytes: Uint8Array): Promise<CvPart> {
   let doc: PDFDocument;
   try {
     doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
@@ -62,6 +109,7 @@ async function pdfCv(bytes: Uint8Array): Promise<CvPart> {
   }
   const count = doc.getPageCount();
   if (count === 0) return { line: `CV not included: the PDF has no pages. ${OPEN_FROM_PAGE}`, pdf: null };
+  if (count > MAX_APPLICATION_CV_PAGES) return { line: tooManyPages(count), pdf: null };
   return { line: `CV: PDF, ${pages(count)}, exactly as sent.`, pdf: doc };
 }
 
@@ -131,6 +179,7 @@ async function wordCv(bytes: Uint8Array, page: ChromiumPage): Promise<CvPart> {
     await page.emulateMediaType("print");
     const drawn = await page.pdf({ format: "A4", preferCSSPageSize: true, printBackground: true });
     const doc = await PDFDocument.load(drawn);
+    if (doc.getPageCount() > MAX_APPLICATION_CV_PAGES) return { line: tooManyPages(doc.getPageCount()), pdf: null };
     return {
       line: `CV: Word file, converted for printing (${pages(doc.getPageCount())}). Fonts and layout differ from the original, which is on the candidate's page.`,
       pdf: doc,
@@ -142,6 +191,9 @@ async function wordCv(bytes: Uint8Array, page: ChromiumPage): Promise<CvPart> {
 
 async function cvPart(cv: ApplicationCvSource | null, missingReason: string, page: ChromiumPage): Promise<CvPart> {
   if (!cv) return { line: `CV not included: ${missingReason}`, pdf: null };
+  // Before pdf-lib, mammoth or sharp sees a byte of it.
+  const refused = cvRefusedBeforeOpening(cv);
+  if (refused) return { line: refused, pdf: null };
   switch (detectCvFileKind(cv.mimeType, cv.fileName)) {
     case "pdf":
       return pdfCv(cv.bytes);

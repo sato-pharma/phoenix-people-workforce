@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import JSZip from "jszip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
-import { extractRawTextFromFile, extractRawTextInProcess } from "../src/lib/recruitment/cv-extraction.ts";
+import { PDFParse } from "pdf-parse";
+import sharp from "sharp";
+
+import { CvExtractionError, extractRawTextFromFile, extractRawTextInProcess } from "../src/lib/recruitment/cv-extraction.ts";
 import {
   CV_PARSE_MAX_OLD_GENERATION_MB,
   CV_PARSE_TIMEOUT_MS,
+  CvParseIsolationUnavailableError,
   CvParseLimitError,
   extractCvTextIsolated,
+  extractPdfPageImagesInWorker,
   parseCvTextInWorker,
 } from "../src/lib/recruitment/cv-text-isolation.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * CV FILES FROM STRANGERS ARE PARSED IN A BOUNDED THREAD (23 Oct 2026 audit, P5-04).
@@ -19,7 +26,9 @@ import {
  * pdf-parse, mammoth and word-extractor ran inside the web process on files anyone can send, with no
  * bound on time or memory. They now run in a worker thread with a heap ceiling and a deadline. The
  * text a normal file yields is the SAME string the in-process reader gave — proven here on a real PDF
- * and a real .docx — and a thread that cannot load its library falls back to the in-process reader.
+ * and a real .docx. A thread that cannot load its library is a REFUSAL — it used to fall back to the
+ * in-process reader without limits (audit, 2026-10-26, point 33) — and the scanned-CV OCR's page-image
+ * extraction runs in the same bounded thread instead of in the web process.
  */
 
 async function samplePdf(): Promise<Buffer> {
@@ -31,6 +40,40 @@ async function samplePdf(): Promise<Buffer> {
   const second = doc.addPage([595, 842]);
   second.drawText("Experience: 4 years in CNS and Pedia lines", { font, size: 12, x: 50, y: 780 });
   return Buffer.from(await doc.save());
+}
+
+/** A "scanned" PDF: one embedded picture per page, the shape cv-ocr.ts reads. Four pages, distinct colours. */
+async function sampleScannedPdf(): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  const colours = [
+    { b: 30, g: 30, r: 200 },
+    { b: 30, g: 200, r: 30 },
+    { b: 200, g: 30, r: 30 },
+    { b: 200, g: 200, r: 200 },
+  ];
+  for (const background of colours) {
+    const png = await sharp({ create: { background, channels: 3, height: 300, width: 400 } }).png().toBuffer();
+    const page = doc.addPage([595, 842]);
+    page.drawImage(await doc.embedPng(png), { height: 300, width: 400, x: 50, y: 400 });
+  }
+  return Buffer.from(await doc.save());
+}
+
+/** cv-ocr.ts's own pre-2026-10-26 in-process extraction, kept here as the reference the thread must match. */
+async function pageImagesInProcess(bytes: Buffer, maxPages: number): Promise<Buffer[]> {
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getImage({});
+    const images: Buffer[] = [];
+    for (const page of result.pages ?? []) {
+      const dataUrl = page.images?.[0]?.dataUrl;
+      if (typeof dataUrl === "string" && dataUrl.includes(",")) images.push(Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"));
+      if (images.length >= maxPages) break;
+    }
+    return images;
+  } finally {
+    await parser.destroy();
+  }
 }
 
 async function sampleDocx(): Promise<Buffer> {
@@ -54,6 +97,11 @@ async function sampleDocx(): Promise<Buffer> {
 }
 
 export async function runCvTextIsolationTests() {
+  // Production's web process holds pdf-parse's CommonJS build: cv-extraction.ts imports it, and Next turns a
+  // server-external package into a plain require(). This file's ESM import loads the OTHER build, and on
+  // Windows a pdf-parse thread then segfaults on exit (exit 139, origin/main's own test, 3 runs in 4). Load
+  // the build production loads, so the threads run under the same conditions they do on the server.
+  createRequire(import.meta.url)("pdf-parse");
   assert.ok(CV_PARSE_TIMEOUT_MS <= 60_000, "the parse has a deadline");
   assert.ok(CV_PARSE_MAX_OLD_GENERATION_MB <= 512, "and a heap ceiling");
 
@@ -93,29 +141,78 @@ export async function runCvTextIsolationTests() {
     "a library's own error comes back as itself",
   );
 
-  // ── a thread that cannot load its library falls back in-process, never fails the CV ─────────────
+  // ── a thread that cannot load its library is REFUSED, never read in-process (point 33) ──────────
+  // It used to fall back to the in-process reader — the unbounded parse the thread exists to stop —
+  // and on 23 Oct 2026 every PDF and legacy .doc on production took that fallback.
   const missing = `require("node:worker_threads").parentPort.postMessage({ type: "unavailable", message: "Cannot find module 'pdf-parse'" });`;
-  let fellBack = false;
-  const text = await extractCvTextIsolated(pdf, "pdf", async () => {
-    fellBack = true;
-    return "in-process text";
-  }, { workerSource: missing });
-  assert.equal(fellBack, true);
-  assert.equal(text, "in-process text");
-  let limitFellBack = false;
-  await assert.rejects(() =>
-    extractCvTextIsolated(pdf, "pdf", async () => {
-      limitFellBack = true;
-      return "";
-    }, { timeoutMs: 300, workerSource: spin }),
+  await assert.rejects(
+    () => extractCvTextIsolated(pdf, "pdf", { workerSource: missing }),
+    (error: unknown) => error instanceof CvParseIsolationUnavailableError,
+    "a thread that cannot load its library must REFUSE the file — it must never read it in-process without the limits",
   );
-  assert.equal(limitFellBack, false, "a file that broke a limit is refused — never retried in-process without one");
+  await assert.rejects(
+    () => extractCvTextIsolated(pdf, "pdf", { timeoutMs: 300, workerSource: spin }),
+    (error: unknown) => error instanceof CvParseLimitError,
+    "a file that broke a limit is refused — never retried in-process without one",
+  );
+  // Through the production entry point the refusal is a failed read the recruiter can retry: "ai_failed"
+  // (answered 502 by the re-read route), never "unsupported_file", which would call the FILE bad.
+  await assert.rejects(
+    () => extractRawTextFromFile(pdf, "application/pdf", "cv.pdf", { workerSource: missing }),
+    (error: unknown) => error instanceof CvExtractionError && error.code === "ai_failed",
+    'the CV entry point must answer a thread that cannot start with CvExtractionError("ai_failed") — not with the in-process text',
+  );
+  await assert.rejects(
+    () => extractRawTextFromFile(docx, docxType, "cv.docx", { timeoutMs: 300, workerSource: spin }),
+    (error: unknown) => error instanceof CvExtractionError && error.code === "unsupported_file",
+    "a file past a limit is still answered as unreadable",
+  );
 
   // The production entry point routes PDF and Word through the thread and turns a limit into "unreadable".
-  const extraction = readFileSync("src/lib/recruitment/cv-extraction.ts", "utf8");
+  const extraction = stripComments(readFileSync("src/lib/recruitment/cv-extraction.ts", "utf8"));
   const entry = extraction.slice(extraction.indexOf("export async function extractRawTextFromFile("));
-  assert.match(entry.slice(0, 1_200), /return await extractCvTextIsolated\(bytes, isolatedKind, \(\) => extractRawTextInProcess\(bytes, mimeType, fileName\)\);/);
-  assert.match(entry.slice(0, 1_200), /if \(error instanceof CvParseLimitError\) throw new CvExtractionError\("unsupported_file", error\.message\);/);
+  const entryBody = entry.slice(0, entry.indexOf("\n}\n"));
+  assert.match(entryBody, /return await extractCvTextIsolated\(bytes, isolatedKind, isolation\);/);
+  assert.match(entryBody, /if \(error instanceof CvParseLimitError\) throw new CvExtractionError\("unsupported_file", error\.message\);/);
+  assert.equal(
+    (entryBody.match(/extractRawTextInProcess\(/g) ?? []).length,
+    1,
+    "the entry point calls the in-process reader ONLY for a kind the thread does not read (to throw unsupported_file) — never as a fallback",
+  );
+
+  // ── the scanned-CV OCR's page images come out of the SAME bounded thread (point 33) ────────────
+  const scanned = await sampleScannedPdf();
+  const reference = await pageImagesInProcess(scanned, 3);
+  const isolatedImages = await extractPdfPageImagesInWorker(scanned, 3);
+  assert.equal(reference.length, 3, "the fixture yields one image per page, capped at three");
+  assert.equal(isolatedImages.length, 3, "the thread caps the pages exactly as cv-ocr.ts did");
+  // The PNG pdf-parse re-encodes can differ byte for byte between its ESM and CommonJS builds; what OCR
+  // sends on is the picture, so the pictures must match pixel for pixel.
+  for (const [index, image] of isolatedImages.entries()) {
+    const thread = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+    const inProcess = await sharp(reference[index]).raw().toBuffer({ resolveWithObject: true });
+    assert.deepEqual(thread.info, inProcess.info, "page " + (index + 1) + " image has the same size and channels as the in-process extraction");
+    assert.ok(thread.data.equals(inProcess.data), "page " + (index + 1) + " image is pixel-identical to the in-process extraction");
+  }
+  const firstPixels = await Promise.all(isolatedImages.map(async (image) => [...(await sharp(image).raw().toBuffer()).subarray(0, 3)].join(",")));
+  assert.deepEqual(firstPixels, ["200,30,30", "30,200,30", "30,30,200"], "the thread returns pages one, two and three, in order");
+  assert.equal((await extractPdfPageImagesInWorker(pdf, 3)).length, 0, "a PDF with no embedded image yields none");
+  await assert.rejects(
+    () => extractPdfPageImagesInWorker(scanned, 3, { workerSource: missing }),
+    (error: unknown) => error instanceof CvParseIsolationUnavailableError,
+    "an image read whose thread cannot start is refused, never run in-process",
+  );
+  await assert.rejects(
+    () => extractPdfPageImagesInWorker(scanned, 3, { timeoutMs: 300, workerSource: spin }),
+    (error: unknown) => error instanceof CvParseLimitError && error.limit === "timeout",
+    "an image read is held to the same deadline",
+  );
+  const ocrSource = stripComments(readFileSync("src/lib/recruitment/cv-ocr.ts", "utf8"));
+  assert.ok(
+    !/["']pdf-parse["']/.test(ocrSource) && !/PDFParse|getImage\(/.test(ocrSource),
+    "cv-ocr.ts must not load pdf-parse or call getImage() in the web process — the page images come from the bounded thread",
+  );
+  assert.match(ocrSource, /extractPdfPageImagesInWorker\(bytes, MAX_OCR_PAGES\)/, "cv-ocr.ts reads its page images through extractPdfPageImagesInWorker");
 
   // 🔴 EVERY LIBRARY THE THREAD require()s MUST BE A NEXT SERVER-EXTERNAL PACKAGE (audit follow-up, 2026-10-23).
   // The thread loads its library by name from node_modules at run time. Next's production file tracing keeps a

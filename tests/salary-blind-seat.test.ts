@@ -464,6 +464,18 @@ export async function runSalaryBlindSeatTests() {
   const workspace = source("src/components/resignations/resignations-workspace.tsx");
   assert.ok(workspace.includes("Salary and settlement amounts are not shown for your seat."), "a plain line, never a 0");
   assert.match(workspace, /\{settlementWithheld \? null : \(\s*<>\s*<RgTh align="right">Base salary<\/RgTh>/);
+  // She exports nothing from Resignations (owner, 2026-10-20). The per-tab Export is built in the
+  // browser with no route behind it, so the page is the only gate — it rendered for her on production.
+  assert.match(workspace, /canExportTab = true,/, "every other reader keeps the tab export");
+  assert.match(
+    workspace,
+    /\{canExportTab \? \(\s*<RgButton disabled=\{busy === "export-tab"\}/,
+    "the tab Export renders only when the page allows it",
+  );
+  assert.ok(
+    source("app/(admin)/resignations/page.tsx").includes("canExportTab={!isSalaryBlindRole(access.role)}"),
+    "the Resignations page withholds the tab export from the salary-blind seat",
+  );
 
   // ── 10. the screens offer her no door the server refuses ─────────────────────────────────────
   const screen = source("src/components/employees/employee-management.tsx");

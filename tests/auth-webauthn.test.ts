@@ -156,7 +156,7 @@ export function runAuthWebauthnTests() {
   );
   assert.match(
     loginVerifySource,
-    /isIpBlocked/,
+    /readIpBlock\(/,
     "the admin IP blocklist must apply to biometric sign-in as well as password sign-in",
   );
   assert.match(

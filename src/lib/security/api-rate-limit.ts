@@ -2,8 +2,15 @@ import { createHash } from "node:crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientAddress } from "@/lib/security/client-address";
+import { createMemoryRateBuckets } from "@/lib/security/memory-rate-buckets";
 
-const fallbackBuckets = new Map<string, { count: number; resetAt: number }>();
+/**
+ * The in-process stand-in for the bucket table, used ONLY by a caller that opted in with
+ * `onStoreError: "memory"`. Bounded (audit, 2026-10-26, points 21 and 22): it used to be a plain Map
+ * that only grew, so a caller rotating its key could grow it for as long as the process lived.
+ */
+export const API_RATE_LIMIT_MEMORY_MAX_KEYS = 10_000;
+const fallbackBuckets = createMemoryRateBuckets(API_RATE_LIMIT_MEMORY_MAX_KEYS);
 
 export class ApiRateLimitError extends Error {
   retryAfterSeconds: number;
@@ -41,18 +48,8 @@ export function rateLimitIdentity(input: {
 }
 
 function assertFallbackRateLimit(bucketKey: string, limit: number, windowMs: number) {
-  const now = Date.now();
-  const existing = fallbackBuckets.get(bucketKey);
-  if (!existing || existing.resetAt <= now) {
-    fallbackBuckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
-    return;
-  }
-
-  if (existing.count >= limit) {
-    throw new ApiRateLimitError(Math.max(1, Math.ceil((existing.resetAt - now) / 1000)));
-  }
-
-  existing.count += 1;
+  const retryAfterSeconds = fallbackBuckets.consume(bucketKey, limit, windowMs);
+  if (retryAfterSeconds > 0) throw new ApiRateLimitError(retryAfterSeconds);
 }
 
 function isRateLimitSchemaMissing(error: unknown) {
@@ -83,6 +80,19 @@ function isRateLimitSchemaMissing(error: unknown) {
 export async function assertApiRateLimit(input: {
   identifier: string;
   limit: number;
+  /**
+   * What happens when the shared bucket store cannot be read or written (the database is down, or
+   * the rate-limit schema is missing).
+   *
+   * Left out — every caller but two — the store's error is THROWN, so the caller fails closed: a
+   * limit that cannot be checked is not a limit that passed.
+   *
+   * `"memory"` counts in this process instead, in a bounded map. Only for a public route that must
+   * keep answering through a database outage and must never run unlimited while it does: the crash
+   * report (a report must not depend on the database being up) and the one-time WhatsApp connection.
+   * Both used to catch the store error and let the request through with no limit at all.
+   */
+  onStoreError?: "memory";
   scope: string;
   windowMs: number;
 }) {
@@ -148,7 +158,8 @@ export async function assertApiRateLimit(input: {
       .eq("bucket_key", bucketKey);
     if (updateError) throw updateError;
   } catch (error) {
-    if (isRateLimitSchemaMissing(error)) {
+    if (error instanceof ApiRateLimitError) throw error;
+    if (input.onStoreError === "memory") {
       assertFallbackRateLimit(bucketKey, input.limit, input.windowMs);
       return;
     }

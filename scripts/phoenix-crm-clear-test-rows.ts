@@ -143,6 +143,13 @@ export const DELETE_PLAN: readonly Step[] = [
   // Everything hanging off a customer, a place or a visit.
   { table: "phoenix_crm_customer_moves", by: "flag", where: `is_test or customer_id in (${TEST_CUSTOMERS})` },
   {
+    // References phoenix_crm_customers with no cascade (found 2026-10-17 when Guard 2 aborted a live
+    // sweep). Its people rows cascade from it, so they need no step of their own.
+    table: "phoenix_crm_double_visit_requests",
+    by: "flag",
+    where: `is_test or customer_id in (${TEST_CUSTOMERS})`,
+  },
+  {
     table: "phoenix_crm_validation_reviews",
     by: "flag",
     where: `is_test or customer_id in (${TEST_CUSTOMERS}) or place_id in (${TEST_PLACES})`,

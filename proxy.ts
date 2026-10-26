@@ -12,6 +12,12 @@ import {
   isSameOriginMutationRequest,
   requiresCsrfProtection,
 } from "@/lib/security/csrf";
+import {
+  CSP_NONCE_HEADER,
+  createCspNonce,
+  pageContentSecurityPolicy,
+  shouldSendPageCsp,
+} from "@/lib/security/content-security-policy";
 import { logStructured } from "@/lib/observability/log";
 import {
   isAllowedPhoenixOrigin,
@@ -291,8 +297,8 @@ function securityProxy(request: NextRequest): NextResponse | null {
       request.nextUrl.pathname === "/api/admin/synthetic-journeys/ingest" ||
       request.nextUrl.pathname === "/api/integrations/telegram/webhook" ||
       request.nextUrl.pathname === "/api/webhooks/resend" ||
-      // Brevo transactional webhook: the provider POSTs cross-origin; a shared secret token
-      // (?token= / x-brevo-token, verified in the route) authorises it, so it is CSRF-exempt.
+      // Brevo transactional webhook: the provider POSTs cross-origin; a shared secret in the
+      // Authorization: Bearer header (verified in the route; ?token= is refused) authorises it, so it is CSRF-exempt.
       request.nextUrl.pathname === "/api/webhooks/brevo" ||
       // Sentry alert webhook: Sentry POSTs cross-origin with no session; the route verifies the HMAC signature
       // of the body against SENTRY_WEBHOOK_SECRET itself, so it is CSRF-exempt by the same shared-secret pattern.
@@ -441,6 +447,29 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // THE PAGE SCRIPT NONCE (src/lib/security/content-security-policy.ts). A page gets a nonce minted
+  // for this one request: on the REQUEST, where Next.js reads it out of `content-security-policy` and
+  // puts it on every script it renders and the root layout reads it from `x-nonce`; and on the
+  // RESPONSE, where its policy replaces the next.config.ts one for this page. API routes and files
+  // keep the next.config.ts policy.
+  const pageCsp = pageCspFor(pathname);
+  return withPageCsp(forwardRequest(request, pathname, search, pageCsp), pageCsp);
+}
+
+type PageCsp = { nonce: string; policy: string };
+
+function pageCspFor(pathname: string): PageCsp | null {
+  if (!shouldSendPageCsp(pathname)) return null;
+  const nonce = createCspNonce();
+  return { nonce, policy: pageContentSecurityPolicy(pathname, nonce) };
+}
+
+function withPageCsp(response: NextResponse, pageCsp: PageCsp | null): NextResponse {
+  if (pageCsp) response.headers.set("Content-Security-Policy", pageCsp.policy);
+  return response;
+}
+
+function forwardRequest(request: NextRequest, pathname: string, search: string, pageCsp: PageCsp | null): NextResponse {
   // A client can set any header it likes. These two are ours, and the shell trusts them to decide
   // which navigation to render — so delete whatever arrived and write our own. Done for EVERY
   // matched request, including ones that are not rewritten, so there is no path through this file
@@ -449,6 +478,15 @@ export function proxy(request: NextRequest) {
   headers.delete(SHELL_HEADER);
   headers.delete(PATH_HEADER);
   headers.set(PATH_HEADER, `${pathname}${search}`);
+  // The nonce and the policy Next.js reads it from are ours too: whatever arrived is dropped, and a
+  // page gets this request's pair.
+  headers.delete(CSP_NONCE_HEADER);
+  headers.delete("content-security-policy");
+  headers.delete("content-security-policy-report-only");
+  if (pageCsp) {
+    headers.set(CSP_NONCE_HEADER, pageCsp.nonce);
+    headers.set("content-security-policy", pageCsp.policy);
+  }
 
   const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;
   if (intervention) return intervention;
@@ -495,7 +533,14 @@ export const config = {
   // that much of ANY request body on any path, before authentication. `$` anchors each exclusion to
   // the exact path. Next reads this object statically, so the matcher must stay a literal. Pinned by
   // tests/proxy-upload-body-limit.test.ts.
+  //
+  // ONE TOKEN DOOR is excluded too: `/api/devices/recordings/upload`, where a rep tablet files a screen
+  // recording of up to 256 MB (audit, 2026-10-26, point 24). A tablet holds no cookie and sends no
+  // Origin, so there is no session to protect and no `assertSameOriginMutation` to run — the proxy
+  // only cut its body at 10 MB and refused it as cross-site. Its gate is in the route, before the body
+  // is read: a Content-Length cap, a per-address rate limit and the slot the address names; then the
+  // single-use recording token.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/hiring-documents/files$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/recordings/upload$|api/hiring-documents/files$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
   ],
 };

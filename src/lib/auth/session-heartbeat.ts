@@ -16,6 +16,8 @@ import {
   accessContextFromDevPreviewToken,
   createDevPreviewSessionToken,
   devPreviewCookieMaxAgeSeconds,
+  // The one loopback gate; this file kept its own URL-only copy until 2026-10-26.
+  isLocalDevelopmentRequest,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
 import {
@@ -67,15 +69,6 @@ export type SessionHeartbeatResult = {
   cookies: HeartbeatCookie[];
   status: number;
 };
-
-function isLocalDevelopmentRequest(request: Request) {
-  if (process.env.NODE_ENV !== "development") {
-    return false;
-  }
-
-  const hostname = new URL(request.url).hostname.toLowerCase();
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
 
 /**
  * True when the heartbeat failed because the DATABASE was slow or down, not because the session is

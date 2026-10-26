@@ -412,19 +412,30 @@ The record push is aimed at the RustDesk package (`rustDeskPackageName()`), neve
 1. **Trigger.** Phoenix sends `POST /rest/private/push` with `messageType: "intent"`, `deviceNumbers:
    [<this tablet>]`, and a `payload` (a JSON **string**) of
    `{ "action": "com.satopharma.phoenix.tablet.RECORD_SCREEN", "pkg": "<rustdesk package>", "extra":
-   { "recordingId": "<uuid>", "token": "<hex>", "uploadUrl": "https://…/api/devices/recordings/upload",
+   { "recordingId": "<uuid>", "token": "<hex>", "uploadUrl": "https://…/api/devices/recordings/upload?recordingId=<uuid>",
    "durationSeconds": <n> } }`. The fork registers the receiver/activity for that action.
 2. **Capture.** Record the screen via the MediaProjection session the fork already owns for live view,
    for `durationSeconds` (5–300), to an mp4 (or webm).
-3. **Upload.** `POST` the file to `uploadUrl` as multipart `file`, with form fields `recordingId`,
-   `token` and `capturedSeconds`. No bearer and no session — the `token` IS the credential, matched
-   once against the slot's stored hash inside a 15-minute window, then burned.
+3. **Upload.** `POST` the file to `uploadUrl` **exactly as given** — it carries `?recordingId=` — as
+   multipart `file`, with form fields `token` and `capturedSeconds` (a `recordingId` field may be sent
+   too, but must be the same id, or the upload is refused `400`). No bearer and no session — the
+   `token` IS the credential, matched once against the slot's stored hash inside a 15-minute window,
+   then burned. The door reads the slot the address names **before it reads the body**: no id or a
+   malformed one is refused `400`, an unknown slot `404`, a handled one `409`, a spent or expired one
+   `410`, and a slot that cannot be read `503` (retry) — so a caller without a live slot can never
+   make the server hold a 256 MB body.
+   Send it with a **`Content-Length`** — a chunked body is refused `411` before it is read, and a
+   request over 256 MB plus 64 KB of framing is refused `413`. One address may make **10 uploads a
+   minute** (`429` with `Retry-After` past that; `503` when the limit cannot be checked — retry). The
+   token is claimed once, atomically: a second upload on the same slot gets `409` and never touches
+   the first file (stored with no overwrite). This route is left out of the proxy matcher, whose 10 MB
+   body copy used to cut every real recording short (audit, 2026-10-26, point 24).
 
 **The exposure, stated plainly.** A tablet's Headwind configuration is world-readable (§8.3), so no
 long-lived secret may travel to a device. The per-recording token travels in the push instead: random,
-single-use, short-lived, and worth at most one capture slot for minutes if it leaked. The ingest
-re-reads the stored object's real size rather than trusting the tablet — the same discipline the CRM
-visit recording keeps. The `/rest/videos` path this feature does **not** use is the server's own
+single-use, short-lived, and worth at most one capture slot for minutes if it leaked. The size filed
+is the byte count of the file that actually arrived, never a number the tablet sends (this line used
+to say the stored object was re-read, which it never was). The `/rest/videos` path this feature does **not** use is the server's own
 unauthenticated video endpoint, deliberately 403'd by the §8.3 Tomcat rule; recording uses the
 authenticated Phoenix door above, never that hole.
 

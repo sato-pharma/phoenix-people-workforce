@@ -10,12 +10,17 @@ export function runBrevoWebhookEventsTests() {
   const secret = "sekret-token-123";
   const base = "https://phoenix-hr.satopharma.com/api/webhooks/brevo";
 
-  // --- Auth (shared secret via query token or header) -----------------------------
-  assert.equal(verifyBrevoWebhookAuth({ url: `${base}?token=${secret}`, headers: new Headers(), secret }), true, "query token accepted");
-  assert.equal(verifyBrevoWebhookAuth({ url: base, headers: new Headers({ "x-brevo-token": secret }), secret }), true, "header token accepted");
-  assert.equal(verifyBrevoWebhookAuth({ url: `${base}?token=wrong`, headers: new Headers(), secret }), false, "wrong token rejected");
+  // --- Auth (shared secret in the Authorization: Bearer header ONLY) -----------------
+  // Audit point 20 (owner-approved 2026-10-26) changed this contract on purpose: `?token=` and
+  // `x-brevo-token` used to be ACCEPTED and are now refused. The full proof, the route included, is
+  // tests/brevo-webhook-bearer-auth.test.ts.
+  const bearer = (value: string) => new Headers({ authorization: `Bearer ${value}` });
+  assert.equal(verifyBrevoWebhookAuth({ url: base, headers: bearer(secret), secret }), true, "Bearer token accepted");
+  assert.equal(verifyBrevoWebhookAuth({ url: `${base}?token=${secret}`, headers: new Headers(), secret }), false, "query token refused");
+  assert.equal(verifyBrevoWebhookAuth({ url: base, headers: new Headers({ "x-brevo-token": secret }), secret }), false, "x-brevo-token header refused");
+  assert.equal(verifyBrevoWebhookAuth({ url: base, headers: bearer("wrong"), secret }), false, "wrong token rejected");
   assert.equal(verifyBrevoWebhookAuth({ url: base, headers: new Headers(), secret }), false, "missing token rejected");
-  assert.equal(verifyBrevoWebhookAuth({ url: `${base}?token=${secret}`, headers: new Headers(), secret: "" }), false, "empty secret rejects");
+  assert.equal(verifyBrevoWebhookAuth({ url: base, headers: bearer(secret), secret: "" }), false, "empty secret rejects");
 
   // --- Event → status mapping -----------------------------------------------------
   const statusFor = (event: string) =>

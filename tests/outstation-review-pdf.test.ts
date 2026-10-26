@@ -7,6 +7,7 @@ import { buildRouteStaticMapUrl, decodePolyline, renderRouteDiagram } from "@/li
 import { renderRouteStreetMap } from "@/lib/outstation/review-map-render";
 import { parseOutstationDescription } from "@/lib/outstation/description-format";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * "Extract this page as it is as a PDF… no horizontal scrolling… look in the eligibility. Also
@@ -387,6 +388,17 @@ export async function runOutstationReviewPdfTests() {
     /gm_authFailure/,
     "a rejected key must surface as a reason, not as a silent timeout",
   );
+  {
+    const code = stripComments(renderer);
+    const bypass = code.indexOf("await page.setBypassCSP(true)");
+    const navigate = code.indexOf("await page.goto(");
+    assert.ok(
+      bypass >= 0 && bypass < navigate,
+      "the page must ignore the borrowed /login page's nonce policy BEFORE it navigates there — that "
+        + "policy admits only scripts with its own nonce, so the map's scripts are refused and the PDF "
+        + "silently falls back to the diagram",
+    );
+  }
 
   // ── 5. THE ROUTE IS SERVED BY THE SAME GATE AS THE REVIEW ────────────────────────────────────
 

@@ -167,11 +167,12 @@ export function runVacationDecisionFormTests() {
 // ── F-19 ────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The raw-error shapes still left in route files. Counted, so the number can only go down. At this
- * PR every one left is a CRON or notification route answering a machine (cron-job.org, the dead
- * man's switch) or the payslips route's development-only branch — none answers a person.
+ * The raw-error shapes still left in route files. Counted, so the number can only go down. Since the
+ * 26 Oct 2026 deep audit (lane D) the notification routes redact too, so every one left is an
+ * iReports360 sync route answering its cron (left alone on purpose) or the payslips route's
+ * development-only branch — none answers a person.
  */
-const RAW_ROUTE_ERROR_BASELINE = 17;
+const RAW_ROUTE_ERROR_BASELINE = 7;
 const RAW_ROUTE_ERROR_PATTERNS = [
   /\b(\w+) instanceof Error \? \1\.message\b(?!\.toLowerCase)/g,
   /\bString\((?:error|err|e|caught|cause|reason)(?: \?\? "")?\)/g,
@@ -268,6 +269,12 @@ export function runApiErrorWrappedDatabaseTextTests() {
   );
   const exposed = sites.filter((site) => /^app\/api\/(public|share)\//.test(site));
   assert.deepEqual(exposed, [], "a route anyone can reach without signing in carries no raw error text at all");
+  const notifications = sites.filter((site) => site.startsWith("app/api/notifications/"));
+  assert.deepEqual(
+    notifications,
+    [],
+    "🔴 a notification route answers raw error text again — its cron response, run summary and dead man's switch carry clientSafeErrorMessage, the real error goes to the log",
+  );
 }
 
 // ── S-APP-03 ────────────────────────────────────────────────────────────────────────────────────
@@ -338,5 +345,28 @@ export function runCsvFormulaNeutraliserTests() {
     const source = read(file);
     assert.match(source, /import \{ csvCell \} from "@\/lib\/export\/csv-cell";/, `${file} uses the shared cell`);
     assert.doesNotMatch(source, /function csvCell\(/, `${file} keeps no private, un-neutralised copy`);
+  }
+
+  // The browser-side downloads: each one writes text a person typed (an audit summary, a leave note,
+  // a coaching comment, a distributor's upload cell, a vacancy title) into a CSV opened in Excel, so
+  // each builds its lines with the shared `csvLine` (formula lead neutralised, RFC4180 quoting) and
+  // starts with the shared BOM — never a hand-rolled quote-doubling escaper.
+  for (const file of [
+    "src/components/admin/audit-log-viewer.tsx",
+    "src/components/vacation/vacation-report.tsx",
+    "src/components/coaching/employee-coaching-list-impl.tsx",
+    "src/components/sales/weekly/weekly-upload-workspace.tsx",
+    "src/components/reports/vacancies-report.tsx",
+  ]) {
+    const source = read(file);
+    assert.match(
+      source,
+      /import \{ CSV_BOM, csvLine \} from "@\/lib\/export\/spreadsheet-safe";/,
+      `🔴 ${file} builds its CSV with the shared, formula-neutralising csvLine`,
+    );
+    assert.match(source, /csvLine\(/, `${file} calls csvLine`);
+    assert.match(source, /CSV_BOM \+/, `${file} starts its CSV with the shared BOM`);
+    assert.doesNotMatch(source, /function csv(?:Cell|Escape|Field)\(/, `${file} keeps no private, un-neutralised escaper`);
+    assert.doesNotMatch(source, /\.replace\(\/"\/g/, `${file} hand-escapes no quote — csvLine does the quoting`);
   }
 }

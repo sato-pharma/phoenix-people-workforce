@@ -36,6 +36,32 @@ function testTheButtonAndTheScriptAgree() {
 }
 
 /**
+ * The Print button carries no inline handler, and the banner's own script wires it.
+ *
+ * The hand-typed paper is shown in a srcdoc frame, which runs under the PAGE policy
+ * (src/lib/security/content-security-policy.ts): its scripts run with the page nonce, but an inline
+ * `onclick` is blocked whatever the nonce — so a button wired that way would show and do nothing.
+ */
+function testThePrintButtonIsWiredByTheScript() {
+  const html = printBanner(["A4. 1 copy."]);
+  assert.doesNotMatch(html, /\son[a-z]+=/iu, "🔴 no inline event handler in the banner — the page policy blocks it");
+  assert.match(html, /<button type="button" class="print-banner__action" id="phx-print">Print<\/button>/u);
+
+  const body = (/<script>([\s\S]*?)<\/script>/u.exec(html) as RegExpExecArray)[1];
+  const listeners: Array<{ event: string; handler: () => void }> = [];
+  const printButton = { addEventListener: (event: string, handler: () => void) => listeners.push({ event, handler }) };
+  let printed = 0;
+  const doc = {
+    // No download link here (a file:// paper): the Print button must be wired all the same.
+    getElementById: (id: string) => (id === "phx-print" ? printButton : null),
+  };
+  new Function("document", "window", "URL", body)(doc, { location: { href: "file:///C:/paper.html" }, print: () => (printed += 1) }, URL);
+  assert.deepEqual(listeners.map((l) => l.event), ["click"], "🔴 the banner script must wire the Print button");
+  listeners[0].handler();
+  assert.equal(printed, 1, "a click opens the print dialog");
+}
+
+/**
  * The guard must admit a real print URL and refuse anything else.
  *
  * Run against the emitted script rather than a copy of its logic — a copy is what let the original
@@ -114,5 +140,6 @@ export async function runPrintBannerScriptTests() {
   testTheStackNamesAFontTheServerHas();
   testTheInjectedScriptParses();
   testTheButtonAndTheScriptAgree();
+  testThePrintButtonIsWiredByTheScript();
   testTheGuardAdmitsAPrintUrlAndRefusesOthers();
 }

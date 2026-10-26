@@ -181,7 +181,7 @@ export async function runContractRenewalNotifications(request: Request) {
       results.push({
         daysUntil: row.daysUntil,
         employeeHrId: row.hr_id,
-        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+        result: { error: clientSafeErrorMessage(error, "Contract renewal notification failed."), sent: false },
       });
     }
   }

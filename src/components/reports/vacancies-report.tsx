@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
 import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
+import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { publicVacancyLabel } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -93,11 +94,6 @@ function formatDate(value: string | null | undefined) {
     month: "short",
     year: "numeric",
   });
-}
-
-function csvCell(value: string | number | null | undefined) {
-  const text = emptyText(value);
-  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function groupCounts(
@@ -402,11 +398,10 @@ export function VacanciesReport({
       row.status,
       row.createdAt,
     ]);
-    const csv = [
-      headers.map(csvCell).join(","),
-      ...rows.map((row) => row.map(csvCell).join(",")),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    // csvLine neutralises a formula lead (=, +, -, @) in every cell: position titles, manager names
+    // and areas are typed by people, and this file is opened in Excel. A blank cell stays blank.
+    const csv = [csvLine(headers), ...rows.map((row) => csvLine(row))].join("\n");
+    const blob = new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 

@@ -20,7 +20,7 @@ name (`select conname, pg_get_constraintdef(oid) from pg_constraint where conrel
 
 | Var | Set to | Why |
 |---|---|---|
-| `PHOENIX_EMAIL_FORCE_TESTING` | `false` | **P0** — stop redirecting all mail to the test inboxes. Verify with `/api/health/email` (must read `forceTesting:false`, `status:healthy`). |
+| `PHOENIX_EMAIL_FORCE_TESTING` | `false` | **P0** — stop redirecting all mail to the test inboxes. Verify with `/api/health/email` as a Super Admin or with the `CRON_SECRET` bearer (must read `forceTesting:false`, `status:healthy`; an anonymous caller sees only `status` and `timestamp`). |
 | `NOTIFICATION_DASHBOARD_URL` | `https://phoenix-hr.satopharma.com` | needed to mint the HTTPS one-click unsubscribe URL |
 | `PHOENIX_AUTH_SECRET` | (already set for sessions) | also signs unsubscribe tokens — confirm present |
 
@@ -62,7 +62,9 @@ covered by the Healthchecks.io dead-man's-switch on all 8 scheduled routes. No a
 
 ## 6. Post-rollout verification
 
-- `/api/health/email` → `healthy`, `forceTesting:false`.
+- `/api/health/email` → `healthy`, `forceTesting:false`. The detail (`checks`, `forceTesting`,
+  `deliveryMode`, `providerChain`, `moduleAccounts`, `warnings`) answers only the `CRON_SECRET` bearer or a
+  signed-in Super Admin; anyone else gets `{status, timestamp}` with the same 200/503.
 - Webhook replay a `email.bounced (Permanent)` and `email.complained` → rows appear in
   `email_suppressions`; re-send to that address → skipped.
 - Click a List-Unsubscribe link → `email_suppressions` gets a `reason='unsubscribe'` row.

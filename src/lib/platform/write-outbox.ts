@@ -153,18 +153,20 @@ export async function persistThroughOutbox<TPayload>(
 /**
  * Write out as many due rows as the batch allows. A row is deleted the moment its write lands — or
  * the moment the probe shows it had landed all along — and pushed out on the back-off otherwise.
+ *
+ * `only` lands just the rows whose payload it accepts, DUE OR NOT: a domain that must have every row
+ * for one subject written before it moves on (a payroll run about to confirm Part 2) cannot wait out
+ * an hour of back-off. A row it does not accept is left exactly as it was.
  */
 export async function drainOutbox<TPayload>(
   queue: OutboxQueue<TPayload>,
   limit = OUTBOX_DRAIN_BATCH,
+  only?: (payload: TPayload) => boolean,
 ): Promise<{ drained: number; deferred: number }> {
   const supabase = getSupabaseAdmin({ requestTimeoutMs: OUTBOX_RETRY_TIMEOUT_MS });
-  const { data, error } = await supabase
-    .from(queue.table)
-    .select("id, payload, attempts")
-    .lte("next_attempt_at", new Date().toISOString())
-    .order("created_at", { ascending: true })
-    .limit(limit);
+  let select = supabase.from(queue.table).select("id, payload, attempts");
+  if (!only) select = select.lte("next_attempt_at", new Date().toISOString());
+  const { data, error } = await select.order("created_at", { ascending: true }).limit(limit);
 
   if (error || !Array.isArray(data) || data.length === 0) return { deferred: 0, drained: 0 };
 
@@ -173,6 +175,7 @@ export async function drainOutbox<TPayload>(
 
   for (const row of data as { id: string; payload: unknown; attempts: number }[]) {
     const payload = queue.read(row.payload);
+    if (payload && only && !only(payload)) continue;
     if (!payload) {
       // Nothing a retry can do with it, and leaving it would block the queue head for ever.
       await supabase.from(queue.table).delete().eq("id", row.id);

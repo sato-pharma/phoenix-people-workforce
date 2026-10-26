@@ -3,7 +3,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
+import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -711,8 +711,13 @@ function mapFlag(row: Record<string, unknown>): SalaryFlag {
   };
 }
 
+/**
+ * Batch HEADERS only — period, file, status — and no employee row, which is why it takes no access:
+ * every reader that turns a batch into people (`getPayrollDashboard`, `getSalaryBatchExport`,
+ * `getLatestSalaryRecordsBefore`) narrows the rows by the viewer's access itself.
+ */
 export async function listSalaryBatches(): Promise<SalaryBatch[]> {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("payroll.listSalaryBatches");
   const { data, error } = await supabase
     .from("salary_batches")
     .select("*")
@@ -777,8 +782,10 @@ function payrollPeriodSortValue(batch: Pick<SalaryBatch, "month" | "year">) {
 export async function getLatestSalaryRecordsBefore(
   month: number,
   year: number,
+  accessContext: AccessContext,
 ): Promise<SalaryRecord[]> {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("payroll.getLatestSalaryRecordsBefore");
+  const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
   const targetPeriod = year * 12 + month;
   const batches = await listSalaryBatches();
   const previousBatch = batches
@@ -802,14 +809,18 @@ export async function getLatestSalaryRecordsBefore(
     throw error;
   }
 
-  return (data ?? []).map((row) => mapRecord(row as Record<string, unknown>));
+  return filterPayrollRowsByAccess((data ?? []) as Array<Record<string, unknown>>, payrollAccessFilter).map((row) =>
+    mapRecord(row),
+  );
 }
 
 export async function getLatestSalaryExpenseTotalsBefore(
   month: number,
   year: number,
+  accessContext: AccessContext,
 ): Promise<Map<string, number>> {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("payroll.getLatestSalaryExpenseTotalsBefore");
+  const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
   const { data: batches, error: batchError } = await supabase
     .from("salary_batches")
     .select("id,file_name,uploaded_by,approved_by,month,year")
@@ -842,7 +853,7 @@ export async function getLatestSalaryExpenseTotalsBefore(
   }
 
   const totals = new Map<string, number>();
-  ((data ?? []) as Array<Record<string, unknown>>).forEach((row) => {
+  filterPayrollRowsByAccess((data ?? []) as Array<Record<string, unknown>>, payrollAccessFilter).forEach((row) => {
     const hrId = String(row.hr_id ?? "").trim();
     if (!hrId) return;
     totals.set(hrId, Number(row.expenses ?? 0));
@@ -855,7 +866,7 @@ export async function getPayrollDashboard(
   batchId: string | undefined,
   accessContext: AccessContext,
 ): Promise<PayrollDashboardData> {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("payroll.getPayrollDashboard");
   const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
 
   const batches = await listSalaryBatches();
@@ -1036,7 +1047,7 @@ export async function getSalaryBatchExport(
   batch: SalaryBatch;
   records: SalaryRecord[];
 } | null> {
-  const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
+  const supabase = await rowSecurityClientFor("payroll.getSalaryBatchExport");
   const normalizedRequestedId = batchId.trim();
   let targetBatchId = normalizedRequestedId;
   const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);

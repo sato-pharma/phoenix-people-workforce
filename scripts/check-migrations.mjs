@@ -369,6 +369,101 @@ for (const file of files) {
   }
 }
 
+// 6. A migration that creates a schema must revoke it from anon and authenticated in the same file.
+// 20261023082524_repair_stranded_in_app_notifications.sql created notification_backup_20261023 to
+// hold a copy of three notification tables and never revoked it; nothing failed, because nothing
+// looked. Its siblings that week (20261023023133, 20261023023603, 20261023043213) each followed
+// `execute format('create schema … %I', …)` with `execute format('revoke all on schema %I from
+// public, anon, authenticated', …)`; this rule makes that pairing the requirement instead of the
+// habit. Audit 2026-10-26, point 13; the schema itself is locked by 20261026120100.
+//
+// Both shapes are read: a static `create schema [if not exists] <name>`, which needs a revoke on
+// THAT schema, and a dynamic one inside `execute format(...)`, which needs a revoke on a
+// placeholder schema (`%I`) in the same file. The revoke must name anon AND authenticated —
+// revoking from PUBLIC alone leaves an explicit grant to either standing.
+//
+// The cutoff is the week the gap happened: a ratchet on new work, like rule 4b. Exempt are the
+// schemas the platform owns or the browser must use by design (`private` holds the helpers 64
+// policies call, so authenticated holds USAGE on it on purpose), and the one file fixed after the
+// fact, whose fixing file must exist for the exemption to stand.
+const SCHEMA_REVOKE_CUTOFF = '20261023000000';
+const SCHEMA_REVOKE_EXEMPT_SCHEMAS = new Set([
+  'extensions', 'auth', 'storage', 'realtime', 'graphql', 'graphql_public', 'vault', 'pgsodium',
+  'pgsodium_masks', 'supabase_functions', 'supabase_migrations', 'net', 'cron', 'pgbouncer',
+  '_realtime', '_analytics', 'private',
+]);
+const SCHEMA_REVOKE_FIXED_AFTER = new Map([
+  ['20261023082524_repair_stranded_in_app_notifications.sql', '20261026120100_lock_the_notification_backup_schema.sql'],
+]);
+for (const [file, fixedBy] of SCHEMA_REVOKE_FIXED_AFTER) {
+  if (files.includes(file) && !files.includes(fixedBy)) {
+    fail(
+      `"${file}" is exempt from the create-schema revoke rule only because "${fixedBy}" locks its ` +
+      'schema afterwards, and that file is missing. Restore it, or remove the exemption and revoke in ' +
+      `"${file}" itself.`
+    );
+  }
+}
+for (const file of files) {
+  if (!/^\d{14}_/.test(file) || file.slice(0, 14) < SCHEMA_REVOKE_CUTOFF) continue;
+  if (SCHEMA_REVOKE_FIXED_AFTER.has(file)) continue;
+
+  // Same comment-stripping as rule 4: a revoke in a comment (a rollback note) must not satisfy the
+  // rule, and a create schema in prose must not trip it.
+  const sql = fs
+    .readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('--');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n')
+    .replace(/\s+/g, ' ');
+
+  // Every schema (or placeholder) this file revokes from BOTH browser roles. A statement ends at
+  // `;` or, inside an execute string, at the closing quote.
+  const revokedFrom = new Map();
+  const revokes = /\brevoke\b[^;']*?\bon\s+schema\s+([^;']*?)\s+from\s+([^;']*)/gi;
+  let rv;
+  while ((rv = revokes.exec(sql)) !== null) {
+    const roles = rv[2].toLowerCase();
+    for (const raw of rv[1].split(',')) {
+      const name = raw.trim().replace(/^"|"$/g, '').toLowerCase();
+      if (!name) continue;
+      const held = revokedFrom.get(name) ?? new Set();
+      if (/\banon\b/.test(roles)) held.add('anon');
+      if (/\bauthenticated\b/.test(roles)) held.add('authenticated');
+      revokedFrom.set(name, held);
+    }
+  }
+  const revokesBoth = (name) => {
+    const held = revokedFrom.get(name);
+    return Boolean(held && held.has('anon') && held.has('authenticated'));
+  };
+
+  const creates = /\bcreate\s+schema\s+(?:if\s+not\s+exists\s+)?("?)([a-z_][a-z0-9_$]*|%[a-z])\1/gi;
+  let cs;
+  while ((cs = creates.exec(sql)) !== null) {
+    const name = cs[2].toLowerCase();
+    if (SCHEMA_REVOKE_EXEMPT_SCHEMAS.has(name)) continue;
+    const dynamic = name.startsWith('%');
+    const covered = dynamic
+      ? [...revokedFrom.keys()].some((k) => k.startsWith('%') && revokesBoth(k))
+      : revokesBoth(name);
+    if (!covered) {
+      fail(
+        `"${file}" creates schema ${dynamic ? `${name} (inside execute format)` : name} without revoking it ` +
+        'from anon and authenticated in the same file — the gap that left notification_backup_20261023 ' +
+        'open to the browser roles. Add, straight after the create: ' +
+        (dynamic
+          ? "execute format('revoke all on schema %I from public, anon, authenticated', <the same name>);"
+          : `revoke all on schema ${name} from public, anon, authenticated;`) +
+        ' A schema the browser must use by design goes in SCHEMA_REVOKE_EXEMPT_SCHEMAS with its reason.'
+      );
+    }
+  }
+}
+
 // Summary
 const total = files.length;
 if (errors === 0 && warnings === 0) {

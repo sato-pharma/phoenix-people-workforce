@@ -47,6 +47,24 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 type ExcludedPerson = { hrId: string; fullName: string; reason: string | null };
 
 /**
+ * One deduction or expense decision parked while the run was busy, as `getRunView` returns it
+ * (`ParkedPayrollResync`, resync-outbox.ts — server-only, so the shape is restated here).
+ */
+type ParkedResync = { kind: "deduction" | "expense"; people: number; queuedAt: string; attempts: number };
+
+/** "2 deduction decisions and 1 expense decision, for 5 employees, are" — the panel's subject. */
+function parkedResyncSubject(parked: ParkedResync[]): string {
+  const phrase = (n: number, kind: string) => `${n} ${kind} decision${n === 1 ? "" : "s"}`;
+  const deductions = parked.filter((entry) => entry.kind === "deduction").length;
+  const expenses = parked.filter((entry) => entry.kind === "expense").length;
+  const parts = [];
+  if (deductions > 0) parts.push(phrase(deductions, "deduction"));
+  if (expenses > 0) parts.push(phrase(expenses, "expense"));
+  const total = parked.reduce((sum, entry) => sum + entry.people, 0);
+  return `${parts.join(" and ")}, for ${people(total)}, ${parked.length === 1 ? "is" : "are"}`;
+}
+
+/**
  * Purely a visual grouping of the same PART1/PART2_STEP_KEYS — no step gains or
  * loses anything, HR just no longer scans one flat row of 10 identical pills to
  * find the one they want (owner feedback 2026-08-08: "very uncomfortable to
@@ -153,6 +171,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * code; the name has to be joined server-side, so this cannot be derived from `draftRows` here.
    */
   const [excludedPeople, setExcludedPeople] = useState<ExcludedPerson[]>([]);
+  /**
+   * Decisions saved while the run was busy that have NOT reached its figures yet. Null when the
+   * server could not read the queue — said on screen, never shown as none.
+   */
+  const [parkedResyncs, setParkedResyncs] = useState<ParkedResync[] | null>([]);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
   /** Who this run is NOT paying, and why — see the panel below the reconciliation. */
   const [holdReview, setHoldReview] = useState<HoldReview | null>(null);
@@ -224,6 +247,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setStepStates(data.view?.stepStates ?? []);
       setDraftRows(data.view?.draftRows ?? []);
       setExcludedPeople((data.view?.excludedPeople ?? []) as ExcludedPerson[]);
+      setParkedResyncs(
+        data.view && "parkedResyncs" in data.view ? (data.view.parkedResyncs as ParkedResync[] | null) : [],
+      );
       setRecon(null);
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
@@ -751,6 +777,32 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 </li>
               ))}
             </ul>
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {/* Decisions that have not reached this run's figures yet (risk review, 26 Oct). Before
+          this, one parked after Part 2 was confirmed was dropped without a word. */}
+      {run && (run.phase === "part1" || run.phase === "part2" || run.phase === "ready") && parkedResyncs === null ? (
+        <AdminCallout tone="warning">
+          <div className="min-w-0">
+            Could not check whether a deduction or expense decision is still waiting to reach this run.
+            Reload the page before confirming Part 2.
+          </div>
+        </AdminCallout>
+      ) : null}
+      {run &&
+      (run.phase === "part1" || run.phase === "part2" || run.phase === "ready") &&
+      parkedResyncs &&
+      parkedResyncs.length > 0 ? (
+        <AdminCallout tone="warning">
+          <div className="min-w-0">
+            <div className="font-black">{parkedResyncSubject(parkedResyncs)} waiting to reach this run</div>
+            <div className="mt-1 text-xs">
+              {run.phase === "ready"
+                ? "They were saved after Part 2 was confirmed, so these figures do not include them. Reopen Part 2 to apply them."
+                : "They were saved while this run was busy and are being applied now. Part 2 cannot be confirmed until they have reached it — reload in a minute."}
+            </div>
           </div>
         </AdminCallout>
       ) : null}

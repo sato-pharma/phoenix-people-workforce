@@ -15,7 +15,7 @@ import {
   writeAuthAudit,
 } from "@/lib/auth/audit";
 import { resolveAuthUserForPasswordlessLogin } from "@/lib/auth/credentials";
-import { isIpBlocked } from "@/lib/auth/ip-blocklist";
+import { readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
   createSessionToken,
@@ -74,7 +74,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (await isIpBlocked(ip)) {
+    // Fail-closed, as at the password door: an unreadable blocklist refuses the sign-in (point 15),
+    // as "temporarily unavailable" — it is an outage, not a block (risk review, 26 Oct).
+    const blocklist = await readIpBlock(ip);
+    if (blocklist === "unreadable") {
+      return NextResponse.json(
+        { error: "sign_in_unavailable", message: "Sign-in is temporarily unavailable. Please try again in a few minutes." },
+        { status: 503 },
+      );
+    }
+    if (blocklist === "blocked") {
       return NextResponse.json(
         { error: "rate_limited", message: "Too many sign-in attempts. Please try again later." },
         { status: 429 },

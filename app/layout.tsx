@@ -1,12 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
 import { PageTimingBeacon } from "@/components/layout/page-timing-beacon";
 import { PhxLiveBanner } from "@/components/layout/phx-live-banner";
 import { ReportingErrorBoundary } from "@/components/layout/reporting-error-boundary";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { CspNonceProvider } from "@/components/security/csp-nonce-provider";
 import { systemIdentity } from "@/config/system-settings";
 import { DOM_TRANSLATE_GUARD_BOOT_SCRIPT } from "@/lib/error-monitor/dom-translate-guard";
+import { CSP_NONCE_HEADER } from "@/lib/security/content-security-policy";
+import { CSP_NONCE_CAPTURE_BOOT_SCRIPT } from "@/lib/security/csp-nonce";
 import {
   DEFAULT_DISPLAY_SCALE,
   DISPLAY_SCALE_CSS_VAR,
@@ -90,11 +94,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // This request's script nonce, minted by proxy.ts (src/lib/security/content-security-policy.ts).
+  // The page policy allows no inline script without it, so every <script> below carries it. Reading
+  // a request header makes every page render per request — which a per-request nonce needs anyway.
+  const nonce = (await headers()).get(CSP_NONCE_HEADER) ?? undefined;
   /*
     NO translate="no" HERE, AND THAT IS A DECISION — do not re-add it without reading this.
 
@@ -135,18 +143,23 @@ export default function RootLayout({
       <body className="min-h-full bg-bg font-sans text-text">
         {/* FIRST, and before anything renders — see DISPLAY_SCALE_BOOT_SCRIPT. Moving this below
             the shell reintroduces the paint-at-100%-then-snap flash it exists to prevent. */}
-        <script dangerouslySetInnerHTML={{ __html: DISPLAY_SCALE_BOOT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: DISPLAY_SCALE_BOOT_SCRIPT }} />
         {/* Also before any bundle: React's first DOM write must already see the guarded prototype.
             See src/lib/error-monitor/dom-translate-guard.ts. */}
-        <script dangerouslySetInnerHTML={{ __html: DOM_TRANSLATE_GUARD_BOOT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: DOM_TRANSLATE_GUARD_BOOT_SCRIPT }} />
+        {/* Keeps the nonce this document was served with, for the frames that show our own rendered
+            HTML — a refresh re-renders this layout with a new request's nonce. See csp-nonce.ts. */}
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: CSP_NONCE_CAPTURE_BOOT_SCRIPT }} />
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <GlobalErrorReporter />
         <PageTimingBeacon />
         <PhxLiveBanner />
-        <ThemeProvider>
-          <ReportingErrorBoundary>{children}</ReportingErrorBoundary>
-        </ThemeProvider>
+        <CspNonceProvider nonce={nonce}>
+          <ThemeProvider>
+            <ReportingErrorBoundary>{children}</ReportingErrorBoundary>
+          </ThemeProvider>
+        </CspNonceProvider>
         <Toaster closeButton position="top-right" richColors theme="light" />
       </body>
     </html>

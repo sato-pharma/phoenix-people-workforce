@@ -122,7 +122,12 @@ export async function runAccessBoundariesTests() {
     assert.ok(!messages.includes(raw), `internal messages no longer splice ${raw}`);
   }
   assert.match(messages, /const pattern = ilikeContainsValue\(search\);/);
-  assert.match(messages, /email\.ilike\.\$\{quotedEmail\},auth_email\.ilike\.\$\{quotedEmail\}/);
+  // The typed-email path no longer builds an `.or()` at all (audit point 3, 2026-10-26): it matches
+  // employees.work_email through `.ilike()`, which takes the value as one filter argument, after the
+  // shared wildcard cleaning — so there is still no PostgREST grammar for a typed value to escape.
+  assert.match(messages, /const term = isEmail\(email\) \? searchableTerm\(email\) : null;/);
+  assert.match(messages, /\.ilike\("work_email", term\)/);
+  assert.ok(!/\.or\(`[^`]*\$\{(?:email|quotedEmail)\}/.test(messages), "no typed email is spliced into an .or() expression");
   assert.match(messages, /login_id\.ilike\.\$\{quotedLogin\},hr_id\.ilike\.\$\{quotedHrId\}/);
   const lookup = source("app/api/admin/outstation/employee-lookup/route.ts");
   assert.ok(!lookup.includes("const pattern = `%${query}%`"), "the outstation lookup no longer splices the query");
@@ -164,6 +169,18 @@ export async function runAccessBoundariesTests() {
     "HEADLINE: the cookies are cleared before the rate limit can return",
   );
   assert.ok(!/status: 429/.test(logout), "a rate-limited sign-out still signs this browser out");
+  // Audit point 14 (2026-10-26): the server-side session is revoked BEFORE the limiter is asked and
+  // whatever it answers, and the page is told whether the revoke really happened. Until then a limited
+  // sign-out returned `sessionRevoked: false` early and the stolen-cookie session stayed live.
+  const revokeAt = logout.indexOf('revokeAppSession(session.sid, "logout")');
+  assert.ok(
+    revokeAt > 0 && revokeAt < logout.indexOf("await assertApiRateLimit("),
+    "HEADLINE: the server-side session is revoked before the rate limit is asked",
+  );
+  assert.equal(logout.split("return NextResponse.json(").length - 1, 1, "one answer — the limiter cannot return early and skip the revoke");
+  assert.ok(!/sessionRevoked: false/.test(logout), "the answer never claims a fixed revoke result");
+  assert.match(logout, /return NextResponse\.json\(\{ sessionRevoked, success: true \}\);/, "the answer carries the real revoke result");
+  assert.match(logout, /if \(session && auditAllowed\) \{\s*await writeAuthAudit\(/, "the limit guards the audit row only");
 
   const realFetch = globalThis.fetch;
   const realWindow = (globalThis as { window?: unknown }).window;

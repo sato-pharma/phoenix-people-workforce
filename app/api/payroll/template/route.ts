@@ -1667,7 +1667,7 @@ async function buildReadyRows(
 
   const [payrollEmployees, previousExpensesByEmployee, approvedExpenseTotals] = await Promise.all([
     getPayrollTemplateEmployees(month, year),
-    getLatestSalaryExpenseTotalsBefore(month, year),
+    getLatestSalaryExpenseTotalsBefore(month, year, accessContext),
     getApprovedExpenseTotalsForPayroll(month, year, accessContext),
   ]);
 
