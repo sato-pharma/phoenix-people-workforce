@@ -69,7 +69,7 @@ export async function runMarketingApprovalHistoryTabTests() {
   /* 2. Every outcome carries a human label — never a raw code (owner rule)  */
   /* ---------------------------------------------------------------------- */
 
-  for (const outcome of ["approved", "archived", "closed", "in_flight", "rejected", "returned"] as const) {
+  for (const outcome of ["approved", "archived", "awaiting_next_stage", "closed", "in_flight", "rejected", "returned"] as const) {
     const label = MARKETING_HISTORY_OUTCOME_LABEL[outcome];
     assert.ok(label && label.length > 0, `${outcome} must have a label`);
     // A label that is just the key echoed back is a raw code with extra steps.
@@ -136,10 +136,10 @@ export async function runMarketingApprovalHistoryTabTests() {
   /* 5. Only requests that have LEFT the chain appear                        */
   /* ---------------------------------------------------------------------- */
 
-  const statuses = service.slice(
-    service.indexOf("const MARKETING_HISTORY_STATUSES"),
-    service.indexOf("const MARKETING_HISTORY_ROW_LIMIT"),
-  );
+  // Only the array literal itself: the helpers that sit below it (the "approved by you, waiting for
+  // the next stage" rule) name pending_approval on purpose and are not part of this list.
+  const statusesStart = service.indexOf("const MARKETING_HISTORY_STATUSES");
+  const statuses = service.slice(statusesStart, service.indexOf("];", statusesStart));
   assert.ok(statuses.length > 0, "expected to find MARKETING_HISTORY_STATUSES");
   for (const live of ["pending_approval", "pending_validation", "draft"]) {
     assert.doesNotMatch(
@@ -224,8 +224,8 @@ export async function runMarketingApprovalHistoryTabTests() {
     );
     assert.match(
       text,
-      /<h3 className="mt-0\.5 text-phx-lg font-black tracking-tight text-slate-950">\s*\{row\.customerName\}/,
-      `${label}: the customer-name heading must carry no whitespace-nowrap, so a long name takes the second line it needs`,
+      /<h3 className="mt-0\.5 text-phx-lg font-black tracking-tight text-slate-950">\s*\{row\.requestTitle\}/,
+      `${label}: the request-title heading must carry no whitespace-nowrap, so a long name takes the second line it needs`,
     );
   }
   // And the banned escapes stay banned on the heading itself.

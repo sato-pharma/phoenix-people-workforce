@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Eye,
   History,
+  Hourglass,
   RefreshCcw,
   Search,
   Undo2,
@@ -47,6 +48,7 @@ import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthCla
 const OUTCOME_VARIANT: Record<MarketingApproverHistoryOutcome, "neutral" | "success" | "warning" | "danger"> = {
   approved: "success",
   archived: "neutral",
+  awaiting_next_stage: "warning",
   cancelled: "danger",
   closed: "neutral",
   in_flight: "warning",
@@ -57,6 +59,7 @@ const OUTCOME_VARIANT: Record<MarketingApproverHistoryOutcome, "neutral" | "succ
 const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2> = {
   approved: CheckCircle2,
   archived: Archive,
+  awaiting_next_stage: Hourglass,
   cancelled: XCircle,
   closed: Archive,
   in_flight: History,
@@ -67,6 +70,7 @@ const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2>
 const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
   approved: "from-white via-emerald-50/40 to-white",
   archived: "from-white via-slate-50 to-white",
+  awaiting_next_stage: "from-white via-orange-50/30 to-white",
   cancelled: "from-white via-rose-50/40 to-white",
   closed: "from-white via-slate-50 to-white",
   in_flight: "from-white via-orange-50/30 to-white",
@@ -80,6 +84,7 @@ const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
 const OUTCOME_DETAIL_BORDER: Record<MarketingApproverHistoryOutcome, string> = {
   approved: "border-l-emerald-500",
   archived: "border-l-slate-400",
+  awaiting_next_stage: "border-l-orange-500",
   cancelled: "border-l-rose-500",
   closed: "border-l-slate-400",
   in_flight: "border-l-orange-500",
@@ -106,8 +111,17 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
           This is the answer the tab is opened for. It sits ABOVE the full chain because the last
           word is what anyone is looking for, and the chain below is the supporting record. */}
       <div className="px-4 py-3">
-        <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Final response</p>
-        {row.finalStepName ? (
+        <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          {row.waitingFor ? "Where it is now" : "Final response"}
+        </p>
+        {row.waitingFor ? (
+          // Not finished, and said so: the request is past this viewer's rung and waiting on the next
+          // stage. It is never worded as an approval of the whole request.
+          <p className="mt-1 text-phx-sm font-bold text-slate-800">
+            Waiting for {row.waitingFor.stepName}
+            {row.waitingFor.approverName ? ` · ${row.waitingFor.approverName}` : ""}
+          </p>
+        ) : row.finalStepName ? (
           <>
             <p className="mt-1 text-phx-sm font-bold text-slate-800">
               {row.outcomeLabel} at {row.finalStepName}
@@ -176,7 +190,7 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
           <span className="text-phx-md font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
         </div>
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Decided</span>
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
           <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
         </div>
       </div>
@@ -216,10 +230,10 @@ function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
               and a sideways scroll on a heading is a gesture nobody makes. The parent is min-w-0,
               so the h3 now takes the second line it needs and the name still arrives whole. */}
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-            {row.customerName}
+            {row.requestTitle}
           </h3>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName} ({row.requesterRole})
+            Customer: {row.customerName} · {row.requesterRole}
           </p>
         </div>
         <Badge className="shrink-0" variant={OUTCOME_VARIANT[row.outcome]}>
@@ -252,9 +266,11 @@ function HistoryTableRow({
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   // The final word, in one scannable line. Never wrapped or clipped — the table scrolls sideways
   // inside its own box instead, so a long approver name widens the column rather than losing text.
-  const finalResponse = row.finalStepName
-    ? `${row.finalStepName}${row.finalApproverName ? ` · ${row.finalApproverName}` : ""}`
-    : "Not decided on the chain";
+  const finalResponse = row.waitingFor
+    ? `Waiting for ${row.waitingFor.stepName}${row.waitingFor.approverName ? ` · ${row.waitingFor.approverName}` : ""}`
+    : row.finalStepName
+      ? `${row.finalStepName}${row.finalApproverName ? ` · ${row.finalApproverName}` : ""}`
+      : "Not decided on the chain";
 
   return (
     <>
@@ -263,7 +279,10 @@ function HistoryTableRow({
         onClick={onToggle}
       >
         <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-500">{row.requestCode}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">{row.customerName}</td>
+        <td className="px-3 py-2.5">
+          <span className="block break-words text-phx-md font-black text-slate-950">{row.requestTitle}</span>
+          <span className="block break-words text-phx-xs font-medium text-slate-500">Customer: {row.customerName}</span>
+        </td>
         <td className="whitespace-nowrap px-3 py-2.5">
           <Badge variant={OUTCOME_VARIANT[row.outcome]}>
             <Icon className="mr-1 h-3 w-3" />
@@ -378,7 +397,10 @@ export function MarketingRequestHistory() {
     const counts = new Map<MarketingApproverHistoryOutcome, { count: number; label: string }>();
     for (const row of rows) {
       const entry = counts.get(row.outcome);
-      counts.set(row.outcome, { count: (entry?.count ?? 0) + 1, label: row.outcomeLabel });
+      // The waiting label names a stage ("… waiting for Finance"), which differs row to row — the
+      // chip groups them all under one plain name.
+      const label = row.outcome === "awaiting_next_stage" ? "Waiting for the next stage" : row.outcomeLabel;
+      counts.set(row.outcome, { count: (entry?.count ?? 0) + 1, label });
     }
     return Array.from(counts.entries()).map(([outcome, entry]) => ({ ...entry, outcome }));
   }, [rows]);
@@ -388,14 +410,20 @@ export function MarketingRequestHistory() {
     let approved = 0;
     let rejected = 0;
     let returned = 0;
+    let waiting = 0;
     let value = 0;
     for (const row of rows) {
       if (row.outcome === "approved") approved += 1;
       else if (row.outcome === "rejected") rejected += 1;
       else if (row.outcome === "returned") returned += 1;
+      // A request still moving is not decided, so it is neither counted as decided nor valued.
+      if (row.outcome === "awaiting_next_stage") {
+        waiting += 1;
+        continue;
+      }
       value += row.estimatedCost ?? 0;
     }
-    return { approved, rejected, returned, value };
+    return { approved, rejected, returned, waiting, value };
   }, [rows]);
 
   const visibleRows = useMemo(() => {
@@ -403,7 +431,7 @@ export function MarketingRequestHistory() {
     return rows.filter((row) => {
       if (outcomeFilter !== "all" && row.outcome !== outcomeFilter) return false;
       if (!needle) return true;
-      return [row.requestCode, row.customerName, row.requesterName, row.requestType, row.finalStepName ?? ""]
+      return [row.requestCode, row.requestTitle, row.customerName, row.requesterName, row.requestType, row.finalStepName ?? ""]
         .join(" ")
         .toLowerCase()
         .includes(needle);
@@ -476,8 +504,17 @@ export function MarketingRequestHistory() {
             icon={History}
             label="Decided"
             note="Approved, rejected or returned"
-            value={rows.length}
+            value={rows.length - summary.waiting}
           />
+          {summary.waiting > 0 ? (
+            <PortalMetricCard
+              accent="orange"
+              icon={Hourglass}
+              label="Waiting"
+              note="You approved; the next stage has not answered"
+              value={summary.waiting}
+            />
+          ) : null}
           {summary.approved > 0 ? (
             <PortalMetricCard
               accent="emerald"
@@ -629,7 +666,7 @@ export function MarketingRequestHistory() {
               >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    {["Request", "Customer", "Outcome", "Final response", "Value", "Decided", ""].map(
+                    {["Request", "Activity · Requester", "Outcome", "Final response", "Value", "Decided", ""].map(
                       (heading, index) => (
                         <th
                           className="whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
