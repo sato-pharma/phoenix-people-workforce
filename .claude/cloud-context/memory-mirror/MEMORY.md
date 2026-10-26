@@ -30,6 +30,8 @@
 
 ## Inbox — new notes land here
 
+- [grep `origin/main` for the BEHAVIOUR before building a fix](another-session-may-have-already-shipped-your-fix.md) — a parallel session shipped the same 23-file sales fix at 07:14 Cairo; the duplicate PR cost a full validation run and would have regressed a shipped window design.
+
 
 
 
