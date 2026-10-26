@@ -417,7 +417,10 @@ export function summaryMarkdown(record) {
   ].join("\n");
 }
 
-/** One shadow evaluation, end to end. Never throws. */
+/**
+ * One shadow evaluation, end to end. Never throws.
+ * @param {{ ctx?: object, readGit?: Function, readGh?: Function, clock?: () => number }} [options]
+ */
 export function shadow({ ctx, readGit = run, readGh = gh, clock = () => performance.now() } = {}) {
   const started = clock();
   let evidence = ctx ?? {};
