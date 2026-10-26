@@ -591,6 +591,9 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       // The mirror view hides Phoenix CRM work until the rep's team is started, so a day Phoenix
       // proves worked is a worked day, not a no-activity candidate.
       if (hrKey && phoenixWorkedKeys.has(`${hrKey}|${dateIso}`)) return "CP";
+      // Today has not ended: a rep with nothing logged yet is not a no-activity day, so it stays
+      // blank like a future day and is never judged (owner, 2026-10-26).
+      if (todayIso && dateIso === todayIso) return null;
       return "N";
     });
 
@@ -968,6 +971,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     holidaySourceLabel: holidays.sourceLabel,
     holidays: holidays.holidays,
     parsed,
+    todayIso: input.todayIso ?? null,
   });
 
   // Attach the CRM-identity resolution to each employee so the UI and the deductions guard

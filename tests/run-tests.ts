@@ -673,6 +673,7 @@ import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.t
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
 import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce-compliance-live-snapshots.test.ts";
 import { runFieldWorkforceComplianceScorecardsTests } from "./field-workforce-compliance-scorecards.test.ts";
+import { runFwcTodayNotYetEndedTests } from "./fwc-today-not-yet-ended.test.ts";
 import { runCompanyVacationReportTests } from "./company-vacation-report.test.ts";
 import { runSfeVacationSourceReportTests } from "./sfe-vacation-source-report.test.ts";
 import { runCompanyActivityReportTests } from "./company-activity-report.test.ts";
@@ -3941,6 +3942,7 @@ await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("field workforce compliance live snapshots", runFieldWorkforceComplianceLiveSnapshotsTests);
 await runTest("field workforce compliance scorecards", runFieldWorkforceComplianceScorecardsTests);
+await runTest("field workforce compliance: today has not ended, so it is never N, never eligible and raises no candidate; no eligible day has no percentage", runFwcTodayNotYetEndedTests);
 await runTest("company vacation report (CRM signal classification)", runCompanyVacationReportTests);
 await runTest("sfe manager vacation source report (read-only + Phoenix vs CRM)", runSfeVacationSourceReportTests);
 await runTest("company activity report (reconciliation, summary, filters, range, role gate)", runCompanyActivityReportTests);

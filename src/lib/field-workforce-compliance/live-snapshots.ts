@@ -90,7 +90,7 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
  * 6-month employee trend without threading the whole (much larger) preview through it.
  */
 export type FieldWorkforceEmployeeMonthRollup = {
-  compliancePercent: number;
+  compliancePercent: number | null;
   employeeName: string;
   highSeverityCount: number;
   hrId: string;
@@ -118,10 +118,10 @@ export async function getFieldWorkforceComplianceLiveView(input: {
   const [yearStr, monthStr] = input.monthKey.split("-");
   const year = Number.parseInt(yearStr, 10);
   const month = Number.parseInt(monthStr, 10);
-  // Africa/Cairo, not UTC. This feeds ireports360-source.ts's `dateIso > todayIso` future-day
-  // cutoff, and the visit dates it is compared against are stored as Cairo wall-clock. A UTC
-  // "today" runs a day behind for the ~3 hours after Cairo midnight, which renders the current
-  // day blank ("not happened yet") instead of "N" (no visits) — under-reporting a day.
+  // Africa/Cairo, not UTC. This feeds ireports360-source.ts's not-yet-ended cutoff (today and
+  // later are never judged), and the visit dates it is compared against are stored as Cairo
+  // wall-clock. A UTC "today" runs a day behind for the ~3 hours after Cairo midnight, which would
+  // hold back yesterday — a finished day — as not yet ended.
   const todayIso = cairoDateIso();
   const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
   // A true INSTANT, deliberately — a timestamp, not a calendar day, and it carries its own `Z`.
@@ -179,7 +179,7 @@ export function listRecentFieldWorkforceComplianceMonths(input: {
 }
 
 export type FieldWorkforceEmployeeTrendPoint = {
-  compliancePercent: number;
+  compliancePercent: number | null;
   highSeverityCount: number;
   matchStatus: "matched" | "unmatched";
   monthKey: string;

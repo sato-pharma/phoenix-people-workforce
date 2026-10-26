@@ -132,15 +132,21 @@ function runPersonSummaries() {
   const of = (key: string) => calendar.people.find((row) => row.key === key)!;
 
   const rep = of("REP-A");
-  assert.deepEqual(rep.judgedDates, ["2026-10-10", "2026-10-11", "2026-10-12", "2026-10-14", "2026-10-15", "2026-10-17", "2026-10-18"]);
-  assert.deepEqual(rep.notSeenDates, ["2026-10-10", "2026-10-15", "2026-10-17", "2026-10-18"]);
+  // Today (the 18th) has not ended: it stays in its own day box as "so far", but it is never a
+  // judged day, so the month tiles and the Detail rows count finished days only (2026-10-26).
+  assert.deepEqual(rep.judgedDates, ["2026-10-10", "2026-10-11", "2026-10-12", "2026-10-14", "2026-10-15", "2026-10-17"]);
+  assert.deepEqual(rep.notSeenDates, ["2026-10-10", "2026-10-15", "2026-10-17"]);
+  assert.equal(rep.expectedDays, 6, "today is not one of his judged working days");
+  assert.equal(rep.expectedToday, true);
+  assert.equal(rep.notSeenToday, true, "nothing recorded so far today is carried apart from the finished days");
+  assert.equal(calendar.days.find((row) => row.date === "2026-10-18")!.notSeen.some((entry) => entry.key === "REP-A"), true, "today's box still lists him so far");
   assert.equal(rep.longestRun, 2, "the 15th and the 17th run together (the Friday between is off); today is not finished, so it never lengthens a run");
   assert.equal(rep.lastSeen, "2026-10-14");
   assert.equal(rep.lastSeenLabel, "CRM visit");
   assert.equal(rep.wholePeriod, false);
 
   const rsm = of("RSM-B");
-  assert.deepEqual(rsm.judgedDates, ["2026-10-11", "2026-10-12", "2026-10-14", "2026-10-15", "2026-10-18"], "an RSM is never judged on a Saturday");
+  assert.deepEqual(rsm.judgedDates, ["2026-10-11", "2026-10-12", "2026-10-14", "2026-10-15"], "an RSM is never judged on a Saturday, and today is not judged");
   assert.equal(rsm.wholePeriod, true, "four finished working days and nothing recorded");
   assert.equal(rsm.longestRun, 4);
   assert.equal(rsm.lastSeen, null);
@@ -148,12 +154,13 @@ function runPersonSummaries() {
   // The most days not seen come first.
   const counts = calendar.people.map((row) => row.notSeenDates.length);
   assert.deepEqual(counts, [...counts].sort((left, right) => right - left));
-  assert.equal(counts[0], 5);
+  assert.equal(counts[0], 5, "REP-E: the 10th, 12th, 14th, 15th and 17th — today is never counted");
+  assert.equal(calendar.people[0].key, "REP-E");
 
   // On the second working day of a window, "not seen on any day" would rest on too little.
   const early = build({}, { end: "2026-10-12", start: "2026-10-11", today: "2026-10-12" });
   const earlyRsm = early.people.find((row) => row.key === "RSM-B")!;
-  assert.equal(earlyRsm.notSeenDates.length, 2);
+  assert.equal(earlyRsm.notSeenDates.length, 1, "the 11th only — today (the 12th) is not judged yet");
   assert.equal(earlyRsm.wholePeriod, false, `fewer than ${WHOLE_PERIOD_MIN_DAYS} finished working days is never "not seen on any day"`);
 }
 

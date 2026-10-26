@@ -10,7 +10,8 @@ import type { FieldWorkforceEmployeeSummary } from "@/lib/field-workforce-compli
 const UNASSIGNED_GROUP_LABEL = "Unassigned";
 
 export type FieldWorkforceGroupScorecard = {
-  avgCompliancePercent: number;
+  /** Average over the members who have a percentage; null when none has one yet. */
+  avgCompliancePercent: number | null;
   employeeCount: number;
   flaggedEmployeeCount: number;
   groupName: string;
@@ -37,9 +38,14 @@ function buildFieldWorkforceGroupScorecards(
 
   const scorecards: FieldWorkforceGroupScorecard[] = [];
   for (const [groupName, members] of groups) {
-    const totalCompliance = members.reduce((sum, employee) => sum + employee.compliancePercent, 0);
+    // A member with no eligible day yet has no percentage: he is left out of the average rather
+    // than counted as 0%.
+    const percents = members
+      .map((employee) => employee.compliancePercent)
+      .filter((value): value is number => value !== null);
+    const totalCompliance = percents.reduce((sum, value) => sum + value, 0);
     scorecards.push({
-      avgCompliancePercent: Math.round((totalCompliance / members.length) * 100) / 100,
+      avgCompliancePercent: percents.length > 0 ? Math.round((totalCompliance / percents.length) * 100) / 100 : null,
       employeeCount: members.length,
       flaggedEmployeeCount: members.filter((employee) => employee.severityCounts.High > 0).length,
       groupName,
@@ -48,8 +54,10 @@ function buildFieldWorkforceGroupScorecards(
     });
   }
 
+  // Groups with no percentage yet sort after every scored group.
+  const sortValue = (scorecard: FieldWorkforceGroupScorecard) => scorecard.avgCompliancePercent ?? Number.POSITIVE_INFINITY;
   return scorecards.sort((left, right) =>
-    left.avgCompliancePercent - right.avgCompliancePercent || left.groupName.localeCompare(right.groupName));
+    (sortValue(left) === sortValue(right) ? 0 : sortValue(left) - sortValue(right)) || left.groupName.localeCompare(right.groupName));
 }
 
 export function buildFieldWorkforceManagerScorecards(employees: FieldWorkforceEmployeeSummary[]): FieldWorkforceGroupScorecard[] {

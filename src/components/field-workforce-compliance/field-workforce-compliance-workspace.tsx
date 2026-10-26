@@ -55,6 +55,7 @@ import { handlePossibleSessionDeath } from "@/lib/auth/client-session";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { complianceLabel } from "@/lib/field-workforce-compliance/compliance-label";
 
 
 type LiveMonthsListResponse = {
@@ -173,6 +174,10 @@ async function readJsonResponse<T extends { message?: string; success: boolean }
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatPercentValue(value: number) {
+  return `${formatNumber(value)}%`;
 }
 
 function formatRawValue(value: unknown) {
@@ -798,7 +803,7 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
         <MetricCard label="Vacation Days" tone={employee.vacationSignalDays ? "warning" : "neutral"} value={formatNumber(employee.vacationSignalDays)} />
         <MetricCard label="Campaign Days" value={formatNumber(employee.campaignDays)} />
         <MetricCard label="Total Visits" tone="success" value={formatNumber(employee.totalVisits)} />
-        <MetricCard label="Compliance %" tone={employee.compliancePercent >= 75 ? "success" : employee.compliancePercent >= 50 ? "warning" : "danger"} value={`${formatNumber(employee.compliancePercent)}%`} />
+        <MetricCard label="Compliance %" tone={employee.compliancePercent === null ? "neutral" : employee.compliancePercent >= 75 ? "success" : employee.compliancePercent >= 50 ? "warning" : "danger"} value={complianceLabel(employee, formatPercentValue)} />
         <MetricCard label="Longest N Streak" tone={employee.noActivityPattern.longestStreak >= 3 ? "danger" : employee.noActivityPattern.longestStreak >= 2 ? "warning" : "neutral"} value={formatNumber(employee.noActivityPattern.longestStreak)} />
         <MetricCard label="Holiday Warnings" tone={employee.holidayWarnings ? "warning" : "neutral"} value={formatNumber(employee.holidayWarnings)} />
         <MetricCard label="Pre-hire Context" tone={employee.preHireIgnoredValues ? "warning" : "neutral"} value={formatNumber(employee.preHireIgnoredValues)} />
@@ -968,7 +973,7 @@ function EmployeeTrendStrip({ hrId }: { hrId: string }) {
         </span>
       </div>
       <div className="mt-3 flex items-end gap-2">
-        {trend.points.map((point) => (
+        {trend.points.filter((point): point is typeof point & { compliancePercent: number } => point.compliancePercent !== null).map((point) => (
           <div className="flex flex-col items-center gap-1" key={point.monthKey}>
             <div
               className={cn(
@@ -1374,11 +1379,13 @@ function MonthlySummaryTable({
           renderCard={(employee) => (
             <PortalRecordCard
               accent={
-                employee.compliancePercent >= 75
-                  ? "emerald"
-                  : employee.compliancePercent >= 50
-                    ? "amber"
-                    : "rose"
+                employee.compliancePercent === null
+                  ? "slate"
+                  : employee.compliancePercent >= 75
+                    ? "emerald"
+                    : employee.compliancePercent >= 50
+                      ? "amber"
+                      : "rose"
               }
               meta={
                 <span>
@@ -1390,7 +1397,7 @@ function MonthlySummaryTable({
               }
               status={
                 <span className="font-black text-slate-950">
-                  {formatNumber(employee.compliancePercent)}%
+                  {complianceLabel(employee, formatPercentValue)}
                 </span>
               }
               title={employee.employeeName}
@@ -1462,7 +1469,7 @@ function MonthlySummaryTable({
                 <td className="whitespace-nowrap px-4 py-3">{employee.hiringDateIso ?? "-"}</td>
                 <td className="px-4 py-3">{formatNumber(employee.eligibleWorkingDays)}</td>
                 <td className="px-4 py-3">{formatNumber(employee.workedDays)}</td>
-                <td className="px-4 py-3 font-black text-slate-950">{formatNumber(employee.compliancePercent)}%</td>
+                <td className="px-4 py-3 font-black text-slate-950">{complianceLabel(employee, formatPercentValue)}</td>
                 <td className="px-4 py-3 font-bold text-rose-700">{formatNumber(employee.noActivityCandidates)}</td>
                 <td className="px-4 py-3 text-sky-700">{formatNumber(employee.vacationSignalDays)}</td>
                 <td className="px-4 py-3 text-violet-700">{formatNumber(employee.campaignDays)}</td>
@@ -1508,25 +1515,29 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
           renderCard={(scorecard) => (
             <PortalRecordCard
               accent={
-                scorecard.avgCompliancePercent >= 75
-                  ? "emerald"
-                  : scorecard.avgCompliancePercent >= 50
-                    ? "amber"
-                    : "rose"
+                scorecard.avgCompliancePercent === null
+                  ? "slate"
+                  : scorecard.avgCompliancePercent >= 75
+                    ? "emerald"
+                    : scorecard.avgCompliancePercent >= 50
+                      ? "amber"
+                      : "rose"
               }
               meta={<span>{formatNumber(scorecard.employeeCount)} employees</span>}
               status={
                 <span
                   className={cn(
                     "font-black",
-                    scorecard.avgCompliancePercent >= 75
-                      ? "text-emerald-700"
-                      : scorecard.avgCompliancePercent >= 50
-                        ? "text-amber-700"
-                        : "text-rose-700",
+                    scorecard.avgCompliancePercent === null
+                      ? "text-slate-500"
+                      : scorecard.avgCompliancePercent >= 75
+                        ? "text-emerald-700"
+                        : scorecard.avgCompliancePercent >= 50
+                          ? "text-amber-700"
+                          : "text-rose-700",
                   )}
                 >
-                  {scorecard.avgCompliancePercent}%
+                  {scorecard.avgCompliancePercent === null ? "—" : `${scorecard.avgCompliancePercent}%`}
                 </span>
               }
               title={scorecard.groupName}
@@ -1580,8 +1591,8 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
               <tr className="text-slate-700 hover:bg-slate-50/70" key={scorecard.groupName}>
                 <td className="break-words px-4 py-3 font-black text-slate-950">{scorecard.groupName}</td>
                 <td className="px-4 py-3">{formatNumber(scorecard.employeeCount)}</td>
-                <td className={cn("px-4 py-3 font-black", scorecard.avgCompliancePercent >= 75 ? "text-emerald-700" : scorecard.avgCompliancePercent >= 50 ? "text-amber-700" : "text-rose-700")}>
-                  {scorecard.avgCompliancePercent}%
+                <td className={cn("px-4 py-3 font-black", scorecard.avgCompliancePercent === null ? "text-slate-500" : scorecard.avgCompliancePercent >= 75 ? "text-emerald-700" : scorecard.avgCompliancePercent >= 50 ? "text-amber-700" : "text-rose-700")}>
+                  {scorecard.avgCompliancePercent === null ? "—" : `${scorecard.avgCompliancePercent}%`}
                 </td>
                 <td className="px-4 py-3 text-rose-700">{formatNumber(scorecard.totalNoActivityCandidates)}</td>
                 <td className="px-4 py-3 text-rose-700">{formatNumber(scorecard.totalHighSeverityCount)}</td>

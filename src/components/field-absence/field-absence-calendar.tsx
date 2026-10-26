@@ -482,7 +482,7 @@ function PersonPanel({
   today: string;
 }) {
   const sources = SOURCES.map((source) => FIELD_ABSENCE_SOURCE_LABELS[source]);
-  const notSeenThatDay = date ? person.notSeenDates.includes(date) : false;
+  const notSeenThatDay = date ? person.notSeenDates.includes(date) || (date === today && person.notSeenToday) : false;
   return (
     <CrmPanel
       actions={
@@ -551,11 +551,15 @@ export function FieldAbsenceCalendarView({ basePath, data }: { basePath: string;
 
   const { days, people } = useMemo(() => {
     if (!hidden) return { days: calendar.days, people: calendar.people };
-    const judgedOn = new Set(calendar.people.find((person) => person.key === hidden)?.judgedDates ?? []);
+    const hiddenPerson = calendar.people.find((person) => person.key === hidden);
+    const judgedOn = new Set(hiddenPerson?.judgedDates ?? []);
+    // Today is not a judged day, but he still sits in today's "so far" count.
+    const countedOn = (day: { date: string; provisional: boolean }) =>
+      judgedOn.has(day.date) || (day.provisional && hiddenPerson?.expectedToday === true);
     return {
       days: calendar.days.map((day) => ({
         ...day,
-        expected: day.expected - (judgedOn.has(day.date) ? 1 : 0),
+        expected: day.expected - (countedOn(day) ? 1 : 0),
         notSeen: day.notSeen.filter((entry) => entry.key !== hidden),
       })),
       people: calendar.people.filter((person) => person.key !== hidden),

@@ -47,7 +47,7 @@ export default async function TeamCalendarPage({
   return (
     <EmployeePortalPageShell
       badge="Team Performance"
-      description="Live field-visit calendar for every rep in your line, straight from the iReports360 visits mirror. Click a green numeric day to open that day's visits."
+      description="Live field-visit calendar for every rep in your line, with field visits from Phoenix CRM and iReports360. Click a green numeric day to open that day's visits."
       errorBoundaryTitle="Team Calendar unavailable"
       title="Team Calendar"
     >

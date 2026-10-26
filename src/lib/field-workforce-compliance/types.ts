@@ -285,7 +285,9 @@ export type FieldWorkforceCustomerAuthenticity = {
 export type FieldWorkforceEmployeeSummary = {
   areaName: string | null;
   campaignDays: number;
-  compliancePercent: number;
+  /** Worked days over eligible days; null when the month has no eligible day for him (hired
+   * after it, or none of his days has ended yet) — never 0%. */
+  compliancePercent: number | null;
   /**
    * CRM-identity resolution for the live (visits-mirror) path. Null on the Excel-upload
    * path, where the workbook itself is the trusted source and no CRM join happens.
