@@ -33,6 +33,14 @@ const TABLE = "automated_payroll_held_settlements";
  * would re-open a debt the company had already paid (and the reverse would lose a bank reference).
  */
 const RELEASES_TABLE = "automated_payroll_held_releases";
+/**
+ * HR's record that an EARLIER published month's Part 1 was never paid (owner, 2026-10-26: "they will
+ * hold it in the previous salary, first and second"). The Part 1 bank files leave a held person out,
+ * but the runs published before `part1_withheld` existed recorded every held person's Part 1 as paid,
+ * and recorded nothing at all for someone held at Part 1 and released by Part 2. One row per (held
+ * run, person); it adds to what is still held, never above that person's frozen Part 1 on that run.
+ */
+const PART1_UNPAID_TABLE = "automated_payroll_held_part1_unpaid";
 
 export type HeldSettlement = {
   id: string;
@@ -68,6 +76,18 @@ export type HeldBalance = {
   reason: string | null;
   firstPartAlreadyPaid: number;
   secondPartWithheld: number;
+  /**
+   * The first instalment this month did NOT pay: frozen at Part 1 confirm (the person was on hold, so
+   * the Part 1 bank files left them out), or entered by HR as "Part 1 Not Paid" for a month published
+   * before that was recorded — the larger of the two, since both describe the same unpaid money.
+   */
+  firstPartWithheld: number;
+  /** What HR entered as "Part 1 Not Paid" against this month (0 when nothing was entered). */
+  part1Correction: number;
+  /** Taken off this month's Part 2 by Defer Pay and owed again later. */
+  deferred: number;
+  /** When the deferred amount falls due, "YYYY-MM"; null when nothing was deferred. */
+  deferredTo: string | null;
   settled: HeldSettlement | null;
   /**
    * Released against this held month by OTHER payroll runs that are not cancelled — published ones
@@ -75,7 +95,10 @@ export type HeldBalance = {
    * it, so it is reserved). The run asking is never counted against itself.
    */
   releasedByPayroll: number;
-  /** Withheld minus settled by hand minus released by payroll, floored at zero. The figure that must not be paid twice. */
+  /**
+   * Part 2 withheld + Part 1 withheld + deferred, minus settled by hand minus released by payroll,
+   * floored at zero. The figure that must not be paid twice.
+   */
   outstanding: number;
 };
 
@@ -221,8 +244,155 @@ type PublishedHeldEntry = {
   name?: unknown;
   reason?: unknown;
   firstPartAlreadyPaid?: unknown;
+  /** Absent on a run published before Part 1 holds were frozen — read as 0 (the old "already paid"). */
+  firstPartWithheld?: unknown;
   secondPartWithheld?: unknown;
 };
+
+/** Someone paid this month's Part 2 whose Part 1 was withheld (held at Part 1, released by Part 2). */
+type PublishedPart1UnpaidEntry = { hrId?: unknown; name?: unknown; amount?: unknown };
+
+/** Pay taken off this month's Part 2 by Defer Pay, and when it falls due. */
+type PublishedDeferredEntry = { hrId?: unknown; name?: unknown; amount?: unknown; releaseIn?: unknown };
+
+/** One "Part 1 Not Paid" row HR entered against an earlier published run. */
+export type Part1Correction = { heldRunId: string; hrId: string; compact: string; name: string; amount: number };
+
+/** The `published` audit row's money lists that make up what is still held. */
+export type PublishedHoldDetail = { held?: unknown; part1Unpaid?: unknown; deferred?: unknown };
+
+/**
+ * One published run's held balances: every person the run withheld any money from — Part 2 on hold,
+ * Part 1 withheld, pay deferred, or a Part 1 HR recorded as not paid — merged into ONE balance per
+ * person, so a person is never listed twice for one month and no figure is counted twice.
+ *
+ * Pure, so the rule that decides what is owed is unit-tested directly; loadHeldBalances does the reads.
+ */
+export function heldBalancesForRun(input: {
+  runId: string;
+  month: number;
+  year: number;
+  detail: PublishedHoldDetail;
+  settlements: Map<string, HeldSettlement>;
+  /** Payroll releases, keyed by held run and compact HR id (payrollReleasedByHeldMonth). */
+  releasedByPayroll: Map<string, number>;
+  corrections: readonly Part1Correction[];
+}): HeldBalance[] {
+  type Acc = {
+    hrId: string;
+    name: string;
+    reason: string | null;
+    firstPartAlreadyPaid: number;
+    recordedFirstWithheld: number;
+    secondPartWithheld: number;
+    correction: number;
+    deferred: number;
+    deferredTo: string | null;
+  };
+  const byCompact = new Map<string, Acc>();
+  const accFor = (hrIdValue: unknown, nameValue: unknown): Acc | null => {
+    const hrId = String(hrIdValue ?? "");
+    const compact = compactHrKey(hrId);
+    if (!compact) return null;
+    let acc = byCompact.get(compact);
+    if (!acc) {
+      acc = {
+        hrId,
+        name: String(nameValue ?? ""),
+        reason: null,
+        firstPartAlreadyPaid: 0,
+        recordedFirstWithheld: 0,
+        secondPartWithheld: 0,
+        correction: 0,
+        deferred: 0,
+        deferredTo: null,
+      };
+      byCompact.set(compact, acc);
+    }
+    if (!acc.name && nameValue) acc.name = String(nameValue);
+    return acc;
+  };
+  const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+  for (const entry of list<PublishedHeldEntry>(input.detail.held)) {
+    const acc = accFor(entry.hrId, entry.name);
+    if (!acc) continue;
+    acc.reason = entry.reason == null ? null : String(entry.reason);
+    acc.firstPartAlreadyPaid = roundCurrency(acc.firstPartAlreadyPaid + num(entry.firstPartAlreadyPaid));
+    acc.recordedFirstWithheld = roundCurrency(acc.recordedFirstWithheld + num(entry.firstPartWithheld));
+    acc.secondPartWithheld = roundCurrency(acc.secondPartWithheld + num(entry.secondPartWithheld));
+  }
+  for (const entry of list<PublishedPart1UnpaidEntry>(input.detail.part1Unpaid)) {
+    const acc = accFor(entry.hrId, entry.name);
+    if (acc) acc.recordedFirstWithheld = roundCurrency(acc.recordedFirstWithheld + num(entry.amount));
+  }
+  for (const entry of list<PublishedDeferredEntry>(input.detail.deferred)) {
+    const acc = accFor(entry.hrId, entry.name);
+    if (!acc) continue;
+    acc.deferred = roundCurrency(acc.deferred + num(entry.amount));
+    const releaseIn = String(entry.releaseIn ?? "");
+    if (/^\d{4}-\d{2}$/.test(releaseIn)) acc.deferredTo = releaseIn;
+  }
+  for (const correction of input.corrections) {
+    if (correction.heldRunId !== input.runId) continue;
+    const acc = accFor(correction.hrId, correction.name);
+    if (acc) acc.correction = roundCurrency(acc.correction + correction.amount);
+  }
+
+  const balances: HeldBalance[] = [];
+  for (const [compact, acc] of byCompact) {
+    // Two reports of the same unpaid Part 1 — what the run froze and what HR entered — so the larger
+    // stands, never the sum. What HR adds beyond the frozen figure comes off "already paid".
+    const firstPartWithheld = roundCurrency(Math.max(acc.recordedFirstWithheld, acc.correction));
+    const firstPartAlreadyPaid = Math.max(
+      0,
+      roundCurrency(acc.firstPartAlreadyPaid - (firstPartWithheld - acc.recordedFirstWithheld)),
+    );
+    const settled = input.settlements.get(compact) ?? null;
+    const released = input.releasedByPayroll.get(releaseKey(input.runId, compact)) ?? 0;
+    const withheld = roundCurrency(acc.secondPartWithheld + firstPartWithheld + acc.deferred);
+    balances.push({
+      runId: input.runId,
+      month: input.month,
+      year: input.year,
+      hrId: acc.hrId,
+      compact,
+      name: acc.name,
+      reason: acc.reason,
+      firstPartAlreadyPaid,
+      secondPartWithheld: acc.secondPartWithheld,
+      firstPartWithheld,
+      part1Correction: acc.correction,
+      deferred: acc.deferred,
+      deferredTo: acc.deferred > 0 ? acc.deferredTo : null,
+      settled,
+      releasedByPayroll: released,
+      outstanding: Math.max(0, roundCurrency(withheld - (settled?.amount ?? 0) - released)),
+    });
+  }
+  return balances;
+}
+
+/**
+ * How much of a person's outstanding balance is deferred pay that is not due yet in `period`. Pure.
+ * Capped at each month's outstanding, so a balance already part-paid never reads as more not-due than
+ * is owed.
+ */
+export function notYetDue(balances: readonly HeldBalance[], period: { month: number; year: number }): number {
+  const now = monthKeyAfter(period.month, period.year, 0);
+  return roundCurrency(
+    balances.reduce((sum, balance) => {
+      if (!(balance.deferred > 0) || !balance.deferredTo || balance.deferredTo <= now) return sum;
+      return sum + Math.min(balance.deferred, balance.outstanding);
+    }, 0),
+  );
+}
+
+/** "YYYY-MM" of the month `offset` months after (month, year). */
+export function monthKeyAfter(month: number, year: number, offset: number): string {
+  const index = year * 12 + (month - 1) + offset;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
 
 function num(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -277,6 +447,7 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
   const settlementsByRun = new Map<string, Map<string, HeldSettlement>>();
   for (const runId of runIds) settlementsByRun.set(runId, await getHeldSettlements(runId));
   const releasedByPayroll = payrollReleasedByHeldMonth(await loadPayrollReleases(), options?.excludeRunId);
+  const corrections = await loadPart1Corrections();
 
   const balances: HeldBalance[] = [];
   const seen = new Set<string>();
@@ -290,34 +461,155 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
 
     const period = runsById.get(runId);
     if (!period) continue;
-    const detail = (row.detail ?? {}) as { held?: unknown };
-    const held = Array.isArray(detail.held) ? (detail.held as PublishedHeldEntry[]) : [];
-    const settlements = settlementsByRun.get(runId) ?? new Map<string, HeldSettlement>();
-
-    for (const entry of held) {
-      const hrId = String(entry.hrId ?? "");
-      const compact = compactHrKey(hrId);
-      if (!compact) continue;
-      const withheld = roundCurrency(num(entry.secondPartWithheld));
-      const settled = settlements.get(compact) ?? null;
-      const released = releasedByPayroll.get(releaseKey(runId, compact)) ?? 0;
-      balances.push({
+    balances.push(
+      ...heldBalancesForRun({
         runId,
         month: period.month,
         year: period.year,
-        hrId,
-        compact,
-        name: String(entry.name ?? ""),
-        reason: entry.reason == null ? null : String(entry.reason),
-        firstPartAlreadyPaid: roundCurrency(num(entry.firstPartAlreadyPaid)),
-        secondPartWithheld: withheld,
-        settled,
-        releasedByPayroll: released,
-        outstanding: Math.max(0, roundCurrency(withheld - (settled?.amount ?? 0) - released)),
-      });
-    }
+        detail: (row.detail ?? {}) as PublishedHoldDetail,
+        settlements: settlementsByRun.get(runId) ?? new Map<string, HeldSettlement>(),
+        releasedByPayroll,
+        corrections,
+      }),
+    );
   }
   return balances;
+}
+
+/**
+ * Every "Part 1 Not Paid" row. A read failure THROWS, missing table included, for the same reason as
+ * the payroll releases: a silent empty read would show a saved figure as gone and the money as not
+ * owed.
+ */
+async function loadPart1Corrections(): Promise<Part1Correction[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(PART1_UNPAID_TABLE)
+    .select("held_run_id,employee_hr_id,employee_hr_id_compact,employee_name,amount");
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map((row) => ({
+    heldRunId: String(row.held_run_id ?? ""),
+    hrId: String(row.employee_hr_id ?? ""),
+    compact: String(row.employee_hr_id_compact ?? ""),
+    name: String(row.employee_name ?? ""),
+    amount: num(row.amount),
+  }));
+}
+
+/** The latest PUBLISHED run before (month, year) — the month a "Part 1 Not Paid" entry is recorded against. */
+export async function previousPublishedRun(period: {
+  month: number;
+  year: number;
+}): Promise<{ id: string; month: number; year: number } | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("id,month,year")
+    .eq("phase", "published")
+    .order("year", { ascending: false })
+    .order("month", { ascending: false });
+  if (error) throw error;
+  const target = period.year * 12 + period.month;
+  for (const row of (data ?? []) as Row[]) {
+    const month = Number(row.month ?? 0);
+    const year = Number(row.year ?? 0);
+    if (year * 12 + month < target) return { id: String(row.id), month, year };
+  }
+  return null;
+}
+
+/** What HR has entered as "Part 1 Not Paid" against one run, by compact HR id. */
+export async function part1CorrectionsForRun(heldRunId: string): Promise<Map<string, number>> {
+  const byCompact = new Map<string, number>();
+  for (const correction of await loadPart1Corrections()) {
+    if (correction.heldRunId !== heldRunId || !correction.compact) continue;
+    byCompact.set(correction.compact, roundCurrency((byCompact.get(correction.compact) ?? 0) + correction.amount));
+  }
+  return byCompact;
+}
+
+/**
+ * Record what HR says an earlier published run's Part 1 did NOT pay, from the Held Salary Release step.
+ *
+ * Never above the person's frozen Part 1 on that run — the most that run could have paid them at all.
+ * Zero withdraws the entry. Audited, because it changes what the company owes.
+ */
+export async function recordPart1Corrections(input: {
+  heldRunId: string;
+  recordedInRunId: string;
+  actorHrId: string;
+  entries: readonly { hrId: string; name: string; amount: number }[];
+}): Promise<void> {
+  if (input.entries.length === 0) return;
+  const admin = getSupabaseAdmin();
+  const compacts = input.entries.map((entry) => compactHrKey(entry.hrId)).filter(Boolean);
+  const { data: drafts, error: draftError } = await admin
+    .from("automated_payroll_draft_rows")
+    .select("employee_hr_id_compact,first_part_frozen")
+    .eq("run_id", input.heldRunId)
+    .in("employee_hr_id_compact", compacts);
+  if (draftError) throw draftError;
+  const frozenByCompact = new Map(
+    ((drafts ?? []) as Row[]).map((row) => [String(row.employee_hr_id_compact ?? ""), num(row.first_part_frozen)]),
+  );
+  const problems: string[] = [];
+  const upserts: Record<string, unknown>[] = [];
+  const withdrawals: string[] = [];
+  const now = new Date().toISOString();
+  for (const entry of input.entries) {
+    const compact = compactHrKey(entry.hrId);
+    const amount = roundCurrency(Number(entry.amount));
+    if (!compact || !Number.isFinite(amount) || amount < 0) {
+      problems.push(`${entry.name || entry.hrId}: not a usable amount`);
+      continue;
+    }
+    if (amount === 0) {
+      withdrawals.push(compact);
+      continue;
+    }
+    const frozen = roundCurrency(frozenByCompact.get(compact) ?? 0);
+    if (amount > frozen) {
+      problems.push(
+        `${entry.name || entry.hrId}: ${amount.toFixed(2)} is more than the ${frozen.toFixed(2)} Part 1 that month confirmed`,
+      );
+      continue;
+    }
+    upserts.push({
+      held_run_id: input.heldRunId,
+      employee_hr_id: hrIdForStorage(entry.hrId) ?? entry.hrId.trim(),
+      employee_hr_id_compact: compact,
+      employee_name: entry.name || null,
+      amount,
+      recorded_in_run_id: input.recordedInRunId,
+      recorded_by: input.actorHrId,
+      updated_at: now,
+    });
+  }
+  if (problems.length > 0) {
+    throw new Error(`Validation: Part 1 Not Paid can never be more than that month's Part 1. ${problems.slice(0, 6).join("; ")}`);
+  }
+  if (upserts.length > 0) {
+    const { error } = await admin
+      .from(PART1_UNPAID_TABLE)
+      .upsert(upserts, { onConflict: "held_run_id,employee_hr_id_compact" });
+    if (error) throw error;
+  }
+  if (withdrawals.length > 0) {
+    const { error } = await admin
+      .from(PART1_UNPAID_TABLE)
+      .delete()
+      .eq("held_run_id", input.heldRunId)
+      .in("employee_hr_id_compact", withdrawals);
+    if (error) throw error;
+  }
+  await writeAutomatedPayrollAudit({
+    runId: input.recordedInRunId,
+    actorHrId: input.actorHrId,
+    action: "held_part1_unpaid_recorded",
+    detail: {
+      heldRunId: input.heldRunId,
+      recorded: upserts.map((row) => ({ hrId: row.employee_hr_id, amount: row.amount })),
+      withdrawn: withdrawals,
+    },
+  });
 }
 
 /**

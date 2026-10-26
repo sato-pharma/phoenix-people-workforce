@@ -56,7 +56,7 @@ const COLUMNS: HeldColumn[] = [
   { header: "Line", width: 16 },
   { header: "Reason held", width: 46 },
   { header: "Part 1 already paid", width: 17, money: true },
-  { header: "Part 2 owed", width: 14, money: true },
+  { header: "Withheld (owed)", width: 14, money: true },
   { header: "Settled outside payroll", width: 18, money: true },
   { header: "Settled on", width: 13 },
   { header: "Method / reference", width: 30 },
@@ -80,7 +80,12 @@ function round(value: number): number {
 }
 
 function fromAssembled(entry: AssembledRow, settled: HeldSettlement | null): HeldTabRow {
-  const owed = round(entry.row.secondPart);
+  // Held when Part 1 was confirmed: the Part 1 bank files left this person out, so nothing has been
+  // paid and both instalments are owed (owner, 2026-10-26). A run confirmed before that was recorded
+  // reads as before — Part 1 paid — the same rule publish records, so the tab and the record agree.
+  const part1Withheld = entry.part1Withheld === true;
+  const alreadyPaid = part1Withheld ? 0 : round(entry.row.firstPart);
+  const owed = part1Withheld ? round(entry.row.firstPart + entry.row.secondPart) : round(entry.row.secondPart);
   return {
     hrId: entry.row.hrId,
     name: entry.row.fullName,
@@ -89,7 +94,7 @@ function fromAssembled(entry: AssembledRow, settled: HeldSettlement | null): Hel
     // The same reason the cover and the payroll row show, through the same helper, so a reason that
     // says nothing announces itself here too instead of rendering as an empty cell.
     reason: normalizeHoldReason(entry.row.payrollComment) ?? HELD_NO_REASON_COMMENT,
-    firstPartAlreadyPaid: round(entry.row.firstPart),
+    firstPartAlreadyPaid: alreadyPaid,
     secondPartOwed: owed,
     settled,
     outstanding: Math.max(0, round(owed - (settled?.amount ?? 0))),
@@ -104,7 +109,8 @@ function fromBalance(balance: HeldBalance): HeldTabRow {
     line: "",
     reason: balance.reason ?? HELD_NO_REASON_COMMENT,
     firstPartAlreadyPaid: balance.firstPartAlreadyPaid,
-    secondPartOwed: balance.secondPartWithheld,
+    // Everything this month withheld: Part 2, Part 1 when it was never paid, and pay deferred to later.
+    secondPartOwed: round(balance.secondPartWithheld + balance.firstPartWithheld + balance.deferred),
     settled: balance.settled,
     outstanding: balance.outstanding,
   };
@@ -171,8 +177,9 @@ export function addHeldSheet(
   const explain = sheet.getCell(2, 1);
   explain.value =
     "A held row is dropped at publish: no payslip is written, and the money is paid outside this " +
-    "system or not at all. Part 1 was already transferred, so only Part 2 is owed — paying the full " +
-    "net would pay Part 1 twice. Record a transfer against the person so the next month does not " +
+    "system or not at all. When Part 1 was already transferred only Part 2 is owed — paying the full " +
+    "net would pay Part 1 twice; someone held when Part 1 was confirmed was paid nothing, so both are " +
+    "owed. Record a transfer against the person so the next month does not " +
     "work the same amount up again; anything with a figure under Still outstanding has no such record.";
   sheet.mergeCells(2, 1, 2, COLUMNS.length);
   explain.font = { color: { argb: SLATE }, name: "Calibri", size: 9 };

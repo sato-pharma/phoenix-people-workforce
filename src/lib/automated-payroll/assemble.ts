@@ -80,6 +80,18 @@ export type AssembledRow = {
    * publish can record exactly what was released against the held balance, and nothing else.
    */
   heldReleaseApplied: number;
+  /**
+   * Taken off this month's Part 2 by Defer Pay and owed again later (owner, 2026-10-26). Already
+   * inside Other Deductions; surfaced so publish can record it as owed. Never above the Part 2 the
+   * row had before the deferral, and 0 on a held row — a held month is withheld whole.
+   */
+  payDeferralApplied: number;
+  /**
+   * The person was ON HOLD when Part 1 was confirmed, so the Part 1 bank files did not pay their first
+   * instalment. Undefined before Part 1 confirm or on a run confirmed before this was recorded —
+   * readers then fall back to `onHold`, which is what they did before.
+   */
+  part1Withheld?: boolean;
   lifecycle: RowLifecycle;
   /** For the Part-1 sheet's bank columns — not part of the canonical salary_records payload. */
   bankName: string | null;
@@ -260,6 +272,8 @@ export function settlementBasisFor(input: {
       otherAdditions: num(draft?.otherAdditions),
       heldReleaseValue: heldReleaseAmount(draft),
       // Taken off.
+      // Defer Pay: assembleRows also caps it at the row's Part 2, which the step's save already enforces.
+      payDeferralValue: draft?.onHold ? 0 : payDeferralAmount(draft),
       fingerprintValue: num(draft?.fingerprintValue),
       crm: num(draft?.crm),
       unpaidVacations: num(draft?.unpaidVacations),
@@ -281,6 +295,11 @@ export function settlementBasisFor(input: {
 /** The Held Salary Release step's figure for this row, never negative. */
 function heldReleaseAmount(draft: DraftRow | undefined): number {
   return Math.max(0, roundCurrency(num(draft?.heldReleaseValue)));
+}
+
+/** The Defer Pay step's figure for this row, never negative. */
+function payDeferralAmount(draft: DraftRow | undefined): number {
+  return Math.max(0, roundCurrency(num(draft?.payDeferralValue)));
 }
 
 /** Leaver's own CRM+vacation deduction, confirmed on the Resignation step (owner rule 2026-07-20). Non-leavers: 0. */
@@ -406,7 +425,7 @@ export function assembleRows(input: {
     // Deductions — `totalDeductions` adds both, and counting it twice would overstate every
     // affected row's deductions. `otherPart1Total` above is untouched and still carries it, which
     // is what keeps the frozen First Part exactly where it was.
-    const otherDeductionsTotal = roundCurrency(
+    const otherDeductionsBeforeDeferral = roundCurrency(
       manualOtherDeductions +
         otherPart1DeductionsExceptLoan(draft) +
         specialDeduction +
@@ -422,20 +441,32 @@ export function assembleRows(input: {
     const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions) + heldReleaseApplied);
     const loans = part1LoanDeduction(draft);
 
-    const parts = assembleParts({
-      effective,
-      paymentMode,
-      firstPartFrozen,
-      additions: { expenses, incentive, overtime, bonus, otherAdditions: otherAdditionsTotal },
-      deductions: {
-        fingerprint,
-        crm,
-        unpaidVacations,
-        medicalInsurance,
-        loans,
-        otherDeductions: otherDeductionsTotal,
-      },
-    });
+    const partsWith = (otherDeductions: number) =>
+      assembleParts({
+        effective,
+        paymentMode,
+        firstPartFrozen,
+        additions: { expenses, incentive, overtime, bonus, otherAdditions: otherAdditionsTotal },
+        deductions: {
+          fingerprint,
+          crm,
+          unpaidVacations,
+          medicalInsurance,
+          loans,
+          otherDeductions,
+        },
+      });
+    // Defer Pay (owner, 2026-10-26): part of this month's pay moved to a later month. It comes off Part 2
+    // only — Part 1 is frozen money — so it is capped at the Part 2 the row has without it, which keeps
+    // it from ever eating into the first instalment or creating an overpayment. Taken as a deduction so
+    // the month's total, the payslip and the bank file all show the smaller figure; publish records it
+    // as owed and Held Salary Release pays it in its month. A held row defers nothing.
+    const partsBeforeDeferral = partsWith(otherDeductionsBeforeDeferral);
+    const payDeferralApplied = draft?.onHold
+      ? 0
+      : Math.min(payDeferralAmount(draft), partsBeforeDeferral.secondPart);
+    const otherDeductionsTotal = roundCurrency(otherDeductionsBeforeDeferral + payDeferralApplied);
+    const parts = payDeferralApplied > 0 ? partsWith(otherDeductionsTotal) : partsBeforeDeferral;
 
     // The insurance wage decides the filing, so it decides this figure. Falling back to the
     // master's raw column when no wage is on file is deliberate: the alternative is to publish a
@@ -526,6 +557,8 @@ export function assembleRows(input: {
       totalPayable: parts.totalPayable,
       carriedForwardApplied,
       heldReleaseApplied,
+      payDeferralApplied,
+      part1Withheld: draft?.part1Withheld ?? undefined,
       lifecycle: member.lifecycle,
       bankName: employee.bankName ?? null,
       bankAccount: employee.bankAccount ?? null,
@@ -628,6 +661,9 @@ export function assembleReleaseOnlyRow(input: {
     totalPayable: release,
     carriedForwardApplied: 0,
     heldReleaseApplied: release,
+    payDeferralApplied: 0,
+    // Paid nothing in Part 1 by construction (firstPart 0), so there was nothing to withhold.
+    part1Withheld: false,
     lifecycle: member.lifecycle,
     bankName: employee.bankName ?? null,
     bankAccount: employee.bankAccount ?? null,

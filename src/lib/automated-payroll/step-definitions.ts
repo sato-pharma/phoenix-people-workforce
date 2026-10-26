@@ -571,16 +571,51 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Held Salary Release",
     subtitle:
-      "Salary an earlier published month withheld and has not paid since — the held amount less anything already settled by hand. It is paid in this month's Part 2, in Other Additions, including for people who have since left. The recommended figure is the whole outstanding balance; lower it to pay part now, or set 0 to keep holding. It can never be raised above what is owed. Someone held again this month is not released. Confirming Part 2 reserves the release against the held month and publishing records it, so it is released once.",
+      "Salary an earlier published month withheld and has not paid since — Part 2 withheld, Part 1 when it was never paid, and pay deferred to this month — less anything already settled by hand. It is paid in this month's Part 2, in Other Additions, including for people who have since left. The recommended figure is everything due now; deferred pay not due yet is left out until its month. Lower it to pay part now, or set 0 to keep holding; it can never be raised above what is owed. Someone held again this month is not released. If last month's Part 1 was not paid to someone (they were held when it was confirmed), enter it under Part 1 Not Paid — add them with Add employee if they are not listed — and it joins what they are owed. Confirming Part 2 reserves the release against the held month and publishing records it, so it is released once.",
     contextColumns: [
       { key: "Held Month", label: "Held Month" },
       { key: "Part 1 Already Paid", label: "Part 1 Already Paid", money: true },
+      { key: "Part 1 Withheld", label: "Part 1 Withheld", money: true },
       { key: "Part 2 Withheld", label: "Part 2 Withheld", money: true },
+      { key: "Deferred", label: "Deferred", money: true },
       { key: "Settled By Hand", label: "Settled By Hand", money: true },
       { key: "Released In Payroll", label: "Released In Payroll", money: true },
       { key: "Outstanding", label: "Outstanding", money: true },
+      { key: "Not Yet Due", label: "Not Yet Due", money: true },
     ],
-    fields: [{ key: "heldReleaseValue", label: "Release Amount", kind: "money" }],
+    fields: [
+      // Saved to its own ledger against last month's run, not to this run's draft row (run-service saveStep).
+      { key: "part1NotPaid", label: "Part 1 Not Paid (previous month)", kind: "money", notPersisted: true },
+      { key: "heldReleaseValue", label: "Release Amount", kind: "money" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+    // Someone held at Part 1 but released at Part 2 last month is not on the held list at all — HR adds
+    // them here to record the Part 1 they were never paid.
+    allowsManualRows: true,
+  },
+  p2_pay_deferral: {
+    key: "p2_pay_deferral",
+    phase: "part2",
+    title: "Defer Pay",
+    subtitle:
+      "Move part of this month's pay to a later month (owner, 2026-10-26). The amount comes off this month's Part 2 and is owed again next month or the month after, where Held Salary Release offers it once it is due. It can never be more than the person's Part 2. Leave 0 for nobody. A held person's deferral does nothing — their whole month is already withheld.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Part 2", label: "Part 2", money: true },
+    ],
+    fields: [
+      { key: "payDeferralValue", label: "Amount To Defer", kind: "money" },
+      {
+        key: "payDeferralMonth",
+        label: "Pay It In",
+        kind: "select",
+        options: [
+          { value: "next", label: "Next month" },
+          { value: "after_next", label: "The month after" },
+        ],
+      },
+    ],
     hasReason: false,
     isHoldStep: false,
   },
@@ -652,5 +687,6 @@ export const STEP_ORDER: StepKey[] = [
   "p2_additions",
   "p2_manual_deductions",
   "p2_held_release",
+  "p2_pay_deferral",
   "p2_holds",
 ];

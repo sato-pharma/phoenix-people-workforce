@@ -12,6 +12,9 @@
 /** Payroll period. Structurally identical to CopilotPeriod so it interops with the reused feeders. */
 export type PayrollPeriod = { month: number; year: number };
 
+/** Defer Pay: when the deferred amount falls due, counted from the run's own month. */
+export type PayDeferralMonth = "next" | "after_next";
+
 /**
  * One employee's hold as it stood in the month before the run being edited —
  * the record a carried-forward reason is read from. `reason` is null when that
@@ -51,6 +54,7 @@ export type StepKey =
   | "p2_additions"
   | "p2_manual_deductions"
   | "p2_held_release"
+  | "p2_pay_deferral"
   | "p2_holds";
 
 export const PART1_STEP_KEYS: readonly StepKey[] = [
@@ -73,6 +77,7 @@ export const PART2_STEP_KEYS: readonly StepKey[] = [
   "p2_additions",
   "p2_manual_deductions",
   "p2_held_release",
+  "p2_pay_deferral",
   "p2_holds",
 ] as const;
 
@@ -183,6 +188,16 @@ export type DraftRow = {
    * released once. Optional so a row read before the column existed still types.
    */
   heldReleaseValue?: number | null;
+  /**
+   * Defer Pay step (owner, 2026-10-26: "I have the option to transfer this payment to the next month,
+   * or to the month after") -> an amount taken off this month's Part 2 and owed again later. Clamped
+   * to the row's Part 2 and worth nothing on a held row (assemble.ts). Publish records it and the
+   * Held Salary Release step offers it once it is due. Optional so a row read before the column
+   * existed still types.
+   */
+  payDeferralValue?: number | null;
+  /** When the deferred amount falls due: the month after this run, or the one after that. */
+  payDeferralMonth?: PayDeferralMonth | null;
   // Part 2 — deductions.
   unpaidVacations: number | null;
   crm: number | null;
@@ -267,6 +282,17 @@ export type DraftRow = {
    * already on the books moves. Cleared by `unconfirmPart1`, which re-freezes.
    */
   settledInPart1: boolean | null;
+  /**
+   * Frozen at Part 1 confirm, beside `firstPartFrozen`: was this person ON HOLD at that moment?
+   *
+   * The Part 1 bank files leave a held person out, so a hold at Part 1 means the first instalment was
+   * never paid. Publish used to record every held person's Part 1 as "already paid", and someone held
+   * at Part 1 but released at Part 2 lost their Part 1 for good (owner, 2026-10-26: "I should be able
+   * to release their whole the previous salary"). NULL before Part 1 confirm, and on every run
+   * confirmed before the column existed — readers then fall back to the live hold, as before.
+   * Cleared by `unconfirmPart1`.
+   */
+  part1Withheld?: boolean | null;
   // Hold — held employee still appears (red + flagged), excluded from publish.
   onHold: boolean;
   holdReason: string | null;

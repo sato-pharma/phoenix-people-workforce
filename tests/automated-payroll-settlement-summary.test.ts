@@ -259,7 +259,9 @@ export function runAutomatedPayrollSettlementSummaryTests() {
   const unclassified: string[] = [];
   for (const [stepKey, definition] of Object.entries(STEP_DEFINITIONS)) {
     for (const field of definition.fields) {
-      if (field.kind !== "money") continue;
+      // A field that saves no draft column (Held Salary Release's Part 1 Not Paid, which is a record
+      // against an EARLIER month) is no component of this month, so it has nothing to move.
+      if (field.kind !== "money" || field.notPersisted) continue;
       if (!classified.has(field.key)) unclassified.push(`${stepKey}.${field.key}`);
     }
   }

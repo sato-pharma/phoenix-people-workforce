@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow } from "../types.ts";
-import { resolveBankRoute } from "./bank-coverage.ts";
+import { heldForScope, resolveBankRoute } from "./bank-coverage.ts";
 
 /**
  * CIB (Commercial International Bank) bulk-credit template. Schema AND
@@ -51,7 +51,7 @@ export function formatCibAmount(amount: number): string {
  */
 export function cibRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"): CibSheetRow[] {
   return rows
-    .filter((entry) => !entry.onHold)
+    .filter((entry) => !heldForScope(entry, scope))
     // One routing definition, shared with fab-sheet.ts and bank-coverage.ts. Same decision as the
     // literal string test it replaces; the difference is that an unrouted row is now named rather
     // than silently dropped.
