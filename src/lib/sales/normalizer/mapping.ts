@@ -795,8 +795,9 @@ export async function parseUnmappedWorkbook(buffer: ArrayBuffer | Buffer, distri
 }
 
 // How many rejected rows one upload's history record keeps, and how long each cell may run — the
-// customer map import's bounds (customer-map.ts), for its reason: writeAuditLog sends with a
-// 3-second timeout and drops a failed write silently, so only a pathological sheet is ever cut and
+// customer map import's bounds (customer-map.ts), for its reason: writeAuditLog bounds its first
+// attempt at 8 seconds (3 until 26 Oct 2026), then queues a write it could not land rather than
+// losing it, and never throws back at this caller, so only a pathological sheet is ever cut and
 // the record itself always saves.
 export const UNMAPPED_LIST_REJECTED_ROWS_KEPT = 5000;
 const REJECTED_RAW_MAX = 200;

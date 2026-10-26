@@ -202,7 +202,8 @@ export type CustomerMapImportBlockedRow = { key: string; reason: string; row: nu
 
 // How many blocked rows one import's history record keeps. The largest import ever run blocked 969;
 // the cap and the per-field lengths only bound a pathological sheet, so the record itself — which
-// writeAuditLog sends with a 3-second timeout and drops silently on failure — always saves.
+// writeAuditLog bounds at an 8-second first attempt (3 until 26 Oct 2026), then queues through the
+// outbox rather than losing, and never throws back at this caller — always saves.
 export const CUSTOMER_MAP_BLOCKED_ROWS_KEPT = 5000;
 const BLOCKED_KEY_MAX = 200;
 const BLOCKED_REASON_MAX = 400;
