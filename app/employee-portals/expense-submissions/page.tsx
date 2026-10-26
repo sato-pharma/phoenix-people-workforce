@@ -46,8 +46,11 @@ export default async function EmployeePortalExpenseSubmissionsPage() {
   // Submit Expense and Expense Submissions are ONE page for anyone who can submit a claim (owner,
   // 2026-10-22: "I want the submit expense and the expense submissions to be in one page … in the
   // same form"): the form, and My claims under it. This route stays for links, notifications and
-  // the viewers who can read claims but not submit one (Training Manager, Manager), who still get
-  // the list here. Submit Expense never sends anyone back to this page, so there is no loop.
+  // the viewers who can read claims but cannot submit one — `expenses:read` without
+  // `outstation:create`, which is head-office staff such as the Finance Manager, NOT the managers
+  // this comment once named: the Training Manager and the Manager both hold `outstation:create`
+  // and are forwarded from here like everyone else who files a trip. Submit Expense never sends
+  // anyone back to this page, so there is no loop.
   if (access.role !== "Medical Rep" && (await canAccess(access, "outstation", "create"))) {
     redirect(`/employee-portals/submit-expense#${MY_CLAIMS_ANCHOR}`);
   }

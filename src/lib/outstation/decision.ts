@@ -167,7 +167,7 @@ export function outstationCampaignRuleOutcome(input: {
  * `hasTicketAttachments` MUST be derived from files the server actually stored,
  * never from a client-supplied boolean.
  *
- * Waived on 2026-08-19 (owner request) for the three roles in evidence-waiver.ts: they MAY
+ * Waived on 2026-08-19 (owner request) for the roles in evidence-waiver.ts: they MAY
  * attach the ticket — as a PDF or an image — but a train or bus claim without one is accepted.
  * The waiver is applied here rather than by clearing `requiresTicketAttachment` upstream so that
  * the admin policy editor keeps saying what the policy actually is for everyone else; a role
