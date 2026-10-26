@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { medicalRepCountLabel } from "@/lib/employee-portal/rep-target-gap";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -107,7 +108,7 @@ export default async function EmployeePortalTeamPerformancePage({
     <EmployeePortalPageShell
       badge="Team Performance"
       description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
-        teamMemberCount > 0 ? `${teamMemberCount} medical reps` : "no available team data"
+        teamMemberCount > 0 ? medicalRepCountLabel(teamMemberCount) : "no available team data"
       }.`}
       title="Team Performance"
     >
@@ -124,7 +125,7 @@ export default async function EmployeePortalTeamPerformancePage({
             <p className="mt-1 text-sm text-slate-500">
               {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
               {" · "}
-              {teamMemberCount > 0 ? `${teamMemberCount} medical reps` : "No team data"}
+              {teamMemberCount > 0 ? medicalRepCountLabel(teamMemberCount) : "No team data"}
             </p>
           </div>
 
