@@ -8,9 +8,7 @@ useDefault = true
 [[allowlists]]
 # gitleaks refuses the old single [allowlist] table beside a [[allowlists]] one, so both are
 # written in the array form. This first one is the original allowlist, unchanged in content.
-description = "Generated files and code identifiers"
-# Applies to `regexes` below only — `paths` always matches the file path regardless.
-regexTarget = "line"
+description = "Generated files"
 paths = [
   '''node_modules/''',
   '''\.next/''',
@@ -31,15 +29,23 @@ paths = [
   # so what has to be trusted here is the workbook, not this scan. Owner-approved 2026-09-03.
   '''src/lib/sales/closing-engine-template-generated\.ts''',
 ]
-regexes = [
-  # This codebase names internal step/template/milestone identifiers "key"/"stepKey"/
-  # "templateKey" (e.g. `key: "p1_resignations"`, `stepKey === "p1_other_deductions"`,
-  # `templateKey: "probation_day30"`), which trips the generic-api-key rule on every
-  # occurrence -- these are plain code identifiers, not secrets. Targets the LINE
-  # (regexTarget=line above) so it only suppresses this specific "key"-named
-  # property/comparison shape, not any alphanumeric string anywhere.
-  '''(?i)key\s*(:|===)\s*"[a-zA-Z][a-zA-Z0-9_]*"''',
-]
+
+[[allowlists]]
+# Code identifiers: this codebase names its step, template and milestone ids "key", "stepKey" and
+# "templateKey" (`key: "p1_resignations"`, `stepKey === "p1_other_deductions"`,
+# `templateKey: "probation_day30"`, `key: "doubleVisitor2"`), and the generic-api-key rule reads
+# each one as a credential — 31 lines of the tree on 26 Oct 2026.
+# 🔴 Until 26 Oct this was a LINE regex, `key\s*(:|===)\s*"[a-zA-Z][a-zA-Z0-9_]*"`, on every rule,
+# and it hid any alphanumeric value after `key:` — `api_key: "<a real random key>"` scanned clean.
+# Now it checks the captured VALUE alone, for the generic rule alone, and allows only an
+# identifier's shape: two or more words, each at most 16 characters, joined by `_` or by a
+# capital (lower snake_case or lower camelCase), and a capitalised word may carry digits only at
+# its end. A random key fails it — a hex key has no separator, and a mixed-case one has runs of
+# capitals or digits inside a word: 3 in 100,000 random 32-character keys fit, 0 hex keys.
+description = "Code identifiers (p1_resignations, probation_day30, doubleVisitor2)"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^[a-z][a-z0-9]{0,15}(?:_[a-z0-9]{1,16}|[A-Z][a-z]{1,15}[0-9]{0,3})+$''']
 
 [[allowlists]]
 # Data migrations stamp their rows with an idempotency label in a notes column —
@@ -52,3 +58,18 @@ description = "Migration idempotency labels (token=KFS2-AIF-D1)"
 regexTarget = "match"
 # The match carries the sentence's trailing punctuation ("token=KFS2-AIF-OT-PRE-JULY. "), hence \W*.
 regexes = ['''^token=[A-Z0-9]+(?:-[A-Z0-9]+)+\W*$''']
+
+[[allowlists]]
+# Environment-variable NAMES that end in KEY, TOKEN or SECRET: `ANTHROPIC_API_KEY_2`,
+# `RESEND_WEBHOOK_SECRET_3`. The generic-api-key rule reads them as the value of the key written
+# before them (`"ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2"`, or `.env.example`'s empty
+# `ANTHROPIC_API_KEY=` with the next line's name taken as its value). Five of the seven findings of
+# 25 Oct 2026 were this one name, and 13 of the 34 across the whole git history.
+# regexTarget = "secret" checks the captured VALUE alone, so a real key on the same line is still
+# reported: a real credential is random mixed case and is never upper-case words joined by
+# underscores ending in _KEY, _TOKEN or _SECRET. The optional trailing `=` or `.` is the
+# rule's capture running on into `ANTHROPIC_API_KEY_2=` or the full stop ending a comment.
+description = "Environment-variable names that end in KEY, TOKEN or SECRET"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:KEY|TOKEN|SECRET)(?:_[0-9]+)?[.=]?$''']

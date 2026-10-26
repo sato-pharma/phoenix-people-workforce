@@ -118,7 +118,7 @@ function unavailableIsNeverZeroTests() {
   const login = read(LOGIN_PANEL);
   assert.match(login, /const UNAVAILABLE = "Unavailable";/);
   assert.match(login, /value === null \? UNAVAILABLE :/, "a null count prints Unavailable, never 0");
-  for (const field of ["lockedAccounts", "forcedPasswordResets", "failedSignIns24h", "distinctFailedIps24h"]) {
+  for (const field of ["lockedAccounts", "forcedPasswordResets", "failedSignIns24h", "distinctFailedIps24h"]) { // gitleaks:allow — field names, not a credential
     assert.match(login, new RegExp(`value=\\{countValue\\(overview\\.${field}\\)\\}`), `the ${field} tile goes through countValue`);
   }
   // Each lens list has its own unavailable branch, keyed to the source that feeds it, ahead of its
