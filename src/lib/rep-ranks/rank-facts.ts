@@ -51,6 +51,13 @@ export type RankRosterRep = {
   areaName: string | null;
   regionName: string | null;
   seatIds: readonly string[];
+  /**
+   * The seats in `seatIds` that another person sits on too (a handover: the rep serving notice and the
+   * new hire). Coverage and frequency read only THIS rep's visits there — never the seat's — so neither
+   * is credited with the other's saves. Absent means no seat is shared. A seat's PLAN is not split (the
+   * plan report is per seat), so both occupants read the seat's plan.
+   */
+  sharedSeatIds?: readonly string[];
   /** The first day the rep owes Phoenix CRM work: the team's start, or the first visit, never before hiring. */
   startDay: string;
 };
@@ -165,7 +172,10 @@ export function repFactsForWindow(
   // Coverage and frequency, month slice by month slice, prorated and weighted by owed days.
   const seats = new Set(rep.seatIds);
   const customers = rep.seatIds.flatMap((seatId) => indexed.customersBySeat.get(seatId) ?? []);
-  const seatVisits = rep.seatIds.flatMap((seatId) => indexed.visitsBySeat.get(seatId) ?? []);
+  const sharedSeats = new Set(rep.sharedSeatIds ?? []);
+  const seatVisits = rep.seatIds
+    .flatMap((seatId) => indexed.visitsBySeat.get(seatId) ?? [])
+    .filter((visit) => !sharedSeats.has(visit.seatId) || visit.repKey === rep.hrIdKey);
   let coverageWeighted = 0;
   let frequencyWeighted = 0;
   let frequencyWeight = 0;

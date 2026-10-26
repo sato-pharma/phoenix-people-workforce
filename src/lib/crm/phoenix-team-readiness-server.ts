@@ -43,7 +43,7 @@ import {
 import type { PhoenixTeamRow } from "@/lib/crm/phoenix-team-starts";
 import { queryVisits } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
-import { personKey, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { personKey, seatPeople, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -157,10 +157,11 @@ export async function loadPhoenixTeamReadiness(input: {
   for (const territory of org.territories) {
     const parent = territory.parentSeatId;
     if (!parent || !teamSeatIds.has(parent)) continue;
-    repSeatsByTeam.set(parent, [...(repSeatsByTeam.get(parent) ?? []), territory]);
+    // One row per PERSON: a handover seat lists the rep serving notice and the new hire, not one of them.
+    repSeatsByTeam.set(parent, [...(repSeatsByTeam.get(parent) ?? []), ...seatPeople(territory)]);
   }
 
-  const seatIds = [...repSeatsByTeam.values()].flat().map((seat) => seat.seatId);
+  const seatIds = [...new Set([...repSeatsByTeam.values()].flat().map((seat) => seat.seatId))];
   const occupantIds = [...repSeatsByTeam.values()]
     .flat()
     .map((seat) => seat.occupantHrId)

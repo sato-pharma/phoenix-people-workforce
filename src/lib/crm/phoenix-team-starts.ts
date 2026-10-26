@@ -253,7 +253,7 @@ import { addDaysIso } from "@/lib/crm/dates";
 import type { PhoenixTeamReadinessPanelData } from "@/lib/crm/phoenix-team-readiness";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
-import type { OrgIndex, OrgSeat } from "@/lib/phoenix-crm/scope";
+import { seatOccupants, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 
 /** The table the first migration creates. The app reads it; only `phoenix_crm_set_team_start` writes it. */
@@ -596,7 +596,8 @@ export function buildPhoenixTeamRows(input: {
   for (const teamSeatId of new Set<string>([...territoriesByTeam.keys(), ...startsByTeam.keys()])) {
     const seat = org.seats.get(teamSeatId) ?? null;
     const territories = territoriesByTeam.get(teamSeatId) ?? [];
-    const reps = territories.filter((territory) => Boolean(territory.occupantHrId)).length;
+    // People, not seats: a handover seat holds two.
+    const reps = territories.reduce((count, territory) => count + seatOccupants(territory).length, 0);
     const starts = [...(startsByTeam.get(teamSeatId) ?? [])].sort((left, right) => left.startsOn.localeCompare(right.startsOn));
     const running = starts.find((start) => start.stopsOn === null) ?? null;
     const lastStopped = [...starts].reverse().find((start) => start.stopsOn !== null) ?? null;

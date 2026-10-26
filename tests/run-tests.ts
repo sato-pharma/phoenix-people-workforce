@@ -2115,6 +2115,7 @@ import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-produ
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmDmRecordsHisDayTests } from "./phoenix-crm-dm-records-his-day.test.ts";
+import { runPhoenixCrmSeatHandoverOccupantsTests } from "./phoenix-crm-seat-handover-occupants.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -7578,6 +7579,11 @@ await runTest(
 await runTest(
   "Phoenix CRM a district manager records his OWN day (owner, 2026-10-20: the District Sales Manager's Add visit screen showed the seven day tiles greyed under \"recorded by the territory's own rep\", and he said let her record the day — the row lands on HIS team seat, never the rep's, because a day activity is one row per seat per day and a manager's meeting on the rep's seat would replace the rep's own; district tiers only, the Super Admin and every other manager refused as before)",
   runPhoenixCrmDmRecordsHisDayTests,
+);
+
+await runTest(
+  "Phoenix CRM a seat with two occupants keeps both in the org index and Phoenix Ranks gives each their OWN visits (owner, 2026-10-26 — Hana Abdelaziz and Aya Mamdouh share Haram - Faisal; the org view returns one row per occupant and the index kept only the last)",
+  runPhoenixCrmSeatHandoverOccupantsTests,
 );
 
 await runTest(

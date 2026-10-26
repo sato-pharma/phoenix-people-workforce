@@ -49,12 +49,26 @@ export type OrgSeat = {
    * test builds by hand keeps compiling; the organogram read in server/org.ts always fills it.
    */
   isOtherPseudoDm?: boolean | null;
+  /**
+   * EVERY person on the seat, upper case, in organogram order — `buildOrgIndex` fills it. The view
+   * returns one row per occupant, so a handover seat (the rep serving notice and the new hire) has two;
+   * `occupantHrId` stays the one the row-per-seat readers have always used (the LAST row). OPTIONAL so
+   * every seat a test builds by hand keeps compiling — read it through `seatOccupants`.
+   */
+  occupants?: string[];
 };
 
 export type OrgIndex = {
   seats: ReadonlyMap<string, OrgSeat>;
   seatsByOccupant: ReadonlyMap<string, OrgSeat[]>;
+  /** One entry per territory SEAT, however many people sit on it — read `occupants` for the people. */
   territories: OrgSeat[];
+  /**
+   * One entry per occupied territory seat × PERSON: a handover seat appears twice, once per occupant,
+   * each carrying that person as `occupantHrId`. Anything that counts or scores PEOPLE reads this, never
+   * `territories` — which would see only one of the two.
+   */
+  territoryHolders: OrgSeat[];
 };
 
 export const TERRITORY_TIER = "REP";
@@ -69,22 +83,56 @@ export function personKey(hrId: string | null | undefined): string | null {
   return key ? key.toUpperCase() : null;
 }
 
+/** Everyone on a seat — `occupants` when the index built it, else the one occupant, else nobody. */
+export function seatOccupants(seat: OrgSeat): string[] {
+  if (seat.occupants) return seat.occupants;
+  return seat.occupantHrId ? [seat.occupantHrId] : [];
+}
+
+/**
+ * One entry per PERSON on a territory seat: the seat itself when it has one occupant or none, a copy per
+ * occupant (each carrying that person as `occupantHrId`) when a handover has put two on it. For a caller
+ * that walks `territories` but counts or lists people.
+ */
+export function seatPeople(seat: OrgSeat): OrgSeat[] {
+  const occupants = seatOccupants(seat);
+  if (occupants.length <= 1) return [seat];
+  return occupants.map((occupantHrId) => ({ ...seat, occupantHrId }));
+}
+
 export function buildOrgIndex(seats: ReadonlyArray<OrgSeat>): OrgIndex {
+  // au_v_org_tree has ONE ROW PER OCCUPANT: a handover seat arrives as two rows with the same seat id.
+  // Collapsing them on the seat id kept only the last, and the other person vanished from every
+  // territory read (2026-10-26: Hana Abdelaziz, serving notice, behind Aya Mamdouh on one Pedia seat).
+  const occupantsOf = new Map<string, string[]>();
+  for (const seat of seats) {
+    const person = personKey(seat.occupantHrId);
+    if (!person) continue;
+    const list = occupantsOf.get(seat.seatId) ?? [];
+    if (!list.includes(person)) list.push(person);
+    occupantsOf.set(seat.seatId, list);
+  }
   const byId = new Map<string, OrgSeat>();
   const byOccupant = new Map<string, OrgSeat[]>();
+  const holders = new Map<string, OrgSeat>();
   for (const seat of seats) {
-    const normalized: OrgSeat = { ...seat, occupantHrId: personKey(seat.occupantHrId) };
+    const occupants = occupantsOf.get(seat.seatId) ?? [];
+    const normalized: OrgSeat = { ...seat, occupantHrId: personKey(seat.occupantHrId), occupants };
     byId.set(normalized.seatId, normalized);
     if (normalized.occupantHrId) {
       const held = byOccupant.get(normalized.occupantHrId) ?? [];
-      held.push(normalized);
+      if (!held.some((existing) => existing.seatId === normalized.seatId)) held.push(normalized);
       byOccupant.set(normalized.occupantHrId, held);
+      if (normalized.tier === TERRITORY_TIER) holders.set(`${normalized.seatId}|${normalized.occupantHrId}`, normalized);
     }
   }
   const territories = [...byId.values()]
     .filter((seat) => seat.tier === TERRITORY_TIER)
     .sort((left, right) => left.seatId.localeCompare(right.seatId));
-  return { seats: byId, seatsByOccupant: byOccupant, territories };
+  const territoryHolders = [...holders.values()].sort(
+    (left, right) => left.seatId.localeCompare(right.seatId) || (left.occupantHrId ?? "").localeCompare(right.occupantHrId ?? ""),
+  );
+  return { seats: byId, seatsByOccupant: byOccupant, territories, territoryHolders };
 }
 
 /** The territories (REP seats) a person holds. */
@@ -138,7 +186,7 @@ export function managerChain(index: OrgIndex, territorySeatId: string): ChainMem
   for (const ancestorId of ancestors) {
     const seat = index.seats.get(ancestorId);
     if (!seat || !isManagerTier(seat.tier) || !seat.occupantHrId) continue;
-    if (seat.occupantHrId === territory.occupantHrId) continue;
+    if (seatOccupants(territory).includes(seat.occupantHrId)) continue;
     if (seen.has(seat.occupantHrId)) continue;
     seen.add(seat.occupantHrId);
     chain.push({ hrId: seat.occupantHrId, seat, position: chain.length });
