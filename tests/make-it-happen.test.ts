@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import ExcelJS from "exceljs";
 
@@ -49,6 +51,7 @@ import {
   isTeamBound,
   makeItHappenBoundLabel,
 } from "@/lib/sales/make-it-happen/scope";
+import { holdsTargetOrSalesInPeriod, isListedOnTeam, teamRowSatoHalf } from "@/lib/sales/make-it-happen/team-roster";
 
 function row(overrides: Partial<AchievementRow>): AchievementRow {
   return {
@@ -450,6 +453,95 @@ export async function runMakeItHappenTests() {
   ]);
   assert.equal(noSatoTarget?.hasTarget, false, "no Sato target yet is told apart from a real 0%");
   assert.equal(noSatoTarget?.achievement, null, "and reads null, never 0%");
+
+  // ── The team list names no one who has left unless they hold a target or sales in the period ──
+  // 26 Oct 2026: the National Sales Manager read "Everyone 32 · No target 18" and nine of the
+  // eighteen had resigned or declined their offer — their closed trend-month rows (Jul–Sep, kept for
+  // the pace forecast) put them on a Q4 list. Only the per-person list moves; lines and totals do not.
+  const q4 = new Set(["2026-10", "2026-11", "2026-12"]);
+  const trendOnly = [row({ period: "2026-08", repHrId: "L-1", actualUnits: 40, actualValue: 4000, targetValue: 5000 })];
+  for (const status of ["resigned", "terminated", "declined_offer", "not_renewed"]) {
+    assert.equal(
+      isListedOnTeam({ employmentStatus: status, repRows: trendOnly, months: q4 }),
+      false,
+      `a ${status} person with only closed trend months is not on the Q4 team`,
+    );
+  }
+  assert.equal(
+    isListedOnTeam({ employmentStatus: "Resigned ", repRows: trendOnly, months: q4 }),
+    false,
+    "the status is read case- and space-insensitively, as the repo's one rule reads it",
+  );
+  assert.equal(
+    isListedOnTeam({
+      employmentStatus: "resigned",
+      repRows: [row({ period: "2026-10", repHrId: "L-1", targetValue: 3000 })],
+      months: q4,
+    }),
+    true,
+    "a leaver who still holds a Q4 target is listed",
+  );
+  assert.equal(
+    isListedOnTeam({
+      employmentStatus: "resigned",
+      repRows: [row({ period: "2026-10", repHrId: "L-1", actualUnits: 5 })],
+      months: q4,
+    }),
+    true,
+    "a leaver who sold in Q4 is listed",
+  );
+  assert.equal(
+    isListedOnTeam({
+      employmentStatus: "resigned",
+      repRows: [row({ period: "2026-10", repHrId: "L-1", actualUnits: 0, actualValue: 0 })],
+      months: q4,
+    }),
+    false,
+    "an all-zero Q4 row is neither a target nor a sale",
+  );
+  for (const status of ["active", "on_leave", "", null, undefined]) {
+    assert.equal(
+      isListedOnTeam({ employmentStatus: status, repRows: trendOnly, months: q4 }),
+      true,
+      `an employed (or unknown) person stays listed: ${String(status)}`,
+    );
+  }
+  assert.equal(
+    isListedOnTeam({ employmentStatus: "active", repRows: [], months: q4 }),
+    true,
+    "a new hire with no rows yet stays listed",
+  );
+  assert.equal(holdsTargetOrSalesInPeriod(trendOnly, q4), false);
+
+  // A Pedia person with no Sato product in scope reads Total and Sato like every other Pedia row
+  // (Essam Elsayed's row rendered a bare meter without them).
+  const noSatoPedia: LinePlanGroup = { ...splitLine, satoHalf: null };
+  assert.deepEqual(
+    teamRowSatoHalf({ repLines: [noSatoPedia], semester: "2026-S2", satoProductNames: "Guamusin and Ivyronc" }),
+    { productNames: "Guamusin and Ivyronc", hasTarget: false, achievement: null },
+    "a Pedia person with no Sato product in scope reads 'Sato · No target', not a single meter",
+  );
+  assert.equal(teamRowSatoHalf({ repLines: [cnsLine], semester: "2026-S2", satoProductNames: "x" }), null, "CNS has no Sato half");
+  assert.equal(
+    teamRowSatoHalf({ repLines: [noSatoPedia], semester: "2026-S1", satoProductNames: "x" }),
+    null,
+    "before the split semester there is none",
+  );
+  assert.equal(
+    teamRowSatoHalf({ repLines: [splitLine], semester: "2026-S2", satoProductNames: "x" })?.achievement,
+    0.5,
+    "a measured half is left exactly as measured",
+  );
+
+  // The workspace applies the filter to the PER-PERSON loop only: lines, overall and the pace stay on every row.
+  const workspaceSource = readFileSync(path.join(process.cwd(), "src/lib/sales/make-it-happen/workspace.ts"), "utf8");
+  assert.ok(workspaceSource.includes("isListedOnTeam({"), "the per-person loop asks isListedOnTeam");
+  assert.ok(workspaceSource.includes("const lines = buildLines(rows);"), "the lines still read every row, trend months included");
+  assert.ok(
+    workspaceSource.includes("const overall = gradeRows(rows.filter((row) => monthSet.has(row.period))"),
+    "the overall total still reads the selected period's rows without any employment filter",
+  );
+  assert.ok(workspaceSource.includes("teamRowSatoHalf({"), "the team row's Sato half comes from the shared helper");
 
   // ── Gap to target, per product ──
   const alphaFigures = rowFigures(alpha, true, 20);

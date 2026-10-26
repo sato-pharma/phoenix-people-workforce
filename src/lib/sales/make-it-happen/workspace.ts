@@ -16,6 +16,7 @@ import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import {
   SALES_LINES,
   lineName,
+  loadEmployeeEmploymentStatusMap,
   loadEmployeeNameMap,
   loadProductFamilyMap,
   loadProductNameMap,
@@ -55,7 +56,7 @@ import {
   isTeamBound,
   resolveMakeItHappenBound,
 } from "@/lib/sales/make-it-happen/scope";
-import { repPaceSatoHalf } from "@/lib/sales/make-it-happen/scenarios";
+import { isListedOnTeam, teamRowSatoHalf } from "@/lib/sales/make-it-happen/team-roster";
 
 export type WorkspaceRequest = {
   kind?: string | null;
@@ -113,6 +114,14 @@ export async function buildMakeItHappenWorkspace(
     isTeamBound(resolved) ? loadEmployeeNameMap() : new Map<string, string>(),
   );
   employeeNamesLoad.catch(() => {});
+  // Employment status decides who the per-person list names (team-roster.ts), so it is a team-only
+  // read too. A failed read must not blank the planner: every person then reads as still employed.
+  const employmentStatusLoad = boundLoad.then((resolved) =>
+    isTeamBound(resolved)
+      ? loadEmployeeEmploymentStatusMap().catch(() => new Map<string, string>())
+      : new Map<string, string>(),
+  );
+  employmentStatusLoad.catch(() => {});
   // A non-team viewer's saved plans are his OWN and nobody else's — no rep to view, no rep list — so
   // the owner list is known the moment the bound is, and his plans read beside the range instead of
   // after it. Wrapped, because null from listPlansForOwners already means "no plans table".
@@ -142,15 +151,18 @@ export async function buildMakeItHappenWorkspace(
   };
   if (bound.rows.kind === "none") return shell;
 
-  const [[rawRows, publishedKeys, productNames, prices, families], employeeNames] = await Promise.all([
-    windowLoads,
-    employeeNamesLoad,
-  ]);
+  const [[rawRows, publishedKeys, productNames, prices, families], employeeNames, employmentStatuses] =
+    await Promise.all([windowLoads, employeeNamesLoad, employmentStatusLoad]);
 
   const namesByKey = new Map<string, string>();
   for (const [hrId, name] of employeeNames) {
     const key = canonicalHrIdKey(hrId);
     if (key) namesByKey.set(key, name);
+  }
+  const statusByKey = new Map<string, string>();
+  for (const [hrId, status] of employmentStatuses) {
+    const key = canonicalHrIdKey(hrId);
+    if (key) statusByKey.set(key, status);
   }
   const personName = (hrId: string | null | undefined) =>
     namesByKey.get(canonicalHrIdKey(hrId) ?? "") ?? "Unnamed employee";
@@ -317,6 +329,9 @@ export async function buildMakeItHappenWorkspace(
       rowsByRep.set(key, bucket);
     }
     for (const [key, repRows] of rowsByRep) {
+      // Someone who has left is listed only while they hold a target or sales in the selected period.
+      // Their closed trend-month rows still feed `lines`, `overall` and the pace above: only this list moves.
+      if (!isListedOnTeam({ employmentStatus: statusByKey.get(key), repRows, months: monthSet })) continue;
       const repLines = buildLines(repRows);
       if (repLines.length === 0) continue;
       const repGraded = gradeRows(repRows.filter((row) => monthSet.has(row.period)).map(toGradable));
@@ -333,7 +348,7 @@ export async function buildMakeItHappenWorkspace(
         expectedValue,
         expectedAchievement: achievementOf(repGraded.gradedValue, expectedValue, targetValue),
         // The rep's Sato half at pace — the companion to the total half above (engine.ts rule 7).
-        pediaSato: repPaceSatoHalf(repLines),
+        pediaSato: teamRowSatoHalf({ repLines, semester: periodSemester, satoProductNames }),
         savedPlans: [],
       });
     }

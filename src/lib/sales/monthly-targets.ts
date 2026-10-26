@@ -768,6 +768,21 @@ export async function loadEmployeeNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
+/** hr_id -> employees.employment_status, for the screens that must tell a leaver from a current employee. */
+export async function loadEmployeeEmploymentStatusMap(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("employees").select("hr_id,employment_status");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const hrId = str(record.hr_id).trim();
+    const status = str(record.employment_status).trim();
+    if (hrId && status) map.set(hrId, status);
+  }
+  return map;
+}
+
 // ── Source drill-down (traceability) ─────────────────────────────────────────
 // Decompose a closing number to its raw source (distributor + brick). Reconciles
 // exactly to au.f_monthly_attribution. Used by the expandable Targets rows + export.
