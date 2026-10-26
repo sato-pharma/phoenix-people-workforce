@@ -32,7 +32,8 @@ export function runProbationStabilizationTests() {
   const resignationsReportSource = readResignationsUiSource();
   const trackerSource = readFileSync("src/components/probation/probation-tracker.tsx", "utf8");
 
-  assert.match(serviceSource, /getProbationRows\(access: AccessContext\)/);
+  assert.match(serviceSource, /export const getProbationRows = cache\(loadProbationRows\)/);
+  assert.match(serviceSource, /function loadProbationRows\(access: AccessContext\)/);
   assert.match(serviceSource, /canReadProbationEmployee\(access, employee, viewer, employees\)/);
   assert.match(serviceSource, /export function canReadAllProbation/);
   assert.match(serviceSource, /canViewAllProbation\(access\) \|\| access\.role === "CEO"/);

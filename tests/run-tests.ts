@@ -675,6 +675,7 @@ import { runTeamCalendarWeeksTests } from "./team-calendar-weeks.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
+import { runProbationRowsOneReadPerRequestTests } from "./probation-rows-one-read-per-request.test.ts";
 import { runLoginPageHardeningTests } from "./login-page-hardening.test.ts";
 import { runCommunicationSourceOfTruthTests } from "./communication-source-of-truth.test.ts";
 import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
@@ -4271,6 +4272,7 @@ await runTest("Cairo period seeds (a working period must never come from the raw
 await runTest("shared person identity (B-10 = PHX-1 = admin-HR, one primitive)", runIdentityAliasesTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
+await runTest("probation list is read once per request", runProbationRowsOneReadPerRequestTests);
 await runTest("login page hardening", runLoginPageHardeningTests);
 await runTest("communication source of truth", runCommunicationSourceOfTruthTests);
 await runTest("coaching scoring", runCoachingScoringTests);
