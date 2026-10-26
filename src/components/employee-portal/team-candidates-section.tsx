@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 // The card itself lives in candidate-read-card.tsx, shared with the district folders. Both screens
 // show a manager a CV he can read and comment on but must not answer, and the day they stopped being
@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
 import type { CandidateOpeners } from "@/lib/recruitment/candidate-openers";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { tidyTeamManagers } from "@/lib/recruitment/my-candidates-tidy";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
@@ -28,9 +29,12 @@ import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
  *     and those are what this does. The answer belongs to the manager the CV was pushed to; a
  *     National Sales Manager pressing it from this screen would overwrite their decision with no
  *     record of whose it was.
- *   • Every manager is listed, including the ones with no CVs at all — 8 of the 12 managers under
- *     the two people holding an NSM seat had none on the morning this was built. A picker that hides
- *     them reads as "my other districts are missing", and the fix for that is a zero, not a gap.
+ *   • Every manager who is still with the company is listed, including the ones with no CVs at all —
+ *     8 of the 12 managers under the two people holding an NSM seat had none on the morning this was
+ *     built. A picker that hides them reads as "my other districts are missing", and the fix for that
+ *     is a zero, not a gap. The exception (owner, 2026-10-26) is a manager who has LEFT the company and
+ *     holds no CV: nothing is waiting there, so they are hidden. One who left but still holds CVs
+ *     stays, and the managers holding CVs are listed first (`tidyTeamManagers`).
  */
 
 export type TeamManagerOption = {
@@ -55,12 +59,13 @@ function teamManagerLabel(manager: TeamManagerOption): string {
 }
 
 export function TeamCandidatesSection({
-  managers,
+  managers: allManagers,
   viewerHrId,
 }: {
   managers: TeamManagerOption[];
   viewerHrId: string | null;
 }) {
+  const managers = useMemo(() => tidyTeamManagers(allManagers), [allManagers]);
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   // That manager's OWN areas from the organogram, each with everyone who asked for it. Separate

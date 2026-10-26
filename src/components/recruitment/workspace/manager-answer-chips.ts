@@ -6,6 +6,7 @@
 // ("one question, one name"). Server-only: the question set is read from the database, so no client
 // component may import this file.
 
+import { chipsForCandidateStatus } from "@/lib/recruitment/my-candidates-tidy";
 import type { Candidate } from "@/lib/recruitment/types";
 import {
   answerChipsFor,
@@ -47,7 +48,11 @@ export function answerChipsByCandidate(
   const chips: Record<string, WorkspaceAnswerChip[]> = {};
   for (const candidate of candidates) {
     if (chips[candidate.id]) continue;
-    chips[candidate.id] = answerChipsFor(chipCandidate(candidate), { context, nameOf: () => null, roleFamily: null, tab: null });
+    // A hired candidate is not shown an unanswered "Applying for": the role is the seat they were hired into.
+    chips[candidate.id] = chipsForCandidateStatus(
+      candidate.status,
+      answerChipsFor(chipCandidate(candidate), { context, nameOf: () => null, roleFamily: null, tab: null }),
+    );
   }
   return chips;
 }

@@ -29,6 +29,7 @@ import {
 } from "@/lib/recruitment/district-manager-folders-db";
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
+import { loadRequisitionPlaces } from "@/lib/recruitment/requisition-places-db";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 import { fenceDistrictBoards, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 import { cairoToday } from "@/lib/recruitment/workspace/filters";
@@ -169,6 +170,8 @@ async function AdminRecruitmentCandidatesContent({
         chipContext,
       )
     : {};
+  // The area and line names behind each position, so a card says where the seat is and not its request code.
+  const requisitionPlaces = await loadRequisitionPlaces(visibleApplications.map((application) => application.requisition));
   // A `?candidate=` link opens that CV on arrival, when it is one of his (the same parameter the
   // portal twin reads).
   const linked = (await searchParams)[CANDIDATE_LINK_PARAM];
@@ -213,6 +216,7 @@ async function AdminRecruitmentCandidatesContent({
           initialOpeners={openers}
           initialSentToMe={visibleSentToMe}
           initialTeam={team}
+          requisitionPlaces={requisitionPlaces}
           today={cairoToday()}
           viewerHrId={access.hrId}
         />
