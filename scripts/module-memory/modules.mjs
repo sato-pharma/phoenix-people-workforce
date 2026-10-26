@@ -1290,6 +1290,24 @@ export const MODULES = [
     keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-10-26, FOR THE REASON `engineering-deploys` ABOVE RECORDS: `engineering`'s injected
+  // pointer measured 4,078 bytes against the 4,000 margin the moment the main-only cache rule landed beside
+  // the tree-reuse shadow rule. The field day papers section (the nightly printer, its day-off reading,
+  // the hand-written notes and the archive it keeps) is about one script folder and stands alone.
+  // `engineering` KEEPS EVERY GLOB IT HAD; this module ADDS `scripts/field-day/**`, which no module
+  // matched before, so the printer's rules now reach a session that opens the printer itself.
+  {
+    id: "engineering-field-day",
+    title: "Engineering — the field day papers (scripts/field-day)",
+    scope: "The nightly field day printer and its launcher, how a paper reads a day off, the hand-written notes keyed by day, and the archive a reprint keeps before replacing a paper that already went out.",
+    globs: [
+      "scripts/field-day/**",
+      "xlsx/field-day-print.mjs",
+      "tests/field-day-report.test.ts",
+    ],
+    keywords: ["field day", "field-day", "print-day", "nightly papers", "superseded paper"],
+    tables: [],
+  },
   // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──
   //
   // 135 notes in one file, and they are NOT one subject: half are git and worktree MECHANICS (what a
