@@ -196,6 +196,8 @@ export async function runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests
   // Part 2 last month is on no held list, so HR adds them to record the Part 1 they were never paid. The
   // figure is not free — it is refused above that person's frozen Part 1 on the earlier run.
   assert.equal(STEP_DEFINITIONS.p2_held_release.allowsManualRows, true);
+  // Part 1's Held Salary Release takes Part 1 Not Paid the same way (owner, 2026-10-26).
+  assert.equal(STEP_DEFINITIONS.p1_held_release.allowsManualRows, true);
   const heldSettlements = readFileSync("src/lib/automated-payroll/held-settlements.ts", "utf8");
   const recorder = heldSettlements.slice(heldSettlements.indexOf("export async function recordPart1Corrections"));
   assert.match(
@@ -204,7 +206,7 @@ export async function runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests
     "a hand-added Part 1 Not Paid is checked against the frozen Part 1 of the month it is recorded against",
   );
   for (const [key, definition] of Object.entries(STEP_DEFINITIONS)) {
-    if (key === "p2_expenses" || key === "p2_held_release") continue;
+    if (key === "p2_expenses" || key === "p2_held_release" || key === "p1_held_release") continue;
     assert.notEqual(
       definition.allowsManualRows,
       true,

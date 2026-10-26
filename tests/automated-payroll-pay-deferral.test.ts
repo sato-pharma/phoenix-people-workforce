@@ -250,7 +250,7 @@ export function runAutomatedPayrollPayDeferralTests() {
   );
   assert.match(
     bodyOf("saveStep"),
-    /if \(stepKey === "p2_pay_deferral"\) assertPayDeferralEdits\(applicable, currentRows\)/,
-    `${path}: a save can never defer more than the Part 2 column`,
+    /const deferralFields = PAY_DEFERRAL_FIELDS\[stepKey\];\s*if \(deferralFields\) assertPayDeferralEdits\(applicable, currentRows, deferralFields\)/,
+    `${path}: a save can never defer more than the step's Part 1 or Part 2 column`,
   );
 }

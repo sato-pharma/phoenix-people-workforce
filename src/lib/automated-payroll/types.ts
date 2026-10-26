@@ -47,6 +47,8 @@ export type StepKey =
   | "p1_no_record"
   | "p1_other_deductions"
   | "p1_special_situations"
+  | "p1_held_release"
+  | "p1_pay_deferral"
   | "p1_holds"
   | "p2_expenses"
   | "p2_vacation"
@@ -67,6 +69,8 @@ export const PART1_STEP_KEYS: readonly StepKey[] = [
   "p1_no_record",
   "p1_other_deductions",
   "p1_special_situations",
+  "p1_held_release",
+  "p1_pay_deferral",
   "p1_holds",
 ] as const;
 
@@ -198,6 +202,20 @@ export type DraftRow = {
   payDeferralValue?: number | null;
   /** When the deferred amount falls due: the month after this run, or the one after that. */
   payDeferralMonth?: PayDeferralMonth | null;
+  /**
+   * Part 1 Held Salary Release (owner, 2026-10-26: "it should be also in part one. For example, if an
+   * employee is resigned and his value of working days is only covered in the first part") -> an
+   * earlier month's held salary paid in THIS month's Part 1. Part 2's release only pays what is
+   * left. Worth nothing on a row withheld at Part 1. Optional so an older row still types.
+   */
+  heldReleaseP1Value?: number | null;
+  /**
+   * Part 1 Defer Pay -> an amount taken off this month's Part 1 and owed again later. Never above the
+   * row's Part 1 and worth nothing on a row withheld at Part 1 (assemble.ts).
+   */
+  payDeferralP1Value?: number | null;
+  /** When the Part 1 deferred amount falls due — its own month, apart from Part 2's. */
+  payDeferralP1Month?: PayDeferralMonth | null;
   // Part 2 — deductions.
   unpaidVacations: number | null;
   crm: number | null;

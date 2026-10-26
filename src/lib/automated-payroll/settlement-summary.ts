@@ -53,7 +53,8 @@ export const ADDITION_COMPONENT_KEYS = [
   // `otherAdditions` in assembleParts, beside the Special Situations addition.
   "otherAdditions",
   // Held Salary Release (2026-10-26): an earlier month's withheld salary paid now — also part of
-  // `otherAdditions` in assembleParts.
+  // `otherAdditions` in assembleParts. One key per instalment, as each step writes its own.
+  "heldReleaseP1Value",
   "heldReleaseValue",
 ] as const;
 
@@ -87,7 +88,9 @@ export const DEDUCTION_COMPONENT_KEYS = [
   // editable, and easy to forget: leaving it out overstates take-home for
   // exactly the people whose pay was already wrong once.
   "carriedForwardApplied",
-  // Defer Pay (2026-10-26): moved off this month's Part 2 to a later month — part of `otherDeductions`.
+  // Defer Pay (2026-10-26): moved off this month's Part 1 or Part 2 to a later month — part of
+  // `otherDeductions`. One key per instalment, as each step writes its own.
+  "payDeferralP1Value",
   "payDeferralValue",
 ] as const;
 

@@ -406,8 +406,8 @@ export function runAutomatedPayrollHeldReleaseTests() {
   }
   assert.match(
     bodyOf("heldReleasesOf"),
-    /!entry\.onHold && entry\.heldReleaseApplied > 0/,
-    `${path}: only a row that is paid releases anything — a held row's release stays owed`,
+    /entry\.heldReleasePart1Applied \+ \(entry\.onHold \? 0 : entry\.heldReleaseApplied\)/,
+    `${path}: Part 2 releases only on a row that is paid — a held row's Part 2 release stays owed — and Part 1's wherever Part 1 paid it`,
   );
   const publish = bodyOf("publishToPayslips");
   const record = publish.slice(publish.search(/recordHeldReleases\(/));
@@ -447,7 +447,7 @@ export function runAutomatedPayrollHeldReleaseTests() {
   );
   assert.match(
     bodyOf("saveStep"),
-    /if \(stepKey === "p2_held_release"\) assertHeldReleaseEdits\(applicable, currentRows\)/,
+    /assertHeldReleaseEdits\(applicable, currentRows, stepKey === "p1_held_release" \? "heldReleaseP1Value" : "heldReleaseValue"\)/,
     `${path}: a save can never raise a release above the Outstanding column`,
   );
   assert.match(

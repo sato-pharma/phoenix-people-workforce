@@ -81,11 +81,24 @@ export type AssembledRow = {
    */
   heldReleaseApplied: number;
   /**
+   * Held salary paid in THIS month's Part 1 by Part 1's Held Salary Release (owner, 2026-10-26: "it
+   * should be also in part one"). Already inside Other Additions and the First Part; 0 on a row
+   * withheld at Part 1. `heldReleaseApplied` above is the Part 2 share only — publish records the sum.
+   */
+  heldReleasePart1Applied: number;
+  /**
    * Taken off this month's Part 2 by Defer Pay and owed again later (owner, 2026-10-26). Already
    * inside Other Deductions; surfaced so publish can record it as owed. Never above the Part 2 the
    * row had before the deferral, and 0 on a held row — a held month is withheld whole.
    */
   payDeferralApplied: number;
+  /**
+   * Taken off this month's Part 1 by Part 1's Defer Pay. Already inside Other Deductions and the First
+   * Part; never above the First Part the row had before it, and 0 on a row withheld at Part 1. Owed
+   * again in its own month (`payDeferralP1Month`), even if the row is held at Part 2 — Part 1 was paid
+   * without it either way.
+   */
+  payDeferralPart1Applied: number;
   /**
    * The person was ON HOLD when Part 1 was confirmed, so the Part 1 bank files did not pay their first
    * instalment. Undefined before Part 1 confirm or on a run confirmed before this was recorded —
@@ -203,27 +216,106 @@ export function computeFrozenFirstParts(input: {
   draftRows: DraftRow[];
   period: PayrollPeriod;
 }): Map<string, number> {
+  return new Map([...computePart1Freeze(input)].map(([compact, freeze]) => [compact, freeze.firstPart]));
+}
+
+export type Part1Freeze = {
+  /** The First Part, with Part 1's Held Salary Release added and its Defer Pay taken off. */
+  firstPart: number;
+  heldReleaseApplied: number;
+  /** Part 1's Defer Pay as it can actually be applied — capped at the First Part without it. */
+  payDeferralApplied: number;
+};
+
+/**
+ * computeFrozenFirstParts, keeping what Part 1's Held Salary Release and Defer Pay actually came to.
+ * Part 1 confirm stores the capped deferral back on the draft row, so the figure the bank file paid
+ * and the figure owed later are the same one.
+ */
+export function computePart1Freeze(input: {
+  members: PopulationMember[];
+  sources: Map<string, PayrollSalarySource>;
+  draftRows: DraftRow[];
+  period: PayrollPeriod;
+}): Map<string, Part1Freeze> {
   const drafts = draftByCompact(input.draftRows);
-  const frozen = new Map<string, number>();
+  const frozen = new Map<string, Part1Freeze>();
   for (const member of input.members) {
     const source = lookupSource(input.sources, member.employee.hrId);
     const draft = drafts.get(member.compact);
     const effective = buildEffective(member, source, draft, input.period);
-    const value = freezeFirstPart({
-      effective,
-      fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
-      paymentMode: source?.paymentMode ?? "two_parts",
+    frozen.set(
+      member.compact,
+      freezeWithPart1Adjustments({
+        member,
+        draft,
+        effective,
+        fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
+        paymentMode: source?.paymentMode ?? "two_parts",
+      }),
+    );
+  }
+  return frozen;
+}
+
+/** Held at Part 1 — the Part 1 bank files paid this person nothing (bank-files heldForScope). */
+function part1WithheldFor(draft: DraftRow | undefined): boolean {
+  return Boolean(draft?.part1Withheld ?? draft?.onHold);
+}
+
+/** Part 1's Held Salary Release figure for this row, never negative; nothing when withheld at Part 1. */
+function heldReleasePart1Amount(draft: DraftRow | undefined): number {
+  return part1WithheldFor(draft) ? 0 : Math.max(0, roundCurrency(num(draft?.heldReleaseP1Value)));
+}
+
+/** Part 1's Defer Pay figure as typed, never negative; nothing when withheld at Part 1. Uncapped. */
+function payDeferralPart1Amount(draft: DraftRow | undefined): number {
+  return part1WithheldFor(draft) ? 0 : Math.max(0, roundCurrency(num(draft?.payDeferralP1Value)));
+}
+
+/**
+ * The live First Part, the ONE place Part 1's Held Salary Release and Defer Pay reach it (owner,
+ * 2026-10-26: "it should be also in part one"). Used by the freeze AND by the live preview, so the
+ * frozen figure is the previewed one.
+ *
+ * The release is a Part 1 addition. The deferral is a Part 1 deduction capped at the First Part the
+ * row has WITHOUT it, so it can never take Part 1 below zero or reach into Part 2 — Part 2 has its own
+ * Defer Pay. Below that cap freezeFirstPart is linear in its deductions, so the second pass takes off
+ * exactly the deferral.
+ */
+function freezeWithPart1Adjustments(input: {
+  member: PopulationMember;
+  draft: DraftRow | undefined;
+  effective: EffectiveSalary;
+  fullBaseSalary: number;
+  paymentMode: string;
+}): Part1Freeze {
+  const { member, draft } = input;
+  const heldReleaseApplied = heldReleasePart1Amount(draft);
+  const freezeWith = (deferral: number) =>
+    freezeFirstPart({
+      effective: input.effective,
+      fullBaseSalary: input.fullBaseSalary,
+      paymentMode: input.paymentMode,
       fingerprint: num(draft?.fingerprintValue),
       otherPart1Deductions: roundCurrency(
-        otherPart1DeductionsTotal(draft) + (specialRoutedToFirst(draft) ? specialDeductionAmount(draft) : 0),
+        otherPart1DeductionsTotal(draft) +
+          (specialRoutedToFirst(draft) ? specialDeductionAmount(draft) : 0) +
+          deferral,
       ),
-      otherPart1Additions: specialRoutedToFirst(draft) ? specialAdditionAmount(draft) : 0,
+      otherPart1Additions: roundCurrency(
+        (specialRoutedToFirst(draft) ? specialAdditionAmount(draft) : 0) + heldReleaseApplied,
+      ),
       medicalInsurance: roundCurrency(num(member.employee.medicalInsurance)),
       leaverDeduction: leaverDeductionFor(member, draft),
     });
-    frozen.set(member.compact, value);
-  }
-  return frozen;
+  const beforeDeferral = freezeWith(0);
+  const payDeferralApplied = roundCurrency(Math.min(payDeferralPart1Amount(draft), beforeDeferral));
+  return {
+    firstPart: payDeferralApplied > 0 ? freezeWith(payDeferralApplied) : beforeDeferral,
+    heldReleaseApplied,
+    payDeferralApplied,
+  };
 }
 
 /**
@@ -270,9 +362,14 @@ export function settlementBasisFor(input: {
       overtime: num(draft?.overtime),
       specialAdditionValue: specialAdditionAmount(draft),
       otherAdditions: num(draft?.otherAdditions),
+      // Each instalment's release under the key its own step writes, so typing in either box moves
+      // exactly its own share: Part 1's (nothing when withheld at Part 1) and Part 2's.
+      heldReleaseP1Value: heldReleasePart1Amount(draft),
       heldReleaseValue: heldReleaseAmount(draft),
       // Taken off.
-      // Defer Pay: assembleRows also caps it at the row's Part 2, which the step's save already enforces.
+      // Defer Pay, each instalment under its own step's key: assembleRows also caps each at its own
+      // part, which the steps' saves already enforce.
+      payDeferralP1Value: payDeferralPart1Amount(draft),
       payDeferralValue: draft?.onHold ? 0 : payDeferralAmount(draft),
       fingerprintValue: num(draft?.fingerprintValue),
       crm: num(draft?.crm),
@@ -364,10 +461,8 @@ export function assembleRows(input: {
     const fullNetSalary = roundCurrency(source?.netSalary ?? 0);
 
     const fingerprint = num(draft?.fingerprintValue);
-    const otherPart1Total = otherPart1DeductionsTotal(draft);
     const specialDeduction = specialDeductionAmount(draft);
     const specialAddition = specialAdditionAmount(draft);
-    const specialToFirst = specialRoutedToFirst(draft);
     const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
     // Use the frozen First Part after Part-1 confirm; before that, compute live.
     //
@@ -388,21 +483,23 @@ export function assembleRows(input: {
     // asserts, and matches the money that actually left the bank. The employee
     // is separately flagged as `joined_after_part1` by data-quality.ts, so this
     // is visible rather than merely silent-and-correct.
-    const firstPartFrozen =
+    //
+    // Part 1's Held Salary Release and Defer Pay (owner, 2026-10-26) are inside the First Part. After
+    // Part 1 confirm they are what was stored with it — Part 1 confirm writes the capped deferral back
+    // — and nothing at all for someone who entered after the freeze, since Part 1 paid them nothing.
+    const part1: Part1Freeze =
       draft?.firstPartFrozen != null
-        ? draft.firstPartFrozen
+        ? {
+            firstPart: draft.firstPartFrozen,
+            heldReleaseApplied: heldReleasePart1Amount(draft),
+            payDeferralApplied: payDeferralPart1Amount(draft),
+          }
         : input.part1Confirmed === true
-          ? 0
-          : freezeFirstPart({
-              effective,
-              fullBaseSalary,
-              paymentMode,
-              fingerprint,
-              otherPart1Deductions: roundCurrency(otherPart1Total + (specialToFirst ? specialDeduction : 0)),
-              otherPart1Additions: specialToFirst ? specialAddition : 0,
-              medicalInsurance,
-              leaverDeduction: leaverDeductionFor(member, draft),
-            });
+          ? { firstPart: 0, heldReleaseApplied: 0, payDeferralApplied: 0 }
+          : freezeWithPart1Adjustments({ member, draft, effective, fullBaseSalary, paymentMode });
+    const firstPartFrozen = part1.firstPart;
+    const heldReleasePart1Applied = part1.heldReleaseApplied;
+    const payDeferralPart1Applied = part1.payDeferralApplied;
 
     const expenses = num(draft?.expenses);
     const incentive = num(draft?.incentive);
@@ -423,13 +520,16 @@ export function assembleRows(input: {
     );
     // The loan is shown in the Loans column, so it must not also be counted inside Other
     // Deductions — `totalDeductions` adds both, and counting it twice would overstate every
-    // affected row's deductions. `otherPart1Total` above is untouched and still carries it, which
-    // is what keeps the frozen First Part exactly where it was.
+    // affected row's deductions. The freeze (freezeWithPart1Adjustments) still takes it from
+    // otherPart1DeductionsTotal, which is what keeps the frozen First Part exactly where it was.
+    // Part 1's Defer Pay is already off the First Part; it counts here once for the month, so Part 2
+    // (`totalPayable - firstPartFrozen`) is left exactly as it was.
     const otherDeductionsBeforeDeferral = roundCurrency(
       manualOtherDeductions +
         otherPart1DeductionsExceptLoan(draft) +
         specialDeduction +
-        carriedForwardApplied,
+        carriedForwardApplied +
+        payDeferralPart1Applied,
     );
     // The Additions step's Other additions cell (a dispute refund, 2026-10-09) is paid in the same
     // column as the Special Situations addition, and like it counts once for the whole month. A held
@@ -437,8 +537,11 @@ export function assembleRows(input: {
     // it lands in Part 2 through `secondPart = totalPayable - firstPartFrozen`. A row HELD again this
     // month releases nothing: the release stays owed on its own month, and folding it into a held row
     // would let it cancel this month's overpayment and vanish with the hold.
+    // Part 1's release is already inside the First Part, and counts here once for the month the same way.
     const heldReleaseApplied = draft?.onHold ? 0 : heldReleaseAmount(draft);
-    const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions) + heldReleaseApplied);
+    const otherAdditionsTotal = roundCurrency(
+      specialAddition + num(draft?.otherAdditions) + heldReleasePart1Applied + heldReleaseApplied,
+    );
     const loans = part1LoanDeduction(draft);
 
     const partsWith = (otherDeductions: number) =>
@@ -557,7 +660,9 @@ export function assembleRows(input: {
       totalPayable: parts.totalPayable,
       carriedForwardApplied,
       heldReleaseApplied,
+      heldReleasePart1Applied,
       payDeferralApplied,
+      payDeferralPart1Applied,
       part1Withheld: draft?.part1Withheld ?? undefined,
       lifecycle: member.lifecycle,
       bankName: employee.bankName ?? null,
@@ -569,10 +674,9 @@ export function assembleRows(input: {
   for (const member of input.releaseOnlyMembers ?? []) {
     // Someone in the population is paid the release through their ordinary row above.
     if (memberCompacts.has(member.compact)) continue;
-    // Held again: nothing is released, so there is no row (see heldReleaseApplied above).
-    if (drafts.get(member.compact)?.onHold) continue;
-    const release = heldReleaseAmount(drafts.get(member.compact));
-    if (release <= 0) continue;
+    // Nothing released in either part (held again, or no release saved): no row.
+    const draft = drafts.get(member.compact);
+    if (heldReleasePart1Amount(draft) <= 0 && (draft?.onHold || heldReleaseAmount(draft) <= 0)) continue;
     results.push(
       assembleReleaseOnlyRow({
         member,
@@ -592,8 +696,9 @@ export function assembleRows(input: {
  * whose last Part 2 was withheld (owner, 2026-10-26: "if someone's salary is held, it's not added
  * afterwards").
  *
- * Not built through the split: they earned nothing this month, so there is no Part 1, no deduction
- * and no proration. The whole release is the Part 2 instalment, and the month's pay is the release.
+ * Not built through the split: they earned nothing this month, so there is no salary, no deduction
+ * and no proration. Part 1's release is the First Part, Part 2's is the Second Part, and the month's
+ * pay is the two together.
  *
  * The salary columns still show the CONTRACT salary, because the sheet's own rules need them (a
  * gross of zero is refused, and gross and net must follow the locked formulas). Social insurance
@@ -610,7 +715,11 @@ export function assembleReleaseOnlyRow(input: {
 }): AssembledRow {
   const { member, source, draft } = input;
   const employee = member.employee;
-  const release = heldReleaseAmount(draft);
+  // Part 1's release is paid in this month's Part 1 unless they were held at Part 1; Part 2's in Part 2
+  // unless they are held now (owner, 2026-10-26: "it should be also in part one").
+  const firstPart = heldReleasePart1Amount(draft);
+  const secondPart = draft?.onHold ? 0 : heldReleaseAmount(draft);
+  const release = roundCurrency(firstPart + secondPart);
   const baseSalary = roundCurrency(source?.baseSalary ?? 0);
   const extraCostOfLiving = roundCurrency(source?.extraCostOfLiving ?? 0);
   const fuelAllowance = roundCurrency(source?.fuelAllowance ?? 0);
@@ -625,7 +734,7 @@ export function assembleReleaseOnlyRow(input: {
     expenses: 0,
     extraCostOfLiving,
     fingerPrint: 0,
-    firstPart: 0,
+    firstPart,
     fuelAllowance,
     governmentalDeductions: 0,
     fullName: employee.fullName,
@@ -646,7 +755,7 @@ export function assembleReleaseOnlyRow(input: {
     payrollComment: HELD_RELEASE_ONLY_COMMENT,
     paymentMode: normalizePayrollPaymentMode(source?.paymentMode ?? "two_parts"),
     row: input.index + 1,
-    secondPart: release,
+    secondPart,
     socialInsurance: 0,
     totalAdditions: roundCurrency(extraCostOfLiving + fuelAllowance + release),
     totalDeductions: 0,
@@ -656,14 +765,15 @@ export function assembleReleaseOnlyRow(input: {
   return {
     row,
     compact: member.compact,
-    onHold: false,
+    onHold: Boolean(draft?.onHold),
     overpaidResidual: 0,
     totalPayable: release,
     carriedForwardApplied: 0,
-    heldReleaseApplied: release,
+    heldReleaseApplied: secondPart,
+    heldReleasePart1Applied: firstPart,
     payDeferralApplied: 0,
-    // Paid nothing in Part 1 by construction (firstPart 0), so there was nothing to withhold.
-    part1Withheld: false,
+    payDeferralPart1Applied: 0,
+    part1Withheld: draft?.part1Withheld ?? undefined,
     lifecycle: member.lifecycle,
     bankName: employee.bankName ?? null,
     bankAccount: employee.bankAccount ?? null,
