@@ -35,6 +35,8 @@ export type RepAchievementPerson = {
   areaName: string;
   regionName: string;
   managerName: string;
+  /** The employee list's hire date, date-only (`YYYY-MM-DD`); null when HR never entered one. */
+  hireDate: string | null;
   left: boolean;
 };
 
@@ -133,6 +135,7 @@ export function buildRepAchievementRecords(input: BuildRepAchievementInput): Rep
       .sort((a, b) => a.productName.localeCompare(b.productName));
     records.push({
       areaName: person?.areaName ?? "",
+      hireDate: person?.hireDate ?? null,
       jobTitle: person?.jobTitle ?? "",
       key,
       left: person?.left ?? false,

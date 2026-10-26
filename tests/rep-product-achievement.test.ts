@@ -8,6 +8,7 @@ import {
   DEFAULT_REP_ACHIEVEMENT_FILTERS,
   REP_ACHIEVEMENT_ALL,
   describeAchievementCell,
+  formatRepHireDate,
   filterRepAchievement,
   parseRepAchievementFilters,
   repAchievementQuery,
@@ -46,9 +47,9 @@ function row(partial: Partial<AchievementRow> & Pick<AchievementRow, "period" | 
 
 // Keyed as the server keys them — `rankingHrKey`, the leaderboards' own normaliser.
 const people = new Map<string, RepAchievementPerson>([
-  [rankingHrKey("REP-1"), { areaName: "Nasr City", jobTitle: "Medical Rep", left: false, managerName: "Mona Adel", name: "Ahmed Samir", regionName: "Cairo" }],
-  [rankingHrKey("REP-2"), { areaName: "Smouha", jobTitle: "Medical Rep", left: true, managerName: "Karim Fawzy", name: "Basma Nabil", regionName: "Alexandria" }],
-  [rankingHrKey("REP-3"), { areaName: "Mansoura", jobTitle: "Medical Rep", left: false, managerName: "Mona Adel", name: "Cherif Hany", regionName: "Delta" }],
+  [rankingHrKey("REP-1"), { areaName: "Nasr City", hireDate: "2024-03-12", jobTitle: "Medical Rep", left: false, managerName: "Mona Adel", name: "Ahmed Samir", regionName: "Cairo" }],
+  [rankingHrKey("REP-2"), { areaName: "Smouha", hireDate: "2025-01-05", jobTitle: "Medical Rep", left: true, managerName: "Karim Fawzy", name: "Basma Nabil", regionName: "Alexandria" }],
+  [rankingHrKey("REP-3"), { areaName: "Mansoura", hireDate: null, jobTitle: "Medical Rep", left: false, managerName: "Mona Adel", name: "Cherif Hany", regionName: "Delta" }],
 ]);
 const productNames = new Map([
   ["GAU", "Gaumycin"],
@@ -101,6 +102,10 @@ export async function runRepProductAchievementTests() {
   assert.equal(records.length, 3, "one record per rep per line; a row with no rep is the area's");
 
   const ahmed = records.find((record) => record.name === "Ahmed Samir")!;
+  assert.equal(ahmed.hireDate, "2024-03-12", "his hire date comes off the employee list");
+  assert.equal(formatRepHireDate(ahmed.hireDate), "12 Mar 2024");
+  assert.equal(formatRepHireDate("2025-01-05T00:00:00+02:00"), "5 Jan 2025", "read off the string, never shifted a day");
+  assert.equal(formatRepHireDate(null), null);
   const gau = ahmed.products.find((product) => product.productCode === "GAU")!;
   assert.equal(gau.productName, "Gaumycin");
   assert.equal(gau.cells[0].value, 0.7, "July: 7,000 ÷ 10,000");
@@ -186,23 +191,42 @@ export async function runRepProductAchievementTests() {
   const detail = workbook.getWorksheet("By rep and product")!;
   let headerRow = 0;
   detail.eachRow((sheetRow, number) => {
-    if (!headerRow && sheetRow.getCell(1).value === "Rep" && sheetRow.getCell(6).value === "Product") headerRow = number;
+    if (!headerRow && sheetRow.getCell(1).value === "Rep" && sheetRow.getCell(7).value === "Product") headerRow = number;
   });
   assert.ok(headerRow > 0, "the detail sheet has its header row");
-  const heads = Array.from({ length: 9 }, (_, index) => detail.getRow(headerRow).getCell(7 + index).value);
+  const heads = Array.from({ length: 9 }, (_, index) => detail.getRow(headerRow).getCell(8 + index).value);
   assert.deepEqual(heads, [
     "July 2026", "August 2026", "September 2026", "Q3 2026",
     "October 2026", "November 2026", "December 2026", "Q4 2026 to date", "S2 2026 to date",
   ]);
   let gaumycinRow = 0;
   detail.eachRow((sheetRow, number) => {
-    if (sheetRow.getCell(1).value === "Ahmed Samir" && sheetRow.getCell(6).value === "Gaumycin") gaumycinRow = number;
+    if (sheetRow.getCell(1).value === "Ahmed Samir" && sheetRow.getCell(7).value === "Gaumycin") gaumycinRow = number;
   });
-  const july = detail.getRow(gaumycinRow).getCell(7);
+  const july = detail.getRow(gaumycinRow).getCell(8);
   assert.equal(july.value, 0.7, "a percentage is stored as its ratio");
   assert.equal(july.numFmt, "0.0%");
-  assert.equal(detail.getRow(gaumycinRow).getCell(11).value, "Not published", "never a 0 in the file either");
-  assert.equal(detail.getRow(gaumycinRow - 1).getCell(6).value, "All products", "the rep's overall row leads his products");
+  assert.equal(detail.getRow(gaumycinRow).getCell(12).value, "Not published", "never a 0 in the file either");
+  assert.equal(detail.getRow(gaumycinRow - 1).getCell(7).value, "All products", "the rep's overall row leads his products");
+
+  // His hire date (owner, 2026-10-26: "ADD HIS HIRING DATE") — a real Excel date she can sort, a dash when HR has none.
+  assert.equal(detail.getRow(headerRow).getCell(6).value, "Hired");
+  const hired = detail.getRow(gaumycinRow).getCell(6);
+  assert.ok(hired.value instanceof Date, "the hire date is a real date in the file, not text");
+  assert.equal((hired.value as Date).toISOString().slice(0, 10), "2024-03-12", "the day never moves with the timezone");
+  assert.equal(hired.numFmt, "d mmm yyyy");
+  const overallSheet = workbook.getWorksheet("Rep overall")!;
+  let overallHead = 0;
+  let cherifRow = 0;
+  overallSheet.eachRow((sheetRow, number) => {
+    if (!overallHead && sheetRow.getCell(1).value === "Rep") overallHead = number;
+    if (sheetRow.getCell(1).value === "Cherif Hany") cherifRow = number;
+  });
+  assert.deepEqual(
+    [6, 7, 8].map((column) => overallSheet.getRow(overallHead).getCell(column).value),
+    ["Hired", "Status", "July 2026"],
+  );
+  assert.equal(overallSheet.getRow(cherifRow).getCell(6).value, "—", "no hire date on file reads as a dash, never a made-up date");
 
   // ── Who reaches it ─────────────────────────────────────────────────────────
   const allowed: PhoenixRole[] = ["Super Admin", "Training Manager"];

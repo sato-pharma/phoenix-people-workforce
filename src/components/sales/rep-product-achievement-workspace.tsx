@@ -38,6 +38,7 @@ import {
   describeAchievementCell,
   filterRepAchievement,
   focusCells,
+  formatRepHireDate,
   gradedValue,
   repAchievementFilterOptions,
   repAchievementQuery,
@@ -137,8 +138,10 @@ function SortHead({
     >
       <button
         className={cn(
-          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] transition hover:text-slate-950",
-          active ? "text-slate-950" : "text-slate-500",
+          // The portal shell paints every table head black with light ink (globals.css,
+          // `.employee-portal-shell thead th`), so the sort label is light too: dark ink went black on black.
+          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] transition hover:text-white",
+          active ? "text-white" : "text-slate-300",
         )}
         onClick={onClick}
         type="button"
@@ -543,7 +546,8 @@ export function RepProductAchievementWorkspace({
 }
 
 function repMeta(record: RepAchievementRecord) {
-  return [record.lineName, record.areaName, record.managerName ? `Manager: ${record.managerName}` : ""]
+  const hired = formatRepHireDate(record.hireDate);
+  return [record.lineName, record.areaName, record.managerName ? `Manager: ${record.managerName}` : "", hired ? `Hired ${hired}` : ""]
     .filter(Boolean)
     .join(" · ");
 }
