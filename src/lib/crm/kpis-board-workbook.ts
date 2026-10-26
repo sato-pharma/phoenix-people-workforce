@@ -36,6 +36,7 @@ export const KPI_EXPORT_MARKERS = {
   noCalls: "No calls",
   noPlan: "No plan",
   noScore: "No score",
+  justStarted: "Just started",
   notRecorded: "Not recorded",
 } as const;
 
@@ -99,7 +100,10 @@ function overallPct(row: KpiRepRow): Cell {
     pmAttainmentPct: row.pmAttainmentPct,
     hasCallRate: row.hasCallRate,
     noGpsFeed: row.noGpsFeed,
+    justStarted: Boolean(row.justStarted),
   });
+  // A rep too new to judge prints the board's words, never a 0% or "No score" (owner, 2026-10-26).
+  if (row.justStarted) return { kind: "pct", value: null, marker: KPI_EXPORT_MARKERS.justStarted };
   return { kind: "pct", value: index.overallPct, marker: KPI_EXPORT_MARKERS.noScore };
 }
 
@@ -134,7 +138,16 @@ function repColumns(board: KpisBoard): Array<Column<KpiRepRow>> {
     {
       header: "Flags",
       width: 34,
-      cell: (row) => text(kpiFlagsOf(row).map((flag) => kpiFlagLabel(flag, rules)).join(" · ")),
+      cell: (row) =>
+        text(
+          kpiFlagsOf(row)
+            .map((flag) =>
+              flag === "just-started" && row.justStarted
+                ? `${KPI_EXPORT_MARKERS.justStarted} · ${row.justStarted.workingDaysIn} working days in`
+                : kpiFlagLabel(flag, rules),
+            )
+            .join(" · "),
+        ),
     },
   ];
 }

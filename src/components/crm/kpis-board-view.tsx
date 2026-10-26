@@ -69,10 +69,13 @@ import {
   UNASSIGNED_FACET_LABEL,
   type KpiBand,
   type KpiFilterState,
+  type KpiFlag,
+  type KpiJustStarted,
   type KpiRangeFilters,
   type KpiSortField,
   isTooEarlyToScore,
 } from "@/lib/crm/kpis-filters";
+import { utcDate } from "@/lib/format/cairo-datetime";
 import {
   buildKpiDoctorFacets,
   EMPTY_KPI_DOCTOR_FILTER,
@@ -237,7 +240,33 @@ function repKpiIndex(row: KpiRepRow): KpiIndex {
     pmAttainmentPct: row.pmAttainmentPct,
     hasCallRate: row.hasCallRate,
     noGpsFeed: row.noGpsFeed,
+    justStarted: Boolean(row.justStarted),
   });
+}
+
+/**
+ * How far in a rep too new to judge is — "2 working days in" — printed wherever a verdict would
+ * otherwise sit (owner, 2026-10-26: "show them plainly as just started, with the number of working
+ * days in").
+ */
+function justStartedDays(justStarted: KpiJustStarted): string {
+  const days = justStarted.workingDaysIn;
+  if (days === 0) return "no working day in yet";
+  return `${days} working day${days === 1 ? "" : "s"} in`;
+}
+
+/** A flag chip's words; "Just started" carries her working days, the rest read as the filter does. */
+function repFlagLabel(row: KpiRepRow, flag: KpiFlag, rules?: KpisBoard["kpiRules"]): string {
+  if (flag === "just-started" && row.justStarted) return `Just started · ${justStartedDays(row.justStarted)}`;
+  return kpiFlagLabel(flag, rules);
+}
+
+/**
+ * A DATE THE FOOTER PRINTS — "31 Oct", never "2026-10-31" (owner, 2026-10-26). The month label beside
+ * it already carries the year. A date-only value, so the UTC formatter, as the hire date uses.
+ */
+function footerDay(iso: string): string {
+  return utcDate(iso).replace(/\s\d{4}$/, "");
 }
 
 /**
@@ -246,13 +275,15 @@ function repKpiIndex(row: KpiRepRow): KpiIndex {
  * "No score" and never "0%", for the same reason `hasMeasurablePlan` exists: a rep the plan asked
  * nothing of and who logged nothing has no value on this axis, not a bad one.
  */
-function overallValue(index: KpiIndex): string {
+function overallValue(index: KpiIndex, row?: Pick<KpiRepRow, "justStarted">): string {
+  if (row?.justStarted) return "Just started";
   return index.overallPct == null ? "No score" : `${index.overallPct}%`;
 }
 
 /** What went into a row's average, in the width a table cell has. The full arithmetic is on the
  * panel above the tiles — this says how many of the four the average could use. */
-function overallCaption(index: KpiIndex): string {
+function overallCaption(index: KpiIndex, row?: Pick<KpiRepRow, "justStarted">): string {
+  if (row?.justStarted) return justStartedDays(row.justStarted);
   if (index.overallPct == null) {
     const reasons = [...new Set(index.components.map((component) => component.excludedBecause).filter(Boolean))];
     return reasons.join(" · ") || "Nothing to score";
@@ -944,7 +975,7 @@ function RepCell({
               className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
-              {kpiFlagLabel(flag, rules)}
+              {repFlagLabel(row, flag, rules)}
             </span>
           ))}
         </span>
@@ -1120,9 +1151,9 @@ function OverallCell({ row }: { row: KpiRepRow }) {
   return (
     <MeasureCell
       band={band}
-      caption={overallCaption(overall)}
+      caption={overallCaption(overall, row)}
       fill={overall.overallPct}
-      value={overallValue(overall)}
+      value={overallValue(overall, row)}
     />
   );
 }
@@ -1956,14 +1987,15 @@ function RepCard({
     },
     {
       band: amBandOf(row),
-      caption: sessionCaption(row, "am", amTarget, "No calls"),
+      // The value already says "No calls" when there are none, so the caption says nothing then.
+      caption: sessionCaption(row, "am", amTarget, ""),
       fill: amFill(row),
       label: "AM call rate",
       value: amPct(row),
     },
     {
       band: pmBandOf(row),
-      caption: sessionCaption(row, "pm", pmTarget, "No calls"),
+      caption: sessionCaption(row, "pm", pmTarget, ""),
       fill: pmFill(row),
       label: "PM call rate",
       value: pmPct(row),
@@ -1977,7 +2009,7 @@ function RepCard({
         ? `${row.pharmacyReported} reported · none provable`
         : row.hasCallRate
           ? `${row.pharmacyVerified} ${row.phoenix ? "visits" : "verified"} · no target set yet`
-          : "No calls",
+          : "",
       fill: null,
       label: "Pharmacy",
       value: pharmacyValue(row),
@@ -1988,10 +2020,10 @@ function RepCard({
     // width — the fits-the-screen rule is untouched.
     {
       band: kpiBandOf(overall.overallPct),
-      caption: overallCaption(overall),
+      caption: overallCaption(overall, row),
       fill: overall.overallPct,
       label: "Overall",
-      value: overallValue(overall),
+      value: overallValue(overall, row),
     },
   ];
   const flags = kpiFlagsOf(row).filter(
@@ -2020,7 +2052,9 @@ function RepCard({
             <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
-            <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+            {measure.caption ? (
+              <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+            ) : null}
             {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
         ))}
@@ -2040,7 +2074,7 @@ function RepCard({
               className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
-              {kpiFlagLabel(flag, rules)}
+              {repFlagLabel(row, flag, rules)}
             </span>
           ))}
         </div>
@@ -2710,7 +2744,8 @@ function CallRateSessionTiles({ board, partial, session }: { board: KpisBoard; p
   const am = session === "am";
   const { totals } = board;
   const callWord = isPhoenix(board) ? "visits" : "verified";
-  const scored = board.reps.filter((row) => !row.noGpsFeed);
+  // A rep too new to judge is left out of the asks and the shortfall, as the team totals leave her.
+  const scored = board.reps.filter((row) => !row.noGpsFeed && !row.justStarted);
   const target = am ? board.amTarget : board.pmTarget;
   const askedFor = scored.reduce((sum, row) => sum + sessionFigures(row, board, session).asked, 0);
   const short = scored.reduce((sum, row) => sum + (sessionFigures(row, board, session).short ?? 0), 0);
@@ -3173,7 +3208,9 @@ function ManagerCard({ board, row }: { board: KpisBoard; row: KpiManagerRow }) {
             <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
-            <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+            {measure.caption ? (
+              <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+            ) : null}
             {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
         ))}
@@ -3651,7 +3688,7 @@ export function KpisBoardView({
               {board.reps.length > 1 ? (
               <div className="border-t border-slate-100">
                 <KpiSection
-                  description="Best three on each measure, from the reps currently in view. Separate answers — often different people. The morning and the afternoon are ranked apart."
+                  description="Best three on each measure, from the reps currently in view. Separate answers — often different people. The morning and the afternoon are ranked apart, on the uncapped figure, so a rep above target can read over 100% here."
                   title="Standing out"
                 >
                   <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
@@ -3785,19 +3822,21 @@ export function KpisBoardView({
                 dates would be wrong for five columns of them. */}
             {weekly ? null : (
             <p className={`leading-4 ${CAPTION}`}>
-              Coverage and frequency are scored for {board.monthLabel} to {board.asOf}.{" "}
+              Coverage and frequency are scored for {board.monthLabel} to {footerDay(board.asOf)}.{" "}
               {board.range.notStarted
                 ? `Call rate is not scored — ${periodPhrase} has not started.`
                 : callRateBeganToday(board)
                   ? `Call rate is not scored yet — ${periodPhrase} began today, and today is not scored until it is over.`
-                  : `Call rate is scored over ${periodPhrase} to ${board.range.dateTo}${
+                  : `Call rate is scored over ${periodPhrase} to ${footerDay(board.range.dateTo)}${
                       board.range.todayLeftOut ? " — today is not scored until it is over" : ""
                     }.`}{" "}
               {phoenix
                 ? "Every submitted regular visit counts toward the call rate; GPS is evidence only. PM passes at 10 a day and AM at 2, judged apart. Frequency passes when a doctor gets the visits their grade asks for (A 3, B 2, C 1) — extra visits are fine and ungraded doctors are left out."
                 : "Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation, not a win."}{" "}
-              The bands below are these same three measures cut into ranges; nothing on this board blends
-              them into a single score.
+              The bands below cut each measure into ranges. The Overall KPI is the one figure that combines
+              them: the average of Coverage, Frequency, AM and PM, each capped at 100% before it is averaged.
+              The Standing out rankings use the uncapped figures. A rep hired inside the period who has
+              worked under a third of its working days shows as just started and is not judged.
             </p>
             )}
             <p className={`mt-1.5 flex flex-wrap items-center gap-1.5 leading-4 ${CAPTION}`}>

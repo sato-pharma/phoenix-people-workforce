@@ -134,6 +134,10 @@ export type KpiIndexInput = {
   /** Ruling A1 (owner, 2026-09-21): calls logged, no GPS feed to prove them — so AM and PM leave the
    * average for THAT reason, never "no working days". */
   noGpsFeed?: boolean;
+  /** Hired inside the window with too few working days to judge (`kpiJustStartedOf` in
+   * kpis-filters.ts): every measure leaves the average, so the overall is null, never a 0%. Takes the
+   * row's own `{ workingDaysIn }` too, so a whole rep row can be passed in as it stands. */
+  justStarted?: boolean | { workingDaysIn: number } | null;
 };
 
 /** The fixed half of the explanation. Printed under the formula, and identical on every board. */
@@ -181,7 +185,7 @@ export function kpiIndexOf(input: KpiIndexInput): KpiIndex {
   ];
 
   const components: KpiIndexComponent[] = raw.map((entry) => {
-    const measuredPct = entry.measuredPct;
+    const measuredPct = input.justStarted ? null : entry.measuredPct;
     const scoredPct = measuredPct == null ? null : clampToStandard(measuredPct);
     return {
       key: entry.key,
@@ -189,7 +193,8 @@ export function kpiIndexOf(input: KpiIndexInput): KpiIndex {
       measuredPct,
       scoredPct,
       capped: measuredPct != null && measuredPct > 100,
-      excludedBecause: scoredPct == null ? (entry.excludedBecause ?? "not measurable") : null,
+      excludedBecause:
+        scoredPct == null ? (input.justStarted ? "just started" : (entry.excludedBecause ?? "not measurable")) : null,
     };
   });
 

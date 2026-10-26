@@ -143,6 +143,13 @@ export type KpiManagerRow = {
  * board reads as "No plan" or "No calls" is never averaged in as a 0.
  */
 export function kpiRepMeasures(row: KpiRepRow): MeasureValues {
+  // A rep too new to judge prints "Just started", not a number, so she adds nothing to any average
+  // above her — a hire of two days would otherwise pull her district manager down (owner, 2026-10-26).
+  if (row.justStarted) {
+    const blank = {} as MeasureValues;
+    for (const measure of KPI_MANAGER_MEASURES) blank[measure] = null;
+    return blank;
+  }
   const proved = row.hasCallRate && !row.noGpsFeed;
   return {
     coveragePct: row.hasMeasurablePlan ? row.coveragePct : null,
