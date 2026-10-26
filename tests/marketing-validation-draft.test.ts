@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 
 import {
   describeRestoredDraft,
+  describeUnsendableQueue,
   isCaptureEvidenceFresh,
   isDraftWorthKeeping,
   MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS,
@@ -289,4 +290,18 @@ export async function runMarketingValidationDraftTests() {
     ["an unnamed customer"],
     "a capture taken before the name was typed still has to be reported, not silently skipped",
   );
+
+  // The offline queue's banner. An entry with no owner was refused for that reason alone — the live
+  // check of 26 Oct 2026 found a fresh one reported as "too old", which sent a rep to re-shoot a
+  // photo for the wrong reason.
+  assert.equal(describeUnsendableQueue({ noOwner: 0, tooOld: 0 }), null, "nothing unsendable, no banner");
+  const ownerless = describeUnsendableQueue({ noOwner: 1, tooOld: 0 }) ?? "";
+  assert.doesNotMatch(ownerless, /too old/, "an entry with no owner is never said to be too old");
+  assert.match(ownerless, /^1 offline submission on this device was saved without the name of the person who saved it/, "it says the owner is missing");
+  assert.match(ownerless, /If it was yours, capture it again.$/, "and what to do about it");
+  const aged = describeUnsendableQueue({ noOwner: 0, tooOld: 2 }) ?? "";
+  assert.match(aged, /^2 offline submissions were waiting to sync, but the live photo and location on them are now too old/, "the viewer's own aged entries keep their reason");
+  assert.doesNotMatch(aged, /without the name/, "and are not called ownerless");
+  const both = describeUnsendableQueue({ noOwner: 2, tooOld: 1 }) ?? "";
+  assert.match(both, /^1 offline submission was waiting to sync, .* on it are now too old .* Capture it again. 2 offline submissions on this device were saved without the name of the person who saved them, so they cannot be sent under anyone's name. If they were yours, capture them again.$/, "both reasons, each with its own count");
 }

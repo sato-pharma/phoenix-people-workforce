@@ -325,3 +325,27 @@ export function describeRestoredDraft(restore: MarketingDraftRestore): string {
   const names = restore.expiredEvidenceFor.join(", ");
   return `Recovered ${subject} from before the page closed, but the live photo and location on ${names} were too old to keep as evidence — take them again before saving.`;
 }
+
+/**
+ * The banner for offline submissions found on the device that can no longer be sent, or null when
+ * there are none. The two reasons are told apart because they are different facts: `tooOld` are the
+ * viewer's own, whose evidence aged out; `noOwner` were queued before entries said whose they are, so
+ * nobody's session may send them — however fresh they are, "too old" would be a false reason.
+ */
+export function describeUnsendableQueue(counts: { noOwner: number; tooOld: number }): string | null {
+  const sentences: string[] = [];
+  const { noOwner, tooOld } = counts;
+  if (tooOld > 0) {
+    const many = tooOld > 1;
+    sentences.push(
+      `${tooOld} offline submission${many ? "s were" : " was"} waiting to sync, but the live photo and location on ${many ? "them" : "it"} are now too old to count as evidence of the visit. Capture ${many ? "them" : "it"} again.`,
+    );
+  }
+  if (noOwner > 0) {
+    const many = noOwner > 1;
+    sentences.push(
+      `${noOwner} offline submission${many ? "s" : ""} on this device ${many ? "were" : "was"} saved without the name of the person who saved ${many ? "them" : "it"}, so ${many ? "they" : "it"} cannot be sent under anyone's name. If ${many ? "they were" : "it was"} yours, capture ${many ? "them" : "it"} again.`,
+    );
+  }
+  return sentences.length > 0 ? sentences.join(" ") : null;
+}
