@@ -420,8 +420,13 @@ export function regionalManagerMembersFromRows(
   const underRegionalManagers: AchievementRow[] = [];
   // A seated district with NO occupied RSM above it is totalled under its region instead, so the
   // roll-up rows foot to the seated-district total (owner, 2026-10-26: EGP 3.07M sat in regions with
-  // no Regional Manager and appeared nowhere). Skipped for a Regional Manager reading his own region
-  // (`exclude`): his bound holds only his districts, and a region row there would be noise.
+  // no Regional Manager and appeared nowhere). Skipped only for a Regional Manager reading his own
+  // region: his bound holds just his districts, and a region row there would be noise. The NSM page
+  // passes the NSM's own id as `exclude` too, so "an id was excluded" is NOT "the viewer is an RM" —
+  // the viewer is an RM only when that id is a Regional Manager seated above one of these rows.
+  const viewerIsRegionalManager =
+    exclude !== "" &&
+    rows.some((row) => regionalManagerAbove(row.dmSeatId, seats)?.hrId.trim().toUpperCase() === exclude);
   const regionLabels = new Map<string, string>();
   for (const row of rows) {
     if (!row.dmHrId) continue;
@@ -432,7 +437,7 @@ export function regionalManagerMembersFromRows(
       underRegionalManagers.push({ ...row, dmHrId: rsm.hrId });
       continue;
     }
-    if (exclude) continue;
+    if (viewerIsRegionalManager) continue;
     const region = regionWithoutManagerOf(row.dmSeatId, seats);
     if (!region) continue;
     const key = `${REGION_WITHOUT_MANAGER_KEY_PREFIX}${region.toLowerCase()}`;
