@@ -1023,7 +1023,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // manager's form never pays for the holiday read.
     enteredAs === "rep" ? loadPlanHolidays(viewer.cairoToday, visitAskLastDay(viewer.cairoToday)) : Promise.resolve(new Map<string, string>()),
     // The customers a named exception covers (owner, 2026-10-17): the day and the week never block them.
-    loadOffPlanExemptions(seat.seatId),
+    // The seat's rep is whose dated window it reads (owner, 2026-10-26: a new hire's first month).
+    loadOffPlanExemptions(seat.seatId, enteredAs === "rep" ? viewer.hrId : (seat.occupantHrId ?? null), today),
     // Their names are read apart from the day's: a product manager holds no seat, so he is neither in
     // the day's visits nor in the chain.
     lineProductManagersRead.then((managers) => loadPeopleNames(managers.map((manager) => manager.hrId))),

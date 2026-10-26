@@ -19,6 +19,26 @@ district manager, then the SFE). Asked three questions in chat, he answered:
   Elsebaey) and the SFE Manager (Khaled Mohamed Ali Bedair). One in-app notice each, sent 2026-10-17; no email, no
   Telegram (Phoenix CRM sends none by owner rule).
 
+## A new hire's first month (owner, 2026-10-26)
+
+*"Aya Mamdouh is a new hire — make her able to submit unplanned visits during her first hiring month with no cap, only
+during the first month, then automatic return normal."* Aya Mamdouh sdeek Ali (Pedia, Giza 4; seat `SEAT-PED-REP-GZ4`),
+hired 24 October 2026, has **no daily or weekly out-of-plan limit from 24 October to 23 November 2026, both inclusive**.
+On 24 November the usual 2 a day and 8 a week apply again with no job and no hand: the row simply stops matching.
+
+- It is a **rep-wide dated row**: `rep_hr_id` + `valid_from` + `valid_until`, no customer and no venue. The CHECK
+  `phoenix_crm_offplan_exemptions_rep_window` refuses one with a missing date, the dates out of order, or a customer or
+  venue beside it — a rep-wide row can never be open-ended.
+- `phoenix_crm_offplan_rep_exempt(seat, rep, day)` matches on the seat AND the rep, so a successor on that seat is not
+  covered. The cap trigger asks it right after the admin entry skip, stamps `offplan_exempt` and returns before it
+  counts, so her first-month visits never use up the week the window ends inside.
+- Only the CAP is lifted. Every such visit is still `out_of_plan`, still needs its written reason, and still goes to her
+  district manager and then the SFE. The settings are untouched; the venue's own daily number is not lifted.
+- Her allowance card reads "Until 23 November there is no daily or weekly limit on your unplanned visits. From the day
+  after, the usual limit applies." and shows no meters; a manager entering a visit for her reads it about the rep.
+- Migration `20261026230001_phoenix_crm_new_hire_offplan_month.sql`. To end one early, set `ended_at`. The next new hire
+  is a new row with the owner's word.
+
 ## How it is built
 
 - Table `phoenix_crm_offplan_exemptions` — one row per **seat** and **customer or venue**. It is a named row, never a

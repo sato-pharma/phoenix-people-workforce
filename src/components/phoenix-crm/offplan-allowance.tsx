@@ -87,7 +87,16 @@ export function OffPlanAllowanceCard({
 }) {
   const full = offPlanLeft(allowance.day) === 0 || offPlanLeft(allowance.week) === 0;
   // A named exception (owner, 2026-10-17) is told to the rep as a gift, and to a manager in his own voice.
-  const exemption = voice === "rep" ? offPlanExemptionSentence(allowance) : null;
+  const exemption = offPlanExemptionSentence(allowance, voice);
+  // A dated window over all of the rep's out-of-plan visits (owner, 2026-10-26: a new hire's first month) has no
+  // numbers to draw — the meters would read "0 of 2" beside "no limit" — so the card is that one sentence.
+  if (allowance.exemptAll && exemption) {
+    return (
+      <section aria-label="Out-of-plan allowance" className={cn("min-w-0 border border-l-4 border-slate-200 border-l-emerald-600 bg-white px-3.5 py-3", className)}>
+        <p className="break-words text-xs font-bold leading-5 text-emerald-800">{exemption}</p>
+      </section>
+    );
+  }
   return (
     <section
       aria-label="Out-of-plan allowance"

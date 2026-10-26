@@ -75,17 +75,36 @@ export async function loadExemptVisitIds(visitIds: ReadonlyArray<string>): Promi
 
 /**
  * The customers of one seat that a named exception covers, and what the exception is called — what the rep's
- * picker needs so the day and the week never block them. A failed read answers none: the picker then shows
- * the ordinary limit, and the database door still lets the visit through.
+ * picker needs so the day and the week never block them — plus a dated window over all of this rep's
+ * out-of-plan visits that covers `day` (owner, 2026-10-26: a new hire's first month), read with the same seat,
+ * rep and day test as `phoenix_crm_offplan_rep_exempt`, the door's own. A failed read answers none: the picker
+ * then shows the ordinary limit, and the database door still lets the visit through.
  */
-export async function loadOffPlanExemptions(seatId: string): Promise<OffPlanExemptions> {
+export async function loadOffPlanExemptions(seatId: string, repHrId: string | null, day: string): Promise<OffPlanExemptions> {
   try {
-    const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_offplan_exempt_customers", { p_seat: seatId });
-    if (error) throw error;
-    const rows = (data ?? []) as Array<{ customer_id: string; label: string }>;
+    const [venues, window] = await Promise.all([
+      getSupabaseAdmin().rpc("phoenix_crm_offplan_exempt_customers", { p_seat: seatId }),
+      repHrId
+        ? getSupabaseAdmin()
+            .from("phoenix_crm_offplan_exemptions")
+            .select("label, valid_until")
+            .eq("seat_id", seatId)
+            .eq("rep_hr_id", repHrId)
+            .is("ended_at", null)
+            .lte("valid_from", day)
+            .gte("valid_until", day)
+            .order("valid_until", { ascending: false })
+            .limit(1)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (venues.error) throw venues.error;
+    if (window.error) throw window.error;
+    const rows = (venues.data ?? []) as Array<{ customer_id: string; label: string }>;
+    const open = ((window.data ?? []) as Array<{ label: string; valid_until: string }>)[0];
     return {
       customerIds: rows.map((row) => String(row.customer_id)),
       labels: [...new Set(rows.map((row) => String(row.label)))],
+      ...(open ? { all: { label: String(open.label), until: String(open.valid_until) } } : {}),
     };
   } catch (error) {
     console.error("phoenix-crm: the out-of-plan exceptions could not be read", error);
