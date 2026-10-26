@@ -1,0 +1,45 @@
+# The secret scan's history baseline: findings in OLD commits, each one read and classified as not a
+# live credential on 26 Oct 2026. The nightly job in .github/workflows/security-scan.yml scans every
+# commit on every ref GitHub holds (branches, pull-request heads, backups), and a commit can never be
+# edited, so a harmless hit in one would turn the scan red every night for ever. Each line below is
+# that one commit, that one file, that one rule and that one line; the same text in any NEW commit is
+# still reported.
+#
+# Built from a scan of 17,066 commits with the config in .gitleaks.toml (21 findings, every one listed
+# here). Never add a line without reading the finding first. A real key does not go here: it gets
+# rotated, and then it goes here.
+
+# Test vectors and invented fixtures — the tests carry `gitleaks:allow` on those lines today.
+127ca5e74f3f2802c11e63a0bd069bbf2a2b7776:tests/cloud-mirror-refresh.test.ts:generic-api-key:48
+5285cbdb000d65830a94344b0b0890e364673388:tests/cloud-mirror-refresh.test.ts:generic-api-key:48
+1778e84f2590ba673e8115420d9716d30709f605:tests/railway-secret-shape.test.ts:generic-api-key:20
+1778e84f2590ba673e8115420d9716d30709f605:tests/railway-secret-shape.test.ts:jwt:90
+3e1bd91d1a433bc60bc895135c3290cffbfb9c3e:tests/mailbox-offboarding-totp.test.ts:generic-api-key:19
+627b47f428653f3627fb86956710b8caa42d1a22:tests/new-hire-mailbox-robot.test.ts:generic-api-key:316
+ad9e9dfb050cf93e84ce5123dfe1450736c236b2:tests/new-hire-mailbox-robot.test.ts:generic-api-key:316
+e04e67aa9b901c9a27e28fd9a7698911febb7fcd:tests/error-monitor-redact-route.test.ts:generic-api-key:84
+
+# Names in code, not values: field names, a map key, hiring-pack template keys.
+37a4b4c82207a8360def04dcde24696f0b3a6a29:tests/system-audit-moved-sections.test.ts:generic-api-key:121
+74b4cce1ec0d00c9f36e885e96310290ecf16dfb:tests/system-audit-moved-sections.test.ts:generic-api-key:121
+1d548420c288922f9d6809e1895765e6362a5ffc:src/lib/employee-360/deep-service.ts:generic-api-key:568
+fba8eedfc1cec0d344bacf999122005c5d5b8cac:src/lib/employee-360/deep-service.ts:generic-api-key:568
+574f5498508d3d2408ac9202f491548f3f850c40:tests/hiring-pack-document-registry.test.ts:generic-api-key:32
+77c908f7cad4468fae30c5e45cb4221b55dc2e62:tests/hiring-pack-custom-template-render.test.ts:generic-api-key:133
+c9d649ce08f9da4e3429d8c7ac20020a78e4b0ba:tests/hiring-pack-custom-templates.test.ts:generic-api-key:31
+
+# A file listing of node_modules documentation paths.
+39a1e28dbb1d9ce11910a463f64e6654bdab874c:tree_with_file_sizes.csv:generic-api-key:30467
+
+# The STAGING project's anon key — public by design, it ships to every browser.
+b9ab1f128cc2821a86b687010108935e98c07b6f:.github/workflows/ci.yml:jwt:218
+
+# The Direct Orders sheet's bootstrap feed token — the one row it names was revoked 5 Aug 2026.
+9c257f5753a7a513e447e769346abb3b68ea09d2:docs/direct-orders-live-sheet.gs:generic-api-key:55
+d3000f212c1db89592e133aae876033f194d54cf:docs/direct-orders-live-sheet.gs:generic-api-key:55
+
+# Never merged, kept only on a pull-request head or a backup ref. The cron secret is a different
+# length from the live one and is not the current value (the GCP scheduler it served is gone); the
+# probe token gated a diagnostic route that never reached main.
+baed4f22d47ed5ce2e0223ef5b9cc337ac82acf6:scripts/setup-gcp-cron.sh:generic-api-key:7
+cc2cde475978a0a72f412f4df895c51a01568d81:app/api/_diag/fwc-probe/route.ts:generic-api-key:15

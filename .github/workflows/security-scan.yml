@@ -55,6 +55,16 @@ name: Security Scan (OSS)
 # not a gate. If it fires, treat it as a live credential exposure — ROTATE the key first, then scrub
 # it; a secret that reached the remote must be considered compromised even after the commit is
 # removed — and do not assume the finding was caught before the code shipped, because it was not.
+#
+# 🔴 IT READS THE GIT HISTORY TOO, SINCE 2026-10-26. Until then secret-scan ran `--no-git` over the
+# checked-out tree only, so a key committed and deleted in a later commit — still in the remote for
+# ever, on its branch, its pull-request head or a backup ref — was invisible to the only automated
+# secret detection this repository has. It now runs two legs: the tree, and every commit on every ref
+# GitHub holds. The first full-history scan read 17,066 commits in about 90 seconds and found 34 hits,
+# none of them a live credential: 13 were environment-variable NAMES (now allowlisted in
+# `.gitleaks.toml`) and the other 21 are listed one by one in `.gitleaksignore`, the history baseline.
+# The same change narrowed `.gitleaks.toml`'s code-identifier allowlist, which had hidden ANY
+# alphanumeric value written after `key:` — a real `api_key: "<random>"` used to scan clean.
 
 on:
   # 🔴 NOT ON pull_request SINCE 2026-09-29, AND NOT BECAUSE SECRET SCANNING WAS DROPPED.
@@ -123,7 +133,10 @@ jobs:
     # fails only that step, which `continue-on-error` turns into a reported finding with the job
     # still green. Account and the two runs it cost: migration-drift-check.yml, above its job.
     # Pinned by tests/github-workflow-validity.test.ts.
-    timeout-minutes: 15
+    #
+    # 30 since 2026-10-26: the legs budget 6 (tree) + 12 (history) + 3 (Telegram) = 21, and the test
+    # wants five minutes of setup above that.
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -141,10 +154,9 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
           chmod +x gitleaks
 
-      # --no-git: scan the checked-out working tree as plain files, not git history. Simpler and
-      # more robust than diffing PR base...head ranges, and behaves identically for pull_request
-      # and schedule events. Trade-off: won't catch a secret added then removed within one PR's
-      # history — the daily scheduled run over main is the backstop.
+      # --no-git: this leg reads the checked-out working tree as plain files — what `main` holds
+      # today. A secret added and later removed is not in the tree; the next step, which reads every
+      # commit on every ref, is the leg that catches it (2026-10-26 — until then nothing did).
       #
       # --redact: findings are reported by rule, file and line, never with the secret value, so
       # the run log and the summary below can never themselves become the leak.
@@ -211,12 +223,87 @@ jobs:
             exit 1
           fi
 
+      # ── THE HISTORY LEG (2026-10-26) ──────────────────────────────────────────────────
+      # The tree leg above cannot see a key that was committed and then deleted: it is gone from the
+      # tree and still in the remote — on its branch, on the pull request's head ref (GitHub keeps
+      # `refs/pull/<n>/head` after the branch is deleted) and on any `refs/backups/*`. This leg reads
+      # every one of them.
+      #
+      # The checkout above stays at depth 1, so the fetch below is this leg's whole extra cost, and it
+      # is paid INSIDE the leg's budget on purpose: a slow or failed fetch is then REPORTED like a
+      # finding — the alert fires, saying the history half did not run — instead of failing the job,
+      # which would withhold the production deploy (see above `Scan for secrets`).
+      # `+refs/*:refs/mirror/*` takes every ref GitHub serves — branches, tags, pull-request heads,
+      # backups and rescues — into a namespace of its own, so nothing collides with the checkout, and
+      # `--log-opts="--all"` walks all of them.
+      #
+      # `.gitleaksignore` at the repo root is the history baseline: harmless findings in OLD commits,
+      # each named by commit, file, rule and line, so the same text in any new commit is still
+      # reported. gitleaks reads it and `.gitleaks.toml` from the scanned folder by itself.
+      #
+      # Measured 26 Oct 2026 on a full mirror of this repository: 17,066 commits, 378 MB of patches,
+      # 67–93 seconds.
+      - name: Scan git history for secrets (gitleaks)
+        id: gitleaks_history
+        continue-on-error: true
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          UNSHALLOW=""
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then UNSHALLOW="--unshallow"; fi
+          if ! git fetch --quiet --no-tags $UNSHALLOW origin '+refs/*:refs/mirror/*'; then
+            echo "### Secret scan of the git history" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not run: the history could not be fetched." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::The git history could not be fetched, so the history half of the secret scan did not run. Not reporting this as clean."
+            exit 1
+          fi
+          COMMITS=$(git rev-list --all --count)
+          REFS=$(git for-each-ref refs/mirror | wc -l)
+
+          set +e
+          ./gitleaks git . \
+            --log-opts="--all" \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks-history-report.sarif
+          SCAN_STATUS=$?
+          set -e
+
+          # No report at all is a scan that never ran (the binary died before writing it). Say so in
+          # the summary rather than leave `jq` to fail the step with no word of why.
+          if [ ! -s gitleaks-history-report.sarif ]; then
+            echo "### Secret scan of the git history" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not run: gitleaks exited ${SCAN_STATUS} and wrote no report." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::gitleaks exited ${SCAN_STATUS} on the git history and wrote no report, so the history half of the secret scan did not run. Not reporting this as clean."
+            exit 1
+          fi
+
+          COUNT=$(jq '[.runs[]?.results[]?] | length' gitleaks-history-report.sarif)
+          {
+            echo "### Secret scan of the git history (gitleaks v${GITLEAKS_VERSION})"
+            echo "Read ${COMMITS} commits on ${REFS} refs."
+            echo "Findings: **${COUNT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::gitleaks found ${COUNT} potential secret(s) in the git history. ROTATE the credential first — a key in any commit on the remote is compromised even if no branch shows it any more — then decide the history. A finding read and proven harmless goes into .gitleaksignore by its fingerprint, never before it is read. See the gitleaks-report artifact for commit, file and line (values are redacted)."
+            exit 1
+          fi
+
+          # The same guard as the tree leg: a non-zero exit with no findings is a scan that did not run.
+          if [ "$SCAN_STATUS" -ne 0 ]; then
+            echo "::error::gitleaks exited ${SCAN_STATUS} on the git history without producing findings — the scan did not run correctly. Not reporting this as clean."
+            exit 1
+          fi
+
       - name: Upload gitleaks report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gitleaks-report
-          path: gitleaks-report.sarif
+          path: |
+            gitleaks-report.sarif
+            gitleaks-history-report.sarif
           retention-days: 14
 
       # The durable record, written OUTSIDE the check suite's verdict — a job summary a human can read
@@ -228,14 +315,18 @@ jobs:
       # 4am: rotate first, scrub second. A key that reached the remote is compromised whatever the
       # tree looks like afterwards.
       - name: Report the secret-scan finding without withholding the deploy
-        if: ${{ always() && steps.gitleaks.outcome == 'failure' }}
+        if: ${{ always() && (steps.gitleaks.outcome == 'failure' || steps.gitleaks_history.outcome == 'failure') }}
+        env:
+          TREE_OUTCOME: ${{ steps.gitleaks.outcome }}
+          HISTORY_OUTCOME: ${{ steps.gitleaks_history.outcome }}
         run: |
           set -uo pipefail
 
           {
             printf '## Secret scan finding\n\n'
-            printf 'gitleaks either found something or did not run — read the scanning step above, which prints the count and the reason.\n\n'
-            printf '**ROTATE THE CREDENTIAL FIRST.** Anything pushed to the remote must be treated as compromised, and removing the commit does not undo that. Scrub the tree second. The `gitleaks-report` artifact on this run carries rule, file and line, with values redacted.\n\n'
+            printf 'Working tree: **%s** · Git history: **%s**\n\n' "$TREE_OUTCOME" "$HISTORY_OUTCOME"
+            printf 'gitleaks either found something or did not run — read the failed scanning step above, which prints the count and the reason.\n\n'
+            printf '**ROTATE THE CREDENTIAL FIRST.** Anything pushed to the remote must be treated as compromised, and removing the commit does not undo that. Scrub the tree second. A finding in the history that is read and proven harmless goes into `.gitleaksignore` by its fingerprint. The `gitleaks-report` artifact on this run carries rule, commit, file and line, with values redacted.\n\n'
             printf 'This job concludes **success on purpose**. A failed or cancelled check suite on `main` HEAD makes Railway withhold that commit'"'"'s production deploy permanently — never `success`, seconds after the suite concludes, with `ci.yml` green — so an alarm that went red would block the very pipeline somebody needs in order to ship the scrub. The finding is in the failed step above, in the annotation, and in the Telegram alert.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -268,7 +359,7 @@ jobs:
       # `continue-on-error`, so this job concludes success even when it finds a secret and `failure()`
       # is permanently false — a `failure()` gate here would have arrived stillborn.
       - name: Notify Telegram on failure
-        if: ${{ always() && steps.gitleaks.outcome == 'failure' }}
+        if: ${{ always() && (steps.gitleaks.outcome == 'failure' || steps.gitleaks_history.outcome == 'failure') }}
         continue-on-error: true
         timeout-minutes: 3
         env:
@@ -280,6 +371,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           EVENT: ${{ github.event_name }}
           WF_FILE: security-scan.yml
+          TREE_OUTCOME: ${{ steps.gitleaks.outcome }}
+          HISTORY_OUTCOME: ${{ steps.gitleaks_history.outcome }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The secret scan FAILED and reached nobody, which is the condition this step exists to prevent."
@@ -331,8 +424,17 @@ jobs:
             fi
           fi
           HEADER='SECRET SCAN FAILED (gitleaks)'
+          # Which half went red, in plain words, so the alert's second line says where to look.
+          if [ "$TREE_OUTCOME" = "failure" ] && [ "$HISTORY_OUTCOME" = "failure" ]; then
+            WHERE='Both halves: the files on main AND the git history.'
+          elif [ "$HISTORY_OUTCOME" = "failure" ]; then
+            WHERE='The git history (old commits, pull-request heads, backups). The files on main are clean.'
+          else
+            WHERE='The files on main. The git history is clean.'
+          fi
+          HEADER=$(printf '%s\n%s' "$HEADER" "$WHERE")
           [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
-          TEXT=$(printf '%s\n\nThe daily secret scan over main is red. This is the ONLY automated secret detection on this repository - GitHub Advanced Security is not purchasable on a personal account - and the tree it scans holds production Supabase service-role keys.\n\nROTATE FIRST, SCRUB SECOND. A key that reached the remote is compromised whatever the tree looks like afterwards; removing the commit does not undo it.\n\nIt is either a real finding or a scan that did not run. Open the run, read the Findings count, and take the gitleaks-report artifact for rule, file and line (values are redacted).\n\nThis alarm was added 2026-09-30: this job lost its pull_request trigger the day before, and from then until now a scheduled finding reached nobody at all.\n\n%s' "$HEADER" "$RUN_URL")
+          TEXT=$(printf '%s\n\nThe daily secret scan over main is red. This is the ONLY automated secret detection on this repository - GitHub Advanced Security is not purchasable on a personal account - and this repository works with production Supabase service-role keys.\n\nROTATE FIRST, SCRUB SECOND. A key that reached the remote is compromised whatever the tree looks like afterwards; removing the commit does not undo it.\n\nIt is either a real finding or a scan that did not run. Open the run, read the Findings count, and take the gitleaks-report artifact for rule, commit, file and line (values are redacted).\n\n%s' "$HEADER" "$RUN_URL")
           HTTP=$(curl -sS --max-time 20 -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
