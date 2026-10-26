@@ -20,8 +20,9 @@ was serving at 00:29 Cairo on 26 Oct. Nothing was changed.
   - An old trip-claim draft, offline claim included, is deleted the first time the claim screen opens
     (`mobile-outstation-wizard.tsx`). So are the old Contact HR and expense-decision drafts.
   - Old offline leave requests are deleted when the leave form opens (`vacation-request-form.tsx`).
-  - Old offline marketing visits are not sent, and the screen counts them as expired
-    (`marketing-validation-workspace.tsx`).
+  - Old offline marketing visits are not sent (`marketing-validation-workspace.tsx`). The screen says each
+    one was saved without the name of the person who saved it. Until [#6482] it called them too old, which
+    a live check at 03:00 Cairo on 26 Oct showed for a fresh entry.
   - Only the marketing screen tells the person. The server cannot see whether any old entry existed.
 
 ## How the caches work here (the facts behind every verdict)
@@ -280,3 +281,4 @@ All fixed in [#6479] unless a line says otherwise.
 
 [#6476]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6476
 [#6479]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6479
+[#6482]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6482
