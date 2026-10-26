@@ -638,7 +638,25 @@ export type SosDashboardOptions = SosScopeOverrides & {
    * /roi-report-service.ts) — same UX, same server-side re-validation against the caller's role.
    */
   revealRestrictedProducts?: boolean;
+  /**
+   * Leave the data-gap banner ("<distributor> is missing from <months> …") out of `insights`.
+   * The employee portal sets it: the banner is an HR/admin upload-housekeeping note, never shown
+   * to the field (owner, 2026-10-26). The admin dashboard and exports keep it.
+   */
+  omitCoverageWarning?: boolean;
 };
+
+/**
+ * The batch-coverage read behind the data-gap banner, or null — when the caller hides the banner
+ * (the batch query is then never run) or when the read fails (the dashboard must not go down for it).
+ */
+export function loadSosCoverageFor(
+  options: SosDashboardOptions | undefined,
+  load: () => Promise<SosCoverageReport> = loadSosCoverageReport,
+): Promise<SosCoverageReport | null> {
+  if (options?.omitCoverageWarning) return Promise.resolve(null);
+  return load().catch(() => null);
+}
 
 export async function getSosDashboard(
   filters: SosDashboardFilters,
@@ -660,8 +678,9 @@ export async function getSosDashboard(
     resolveSalesAccessScope(accessContext),
     // Which months and which distributors actually landed. Nothing in the pipeline noticed that
     // 2026-05 was never uploaded, and every trend line drew straight through the gap. A failure to
-    // read coverage must not take the dashboard down — it degrades to "no gaps reported".
-    loadSosCoverageReport().catch(() => null),
+    // read coverage must not take the dashboard down — it degrades to "no gaps reported". The
+    // employee portal never shows the banner, so it never runs the read either.
+    loadSosCoverageFor(options),
     // The organogram's area -> DM-territory map, for every line and every month this page can show.
     // Fails soft to an unavailable resolver: the dashboard then groups geographically exactly as it
     // did before, which is wrong-but-unchanged rather than blank. See loadOperationalRegionResolver.
