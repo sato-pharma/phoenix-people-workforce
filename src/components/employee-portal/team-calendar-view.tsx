@@ -23,6 +23,7 @@ import {
   type TeamCalendarWeek,
   weekIndexForDate,
 } from "@/lib/employee-portal/team-calendar-weeks";
+import { complianceLabel } from "@/lib/field-workforce-compliance/compliance-label";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -268,10 +269,8 @@ function RepMonthRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
-          <p className="mt-1 font-mono text-xs font-bold text-slate-500">
-            {employee.hrId}
-            {hierarchy ? ` · ${hierarchy}` : ""}
-          </p>
+          {/* Names, never codes: the HR id stays out of the subtitle; the search still matches it. */}
+          {hierarchy ? <p className="mt-1 text-xs font-bold text-slate-500">{hierarchy}</p> : null}
         </div>
         <div className="flex items-center gap-3 text-phx-xs font-bold">
           {hasMonthSplit ? (
@@ -282,7 +281,9 @@ function RepMonthRow({
             <span className="text-emerald-700">{ownVisits} visits</span>
           )}
           {coachingDays > 0 ? <span className="text-fuchsia-700">{coachingDays} DV days</span> : null}
-          <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
+          <span className="text-slate-500">
+            {employee.compliancePercent === null ? complianceLabel(employee) : `${complianceLabel(employee)} compliance`}
+          </span>
         </div>
       </div>
 
@@ -536,7 +537,7 @@ export function TeamCalendarView({
           <input
             className={`${phxFieldClassName} xl:col-span-1`}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search rep name or HR ID"
+            placeholder="Search rep name"
             value={query}
           />
           {teamOptions.length > 0 ? (

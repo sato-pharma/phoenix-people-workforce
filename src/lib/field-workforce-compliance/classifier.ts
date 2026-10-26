@@ -146,6 +146,7 @@ function explainCell(input: {
   if (input.ignoreReason === "after_exit_date") return "Ignored because the employee resigned/exited before this day.";
   if (input.ignoreReason === "national_holiday") return `Excluded — national holiday${input.holidayName ? `: ${input.holidayName}` : ""}.`;
   if (input.ignoreReason === "weekly_off") return "Excluded because weekly day off.";
+  if (input.ignoreReason === "not_yet_ended") return "Not judged yet — the day has not ended.";
   if (input.status === "UNKNOWN") return "Review needed: unknown value in monthly file.";
   if (input.status === "N" && input.isPublicHoliday) return "No activity entered on a public holiday; review as holiday context, not normal deduction.";
   if (input.status === "AV" && input.isPublicHoliday) return "Vacation signal overlaps a public holiday; reconcile before any leave action.";
@@ -173,9 +174,10 @@ function cellContext(cell: {
   if (cell.isPreHire) context.push("Pre-hire");
   if (cell.isFriday) context.push("Friday");
   else if (cell.ignoreReason === "weekly_off") context.push("Weekly off");
+  if (cell.ignoreReason === "not_yet_ended") context.push("Day not ended");
   if (cell.isPublicHoliday) context.push(cell.holidayName ? `National vacation: ${cell.holidayName}` : "National vacation");
   if (cell.status === "UNKNOWN") context.push("Unknown value");
-  if (cell.ignored) context.push("Ignored");
+  if (cell.ignored && cell.ignoreReason !== "not_yet_ended") context.push("Ignored");
   return context;
 }
 
@@ -333,6 +335,8 @@ function buildTimeline(input: {
   hrId: string;
   month: number;
   title: string | null;
+  /** Today in Cairo; a blank day from today on has not ended and is never judged. */
+  todayIso?: string | null;
   year: number;
 }) {
   return monthDates(input.year, input.month).map((dateIso) => {
@@ -348,7 +352,11 @@ function buildTimeline(input: {
     // Medical Rep / District Manager) are NOT working days — they never count as activity or
     // as absence, and they raise no review candidates. Days outside the employment span
     // (before hire / after a resigned employee's last working date) are likewise ignored.
-    const ignored = isPreHire || isPostExit || isWeeklyOff || isPublicHoliday;
+    // Today and the days after it, with nothing recorded, have not ended — they are neither worked
+    // nor absent, so they leave the eligible count rather than pull the percentage down (owner,
+    // 2026-10-26). Today WITH visits or Phoenix CRM work still counts as worked.
+    const isNotYetEnded = Boolean(input.todayIso && dateIso >= input.todayIso && status === "BLANK");
+    const ignored = isPreHire || isPostExit || isWeeklyOff || isPublicHoliday || isNotYetEnded;
     const ignoreReason = isPreHire
       ? "before_hiring_date"
       : isPostExit
@@ -357,7 +365,9 @@ function buildTimeline(input: {
           ? "national_holiday"
           : isWeeklyOff
             ? "weekly_off"
-            : undefined;
+            : isNotYetEnded
+              ? "not_yet_ended"
+              : undefined;
     const eligible = !ignored;
     const countedAsWorkedDay = eligible && (status === "VISITS" || status === "CP");
     const countedAsVisitTotal = eligible && status === "VISITS";
@@ -413,6 +423,7 @@ function buildEmployeeSummary(input: {
   holidayByDate: Map<string, string>;
   month: number;
   reviewCandidates: FieldWorkforceReviewCandidate[];
+  todayIso?: string | null;
   warnings: FieldWorkforceValidationIssue[];
   year: number;
 }) {
@@ -479,6 +490,7 @@ function buildEmployeeSummary(input: {
     hrId: displayHrId,
     month: input.month,
     title: input.employeeReference?.jobTitle ?? input.employeeReference?.roleName ?? null,
+    todayIso: input.todayIso,
     year: input.year,
   });
   updateNoActivitySeverity(timeline);
@@ -500,9 +512,10 @@ function buildEmployeeSummary(input: {
     // campaignOverlay isn't attached yet at this stage — the live path recomputes campaignDays on
     // the enriched timeline (see ireports360-source.ts) so mixed days still count as campaign days.
     campaignDays: timeline.filter((cell) => !cell.ignored && cell.status === "CP").length,
+    // No eligible day (hired after the month, or none ended yet) has no percentage — never 0%.
     compliancePercent: timeline.filter((cell) => !cell.ignored).length > 0
       ? roundPercent((timeline.filter((cell) => cell.countedAsWorkedDay).length / timeline.filter((cell) => !cell.ignored).length) * 100)
-      : 0,
+      : null,
     employeeName,
     employmentStatus: input.employeeReference?.employmentStatus ?? null,
     eligibleWorkingDays: timeline.filter((cell) => !cell.ignored).length,
@@ -602,6 +615,8 @@ export function buildFieldWorkforceCompliancePreview(input: {
   holidaySourceLabel: string;
   holidays?: FieldWorkforceHoliday[];
   parsed: FieldWorkforceParsedWorkbook;
+  /** Today in Cairo. Optional: an uploaded workbook of a closed month passes none. */
+  todayIso?: string | null;
 }): FieldWorkforcePreviewResult {
   const parsed = input.parsed;
   const month = parsed.month ?? 1;
@@ -635,6 +650,7 @@ export function buildFieldWorkforceCompliancePreview(input: {
         holidayByDate,
         month,
         reviewCandidates,
+        todayIso: input.todayIso ?? null,
         warnings,
         year,
       }),

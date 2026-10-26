@@ -22,6 +22,7 @@
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
+import { cairoTodayIso } from "@/lib/crm/dates.ts";
 import { getAgentCrmIdentityRows, scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import type { CrmAgentIdentityRow } from "@/lib/crm/reads.ts";
 import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
@@ -749,7 +750,9 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   /** The month's visits, from collectCrmCandidates' single shared scan. */
   monthVisits: readonly LeaverVisitRow[];
 }): Promise<DeductionsCandidateDraft[]> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Cairo, not UTC: today is never judged, and between midnight and 03:00 Cairo the UTC date is
+  // still yesterday — a UTC "today" would hold back a finished day.
+  const todayIso = cairoTodayIso();
   const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({
     month: input.month,
     year: input.year,

@@ -279,7 +279,9 @@ export function buildFieldLines(input: FieldLinesInput): HrOpsLineDraft[] {
     const directoryEntry = input.directory.get(person.key);
     for (const day of window) {
       const hasVisits = (tallies.get(person.key)?.get(day) ?? null) !== null;
-      if (!judgedDates.has(day) && !hasVisits) continue;
+      // Today is never a judged day (it has not ended) but still gets its line while he is expected.
+      const expectedToday = day === input.today && summary?.expectedToday === true;
+      if (!judgedDates.has(day) && !expectedToday && !hasVisits) continue;
       const span = spanOn(person, day);
       const absent = input.calendar.judged && notSeen.has(day) && day < input.today;
       const line = lineFor(person.key, day, {

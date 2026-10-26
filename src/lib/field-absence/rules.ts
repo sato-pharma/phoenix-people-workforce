@@ -145,11 +145,16 @@ export type FieldAbsenceDay = {
 
 export type FieldAbsencePersonSummary = Omit<FieldAbsenceEntry, "wholePeriod"> & {
   wholePeriod: boolean;
-  /** Working days he was judged on, today included. */
+  /** FINISHED working days he was judged on. Today has not ended, so it is never one of them. */
   expectedDays: number;
   /** The same days, by date — so a screen that hides one person can take him out of each day's count. */
   judgedDates: string[];
+  /** Finished working days with nothing recorded; today is never one of them. */
   notSeenDates: string[];
+  /** Today is a working day for him — it sits in today's box as "so far", outside the counts above. */
+  expectedToday: boolean;
+  /** Nothing recorded for him so far today. Never part of notSeenDates (owner, 2026-10-26). */
+  notSeenToday: boolean;
   /** Every day in the period the system recorded something for him while he held a seat on this
    * calendar and was employed, working day or not — a day on another line's seat, or after he left,
    * is not this calendar's to show. */
@@ -280,6 +285,8 @@ export function buildFieldAbsenceCalendar(input: {
   type Tally = {
     entry: Omit<FieldAbsenceEntry, "wholePeriod">;
     expectedDays: number;
+    expectedToday: boolean;
+    notSeenToday: boolean;
     finalDays: number;
     finalSeen: number;
     judgedDates: string[];
@@ -312,19 +319,24 @@ export function buildFieldAbsenceCalendar(input: {
         const tally: Tally = tallies.get(person.key) ?? {
           entry,
           expectedDays: 0,
+          expectedToday: false,
           finalDays: 0,
           finalSeen: 0,
           judgedDates: [],
           longestRun: 0,
           notSeenDates: [],
+          notSeenToday: false,
           run: 0,
         };
         // The person's row names the seat he held LAST in the period.
         tally.entry = entry;
-        tally.expectedDays += 1;
-        tally.judgedDates.push(day);
         const seen = evidence.seen.get(person.key)?.has(day) ?? false;
+        // Today has not ended: it shows in its own day box as "so far" (row.pending below), but it
+        // is never a judged day, so the month tiles and the Detail rows count finished days only.
+        if (provisional) tally.expectedToday = true;
         if (!provisional) {
+          tally.expectedDays += 1;
+          tally.judgedDates.push(day);
           tally.finalDays += 1;
           if (seen) {
             tally.finalSeen += 1;
@@ -335,7 +347,8 @@ export function buildFieldAbsenceCalendar(input: {
           }
         }
         if (!seen && judged) {
-          tally.notSeenDates.push(day);
+          if (provisional) tally.notSeenToday = true;
+          else tally.notSeenDates.push(day);
           row.pending.push(entry);
         }
         tallies.set(person.key, tally);
@@ -357,11 +370,13 @@ export function buildFieldAbsenceCalendar(input: {
     return {
       ...tally.entry,
       expectedDays: tally.expectedDays,
+      expectedToday: tally.expectedToday,
       judgedDates: tally.judgedDates,
       lastSeen,
       lastSeenLabel: lastSeen ? (evidence.seen.get(key)?.get(lastSeen) ?? null) : null,
       longestRun: judged ? tally.longestRun : 0,
       notSeenDates: tally.notSeenDates,
+      notSeenToday: tally.notSeenToday,
       seenDates,
       wholePeriod: wholePeriod(tally),
     };
