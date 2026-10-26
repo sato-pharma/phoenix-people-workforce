@@ -2,6 +2,7 @@ import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
   invalidateEmployeeDirectoryCache,
+  isActiveLifecycleStatus,
 } from "@/lib/employees/employee-directory";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
@@ -645,7 +646,59 @@ function assertWorkflowActionAllowed(
 // No caller may sort or edit these rows in place: they are shared.
 export const getProbationRows = cache(loadProbationRows);
 
+// The tracker's own list: everyone in `getProbationRows` PLUS the probations that ended with no
+// decision. A lapsed probation with an open case is the one a manager still owes an answer on, and
+// it used to vanish from the tracker the day it ended (while "Score a probationer" still listed it).
+// Only the tracker surfaces read this — the reminder sweep, the CEO and HR tiles, the Needs You
+// count and the Double-Visit analytics keep `getProbationRows` and its "still inside 90 days" rule,
+// so no count or email outside the tracker moves. Same per-request cache, same no-edit-in-place rule.
+export const getProbationTrackerRows = cache(loadProbationTrackerRows);
+
+// One directory join and both probation reads, shared by the two lists above in a request.
+const loadAllProbationRows = cache(buildProbationRows);
+
 async function loadProbationRows(access: AccessContext): Promise<ProbationRow[]> {
+  return (await loadAllProbationRows(access)).filter((row) => row.days_remaining > 0);
+}
+
+async function loadOpenProbationCaseHrIds(): Promise<Set<string>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .select("employee_hr_id")
+    .eq("status", "active")
+    .is("decision", null);
+  if (error) {
+    // A domain that is not migrated has no cases, so nothing is overdue. Anything else is a real
+    // failure and must reach the page, never read as "no overdue decisions".
+    if (isProbationSchemaMissing(error)) return new Set();
+    throw error;
+  }
+  return new Set(
+    ((data ?? []) as Array<{ employee_hr_id: string | null }>)
+      .map((row) => normalizeHrId(row.employee_hr_id))
+      .filter((hrId): hrId is string => Boolean(hrId)),
+  );
+}
+
+async function loadProbationTrackerRows(access: AccessContext): Promise<ProbationRow[]> {
+  const rows = await loadAllProbationRows(access);
+  const isLapsedAndUndecided = (row: ProbationRow) =>
+    row.days_remaining <= 0 &&
+    Boolean(row.probation_end_date) &&
+    isProbationDecisionOutstanding(row) &&
+    isActiveLifecycleStatus(row.employment_status);
+  if (!rows.some(isLapsedAndUndecided)) return rows.filter((row) => row.days_remaining > 0);
+
+  const openCaseHrIds = await loadOpenProbationCaseHrIds();
+  return rows.flatMap((row): ProbationRow[] => {
+    if (row.days_remaining > 0) return [row];
+    if (!isLapsedAndUndecided(row)) return [];
+    const hrId = normalizeHrId(row.hr_id);
+    return hrId && openCaseHrIds.has(hrId) ? [{ ...row, overdue_decision: true }] : [];
+  });
+}
+
+async function buildProbationRows(access: AccessContext): Promise<ProbationRow[]> {
   const [{ employees }, viewerAllowedLines] = await Promise.all([
     getEmployeeDirectory(),
     resolveViewerAllowedLines(access),
@@ -705,8 +758,7 @@ async function loadProbationRows(access: AccessContext): Promise<ProbationRow[]>
         team_name: employee.teamName,
         workflow,
       };
-    })
-    .filter((row) => row.days_remaining > 0);
+    });
 }
 
 async function insertHistory(

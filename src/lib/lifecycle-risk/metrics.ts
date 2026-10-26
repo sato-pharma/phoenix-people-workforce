@@ -2,7 +2,7 @@ import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/dat
 import { nextContractAnniversary } from "@/lib/contracts/date-rules";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import type { ContractRenewalStatus } from "@/lib/contracts/types";
-import type { ProbationDecision } from "@/lib/probation/types";
+import type { ProbationDecision, ProbationZone } from "@/lib/probation/types";
 
 export const lifecycleRiskWindows = {
   contractCriticalDays: 7,
@@ -34,6 +34,8 @@ export type ProbationRiskInput = {
   employeeHrId?: string | null;
   employeeName?: string | null;
   hireDate?: string | null;
+  /** The probation ended with no decision (a tracker row's `overdue_decision`). */
+  overdueDecision?: boolean;
   probationEndDate?: string | null;
   workflowDecision?: ProbationDecision | null;
 };
@@ -81,6 +83,17 @@ export function classifyProbationTrafficStatus(daysRemaining: number) {
   if (daysRemaining > lifecycleRiskWindows.probationWarningDays) return "safe" as const;
   if (daysRemaining >= lifecycleRiskWindows.probationCriticalDays) return "warning" as const;
   return "critical" as const;
+}
+
+/**
+ * The tracker's zone for one row: a probation that ended with no decision is its own zone, above
+ * critical, whatever its (zero or negative) day count would classify as.
+ */
+export function classifyProbationRowZone(row: {
+  days_remaining: number;
+  overdue_decision?: boolean;
+}): ProbationZone {
+  return row.overdue_decision ? "overdue" : classifyProbationTrafficStatus(row.days_remaining);
 }
 
 export function calculateProbationProgress(daysRemaining: number) {
@@ -134,12 +147,15 @@ export function summarizeContractRenewalRows(rows: ContractRiskInput[], referenc
 
 export function summarizeProbationRiskRows(rows: ProbationRiskInput[]) {
   const activeRows = rows.filter((row) => row.workflowDecision !== "pass" && row.workflowDecision !== "terminate");
+  // An overdue-decision row sits in its own zone, so the three day-count zones never also count it.
+  const zoneRows = activeRows.filter((row) => !row.overdueDecision);
   return {
-    critical: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "critical").length,
+    critical: zoneRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "critical").length,
     openWorkflows: activeRows.filter((row) => row.workflowDecision == null).length,
-    safe: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "safe").length,
+    overdue: activeRows.length - zoneRows.length,
+    safe: zoneRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "safe").length,
     total: activeRows.length,
-    warning: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "warning").length,
+    warning: zoneRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "warning").length,
   };
 }
 
