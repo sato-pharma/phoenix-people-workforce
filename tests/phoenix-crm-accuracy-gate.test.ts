@@ -154,17 +154,19 @@ export function runPhoenixCrmAccuracyGateTests() {
 
   const bothGood = parsePlaceDraft(placeBody(5, 15));
   assert.ok(bothGood.ok, "two accurate readings validate the place");
-  assert.equal(placePoint(bothGood.value).source, "pin", "the SHARPER reading fixes the place: pin 5 m beats photo 15 m (owner, 2026-10-11)");
+  assert.equal(placePoint(bothGood.value).source, "photo", "🔴 the LIVE PHOTO fixes the place even when the pin claims to be sharper: photo 15 m over pin 5 m (owner, 2026-10-26, replacing the 2026-10-11 sharper rule)");
   const photoSharper = parsePlaceDraft(placeBody(15, 5));
   assert.ok(photoSharper.ok);
-  assert.equal(placePoint(photoSharper.value).source, "photo", "a photo at least as sharp as the pin stays the fixed point, as ruled 2026-09-29");
+  assert.equal(placePoint(photoSharper.value).source, "photo", "a photo sharper than the pin is the fixed point too");
   const tie = parsePlaceDraft(placeBody(27.1, 27.1));
   assert.ok(tie.ok);
   assert.equal(placePoint(tie.value).source, "photo", "a tie goes to the photo");
   // The pure picker the capture screen shares with the save, so the address she reads is the saved one.
   assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: null }, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "photo", "an UNKNOWN photo accuracy is taken, as it always was");
   assert.equal(pickPlacePoint(null, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "pin", "no photo reading: the pin");
-  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: 200 }, { lat: 2, lon: 2, accuracyMeters: 11 }).lat, 2, "a 200 m photo reading (inside the line) never beats an 11 m pin");
+  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: 200 }, { lat: 2, lon: 2, accuracyMeters: 11 }).lat, 1, "🔴 a 200 m photo reading (inside the line) is the point over an 11 m pin — the photo is the source of trust (owner, 2026-10-26)");
+  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: 250 }, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "photo", "exactly on the place's line is still the photo");
+  assert.equal(pickPlacePoint({ lat: 1, lon: 1, accuracyMeters: 251 }, { lat: 2, lon: 2, accuracyMeters: 11 }).source, "pin", "one metre past the line the photo is no reading, and the pin fixes the place");
 
   const noPhotoReading = parsePlaceDraft(placeBody(8, "none"));
   assert.ok(noPhotoReading.ok, "a photo whose shutter read no position is not a rough one — the pin alone decides, as before");
