@@ -331,7 +331,8 @@ export function heldBalancesForRun(input: {
     if (!acc) continue;
     acc.deferred = roundCurrency(acc.deferred + num(entry.amount));
     const releaseIn = String(entry.releaseIn ?? "");
-    if (/^\d{4}-\d{2}$/.test(releaseIn)) acc.deferredTo = releaseIn;
+    // Part 1 and Part 2 can each defer to a different month; the later one stands, so nothing is paid early.
+    if (/^\d{4}-\d{2}$/.test(releaseIn) && (!acc.deferredTo || releaseIn > acc.deferredTo)) acc.deferredTo = releaseIn;
   }
   for (const correction of input.corrections) {
     if (correction.heldRunId !== input.runId) continue;
@@ -784,7 +785,7 @@ export function planHeldReleases(
 export async function recordHeldReleases(input: {
   runId: string;
   actorHrId: string;
-  stage: "part2_confirmed" | "published";
+  stage: "part1_confirmed" | "part1_reopened" | "part2_confirmed" | "published";
   releases: readonly { hrId: string; amount: number }[];
 }): Promise<PlannedHeldRelease[]> {
   const admin = getSupabaseAdmin();

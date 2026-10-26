@@ -14,7 +14,7 @@ import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
+import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
 import { holdRun } from "./run-hold.ts";
 import {
@@ -210,6 +210,9 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "otherAdditions",
   "heldReleaseValue",
   "payDeferralValue",
+  // Part 1's Held Salary Release and Defer Pay (owner, 2026-10-26: "it should be also in part one").
+  "heldReleaseP1Value",
+  "payDeferralP1Value",
   "unpaidVacations",
   "resignationCrmDays",
   "crm",
@@ -251,6 +254,7 @@ const SELECT_FIELDS: Record<string, keyof DraftRowPatch> = {
   specialSituationPart: "specialSituationPart",
   // Defer Pay: when the deferred amount falls due ("next" | "after_next"), checked in assertPayDeferralEdits.
   payDeferralMonth: "payDeferralMonth",
+  payDeferralP1Month: "payDeferralP1Month",
 };
 
 export type RunView = {
@@ -710,12 +714,34 @@ async function loadRunContext(period: PayrollPeriod, runId: string): Promise<{
   return { members: included, sources, draftRows, directory, releaseOnlyMembers };
 }
 
-/** What the sheet releases of earlier months' held salary, row by row — never a held row's. */
+/**
+ * What the sheet releases of earlier months' held salary, row by row. Part 1's release counts wherever
+ * Part 1 paid it — its bank files carried it, so it is released even if the row is held at Part 2 —
+ * and Part 2's only on a row not held now (owner, 2026-10-26: "it should be also in part one").
+ */
 function heldReleasesOf(rows: AssembledRow[]): { hrId: string; amount: number }[] {
   return rows
-    .filter((entry) => !entry.onHold && entry.heldReleaseApplied > 0)
-    .map((entry) => ({ hrId: entry.row.hrId, amount: entry.heldReleaseApplied }));
+    .map((entry) => ({
+      hrId: entry.row.hrId,
+      amount: roundCurrency(entry.heldReleasePart1Applied + (entry.onHold ? 0 : entry.heldReleaseApplied)),
+    }))
+    .filter((release) => release.amount > 0);
 }
+
+/** Held at Part 1 — the Part 1 bank files paid this person nothing (assemble.ts part1WithheldFor). */
+function withheldAtPart1(draft: DraftRow): boolean {
+  return Boolean(draft.part1Withheld ?? draft.onHold);
+}
+
+/** What a draft row releases across both instalments: what assembleRows pays, before any cap. */
+function heldReleaseDueOn(draft: DraftRow): number {
+  const part1 = withheldAtPart1(draft) ? 0 : Math.max(0, roundCurrency(Number(draft.heldReleaseP1Value ?? 0)));
+  const part2 = draft.onHold ? 0 : Math.max(0, roundCurrency(Number(draft.heldReleaseValue ?? 0)));
+  return roundCurrency(part1 + part2);
+}
+
+/** Part 1's Held Salary Release and Defer Pay: their bank files pay what Part 1 confirm froze. */
+const PART1_ONLY_STEP_KEYS: ReadonlySet<StepKey> = new Set<StepKey>(["p1_held_release", "p1_pay_deferral"]);
 
 /**
  * What the Held Salary Release step needs beyond the population: every outstanding held balance from
@@ -735,7 +761,7 @@ async function heldReleaseInputs(
   carryForwardByCompact?: Map<string, number>;
 }> {
   if (stepKey === "p2_pay_deferral") return { carryForwardByCompact: await outstandingCarryForwardFor(runId) };
-  if (stepKey !== "p2_held_release") return {};
+  if (stepKey !== "p2_held_release" && stepKey !== "p1_held_release") return {};
   const previous = await previousPublishedRun(period);
   return {
     heldBalances: await outstandingHeldByEmployee(runId),
@@ -784,31 +810,40 @@ async function savePart1NotPaid(
   return true;
 }
 
+/** The fields and the bounding column of one instalment's Defer Pay step. */
+type PayDeferralFields = { value: "payDeferralValue" | "payDeferralP1Value"; month: string; part: "Part 1" | "Part 2" };
+const PAY_DEFERRAL_FIELDS: Partial<Record<StepKey, PayDeferralFields>> = {
+  p1_pay_deferral: { value: "payDeferralP1Value", month: "payDeferralP1Month", part: "Part 1" },
+  p2_pay_deferral: { value: "payDeferralValue", month: "payDeferralMonth", part: "Part 2" },
+};
+
 /**
- * Defer Pay (owner, 2026-10-26): never more than the person's Part 2 — the figure in the step's own
- * "Part 2" column, the most this month can move — and only to next month or the one after.
+ * Defer Pay (owner, 2026-10-26): never more than the person's instalment — the figure in the step's own
+ * "Part 1" or "Part 2" column, the most that instalment can move — and only to next month or the one after.
  */
-function assertPayDeferralEdits(edits: StepEditInput[], rows: StepRow[]): void {
+function assertPayDeferralEdits(edits: StepEditInput[], rows: StepRow[], fields: PayDeferralFields): void {
   const byHrId = new Map(rows.map((row) => [row.hrId.toLowerCase(), row]));
   const problems: string[] = [];
   for (const edit of edits) {
-    const month = edit.selects?.payDeferralMonth;
+    const month = edit.selects?.[fields.month];
     const row = byHrId.get(String(edit.hrId ?? "").toLowerCase());
     const name = row?.fullName ?? edit.hrId;
     if (month !== undefined && month !== "next" && month !== "after_next") {
       problems.push(`${name}: "${month}" is not next month or the month after`);
     }
-    const value = edit.values?.payDeferralValue;
+    const value = edit.values?.[fields.value];
     if (value === undefined || value === null) continue;
     const amount = roundCurrency(Number(value));
     if (!(amount > 0)) continue;
-    const part2 = roundCurrency(Number(row?.context?.["Part 2"] ?? 0));
-    if (amount > part2) {
-      problems.push(`${name}: ${amount.toFixed(2)} is more than this month's Part 2 of ${part2.toFixed(2)}`);
+    const instalment = roundCurrency(Number(row?.context?.[fields.part] ?? 0));
+    if (amount > instalment) {
+      problems.push(`${name}: ${amount.toFixed(2)} is more than this month's ${fields.part} of ${instalment.toFixed(2)}`);
     }
   }
   if (problems.length > 0) {
-    throw new Error(`Validation: pay can only be deferred out of this month's Part 2. ${problems.slice(0, 6).join("; ")}`);
+    throw new Error(
+      `Validation: pay can only be deferred out of this month's ${fields.part}. ${problems.slice(0, 6).join("; ")}`,
+    );
   }
 }
 
@@ -817,11 +852,15 @@ function assertPayDeferralEdits(edits: StepEditInput[], rows: StepRow[]): void {
  * the step lists. Judged against the step's own Outstanding column, which is the balance read at
  * the moment of the save. Both the grid and a re-uploaded sheet come through saveStep.
  */
-function assertHeldReleaseEdits(edits: StepEditInput[], rows: StepRow[]): void {
+function assertHeldReleaseEdits(
+  edits: StepEditInput[],
+  rows: StepRow[],
+  field: "heldReleaseValue" | "heldReleaseP1Value",
+): void {
   const byHrId = new Map(rows.map((row) => [row.hrId.toLowerCase(), row]));
   const problems: string[] = [];
   for (const edit of edits) {
-    const value = edit.values?.heldReleaseValue;
+    const value = edit.values?.[field];
     // Zero releases nothing, so it needs no balance — a row added only to enter Part 1 Not Paid sends it.
     if (value === undefined || value === null || roundCurrency(Number(value)) === 0) continue;
     const row = byHrId.get(String(edit.hrId ?? "").toLowerCase());
@@ -848,20 +887,22 @@ function assertHeldReleaseEdits(edits: StepEditInput[], rows: StepRow[]): void {
  * otherwise vanish from the sheet while the step still showed it.
  */
 async function assertHeldReleasesPayable(runId: string, draftRows: DraftRow[], rows: AssembledRow[]): Promise<void> {
-  // A row held again this month releases nothing (assemble.ts): its release stays owed, so it is not
-  // checked against the sheet here and not recorded by recordHeldReleases.
-  const releases = draftRows.filter(
-    (draft) => !draft.excluded && !draft.onHold && Number(draft.heldReleaseValue ?? 0) > 0,
-  );
+  // A release reaches the sheet in Part 1 unless the row was withheld at Part 1, and in Part 2 unless it
+  // is held now (assemble.ts). What does not reach it stays owed, so it is not checked against the sheet
+  // here and not recorded by recordHeldReleases. Both instalments are checked as ONE figure against the
+  // balance, which leaves out this run's own reservation, so Part 1's release cannot be offered twice.
+  const releases = draftRows.filter((draft) => !draft.excluded && heldReleaseDueOn(draft) > 0);
   if (releases.length === 0) return;
   const balances = await outstandingHeldByEmployee(runId);
-  const paidByCompact = new Map(rows.map((entry) => [entry.compact, entry.heldReleaseApplied]));
+  const paidByCompact = new Map(
+    rows.map((entry) => [entry.compact, roundCurrency(entry.heldReleaseApplied + entry.heldReleasePart1Applied)]),
+  );
   const problems: string[] = [];
   for (const draft of releases) {
     const compact = compactHrKey(draft.employeeHrIdCompact);
     const owed = balances.get(compact) ?? [];
     const name = owed[0]?.name || draft.employeeHrId;
-    const amount = roundCurrency(Number(draft.heldReleaseValue));
+    const amount = heldReleaseDueOn(draft);
     const outstanding = roundCurrency(owed.reduce((sum, balance) => sum + balance.outstanding, 0));
     if (amount > outstanding) {
       problems.push(`${name}: release ${amount.toFixed(2)} is more than the ${outstanding.toFixed(2)} still held`);
@@ -1013,6 +1054,14 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
   if (phase === "part2" && run.phase === "part1") {
     throw new Error("Conflict: confirm Part 1 before editing Part 2 steps.");
   }
+  // Part 1's release and deferral are what its bank files paid, so they are fixed once Part 1 is
+  // confirmed. A change after that goes on Part 2's own Held Salary Release or Defer Pay.
+  if (PART1_ONLY_STEP_KEYS.has(stepKey) && run.phase !== "part1") {
+    throw new Error(
+      "Conflict: Part 1 is confirmed, and its bank files pay these figures. Use Part 2's Held Salary " +
+        "Release or Defer Pay, or reopen Part 1 to change them.",
+    );
+  }
 
   // Nor while a confirm, reopen, cancel or publish holds the run (audit finding 50).
   assertNoTransitionInProgress(run);
@@ -1023,6 +1072,7 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
  * to the run hold so the phase is checked again at the moment of the write, not only when it was read.
  */
 function stepWritablePhases(stepKey: StepKey): RunPhase[] {
+  if (PART1_ONLY_STEP_KEYS.has(stepKey)) return ["part1"];
   return stepPhase(stepKey) === "part2" ? ["part2"] : ["part1", "part2"];
 }
 
@@ -1079,11 +1129,15 @@ export async function saveStep(
   assertNoNegativeStepValues(stepDefinition(stepKey), applicable, currentRows);
   // Part 1 Not Paid raises what is owed, so it is recorded first and the release is judged against the
   // balance it produced — entering it and releasing it in one save works.
-  if (stepKey === "p2_held_release" && (await savePart1NotPaid(access, run, applicable, currentRows, candidates))) {
+  const releaseStep = stepKey === "p1_held_release" || stepKey === "p2_held_release";
+  if (releaseStep && (await savePart1NotPaid(access, run, applicable, currentRows, candidates))) {
     currentRows = (await loadStepView(access, runId, stepKey)).rows;
   }
-  if (stepKey === "p2_held_release") assertHeldReleaseEdits(applicable, currentRows);
-  if (stepKey === "p2_pay_deferral") assertPayDeferralEdits(applicable, currentRows);
+  if (releaseStep) {
+    assertHeldReleaseEdits(applicable, currentRows, stepKey === "p1_held_release" ? "heldReleaseP1Value" : "heldReleaseValue");
+  }
+  const deferralFields = PAY_DEFERRAL_FIELDS[stepKey];
+  if (deferralFields) assertPayDeferralEdits(applicable, currentRows, deferralFields);
 
   // A hold may not be saved without a reason.
   //
@@ -1500,7 +1554,10 @@ export async function confirmPart1(
     );
   }
 
-  const frozen = computeFrozenFirstParts({ members, sources, draftRows, period });
+  // Part 1's release must still be owed, and paid in full by the First Part about to be frozen.
+  await assertHeldReleasesPayable(runId, draftRows, preflightRows);
+
+  const frozen = computePart1Freeze({ members, sources, draftRows, period });
 
   // THE PART 1 / PART 2 DEDUCTION ROUTING IS FROZEN HERE TOO, in the same write.
   //
@@ -1516,7 +1573,7 @@ export async function confirmPart1(
   // been routed anywhere yet.
   const patches: DraftRowPatch[] = members.map((member) => ({
     employeeHrId: member.employee.hrId,
-    firstPartFrozen: frozen.get(member.compact) ?? 0,
+    firstPartFrozen: frozen.get(member.compact)?.firstPart ?? 0,
     settledInPart1: isSettledInPart1(member, lookupSource(sources, member.employee.hrId)),
     // Held now means the Part 1 bank files leave them out: their first instalment is NOT paid, and
     // stays owed even if Part 2 releases the hold (owner, 2026-10-26). Set under the claim below.
@@ -1532,13 +1589,18 @@ export async function confirmPart1(
     // the claim nothing else can write, so recomputing here and refusing on any difference means the
     // freeze is never built from figures the run no longer holds.
     const fresh = await loadRunContext(period, runId);
-    const refrozen = computeFrozenFirstParts({
+    const refrozen = computePart1Freeze({
       members: fresh.members,
       sources: fresh.sources,
       draftRows: fresh.draftRows,
       period,
     });
-    const movedWhileConfirming = frozenFirstPartsDiffer(frozen, refrozen, members, fresh.members);
+    const movedWhileConfirming = frozenFirstPartsDiffer(
+      firstPartsOf(frozen),
+      firstPartsOf(refrozen),
+      members,
+      fresh.members,
+    );
     if (movedWhileConfirming) {
       throw new Error(
         "Conflict: this run changed while Part 1 was being confirmed (a step was saved or a deduction " +
@@ -1549,7 +1611,46 @@ export async function confirmPart1(
     // files will act on.
     const heldNow = new Set(fresh.draftRows.filter((row) => row.onHold).map((row) => row.employeeHrIdCompact));
     for (const patch of patches) patch.part1Withheld = heldNow.has(compactHrKey(patch.employeeHrId));
+    const part1Releases: { hrId: string; amount: number }[] = [];
+    const freshDrafts = new Map(fresh.draftRows.map((row) => [row.employeeHrIdCompact, row]));
+    for (const member of fresh.members) {
+      const freeze = refrozen.get(member.compact);
+      if (!freeze) continue;
+      if (freeze.heldReleaseApplied > 0) {
+        part1Releases.push({ hrId: member.employee.hrId, amount: freeze.heldReleaseApplied });
+      }
+      // Part 1's Defer Pay is stored as it was applied — capped at the First Part — so the bank file
+      // and the figure owed later are the same one.
+      const typed = roundCurrency(Number(freshDrafts.get(member.compact)?.payDeferralP1Value ?? 0));
+      const patch = patches.find((candidate) => compactHrKey(candidate.employeeHrId) === member.compact);
+      if (patch && !patch.part1Withheld && typed > freeze.payDeferralApplied) {
+        patch.payDeferralP1Value = freeze.payDeferralApplied;
+      }
+    }
+    // Someone on the sheet only for a held salary (releaseOnlyMembersFor): Part 1 pays their Part 1
+    // release unless they are held now, and that answer is frozen like everyone else's.
+    for (const member of fresh.releaseOnlyMembers) {
+      const draft = freshDrafts.get(member.compact);
+      const release = Math.max(0, roundCurrency(Number(draft?.heldReleaseP1Value ?? 0)));
+      if (!draft || !(release > 0)) continue;
+      const withheld = heldNow.has(member.compact);
+      patches.push({
+        employeeHrId: member.employee.hrId,
+        part1Withheld: withheld,
+        editedBy: actorId(access),
+        writeReason: "part1_confirmed",
+      });
+      if (!withheld) part1Releases.push({ hrId: member.employee.hrId, amount: release });
+    }
     await upsertDraftRows(runId, patches);
+    // RESERVE THE HELD SALARY PART 1 RELEASES, before the run moves on: from here the Part 1 bank files
+    // can pay it. Always written, so a re-confirm after a reopen replaces what the first confirm recorded.
+    await recordHeldReleases({
+      runId,
+      actorHrId: actorId(access),
+      stage: "part1_confirmed",
+      releases: part1Releases,
+    });
     return updateRun(
       runId,
       { phase: "part2", part1ConfirmedAt: nowIso(), part1ConfirmedBy: actorId(access) },
@@ -1579,6 +1680,10 @@ export async function confirmPart1(
     });
   });
   return updated;
+}
+
+function firstPartsOf(freeze: ReturnType<typeof computePart1Freeze>): Map<string, number> {
+  return new Map([...freeze].map(([compact, part1]) => [compact, part1.firstPart]));
 }
 
 /**
@@ -1668,6 +1773,9 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
   const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
   const updated = await whileClaimed(runId, transition, async () => {
     await upsertDraftRows(runId, patches);
+    // What confirming Part 1 (and any Part 2 confirm since) reserved of earlier months' held salary is
+    // withdrawn with the freeze: re-confirming records it again from the figures as they then stand.
+    await recordHeldReleases({ runId, actorHrId: actorId(access), stage: "part1_reopened", releases: [] });
     return updateRun(
       runId,
       { phase: "part1", part1ConfirmedAt: null, part1ConfirmedBy: null },
@@ -2429,9 +2537,10 @@ export type PublishResult = {
  *
  * - part1Unpaid: paid this month's Part 2 but NOT its Part 1 — held when Part 1 was confirmed, released
  *   by Part 2. Owed to them, and the next month's Held Salary Release offers it.
- * - deferred: pay moved off this month's Part 2 by Defer Pay, owed again in the month HR chose.
+ * - deferred: pay moved off this month's Part 1 or Part 2 by Defer Pay, owed again in the month HR
+ *   chose for it. Part 1's is owed even on a row held at Part 2: Part 1 was paid without it either way.
  *
- * A row still on hold is in the held record instead, never in either list.
+ * Otherwise a row still on hold is in the held record instead, never in either list.
  */
 function owedLaterRecords(
   rows: AssembledRow[],
@@ -2444,22 +2553,26 @@ function owedLaterRecords(
   const part1Unpaid = rows
     .filter((entry) => !entry.onHold && entry.part1Withheld === true && entry.row.firstPart > 0)
     .map((entry) => ({ hrId: entry.row.hrId, name: entry.row.fullName, amount: roundCurrency(entry.row.firstPart) }));
-  const deferralMonthByCompact = new Map(
-    draftRows.map((draft) => [draft.employeeHrIdCompact, draft.payDeferralMonth ?? "next"]),
-  );
-  const deferred = rows
+  const draftByCompact = new Map(draftRows.map((draft) => [draft.employeeHrIdCompact, draft]));
+  const releaseIn = (month: string | null | undefined) =>
+    monthKeyAfter(period.month, period.year, month === "after_next" ? 2 : 1);
+  const deferredPart1 = rows
+    .filter((entry) => entry.payDeferralPart1Applied > 0)
+    .map((entry) => ({
+      hrId: entry.row.hrId,
+      name: entry.row.fullName,
+      amount: roundCurrency(entry.payDeferralPart1Applied),
+      releaseIn: releaseIn(draftByCompact.get(entry.compact)?.payDeferralP1Month),
+    }));
+  const deferredPart2 = rows
     .filter((entry) => !entry.onHold && entry.payDeferralApplied > 0)
     .map((entry) => ({
       hrId: entry.row.hrId,
       name: entry.row.fullName,
       amount: roundCurrency(entry.payDeferralApplied),
-      releaseIn: monthKeyAfter(
-        period.month,
-        period.year,
-        deferralMonthByCompact.get(entry.compact) === "after_next" ? 2 : 1,
-      ),
+      releaseIn: releaseIn(draftByCompact.get(entry.compact)?.payDeferralMonth),
     }));
-  return { part1Unpaid, deferred };
+  return { part1Unpaid, deferred: [...deferredPart1, ...deferredPart2] };
 }
 
 /**
@@ -2552,7 +2665,8 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       // this publish would have paid and did not. All are needed to settle the person by hand.
       firstPartAlreadyPaid: entry.part1Withheld === true ? 0 : roundCurrency(entry.row.firstPart),
       firstPartWithheld: entry.part1Withheld === true ? roundCurrency(entry.row.firstPart) : 0,
-      // A held row releases no earlier held salary (assemble.ts), so these are this month's own figures.
+      // A held row releases no earlier held salary in Part 2 (assemble.ts); a Part 1 release paid before
+      // the hold is inside firstPartAlreadyPaid. So the Part 2 figure is this month's own.
       secondPartWithheld: roundCurrency(entry.row.secondPart),
       monthTotal: roundCurrency(entry.row.monthSalary),
       // The filing figures too (audit finding 43): a held person has no salary record, so the statutory

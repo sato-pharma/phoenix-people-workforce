@@ -93,7 +93,9 @@ function buildRow(overrides: {
     totalPayable: overrides.totalPayable,
     carriedForwardApplied: 0,
     heldReleaseApplied: 0,
+    heldReleasePart1Applied: 0,
     payDeferralApplied: 0,
+    payDeferralPart1Applied: 0,
     lifecycle: "regular",
     bankName: "FAB",
     bankAccount: "1",
@@ -199,11 +201,12 @@ export function runAutomatedPayrollGuardsThatGuardTests() {
       "data gate is acknowledgeable and Part 2's pre-flight is not, so without this Part 1 waves " +
       "through people Part 2 will refuse and the month gets stuck after money is already frozen",
   );
-  const freezeAt = part1Body.search(/computeFrozenFirstParts\(/);
-  const preflightAt = part1Body.search(/preflightValidate/);
+  const freezeAt = part1Body.search(/computePart1Freeze\(/);
+  // The CALL, not the import: `preflightValidate: preflightAtPart1` names it a line before it runs.
+  const preflightAt = part1Body.search(/\bpreflight(?:Validate|AtPart1)\(/);
   assert.ok(
     preflightAt >= 0 && freezeAt > preflightAt,
-    `${path}: the pre-flight must run BEFORE computeFrozenFirstParts — validating after the freeze ` +
+    `${path}: the pre-flight must run BEFORE computePart1Freeze — validating after the freeze ` +
       "would report the problem with the money already committed",
   );
 }

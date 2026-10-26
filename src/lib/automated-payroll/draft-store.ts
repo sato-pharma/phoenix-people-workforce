@@ -98,6 +98,12 @@ function mapDraftRow(row: RunRow): DraftRow {
     payDeferralValue: numeric(row.pay_deferral_value),
     payDeferralMonth:
       row.pay_deferral_month === "next" || row.pay_deferral_month === "after_next" ? row.pay_deferral_month : null,
+    heldReleaseP1Value: numeric(row.held_release_p1_value),
+    payDeferralP1Value: numeric(row.pay_deferral_p1_value),
+    payDeferralP1Month:
+      row.pay_deferral_p1_month === "next" || row.pay_deferral_p1_month === "after_next"
+        ? row.pay_deferral_p1_month
+        : null,
     unpaidVacations: numeric(row.unpaid_vacations),
     resignationCrmDays: numeric(row.resignation_crm_days),
     crm: numeric(row.crm),
@@ -390,6 +396,8 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("otherAdditions", "other_additions");
   num("heldReleaseValue", "held_release_value");
   num("payDeferralValue", "pay_deferral_value");
+  num("heldReleaseP1Value", "held_release_p1_value");
+  num("payDeferralP1Value", "pay_deferral_p1_value");
   num("unpaidVacations", "unpaid_vacations");
   num("resignationCrmDays", "resignation_crm_days");
   num("crm", "crm");
@@ -412,6 +420,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   if (patch.settledInPart1 !== undefined) db.settled_in_part1 = patch.settledInPart1;
   if (patch.part1Withheld !== undefined) db.part1_withheld = patch.part1Withheld;
   if (patch.payDeferralMonth !== undefined) db.pay_deferral_month = patch.payDeferralMonth;
+  if (patch.payDeferralP1Month !== undefined) db.pay_deferral_p1_month = patch.payDeferralP1Month;
   if (patch.expensesNote !== undefined) db.expenses_note = patch.expensesNote;
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
   if (patch.additionsReason !== undefined) db.additions_reason = patch.additionsReason;

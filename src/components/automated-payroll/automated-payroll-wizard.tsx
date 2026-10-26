@@ -85,6 +85,7 @@ const PART1_STEP_GROUPS: { label: string; keys: readonly StepKey[] }[] = [
       "p1_other_deductions",
     ],
   },
+  { label: "Pay adjustments", keys: ["p1_held_release", "p1_pay_deferral"] },
   { label: "Special cases & review", keys: ["p1_special_situations", "p1_holds"] },
 ];
 
