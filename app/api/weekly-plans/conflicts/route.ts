@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getSameLinePlanBookings } from "@/lib/weekly-planning/calendar-service";
+import { sameLineBookingRangeProblem } from "@/lib/weekly-planning/calendar";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -26,9 +27,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const start = validDate(url.searchParams.get("start"));
     const end = validDate(url.searchParams.get("end"));
-    if (!start || !end || end < start) {
+    // One plan period at a time: an open-ended range would read every submitted plan of the year.
+    const rangeProblem = start && end ? sameLineBookingRangeProblem(start, end) : "A valid start and end date are required.";
+    if (!start || !end || rangeProblem) {
       return NextResponse.json(
-        { error: "invalid_range", message: "A valid start and end date are required.", success: false },
+        { error: "invalid_range", message: rangeProblem, success: false },
         { status: 400 },
       );
     }

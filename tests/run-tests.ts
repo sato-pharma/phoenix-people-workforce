@@ -495,6 +495,7 @@ import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
 import { runWeeklyPlansHardeningTests } from "./weekly-plans-hardening.test.ts";
 import { runWeeklyPlanCalendarOwnerScopeTests } from "./weekly-plan-calendar-owner-scope.test.ts";
+import { runWeeklyPlanConflictsScopeTests } from "./weekly-plan-conflicts-scope.test.ts";
 import { runPlanningCalendarExportTests } from "./planning-calendar-export.test.ts";
 import { runPlanningCalendarHidesOfficeTests } from "./planning-calendar-hides-office.test.ts";
 import { runPlanningCalendarFullDayMergeTests } from "./planning-calendar-full-day-merge.test.ts";
@@ -4004,6 +4005,7 @@ await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);
 await runTest("weekly plan calendar owner scope (title eligibility, cross-line/hierarchy visible)", runWeeklyPlanCalendarOwnerScopeTests);
+await runTest("weekly plan conflicts route (capped window, rep + date only)", runWeeklyPlanConflictsScopeTests);
 await runTest("planning calendar XLSX export (SFE Manager/Super Admin gate, per-user summary + detail)", runPlanningCalendarExportTests);
 await runTest("planning calendar hides Office days (only field days are shown)", runPlanningCalendarHidesOfficeTests);
 await runTest("planning calendar shows an identical AM and PM as one Full day entry", runPlanningCalendarFullDayMergeTests);

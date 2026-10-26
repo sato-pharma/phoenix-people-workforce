@@ -1489,14 +1489,13 @@ export function PlansWorkspace({
       const warning = sameLineBookingWarning({
         activityDate: row.activityDate,
         bookings: sameLineBookings,
-        currentEmployeeHrId: workspace.currentEmployee?.hrId,
         medicalRepHrId: row.doubleVisitMedicalRepHrId || autoRep?.hrId,
         medicalRepName: row.doubleVisitMedicalRepName || autoRep?.fullName,
       });
       if (warning) map.set(row.key, warning);
     }
     return map;
-  }, [rows, sameLineBookings, workspace.currentEmployee?.hrId, workspace.medicalRepOptions]);
+  }, [rows, sameLineBookings, workspace.medicalRepOptions]);
   const firstConflictWarning = Array.from(rowConflictWarning.values())[0] ?? null;
 
   const sheetRow = rows.find((row) => row.key === sheetKey) ?? null;

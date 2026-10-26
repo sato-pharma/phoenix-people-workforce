@@ -82,20 +82,37 @@ export type PlanningCalendarConflict = {
   warning: string;
 };
 
+// What the Plans form needs to say "already planned with this Medical Rep on this date" - and nothing
+// more. The booking never carries the other manager's HR id, line, area, region or activity: the server
+// names the manager only when the viewer may already see that manager's plan on the planning calendar.
 export type SameLinePlanBooking = {
-  activityTitle: string;
-  area: string | null;
   date: string;
-  employeeHrId: string;
-  employeeName: string;
-  // Nickname-aware display name (nickname when set, else employeeName). Use this
-  // for live UI rendering; legal/audit contexts keep using employeeName.
-  employeeDisplayName: string;
-  lineName: string | null;
   medicalRepHrId: string;
   medicalRepName: string;
-  region: string | null;
+  // Nickname-aware display name of the manager who booked the rep; null when the viewer may not see
+  // that manager's plans, and the warning then says "Another manager".
+  plannedByDisplayName: string | null;
 };
+
+// The longest window GET /api/weekly-plans/conflicts answers: the form asks for one plan period (a week
+// or a month, 31 days at most); six weeks leaves room for a period that straddles a month end.
+export const SAME_LINE_BOOKING_MAX_RANGE_DAYS = 42;
+
+/** The reason a start/end pair may not be asked of the conflicts route, or null when it may. */
+export function sameLineBookingRangeProblem(start: string, end: string): string | null {
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  const isRealDay = (value: string, ms: number) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === value;
+  if (!isRealDay(start, startMs) || !isRealDay(end, endMs) || end < start) {
+    return "A valid start and end date are required.";
+  }
+  const days = Math.round((endMs - startMs) / 86_400_000) + 1;
+  if (days > SAME_LINE_BOOKING_MAX_RANGE_DAYS) {
+    return `Ask for at most ${SAME_LINE_BOOKING_MAX_RANGE_DAYS} days at a time.`;
+  }
+  return null;
+}
 
 export type PlanningCalendarWorkspace = {
   conflicts: PlanningCalendarConflict[];
@@ -460,7 +477,6 @@ export function attachPlanningConflictWarnings(items: PlanningCalendarPlanItem[]
 
 export function sameLineBookingWarning(input: {
   activityDate: string;
-  currentEmployeeHrId?: string | null;
   medicalRepHrId?: string | null;
   medicalRepName?: string | null;
   bookings: SameLinePlanBooking[];
@@ -469,21 +485,22 @@ export function sameLineBookingWarning(input: {
     [input.medicalRepHrId, input.medicalRepName].map(normalizedPlanningCalendarKey).filter(Boolean),
   );
   if (!input.activityDate || repKeys.size === 0) return null;
-  const currentHrId = normalizedPlanningCalendarKey(input.currentEmployeeHrId);
+  // The server never sends the viewer's own bookings, so every match here is someone else's.
   const matches = input.bookings.filter((booking) => {
     if (booking.date !== input.activityDate) return false;
     const bookingRepKeys = [
       normalizedPlanningCalendarKey(booking.medicalRepHrId),
       normalizedPlanningCalendarKey(booking.medicalRepName),
     ].filter(Boolean);
-    if (!bookingRepKeys.some((key) => repKeys.has(key))) return false;
-    return normalizedPlanningCalendarKey(booking.employeeHrId) !== currentHrId;
+    return bookingRepKeys.some((key) => repKeys.has(key));
   });
   if (matches.length === 0) return null;
 
-  const employeeNames = uniqueSorted(matches.map((booking) => booking.employeeDisplayName));
+  const named = uniqueSorted(matches.map((booking) => booking.plannedByDisplayName));
+  const unnamedCount = matches.filter((booking) => !cleanText(booking.plannedByDisplayName)).length;
+  const planners = [...named, ...(unnamedCount > 0 ? ["Another manager"] : [])];
   const repName = cleanText(input.medicalRepName) || matches[0]?.medicalRepName || "this Medical Rep";
-  return `${employeeNames.join(", ")} already planned with ${repName} on this date. This is a warning only; it does not block submission.`;
+  return `${planners.join(", ")} already planned with ${repName} on this date. This is a warning only; it does not block submission.`;
 }
 
 // Human-readable label for a plan's approval status — the same wording the
