@@ -214,7 +214,7 @@ export async function runRecruitmentManagerEngagementExportTests() {
     "the cover's totals come from the rows written (2 + 1 unopened), not the report's stale figures",
   );
   assert.doesNotMatch(coverText, /999/, "the report's own totals must never be copied onto the cover");
-  assert.match(coverText, /nothing recorded a manager opening a CV before tracking began/, "the reading caveat travels with the file");
+  assert.match(coverText, /Nothing recorded an open before tracking began, so a CV that arrived before then shows as not opened even if it was read/, "the reading caveat travels with the file, without assuming how many CVs it touches");
 
   // Managers — the table on screen.
   const managers = sheetOf(workbook, "Managers");
@@ -241,8 +241,8 @@ export async function runRecruitmentManagerEngagementExportTests() {
   );
   assert.deepEqual(
     rowText(managers, 8, 9),
-    ["Total", "", "", "", "", "4", "1", "3", "1"],
-    "the totals row adds up the sheet above it",
+    ["Total CVs, each counted once", "", "", "", "", "4", "1", "3", "1"],
+    "with no CV shared between managers, the totals row adds up the sheet above it",
   );
 
   // CVs — one line per (manager, CV), in the screen's own order.
@@ -284,7 +284,7 @@ export async function runRecruitmentManagerEngagementExportTests() {
   );
   const filteredManagers = sheetOf(filtered, "Managers");
   assert.deepEqual(rowText(filteredManagers, 6, 1), ["Sara Fouad"], "the filtered sheet holds only the filtered manager");
-  assert.deepEqual(rowText(filteredManagers, 7, 9), ["Total", "", "", "", "", "1", "0", "1", "0"], "and its total is that manager alone");
+  assert.deepEqual(rowText(filteredManagers, 7, 9), ["Total CVs, each counted once", "", "", "", "", "1", "0", "1", "0"], "and its total is that manager alone");
   assert.match(sheetDump(sheetOf(filtered, "Cover")), /“pedia”/, "a filtered export names the filter on its cover");
 
   // An empty report still produces a readable file rather than throwing.

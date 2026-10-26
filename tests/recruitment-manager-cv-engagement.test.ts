@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   aggregateManagerCvEngagement,
   canViewManagerCvEngagement,
+  distinctEngagementTotals,
   engagementHrKey,
   type EngagementManagerMeta,
   type EngagementMembership,
@@ -171,6 +172,80 @@ export function runRecruitmentManagerCvEngagementTests() {
 
   assert.deepEqual(report.totals, { managers: 3, received: 6, opened: 2, notOpened: 4, answered: 3 });
 
+  // ── A CV held by TWO managers is ONE CV in the header tiles ──────────────────────────────────
+  // Production, 25 Oct 2026: Tarek Ali Sabry El-morsy — one row in ats_candidates — was sent to both
+  // Dakahlia 1 managers, and the Pedia line's "CVs received" tile said 15 when there were 14 CVs. The
+  // tiles count candidates; each manager's own card keeps counting what is in front of him.
+  const shared = aggregateManagerCvEngagement({
+    memberships: [
+      { managerHrId: "dm-21", candidateId: "tarek", area: "Mansoura" },
+      { managerHrId: "dm-22", candidateId: "tarek", area: "Mansoura" },
+      { managerHrId: "dm-21", candidateId: "salma", area: "Mansoura" },
+    ],
+    managerMeta: new Map<string, EngagementManagerMeta>([
+      meta({ managerHrId: "dm-21", name: "Hany Saad Mohamed Omar", line: "Pedia" }),
+      meta({ managerHrId: "dm-22", name: "Sahar El Gallad", line: "Pedia" }),
+    ]),
+    candidateInfo: new Map([
+      ["tarek", { name: "Tarek Ali Sabry El-morsy", status: "shortlisted", arrivedAt: "2026-10-25" }],
+      ["salma", { name: "Salma", status: "new", arrivedAt: "2026-10-20" }],
+    ]),
+    // Only Sahar opened Tarek's CV.
+    openedKeys: new Set([`${engagementHrKey("dm-22")}::tarek`]),
+    scoped: true,
+  });
+  const hany = shared.rows.find((row) => row.managerHrId === "dm-21");
+  const sahar = shared.rows.find((row) => row.managerHrId === "dm-22");
+  assert.deepEqual(
+    [hany?.received, hany?.opened, hany?.notOpened, hany?.answered],
+    [2, 0, 2, 1],
+    "each manager's card still counts every CV in front of him, the shared one included",
+  );
+  assert.deepEqual([sahar?.received, sahar?.opened, sahar?.notOpened, sahar?.answered], [1, 1, 0, 1]);
+  assert.deepEqual(
+    shared.totals,
+    { managers: 2, received: 2, opened: 1, notOpened: 1, answered: 1 },
+    "the tiles count Tarek once — 2 CVs, not the 3 the cards add up to; opened once one of his managers opened him",
+  );
+  assert.deepEqual(distinctEngagementTotals(shared.rows), shared.totals, "one helper is the only way the totals are counted");
+
+  // ── Every ACTIVE manager in scope is listed, at zero when nothing reached him ─────────────────
+  // The intro says "for every manager on your line"; a manager who received nothing used to vanish.
+  const rostered = aggregateManagerCvEngagement({
+    memberships: [{ managerHrId: "dm-21", candidateId: "tarek", area: "Mansoura" }],
+    managerMeta: new Map<string, EngagementManagerMeta>([
+      meta({ managerHrId: "dm-21", name: "Hany Saad Mohamed Omar" }),
+      meta({ managerHrId: "dm-23", name: "Mona Fathy" }),
+    ]),
+    candidateInfo: new Map([["tarek", { name: "Tarek Ali Sabry El-morsy", status: "new", arrivedAt: "2026-10-25" }]]),
+    openedKeys: new Set(),
+    scoped: true,
+    // dm-21 twice and in two spellings: a roster manager who also has CVs is one row, not two.
+    rosterManagerHrIds: ["DM-23", "dm-21", "Dm-21"],
+  });
+  assert.deepEqual(
+    rostered.rows.map((row) => [row.managerName, row.received, row.opened, row.notOpened, row.answered, row.candidates.length]),
+    [
+      ["Hany Saad Mohamed Omar", 1, 0, 1, 0, 1],
+      ["Mona Fathy", 0, 0, 0, 0, 0],
+    ],
+    "the manager nothing reached is listed at zero, below the ones with CVs",
+  );
+  assert.deepEqual(rostered.totals, { managers: 2, received: 1, opened: 0, notOpened: 1, answered: 0 });
+  const rosterOnly = aggregateManagerCvEngagement({
+    memberships: [],
+    managerMeta: new Map<string, EngagementManagerMeta>([meta({ managerHrId: "dm-23", name: "Mona Fathy" })]),
+    candidateInfo: new Map(),
+    openedKeys: new Set(),
+    scoped: true,
+    rosterManagerHrIds: ["dm-23"],
+  });
+  assert.deepEqual(
+    rosterOnly.rows.map((row) => [row.managerName, row.received]),
+    [["Mona Fathy", 0]],
+    "a line with no CVs at all still lists its managers",
+  );
+
   // ── An empty input is an empty report, not a throw ──────────────────────────────────────────
   const empty = aggregateManagerCvEngagement({
     memberships: [],
@@ -202,6 +277,13 @@ export function runRecruitmentManagerCvEngagementTests() {
   assert.match(domainSource, /line_id/, "the manager's line must be read from the directory, not the HR prefix");
   // Missing-table codes are treated as "not migrated yet" so the page degrades instead of 500ing.
   assert.match(domainSource, /PGRST205/, "the loader must treat a missing relation as not-migrated-yet");
+  // The roster is the folder holders (DM, acting DM, RSM, NSM) in scope, kept only when the directory's
+  // own lifecycle rule says active — never a hand-rolled status list.
+  assert.match(domainSource, /loadFolderHolderKeys\(\)/, "the roster is every manager who holds CV folders");
+  assert.match(domainSource, /isActiveLifecycleStatus\(/, "a roster manager is listed only when the directory says active");
+  assert.match(domainSource, /rosterManagerHrIds\s*\}\s*\)/, "the loader hands the roster to the aggregator");
+  // Names read in title case beside each other, through the shared display helper.
+  assert.match(domainSource, /tidyAllCapitalsName\(/, "an all-capitals stored name is tidied for display");
   // Route 1 stamps each folder membership with the folder's area — what the expanded list groups by.
   assert.match(domainSource, /area:\s*folder\.areaName/, "the folder route must carry the folder area onto the membership");
 

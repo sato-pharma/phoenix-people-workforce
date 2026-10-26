@@ -36,6 +36,7 @@ import { chunkIds } from "@/lib/recruitment/db-batch";
 import type { ReturnedCvManagerGroup } from "@/lib/recruitment/district-returns";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import type { ManagerCvEngagementReport } from "@/lib/recruitment/manager-cv-engagement";
+import { distinctEngagementTotals } from "@/lib/recruitment/manager-cv-engagement-totals";
 import {
   HR_ROLE_FAMILIES,
   HR_ROLE_TABS,
@@ -148,17 +149,8 @@ export function withoutHiddenEngagementCandidates(
     // A manager is dropped only when the fence emptied him; one who had nothing stays as he was.
     .filter((row) => !row.emptiedByFence)
     .map(({ emptiedByFence: _emptied, ...row }) => row);
-  const totals = rows.reduce(
-    (acc, row) => ({
-      answered: acc.answered + row.answered,
-      managers: acc.managers + 1,
-      notOpened: acc.notOpened + row.notOpened,
-      opened: acc.opened + row.opened,
-      received: acc.received + row.received,
-    }),
-    { answered: 0, managers: 0, notOpened: 0, opened: 0, received: 0 },
-  );
-  return { ...report, rows, totals };
+  // Each CV once, however many managers hold it — the same count the unfenced screen shows.
+  return { ...report, rows, totals: distinctEngagementTotals(rows) };
 }
 
 /** An interview request as the fence reads it: its CVs, each naming a Recruitment candidate or none. */

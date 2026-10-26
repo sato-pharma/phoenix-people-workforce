@@ -16,11 +16,12 @@ export async function runPlanningCalendarHidesOfficeTests() {
     { day: "Tue", activityType: "Field" },
     { day: "Wed", activityType: "Other" },
     { day: "Thu", activityType: "Admin" },
+    { day: "Sat", activityType: "National Vacation" },
   ];
   assert.deepEqual(
     withoutOfficeDays(week).map((item) => item.day),
     ["Tue", "Wed"],
-    "Office and Admin days are dropped and the field days stay",
+    "Office, Admin and National Vacation days are dropped and the field days stay",
   );
 
   assert.equal(resolvePlanItemArea("Behira 1", "Alex Center", "Cairo"), "Behira 1", "a stored area wins");

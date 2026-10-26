@@ -49,7 +49,7 @@ export default async function ManagerEngagementPage() {
       <div className="space-y-6">
         <RecruitmentPageHeader
           badges={<AdminInsightChip tone="slate">Silent report</AdminInsightChip>}
-          description="For every manager: how many CVs are in their My Candidates folder, how many they opened, how many are still unopened, and how many they answered."
+          description="For every manager, including any who have received none yet: how many CVs are in their My Candidates folder, how many they opened, how many are still unopened, and how many they answered."
           icon={<Eye aria-hidden="true" className="h-3.5 w-3.5" />}
           title="Manager CV Engagement"
         />

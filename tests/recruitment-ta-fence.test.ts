@@ -155,6 +155,26 @@ function runSideRuleTests() {
   );
   assert.deepEqual(fenced.totals, { answered: 0, managers: 2, notOpened: 1, opened: 0, received: 1 });
   assert.equal(withoutHiddenEngagementCandidates(report, new Set()), report, "nothing hidden, nothing rebuilt");
+  // A CV two managers hold stays ONE CV in the fenced totals, exactly as on the unfenced screen.
+  const sharedFenced = withoutHiddenEngagementCandidates(
+    {
+      rows: [
+        engagementRow("M-1", [
+          { answered: true, candidateId: MEDICAL_REP, opened: false },
+          { answered: false, candidateId: HR_PLACED, opened: false },
+        ]),
+        engagementRow("M-2", [{ answered: true, candidateId: MEDICAL_REP, opened: true }]),
+      ],
+      scoped: false,
+      totals: { answered: 2, managers: 2, notOpened: 2, opened: 1, received: 3 },
+    },
+    new Set([HR_PLACED]),
+  );
+  assert.deepEqual(
+    sharedFenced.totals,
+    { answered: 1, managers: 2, notOpened: 0, opened: 1, received: 1 },
+    "the fenced tiles count each CV once",
+  );
 
   const queue: ReturnedCvManagerGroup[] = [
     {

@@ -40,6 +40,8 @@
 // role reaches this at all.
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
+import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { canSeeAllRecruitment, resolveHiringManagerScopeHrIds } from "@/lib/recruitment/access";
@@ -48,6 +50,11 @@ import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadAllDistrictBoards } from "@/lib/recruitment/district-manager-folders-db";
+import { loadFolderHolderKeys } from "@/lib/recruitment/folder-holders";
+import {
+  distinctEngagementTotals,
+  type ManagerCvEngagementTotals,
+} from "@/lib/recruitment/manager-cv-engagement-totals";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
@@ -55,6 +62,8 @@ import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { isUuid } from "@/lib/http/uuid";
+
+export { distinctEngagementTotals, type ManagerCvEngagementTotals };
 
 /**
  * The roles that may open the report at all.
@@ -150,7 +159,8 @@ export type ManagerCvEngagementRow = {
 
 export type ManagerCvEngagementReport = {
   rows: ManagerCvEngagementRow[];
-  totals: { managers: number; received: number; opened: number; notOpened: number; answered: number };
+  /** The header tiles: every CV counted ONCE however many managers hold it — see distinctEngagementTotals. */
+  totals: ManagerCvEngagementTotals;
   /** True when the viewer sees only his own line (a National Sales Manager) rather than everyone. */
   scoped: boolean;
 };
@@ -192,6 +202,8 @@ export type EngagementManagerMeta = {
  *                      gone; the membership still counts as received, unnamed and never "answered".
  * @param openedKeys    set of `${engagementHrKey(manager)}::${candidateId}` for which a view row
  *                      exists under that manager's own HR_ID.
+ * @param rosterManagerHrIds every active manager in scope, CVs or not. Each gets a row — at zero when
+ *                      nothing reached him — so "every manager on your line" really is every one.
  */
 export function aggregateManagerCvEngagement(input: {
   memberships: readonly EngagementMembership[];
@@ -199,20 +211,16 @@ export function aggregateManagerCvEngagement(input: {
   candidateInfo: ReadonlyMap<string, { name: string | null; status: string | null; arrivedAt: string | null }>;
   openedKeys: ReadonlySet<string>;
   scoped: boolean;
+  rosterManagerHrIds?: readonly string[];
 }): ManagerCvEngagementReport {
   const byManager = new Map<string, ManagerCvEngagementRow & { seenCandidates: Set<string> }>();
 
-  for (const membership of input.memberships) {
-    const key = engagementHrKey(membership.managerHrId);
-    if (!key) continue;
-    const candidateId = String(membership.candidateId ?? "").trim();
-    if (!candidateId) continue;
-
+  const rowFor = (key: string, managerHrId: string): ManagerCvEngagementRow & { seenCandidates: Set<string> } => {
     let row = byManager.get(key);
     if (!row) {
       const meta = input.managerMeta.get(key);
       row = {
-        managerHrId: meta?.managerHrId ?? membership.managerHrId,
+        managerHrId: meta?.managerHrId ?? managerHrId,
         managerName: meta?.name ?? null,
         managerJobTitle: meta?.jobTitle ?? null,
         managerArea: meta?.area ?? null,
@@ -229,6 +237,22 @@ export function aggregateManagerCvEngagement(input: {
       };
       byManager.set(key, row);
     }
+    return row;
+  };
+
+  // The roster first, so a manager nothing reached still reads as a row of zeros.
+  for (const managerHrId of input.rosterManagerHrIds ?? []) {
+    const key = engagementHrKey(managerHrId);
+    if (key) rowFor(key, managerHrId);
+  }
+
+  for (const membership of input.memberships) {
+    const key = engagementHrKey(membership.managerHrId);
+    if (!key) continue;
+    const candidateId = String(membership.candidateId ?? "").trim();
+    if (!candidateId) continue;
+
+    const row = rowFor(key, membership.managerHrId);
 
     const membershipArea = String(membership.area ?? "").trim() || null;
 
@@ -281,18 +305,7 @@ export function aggregateManagerCvEngagement(input: {
       return String(left.managerName ?? left.managerHrId).localeCompare(String(right.managerName ?? right.managerHrId));
     });
 
-  const totals = rows.reduce(
-    (acc, row) => ({
-      managers: acc.managers + 1,
-      received: acc.received + row.received,
-      opened: acc.opened + row.opened,
-      notOpened: acc.notOpened + row.notOpened,
-      answered: acc.answered + row.answered,
-    }),
-    { managers: 0, received: 0, opened: 0, notOpened: 0, answered: 0 },
-  );
-
-  return { rows, totals, scoped: input.scoped };
+  return { rows, totals: distinctEngagementTotals(rows), scoped: input.scoped };
 }
 
 /** True when the error is "that table/column is not in this database yet". */
@@ -312,6 +325,12 @@ function textOrNull(value: unknown): string | null {
 // `!== 'active'` so a null/blank status (an incomplete row) reads as "not flagged", never as a false
 // resignation badge over a manager who is fine.
 const inactiveEmploymentStatuses = new Set(["resigned", "terminated", "inactive", "suspended"]);
+
+/** A person's name for the report: trimmed, and an all-capitals spelling tidied for display. */
+function displayNameOrNull(value: unknown): string | null {
+  const text = textOrNull(value);
+  return text ? tidyAllCapitalsName(text) : null;
+}
 
 function titleCase(value: string): string {
   return value.length === 0 ? value : value.charAt(0).toUpperCase() + value.slice(1);
@@ -428,10 +447,24 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
     });
   }
 
-  if (memberships.length === 0) return emptyReport;
+  // ── THE ROSTER: every manager who holds CV folders (district, acting district, regional and national
+  // sales managers — the people a CV is sent to), in scope. The intro promises "every manager on your
+  // line", so a manager nothing has reached is listed at zero rather than left out. Only an ACTIVE one
+  // (the directory's own rule, below): a departed manager appears only while CVs still sit with him.
+  // An unreadable organogram reads as nobody, and the CV routes above still stand.
+  const rosterKeys = [...(await loadFolderHolderKeys())]
+    .map((value) => engagementHrKey(value))
+    .filter((key): key is string => key !== null && inScope(key));
+
+  if (memberships.length === 0 && rosterKeys.length === 0) return emptyReport;
 
   const candidateIds = [...new Set(memberships.map((m) => m.candidateId))];
-  const managerKeys = [...new Set(memberships.map((m) => engagementHrKey(m.managerHrId)).filter((k): k is string => k !== null))];
+  const managerKeys = [
+    ...new Set([
+      ...rosterKeys,
+      ...memberships.map((m) => engagementHrKey(m.managerHrId)).filter((k): k is string => k !== null),
+    ]),
+  ];
 
   // Candidate name + status + arrival date, for the answered signal and the human-readable row.
   // Chunked because a PostgREST `.in()` carrying hundreds of ids can silently return nothing.
@@ -446,7 +479,8 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
       const id = String(row.id ?? "").trim();
       if (!id) continue;
       candidateInfo.set(id, {
-        name: textOrNull(row.full_name),
+        // Display only: a name typed all in capitals reads in title case beside the others.
+        name: displayNameOrNull(row.full_name),
         status: textOrNull(row.status),
         arrivedAt: textOrNull(row.created_at),
       });
@@ -520,7 +554,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
     const inactive = inactiveEmploymentStatuses.has(status);
     managerMeta.set(key, {
       managerHrId: dir ? String(dir.hr_id) : key,
-      name: (dir && textOrNull(dir.full_name)) || fb.name,
+      name: (dir && displayNameOrNull(dir.full_name)) || displayNameOrNull(fb.name),
       jobTitle: (dir && textOrNull(dir.job_title)) || fb.jobTitle,
       // The area from the `area_id` LINK, with `region_name` still behind it for a seat that has
       // no area at all. `employees.area_name` is a snapshot frozen at write time — see
@@ -551,7 +585,14 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
     }
   }
 
-  return aggregateManagerCvEngagement({ memberships, managerMeta, candidateInfo, openedKeys, scoped });
+  // A roster manager is listed only when the directory knows him and says he is active — the same
+  // lifecycle rule as the employee directory (active, on leave, or no status recorded).
+  const rosterManagerHrIds = rosterKeys.filter((key) => {
+    const dir = directoryByKey.get(key);
+    return dir !== undefined && isActiveLifecycleStatus(textOrNull(dir.employment_status));
+  });
+
+  return aggregateManagerCvEngagement({ memberships, managerMeta, candidateInfo, openedKeys, scoped, rosterManagerHrIds });
 }
 
 /**

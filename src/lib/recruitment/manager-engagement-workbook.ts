@@ -40,6 +40,7 @@ import {
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { ManagerCvEngagementReport, ManagerCvEngagementRow } from "@/lib/recruitment/manager-cv-engagement";
+import { distinctEngagementTotals } from "@/lib/recruitment/manager-cv-engagement-totals";
 import {
   cairoCalendarDay,
   cairoEngagementStamp,
@@ -69,17 +70,18 @@ export function cairoDateSerial(iso: string | null | undefined): number | null {
 const DATE_FMT = "dd mmm yyyy";
 
 /**
- * The one caveat that must travel with the file. Without it the large "Not opened" column reads as
- * an accusation rather than as a backlog: opens are only counted from the day the feature shipped,
- * so a CV a manager read on paper months ago still reads as not-opened. Kept in step with the amber
- * band the screen shows above the same table.
+ * The one caveat that must travel with the file. Without it the "Not opened" column reads as an
+ * accusation rather than as a backlog: opens are only counted from the day the feature shipped, so a
+ * CV a manager read on paper months ago still reads as not-opened. Kept in step with the amber band
+ * the screen shows above the same table.
  */
 export const ENGAGEMENT_READING_NOTE =
   "“Received” is every CV in the manager’s My Candidates folder — the ones in their areas plus " +
   "anything sent straight to them — not only what was hand-pushed. A CV counts as “Opened” once they " +
-  "opens it in the app from this feature’s launch onward, so the large “Not opened” on older CVs is " +
-  "real: nothing recorded a manager opening a CV before tracking began. “Answered” has full history — " +
-  "it reads the candidate’s recorded decision — so an older CV can show not opened yet answered.";
+  "open it in the app. Nothing recorded an open before tracking began, so a CV that arrived before then " +
+  "shows as not opened even if it was read. “Answered” has full history — it reads the candidate’s " +
+  "recorded decision — so an older CV can show not opened yet answered. The totals count each CV once: " +
+  "a CV sent to two managers is one CV there, and appears in both managers’ rows.";
 
 const CONFIDENTIAL_NOTE =
   "Confidential — this report names managers and measures whether they are reading the CVs sent to them. " +
@@ -170,18 +172,12 @@ function candidateRows(rows: readonly ManagerCvEngagementRow[]): CellValue[][] {
   return flat;
 }
 
-/** Fold the rows this workbook writes into the headline counts its Cover quotes. */
+/**
+ * Fold the rows this workbook writes into the headline counts its Cover quotes — each CV once, however
+ * many managers hold it, exactly as the screen's tiles count them.
+ */
 function totalsOf(rows: readonly ManagerCvEngagementRow[]) {
-  return rows.reduce(
-    (acc, row) => ({
-      managers: acc.managers + 1,
-      received: acc.received + row.received,
-      opened: acc.opened + row.opened,
-      notOpened: acc.notOpened + row.notOpened,
-      answered: acc.answered + row.answered,
-    }),
-    { answered: 0, managers: 0, notOpened: 0, opened: 0, received: 0 },
-  );
+  return distinctEngagementTotals(rows);
 }
 
 export async function buildManagerEngagementWorkbook(input: {
@@ -225,7 +221,9 @@ export async function buildManagerEngagementWorkbook(input: {
     columns: MANAGER_COLUMNS,
     rows: managerRows(rows),
     title: "Managers",
-    totals: ["Total", "", "", "", "", totals.received, totals.opened, totals.notOpened, totals.answered],
+    // Distinct CVs, like the Cover: a CV two managers hold is one CV here, so this line can be lower
+    // than the column above it adds up to.
+    totals: ["Total CVs, each counted once", "", "", "", "", totals.received, totals.opened, totals.notOpened, totals.answered],
     note: ENGAGEMENT_READING_NOTE,
   });
   managerSheet.views = [{ state: "frozen", ySplit: 5, showGridLines: false }];
