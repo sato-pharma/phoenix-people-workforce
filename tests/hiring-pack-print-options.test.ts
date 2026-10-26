@@ -144,7 +144,8 @@ function testThePromptDoesNotLetTheAddressBeSkipped() {
 function testTheRoutesCarryBothAnswers() {
   const print = flat("app/api/hiring-pack/[hrId]/print/route.ts");
   assert.ok(print.includes('const address = url.searchParams.get("address");'));
-  assert.equal((print.match(/\baddress,/g) ?? []).length >= 2, true, "both the HTML and the PDF render take the address");
+  assert.equal((print.match(/\baddress,/g) ?? []).length >= 1, true, "the address is listed in the inputs that choose the paper");
+  assert.equal((print.match(/\.\.\.paperInput/g) ?? []).length, 2, "both the HTML and the PDF render take the address through the shared paperInput");
   assert.ok(
     print.includes('statedCopies: url.searchParams.get("copies")'),
     "the PDF draws one copy and stamps the rest — the sentence must still state the real count",
