@@ -350,18 +350,20 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
         ]}
       />
 
-      {/* The one thing that would be misread without it: a wall of "not opened" on old CVs. Opens are
-          only counted from the day this feature shipped, so a CV a manager read on paper months ago
-          reads as not-opened until he opens it in the app. Say so, once, at the top. */}
+      {/* The one thing that would be misread without it: "not opened" on old CVs. Opens are only
+          counted from the day this feature shipped, so a CV a manager read on paper months ago reads
+          as not-opened until he opens it in the app. Say so, once, at the top — without assuming the
+          number is large, because on a given line it may not be. */}
       <div className={`flex gap-3 border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50 p-3 text-xs leading-5 text-amber-900 ${adminChipDepthClassName}`}>
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
         <p className="min-w-0">
           <span className="font-black">Reading these numbers:</span> &ldquo;Received&rdquo; is every CV in the
           manager&rsquo;s <em>My Candidates</em> folder — the ones in their areas plus anything sent straight to them —
-          not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once they open it in the app from this
-          feature&rsquo;s launch onward, so the large &ldquo;Not opened&rdquo; on older CVs is real: nothing recorded a
-          manager opening a CV before tracking began. &ldquo;Answered&rdquo; has full history — it reads the
-          candidate&rsquo;s recorded decision — so an older CV can show <em>not opened</em> yet <em>answered</em>.
+          not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once they open it in the app. Nothing
+          recorded an open before tracking began, so a CV that arrived before then shows as not opened even if it was
+          read. &ldquo;Answered&rdquo; has full history — it reads the candidate&rsquo;s recorded decision — so an older CV
+          can show <em>not opened</em> yet <em>answered</em>. The totals at the top count each CV once: a CV sent to
+          two managers is one CV there, and appears in both managers&rsquo; rows.
         </p>
       </div>
 
