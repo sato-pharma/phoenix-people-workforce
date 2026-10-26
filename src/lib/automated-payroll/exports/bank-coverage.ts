@@ -156,7 +156,7 @@ export function buildBankCoverage(input: {
   };
 
   for (const entry of input.rows) {
-    if (entry.onHold) continue;
+    if (heldForScope(entry, input.scope)) continue;
     take({
       name: entry.row.fullName,
       hrId: entry.row.hrId,
@@ -208,4 +208,15 @@ export function describeBankCoverage(coverage: BankCoverage): string {
     `${partLabel}: ${coverage.unroutable.length} of ${coverage.payableRows} payable rows reach NO bank file, ` +
     `totalling ${coverage.unroutableTotal.toFixed(2)}. They must be paid another way: ${names.join("; ")}`
   );
+}
+
+/**
+ * Whether a row is left out of one part's bank file as held. Part 1 is decided by the hold AT Part 1
+ * confirm (owner, 2026-10-26): someone held then and released later was not paid their first
+ * instalment, so a Part 1 file rebuilt afterwards must still leave them out — it is the record of what
+ * left the bank. A run confirmed before that was recorded falls back to the live hold, as before.
+ */
+export function heldForScope(entry: AssembledRow, scope: "part1" | "part2"): boolean {
+  if (scope === "part1") return entry.part1Withheld ?? entry.onHold;
+  return entry.onHold;
 }

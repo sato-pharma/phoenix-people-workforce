@@ -22,7 +22,7 @@ import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 // erased at compile time, so there is no runtime cycle.
 import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind.ts";
 
-import { settlementBasisFor } from "./assemble.ts";
+import { assembleRows, settlementBasisFor } from "./assemble.ts";
 import {
   linesFor,
   loadConfirmedDeductions,
@@ -67,7 +67,7 @@ import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
-import type { HeldBalance } from "./held-settlements.ts";
+import { notYetDue, type HeldBalance } from "./held-settlements.ts";
 import type {
   DraftRow,
   PayrollPeriod,
@@ -1444,18 +1444,28 @@ export function releaseOnlyMembersFor(input: {
  *
  * Most of these people are no longer in the population (they resigned, and that is why they were
  * held), so the row is built from the employee record rather than from `members`. The recommended
- * figure is the whole outstanding balance; the step can lower it, never raise it (saveStep).
+ * figure is everything due now — the outstanding balance less pay deferred to a LATER month
+ * (owner, 2026-10-26); the step can lower it, never raise it above the outstanding (saveStep).
+ *
+ * `part1Corrections` is what HR has entered as "Part 1 Not Paid" against the previous published month,
+ * by compact HR id: shown in that column, and anyone with an entry is listed even once it is paid off,
+ * so a saved figure never vanishes from the screen that set it.
  */
 export function recommendHeldRelease(
   members: PopulationMember[],
   directory: Map<string, EmployeeDirectoryRow>,
   drafts: Map<string, DraftRow>,
   heldBalances: Map<string, HeldBalance[]>,
+  period: PayrollPeriod,
+  part1Corrections: Map<string, number> = new Map(),
 ): StepRow[] {
   const memberByCompact = new Map(members.map((member) => [member.compact, member]));
   const compacts = new Set<string>(heldBalances.keys());
   for (const [compact, draft] of drafts) {
     if (!draft.excluded && Number(draft.heldReleaseValue ?? 0) > 0) compacts.add(compact);
+  }
+  for (const [compact, amount] of part1Corrections) {
+    if (amount > 0) compacts.add(compact);
   }
   const rows: StepRow[] = [];
   for (const compact of compacts) {
@@ -1483,19 +1493,60 @@ export function recommendHeldRelease(
     const sum = (pickAmount: (balance: HeldBalance) => number) =>
       roundCurrency(balances.reduce((total, balance) => total + pickAmount(balance), 0));
     const outstanding = sum((balance) => balance.outstanding);
+    // Deferred pay whose month has not come yet: owed, but not recommended before its month.
+    const notDue = notYetDue(balances, period);
+    const dueNow = Math.max(0, roundCurrency(outstanding - notDue));
+    const part1NotPaid = roundCurrency(part1Corrections.get(compact) ?? 0);
     row.context = {
       "Held Month": balances.map((balance) => monthNameAndYear(balance.month, balance.year)).join(", "),
       "Part 1 Already Paid": sum((balance) => balance.firstPartAlreadyPaid),
+      "Part 1 Withheld": sum((balance) => balance.firstPartWithheld),
       "Part 2 Withheld": sum((balance) => balance.secondPartWithheld),
+      Deferred: sum((balance) => balance.deferred),
       "Settled By Hand": sum((balance) => balance.settled?.amount ?? 0),
       "Released In Payroll": sum((balance) => balance.releasedByPayroll),
       Outstanding: outstanding,
+      "Not Yet Due": notDue,
     };
-    row.recommended = { heldReleaseValue: outstanding };
-    row.values = { heldReleaseValue: pick(draft?.heldReleaseValue, outstanding) };
+    row.recommended = { heldReleaseValue: dueNow, part1NotPaid };
+    row.values = { heldReleaseValue: pick(draft?.heldReleaseValue, dueNow), part1NotPaid };
     rows.push(row);
   }
   return rows.sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
+/**
+ * Part 2 "Defer Pay" (owner, 2026-10-26): every member, with the Part 2 the deferral may come off.
+ *
+ * "Part 2" is the row's second instalment WITHOUT its own deferral — the most that can be deferred,
+ * and the same figure assemble.ts caps the deferral at — read from the same assembly the bank files
+ * use, so the screen, the cap and the payment cannot disagree. Nothing is recommended: 0 unless HR
+ * types an amount.
+ */
+function recommendPayDeferral(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  draftRows: DraftRow[],
+  drafts: Map<string, DraftRow>,
+  period: PayrollPeriod,
+  carryForwardByCompact: Map<string, number> | undefined,
+): StepRow[] {
+  const assembled = new Map(
+    assembleRows({ members, sources, draftRows, period, part1Confirmed: true, carryForwardByCompact }).map(
+      (entry) => [entry.compact, entry],
+    ),
+  );
+  return members.map((member) => {
+    const draft = drafts.get(member.compact);
+    const row = baseRow(member);
+    const entry = assembled.get(member.compact);
+    const part2 = entry ? roundCurrency(entry.row.secondPart + entry.payDeferralApplied) : 0;
+    row.context = { ...row.context, "Hire Date": member.employee.hireDate ?? "", "Part 2": part2 };
+    row.recommended = { payDeferralValue: 0 };
+    row.values = { payDeferralValue: pick(draft?.payDeferralValue, 0) };
+    row.selects = { payDeferralMonth: draft?.payDeferralMonth ?? "next" };
+    return row;
+  });
 }
 
 /**
@@ -2121,6 +2172,8 @@ export async function recommendStep(input: {
    */
   heldBalances?: Map<string, HeldBalance[]>;
   directory?: Map<string, EmployeeDirectoryRow>;
+  /** Held Salary Release only: "Part 1 Not Paid" entered against the previous published month. */
+  part1Corrections?: Map<string, number>;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
   const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
@@ -2145,6 +2198,8 @@ async function recommendStepRows(
     draftRows: DraftRow[];
     heldBalances?: Map<string, HeldBalance[]>;
     directory?: Map<string, EmployeeDirectoryRow>;
+    part1Corrections?: Map<string, number>;
+    carryForwardByCompact?: Map<string, number>;
   },
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
@@ -2224,7 +2279,23 @@ async function recommendStepRows(
         // Never an empty step: an empty list would read as "nobody is owed anything".
         throw new Error("Held Salary Release needs the held balances and the employee records to recommend.");
       }
-      return recommendHeldRelease(input.members, input.directory, drafts, input.heldBalances);
+      return recommendHeldRelease(
+        input.members,
+        input.directory,
+        drafts,
+        input.heldBalances,
+        input.period,
+        input.part1Corrections,
+      );
+    case "p2_pay_deferral":
+      return recommendPayDeferral(
+        input.members,
+        input.sources,
+        input.draftRows,
+        drafts,
+        input.period,
+        input.carryForwardByCompact,
+      );
     case "p1_holds":
     case "p2_holds":
       // One extra read, on the two hold steps only — the carry-forward and the

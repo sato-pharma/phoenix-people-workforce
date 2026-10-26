@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
 import type { NonEmployeePayrollRow, PayrollPeriod } from "../types.ts";
-import { resolveBankRoute } from "./bank-coverage.ts";
+import { heldForScope, resolveBankRoute } from "./bank-coverage.ts";
 
 /**
  * FAB (First Abu Dhabi Bank / FABMISR) bulk salary-transfer upload file.
@@ -44,7 +44,7 @@ export function defaultFabValueDate(period: PayrollPeriod): Date {
  */
 export function fabRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"): FabSheetRow[] {
   return rows
-    .filter((entry) => !entry.onHold)
+    .filter((entry) => !heldForScope(entry, scope))
     // One routing definition, shared with cib-sheet.ts and the coverage report in
     // bank-coverage.ts. The decision is identical to the `trim().toUpperCase() === "FAB"` plus
     // non-empty-account test this replaces, so the file's contents do not move. What changes is

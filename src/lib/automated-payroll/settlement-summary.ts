@@ -87,6 +87,8 @@ export const DEDUCTION_COMPONENT_KEYS = [
   // editable, and easy to forget: leaving it out overstates take-home for
   // exactly the people whose pay was already wrong once.
   "carriedForwardApplied",
+  // Defer Pay (2026-10-26): moved off this month's Part 2 to a later month — part of `otherDeductions`.
+  "payDeferralValue",
 ] as const;
 
 export type SettlementSummary = {

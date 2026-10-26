@@ -90,7 +90,7 @@ const PART1_STEP_GROUPS: { label: string; keys: readonly StepKey[] }[] = [
 
 const PART2_STEP_GROUPS: { label: string; keys: readonly StepKey[] }[] = [
   { label: "Expenses & leave", keys: ["p2_expenses", "p2_vacation", "p2_crm"] },
-  { label: "Pay adjustments", keys: ["p2_additions", "p2_manual_deductions", "p2_held_release"] },
+  { label: "Pay adjustments", keys: ["p2_additions", "p2_manual_deductions", "p2_held_release", "p2_pay_deferral"] },
   { label: "Review", keys: ["p2_holds"] },
 ];
 

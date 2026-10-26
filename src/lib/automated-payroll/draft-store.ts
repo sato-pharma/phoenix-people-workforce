@@ -95,6 +95,9 @@ function mapDraftRow(row: RunRow): DraftRow {
     overtime: numeric(row.overtime),
     otherAdditions: numeric(row.other_additions),
     heldReleaseValue: numeric(row.held_release_value),
+    payDeferralValue: numeric(row.pay_deferral_value),
+    payDeferralMonth:
+      row.pay_deferral_month === "next" || row.pay_deferral_month === "after_next" ? row.pay_deferral_month : null,
     unpaidVacations: numeric(row.unpaid_vacations),
     resignationCrmDays: numeric(row.resignation_crm_days),
     crm: numeric(row.crm),
@@ -123,6 +126,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     specialSituationPart: (row.special_situation_part as "first" | "second" | null) ?? null,
     firstPartFrozen: numeric(row.first_part_frozen),
     settledInPart1: row.settled_in_part1 == null ? null : Boolean(row.settled_in_part1),
+    part1Withheld: row.part1_withheld == null ? null : Boolean(row.part1_withheld),
     onHold: Boolean(row.on_hold),
     holdReason: (row.hold_reason as string | null) ?? null,
     excluded: Boolean(row.excluded),
@@ -385,6 +389,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("overtime", "overtime");
   num("otherAdditions", "other_additions");
   num("heldReleaseValue", "held_release_value");
+  num("payDeferralValue", "pay_deferral_value");
   num("unpaidVacations", "unpaid_vacations");
   num("resignationCrmDays", "resignation_crm_days");
   num("crm", "crm");
@@ -405,6 +410,8 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("specialAdditionValue", "special_addition_value");
   num("firstPartFrozen", "first_part_frozen");
   if (patch.settledInPart1 !== undefined) db.settled_in_part1 = patch.settledInPart1;
+  if (patch.part1Withheld !== undefined) db.part1_withheld = patch.part1Withheld;
+  if (patch.payDeferralMonth !== undefined) db.pay_deferral_month = patch.payDeferralMonth;
   if (patch.expensesNote !== undefined) db.expenses_note = patch.expensesNote;
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
   if (patch.additionsReason !== undefined) db.additions_reason = patch.additionsReason;

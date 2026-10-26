@@ -22,6 +22,8 @@ export type PublishedHeldPerson = {
   compact: string;
   name: string;
   firstPartAlreadyPaid: number;
+  /** Part 1 the bank files did not pay (held at Part 1 confirm); 0 on runs published before it was recorded. */
+  firstPartWithheld: number;
   secondPartWithheld: number;
   monthTotal: number;
   /** The filing figures publish recorded for them; null on runs published before these were recorded. */
@@ -63,6 +65,7 @@ export function parsePublishedHoldDetail(detail: unknown): PublishedHoldRecord {
         compact: compactHrKey(hrId),
         name: String(entry.name ?? "").trim() || hrId,
         firstPartAlreadyPaid: roundCurrency(num(entry.firstPartAlreadyPaid)),
+        firstPartWithheld: roundCurrency(num(entry.firstPartWithheld)),
         secondPartWithheld: roundCurrency(num(entry.secondPartWithheld)),
         monthTotal: roundCurrency(num(entry.monthTotal)),
         socialInsurance: numOrNull(entry.socialInsurance),

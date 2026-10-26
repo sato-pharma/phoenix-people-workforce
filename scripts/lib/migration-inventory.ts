@@ -1873,6 +1873,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // to_regclass read null just before, so the table is new. Purely additive. Pinned by
   // tests/automated-payroll-held-release.test.ts.
   "20261026190000_automated_payroll_held_release_ledger.sql",
+
+  // PART 1 WITHHELD, DEFER PAY AND "PART 1 NOT PAID" — applied 26 Oct 2026 on STAGING then PRODUCTION through
+  // scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of
+  // AGENTS.md §8: the Supabase MCP's apply_migration answered {"status":"declined"} on staging, as it did for
+  // the held-release ledger above. The route writes no ledger row on either project, hence this entry.
+  //
+  // No function, so no prosrc digest; the evidence is the end state, read live on BOTH projects after the apply
+  // and identical on each: 3 new automated_payroll_draft_rows columns, the pay-deferral check constraint,
+  // public.automated_payroll_held_part1_unpaid present, relrowsecurity true, 4 policies, 2 indexes, anon SELECT
+  // false, 0 rows. Purely additive. Pinned by tests/automated-payroll-pay-deferral.test.ts.
+  "20261026210000_automated_payroll_part1_withheld_and_pay_deferral.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

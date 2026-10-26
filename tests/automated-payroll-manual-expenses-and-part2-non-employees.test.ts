@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { cibRowsForNonEmployees } from "../src/lib/automated-payroll/exports/cib-sheet.ts";
 import { fabRowsForNonEmployees } from "../src/lib/automated-payroll/exports/fab-sheet.ts";
@@ -191,8 +192,19 @@ export async function runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests
     STEP_DEFINITIONS.p2_expenses.fields.some((field) => field.key === "expensesNote" && field.kind === "text"),
     "a manually added amount has no trip behind it, so the step must carry a free-text note column",
   );
+  // Held Salary Release is the one other step (owner, 2026-10-26): someone held at Part 1 and released by
+  // Part 2 last month is on no held list, so HR adds them to record the Part 1 they were never paid. The
+  // figure is not free — it is refused above that person's frozen Part 1 on the earlier run.
+  assert.equal(STEP_DEFINITIONS.p2_held_release.allowsManualRows, true);
+  const heldSettlements = readFileSync("src/lib/automated-payroll/held-settlements.ts", "utf8");
+  const recorder = heldSettlements.slice(heldSettlements.indexOf("export async function recordPart1Corrections"));
+  assert.match(
+    recorder.slice(0, recorder.indexOf("\nexport ")),
+    /\.select\("employee_hr_id_compact,first_part_frozen"\)/,
+    "a hand-added Part 1 Not Paid is checked against the frozen Part 1 of the month it is recorded against",
+  );
   for (const [key, definition] of Object.entries(STEP_DEFINITIONS)) {
-    if (key === "p2_expenses") continue;
+    if (key === "p2_expenses" || key === "p2_held_release") continue;
     assert.notEqual(
       definition.allowsManualRows,
       true,

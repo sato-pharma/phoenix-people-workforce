@@ -82,6 +82,7 @@ function buildAssembledRow(overrides: {
     totalPayable: (overrides.firstPart ?? 5000) + (overrides.secondPart ?? 5000),
     carriedForwardApplied: 0,
     heldReleaseApplied: 0,
+    payDeferralApplied: 0,
     lifecycle: "regular",
     bankName: overrides.bankName === undefined ? "FAB" : overrides.bankName,
     bankAccount: overrides.bankAccount === undefined ? "009999990001" : overrides.bankAccount,

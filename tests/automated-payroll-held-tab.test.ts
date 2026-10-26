@@ -104,6 +104,7 @@ function buildHeldRow(overrides: {
     totalPayable: overrides.firstPart + overrides.secondPart,
     carriedForwardApplied: 0,
     heldReleaseApplied: 0,
+    payDeferralApplied: 0,
     lifecycle: "regular",
     bankName: "CIB",
     bankAccount: "100000000001",
@@ -203,6 +204,15 @@ export async function runAutomatedPayrollHeldTabTests() {
   );
   assert.ok(numbers.includes(7000), "the unsettled person's whole owed amount must be outstanding");
 
+  // Held when Part 1 was confirmed (owner, 2026-10-26): the Part 1 file left them out, so nothing was
+  // paid and BOTH instalments are owed. Without the stamp the row reads as before — Part 1 paid.
+  const stamped = { ...buildHeldRow({ hrId: "B-104", fullName: "Held At Part One", firstPart: 13100, secondPart: 8300 }), part1Withheld: true };
+  const stampedNumbers = cellText(await renderHeldSheet({ rows: [stamped] }))
+    .filter((value) => /^\d+(\.\d+)?$/.test(value))
+    .map(Number);
+  assert.ok(stampedNumbers.includes(13100 + 8300), "held at Part 1: the whole month is owed");
+  assert.ok(!stampedNumbers.includes(13100), "held at Part 1: no Part 1 reads as already paid");
+
   // Totals. The reason this is a tab rather than prose is that the figures have to add up.
   assert.ok(joined.includes("TOTAL"), "the Held tab must total its money columns");
   assert.ok(
@@ -241,6 +251,10 @@ export async function runAutomatedPayrollHeldTabTests() {
       reason: "Awaiting settlement",
       firstPartAlreadyPaid: 55500,
       secondPartWithheld: 12000,
+      firstPartWithheld: 0,
+      part1Correction: 0,
+      deferred: 0,
+      deferredTo: null,
       settled: null,
       releasedByPayroll: 0,
       outstanding: 12000,
@@ -256,6 +270,10 @@ export async function runAutomatedPayrollHeldTabTests() {
       reason: "Paid by hand",
       firstPartAlreadyPaid: 19600,
       secondPartWithheld: 8000,
+      firstPartWithheld: 0,
+      part1Correction: 0,
+      deferred: 0,
+      deferredTo: null,
       settled: buildSettlement({ compact: "b-156", amount: 8000 }),
       releasedByPayroll: 0,
       outstanding: 0,
