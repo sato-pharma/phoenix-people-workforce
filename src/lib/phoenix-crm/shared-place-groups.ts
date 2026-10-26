@@ -19,6 +19,7 @@
 
 import {
   EMPTY_VALIDATION_REVIEW_FILTERS,
+  decidedByMatches,
   matchesSharedPlaceFilters,
   matchesValidationReviewFilters,
   sharedPlacePassesOutcome,
@@ -339,12 +340,14 @@ export function narrowVenueGroups(input: {
     const customers = all.filter(
       (customer) =>
         seatedPassesOutcome(customer, held, filters.outcome) &&
+        decidedByMatches(customer.decidedByName, filters.decider) &&
         matchesValidationReviewFilters(customer, customerFilters) &&
         withinValidationReviewPeriod(customer.at, cutoff),
     );
     const itself =
       filters.list === "" &&
       sharedPlacePassesOutcome(venue, filters.outcome) &&
+      decidedByMatches(venue.decidedByName, filters.decider) &&
       matchesSharedPlaceFilters(venue, filters) &&
       withinValidationReviewPeriod(venue.capturedAt, cutoff);
     if (!itself && customers.length === 0) continue;

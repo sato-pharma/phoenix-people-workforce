@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import {
+  decidedByMatches,
+  decidedSectionTitle,
   distinctValues,
   EMPTY_VALIDATION_REVIEW_FILTERS,
   hasActiveValidationReviewFilter,
@@ -119,10 +121,23 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   // ── hasActiveValidationReviewFilter: the outcome alone does not count ─────────────────────────────
   assert.equal(hasActiveValidationReviewFilter(EMPTY_VALIDATION_REVIEW_FILTERS), false, "nothing set is not an active filter");
   assert.equal(hasActiveValidationReviewFilter(filtersFor({ outcome: "approved" })), false, "the outcome selector alone is not a narrowing filter");
-  for (const active of [{ rep: "x" }, { line: "x" }, { region: "x" }, { area: "x" }, { list: "x" }, { period: "7" as const }, { text: "x" }]) {
+  for (const active of [{ rep: "x" }, { line: "x" }, { region: "x" }, { area: "x" }, { list: "x" }, { period: "7" as const }, { decider: "x" }, { text: "x" }]) {
     assert.equal(hasActiveValidationReviewFilter(filtersFor(active)), true, `a set ${Object.keys(active)[0]} is an active filter`);
   }
   assert.equal(hasActiveValidationReviewFilter(filtersFor({ text: "   " })), false, "a whitespace-only search is not an active filter");
+
+  // ── Decided by (owner, 2026-10-26: "view only approved by me or only by khaled bedair") ───────────
+  assert.equal(decidedByMatches("Khaled Bedair", ""), true, "nobody chosen passes a decided row");
+  assert.equal(decidedByMatches(null, ""), true, "nobody chosen passes a waiting row too");
+  assert.equal(decidedByMatches("Khaled Bedair", "Khaled Bedair"), true, "his own decision passes his name");
+  assert.equal(decidedByMatches("Omar Gawish", "Khaled Bedair"), false, "another person's decision does not");
+  assert.equal(decidedByMatches(null, "Khaled Bedair"), false, "a row nobody decided passes no decider");
+  assert.equal(decidedByMatches("The system", "The system"), true, "the system's own approvals are a decider of their own");
+  assert.equal(decidedSectionTitle(filtersFor({ decider: "Khaled Bedair", outcome: "approved" }), false), "Approved by Khaled Bedair");
+  assert.equal(decidedSectionTitle(filtersFor({ decider: "Khaled Bedair", outcome: "rejected" }), false), "Rejected by Khaled Bedair");
+  assert.equal(decidedSectionTitle(filtersFor({ decider: "Khaled Bedair" }), false), "Decided by Khaled Bedair", "a chosen decider drops the 14-day words");
+  assert.equal(decidedSectionTitle(filtersFor({}), false), "Decided in the last 14 days");
+  assert.equal(decidedSectionTitle(filtersFor({ decider: "Khaled Bedair" }), true), "Settled in the last 14 days", "a manager's board never names a decider");
 
   // ── The board wires the pure logic, declares the admin surface, and owns the search ──────────────
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
@@ -141,6 +156,13 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   // The one-by-one review's wrapper (2026-10-18) hands every prop on to the board unchanged.
   assert.ok(page.includes("<ValidationReviewsBoard") || page.includes("<PlaceChecksWithDeck"), "the page delegates the sections to the board");
+  // 🔴 THE 14-DAY READ WOULD HAVE HIDDEN 86 OF HIS 480 DECISIONS: the Super Admin's page reads every
+  // decision, its cards count only the recent ones, and the board shows the older ones only while a
+  // decider is chosen. The manager's box is never drawn.
+  assert.match(page, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "the page reads every decision, not the 14-day window");
+  assert.match(page, /realDecided = real\(decided\)\.filter\(\(row\) => row\.recent\)/, "the 14-day cards still count only the recent decisions");
+  assert.match(board, /filters\.decider \? everyDecided : everyDecided\.filter\(\(row\) => row\.recent\)/, "the older decisions show only while a decider is chosen");
+  assert.match(board, /\{team \? null : \(\s*<CrmField htmlFor="vr-decider"/, "the Decided by box is the company board's alone");
   for (const prop of ["capped={capped}", "decided={decided}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={validated}"]) {
     assert.ok(page.includes(prop), `the board is handed ${prop}`);
   }
