@@ -447,4 +447,20 @@ export async function runDeductionsCycleTests(): Promise<void> {
     );
     assert.match(collect, /const crossCycle = await applyCrossCycleHold\(unheld, period\);/, "the office run must hold a day the calendar row already carries");
   }
+
+  // ── A run re-reads the page ───────────────────────────────────────────────
+  // The October Head Office run wrote 28 deductions and the screen kept reading 0 until a manual
+  // reload: every panel fetched on mount only. The run bumps a version that re-keys them.
+  {
+    const workspace = readFileSync("src/components/admin/deductions-workspace.tsx", "utf8");
+    assert.match(
+      workspace,
+      /finally \{\s*setCollecting\(false\);\s*setDataVersion\(\(version\) => version \+ 1\);/,
+      "a collection run must bump the data version when it ends, or the panels keep the pre-run numbers",
+    );
+    assert.ok(workspace.includes("const panelKey = `${monthKey}:${dataVersion}`;"), "the panel key must carry the data version");
+    for (const panel of ["MasterExportBar", "OverviewTab", "ByEmployeeTab", "CategoryTab", "LeaverSettlementPanel"]) {
+      assert.ok(workspace.includes(`<${panel} key={panelKey}`), `${panel} must remount after a collection run`);
+    }
+  }
 }
