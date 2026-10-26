@@ -172,9 +172,11 @@ export function planSlotLabel(startTime: string | null | undefined, endTime: str
  * The Planning Calendar shows where people WORK in the field, so a day (or half-day) planned as
  * "Office" or as "Admin" work is not drawn at all (owner, 2026-10-24: a National Sales Manager
  * planning Sunday and Monday Office, Tuesday Behira 1 and Wednesday Alex Center shows Tuesday and
- * Wednesday only; the same evening, admin work is hidden the same way).
+ * Wednesday only; the same evening, admin work is hidden the same way). A day a planner marked
+ * "National Vacation" is hidden too (owner, 2026-10-26): nothing records where he was, so it could
+ * only show his home area, and the company calendar already draws the official holiday itself.
  */
-const planningCalendarHiddenActivityTypes: ReadonlySet<string> = new Set(["Office", "Admin"]);
+const planningCalendarHiddenActivityTypes: ReadonlySet<string> = new Set(["Office", "Admin", "National Vacation"]);
 
 export function withoutOfficeDays<T extends { activityType: string }>(items: T[]): T[] {
   return items.filter((item) => !planningCalendarHiddenActivityTypes.has(item.activityType));

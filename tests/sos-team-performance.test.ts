@@ -272,6 +272,14 @@ function runVacantDistrictAndRegionalManagerTests() {
     [],
     "a Regional Manager reading his own region does not see himself as a roll-up row",
   );
+  // The NSM's own page passes the NSM's id as the excluded viewer — he is not a Regional Manager, so he
+  // still sees the Regional Manager AND the region with none (live bug: the rows were missing for him).
+  const viewedByNsm = regionalManagerMembersFromRows(rows, seats, names, products, { hrId: "N-1", name: "Nadia National" }, "N-1");
+  assert.deepEqual(
+    viewedByNsm.map((member) => member.name).sort(),
+    ["Giza — no regional manager", "Rami Regional"],
+    "the NSM viewing his own page sees the roll-up rows, including each region with no Regional Manager",
+  );
   // A vacant RSM seat names nobody — its seated districts are totalled by region, not under a person.
   const vacantRsmSeats = indexSalesSeats([
     seat("SEAT-RSM", null, "RSM", null, null),
