@@ -333,7 +333,7 @@ export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise
   const required = new Map(requiredRows.map((row) => [String(row.hr_id), row]));
   // Every occupied rep seat, one row per PERSON: a person on two territories is switched once.
   const seatsByPerson = new Map<string, OrgSeat[]>();
-  for (const seat of viewer.org.territories) {
+  for (const seat of viewer.org.territoryHolders) {
     if (!seat.occupantHrId) continue;
     const held = seatsByPerson.get(seat.occupantHrId) ?? [];
     held.push(seat);
@@ -557,7 +557,7 @@ export async function setRecordingRequired(viewer: PhoenixCrmViewer, raw: unknow
   const required = body.required === true;
   const supabase = getSupabaseAdmin();
   if (required) {
-    const holdsSeat = viewer.org.territories.some((seat) => seat.occupantHrId === hrId);
+    const holdsSeat = viewer.org.territoryHolders.some((seat) => seat.occupantHrId === hrId);
     if (!holdsSeat) throw validationError("This person holds no rep seat now, so there is nothing to record. Reload the page.");
     const { error } = await supabase
       .from("phoenix_crm_recording_required")
