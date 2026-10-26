@@ -29,6 +29,7 @@ import {
   type PlanningCalendarHolidayItem,
   type PlanningCalendarPlanItem,
   type PlanningCalendarWorkspace,
+  sameLineBookingRangeProblem,
   type SameLinePlanBooking,
 } from "@/lib/weekly-planning/calendar";
 import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
@@ -637,29 +638,58 @@ export async function getSharedPlanningCalendarWorkspace(
   }
 }
 
+/**
+ * The bookings the Plans form may hear about, cut down to what its "already planned with this Medical
+ * Rep" warning reads: the rep, the date, and - only where the viewer may already see that manager's plan
+ * on the planning calendar (isPlanItemVisibleToViewer) - who booked. Everyone else's activity title,
+ * area, region, line and HR id stay on the server. The viewer's own plans are not a booking by "another".
+ */
+export function selectSameLinePlanBookings(
+  items: PlanningCalendarPlanItem[],
+  viewer: CalendarViewerContext,
+): SameLinePlanBooking[] {
+  if (!viewer.lineName) return [];
+  const viewerHrId = normalizeHrId(viewer.hrId);
+  return items.flatMap((item) => {
+    const medicalRepIdentity = item.medicalRepHrId ?? item.medicalRepName;
+    if (!medicalRepIdentity || !sameLine(item.lineName, viewer.lineName)) return [];
+    if (normalizeHrId(item.employeeHrId) === viewerHrId) return [];
+    return [{
+      date: item.startDate,
+      medicalRepHrId: medicalRepIdentity,
+      medicalRepName: item.medicalRepName ?? medicalRepIdentity,
+      plannedByDisplayName: isPlanItemVisibleToViewer(item, viewer) ? item.employeeDisplayName : null,
+    }];
+  });
+}
+
 export async function getSameLinePlanBookings(
   access: AccessContext,
   start: string,
   end: string,
 ): Promise<SameLinePlanBooking[]> {
   await assertPermission(access, "weekly_plans", "read");
-  const { directoryByHrId, items } = await loadSubmittedPlanItems(start, end);
-  const viewer = directoryByHrId.get(normalizeHrId(access.hrId));
+  const rangeProblem = sameLineBookingRangeProblem(start, end);
+  if (rangeProblem) throw new Error(rangeProblem);
+  const [{ directoryByHrId, items }, districtManagerHrIds] = await Promise.all([
+    loadSubmittedPlanItems(start, end),
+    activeRoleSignIns(["District Manager"])
+      .then((signIns) => new Set(signIns.map((signIn) => normalizeHrId(signIn.hrId)).filter(Boolean)))
+      .catch(() => new Set<string>()),
+  ]);
+  const viewerHrId = normalizeHrId(access.hrId);
+  const viewer = directoryByHrId.get(viewerHrId);
   if (!viewer?.lineName) return [];
-  return items.flatMap((item) => {
-    const medicalRepIdentity = item.medicalRepHrId ?? item.medicalRepName;
-    if (!medicalRepIdentity || !sameLine(item.lineName, viewer.lineName)) return [];
-    return [{
-      activityTitle: item.activityTitle,
-      area: item.area,
-      date: item.startDate,
-      employeeHrId: item.employeeHrId,
-      employeeName: item.employeeName,
-      employeeDisplayName: item.employeeDisplayName,
-      lineName: item.lineName,
-      medicalRepHrId: medicalRepIdentity,
-      medicalRepName: item.medicalRepName ?? medicalRepIdentity,
-      region: item.region,
-    }];
+  const directReportHrIds = new Set(
+    [...directoryByHrId.values()]
+      .filter((row) => hrIdsMatch(row.managerHrId, access.hrId))
+      .map((row) => normalizeHrId(row.hrId)),
+  );
+  return selectSameLinePlanBookings(items, {
+    hrId: viewerHrId,
+    role: access.role,
+    lineName: viewer.lineName,
+    directReportHrIds,
+    districtManagerHrIds,
   });
 }
