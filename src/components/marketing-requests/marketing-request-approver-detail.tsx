@@ -282,6 +282,26 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
         />
       ) : null}
 
+      {/* ── Twin warning: the same requester, customer, type and cost already live — a possible
+          double payment (twin-request.ts). Named, never decided. ─────────────────────────────── */}
+      {detail.twinOf.length > 0 ? (
+        <div className="border border-rose-300 bg-rose-50 px-2.5 py-2">
+          <p className="flex items-center gap-1.5 text-phx-xs font-black text-rose-900">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {detail.twinOf.length === 1
+              ? "This looks like a second copy of an earlier request"
+              : `This looks like a copy of ${detail.twinOf.length} earlier requests`}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {detail.twinOf.map((twin) => (
+              <li className="text-phx-xs font-medium text-rose-900" key={twin.requestCode}>
+                {twin.requestCode} ({twin.statusLabel}, submitted {twin.submittedDay}) — {twin.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* ── Double-count warning first: it changes whether the rest even matters ───────────── */}
       {detail.contestedBy.length > 0 ? (
         <div className="rounded-sm border border-rose-300 bg-rose-50 px-2.5 py-2">

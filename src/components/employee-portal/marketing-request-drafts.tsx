@@ -234,6 +234,17 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
 
 const todayDate = new Date().toISOString().slice(0, 10);
 
+// A fixed table, not Intl: en-GB ICU spells September "Sept" on some runtimes, and the transfer
+// date must read the same on this laptop, CI and Railway (same choice as invoice-obligation.ts).
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `2026-08-25` → `25 Aug 2026`. The transfer date is a calendar day, so no timezone shift applies. */
+function transferDateLabel(value: string | null | undefined) {
+  const match = /^(d{4})-(d{2})-(d{2})/.exec(String(value ?? ""));
+  const month = match ? MONTHS_SHORT[Number(match[2]) - 1] : undefined;
+  return match && month ? `${Number(match[3])} ${month} ${match[1]}` : "-";
+}
+
 function egp(value: number) {
   return stableCurrencyFormatter("en-US", {
     currency: "EGP",
@@ -864,6 +875,9 @@ function MarketingRequestDraftWorkspaceInner() {
     string | null
   >(null);
   const [customerId, setCustomerId] = useState("");
+  // True once the requester picks a customer themselves (or reopens a returned request). The
+  // pre-picked first customer is not input — Capture Quality must not score it.
+  const [customerChosen, setCustomerChosen] = useState(false);
   // The raw choice. Read `customerContactId` below instead — it is the one that is safe to send.
   const [customerContactChoice, setCustomerContactChoice] = useState("");
   const [requestTypeId, setRequestTypeId] = useState("");
@@ -1124,6 +1138,13 @@ function MarketingRequestDraftWorkspaceInner() {
     });
   }, [pharmacyOptions, selectedPharmacyIds, productLines, payDate]);
 
+  const captureHasInput =
+    customerChosen ||
+    Boolean(payDate) ||
+    Boolean(estimatedCost.trim()) ||
+    deselectedPharmacyIds.length > 0 ||
+    productLines.some((line) => line.productId);
+
   const customerNameMap = useMemo(
     () =>
       new Map(
@@ -1295,6 +1316,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
   function resetForm() {
     setCustomerId(workspace.customers[0]?.id ?? "");
+    setCustomerChosen(false);
     setCustomerContactChoice("");
     setRequestTypeId(String(workspace.requestTypes[0]?.id ?? ""));
     setRequestDate(todayDate);
@@ -1353,6 +1375,7 @@ function MarketingRequestDraftWorkspaceInner() {
     if (!detail) return;
 
     setCustomerId(detail.request.customerId);
+    setCustomerChosen(true);
     setCustomerContactChoice(detail.request.customerContactId ?? "");
     setRequestTypeId(String(detail.request.requestTypeId));
     setRequestDate(detail.request.requestDate || todayDate);
@@ -1708,9 +1731,9 @@ function MarketingRequestDraftWorkspaceInner() {
       ) : null}
 
       {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
-      <div className={`flex gap-1 border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`}>
+      <div className={`grid grid-cols-3 gap-1 border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`}>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
             activeView === "create"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1733,7 +1756,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
             activeView === "approved"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1756,7 +1779,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-phx-md font-bold transition ${
+          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
             activeView === "tracking"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1854,7 +1877,10 @@ function MarketingRequestDraftWorkspaceInner() {
                       disabled={
                         isLoading || workspace.customers.length === 0
                       }
-                      onChange={setCustomerId}
+                      onChange={(value) => {
+                        setCustomerChosen(true);
+                        setCustomerId(value);
+                      }}
                       value={customerId}
                     >
                       <option value="">Select customer</option>
@@ -2439,20 +2465,32 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Capture quality — trust in the FUTURE ROI, scored from what the requester can still fix. */}
-          <div className={`mt-3 border px-3 py-2 ${CAPTURE_BAND_STYLE[captureConfidence.band]}`}>
+          <div
+            className={`mt-3 border px-3 py-2 ${
+              captureHasInput
+                ? CAPTURE_BAND_STYLE[captureConfidence.band]
+                : "border-slate-200 bg-slate-50 text-slate-500"
+            }`}
+          >
             <div className="flex items-center justify-between gap-2">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.10em]">
                 Capture Quality
               </span>
-              <span className="text-phx-md font-black">
-                {captureConfidence.score}
-                <span className="text-phx-2xs font-bold">/100</span>
-              </span>
+              {captureHasInput ? (
+                <span className="text-phx-md font-black">
+                  {captureConfidence.score}
+                  <span className="text-phx-2xs font-bold">/100</span>
+                </span>
+              ) : (
+                <span className="text-phx-xs font-bold">Not scored yet</span>
+              )}
             </div>
             <p className="mt-1 text-phx-xs font-medium leading-snug">
-              {captureConfidence.weakest
-                ? captureConfidence.weakest.detail
-                : "Everything needed to measure this request is captured."}
+              {!captureHasInput
+                ? "Pick the customer, products and pay date — the score shows how measurable this request will be."
+                : captureConfidence.weakest
+                  ? captureConfidence.weakest.detail
+                  : "Everything needed to measure this request is captured."}
             </p>
           </div>
 
@@ -2588,11 +2626,11 @@ function MarketingRequestDraftWorkspaceInner() {
               <p className="text-phx-md font-black text-slate-950">
                 Draft Rows
               </p>
-              <p className="text-phx-2xs font-medium text-slate-400">
-                {workspace.drafts.length > 0
-                  ? `${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`
-                  : "No drafts yet"}
-              </p>
+              {workspace.drafts.length > 0 ? (
+                <p className="text-phx-2xs font-medium text-slate-400">
+                  {`${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
@@ -2747,24 +2785,21 @@ function MarketingRequestDraftWorkspaceInner() {
                     {filteredApproved.map((row) => (
                       <tr key={row.id} className="align-top">
                         <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
-                          {row.moneyTransferDate ?? "-"}
+                          {transferDateLabel(row.moneyTransferDate)}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
                           {row.line ?? "-"}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2">
-                          <p className="font-bold text-slate-900">
+                          <p className="font-bold text-slate-900" dir="auto">
                             {row.contactForMoneyTransfer}
                           </p>
-                          <p className="mt-0.5 font-mono text-phx-2xs font-medium text-slate-400">
-                            {row.requesterHrId}
-                          </p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-900">
+                        <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-900" dir="auto">
                           {row.customerName}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2 text-slate-500">
-                          <p className="text-phx-xs font-medium break-words">
+                          <p className="text-phx-xs font-medium break-words" dir="auto">
                             {row.notes || "-"}
                           </p>
                         </td>
@@ -2858,14 +2893,11 @@ function MarketingRequestDraftWorkspaceInner() {
                     <div key={row.id} className="space-y-2 px-3 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-phx-md font-bold text-slate-950">
+                          <p className="text-phx-md font-bold text-slate-950" dir="auto">
                             {row.customerName}
                           </p>
-                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
+                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400" dir="auto">
                             {row.contactForMoneyTransfer}
-                            {row.requesterHrId
-                              ? ` (${row.requesterHrId})`
-                              : ""}
                           </p>
                         </div>
                         <span className="shrink-0 bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-900">
@@ -2878,7 +2910,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           Transfer
                         </span>
                         <span className="text-right font-bold text-slate-600">
-                          {row.moneyTransferDate ?? "-"}
+                          {transferDateLabel(row.moneyTransferDate)}
                         </span>
                         <span className="font-medium text-slate-400">
                           Line
@@ -2901,7 +2933,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
 
                       {row.notes ? (
-                        <p className="text-phx-2xs font-medium text-slate-500 break-words">
+                        <p className="text-phx-2xs font-medium text-slate-500 break-words" dir="auto">
                           {row.notes}
                         </p>
                       ) : null}
@@ -2997,10 +3029,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
-                          {request.requestCode}
-                        </p>
-                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
+                        <p className="text-phx-md font-black text-slate-950" dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
@@ -3008,6 +3037,9 @@ function MarketingRequestDraftWorkspaceInner() {
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
+                        </p>
+                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                          Ref {request.requestCode}
                         </p>
                       </div>
                       <button
@@ -3069,10 +3101,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
-                          {request.requestCode}
-                        </p>
-                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
+                        <p className="text-phx-md font-black text-slate-950" dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
@@ -3080,6 +3109,9 @@ function MarketingRequestDraftWorkspaceInner() {
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
+                        </p>
+                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                          Ref {request.requestCode}
                         </p>
                       </div>
                       <button
@@ -3194,10 +3226,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
-                          {request.requestCode}
-                        </p>
-                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
+                        <p className="text-phx-md font-black text-slate-950" dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
@@ -3205,6 +3234,9 @@ function MarketingRequestDraftWorkspaceInner() {
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
+                        </p>
+                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                          Ref {request.requestCode}
                         </p>
                       </div>
                       <span className="shrink-0 border border-rose-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-rose-700">

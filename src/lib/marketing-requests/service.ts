@@ -58,9 +58,16 @@ import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notifi
 import {
   loadMarketingDecisionPharmacies,
   loadMarketingRequestOverlaps,
+  loadMarketingRequestTwins,
   type MarketingDecisionOverlap,
   type MarketingDecisionPharmacy,
 } from "@/lib/marketing-requests/request-loaders";
+import {
+  describeTwinForApprover,
+  twinRefusalMessage,
+  type MarketingDecisionTwin,
+  type TwinSubject,
+} from "@/lib/marketing-requests/twin-request";
 // Reused rather than re-implemented: this module already owns the "render a recorded instant in
 // Cairo, never raw UTC" formatter, and it imports nothing from here, so there is no cycle.
 import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
@@ -382,6 +389,12 @@ export type MarketingRequestDecisionSummary = {
    * "Return for edit" — this just makes sure they are not approving it blind.
    */
   contestedBy: MarketingDecisionOverlap[];
+  /**
+   * Other live requests by the same requester for the same customer, request type and cost — a
+   * possible double PAYMENT, not a double count (`twin-request.ts`). Named beside the decision
+   * buttons; the approver still decides.
+   */
+  twinOf: MarketingDecisionTwin[];
   /** The customer's uuid, for evidence/history joins. Null when the request carries no customer. */
   customerId: string | null;
   /**
@@ -4303,6 +4316,17 @@ export async function getMarketingRequestDecisionSummary(
   // Double-count check. Never allowed to break the approval screen: an approver must always be
   // able to decide, so a failure here degrades to "no overlaps known" rather than a dead page.
   const contestedBy = await loadMarketingRequestOverlaps(supabase, request).catch(() => [] as MarketingDecisionOverlap[]);
+  // Twins that predate the submit guard (or slipped past it) — named, never decided. Same
+  // never-break-the-screen rule: a failed read shows no warning rather than a dead page.
+  const twinOf: MarketingDecisionTwin[] = await loadMarketingRequestTwins(supabase, {
+    customerId: request.customerId,
+    estimatedCost: request.estimatedCost,
+    requestId: request.id,
+    requestTypeId: request.requestTypeId,
+    requesterHrId: request.requesterHrId,
+  })
+    .then((twins) => twins.map(describeTwinForApprover))
+    .catch(() => [] as MarketingDecisionTwin[]);
   const requester = employeeRowByHrId(employeeRows).get(normalizeHrId(request.requesterHrId) ?? "");
   const chain: MarketingDecisionChainStep[] = steps
     .filter((step) => !step.isCc)
@@ -4341,6 +4365,7 @@ export async function getMarketingRequestDecisionSummary(
     roiDurationMonths: request.roiDurationMonths,
     roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
     contestedBy,
+    twinOf,
     areaName: requester?.areaName ?? null,
     customerAddress: cleanText(customerRow?.captured_address),
     customerArea: cleanText(customerRow?.extracted_area_name),
@@ -5094,6 +5119,29 @@ function assertMarketingRequestNamesAVenue(pharmacyRowCount: number): void {
     "Select at least one target pharmacy — a request with no target can never be credited a sale.",
     "marketing_request_has_no_venue",
   );
+}
+
+/**
+ * Refuse a twin: the same requester, customer, request type and cost while an earlier copy is still
+ * in the chain or approved (`twin-request.ts`). Five such pairs reached production before this guard,
+ * submitted minutes apart; one sat at Finance Execution beside its own approved, active twin.
+ *
+ * Runs on the server for the same reason the venue check does: the portal posts a raw body, and a
+ * double tap is two posts. `requestId` is the request's own id on a resubmit, so it never blocks itself.
+ */
+async function assertNoMarketingRequestTwin(
+  supabase: SupabaseClient,
+  subject: TwinSubject,
+): Promise<void> {
+  const [twin] = await loadMarketingRequestTwins(supabase, subject);
+  if (!twin) return;
+  const customer = await supabase
+    .from("marketing_customers")
+    .select("display_name")
+    .eq("id", subject.customerId)
+    .maybeSingle();
+  const customerName = cleanText((customer.data as { display_name?: string | null } | null)?.display_name);
+  throw validationError(twinRefusalMessage({ customerName, twin }), "marketing_request_twin");
 }
 
 /**
@@ -8318,6 +8366,13 @@ export async function createMarketingRequestDraft(
     allowedProductCodes,
   });
   assertMarketingRequestNamesAVenue(prepared.pharmacyRows.length);
+  await assertNoMarketingRequestTwin(supabase, {
+    customerId: prepared.requestRow.customer_id,
+    estimatedCost: prepared.requestRow.estimated_cost,
+    requestId: null,
+    requestTypeId: prepared.requestRow.request_type_id,
+    requesterHrId: prepared.requestRow.requester_hr_id,
+  });
 
   const requestInsert = await supabase
     .from("marketing_requests")
@@ -8523,6 +8578,15 @@ export async function resubmitReturnedMarketingRequest(
   // Before the delete below, not after: the resubmit replaces the target list wholesale, so an
   // empty edited set would otherwise strip the targets off a request that already had them.
   assertMarketingRequestNamesAVenue(prepared.pharmacyRows.length);
+  // A returned request resubmitted unchanged while its own twin is still live puts the pair back in
+  // the chain (one such returned/pending pair is on production) — the same refusal as a first submit.
+  await assertNoMarketingRequestTwin(supabase, {
+    customerId: prepared.requestRow.customer_id,
+    estimatedCost: prepared.requestRow.estimated_cost,
+    requestId,
+    requestTypeId: prepared.requestRow.request_type_id,
+    requesterHrId: prepared.requestRow.requester_hr_id,
+  });
 
   const steps = await loadMarketingRequestApprovalSteps(supabase, requestId);
   const resumeStep = steps
