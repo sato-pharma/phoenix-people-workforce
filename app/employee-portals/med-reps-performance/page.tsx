@@ -10,6 +10,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
+import { medicalRepCountLabel } from "@/lib/employee-portal/rep-target-gap";
 import { getMedRepsPerformance } from "@/lib/employee-portal/service";
 import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
@@ -150,7 +151,7 @@ export default async function MedRepsPerformancePage({
       badge="Team Performance"
       description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
         teamMemberCount > 0
-          ? `${teamMemberCount} medical reps ${inScope}`
+          ? `${medicalRepCountLabel(teamMemberCount)} ${inScope}`
           : "no available medical reps data"
       }.`}
       errorBoundaryTitle="Medical Reps Performance unavailable"
@@ -173,7 +174,7 @@ export default async function MedRepsPerformancePage({
               <p className="mt-1.5 max-w-2xl text-sm font-medium text-slate-500">
                 {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
                 {" | "}
-                {teamMemberCount > 0 ? `${teamMemberCount} medical reps ${inScope}` : "No data"}
+                {teamMemberCount > 0 ? `${medicalRepCountLabel(teamMemberCount)} ${inScope}` : "No data"}
               </p>
             </div>
 
@@ -365,7 +366,7 @@ export default async function MedRepsPerformancePage({
         <div className="flex items-center gap-3 px-1">
           <div className="h-px flex-1 bg-gray-200" />
           <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Medical Reps Product Breakdown ({teamMemberCount} reps)
+            Medical Reps Product Breakdown ({medicalRepCountLabel(teamMemberCount)})
           </p>
           <div className="h-px flex-1 bg-gray-200" />
         </div>
@@ -397,7 +398,7 @@ export default async function MedRepsPerformancePage({
                       </p>
                       <p className="text-phx-2xs font-medium text-slate-400">
                         {/* A vacant district has no manager to title (owner, 2026-10-20). */}
-                        {group.isVacantSeat ? "Vacant seat" : "District Manager"} &middot; {group.members.length} medical reps
+                        {group.isVacantSeat ? "Vacant seat" : "District Manager"} &middot; {medicalRepCountLabel(group.members.length)}
                       </p>
                     </div>
                   </div>

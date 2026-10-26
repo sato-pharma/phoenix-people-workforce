@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { repTargetGap } from "@/lib/employee-portal/rep-target-gap";
 import type { DsmTeamMemberData, DsmTeamMemberProductData } from "@/lib/employee-portal/service";
 import { INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT } from "@/lib/incentives/eligibility-threshold";
 import { formatEmployeeDisplayName } from "@/lib/utils";
@@ -457,8 +458,8 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
       {/* Mobile card view */}
       <div className="grid gap-2.5 sm:hidden">
         {pageMembers.map((member) => {
-          const gap = Math.max(0, member.totalTarget - member.totalSales);
-          const isAchieved = member.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT;
+          // Achieved means the target is met — never the 90% incentive line (rep-target-gap.ts).
+          const { achieved: isAchieved, gap } = repTargetGap(member.totalSales, member.totalTarget);
           const color = achievementColor(member.achievementPercent, member.position === 1);
           const progressWidth = Math.min(100, Math.max(0, member.achievementPercent));
           return (
@@ -554,8 +555,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
           </thead>
           <tbody>
             {pageMembers.map((member) => {
-              const gap = Math.max(0, member.totalTarget - member.totalSales);
-              const isAchieved = member.achievementPercent >= INCENTIVE_ELIGIBILITY_THRESHOLD_PERCENT;
+              const { achieved: isAchieved, gap } = repTargetGap(member.totalSales, member.totalTarget);
               const color = achievementColor(member.achievementPercent, member.position === 1);
               return (
                 <tr key={member.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">

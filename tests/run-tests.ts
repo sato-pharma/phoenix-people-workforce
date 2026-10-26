@@ -8,6 +8,7 @@ import { runClosingOfficeRespreadTests } from "./closing-office-respread.test.ts
 import { runClosingStoreSplitGeographyStampTests } from "./closing-store-split-geography-stamp.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
+import { runRepTargetGapTests } from "./rep-target-gap.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated-stamp-cairo.test.ts";
@@ -2964,6 +2965,7 @@ await runTest(
 );
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
 await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
+await runTest("rep target gap (the leaderboard says Achieved only when the target is met, never at the 90% incentive line)", runRepTargetGapTests);
 await runTest(
   "test wiring is complete (no test file imported-but-uninvoked, none orphaned)",
   runTestWiringCompleteTests,
