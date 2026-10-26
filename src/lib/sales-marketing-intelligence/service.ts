@@ -15,6 +15,7 @@ import {
   RESTRICTED_PRODUCT_CODES,
   restrictedProductNameSet,
 } from "@/lib/sales/access-scope";
+import { reconcileMarketingRoiBreakdowns } from "@/lib/marketing-requests/roi-breakdown-reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   SalesMarketingAttributionQuality,
@@ -277,7 +278,9 @@ function normalizeCustomerImpact(value: unknown): SalesMarketingCustomerImpactRo
     label: toText(row.label, "Unassigned"),
     marketingCost: toNumber(row.marketingCost),
     pharmacyCount: toInteger(row.pharmacyCount),
-    regionName: row.regionName == null ? null : toText(row.regionName),
+    // The RPC names a pharmacy with no brick region "Unassigned"; say what it is, as the Region report does.
+    regionName:
+      row.regionName == null || toText(row.regionName) === "Unassigned" ? "Unmapped pharmacy" : toText(row.regionName),
     requestCount: toInteger(row.requestCount),
     requiredRoiValue: toNumber(row.requiredRoiValue),
     salesRows: toInteger(row.salesRows),
@@ -788,10 +791,13 @@ export async function getSalesMarketingDashboardSnapshot(
   // now excludes them server-side via `p_exclude_codes` (above), so the summary and EVERY breakdown
   // already drop their value at source. We still strip the per-product ROI rows and the product
   // filter here as defense in depth — a future RPC edit or new entrypoint cannot leak them.
-  if (canViewRestrictedProducts(access.role)) return snapshot;
+  // Last step on every path: the Region, Distributor and Customer reports add up to the cards.
+  if (canViewRestrictedProducts(access.role)) return reconcileMarketingRoiBreakdowns(snapshot);
   // Non-CEO/SA: strip confidential products AND the confidential Head Office line.
-  return stripHeadOfficeFromMarketingSnapshot(
-    stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+  return reconcileMarketingRoiBreakdowns(
+    stripHeadOfficeFromMarketingSnapshot(
+      stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+    ),
   );
 }
 
@@ -834,10 +840,13 @@ async function getSalesMarketingDashboardFast(
   const productScopedSnapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
   // Drop other lines' products / regions / distributors that leaked in as actuals-only rows.
   const snapshot = scopeBreakdownRowsToLine(productScopedSnapshot, lineScope);
-  if (canViewRestrictedProducts(access.role)) return snapshot;
+  // Last step on every path: the Region, Distributor and Customer reports add up to the cards.
+  if (canViewRestrictedProducts(access.role)) return reconcileMarketingRoiBreakdowns(snapshot);
   // Non-CEO/SA: strip confidential products AND the confidential Head Office line.
-  return stripHeadOfficeFromMarketingSnapshot(
-    stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+  return reconcileMarketingRoiBreakdowns(
+    stripHeadOfficeFromMarketingSnapshot(
+      stripRestrictedFromMarketingSnapshot(snapshot, await restrictedProductNameSet()),
+    ),
   );
 }
 

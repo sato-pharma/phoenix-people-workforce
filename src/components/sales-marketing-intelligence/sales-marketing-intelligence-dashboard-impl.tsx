@@ -44,6 +44,7 @@ import {
 import { RoiRefreshPanel } from "@/components/sales-marketing-intelligence/roi-refresh-panel";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Button } from "@/components/ui/button";
+import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
 import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   SalesMarketingAttributionQuality,
@@ -91,6 +92,21 @@ function number(value: number) {
 function percent(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
   return `${Math.round(safe * 100)}%`;
+}
+
+// A pay date reads "15 Oct 2026" in Cairo, never a raw ISO string. A date-only value is a calendar
+// day and is not shifted; a timestamp is shown on Cairo's calendar. With no pay date, the pay month
+// reads "Oct 2026".
+function payDateLabel(row: Pick<SalesMarketingRequestRow, "payDate" | "payMonth">) {
+  if (row.payDate) {
+    const label = /^\d{4}-\d{2}-\d{2}$/.test(row.payDate) ? utcDate(row.payDate) : cairoDate(row.payDate);
+    if (label !== "—") return label;
+  }
+  if (row.payMonth && /^\d{4}-\d{2}/.test(row.payMonth)) {
+    const label = utcDate(`${row.payMonth.slice(0, 7)}-01`);
+    if (label !== "—") return label.split(" ").slice(1).join(" ");
+  }
+  return "-";
 }
 
 function chartFormatter(value: unknown, name: unknown) {
@@ -256,7 +272,7 @@ function RoiTrendChart({ snapshot }: { snapshot: SalesMarketingDashboardSnapshot
           <Tooltip formatter={chartFormatter} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           <Bar dataKey="marketingCost" fill="#0EA5E9" name="Marketing cost" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="actualSalesValue" fill="#10B981" name="Actual attributed sales" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="actualSalesValue" fill="#10B981" name="Attributed sales" radius={[0, 0, 0, 0]} />
           <Bar dataKey="coverageGap" fill="#F59E0B" name="Coverage gap" radius={[0, 0, 0, 0]} />
           <Line dataKey="requiredRoiValue" dot={false} name="Required ROI" stroke="#EF4444" strokeWidth={2} type="monotone" />
           <Line dataKey="expectedRoiValue" dot={false} name="Expected ROI" stroke="#7C3AED" strokeWidth={2} type="monotone" />
@@ -353,16 +369,16 @@ function DecisionSummaryPanel({ snapshot }: { snapshot: SalesMarketingDashboardS
         {topRisk ? (
           <div className="grid gap-3 text-sm md:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
             <div className="min-w-0">
-              <p className="truncate font-mono text-xs font-black text-slate-900">{topRisk.requestCode}</p>
-              <p className="truncate font-bold text-slate-700">{topRisk.customerName}</p>
-              <p className="truncate text-xs font-semibold text-slate-500">{topRisk.line ?? "Unassigned"}</p>
+              <p className="break-words font-bold text-slate-900">{topRisk.customerName}</p>
+              <p className="break-words text-xs font-semibold text-slate-600">{topRisk.line ?? "Unassigned"}</p>
+              <p className="break-words font-mono text-phx-2xs font-semibold text-slate-400">{topRisk.requestCode}</p>
             </div>
             <div>
               <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Required</p>
               <p className="font-black text-slate-900">{money(topRisk.requiredRoiValue)}</p>
             </div>
             <div>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Attributed sales</p>
               <p className="font-black text-emerald-700">{money(topRisk.actualSalesValue)}</p>
             </div>
             <div>
@@ -407,7 +423,7 @@ function RoiComparisonRowCard({
           { label: "Pharmacies", value: number(row.pharmacyCount) },
           { label: "Cost", value: money(row.marketingCost) },
           { label: "Required", value: money(row.requiredRoiValue) },
-          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Attributed sales", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
           { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
           { label: "Behind", value: number(row.behindRequests) },
           { label: "No data", value: number(row.noDataRequests) },
@@ -465,7 +481,7 @@ function RoiComparisonTable({
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Pharmacies</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
-                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Attributed sales</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
                 <th className="px-3 py-2.5 text-right">Behind / No data</th>
@@ -500,8 +516,8 @@ function RequestRowCard({ row }: { row: SalesMarketingRequestRow }) {
     <PortalRecordCard
       accent={row.actualRoiStatus === "on_track" ? "emerald" : row.actualRoiStatus === "behind" ? "amber" : "slate"}
       meta={
-        <span className="inline-flex flex-wrap items-center gap-1.5">
-          <span className="font-mono">{row.requestCode}</span>
+        <span className="inline-flex flex-wrap items-center gap-1.5 font-mono text-phx-2xs text-slate-400">
+          <span>{row.requestCode}</span>
           {row.customerCode ? <span>{row.customerCode}</span> : null}
         </span>
       }
@@ -511,11 +527,11 @@ function RequestRowCard({ row }: { row: SalesMarketingRequestRow }) {
       <PortalRecordFields
         fields={[
           { label: "Line", value: row.line ?? "-" },
-          { label: "Pay date", value: row.payDate ?? row.payMonth ?? "-" },
+          { label: "Pay date", value: payDateLabel(row) },
           { label: "Cost", value: money(row.estimatedCost) },
           { label: "Required", value: money(row.requiredRoiValue) },
           { label: "Expected", value: money(row.expectedRoiValue) },
-          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Attributed sales", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
           { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
           { label: "Coverage", value: percent(row.actualRoiCoverage) },
         ]}
@@ -546,8 +562,7 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
             className="text-phx-md"
             cols={
               <colgroup>
-                <col className="w-[9%]" />
-                <col className="w-[13%]" />
+                <col className="w-[22%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[7%]" />
@@ -564,14 +579,13 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
           >
             <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Line</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Pay date</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected</th>
-                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Attributed sales</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Attribution</th>
@@ -582,13 +596,15 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
             <tbody>
               {rows.map((row) => (
                 <tr className="border-t border-slate-100" key={row.id}>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-xs font-black text-slate-900">{row.requestCode}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <p className="font-bold text-slate-800">{row.customerName}</p>
-                    {row.customerCode ? <p className="text-phx-xs font-semibold text-slate-500">{row.customerCode}</p> : null}
+                    <p className="break-words font-bold text-slate-900">{row.customerName}</p>
+                    <p className="break-words font-mono text-phx-2xs font-semibold text-slate-400">
+                      {row.requestCode}
+                      {row.customerCode ? ` · ${row.customerCode}` : ""}
+                    </p>
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.payDate ?? row.payMonth ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{payDateLabel(row)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.estimatedCost)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.expectedRoiValue)}</td>
@@ -621,7 +637,7 @@ function CustomerImpactRowCard({ row }: { row: SalesMarketingCustomerImpactRow }
       meta={
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span>{row.distributorName ?? row.distributorCode ?? "Unassigned distributor"}</span>
-          <span>{row.regionName ?? "Unassigned region"}</span>
+          <span>{row.regionName ?? "Unmapped pharmacy"}</span>
         </span>
       }
       status={<CoverageBadge coverage={row.actualRoiCoverage} />}
@@ -632,7 +648,7 @@ function CustomerImpactRowCard({ row }: { row: SalesMarketingCustomerImpactRow }
           { label: "Requests", value: number(row.requestCount) },
           { label: "Cost", value: money(row.marketingCost) },
           { label: "Required", value: money(row.requiredRoiValue) },
-          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Attributed sales", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
           { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
           { label: "Exact rows", value: <span className="text-emerald-700">{number(row.exactSalesRows)}</span> },
           { label: "Fallback rows", value: <span className="text-amber-700">{number(row.fallbackSalesRows)}</span> },
@@ -682,7 +698,7 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Requests</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
-                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Attributed sales</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
                 <th className="border-r border-slate-100 px-3 py-2.5 text-right">Exact Rows</th>
@@ -694,7 +710,7 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
                 <tr className="border-t border-slate-100" key={row.value}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.distributorName ?? row.distributorCode ?? "-"}</td>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionName ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionName ?? "Unmapped pharmacy"}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
@@ -771,11 +787,11 @@ export function SalesMarketingIntelligenceDashboard({
         <AdminStatCard description="Approved paid requests included in ROI attribution." icon={<Target className="h-5 w-5" />} label="Paid Requests" size="compact" tone="violet" value={number(summary.paidRequestCount)} />
         <AdminStatCard description="Sales value required to cover the marketing investment." icon={<Gauge className="h-5 w-5" />} label="Required ROI" size="compact" tone="rose" value={money(summary.requiredRoiValue)} />
         <AdminStatCard description="Forecasted return from request product plans." icon={<LineChart className="h-5 w-5" />} label="Expected ROI" size="compact" tone="orange" value={money(summary.expectedRoiValue)} />
-        <AdminStatCard description="Actual Source-of-Sales value attributed to request products and pharmacies." icon={<TrendingUp className="h-5 w-5" />} label="Actual ROI" size="compact" tone="emerald" value={money(summary.actualAttributedSalesValue)} />
+        <AdminStatCard description="Source-of-Sales value of the request products sold through the targeted pharmacies since each request was paid. A sales value, not a return ratio." icon={<TrendingUp className="h-5 w-5" />} label="Attributed sales" size="compact" tone="emerald" value={money(summary.actualAttributedSalesValue)} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <AdminStatCard description="Actual attributed sales divided by required ROI." icon={<Gauge className="h-5 w-5" />} label="ROI Coverage" size="compact" tone={summary.actualRoiCoverage >= 1 ? "emerald" : "rose"} value={percent(summary.actualRoiCoverage)} />
+        <AdminStatCard description="Attributed sales divided by required ROI." icon={<Gauge className="h-5 w-5" />} label="ROI Coverage" size="compact" tone={summary.actualRoiCoverage >= 1 ? "emerald" : "rose"} value={percent(summary.actualRoiCoverage)} />
         <AdminStatCard description="Required ROI that is not yet covered by attributed sales." icon={<AlertTriangle className="h-5 w-5" />} label="Coverage Gap" size="compact" tone={summary.coverageGap > 0 ? "orange" : "emerald"} value={money(summary.coverageGap)} />
         <AdminStatCard description="Marketing spend tied to behind or no-data requests." icon={<ShieldCheck className="h-5 w-5" />} label="Spend At Risk" size="compact" tone={summary.spendAtRisk > 0 ? "rose" : "emerald"} value={money(summary.spendAtRisk)} />
         <AdminStatCard description="Distinct request customers represented in the selected scope." icon={<UsersRound className="h-5 w-5" />} label="Customers" size="compact" tone="blue" value={number(summary.activeCustomers)} />

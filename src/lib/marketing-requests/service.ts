@@ -186,6 +186,7 @@ import { viewerMayReopenMarketingRequests } from "@/lib/marketing-requests/reope
 import { canCancelMarketingRequest } from "@/lib/marketing-requests/cancel";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
+import { pickMarketingRequestAreaId, sellingAreaIdsAmong } from "@/lib/marketing-requests/request-area";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
 import {
@@ -2520,6 +2521,11 @@ export function prepareMarketingRequestDraft(params: {
   unrestrictedProductLines?: boolean;
   /** Additive per-user product allowlist (product_scope_override) — see marketingProductAllowedForRequester. */
   allowedProductCodes?: Set<string> | null;
+  /**
+   * Which candidate areas are selling territories (`sellingAreaIdsAmong`). A request is never filed
+   * under a retired region-level area; null keeps the first candidate, as before.
+   */
+  sellingAreaIds?: ReadonlySet<number> | null;
 }): PreparedMarketingRequestDraft {
   const normalized = normalizeMarketingRequestDraftInput(params.input);
   if (!normalized.customerId) throw validationError("Customer is required.");
@@ -2569,7 +2575,12 @@ export function prepareMarketingRequestDraft(params: {
     products: roiProducts,
   });
   const requesterHrId = String(params.requester.hrId);
-  const areaId = (normalized.areaId ?? Number(params.customer.area_id ?? params.requester.areaId ?? 0)) || null;
+  const areaId = pickMarketingRequestAreaId({
+    customerAreaId: params.customer.area_id,
+    explicitAreaId: normalized.areaId,
+    requesterAreaId: params.requester.areaId,
+    sellingAreaIds: params.sellingAreaIds,
+  });
   // A requester with an additive product override can span lines, so tag the request with the
   // line of its products when they are unambiguously single-line (a request is single-line in
   // practice), falling back to the requester's own line. Guarded to override users, so every
@@ -8364,6 +8375,11 @@ export async function createMarketingRequestDraft(
     venuePharmacies,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
+    sellingAreaIds: await sellingAreaIdsAmong(supabase, [
+      normalized.areaId,
+      (customerResult.data as MarketingCustomerDbRow).area_id,
+      requester.areaId,
+    ]),
   });
   assertMarketingRequestNamesAVenue(prepared.pharmacyRows.length);
   await assertNoMarketingRequestTwin(supabase, {
@@ -8574,6 +8590,11 @@ export async function resubmitReturnedMarketingRequest(
     venuePharmacies,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
+    sellingAreaIds: await sellingAreaIdsAmong(supabase, [
+      normalized.areaId,
+      (customerResult.data as MarketingCustomerDbRow).area_id,
+      requester.areaId,
+    ]),
   });
   // Before the delete below, not after: the resubmit replaces the target list wholesale, so an
   // empty edited set would otherwise strip the targets off a request that already had them.

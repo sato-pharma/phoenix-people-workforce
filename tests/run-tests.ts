@@ -238,6 +238,7 @@ import { runCustomer360ReportTests } from "./customer-360-report.test.ts";
 import { runMarketingValidationDeskAliasTests } from "./marketing-validation-desk-confirmed-aliases.test.ts";
 import { runMarketingRoiFrontierTests } from "./marketing-roi-frontier.test.ts";
 import { runMarketingRoiSalesDataAsOfTests } from "./marketing-roi-sales-data-asof.test.ts";
+import { runMarketingRoiBreakdownsAddUpTests } from "./marketing-roi-breakdowns-add-up.test.ts";
 import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
 import { runPhoenixCrmDuplicateCustomerTests } from "./phoenix-crm-duplicate-customers.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
@@ -4455,6 +4456,10 @@ await runTest(
 await runTest(
   "'sales loaded through' means every-month-set LOADED, not the newest period any batch mentions, and the ROI duration warns at entry without ever being capped",
   runMarketingRoiSalesDataAsOfTests,
+);
+await runTest(
+  "the Marketing ROI Dashboard's Region, Distributor and Customer reports add up to its cards, rows count real pharmacies and customers, and a new request is never filed under a retired region",
+  runMarketingRoiBreakdownsAddUpTests,
 );
 await runTest(
   "the direct-order pharmacy picker says what else a shop is called: confirmed links only, attached after the wholesaler guard and the area scope, and a failure costs the footnote not the list",
