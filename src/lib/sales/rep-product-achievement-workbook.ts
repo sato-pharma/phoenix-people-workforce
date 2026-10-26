@@ -35,8 +35,11 @@ import {
 // closing-derived export (closing-workbook-lock.ts): she can select and filter, not edit.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const IDENTITY_HEADERS = ["Rep", "Line", "Area", "Region", "Manager", "Status"] as const;
-const IDENTITY_WIDTHS = [28, 14, 20, 18, 26, 10];
+const IDENTITY_HEADERS = ["Rep", "Line", "Area", "Region", "Manager", "Hired", "Status"] as const;
+const IDENTITY_WIDTHS = [28, 14, 20, 18, 26, 13, 10];
+/** The detail sheet carries every identity column but Status, then Product. */
+const DETAIL_IDENTITY = IDENTITY_HEADERS.length - 1;
+const HIRE_DATE_FORMAT = "d mmm yyyy";
 const PERIOD_WIDTH = 12;
 const PERCENT_FORMAT = "0.0%";
 
@@ -67,24 +70,35 @@ function writePeriodCell(cell: ExcelJS.Cell, value: AchievementCell | undefined,
   cell.font = { ...cell.font, color: { argb: HOUSE_XLSX_COLORS.muted }, size: 9 };
 }
 
-function identityValues(record: RepAchievementRecord): string[] {
+/** The hire date as a real Excel date (UTC midnight, so the day never moves), or a dash. */
+function hireDateValue(hireDate: string | null): Date | string {
+  const match = hireDate?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : "—";
+}
+
+function identityValues(record: RepAchievementRecord): (string | Date)[] {
   return [
     record.name,
     record.lineName,
     record.areaName || "—",
     record.regionName || "—",
     record.managerName || "—",
+    hireDateValue(record.hireDate),
     record.left ? "Left" : "Active",
   ];
 }
 
-function writeIdentity(row: ExcelJS.Row, values: readonly string[], zebra: boolean, strong: boolean) {
+function writeIdentity(row: ExcelJS.Row, values: readonly (string | Date)[], zebra: boolean, strong: boolean) {
   values.forEach((value, index) => {
     const cell = row.getCell(index + 1);
     cell.value = value;
     houseBodyStyle(cell, { zebra });
     if (strong) cell.font = { ...cell.font, bold: true, color: { argb: HOUSE_XLSX_COLORS.deep } };
     cell.alignment = { vertical: "middle", wrapText: true };
+    if (value instanceof Date) {
+      cell.numFmt = HIRE_DATE_FORMAT;
+      cell.alignment = { horizontal: "left", vertical: "middle" };
+    }
   });
 }
 
@@ -135,8 +149,9 @@ export async function buildRepAchievementWorkbook(input: RepAchievementWorkbookI
 
   // ── Sheet 1: one row per rep per product ──────────────────────────────────
   const detail = workbook.addWorksheet("By rep and product", { views: [{ showGridLines: false }] });
-  const detailHeads = [...IDENTITY_HEADERS.slice(0, 5), "Product", ...periodHeads];
-  detail.columns = [...IDENTITY_WIDTHS.slice(0, 5), 26, ...periodHeads.map(() => PERIOD_WIDTH)].map((width) => ({ width }));
+  const detailHeads = [...IDENTITY_HEADERS.slice(0, DETAIL_IDENTITY), "Product", ...periodHeads];
+  const detailFirstPeriod = DETAIL_IDENTITY + 2;
+  detail.columns = [...IDENTITY_WIDTHS.slice(0, DETAIL_IDENTITY), 26, ...periodHeads.map(() => PERIOD_WIDTH)].map((width) => ({ width }));
   let next = writeHouseMasthead(workbook, detail, {
     columns: detailHeads.length,
     provenance,
@@ -151,15 +166,15 @@ export async function buildRepAchievementWorkbook(input: RepAchievementWorkbookI
   for (const record of records) {
     const zebra = band % 2 === 1;
     band += 1;
-    const identity = identityValues(record).slice(0, 5);
+    const identity = identityValues(record).slice(0, DETAIL_IDENTITY);
     const overallRow = detail.getRow(next);
     writeIdentity(overallRow, [...identity, "All products"], zebra, true);
-    record.overall.forEach((cell, index) => writePeriodCell(overallRow.getCell(7 + index), cell, zebra, true));
+    record.overall.forEach((cell, index) => writePeriodCell(overallRow.getCell(detailFirstPeriod + index), cell, zebra, true));
     next += 1;
     for (const product of record.products) {
       const row = detail.getRow(next);
       writeIdentity(row, [...identity, product.productName], zebra, false);
-      product.cells.forEach((cell, index) => writePeriodCell(row.getCell(7 + index), cell, zebra, false));
+      product.cells.forEach((cell, index) => writePeriodCell(row.getCell(detailFirstPeriod + index), cell, zebra, false));
       next += 1;
     }
   }
@@ -186,7 +201,7 @@ export async function buildRepAchievementWorkbook(input: RepAchievementWorkbookI
     const zebra = index % 2 === 1;
     const row = overall.getRow(next);
     writeIdentity(row, identityValues(record), zebra, false);
-    record.overall.forEach((cell, column) => writePeriodCell(row.getCell(7 + column), cell, zebra, false));
+    record.overall.forEach((cell, column) => writePeriodCell(row.getCell(IDENTITY_HEADERS.length + 1 + column), cell, zebra, false));
     next += 1;
   });
   overall.views = [{ showGridLines: false, state: "frozen", xSplit: 1, ySplit: overallHeaderRow }];

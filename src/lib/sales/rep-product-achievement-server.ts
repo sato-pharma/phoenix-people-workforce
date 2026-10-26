@@ -83,6 +83,7 @@ export async function loadRepProductAchievement(requested?: string | null): Prom
     if (!key) continue;
     people.set(key, {
       areaName: employee.areaName ?? "",
+      hireDate: employee.hireDate ?? null,
       jobTitle: employee.positionTitle || employee.jobTitle || "",
       left: !isActiveLifecycleStatus(employee.employmentStatus),
       managerName: employee.managerName ?? "",

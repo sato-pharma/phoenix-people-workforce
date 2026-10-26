@@ -69,6 +69,8 @@ export type RepAchievementRecord = {
   areaName: string;
   regionName: string;
   managerName: string;
+  /** His hire date from the employee list, date-only (`YYYY-MM-DD`); null when HR never entered one. */
+  hireDate: string | null;
   /** Left the company — his months stay his (seat-tenure credit), tagged so she can tell. */
   left: boolean;
   /** Every product of his together — by VALUE, the only way products may be added. */
@@ -197,7 +199,18 @@ export function semesterOptions(floorPeriod: string, currentPeriod: string): Rep
 
 // ── Reading a cell ──────────────────────────────────────────────────────────
 
+const HIRE_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
+
+/** "12 Mar 2024", read straight off the date-only string so no timezone can move the day; null when absent. */
+export function formatRepHireDate(hireDate: string | null | undefined): string | null {
+  const match = hireDate?.match(HIRE_DATE_PATTERN);
+  if (!match) return null;
+  const month = MONTH_SHORT[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month} ${match[1]}` : null;
+}
+
 /** "70%" — whole percent on screen, as she wrote it. The export keeps the exact ratio. */
+
 export function formatAchievementPercent(value: number): string {
   const percent = value * 100;
   const rounded = Math.round(percent);
