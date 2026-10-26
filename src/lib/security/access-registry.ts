@@ -1028,6 +1028,7 @@ export const accessRegistry = [
   // places" answer on the ordered pair, or takes it back.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-customer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // Approving a place AFTER it was rejected (owner, 2026-10-03). The same gate and the same decider.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),

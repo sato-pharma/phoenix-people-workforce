@@ -206,6 +206,9 @@ const ROUTE_GATES: RouteGate[] = [
   // only — the loader and the service refuse everyone else before a row is read.
   get("validation-reviews/same-place"),
   post("validation-reviews/same-place", "approve"),
+  // The fourth tab (owner, 2026-10-26): one customer several reps validated at places that do not agree.
+  // A read only, the deciders alone — the loader refuses everyone else before a row is read.
+  get("validation-reviews/same-customer"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.
