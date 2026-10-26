@@ -1,3 +1,4 @@
+import { offerLetterLapsed, todayInCairo } from "@/lib/offers/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
 
@@ -19,6 +20,16 @@ export { formatSeatOfferOut, offerSeatKeyForVacancy, type SeatOfferOut } from "@
  * withdrawn one is over, and showing either on a seat would say the chair is spoken for when it is
  * free — the worse of the two mistakes, because it stops somebody hiring.
  *
+ * ── A SENT letter past its "valid until" day is over too ──
+ * Nobody answered it in time, so the chair is free again — but the row still says "sent", because
+ * nothing moves a letter on when its deadline passes. Measured on production 2026-10-26: two
+ * duplicate letters to Bassant Samir Mousa, valid until 21 October, kept the Giza chair under
+ * Dr. Ali Mohamed reading "Offer out … starts 25 October 2026" after her candidate record had been
+ * rejected. So a sent letter is drawn only through its valid-until day (Cairo). An ACCEPTED letter
+ * is always drawn — the candidate said yes, and only the hire closes it. The accept link opens for
+ * OFFER_ACCEPT_GRACE_DAYS after that day; a late acceptance turns the letter accepted and it comes
+ * back on the seat by itself.
+ *
  * ── The seat is read through the vacancy, never matched by name ──
  * `offers.vacancy_id` points at `position_vacancies`, whose `seat_id` is the organogram's own seat
  * key (41 of the 43 open rows carry one). So the chain is exact: offer → vacancy → seat. No
@@ -36,6 +47,7 @@ type OfferRow = {
   reference: string | null;
   start_date: string | null;
   status: string | null;
+  valid_until: string | null;
   vacancy_id: number | string | null;
 };
 
@@ -59,7 +71,7 @@ export async function loadOfferOutBySeat(): Promise<Map<string, SeatOfferOut>> {
 
     const { data: offerRows, error: offerError } = await db
       .from("offers")
-      .select("id, candidate_name, reference, start_date, status, vacancy_id")
+      .select("id, candidate_name, reference, start_date, status, valid_until, vacancy_id")
       .in("status", ["sent", "accepted"])
       .not("vacancy_id", "is", null);
 
@@ -67,7 +79,10 @@ export async function loadOfferOutBySeat(): Promise<Map<string, SeatOfferOut>> {
     // "nothing is spoken for" rather than as an error.
     if (offerError) return out;
 
-    const offers = (offerRows ?? []) as OfferRow[];
+    const today = todayInCairo();
+    const offers = ((offerRows ?? []) as OfferRow[]).filter(
+      (row) => row.status === "accepted" || !offerLetterLapsed(row.valid_until, today),
+    );
     if (offers.length === 0) return out;
 
     const vacancyIds = Array.from(

@@ -146,3 +146,19 @@ export function daysBetween(from: string, to: string): number | null {
  * typed by hand.
  */
 export const DEFAULT_OFFER_VALIDITY_DAYS = 7;
+
+/**
+ * True once a letter's "valid until" day is over in Cairo — `todayIso` is later than it.
+ *
+ * Read the way the accept link reads it (`offerAcceptExpiry`): the stored English string, or an ISO
+ * date. An unreadable or missing date returns false — a letter whose deadline cannot be read is not
+ * declared over on a guess.
+ *
+ * The valid-until day itself still counts: a letter valid until 21 October is live all of the 21st.
+ */
+export function offerLetterLapsed(validUntil: string | null | undefined, todayIso: string): boolean {
+  const raw = String(validUntil ?? "").trim();
+  if (!raw || !isIsoDate(todayIso)) return false;
+  const iso = isIsoDate(raw) ? raw : parseLetterDate(raw);
+  return iso !== null && iso < todayIso;
+}
