@@ -54,6 +54,9 @@ export type PrivateCalendarReportDetails = {
   workingHours: string | null;
 };
 
+/** A person a visit entry was made with, as the day tile names them. */
+export type PrivateCalendarTilePerson = { hrId: string | null; name: string };
+
 export type PrivateCalendarItem = {
   // The colour the item wears — who went (single, double, chain) crossed with regular or campaign
   // for a CRM visit; attendance, vacation, excuse, holiday or other CRM activity otherwise. Absent
@@ -98,6 +101,10 @@ export type PrivateCalendarItem = {
   // reads them through privateCalendarDayTile and falls back to the employee's own area. Never parsed back out of `chipLines`.
   tileAreas?: string[];
   tileWith?: string[];
+  // The same people as `tileWith`, each WITH their HR id where the loader knows it. The tile dedupes on the id, because
+  // one person reaches it under two spellings — the visit mirror's full name and Phoenix's nickname — and printed twice
+  // ("With Hana Abdelaziz Samir Abdelaziz, Hana Abdelaziz", audit 2026-10-26).
+  tileWithPeople?: PrivateCalendarTilePerson[];
   time: string | null;
   title: string;
   // A CRM visit item's visits, AM · PM · Pharmacies apart (never a pharmacy inside PM). Null on

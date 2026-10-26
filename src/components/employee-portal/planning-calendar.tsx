@@ -20,6 +20,7 @@ import {
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
   groupPlanItemsByRegion,
+  planningTilePeople,
   planningGroupKey,
   type PlanningCalendarConflict,
   type PlanningCalendarItem,
@@ -695,15 +696,18 @@ export function PlanningCalendar({
                       <span className="block" key={region.key || "no-region"}>
                         <span className="block bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-slate-300">{region.label}</span>
                         <span className="mt-0.5 block space-y-1">
-                          {region.items.map((item) => {
+                          {/* Each person once per region; their AM and PM read "AM · PM" (planningTilePeople). */}
+                          {planningTilePeople(region.items).map(({ items: personItems, key, slots }) => {
+                            const item = personItems[0];
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
                                 className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-phx-2xs font-normal leading-tight ${planChipTone(item, hue)}`}
-                                key={item.id}
-                                title={item.title}
+                                key={key}
+                                title={personItems.map((personItem) => personItem.title).join("\n")}
                               >
                                 {item.employeeDisplayName}
+                                {slots ? <span className="opacity-70"> · {slots}</span> : null}
                               </span>
                             );
                           })}

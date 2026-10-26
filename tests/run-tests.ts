@@ -500,6 +500,7 @@ import { runPlanningCalendarExportTests } from "./planning-calendar-export.test.
 import { runPlanningCalendarHidesOfficeTests } from "./planning-calendar-hides-office.test.ts";
 import { runPlanningCalendarFullDayMergeTests } from "./planning-calendar-full-day-merge.test.ts";
 import { runPlanningCalendarRegionGroupsTests } from "./planning-calendar-region-groups.test.ts";
+import { runPlanningCalendarTrainingAndTilePeopleTests } from "./planning-calendar-training-and-tile-people.test.ts";
 import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
 import { runWeeklyPlanVisibilityTests } from "./weekly-plan-visibility.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
@@ -2774,6 +2775,9 @@ import { runRecruitmentManagerRecallStatusTests } from "./recruitment-manager-re
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
+import { runBusinessReviewPersonNamesTests } from "./business-review-person-names.test.ts";
+import { runBusinessReviewPortalTalliesTests } from "./business-review-portal-tallies.test.ts";
+import { runPlansHistoryReplacedDraftsAndWeekLabelsTests } from "./plans-history-replaced-drafts-and-week-labels.test.ts";
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
@@ -4016,6 +4020,10 @@ await runTest("planning calendar XLSX export (SFE Manager/Super Admin gate, per-
 await runTest("planning calendar hides Office days (only field days are shown)", runPlanningCalendarHidesOfficeTests);
 await runTest("planning calendar shows an identical AM and PM as one Full day entry", runPlanningCalendarFullDayMergeTests);
 await runTest("planning calendar groups the tile by region and the details by region then area", runPlanningCalendarRegionGroupsTests);
+await runTest(
+  "planning calendar never files a Training day's format (\"PHYSICAL\") as a region — both loaders skip location_text for a Training item — and the month tile draws each person once per region, their AM and PM reading \"AM · PM\"",
+  runPlanningCalendarTrainingAndTilePeopleTests,
+);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("weekly plan visibility (manager-chain + company-wide roles)", runWeeklyPlanVisibilityTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
@@ -10950,6 +10958,18 @@ await runTest(
 await runTest(
   "the shared HR id → name lookup resolves a lower-case id against the upper-case stored row (PostgREST matches case-sensitively and answers a miss with zero rows and NO error), answers to any spelling of an id and to null with no name rather than a lookup of the empty key, prefers the nickname, refuses a blank full_name instead of resolving a person with no name, chunks the filter at 50 keys because every id becomes two or three spellings, loses only the names in a failed chunk while the rest still resolve, never throws into the caller's page, and sends no query at all for an empty id list",
   runEmployeeNamesByHrIdTests,
+);
+await runTest(
+  "a manager's board prints every person by their proper name whatever their status — the NSM Top Reps board read names from the ACTIVE-only directory and printed a departed district manager in the sales file's capitals, and the Business Review took full_name raw (\"SAHAR EL GALLAD\"); the lookup now asks employees by HR id for the ids the directory missed, the review is nickname-first, and only an all-capitals Latin name is re-cased",
+  runBusinessReviewPersonNamesTests,
+);
+await runTest(
+  "the portal Business Review says how its cards relate to the totals above them — the district cards fell EGP 79,062 short of the header because Others (vacant) carries no target and draws no card, and the remainder is now named under the cards; Earners ≥ 90% counts over the STAFFED areas with a target and says how many vacant areas were graded, because a vacant area never earns — display only, no figure re-summed",
+  runBusinessReviewPortalTalliesTests,
+);
+await runTest(
+  "the plan history lists each week once and names it by its date — a draft whose week went forward on another plan (2026-W32 as rev 4 Draft beside rev 5 HR acknowledged, no parent link) is set aside and counted, a dead plan replaces nothing, and weeks read \"Week of 18 Oct\" on the history and the Private Calendar timeline, never \"2026-W42\" or \"Week: 2026-10-24\"",
+  runPlansHistoryReplacedDraftsAndWeekLabelsTests,
 );
 await runTest(
   "every recruitment read of a person's NAME goes through the shared namesByHrId and the module keeps no second copy — the six folded files import it and call it, none of them reads a name map as `get(canonicalHrIdKey(id) ?? \"\")` (which looks up the empty key), any read of `employees` asking ONLY for name columns is refused as a seventh copy with `candidate-views.ts` exempt in writing for reading full_name alone and throwing, and the bare `.eq(\"hr_id\", …)` count is ratcheted at 3 because that comparison is case-sensitive against a mixed-case column and misses with no error — which is what put a raw HR id into an interview notification",

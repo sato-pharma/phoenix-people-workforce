@@ -941,6 +941,25 @@ export const MODULES = [
     keywords: ["vacation", "vacations", "annual leave", "attendance", "fingerprint", "excuse", "excuses", "early birds", "calendar", "field absence", "اجازة", "إجازة", "حضور"],
     tables: ["vacation", "attendance", "excuse", "leave_", "calendar"],
   },
+  // 🔴 SPLIT 2026-10-26, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `time-off` measured a
+  // 4,132-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, the moment the NSM
+  // audit taught its one-name-per-person tile rule. The private calendar — its sources, its tile, its daily
+  // timeline, its disputes and the weekly-review settlement — is one family, so its rules move together.
+  // `time-off` KEEPS EVERY GLOB IT HAD, so a private-calendar file loads the PAIR and nothing that used to
+  // arrive stops arriving.
+  {
+    id: "private-calendar",
+    title: "Private calendar — its sources, tiles, timeline and disputes",
+    scope: "What the private calendar shows for a day and from which source, the no-activity engine, the month tile and the daily timeline, the approved plan beside the record, calendar and weekly-review disputes, and the weekly gap notice.",
+    globs: [
+      "src/lib/private-calendar/**",
+      "src/components/private-calendar/**",
+      "app/**/{private-calendar,private-calendars,private-calendar-disputes}/**",
+      "tests/*private-calendar*",
+    ],
+    keywords: ["private calendar", "no activity recorded", "day tile", "daily timeline", "calendar dispute", "weekly review", "gap notice"],
+    tables: ["private_calendar"],
+  },
   {
     id: "expenses",
     title: "Expenses and outstation trips",

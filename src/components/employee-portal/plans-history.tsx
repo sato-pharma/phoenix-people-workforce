@@ -18,6 +18,8 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { planNounLabel, planPeriodShortLabel } from "@/lib/weekly-planning/plan-labels";
+import { splitDraftsReplacedByALaterPlan } from "@/lib/weekly-planning/plan-revisions";
 import type { EmployeePlan } from "@/lib/weekly-planning/service";
 
 /**
@@ -104,8 +106,8 @@ function PlanCard({ onToggle, open, plan }: { onToggle: () => void; open: boolea
         type="button"
       >
         <span className="min-w-0">
-          <span className="block text-sm font-black capitalize text-slate-900">
-            {plan.planKind} plan · {plan.periodKey}
+          <span className="block text-sm font-black text-slate-900">
+            {planNounLabel(plan.planKind)} · {planPeriodShortLabel(plan)}
           </span>
           <span className="mt-0.5 block text-xs font-semibold text-slate-500">
             {formatDate(plan.periodStartDate)} to {formatDate(plan.periodEndDate)} · {plan.items.length}{" "}
@@ -135,12 +137,17 @@ export function PlansHistory({ openPlanId, plans }: { openPlanId?: string | null
   const [kind, setKind] = useState<KindFilter>("all");
   const [openId, setOpenId] = useState<string | null>(openPlanId ?? null);
 
+  // A draft whose week went forward on a later plan is never listed beside it (splitDraftsReplacedByALaterPlan).
+  const { kept, replaced } = useMemo(() => splitDraftsReplacedByALaterPlan(plans), [plans]);
   const shown = useMemo(
     () =>
-      plans
+      kept
         .filter((plan) => kind === "all" || plan.planKind === kind)
-        .sort((left, right) => right.periodStartDate.localeCompare(left.periodStartDate)),
-    [kind, plans],
+        .sort(
+          (left, right) =>
+            right.periodStartDate.localeCompare(left.periodStartDate) || right.revision - left.revision,
+        ),
+    [kind, kept],
   );
 
   return (
@@ -181,6 +188,11 @@ export function PlansHistory({ openPlanId, plans }: { openPlanId?: string | null
         />
         <p className="text-sm font-black text-slate-700">
           {shown.length} {shown.length === 1 ? "plan" : "plans"}
+          {replaced.length > 0 ? (
+            <span className="block text-xs font-semibold text-slate-500">
+              {replaced.length} unsent {replaced.length === 1 ? "draft" : "drafts"} replaced by a later plan not shown
+            </span>
+          ) : null}
         </p>
       </div>
 

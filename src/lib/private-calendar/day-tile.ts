@@ -10,7 +10,7 @@
 // Every customer, address and per-visit card stays in the Daily Timeline table under the grid.
 //
 // Pure and client-safe — the grid imports it. It reads only structured fields of the item (`activityKind`,
-// `visitCounts`, `managerVisits`, `tileWith`, `tileAreas`, `employeeAreaName`), never `chipLines`, which are text for the
+// `visitCounts`, `managerVisits`, `tileWith`, `tileWithPeople`, `tileAreas`, `employeeAreaName`), never `chipLines`, which are text for the
 // surfaces that print lines (an export, a dispute view).
 
 import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -61,6 +61,50 @@ function distinctTexts(values: ReadonlyArray<string | null | undefined>): string
   return out;
 }
 
+/** One HR id key, hyphen- and case-insensitive ("B-110", "b110"). */
+function personKey(hrId: string | null | undefined): string {
+  return String(hrId ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * Each person once. The loader's list (the visit mirror's spelling) and the Phoenix visits' own people (Phoenix's
+ * nickname-aware name) name the SAME person differently — "Hana Abdelaziz Samir Abdelaziz" and "Hana Abdelaziz" —
+ * so a text-only dedupe printed her twice (audit, 2026-10-26). People are matched on their HR id first; one name is
+ * kept per person, and the Phoenix visit's name wins because it is the one every other screen prints. A name that
+ * arrives with no HR id is still dropped when it is the same text as one already kept. Order is first met.
+ */
+export function distinctTilePeople(
+  loaderPeople: ReadonlyArray<{ hrId: string | null; name: string }>,
+  visitPeople: ReadonlyArray<{ hrId?: string | null; name: string }>,
+): string[] {
+  const kept: Array<{ key: string | null; name: string; fromVisit: boolean }> = [];
+  const add = (hrId: string | null | undefined, rawName: string, fromVisit: boolean) => {
+    const name = String(rawName ?? "").trim();
+    if (!name) return;
+    const key = personKey(hrId) || null;
+    const sameText = (entry: { name: string }) => entry.name.toLowerCase() === name.toLowerCase();
+    const existing = key ? kept.find((entry) => entry.key === key) : kept.find(sameText);
+    if (existing) {
+      if (fromVisit && !existing.fromVisit) {
+        existing.name = name;
+        existing.fromVisit = true;
+      }
+      return;
+    }
+    const twin = kept.find(sameText);
+    if (twin) {
+      // The same text met first without an id: it is this person, so it takes the id for anyone after.
+      if (key && !twin.key) twin.key = key;
+      return;
+    }
+    kept.push({ key, name, fromVisit });
+  };
+  for (const person of loaderPeople) add(person.hrId, person.name, false);
+  for (const person of visitPeople) add(person.hrId, person.name, true);
+  // A rename can leave two kept entries reading the same; print each text once.
+  return distinctTexts(kept.map((entry) => entry.name));
+}
+
 /** The split an entry carries, else the one its Phoenix visits add up to (their `bucket` is the AM · PM · Pharmacy list). */
 function splitOf(item: PrivateCalendarItem): VisitCountSplit | null {
   if (item.visitCounts) return item.visitCounts;
@@ -98,11 +142,12 @@ export function privateCalendarDayTile(item: PrivateCalendarItem): PrivateCalend
     ? visitAreas
     : distinctTexts(item.tileAreas && item.tileAreas.length > 0 ? item.tileAreas : [item.employeeAreaName]);
 
-  // Who: the loader's list (a double visit's other side), plus the people on each Phoenix visit beside the person.
-  const withNames = distinctTexts([
-    ...(item.tileWith ?? []),
-    ...visits.flatMap((visit) => visit.withPeople.map((person) => person.name)),
-  ]);
+  // Who: the loader's list (a double visit's other side), plus the people on each Phoenix visit beside the person —
+  // each PERSON once, by HR id (distinctTilePeople).
+  const withNames = distinctTilePeople(
+    item.tileWithPeople ?? (item.tileWith ?? []).map((name) => ({ hrId: null, name })),
+    visits.flatMap((visit) => visit.withPeople),
+  );
 
   const planned = visits.filter((visit) => visit.planned).length;
   return {

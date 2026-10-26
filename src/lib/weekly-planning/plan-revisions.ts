@@ -90,6 +90,29 @@ export function dropPendingRevisionsOfPlansOfRecord<T extends { id: string; pare
   return rows.filter((row) => !(row.parent_plan_id && ofRecord.has(row.parent_plan_id) && !isPlanOfRecordStatus(row.status)));
 }
 
+/**
+ * Split off every DRAFT whose period already holds a live plan of the same kind — a plan that went
+ * forward (submitted, in approval or approved). Such a draft can never be sent: the period's unique
+ * index refuses a second live plan. The plan history listed one beside the plan that replaced it
+ * (NSM audit, 2026-10-26: 2026-W32 as rev 4 "Draft" and rev 5 "HR acknowledged", neither linked by
+ * parent_plan_id), so the reader saw one week twice. A draft is kept when it is the only plan of its
+ * period, or when every other plan of the period is dead (rejected or cancelled).
+ */
+export function splitDraftsReplacedByALaterPlan<T extends { periodKey: string; planKind: string; status: string | null }>(
+  plans: readonly T[],
+): { kept: T[]; replaced: T[] } {
+  const periodOf = (plan: T) => `${plan.planKind}:${plan.periodKey}`;
+  const wentForward = new Set(
+    plans
+      .filter((plan) => plan.status !== "draft" && !DEAD_REVISION_STATUSES.has(String(plan.status ?? "")))
+      .map(periodOf),
+  );
+  const kept: T[] = [];
+  const replaced: T[] = [];
+  for (const plan of plans) (plan.status === "draft" && wentForward.has(periodOf(plan)) ? replaced : kept).push(plan);
+  return { kept, replaced };
+}
+
 /** Shown when a revision of the same approved plan is already waiting for its decisions. */
 export const REVISION_PENDING_MESSAGE =
   "A revised version of this plan is already waiting for approval. Wait for the decision on it before sending another revision.";

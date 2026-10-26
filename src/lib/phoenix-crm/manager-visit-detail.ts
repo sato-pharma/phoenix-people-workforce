@@ -77,8 +77,11 @@ export type ManagerDayVisit = {
   placeSource: ManagerVisitPlaceSource;
   /** A location was captured with the visit (a pin). Never a distance or a flag: those are the integrity board's. */
   hasPin: boolean;
-  /** The people on a ride-along beside the manager, by name and title, rep first. Empty for his own visit. */
-  withPeople: Array<{ name: string; role: string }>;
+  /**
+   * The people on a ride-along beside the manager, by name and title, rep first. Empty for his own visit. `hrId` is
+   * who they are — the private calendar's day tile dedupes on it, so one person is never printed under two spellings.
+   */
+  withPeople: Array<{ hrId?: string | null; name: string; role: string }>;
   products: string[];
   comment: string | null;
   pharmacyName: string | null;

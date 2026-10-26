@@ -104,7 +104,7 @@ export async function runPlanningCalendarRegionGroupsTests() {
   assert.equal(lineless[0]?.line, "CNS", "the line keeps its own column");
 
   const service = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
-  assert.match(service, /resolvePlanItemRegion\(row\.location_text, medicalRepEmployee\?\.regionName, employee\.regionName, regionOfArea\(areaRegions, area\)\)/, "a legacy plan row never has an empty region when the directory knows one");
+  assert.match(service, /resolvePlanItemRegion\(planItemStoredRegion\(row\.activity_type, row\.location_text\), medicalRepEmployee\?\.regionName, employee\.regionName, regionOfArea\(areaRegions, area\)\)/, "a legacy plan row never has an empty region when the directory knows one");
   assert.match(service, /resolvePlanItemRegion\(null, rep\?\.regionName, employee\.regionName, regionOfArea\(areaRegions, area\)\)/, "a Phoenix CRM manager half-day takes its region from the directory, its area's region first");
   assert.match(service, /const areaRegions = buildAreaRegionIndex\(directoryRows\)/, "the area's region is read from the active directory");
 }

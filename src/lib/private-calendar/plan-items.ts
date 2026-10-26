@@ -28,6 +28,7 @@ import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } 
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readAllPrivateCalendarRows, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { weekOfLabel } from "@/lib/weekly-planning/plan-labels";
 import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
 /**
@@ -160,7 +161,8 @@ export function mapPlanRowToPrivateCalendarItem(
   if (nullableText(item.double_visit_medical_rep_name)) {
     detailLines.push(`With: ${cleanText(item.double_visit_medical_rep_name)}`);
   }
-  if (nullableText(header.period_key)) detailLines.push(`Week: ${cleanText(header.period_key)}`);
+  // "Week of 18 Oct", never the week code or a bare ISO date (NSM audit, 2026-10-26).
+  if (nullableText(header.period_key)) detailLines.push(weekOfLabel(header.period_key) || `Week: ${cleanText(header.period_key)}`);
   // The approving manager goes in the detail lines, not only in `managerName`: the workspace
   // overwrites that field with the employee's CURRENT manager from the directory
   // (decorateItemsWithEmployeeMetadata), so who actually signed this week off would otherwise be lost
@@ -218,7 +220,7 @@ export function mapManagerHalfDayToPrivateCalendarItem(
   const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
   if ((halfDay.kind === "single_visit" || halfDay.kind === "with_senior" || halfDay.kind === "with_area") && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
   if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
-  detailLines.push(`Week: ${halfDay.weekStart}`);
+  detailLines.push(weekOfLabel(halfDay.weekStart) || `Week: ${halfDay.weekStart}`);
   if (names.approver) detailLines.push(`Approved by: ${names.approver}`);
   return {
     activityKind: "plan",

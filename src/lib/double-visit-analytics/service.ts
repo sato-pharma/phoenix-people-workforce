@@ -28,7 +28,7 @@ import { logWarning } from "@/lib/observability/log";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import {
   classifyDoubleVisitRows,
-  doubleVisitCompanions,
+  doubleVisitCompanionPeople,
   privateCalendarActivityKindLabels,
   privateCalendarVisitKind,
   type ClassifiedDoubleVisitRow,
@@ -2433,6 +2433,7 @@ function privateCalendarItem(input: {
   time: string;
   tileAreas: string[];
   tileWith: string[];
+  tileWithPeople: NonNullable<PrivateCalendarItem["tileWithPeople"]>;
   title: string;
   visitCounts: PrivateCalendarItem["visitCounts"];
   visitRecords: PrivateCalendarItem["visitRecords"];
@@ -2464,6 +2465,7 @@ function privateCalendarItem(input: {
     status: input.status,
     tileAreas: input.tileAreas,
     tileWith: input.tileWith,
+    tileWithPeople: input.tileWithPeople,
     time: input.time,
     title: input.title,
     visitCounts: input.visitCounts,
@@ -2498,7 +2500,8 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   const split = emptyVisitCountSplit();
   for (const entry of group) addBucketToSplit(split, entry.bucket, 1, entry.row.from_phoenix === true);
   const total = visitCountSplitTotal(split);
-  const companions = group.flatMap((entry) => doubleVisitCompanions(entry, side));
+  const companionPeople = group.flatMap((entry) => doubleVisitCompanionPeople(entry, side));
+  const companions = companionPeople.map((person) => person.name);
   const withNames = joinedDistinct(companions, "Unmapped or vacant");
   const areaLabel = joinedDistinct(group.map((entry) => entry.row.area_name), "Unmapped");
   const lineLabel = joinedDistinct(group.map((entry) => entry.row.line_name), "Unmapped");
@@ -2536,6 +2539,10 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
     // The day tile's own lists (private-calendar/day-tile.ts): real names and areas only, never the "Unmapped" words.
     tileAreas: group.map((entry) => nullableText(entry.row.area_name)).filter((value): value is string => Boolean(value)),
     tileWith: companions.map(nullableText).filter((value): value is string => Boolean(value)),
+    tileWithPeople: companionPeople.flatMap((person) => {
+      const name = nullableText(person.name);
+      return name ? [{ hrId: nullableText(person.hrId), name }] : [];
+    }),
     time: counts,
     title: `${kindLabel}: ${total} visit${total === 1 ? "" : "s"} with ${withNames} - ${areaLabel}`,
     visitCounts: split,
@@ -2675,7 +2682,9 @@ export function doubleVisitPrivateCalendarItemsFromRows(rows: DoubleVisitDbRow[]
   // exactly as the first does — the other manager named beside the rep, as on a vendor chain.
   const performedEntries = classified.flatMap((entry) =>
     doubleVisitorViews(entry.row).map((view, index) =>
-      index === 0 ? entry : { ...entry, row: view, seniorName: view.double_visitor2_name ?? null },
+      index === 0
+        ? entry
+        : { ...entry, row: view, seniorName: view.double_visitor2_name ?? null, seniorHrId: view.double_visitor2_hr_id ?? null },
     ),
   );
   const performed = groupCalendarRows(

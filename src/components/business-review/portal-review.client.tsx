@@ -33,6 +33,12 @@ import { ReviewPeriodFilter } from "./review-filter.client";
 import type { HiddenFields } from "./hidden-fields";
 import { CustomersByAreaTable } from "./rollups.client";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import {
+  districtCardsRemainder,
+  districtCardsRemainderText,
+  earnerTally,
+  earnerTallyNote,
+} from "@/lib/business-review/portal-tallies";
 
 /**
  * Business Review — the employee-portal view, at every scope breadth.
@@ -342,7 +348,8 @@ export function BusinessReviewPortal({
   }, [areas, spendProp]);
 
   const graded = useMemo(() => areas.filter((a) => a.hasTarget && a.allProducts.ach != null), [areas]);
-  const earners = useMemo(() => graded.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) >= 90), [graded]);
+  // Earners over the STAFFED areas with a target — a vacant area is graded but never earns (earnerTally).
+  const earners = useMemo(() => earnerTally(areas), [areas]);
   const vacantAreas = useMemo(() => areas.filter((a) => a.vacant), [areas]);
   const failAreas = useMemo(
     () =>
@@ -374,6 +381,11 @@ export function BusinessReviewPortal({
         .slice()
         .sort((a, b) => (a.allProducts.ach ?? 0) - (b.allProducts.ach ?? 0)),
     [visibleDms, thresholds.dsmFailBelow],
+  );
+  // What the district cards leave out of the header's sales, said under them (districtCardsRemainder).
+  const dmCardsNote = useMemo(
+    () => districtCardsRemainderText(districtCardsRemainder(dms, visibleDms, totals.sales), egp),
+    [dms, visibleDms, totals.sales],
   );
 
   const showLines = lineRows.length > 1;
@@ -447,9 +459,14 @@ export function BusinessReviewPortal({
           value={pct(totals.ach)}
         />
         <PortalMetricCard accent="sky" label="My sales" note={`of ${egp(totals.target)}`} value={egp(totals.sales)} />
-        <PortalMetricCard accent="emerald" label="Earners ≥ 90%" note={`of ${num(graded.length)} graded areas`} value={num(earners.length)} />
+        <PortalMetricCard accent="emerald" label="Earners ≥ 90%" note={earnerTallyNote(earners, num)} value={num(earners.earners)} />
         <PortalMetricCard accent="rose" label={`Below ${thresholds.repFailBelow}%`} note="vacant areas excluded" value={num(failAreas.length)} />
-        <PortalMetricCard accent="slate" label="Vacant areas" note="coverage gap, not a failure" value={num(vacantAreas.length)} />
+        <PortalMetricCard
+          accent="slate"
+          label="Vacant areas"
+          note={`of ${num(areas.length)} areas · coverage gap, not a failure`}
+          value={num(vacantAreas.length)}
+        />
         <PortalMetricCard
           accent="amber"
           label="Marketing + outstation"
@@ -658,6 +675,7 @@ export function BusinessReviewPortal({
                   </PortalDesktopTable>
                 )}
               />
+              {dmCardsNote ? <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">{dmCardsNote}</p> : null}
             </PortalSection>
           ) : null}
 

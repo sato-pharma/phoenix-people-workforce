@@ -41,6 +41,7 @@ import {
 } from "@/lib/crm/visit-count-buckets";
 import { markDegraded } from "@/lib/cache/serve-uncached";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { resolvePersonDisplayName } from "@/lib/employees/display-name";
 import {
   loadReferenceEmployees,
   loadReferenceLines,
@@ -211,6 +212,20 @@ const ROLE_ORDER = [
   "Group Product Manager",
 ];
 
+/**
+ * The name every pack in the review prints for a person: the nickname the company uses, then the
+ * full name, tidied when it was stored in capitals — the same rule as every other screen
+ * (`resolvePersonDisplayName`), for leavers too. Until 2026-10-26 this read full name FIRST and
+ * printed it raw, so a district manager stored as "SAHAR EL GALLAD" read that way on her district
+ * card and in the district filter. Exported for `tests/business-review-person-names.test.ts`.
+ */
+export function reviewDisplayName(row: Pick<ReferenceEmployee, "full_name" | "nickname">, hrId: string): string {
+  const fullName = String(row.full_name ?? "").trim();
+  const nickname = String(row.nickname ?? "").trim();
+  if (!fullName && !nickname) return hrId;
+  return resolvePersonDisplayName(fullName || nickname, nickname, hrId);
+}
+
 export async function loadReviewDirectory(): Promise<ReviewDirectory> {
   const directory: ReviewDirectory = new Map();
   let rows: ReferenceEmployee[] = [];
@@ -229,7 +244,7 @@ export async function loadReviewDirectory(): Promise<ReviewDirectory> {
     const jobTitle = String(row.job_title ?? "").trim();
     directory.set(hrKey(hrId), {
       hrId,
-      name: String(row.full_name ?? "").trim() || String(row.nickname ?? "").trim() || hrId,
+      name: reviewDisplayName(row, hrId),
       jobTitle,
       role: resolveJobFunctionRole(jobTitle),
       lineId: row.line_id == null ? null : Number(row.line_id),
