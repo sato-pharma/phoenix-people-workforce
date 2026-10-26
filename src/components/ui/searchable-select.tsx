@@ -31,6 +31,16 @@ type SearchableSelectProps = Omit<React.ComponentPropsWithoutRef<"select">, "chi
    * Opt-in: a one-line input is still the right look in filter bars and forms.
    */
   wrapValue?: boolean;
+  /**
+   * Opt-in free typing. When set, whatever is typed that is not already a row gets one extra row at
+   * the top of the list — click it (or press Enter when nothing else matches) and the select emits
+   * `freeTextValue(typed)` as its value. A return of "" means the typed text is not acceptable and no
+   * row is offered. The caller must also list an <option> for the value it holds, so the closed field
+   * can show it. Every select that does not pass this behaves exactly as before.
+   */
+  freeTextValue?: (typed: string) => string;
+  /** The words on that row; defaults to Use "typed". */
+  freeTextLabel?: (typed: string) => string;
 };
 
 // The caller's fixed height (`h-10`, `h-[42px]`) becomes the wrapping field's MINIMUM height, so a
@@ -148,6 +158,8 @@ export function SearchableSelect({
   noResultsText = "No results",
   placeholder,
   wrapValue = false,
+  freeTextValue,
+  freeTextLabel,
   "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
   ...rest
@@ -192,6 +204,19 @@ export function SearchableSelect({
     });
     return filtered.slice(0, maxResults);
   }, [options, normalizedQuery, maxResults]);
+
+  // The extra "use what I typed" row: only when free typing is on, something readable was typed and no
+  // row already reads exactly that (typing a listed name picks the listed one, never a duplicate).
+  const freeTextRow = React.useMemo(() => {
+    if (!freeTextValue) return null;
+    const typed = query.replace(/\s+/g, " ").trim();
+    if (!typed) return null;
+    const lowerTyped = typed.toLowerCase();
+    if (options.some((option) => option.lowerLabel === lowerTyped)) return null;
+    const emitted = freeTextValue(typed);
+    if (!emitted) return null;
+    return { value: emitted, label: freeTextLabel ? freeTextLabel(typed) : `Use "${typed}"` };
+  }, [freeTextLabel, freeTextValue, options, query]);
 
   const selectedLabel = React.useMemo(() => {
     const match = options.find((option) => option.value === currentValue);
@@ -326,6 +351,8 @@ export function SearchableSelect({
       const firstSelectable = filteredOptions.find((option) => !option.disabled);
       if (firstSelectable) {
         selectOption(firstSelectable.value);
+      } else if (freeTextRow) {
+        selectOption(freeTextRow.value);
       }
       return;
     }
@@ -460,8 +487,24 @@ export function SearchableSelect({
                 maxWidth: menuRect.maxWidth,
               }}
             >
+              {freeTextRow ? (
+                <button
+                  role="option"
+                  aria-selected={false}
+                  className="flex w-full items-center gap-2 border-b border-slate-100 bg-orange-50/60 px-3 py-2 text-left text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectOption(freeTextRow.value);
+                  }}
+                >
+                  <span className="min-w-0 whitespace-normal break-words">{freeTextRow.label}</span>
+                </button>
+              ) : null}
               {filteredOptions.length === 0 ? (
-                <div className="p-2 text-xs text-phx-ink-soft" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
+                freeTextRow ? null : (
+                  <div className="p-2 text-xs text-phx-ink-soft" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
+                )
               ) : (
                 filteredOptions.map((option, index) => {
                   const isActive = currentValue === option.value;

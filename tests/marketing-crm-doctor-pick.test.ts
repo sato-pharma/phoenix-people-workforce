@@ -9,6 +9,10 @@ import {
   describeMissingDoctorPick,
   NOT_ON_CRM_LIST_FLAG,
   readsEveryCrmDoctorArea,
+  readTypedCrmDoctorName,
+  TYPED_CRM_DOCTOR_MAX_LENGTH,
+  TYPED_CRM_DOCTOR_PREFIX,
+  typedCrmDoctorValue,
   UNPICKED_CRM_DOCTOR,
 } from "../src/lib/marketing-requests/crm-doctor-pick.ts";
 import {
@@ -151,6 +155,36 @@ export async function runMarketingCrmDoctorPickTests() {
     "a customer already on record carries no pick — its name is locked, not re-chosen",
   );
   assert.equal(describeMissingDoctorPick({ ...pickPending, areaSeatId: "R-1", crmCustomerId: "crm-1" }, 2), null);
+
+  // ---------------------------------------------------------------- one box: pick from the list OR type a name (2026-10-26)
+
+  assert.equal(typedCrmDoctorValue("  د.   سمير  "), `${TYPED_CRM_DOCTOR_PREFIX}د. سمير`, "a typed name is trimmed and its spaces collapsed");
+  assert.equal(typedCrmDoctorValue("   "), "", "nothing readable typed offers no row");
+  assert.equal(readTypedCrmDoctorName(typedCrmDoctorValue("Dr Samir")), "Dr Samir", "the typed name round-trips");
+  assert.equal(readTypedCrmDoctorName("crm-1"), null, "a CRM id is never read as a typed name");
+  assert.equal(readTypedCrmDoctorName(""), null, "the placeholder is not a typed name");
+  assert.equal(readTypedCrmDoctorName("__not_on_crm_list__"), null, 'the "Not on the list" row is not a typed name');
+  assert.equal(readTypedCrmDoctorName(TYPED_CRM_DOCTOR_PREFIX), null, "a prefix with no name is not a name");
+  assert.equal(
+    typedCrmDoctorValue("x".repeat(TYPED_CRM_DOCTOR_MAX_LENGTH + 40)).length,
+    TYPED_CRM_DOCTOR_PREFIX.length + TYPED_CRM_DOCTOR_MAX_LENGTH,
+    "a typed name is capped",
+  );
+
+  const select = code("src/components/ui/searchable-select.tsx");
+  assert.match(select, /freeTextValue\?: \(typed: string\) => string;/, "free typing is an opt-in prop of the shared select");
+  assert.match(select, /if \(!freeTextValue\) return null;/, "without the prop the select offers no typed row — every other select is unchanged");
+  assert.match(select, /option\.lowerLabel === lowerTyped\)\) return null;/, "typing a listed name picks the listed row, never a duplicate");
+  assert.match(select, /\} else if \(freeTextRow\) \{\s*selectOption\(freeTextRow\.value\);/, "Enter takes the typed name only when nothing listed matches");
+  assert.doesNotMatch(select.slice(select.indexOf("freeTextRow ? ("), select.indexOf("filteredOptions.length === 0 ? (")), /truncate|rounded/, "the typed row is square and never ellipsised");
+
+  const doctorForm = code("src/components/employee-portal/marketing-validation-workspace.tsx");
+  assert.match(doctorForm, /freeTextValue=\{typedCrmDoctorValue\}/, "the doctor box accepts a typed name");
+  assert.match(
+    doctorForm,
+    /const typedName = readTypedCrmDoctorName\(value\);\s*if \(typedName\) \{\s*updateCustomer\(customer\.key, \{ crmCustomerId: "", name: typedName, notOnCrmList: true \}\);/,
+    "a typed name becomes a flagged not-on-list customer, never a CRM link",
+  );
 
   // ---------------------------------------------------------------- the flag every approver sees
 
