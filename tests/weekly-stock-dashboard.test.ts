@@ -6,6 +6,7 @@ import {
   WEEKLY_STOCK_UNMAPPED_AREA,
   WEEKLY_STOCK_UNMAPPED_AREA_LABEL,
   buildWeeklyStockView,
+  WEEKLY_STOCK_STATUS_LABELS,
   classifyWeeklyStock,
   weeklyStockSalesWindow,
   type WeeklyStockSourceRow,
@@ -60,7 +61,12 @@ export function runWeeklyStockDashboardTests() {
   assert.equal(classifyWeeklyStock(80, 10).status, "healthy", "exactly 8 weeks is Healthy");
   assert.equal(classifyWeeklyStock(81, 10).status, "over", "over 8 weeks is Overstock");
   assert.deepEqual(classifyWeeklyStock(5, 0), { coverWeeks: null, status: "no_sales" }, "stock with no sales");
-  assert.deepEqual(classifyWeeklyStock(0, 10), { coverWeeks: 0, status: "low" }, "sold out while selling is Low");
+  // ── Out of stock: no units is its own status, with or without sales — it is never "low" (cover below 2
+  //    weeks) and never "healthy" (the old reading of 0 units that sold nothing).
+  assert.deepEqual(classifyWeeklyStock(0, 10), { coverWeeks: 0, status: "out_of_stock" }, "no units while selling is Out of stock");
+  assert.deepEqual(classifyWeeklyStock(0, 0), { coverWeeks: null, status: "out_of_stock" }, "no units and no sales is Out of stock, not Healthy");
+  assert.equal(classifyWeeklyStock(-3, 10).status, "out_of_stock", "a negative reading is no stock either");
+  assert.equal(classifyWeeklyStock(1, 10).status, "low", "one unit left is still Low, not Out of stock");
 
   // ── The average divides by the WEEKS an upload covers, not the number of uploads: after a gap the
   //    de-cumulated upload carries the missing week too, and a cycle's first upload carries weeks 1..n.
@@ -155,6 +161,48 @@ export function runWeeklyStockDashboardTests() {
   assert.equal(earlierConviban?.coverWeeks, 10);
   assert.equal(earlierConviban?.status, "over");
 
+  // The statuses PARTITION the rows: every cell is in exactly one, so the tiles add up to the row count.
+  const everyStatus = ["out_of_stock", "low", "healthy", "over", "no_sales"] as const;
+  assert.deepEqual(Object.keys(WEEKLY_STOCK_STATUS_LABELS), [...everyStatus], "Out of stock is a status with its own label and filter option");
+  const partitioned = buildWeeklyStockView(
+    [
+      row({ weekStart: "2026-09-13", stockUnits: 300, netUnits: 10 }), // 30 weeks: over
+      row({ weekStart: "2026-09-13", branchCode: "B3", branchName: "Banha", stockUnits: 0, netUnits: 4 }), // sold out, selling
+      row({ weekStart: "2026-09-13", branchCode: "B4", branchName: "Tanta", stockUnits: 0, netUnits: 3, productCode: "CO002", productName: "Conviban 25mg/ml Syp" }), // sold out, selling
+      row({ weekStart: "2026-09-13", branchCode: "B4", branchName: "Tanta", stockUnits: 0, netUnits: 0, productCode: "CO003", productName: "Never Stocked" }), // listed at 0, never sold: not a row
+      row({ weekStart: "2026-09-13", branchCode: "B5", branchName: "Zagazig", stockUnits: 5, netUnits: 0 }), // stock, nothing sold
+      row({ weekStart: "2026-09-13", branchCode: "B6", branchName: "Mansoura", stockUnits: 5, netUnits: 10 }), // under 2 weeks: low
+      row({ weekStart: "2026-09-13", branchCode: "B8", branchName: "Damietta", stockUnits: 40, netUnits: 10 }), // 4 weeks: healthy
+    ],
+    areaNames,
+  );
+  const tally = (status: string) => partitioned.cells.filter((cell) => cell.status === status).length;
+  assert.deepEqual(
+    everyStatus.map(tally),
+    [2, 1, 1, 1, 1],
+    "two sold-out cells, then one in every other status",
+  );
+  assert.equal(partitioned.cells.some((cell) => cell.productCode === "CO003"), false, "a catalogue line at 0 units that never sold stays off the screen");
+  assert.equal(
+    partitioned.kpis.outOfStockCount + partitioned.kpis.lowCount + partitioned.kpis.healthyCount + partitioned.kpis.overCount + partitioned.kpis.noSalesCount,
+    partitioned.cells.length,
+    "the five tiles add up to the rows",
+  );
+  assert.equal(partitioned.kpis.outOfStockCount, 2);
+  assert.equal(partitioned.kpis.healthyCount, 1);
+  assert.equal(partitioned.products.find((p) => p.productCode === "CO002")?.status, "out_of_stock", "a product out at every branch is Out of stock");
+  assert.equal(partitioned.products.find((p) => p.productCode === "CO001")?.outDepots, 1, "a product counts its own out-of-stock branches");
+  assert.equal(partitioned.depots.find((d) => d.code === "PS|B4")?.status, "out_of_stock", "a branch whose every product is out reads Out of stock");
+  assert.equal(partitioned.depots.find((d) => d.code === "PS|B4")?.outOfStockCount, 1);
+
+  // A value of 0 caused by a missing price is not an empty shelf: the grouping is never called Out of stock for it.
+  const unpriced = buildWeeklyStockView(
+    [row({ weekStart: "2026-09-13", stockUnits: 50, netUnits: 10, factoryPrice: null, productCode: "ZZ001", productName: "No Price" })],
+    areaNames,
+  );
+  assert.equal(unpriced.cells[0]?.status, "healthy");
+  assert.notEqual(unpriced.depots[0]?.status, "out_of_stock", "stock value 0 from a missing price is not an empty shelf");
+
   // Status filter narrows the rows and every total built from them.
   const overOnly = buildWeeklyStockView(rows, areaNames, { asOfWeekStart: "2026-09-06", statuses: ["over"] });
   assert.ok(overOnly.cells.length > 0 && overOnly.cells.every((cell) => cell.status === "over"));
@@ -169,13 +217,13 @@ export function runWeeklyStockDashboardTests() {
       row({ weekStart: "2026-09-13", branchCode: "B3", branchName: "Banha", stockUnits: 0, netUnits: 4 }),
     ],
     areaNames,
-    { statuses: ["low"] },
+    { statuses: ["out_of_stock"] },
   );
-  assert.deepEqual(soldOut.cells.map((cell) => cell.branchName), ["Banha"], "only the sold-out depot is Low");
+  assert.deepEqual(soldOut.cells.map((cell) => cell.branchName), ["Banha"], "only the sold-out depot is Out of stock");
   const banha = soldOut.depots.find((depot) => depot.code === "PS|B3");
   assert.equal(banha?.avgWeeklyValue, 120, "4 units a week at the product's price of 30");
-  assert.equal(banha?.status, "low", "a sold-out depot that still sells reads Low, never Healthy");
-  assert.equal(soldOut.areas[0]?.status, "low");
+  assert.equal(banha?.status, "out_of_stock", "a sold-out depot that still sells reads Out of stock, never Healthy or Low");
+  assert.equal(soldOut.areas[0]?.status, "out_of_stock");
   assert.equal(soldOut.kpis.avgWeeklyValue, 120);
 
   // ── Wiring: scope and Head Office are enforced on the server, never by the screen.
@@ -265,4 +313,10 @@ export function runWeeklyStockDashboardTests() {
   for (const figure of figures) assert.doesNotMatch(figure, /\bwhitespace-nowrap\b/, "a figure wraps inside its box, never runs out of it");
   assert.match(dashboard, /<div className="hidden md:block">/, "desktop and tablet (from md) read full tables");
   assert.match(dashboard, /<div className="space-y-2 p-3 md:hidden">/, "a phone reads cards");
+  // Out of stock has its own tile, badge and rail, and an empty region never leaves a bare "· ·" separator.
+  assert.match(dashboard, /label="Out of stock"[\s\S]{0,160}drill\("statuses", "out_of_stock"\)/, "the Out of stock tile drills into its rows");
+  assert.match(dashboard, /out_of_stock: "bg-slate-900"/, "and wears its own rail");
+  assert.match(dashboard, /value=\{formatUnits\(kpis\.healthyCount\)\}/, "Healthy counts healthy rows, so the tiles add up");
+  assert.doesNotMatch(dashboard, /\{cell\.areaName\} · \{cell\.regionName\}/, "an empty region is skipped, not printed as a bare separator");
+  assert.match(dashboard, /joinParts\(\[cell\.areaName, cell\.regionName, cell\.distributorName\]\)/, "the branch cards join only the parts that exist");
 }

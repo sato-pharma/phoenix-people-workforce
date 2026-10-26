@@ -58,6 +58,7 @@ const SOURCE_ROWS: WeeklyStockSourceRow[] = [
   row({ ...MAADI, stockUnits: 100, netUnits: 10 }), // Maadi · Conviban: 10 weeks, Overstock
   row({ ...MAADI, ...TEBOFORTIN, stockUnits: 20, netUnits: 0 }), // Maadi · Tebofortin: No sales
   row({ ...TANTA, stockUnits: 5, netUnits: 10 }), // Tanta · Conviban: Low stock
+  row({ ...TANTA, ...TEBOFORTIN, stockUnits: 0, netUnits: 10 }), // Tanta · Tebofortin: sold out, Out of stock
   row({ ...TANTA, ...AMOXI, stockUnits: 60, netUnits: 5 }), // Tanta · Amoxi: 12 weeks, Overstock
   row({ ...IBN_SINA, ...TEBOFORTIN, areaCode: null, branchCode: "K1", branchName: "Key Accounts", stockUnits: 30, netUnits: 10 }), // Area not mapped: Healthy
 ];
@@ -68,7 +69,7 @@ const AREA_NAMES = new Map([
   ["D11", "Tanta 1"],
 ]);
 
-const GROUP_SUMMED = ["Stock Value (EGP)", "Avg Weekly Sales (EGP)", "Low Stock", "Overstock", "No Sales"];
+const GROUP_SUMMED = ["Stock Value (EGP)", "Avg Weekly Sales (EGP)", "Out of Stock", "Low Stock", "Overstock", "No Sales"];
 const GROUP_NEVER_SUMMED = ["Weeks of Cover", "Products"];
 
 // Every table tab, the rows it carries, the only columns its TOTAL row may SUM (in column order), and the
@@ -85,7 +86,7 @@ function tableTabs(view: WeeklyStockView) {
     {
       name: "By Product",
       dataRows: view.products.length,
-      summed: ["Stock Value (EGP)", "Low Stock", "Overstock", "No Sales"],
+      summed: ["Stock Value (EGP)", "Out of Stock", "Low Stock", "Overstock", "No Sales"],
       neverSummed: ["Stock Units", "Avg Weekly Units", "Weeks of Cover", "Branches"],
     },
     { name: "By Branch", dataRows: view.depots.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },
@@ -121,7 +122,7 @@ export async function runWeeklyStockWorkbookTotalsTests() {
 
   // Positive controls: the fixture really spans several products, depots, areas, regions and distributors and
   // every status, so neither check below can pass on a workbook too thin to break it.
-  assert.equal(view.cells.length, 7, "seven product-at-depot rows");
+  assert.equal(view.cells.length, 8, "eight product-at-depot rows");
   assert.equal(view.products.length, 3, "three different products, so a unit total would add different products");
   assert.deepEqual(
     [view.depots.length, view.areas.length, view.regions.length, view.distributors.length],
@@ -131,15 +132,16 @@ export async function runWeeklyStockWorkbookTotalsTests() {
   const screen: Record<string, number> = {
     "Stock Value (EGP)": view.kpis.stockValue,
     "Avg Weekly Sales (EGP)": view.kpis.avgWeeklyValue,
+    "Out of Stock": view.kpis.outOfStockCount,
     "Low Stock": view.kpis.lowCount,
     Overstock: view.kpis.overCount,
     "No Sales": view.kpis.noSalesCount,
   };
   // The type argument keeps `screen` indexable by any label below: without it, the assertion narrows it to
-  // exactly these five keys and `screen[label]` stops typechecking.
+  // exactly these six keys and `screen[label]` stops typechecking.
   assert.deepEqual<Record<string, number>>(
     screen,
-    { "Stock Value (EGP)": 8220, "Avg Weekly Sales (EGP)": 1860, "Low Stock": 2, Overstock: 2, "No Sales": 1 },
+    { "Stock Value (EGP)": 8220, "Avg Weekly Sales (EGP)": 2310, "Out of Stock": 1, "Low Stock": 2, Overstock: 2, "No Sales": 1 },
     "the screen's tiles for this scope",
   );
 
