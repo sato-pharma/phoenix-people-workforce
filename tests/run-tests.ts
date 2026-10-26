@@ -2063,6 +2063,7 @@ import { runPgCronHeartbeatsTests } from "./pg-cron-heartbeats.test.ts";
 import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.test.ts";
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
+import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-answers-401.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
@@ -7382,6 +7383,11 @@ await runTest(
 await runTest(
   "a REFUSED Phoenix CRM capture leaves its reading behind (owner, 2026-10-03, after one rep met the rough-location refusal eighteen times between 16:12 and 18:47 and every one of those eighteen readings was discarded — the integrity table is filed only after a save succeeds, no place or visit row is created, and the upload slot keeps only the fact that a slot was asked for, so her 2,000 m was knowable at all only because four captures were ACCEPTED that morning before the 100 m line shipped at 11:24. Pinned: her real 2,000 m capture records to every decimal with the line it missed; a capture the doors ACCEPT records nothing, and so does a refusal about a comment, the products, the customer or the photo; no usable coordinate is its own reason and keeps the radius the phone claimed, the shutter's own pair and the mock flag, with nothing coerced to 0; each door's own line and only its own, including the band where a place is refused and a visit is not; the classifier restates NO threshold but asks the doors' own predicates; the recorder is void, throws nothing, inserts and never upserts, and dates the Cairo visit day; all three refusing doors file it AWAITED before throwing, because an unawaited promise dies with the invocation; and the table is unkeyed so eighteen refusals are eighteen rows)",
   runPhoenixCrmRefusedReadingsTests,
+);
+
+await runTest(
+  "a Phoenix CRM save from someone whose sign-in ENDED answers 401 signed_out, never 403 (24 Oct 2026, 02:35:58 Cairo: a district manager's session reached its absolute expiry mid-plan, his next half-day save 24 seconds later was refused 403 as if he were not allowed, and he signed in again 6 seconds after. Pinned: assertPermission marks the GUEST refusal SignedOutRefusal, right after canAccess and before the module lock, keeping its Forbidden: prefix so every other route answers as before; an ordinary refusal carries no mark; phoenixCrmFailure answers the mark 401 signed_out BEFORE the 403 mapping; and the CRM client still turns a 401 into its signed-out sentence)",
+  runPhoenixCrmSignedOutAnswers401Tests,
 );
 
 await runTest(

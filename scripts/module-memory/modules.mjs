@@ -365,6 +365,27 @@ export const MODULES = [
     keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location"],
     tables: ["phoenix_crm_refused_readings"],
   },
+  // 🔴 SPLIT, 2026-10-26: the signed-out 401 rule took `phoenix-crm`'s pointer to 4,031, over the 4,000
+  // margin. What a Phoenix CRM request hands the screen is one family — the value it returns, the sentence a
+  // refusal reads as, the Try again a dropped connection leaves, the 401 an ended sign-in answers — and none of
+  // it decides who may do what, so it is the safe half to move. `phoenix-crm` keeps every glob it had, so a
+  // file here loads the pair. Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "phoenix-crm-requests",
+    title: "Phoenix CRM — how a request answers the screen",
+    scope: "What a Phoenix CRM read or save hands back to the screen: the value useCrmGet and crmPost return, the browser's own refusals and how they are named, the Try again a dropped connection leaves and a refusal never does, and the 401 an ended sign-in answers.",
+    globs: [
+      "src/components/phoenix-crm/api.ts",
+      "src/lib/phoenix-crm/server/http.ts",
+      "src/lib/auth/signed-out-refusal.ts",
+      "tests/phoenix-crm-signed-out*",
+      "tests/phoenix-crm-tap-to-retry*",
+      "tests/phoenix-crm-browser-name*",
+      "tests/phoenix-crm-shared-place.test.ts",
+    ],
+    keywords: ["tap to retry", "try again", "signed out", "signed_out", "session ended", "connection dropped", "load failed", "failed to fetch", "useCrmGet", "crmPost", "useCrmAction", "browserNamed", "phoenixCrmFailure"],
+    tables: [],
+  },
   // 🔴 NEW 2026-10-17, its own module from birth: the district manager's weekly plan is a separate table
   // family with its own approval chain, its own visits that count in HIS report only, and Manager's own
   // list. Its rules are the owner's five rounds of 2026-10-16, and none of them binds a rep's plan, so they

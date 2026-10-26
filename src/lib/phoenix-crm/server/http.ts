@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
+import { isSignedOutRefusal } from "@/lib/auth/signed-out-refusal";
 import { ApiError, toApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
@@ -20,6 +21,15 @@ export function phoenixCrmFailure(error: unknown, fallback: string): NextRespons
     return NextResponse.json(
       { error: "rate_limited", message: "Too many requests in the last hour. Wait a few minutes and try again.", success: false },
       { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+    );
+  }
+  // 🔴 NOBODY IS SIGNED IN — the session ended (its absolute expiry, mid-plan) or never existed. A 401, which
+  // the client turns into "You are signed out. Sign in again", never a 403 that reads as a permissions
+  // problem (a district manager, 24 Oct 2026 02:36 Cairo: refused 24 s after his session reached its expiry).
+  if (isSignedOutRefusal(error)) {
+    return NextResponse.json(
+      { error: "signed_out", message: "Your sign-in has ended. Sign in again, then try once more.", success: false },
+      { status: 401 },
     );
   }
   const apiError = toApiError(error, fallback);

@@ -1,0 +1,39 @@
+---
+paths:
+  - "src/components/phoenix-crm/api.ts"
+  - "src/lib/phoenix-crm/server/http.ts"
+  - "src/lib/auth/signed-out-refusal.ts"
+  - "tests/phoenix-crm-signed-out*"
+  - "tests/phoenix-crm-tap-to-retry*"
+  - "tests/phoenix-crm-browser-name*"
+  - "tests/phoenix-crm-shared-place.test.ts"
+---
+
+# Module memory — Phoenix CRM — how a request answers the screen
+
+**Scope:** What a Phoenix CRM read or save hands back to the screen: the value useCrmGet and crmPost return, the browser's own refusals and how they are named, the Try again a dropped connection leaves and a refusal never does, and the 401 an ended sign-in answers.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+
+## Rules
+
+- 🔴 **`useCrmGet(url, key)` AND `crmPost(path, payload, key)` HAND BACK `body[key]` — THE VALUE, NEVER THE ENVELOPE — SO A GENERIC THAT WRAPS THE KEY AGAIN IS AN EMPTY SCREEN THE COMPILER CANNOT SEE** (production, 2026-10-12). `request()` ends in `body[key] as T`, so the type argument is an ASSERTION: `useCrmGet<{ sharedPlaces: SharedPlaceChoice[] }>(…, "sharedPlaces")` read as `data?.sharedPlaces` asks an array for a property it has never carried — `?? []`, an empty venue picker on every phone, and a screen that reads exactly like a territory with nothing in it. 🔴 **It cost the company two days of polyclinic seating and Sherif Medhat nine taps on a Save that could not fire**, with the AM/PM step and the timetable camera never drawn while `seatedDraftProblem` still demanded a session. 🔴 **The touch trail found it, not the logs** (`phoenix_crm_touch_trail`): the HTTP log carries no identity and a 200 on the read proves nothing. Every `useCrmGet` in the module is swept by `tests/phoenix-crm-shared-place.test.ts`. Account: `docs/phoenix-crm-shared-places.md`, "The picker was EMPTY on every phone".
+- 🔴 **A PERMISSION THE BROWSER REFUSES IS NAMED BY THE COMPONENT THAT RAISES IT — a screen's `useBrowserNamed()` covers only the SERVER's refusals** (production, 2026-10-13). Four screens raised their own and named none, so a rep read "Location is blocked for **your browser**" with nothing to search for: Norhan Gamal (AI-0025) met it 5 times on 10 and 12 October, the trail holds 42 of it and 30 of the camera's across 4 reps, and she has never saved a place, a visit or a venue. 🔴 **A browser refusal reached no board at all until 2026-10-13** — `phoenix_crm_refused_readings` held 0 rows for her and `phoenix_crm_touch_trail` was the only witness; it is REPORTED now (the rule below), so a trail dig is no longer how a blocked rep is found. Name it at the RENDER (`{browserNamed(error)}`), never at each `setError`. 🔴 **A screen showing a SERVER refusal names it too** (owner, 2026-10-22): the validation screens printed place refusals raw, so 180 too-rough readings for 12 reps read "for **your browser**". Pinned by `tests/phoenix-crm-browser-name.test.ts`, multi-line notes included.
+🔴 **A DROPPED CONNECTION LEAVES SOMETHING TO PRESS, AND A REFUSAL NEVER DOES** (owner, 2026-10-23: *"add a tap-to-retry to the Phoenix CRM pages when the connection drops"*). `app_error_events` held 1,161 rows of the browsers' own network wordings — `Load failed` on iOS, `network error` on Android, `Failed to fetch` on desktop — over 14 days, across 62 releases, median 12.5 minutes into a visible session: a fetch the rep's network cut off, not a Phoenix fault. READS already offered Try again (`CrmLoadError` + `reload`); a SAVE offered the sentence and nothing to press, so the rep re-filled the form and minted a NEW client id — which can file the visit twice. 🔴 **`useCrmAction` keeps the stopped attempt WHOLE — the same payload AND the same completion** (`run(label, work, then)`): a follow-up left behind the `await` runs on the first attempt only, so a retry that worked would leave the panel open. 🔴 **`isRetryableFailure` admits `code === "offline"` ALONE** — a refusal answers the same way however often the same payload arrives and a signed-out session needs a sign-in first, which is the same split `saveStatusLine` already makes on the plan board (`failed` yes, `blocked` no); keep them agreeing. Every save surface renders `CrmSaveError … onRetry={action.retry}` and `RefreshFailed`'s `onRetry` is REQUIRED, both pinned by `tests/phoenix-crm-tap-to-retry.test.ts`.
+- 🔴 **A SAVE FROM SOMEONE WHOSE SIGN-IN ENDED ANSWERS 401 `signed_out`, NEVER 403** (24 Oct 2026, 02:35:58 Cairo: a district manager's session reached its absolute expiry mid-plan; his next save 24 s later read as "not allowed"). `assertPermission` throws `SignedOutRefusal` (`src/lib/auth/signed-out-refusal.ts`) for the guest context only, still worded `Forbidden:`; `phoenixCrmFailure` answers it 401 BEFORE the 403 mapping, and `src/components/phoenix-crm/api.ts` turns any 401 into "You are signed out". Never fix it per route — all 115 CRM routes share the one failure handler. Pinned by `tests/phoenix-crm-signed-out-answers-401.test.ts`.
+
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (0)
+
+_No notes filed under this module yet._
+<!-- module-memory:notes:end -->
