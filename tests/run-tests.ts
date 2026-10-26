@@ -2713,6 +2713,7 @@ import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
 import { runPhoenixKpiNarrowingTests } from "./phoenix-kpi-narrowing.test.ts";
 import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-settlement-slot-safety.test.ts";
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
+import { runDoubleVisitReseatedAccountOverrideTests } from "./double-visit-reseated-account-override.test.ts";
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
@@ -10690,6 +10691,10 @@ await runTest(
 await runTest(
   "the Private Calendar reads only the days its people are on, whole, and every double and chain visit is the whole-month one (a chain, an ambiguous chain, a reused CRM account, a duplicate save, a lowercase hr id; small scopes only, anything doubtful reads the whole month)",
   runPrivateCalendarDoubleVisitDaysTests,
+);
+await runTest(
+  "a saved CRM identity mapping credits double visits only inside the mapped person's employment and under the label it was saved against, so an account reseated on a new hire gives her every double visit from her hire date (account 1437, mapped to a leaver, hid Mariam Younan from her District Manager's coverage card while the probation watchlist read DV DONE)",
+  runDoubleVisitReseatedAccountOverrideTests,
 );
 await runTest(
   "an APPROVED weekly plan covers a private-calendar day only where Phoenix records that activity nowhere else (Travel, Admin, Meeting, Training, Event, Other), while a planned Field, Double Visit, Office, Vacation, Excuse or National Vacation day with nothing recorded keeps its exception, no unapproved plan is read at all, a plan never silences a Late punch, and both the calendar and the company no-activity engine Deductions reads load the same source",
