@@ -1617,6 +1617,7 @@ import { runAutomatedPayrollNegativeValuesTests } from "./automated-payroll-nega
 import { runAutomatedPayrollStepUploadRoundTripTests } from "./automated-payroll-step-upload-roundtrip.test.ts";
 import { runAutomatedPayrollBankCoverageTests } from "./automated-payroll-bank-coverage.test.ts";
 import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-payroll-settlement-and-held-record.test.ts";
+import { runAutomatedPayrollHeldReleaseTests } from "./automated-payroll-held-release.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
 import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
 import { runAutomatedPayrollSettlementSummaryTests } from "./automated-payroll-settlement-summary.test.ts";
@@ -3364,6 +3365,10 @@ await runTest(
 await runTest(
   "automated payroll: carry-forward settles at publish, and a held person leaves a record",
   runAutomatedPayrollSettlementAndHeldRecordTests,
+);
+await runTest(
+  "automated payroll: a held salary is released later, oldest month first, recorded once from what was published",
+  runAutomatedPayrollHeldReleaseTests,
 );
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);

@@ -26,6 +26,13 @@ import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
  */
 
 const TABLE = "automated_payroll_held_settlements";
+/**
+ * What PAYROLL released of a held month (Held Salary Release, owner 2026-10-26) — one row per
+ * (paying run, held run, employee). Deliberately NOT the by-hand table above: a by-hand record is an
+ * attestation HR can correct or withdraw, and letting that edit overwrite what a payroll run paid
+ * would re-open a debt the company had already paid (and the reverse would lose a bank reference).
+ */
+const RELEASES_TABLE = "automated_payroll_held_releases";
 
 export type HeldSettlement = {
   id: string;
@@ -62,7 +69,13 @@ export type HeldBalance = {
   firstPartAlreadyPaid: number;
   secondPartWithheld: number;
   settled: HeldSettlement | null;
-  /** Withheld minus settled, floored at zero. The figure that must not be paid twice. */
+  /**
+   * Released against this held month by OTHER payroll runs that are not cancelled — published ones
+   * (paid) and ones whose Part 2 is confirmed but not yet published (the bank file can already pay
+   * it, so it is reserved). The run asking is never counted against itself.
+   */
+  releasedByPayroll: number;
+  /** Withheld minus settled by hand minus released by payroll, floored at zero. The figure that must not be paid twice. */
   outstanding: number;
 };
 
@@ -263,6 +276,7 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
 
   const settlementsByRun = new Map<string, Map<string, HeldSettlement>>();
   for (const runId of runIds) settlementsByRun.set(runId, await getHeldSettlements(runId));
+  const releasedByPayroll = payrollReleasedByHeldMonth(await loadPayrollReleases(), options?.excludeRunId);
 
   const balances: HeldBalance[] = [];
   const seen = new Set<string>();
@@ -286,6 +300,7 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
       if (!compact) continue;
       const withheld = roundCurrency(num(entry.secondPartWithheld));
       const settled = settlements.get(compact) ?? null;
+      const released = releasedByPayroll.get(releaseKey(runId, compact)) ?? 0;
       balances.push({
         runId,
         month: period.month,
@@ -297,7 +312,8 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
         firstPartAlreadyPaid: roundCurrency(num(entry.firstPartAlreadyPaid)),
         secondPartWithheld: withheld,
         settled,
-        outstanding: Math.max(0, roundCurrency(withheld - (settled?.amount ?? 0))),
+        releasedByPayroll: released,
+        outstanding: Math.max(0, roundCurrency(withheld - (settled?.amount ?? 0) - released)),
       });
     }
   }
@@ -322,4 +338,205 @@ export async function outstandingHeldByEmployee(currentRunId: string): Promise<M
     byEmployee.set(balance.compact, list);
   }
   return byEmployee;
+}
+
+/** One slice of a release: how much of it settles which held month. */
+export type ReleaseAllocation = { runId: string; month: number; year: number; amount: number };
+
+/**
+ * Split one release across the person's outstanding held months, OLDEST FIRST, never paying any
+ * month past what it still owes.
+ *
+ * Pure, so the rule that decides which debt a payment clears is unit-tested directly. Oldest first
+ * because that is the debt that has waited longest, and because it makes a partial release
+ * predictable: the held-salary sheet then shows the older month cleared and the newer one still
+ * open, rather than both half-paid.
+ *
+ * Whatever exceeds the total outstanding is DROPPED, not carried — the step and publish both refuse
+ * a release above the balance, so a remainder here means the balance moved underneath the run, and
+ * recording more than was owed would turn a settled debt into an overpayment on paper.
+ */
+export function allocateRelease(balances: readonly HeldBalance[], amount: number): ReleaseAllocation[] {
+  let remaining = roundCurrency(Math.max(0, Number.isFinite(amount) ? amount : 0));
+  const ordered = [...balances]
+    .filter((balance) => balance.outstanding > 0)
+    .sort((a, b) => a.year - b.year || a.month - b.month || a.runId.localeCompare(b.runId));
+  const allocations: ReleaseAllocation[] = [];
+  for (const balance of ordered) {
+    if (remaining <= 0) break;
+    const take = roundCurrency(Math.min(remaining, balance.outstanding));
+    if (take <= 0) continue;
+    allocations.push({ runId: balance.runId, month: balance.month, year: balance.year, amount: take });
+    remaining = roundCurrency(remaining - take);
+  }
+  return allocations;
+}
+
+/** One payroll release row: what a paying run released of one held month, for one person. */
+export type PayrollReleaseRow = {
+  payingRunId: string;
+  /** The paying run's phase. A cancelled run paid nobody, so its rows count for nothing. */
+  payingRunPhase: string | null;
+  heldRunId: string;
+  compact: string;
+  amount: number;
+};
+
+function releaseKey(heldRunId: string, compact: string): string {
+  return `${heldRunId}|${compact}`;
+}
+
+/**
+ * Sum the payroll releases against each (held month, person), leaving out the asking run's own rows
+ * and every cancelled run's. Pure, so the rule that decides what still counts is tested directly.
+ *
+ * The asking run's own rows are left out ON PURPOSE: they are what that run is about to pay (or has
+ * paid), so counting them would make a retried confirm or publish refuse its own release as "no
+ * longer owed". Everyone else's count, including a run that is confirmed but not yet published —
+ * its bank file can already have paid the money.
+ */
+export function payrollReleasedByHeldMonth(
+  rows: readonly PayrollReleaseRow[],
+  excludeRunId?: string,
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    if (excludeRunId && row.payingRunId === excludeRunId) continue;
+    if (row.payingRunPhase === "cancelled") continue;
+    const key = releaseKey(row.heldRunId, row.compact);
+    totals.set(key, roundCurrency((totals.get(key) ?? 0) + row.amount));
+  }
+  return totals;
+}
+
+/**
+ * Every payroll release, with its paying run's phase. A read failure THROWS, missing table included:
+ * reading "nothing was released" when the ledger could not be read would offer the same money again.
+ */
+async function loadPayrollReleases(): Promise<PayrollReleaseRow[]> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from(RELEASES_TABLE)
+    .select("paying_run_id,held_run_id,employee_hr_id_compact,amount");
+  if (error) throw error;
+  const raw = (data ?? []) as Row[];
+  if (raw.length === 0) return [];
+  const payingIds = Array.from(new Set(raw.map((row) => String(row.paying_run_id ?? "")).filter(Boolean)));
+  const phaseById = new Map<string, string>();
+  for (let index = 0; index < payingIds.length; index += 50) {
+    const { data: runs, error: runError } = await admin
+      .from("automated_payroll_runs")
+      .select("id,phase")
+      .in("id", payingIds.slice(index, index + 50));
+    if (runError) throw runError;
+    for (const run of (runs ?? []) as Row[]) phaseById.set(String(run.id), String(run.phase ?? ""));
+  }
+  return raw.map((row) => ({
+    payingRunId: String(row.paying_run_id ?? ""),
+    // An unknown phase is NOT treated as cancelled: an unreadable run still holds its money back.
+    payingRunPhase: phaseById.get(String(row.paying_run_id ?? "")) ?? null,
+    heldRunId: String(row.held_run_id ?? ""),
+    compact: String(row.employee_hr_id_compact ?? ""),
+    amount: Number(row.amount ?? 0),
+  }));
+}
+
+/** One person's release, split across their held months. */
+export type PlannedHeldRelease = { hrId: string; compact: string; amount: number; allocations: ReleaseAllocation[] };
+
+/**
+ * Split every release across the person's outstanding held months, and REFUSE one that is not owed in
+ * full. Pure. The callers check the balance first (assertHeldReleasesPayable); a shortfall here means
+ * it moved in between, and recording less than is paid would leave money paid with no record.
+ */
+export function planHeldReleases(
+  balancesByEmployee: Map<string, HeldBalance[]>,
+  releases: readonly { hrId: string; amount: number }[],
+): PlannedHeldRelease[] {
+  const planned: PlannedHeldRelease[] = [];
+  const short: string[] = [];
+  for (const release of releases) {
+    const amount = roundCurrency(release.amount);
+    if (!(amount > 0)) continue;
+    const compact = compactHrKey(release.hrId);
+    if (!compact) {
+      short.push(`${release.hrId}: not a usable employee id`);
+      continue;
+    }
+    const allocations = allocateRelease(balancesByEmployee.get(compact) ?? [], amount);
+    const covered = roundCurrency(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
+    if (covered !== amount) {
+      short.push(`${release.hrId}: release ${amount.toFixed(2)} but only ${covered.toFixed(2)} is still held`);
+      continue;
+    }
+    planned.push({ hrId: release.hrId, compact, amount, allocations });
+  }
+  if (short.length > 0) {
+    throw new Error(`Validation: re-open Held Salary Release and correct it. ${short.slice(0, 6).join("; ")}`);
+  }
+  return planned;
+}
+
+/**
+ * Record what THIS run releases of earlier months' held salary — at Part 2 confirm (the bank files can
+ * pay it from then on, so it is reserved against every other run and the held-salary sheet) and again
+ * at publish (from the rows actually published).
+ *
+ * THE RUN'S ROWS ARE REPLACED, NEVER ADDED TO. The balances are read without this run's own rows, the
+ * plan is written over them, and anything this run recorded before that is no longer planned is
+ * removed. So a confirm re-done after a reopen, or a publish retried after an interruption, leaves
+ * exactly one record of what the run pays — never a second allocation against a month the first
+ * attempt already cleared. Written upsert-first, prune-second: a failure part-way leaves MORE
+ * reserved, never less, so it can hold money back but never offer it twice.
+ */
+export async function recordHeldReleases(input: {
+  runId: string;
+  actorHrId: string;
+  stage: "part2_confirmed" | "published";
+  releases: readonly { hrId: string; amount: number }[];
+}): Promise<PlannedHeldRelease[]> {
+  const admin = getSupabaseAdmin();
+  const planned = planHeldReleases(await outstandingHeldByEmployee(input.runId), input.releases);
+  const now = new Date().toISOString();
+  const payload = planned.flatMap((release) =>
+    release.allocations.map((allocation) => ({
+      paying_run_id: input.runId,
+      held_run_id: allocation.runId,
+      employee_hr_id: hrIdForStorage(release.hrId) ?? release.hrId.trim(),
+      employee_hr_id_compact: release.compact,
+      amount: allocation.amount,
+      recorded_by: input.actorHrId,
+      updated_at: now,
+    })),
+  );
+  if (payload.length > 0) {
+    const { error } = await admin
+      .from(RELEASES_TABLE)
+      .upsert(payload, { onConflict: "paying_run_id,held_run_id,employee_hr_id_compact" });
+    if (error) throw error;
+  }
+
+  const keep = new Set(payload.map((row) => releaseKey(row.held_run_id, row.employee_hr_id_compact)));
+  const { data: existing, error: readError } = await admin
+    .from(RELEASES_TABLE)
+    .select("id,held_run_id,employee_hr_id_compact")
+    .eq("paying_run_id", input.runId);
+  if (readError) throw readError;
+  const stale = ((existing ?? []) as Row[])
+    .filter((row) => !keep.has(releaseKey(String(row.held_run_id ?? ""), String(row.employee_hr_id_compact ?? ""))))
+    .map((row) => String(row.id));
+  if (stale.length > 0) {
+    const { error: deleteError } = await admin.from(RELEASES_TABLE).delete().in("id", stale);
+    if (deleteError) throw deleteError;
+  }
+
+  if (planned.length > 0 || stale.length > 0) {
+    await writeAutomatedPayrollAudit({
+      runId: input.runId,
+      actorHrId: input.actorHrId,
+      action: "held_release_recorded",
+      detail: { stage: input.stage, released: planned, withdrawn: stale.length },
+    });
+  }
+  return planned;
 }

@@ -103,6 +103,7 @@ function buildHeldRow(overrides: {
     // instalments added.
     totalPayable: overrides.firstPart + overrides.secondPart,
     carriedForwardApplied: 0,
+    heldReleaseApplied: 0,
     lifecycle: "regular",
     bankName: "CIB",
     bankAccount: "100000000001",
@@ -241,6 +242,7 @@ export async function runAutomatedPayrollHeldTabTests() {
       firstPartAlreadyPaid: 55500,
       secondPartWithheld: 12000,
       settled: null,
+      releasedByPayroll: 0,
       outstanding: 12000,
     },
     {
@@ -255,6 +257,7 @@ export async function runAutomatedPayrollHeldTabTests() {
       firstPartAlreadyPaid: 19600,
       secondPartWithheld: 8000,
       settled: buildSettlement({ compact: "b-156", amount: 8000 }),
+      releasedByPayroll: 0,
       outstanding: 0,
     },
   ];

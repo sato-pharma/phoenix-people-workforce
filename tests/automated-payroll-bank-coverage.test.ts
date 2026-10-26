@@ -95,6 +95,7 @@ function buildAssembledRow(overrides: {
     // THIS rather than against monthSalary, which is defined as the split itself.
     totalPayable: (overrides.firstPart ?? 5000) + (overrides.secondPart ?? 5000),
     carriedForwardApplied: 0,
+    heldReleaseApplied: 0,
     lifecycle: "regular",
     bankName: overrides.bankName === undefined ? "FAB" : overrides.bankName,
     bankAccount: overrides.bankAccount === undefined ? "00100000001" : overrides.bankAccount,

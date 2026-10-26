@@ -67,6 +67,7 @@ import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
+import type { HeldBalance } from "./held-settlements.ts";
 import type {
   DraftRow,
   PayrollPeriod,
@@ -106,7 +107,31 @@ export type PopulationMember = {
    */
   noticeLastWorkingDate: string | null;
   /** Leaver only — unpaid-leave days inside the settlement span (resignation Rule 1). */
+  /**
+   * On this month's sheet ONLY to be paid an earlier month's held salary (Held Salary Release, owner
+   * 2026-10-26). Typically someone who resigned and was held: no longer in the payroll population, so
+   * no step but the release step lists them, and assembly pays them the release and nothing else.
+   */
+  releaseOnly?: boolean;
 };
+
+/**
+ * A person who is not in this month's population, put on the sheet only to receive a held-salary
+ * release. Lifecycle "regular" with no exit date: nothing about this month is prorated for them,
+ * because nothing about this month is paid to them except the release itself.
+ */
+export function releaseOnlyMember(employee: EmployeeDirectoryRow): PopulationMember | null {
+  const compact = compactHrKey(employee.hrId);
+  if (!compact) return null;
+  return {
+    employee,
+    compact,
+    lifecycle: "regular",
+    lastWorkingDate: null,
+    noticeLastWorkingDate: null,
+    releaseOnly: true,
+  };
+}
 
 /**
  * Drops run-scoped-excluded employees (DraftRow.excluded, set via
@@ -247,6 +272,8 @@ export async function resolvePayrollPopulation(period: PayrollPeriod): Promise<P
 export async function resolvePayrollPopulationAndSources(period: PayrollPeriod): Promise<{
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
+  /** Every employee record, leavers included, by compact HR id — for the held-salary release. */
+  directory: Map<string, EmployeeDirectoryRow>;
 }> {
   const [employees, feeders] = await Promise.all([
     getEmployeeDirectoryRows({ includeInactive: true }),
@@ -254,10 +281,12 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
   ]);
   const members: PopulationMember[] = [];
   const sources = new Map<string, PayrollSalarySource>();
+  const directory = new Map<string, EmployeeDirectoryRow>();
 
   for (const employee of employees) {
     const compact = compactHrKey(employee.hrId);
     if (!compact) continue;
+    if (!directory.has(compact)) directory.set(compact, employee);
     const feeder = feeders.get(compact);
     const leaverLastWorkingDate = feeder?.leaverLastWorkingDate ?? null;
     const isLeaver = Boolean(leaverLastWorkingDate);
@@ -306,7 +335,7 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
     for (const key of salarySourceLookupKeys(employee.hrId)) sources.set(key, source);
   }
 
-  return { members, sources };
+  return { members, sources, directory };
 }
 
 function baseRow(member: PopulationMember): StepRow {
@@ -1371,6 +1400,105 @@ export function recommendAdditions(
 }
 
 /**
+ * Everyone a saved Held Salary Release pays who is NOT in this month's population — typically a
+ * resigned employee whose last Part 2 was withheld. Assembly gives each a release-only row
+ * (assemble.ts assembleReleaseOnlyRow).
+ *
+ * Their salary source is added to `sources` when missing, so the sheet shows their contract salary
+ * the way it does for everyone else. A release saved for someone with no employee record at all is
+ * left out here, and Part 2 confirm and publish refuse it by name rather than drop the money.
+ */
+export function releaseOnlyMembersFor(input: {
+  members: PopulationMember[];
+  directory: Map<string, EmployeeDirectoryRow>;
+  draftRows: DraftRow[];
+  sources: Map<string, PayrollSalarySource>;
+  period: PayrollPeriod;
+}): PopulationMember[] {
+  const listed = new Set(input.members.map((member) => member.compact));
+  const result: PopulationMember[] = [];
+  for (const draft of input.draftRows) {
+    if (draft.excluded || !(Number(draft.heldReleaseValue ?? 0) > 0)) continue;
+    const compact = compactHrKey(draft.employeeHrIdCompact);
+    if (!compact || listed.has(compact)) continue;
+    const employee = input.directory.get(compact);
+    const member = employee ? releaseOnlyMember(employee) : null;
+    if (!employee || !member) continue;
+    if (!lookupSource(input.sources, employee.hrId)) {
+      const source = buildSalarySource(employee, input.period);
+      for (const key of salarySourceLookupKeys(employee.hrId)) input.sources.set(key, source);
+    }
+    listed.add(compact);
+    result.push(member);
+  }
+  return result;
+}
+
+/**
+ * Part 2 "Held Salary Release" (owner, 2026-10-26: "if someone's salary is held, it's not added
+ * afterwards").
+ *
+ * One row per person who has money an earlier PUBLISHED month withheld and that is still owed —
+ * withheld less whatever was settled by hand (held-settlements.ts) — plus anyone who already has a
+ * release saved on this run, so a saved figure never vanishes from the screen that set it.
+ *
+ * Most of these people are no longer in the population (they resigned, and that is why they were
+ * held), so the row is built from the employee record rather than from `members`. The recommended
+ * figure is the whole outstanding balance; the step can lower it, never raise it (saveStep).
+ */
+export function recommendHeldRelease(
+  members: PopulationMember[],
+  directory: Map<string, EmployeeDirectoryRow>,
+  drafts: Map<string, DraftRow>,
+  heldBalances: Map<string, HeldBalance[]>,
+): StepRow[] {
+  const memberByCompact = new Map(members.map((member) => [member.compact, member]));
+  const compacts = new Set<string>(heldBalances.keys());
+  for (const [compact, draft] of drafts) {
+    if (!draft.excluded && Number(draft.heldReleaseValue ?? 0) > 0) compacts.add(compact);
+  }
+  const rows: StepRow[] = [];
+  for (const compact of compacts) {
+    const draft = drafts.get(compact);
+    if (draft?.excluded) continue;
+    const balances = [...(heldBalances.get(compact) ?? [])].sort(
+      (a, b) => a.year - b.year || a.month - b.month,
+    );
+    const employee = memberByCompact.get(compact)?.employee ?? directory.get(compact) ?? null;
+    const member = memberByCompact.get(compact) ?? (employee ? releaseOnlyMember(employee) : null);
+    const row: StepRow = member
+      ? baseRow(member)
+      : {
+          hrId: balances[0]?.hrId ?? draft?.employeeHrId ?? compact,
+          fullName: balances[0]?.name ?? "",
+          jobTitle: null,
+          line: null,
+          context: {},
+          values: {},
+          recommended: {},
+          reason: null,
+          onHold: false,
+          lifecycle: "regular",
+        };
+    const sum = (pickAmount: (balance: HeldBalance) => number) =>
+      roundCurrency(balances.reduce((total, balance) => total + pickAmount(balance), 0));
+    const outstanding = sum((balance) => balance.outstanding);
+    row.context = {
+      "Held Month": balances.map((balance) => monthNameAndYear(balance.month, balance.year)).join(", "),
+      "Part 1 Already Paid": sum((balance) => balance.firstPartAlreadyPaid),
+      "Part 2 Withheld": sum((balance) => balance.secondPartWithheld),
+      "Settled By Hand": sum((balance) => balance.settled?.amount ?? 0),
+      "Released In Payroll": sum((balance) => balance.releasedByPayroll),
+      Outstanding: outstanding,
+    };
+    row.recommended = { heldReleaseValue: outstanding };
+    row.values = { heldReleaseValue: pick(draft?.heldReleaseValue, outstanding) };
+    rows.push(row);
+  }
+  return rows.sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
+/**
  * Part 2 "Any more deductions?" — HR's free-text catch-all, now ALSO the landing
  * place for confirmed loan / other deductions from the Deductions module for
  * continuing two-part employees (owner request 2026-08-03).
@@ -1986,6 +2114,13 @@ export async function recommendStep(input: {
    * for the extra query. Omitting it leaves `carriedForwardApplied` at 0.
    */
   carryForwardByCompact?: Map<string, number>;
+  /**
+   * Held Salary Release only: outstanding held balances from earlier published months, by compact HR
+   * id (held-settlements.ts outstandingHeldByEmployee), and the employee records the release is paid
+   * to — most of them leavers outside `members`. Required for that step; ignored by every other.
+   */
+  heldBalances?: Map<string, HeldBalance[]>;
+  directory?: Map<string, EmployeeDirectoryRow>;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
   const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
@@ -2008,6 +2143,8 @@ async function recommendStepRows(
     members: PopulationMember[];
     sources: Map<string, PayrollSalarySource>;
     draftRows: DraftRow[];
+    heldBalances?: Map<string, HeldBalance[]>;
+    directory?: Map<string, EmployeeDirectoryRow>;
   },
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
@@ -2082,6 +2219,12 @@ async function recommendStepRows(
         await loadConfirmedDeductions(input.period),
         drafts,
       );
+    case "p2_held_release":
+      if (!input.heldBalances || !input.directory) {
+        // Never an empty step: an empty list would read as "nobody is owed anything".
+        throw new Error("Held Salary Release needs the held balances and the employee records to recommend.");
+      }
+      return recommendHeldRelease(input.members, input.directory, drafts, input.heldBalances);
     case "p1_holds":
     case "p2_holds":
       // One extra read, on the two hold steps only — the carry-forward and the
@@ -2096,6 +2239,7 @@ async function recommendStepRows(
 export async function loadStepContext(period: PayrollPeriod): Promise<{
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
+  directory: Map<string, EmployeeDirectoryRow>;
 }> {
   return resolvePayrollPopulationAndSources(period);
 }

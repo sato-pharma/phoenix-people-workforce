@@ -1860,6 +1860,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Purely additive: production's phoenix_crm_places still holds its 3,817 rows. Pinned by
   // tests/phoenix-crm-master-list.test.ts (the migration's grants).
   "20261026165500_phoenix_crm_master_decisions.sql",
+
+  // THE HELD SALARY RELEASE LEDGER — applied 26 Oct 2026 on STAGING then PRODUCTION through
+  // scripts/apply-sql-file.mjs, the standing route of AGENTS.md §8, on the owner's word in chat ("Table first,
+  // then merge"): the Supabase MCP's apply_migration answered {"status":"declined"} on staging four times, the
+  // last right after the owner chose "Retry Supabase prompt". The route writes no ledger row on either
+  // project, hence this entry rather than a ledger write.
+  //
+  // The file defines no function, so there is no prosrc digest; the evidence is the end state, read live on
+  // BOTH projects after the apply and identical on each: public.automated_payroll_held_releases present,
+  // relrowsecurity true, 4 policies, 3 indexes, anon SELECT false, 0 rows on production. Production's
+  // to_regclass read null just before, so the table is new. Purely additive. Pinned by
+  // tests/automated-payroll-held-release.test.ts.
+  "20261026190000_automated_payroll_held_release_ledger.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

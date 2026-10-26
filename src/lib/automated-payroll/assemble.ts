@@ -1,8 +1,10 @@
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { roundCurrency } from "@/lib/payroll/money";
+import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration";
 import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind.ts";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
+import { HELD_RELEASE_ONLY_COMMENT } from "@/lib/payroll/held-release";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
 import {
   statutoryFromInsuranceWage,
@@ -72,6 +74,12 @@ export type AssembledRow = {
    * burying a past month's correction inside "other deductions".
    */
   carriedForwardApplied: number;
+  /**
+   * Held salary from an earlier published month that this row pays (Held Salary Release, owner
+   * 2026-10-26). Already inside Other Additions and the Part 2 instalment; surfaced separately so
+   * publish can record exactly what was released against the held balance, and nothing else.
+   */
+  heldReleaseApplied: number;
   lifecycle: RowLifecycle;
   /** For the Part-1 sheet's bank columns — not part of the canonical salary_records payload. */
   bankName: string | null;
@@ -250,6 +258,7 @@ export function settlementBasisFor(input: {
       overtime: num(draft?.overtime),
       specialAdditionValue: specialAdditionAmount(draft),
       otherAdditions: num(draft?.otherAdditions),
+      heldReleaseValue: heldReleaseAmount(draft),
       // Taken off.
       fingerprintValue: num(draft?.fingerprintValue),
       crm: num(draft?.crm),
@@ -267,6 +276,11 @@ export function settlementBasisFor(input: {
       carriedForwardApplied: Math.max(0, roundCurrency(input.carriedForward ?? 0)),
     },
   };
+}
+
+/** The Held Salary Release step's figure for this row, never negative. */
+function heldReleaseAmount(draft: DraftRow | undefined): number {
+  return Math.max(0, roundCurrency(num(draft?.heldReleaseValue)));
 }
 
 /** Leaver's own CRM+vacation deduction, confirmed on the Resignation step (owner rule 2026-07-20). Non-leavers: 0. */
@@ -303,6 +317,11 @@ export function assembleRows(input: {
    * derived figure, and nothing invented in between.
    */
   statutory?: { config: StatutoryConfig; insuranceWages: InsuranceWageMap };
+  /**
+   * People outside this month's population who are on the sheet ONLY to be paid an earlier month's
+   * held salary (recommend.ts releaseOnlyMember). Built by assembleReleaseOnlyRow, never by the split.
+   */
+  releaseOnlyMembers?: PopulationMember[];
 }): AssembledRow[] {
   const drafts = draftByCompact(input.draftRows);
   const results: AssembledRow[] = [];
@@ -394,8 +413,13 @@ export function assembleRows(input: {
         carriedForwardApplied,
     );
     // The Additions step's Other additions cell (a dispute refund, 2026-10-09) is paid in the same
-    // column as the Special Situations addition, and like it counts once for the whole month.
-    const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions));
+    // column as the Special Situations addition, and like it counts once for the whole month. A held
+    // salary released this month (2026-10-26) joins them: it is an addition with no Part 1 share, so
+    // it lands in Part 2 through `secondPart = totalPayable - firstPartFrozen`. A row HELD again this
+    // month releases nothing: the release stays owed on its own month, and folding it into a held row
+    // would let it cancel this month's overpayment and vanish with the hold.
+    const heldReleaseApplied = draft?.onHold ? 0 : heldReleaseAmount(draft);
+    const otherAdditionsTotal = roundCurrency(specialAddition + num(draft?.otherAdditions) + heldReleaseApplied);
     const loans = part1LoanDeduction(draft);
 
     const parts = assembleParts({
@@ -501,11 +525,111 @@ export function assembleRows(input: {
       overpaidResidual: parts.overpaidResidual,
       totalPayable: parts.totalPayable,
       carriedForwardApplied,
+      heldReleaseApplied,
       lifecycle: member.lifecycle,
       bankName: employee.bankName ?? null,
       bankAccount: employee.bankAccount ?? null,
     });
   });
 
+  const memberCompacts = new Set(input.members.map((member) => member.compact));
+  for (const member of input.releaseOnlyMembers ?? []) {
+    // Someone in the population is paid the release through their ordinary row above.
+    if (memberCompacts.has(member.compact)) continue;
+    // Held again: nothing is released, so there is no row (see heldReleaseApplied above).
+    if (drafts.get(member.compact)?.onHold) continue;
+    const release = heldReleaseAmount(drafts.get(member.compact));
+    if (release <= 0) continue;
+    results.push(
+      assembleReleaseOnlyRow({
+        member,
+        source: lookupSource(input.sources, member.employee.hrId),
+        draft: drafts.get(member.compact),
+        period: input.period,
+        index: results.length,
+      }),
+    );
+  }
+
   return results;
+}
+
+/**
+ * The row for someone paid ONLY a held-salary release this month — typically a resigned employee
+ * whose last Part 2 was withheld (owner, 2026-10-26: "if someone's salary is held, it's not added
+ * afterwards").
+ *
+ * Not built through the split: they earned nothing this month, so there is no Part 1, no deduction
+ * and no proration. The whole release is the Part 2 instalment, and the month's pay is the release.
+ *
+ * The salary columns still show the CONTRACT salary, because the sheet's own rules need them (a
+ * gross of zero is refused, and gross and net must follow the locked formulas). Social insurance
+ * and income tax are ZERO: nothing was earned this month, so nothing is filed for it — the
+ * withheld money was already filed in the month it was earned. Gross is therefore the contract
+ * base, which the gross formula accepts. Working days 0 says on the sheet that no work is paid.
+ */
+export function assembleReleaseOnlyRow(input: {
+  member: PopulationMember;
+  source: PayrollSalarySource | undefined;
+  draft: DraftRow | undefined;
+  period: PayrollPeriod;
+  index: number;
+}): AssembledRow {
+  const { member, source, draft } = input;
+  const employee = member.employee;
+  const release = heldReleaseAmount(draft);
+  const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+  const extraCostOfLiving = roundCurrency(source?.extraCostOfLiving ?? 0);
+  const fuelAllowance = roundCurrency(source?.fuelAllowance ?? 0);
+  const row: SalaryValidationRow = {
+    area: employee.areaName ?? "Unassigned",
+    baseSalary,
+    bonus: 0,
+    calendarDays: calendarDaysInMonth(input.period),
+    crm: 0,
+    hrId: employee.hrId,
+    employmentIncomeTax: 0,
+    expenses: 0,
+    extraCostOfLiving,
+    fingerPrint: 0,
+    firstPart: 0,
+    fuelAllowance,
+    governmentalDeductions: 0,
+    fullName: employee.fullName,
+    grossSalary: baseSalary,
+    hireDate: employee.hireDate,
+    incentive: 0,
+    jobTitle: employee.jobTitle ?? "Unassigned",
+    line: employee.lineName ?? "Unassigned",
+    loans: 0,
+    medicalInsurance: 0,
+    monthSalary: release,
+    nameAr: employee.nameAr,
+    netSalary: roundCurrency(baseSalary + extraCostOfLiving + fuelAllowance),
+    otherAdditions: release,
+    otherDeductions: 0,
+    overtime: 0,
+    // The marker the Statutory Summary reads to keep this row out of the month's insured payroll.
+    payrollComment: HELD_RELEASE_ONLY_COMMENT,
+    paymentMode: normalizePayrollPaymentMode(source?.paymentMode ?? "two_parts"),
+    row: input.index + 1,
+    secondPart: release,
+    socialInsurance: 0,
+    totalAdditions: roundCurrency(extraCostOfLiving + fuelAllowance + release),
+    totalDeductions: 0,
+    unpaidVacations: 0,
+    workingDays: 0,
+  };
+  return {
+    row,
+    compact: member.compact,
+    onHold: false,
+    overpaidResidual: 0,
+    totalPayable: release,
+    carriedForwardApplied: 0,
+    heldReleaseApplied: release,
+    lifecycle: member.lifecycle,
+    bankName: employee.bankName ?? null,
+    bankAccount: employee.bankAccount ?? null,
+  };
 }

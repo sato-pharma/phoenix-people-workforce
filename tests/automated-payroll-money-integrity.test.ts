@@ -596,9 +596,9 @@ export async function runAutomatedPayrollMoneyIntegrityTests() {
   assert.match(publish, /catch \(createError\)[\s\S]{0,200}findSalaryBatchForPeriod/, "a create that throws is followed by a look for the batch (F-18)");
 
   for (const [builder, guard] of [
-    ["export async function buildFinanceSheet", `if (scope === "full") await assertFileMatchesPart2Confirm(run, rows);`],
-    ["export async function buildFabSheet", `if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);`],
-    ["export async function buildCibSheet", `if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);`],
+    ["export async function buildFinanceSheet", `if (scope === "full") await assertFileMatchesPart2Confirm(run, rows, draftRows);`],
+    ["export async function buildFabSheet", `if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);`],
+    ["export async function buildCibSheet", `if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);`],
   ] as const) {
     assert.ok(bodyOf(runService, builder).includes(guard), `${builder.replace("export async function ", "")} must check its Part 2 file against the stamp (F-08b)`);
   }

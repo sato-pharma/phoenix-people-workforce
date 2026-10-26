@@ -566,6 +566,24 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     detailNoun: "confirmed deduction",
     detailColumns: DEDUCTION_DETAIL_COLUMNS,
   },
+  p2_held_release: {
+    key: "p2_held_release",
+    phase: "part2",
+    title: "Held Salary Release",
+    subtitle:
+      "Salary an earlier published month withheld and has not paid since — the held amount less anything already settled by hand. It is paid in this month's Part 2, in Other Additions, including for people who have since left. The recommended figure is the whole outstanding balance; lower it to pay part now, or set 0 to keep holding. It can never be raised above what is owed. Someone held again this month is not released. Confirming Part 2 reserves the release against the held month and publishing records it, so it is released once.",
+    contextColumns: [
+      { key: "Held Month", label: "Held Month" },
+      { key: "Part 1 Already Paid", label: "Part 1 Already Paid", money: true },
+      { key: "Part 2 Withheld", label: "Part 2 Withheld", money: true },
+      { key: "Settled By Hand", label: "Settled By Hand", money: true },
+      { key: "Released In Payroll", label: "Released In Payroll", money: true },
+      { key: "Outstanding", label: "Outstanding", money: true },
+    ],
+    fields: [{ key: "heldReleaseValue", label: "Release Amount", kind: "money" }],
+    hasReason: false,
+    isHoldStep: false,
+  },
   p2_holds: {
     key: "p2_holds",
     phase: "part2",
@@ -633,5 +651,6 @@ export const STEP_ORDER: StepKey[] = [
   "p2_crm",
   "p2_additions",
   "p2_manual_deductions",
+  "p2_held_release",
   "p2_holds",
 ];

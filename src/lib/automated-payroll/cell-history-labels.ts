@@ -27,6 +27,7 @@ export const DRAFT_COLUMN_LABELS: Record<string, string> = {
   manual_other_deductions: "Other deductions",
   manual_reason: "Other deductions reason",
   additions_reason: "Additions reason",
+  held_release_value: "Held salary released",
   p1od_crm_days: "Part 1 CRM days",
   p1od_crm_value: "Part 1 CRM deduction",
   p1od_crm_reason: "Part 1 CRM reason",

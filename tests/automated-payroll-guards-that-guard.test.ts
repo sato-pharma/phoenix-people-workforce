@@ -92,6 +92,7 @@ function buildRow(overrides: {
     overpaidResidual: overrides.overpaidResidual ?? 0,
     totalPayable: overrides.totalPayable,
     carriedForwardApplied: 0,
+    heldReleaseApplied: 0,
     lifecycle: "regular",
     bankName: "FAB",
     bankAccount: "1",
