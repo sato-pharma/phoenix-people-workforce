@@ -298,7 +298,7 @@ function UsageDistributionBar({
     <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between">
         <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Monthly usage</p>
-        <p className="text-phx-xs font-bold text-slate-400">{allowance} total</p>
+        <p className="text-phx-xs font-bold text-slate-400">{allowance} {allowance === 1 ? "excuse" : "excuses"} allowed this month</p>
       </div>
       <div className="mt-2.5 flex h-3 w-full overflow-hidden bg-slate-100">
         {approvedPct > 0 ? (
@@ -1065,10 +1065,6 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
             <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Employee profile</p>
             <h3 className="mt-1.5 text-base font-extrabold text-slate-900">{workspace.employee.fullName}</h3>
             <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">HR ID</span>
-                <span className="text-phx-sm font-bold text-slate-800">{workspace.employee.hrId}</span>
-              </div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Role</span>
                 <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.roleLabel}</span>

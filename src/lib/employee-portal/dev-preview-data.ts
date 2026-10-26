@@ -93,7 +93,7 @@ export const employeePortalDevPreviewData = {
     hireDate: "2020-03-15",
     payrollEligibility: "Eligible",
     probationStatus: "Completed",
-    serviceDurationText: "6 Yrs 1 Mos",
+    serviceDurationText: "6 years 1 month",
   },
   insights: [
     "Line achievement increased by 7.2% vs last month.",

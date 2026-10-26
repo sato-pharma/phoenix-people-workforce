@@ -39,7 +39,7 @@ export default async function EmployeePortalVacationRequestPage() {
   return (
     <EmployeePortalPageShell
       badge="Leave & HR"
-      description="Submit a leave request with the same employee portal workspace design and manager approval flow."
+      description="Ask for leave. Your request goes to your manager, then to HR, and you can follow it here."
       title="Vacation Request"
     >
       <VacationRequestForm

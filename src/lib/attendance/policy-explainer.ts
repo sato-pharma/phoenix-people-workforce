@@ -291,11 +291,30 @@ function graceRows(input: {
 // --- Entry point ------------------------------------------------------------
 
 /**
+ * The policy's name as its employee reads it. A policy written for ONE person (target_type
+ * employee_hr_id) is stored under an administrator's label such as "Ali Elsayed (A-12)" — an HR id
+ * and a spelling the portal never prints. That policy is introduced by the employee's portal display
+ * name instead; every other policy keeps its stored name.
+ */
+export function explainerPolicyName(
+  policy: { policy_name?: string | null; target_type?: string | null },
+  employeeDisplayName?: string | null,
+): string {
+  if (policy.target_type === "employee_hr_id") {
+    const name = employeeDisplayName?.trim();
+    return name ? `Personal policy for ${name}` : "Your personal policy";
+  }
+  return policy.policy_name?.trim() || "Attendance policy";
+}
+
+/**
  * Builds the policy explainer for one resolved policy. Returns null when the employee
  * has no active policy, or the policy has no usable schedule — the caller then shows
  * nothing, because a card describing a policy nobody is on is worse than no card.
  */
 export function buildAttendancePolicyExplainer(input: {
+  /** The employee's portal display name — used only to introduce a policy written for him alone. */
+  employeeDisplayName?: string | null;
   policy: AttendanceFlexPolicyGroupDbRow | null | undefined;
   /** Only affects money, which this card never shows — but the grace engine requires it. */
   referenceDate: string;
@@ -315,7 +334,7 @@ export function buildAttendancePolicyExplainer(input: {
   // is precisely the divergence this file exists to prevent.
   const policyRules = rules.filter((rule) => rule.policy_id === policy.id && rule.is_active !== false);
 
-  const policyName = policy.policy_name?.trim() || "Attendance policy";
+  const policyName = explainerPolicyName(policy, input.employeeDisplayName);
   const workingDays = formatAttendanceWorkingWeekdays(policy.working_weekdays);
   const lateBrackets = toBrackets(policyRules, policy.id, "late");
 
@@ -358,7 +377,7 @@ export function buildAttendancePolicyExplainer(input: {
       rules: rulesText,
       // The flexible engine prices a shortfall off `short_hours`.
       shortBrackets: toBrackets(policyRules, policy.id, "short_hours"),
-      title: "Flexible-hours engine",
+      title: "Flexible working hours",
     };
   }
 

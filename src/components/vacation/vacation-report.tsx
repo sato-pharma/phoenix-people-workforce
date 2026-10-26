@@ -51,7 +51,8 @@ import type {
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_PAYMENT_STATUSES, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
-import { cairoDateTime12h } from "@/lib/format/cairo-datetime";
+import { cairoDateTime12h, utcDate } from "@/lib/format/cairo-datetime";
+import { overlapWarningsLabel, showsDailySlaRunCard, vacationDaysLabel } from "@/lib/vacation/report-display";
 import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -134,15 +135,12 @@ function timelineEventLabel(eventType: string) {
 
 // DATE-ONLY (leave start/end days, `date` columns — formatDateTime below takes a real instant), which
 // `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar
-// day being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
+// day being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo. Built from
+// digits by utcDate ("08 Oct 2026"), the platform's one date-only format, never by asking the browser.
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00Z`));
+  const shown = utcDate(value.slice(0, 10));
+  return shown === "—" ? value : shown;
 }
 
 // An INSTANT, shown in Cairo. Built from digits (cairoDateTime12h), never by asking the browser:
@@ -711,11 +709,11 @@ function PaidUnpaidBar({
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
-          <span className="text-emerald-700">Paid {formatDays(paidDays)} days</span>
+          <span className="text-emerald-700">Paid {vacationDaysLabel(paidDays)}</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
-          <span className="text-amber-700">Unpaid {formatDays(unpaidDays)} days</span>
+          <span className="text-amber-700">Unpaid {vacationDaysLabel(unpaidDays)}</span>
         </span>
       </div>
     </div>
@@ -853,7 +851,7 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Since hire</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{row.daysSinceHire ?? "-"} days</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{row.daysSinceHire == null ? "-" : vacationDaysLabel(row.daysSinceHire)}</p>
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">6-mo date</p>
@@ -873,11 +871,11 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
             style={{ width: `${usedPct}%` }}
           />
         </div>
-        <p className="mt-1 text-phx-sm font-extrabold text-slate-900">{formatDays(row.annualBalanceDays)} days remaining</p>
+        <p className="mt-1 text-phx-sm font-extrabold text-slate-900">{vacationDaysLabel(row.annualBalanceDays)} remaining</p>
       </div>
 
       {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">{row.daysUntilEligibility} days until eligible</p>
+        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} until eligible</p>
       ) : null}
 
       {row.managerName ? (
@@ -939,18 +937,17 @@ function LeaveBalanceDeductionsPanel({
                 {/*
                   Said beside the NAME, because that is what it is about. Not in the self view: a
                   leaver cannot sign in anyway, and "you have left the company" is not something to
-                  print in somebody's own report. The date is ISO like the work date next to it —
-                  this section prints date-only columns raw, and inventing a second format here
-                  would be the one place they disagreed.
+                  print in somebody's own report. Both dates are date-only and read "23 Sept 2026",
+                  the same formatDate the rest of the report uses.
                 */}
                 {!isSelfView && row.employeeHasLeft ? (
                   <span className="font-semibold text-amber-700">
-                    left the company{row.lastWorkingDate ? ` ${row.lastWorkingDate.slice(0, 10)}` : ""}
+                    left the company{row.lastWorkingDate ? ` ${formatDate(row.lastWorkingDate)}` : ""}
                   </span>
                 ) : null}
-                <span className="tabular-nums text-slate-600">{row.workDate}</span>
+                <span className="tabular-nums text-slate-600">{formatDate(row.workDate)}</span>
                 <span className="text-sky-800">
-                  {formatDays(row.days)} {row.days === 1 ? "day" : "days"} from annual leave
+                  {vacationDaysLabel(row.days)} from annual leave
                 </span>
               </p>
               <p className="mt-1 whitespace-pre-wrap break-words text-phx-sm leading-5 text-slate-700">{row.comment}</p>
@@ -1122,11 +1119,9 @@ function RequestCard({
             <>
               <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
               <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-                {row.requestCode}
-              </p>
-              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                 {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
               </p>
+              <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.requestCode}</p>
             </>
           )}
         </div>
@@ -1162,7 +1157,7 @@ function RequestCard({
             </div>
             <div>
               <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-              <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
+              <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{vacationDaysLabel(row.durationDays)}</p>
             </div>
           </div>
 
@@ -1217,7 +1212,7 @@ function RequestCard({
       {(row.slaStatus.isOverdue || row.overlapWarnings.length > 0) ? (
         <div className="mt-2 flex flex-wrap gap-1">
           {row.slaStatus.isOverdue ? <Badge variant="danger">SLA overdue</Badge> : null}
-          {row.overlapWarnings.length > 0 ? <Badge variant="warning">{row.overlapWarnings.length} warning(s)</Badge> : null}
+          {row.overlapWarnings.length > 0 ? <Badge variant="warning">{overlapWarningsLabel(row.overlapWarnings.length)}</Badge> : null}
         </div>
       ) : null}
       {!canAdminManage ? (
@@ -1575,7 +1570,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
     },
     {
       count: rows.length,
-      label: isSelfView ? "My Requests" : "Master Requests",
+      label: isSelfView ? "My Requests" : "All Requests",
       value: "requests" as const,
     },
   ];
@@ -1862,7 +1857,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-emerald-600">
-                      {canAdminManage ? "Master review" : "Visible scope review"}
+                      {canAdminManage ? "All entitlements" : "Visible scope review"}
                     </p>
                     <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee leave entitlements</h3>
                     <p className="mt-0.5 text-phx-sm font-medium leading-5 text-slate-500">
@@ -1927,7 +1922,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire ?? "-"} days since hire</p>
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire == null ? "-" : vacationDaysLabel(row.daysSinceHire)} since hire</p>
                           <p className="text-phx-xs text-slate-400">6-mo: {formatDate(row.sixMonthAnniversary)}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
@@ -1935,7 +1930,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             {eligibilityStatusLabel(row.eligibilityStatus)}
                           </Badge>
                           {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-                            <p className="mt-1 text-phx-xs font-bold text-amber-700">{row.daysUntilEligibility} days left</p>
+                            <p className="mt-1 text-phx-xs font-bold text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} left</p>
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
@@ -2065,7 +2060,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             {/* HR's operating view (queue by stage, SLA breaches, evidence backlog, the daily SLA
                 run). None of it is about the viewer's own requests, so an own-leave viewer skips it. */}
             {dashboard && !isSelfView ? (
-              <div className="grid gap-2 md:grid-cols-4">
+              <div className={cn("grid gap-2", showsDailySlaRunCard({ canAdminManage, isSelfView }) ? "md:grid-cols-4" : "md:grid-cols-3")}>
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
                   <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
                   <p className="mt-1 text-xl font-black text-slate-900">{dashboard.pendingByStage.total}</p>
@@ -2081,11 +2076,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   <p className="mt-1 text-xl font-black text-slate-900">{dashboard.evidence.pending + dashboard.evidence.needsFollowUp + dashboard.evidence.rejected}</p>
                   <p className="text-phx-xs font-semibold text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
                 </div>
-                <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
-                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.dailyEscalationRunStatus.status}</p>
-                  <p className="text-phx-xs font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ?? "No run recorded"}</p>
-                </div>
+                {/* The background job's last run is an HR operations fact — Super Admin and HR only. */}
+                {showsDailySlaRunCard({ canAdminManage, isSelfView }) ? (
+                  <div className="rounded-sm border border-slate-200 bg-white p-3">
+                    <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
+                    <p className="mt-1 text-xl font-black text-slate-900">{dashboard.dailyEscalationRunStatus.status}</p>
+                    <p className="text-phx-xs font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ? formatDate(dashboard.dailyEscalationRunStatus.runDate) : "No run recorded"}</p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -2191,7 +2189,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">
-                      {canAdminManage ? "Master ledger" : "Request history"}
+                      {canAdminManage ? "All requests" : "Request history"}
                     </p>
                     <h3 className="mt-1 text-base font-extrabold text-slate-900">{isSelfView ? "My vacation requests" : "Vacation requests"}</h3>
                   </div>
@@ -2238,8 +2236,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="hidden xl:block">
                 <table className="w-full table-fixed border-collapse text-left text-phx-sm">
                   <colgroup>
-                    <col className="w-[11%]" />
                     <col className="w-[15%]" />
+                    <col className="w-[11%]" />
                     <col className="w-[14%]" />
                     <col className="w-[12%]" />
                     <col className="w-[13%]" />
@@ -2249,8 +2247,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   </colgroup>
                   <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Request</SortableHeader>
                       <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
+                      <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
                       <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>Dates</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Balance &amp; pay</th>
@@ -2263,12 +2261,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     {paginatedRequests.map((row) => (
                       <tr key={row.id} className="bg-white align-top transition hover:bg-orange-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <span className="break-words font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{row.requestCode}</span>
-                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{formatDateTime(row.createdAt)}</p>
-                        </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words font-bold text-slate-900">{row.employeeName}</p>
                           <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                        </td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="break-words text-phx-xs font-semibold text-slate-700">{formatDateTime(row.createdAt)}</p>
+                          <p className="mt-0.5 break-words text-phx-2xs font-medium text-slate-400" title={row.id}>{row.requestCode}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
@@ -2288,7 +2286,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-700">{formatDate(row.startDate)}</p>
                           <p className="text-phx-xs text-slate-400">to {formatDate(row.endDate)}</p>
-                          <p className="mt-0.5 text-phx-sm font-bold text-slate-900">{formatDays(row.durationDays)} days</p>
+                          <p className="mt-0.5 text-phx-sm font-bold text-slate-900">{vacationDaysLabel(row.durationDays)}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words text-slate-700">
@@ -2314,7 +2312,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <p className="mt-1 text-phx-2xs font-bold text-rose-700">SLA overdue</p>
                           ) : null}
                           {row.overlapWarnings.length > 0 ? (
-                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">{row.overlapWarnings.length} warning(s)</p>
+                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">{overlapWarningsLabel(row.overlapWarnings.length)}</p>
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">

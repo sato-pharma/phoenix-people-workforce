@@ -46,7 +46,7 @@ test.describe("Vacation Report Page", () => {
     const entitlementsTab = page.getByRole("tab", { name: /Leave Entitlements/i });
     await expect(entitlementsTab).toBeVisible();
 
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await expect(requestsTab).toBeVisible();
   });
 
@@ -65,7 +65,7 @@ test.describe("Vacation Report Page", () => {
     await expect(entitlementsTab).toHaveAttribute("aria-selected", "true");
 
     // Switch to requests
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -78,7 +78,7 @@ test.describe("Vacation Report Page", () => {
     const entitlementsTab = page.getByRole("tab", { name: /Leave Entitlements/i });
     await expect(entitlementsTab).toHaveAttribute("aria-selected", "true");
 
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await expect(requestsTab).toHaveAttribute("aria-selected", "false");
   });
 
@@ -155,7 +155,7 @@ test.describe("Vacation Report Page", () => {
   // ─── Requests Tab ──────────────────────────────────────────────────
 
   test("requests tab shows status distribution bar", async ({ page }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -168,7 +168,7 @@ test.describe("Vacation Report Page", () => {
   });
 
   test("requests tab shows paid vs unpaid bar", async ({ page }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -179,7 +179,7 @@ test.describe("Vacation Report Page", () => {
   });
 
   test("requests tab shows vacation requests header", async ({ page }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -198,7 +198,7 @@ test.describe("Vacation Report Page", () => {
   test("mobile viewport shows card view for requests", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
 
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -261,7 +261,7 @@ test.describe("Vacation Report Page", () => {
   test("requests table has sortable column headers", async ({ page }) => {
     // The desktop table renders at xl+; below that the cards carry the data.
     await page.setViewportSize({ width: 1440, height: 900 });
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -308,7 +308,7 @@ test.describe("Vacation Report Page", () => {
   });
 
   test("requests tab shows CSV and print buttons", async ({ page }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -321,7 +321,7 @@ test.describe("Vacation Report Page", () => {
   test("date presets appear in filter panel on requests tab", async ({
     page,
   }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 
@@ -338,7 +338,7 @@ test.describe("Vacation Report Page", () => {
   });
 
   test("clicking a date preset fills the date fields", async ({ page }) => {
-    const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
+    const requestsTab = page.getByRole("tab", { name: /All Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
 

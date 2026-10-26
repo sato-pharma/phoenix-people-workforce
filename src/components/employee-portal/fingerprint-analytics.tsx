@@ -9,8 +9,15 @@ import {
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
+import {
+  isNoRecordDay,
+  mergeNoRecordDays,
+  NO_RECORD_STATUS,
+  workedHoursLabel,
+} from "@/lib/attendance/attendance-day-display";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
-import { addDaysToDateOnly, formatDateOnly } from "@/lib/date-only";
+import { addDaysToDateOnly } from "@/lib/date-only";
+import { utcDate } from "@/lib/format/cairo-datetime";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -102,8 +109,10 @@ function generateMonthOptions(): Array<{ label: string; value: string }> {
   return options;
 }
 
+// "27 Sept 2026" from the digits (utcDate, the platform's one date-only format) — never the
+// server's MM/DD/YYYY row.date, and never the browser's own month names.
 function displayDate(key: string) {
-  return formatDateOnly(key, "en-GB", { day: "numeric", month: "short", year: "numeric" }, key);
+  return utcDate(key.slice(0, 10));
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -114,6 +123,7 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "Late")        return <Badge variant="warning">Late</Badge>;
   if (status === "Early leave") return <Badge variant="warning">Early leave</Badge>;
   if (status === "Short day")   return <Badge variant="warning">Short day</Badge>;
+  if (status === NO_RECORD_STATUS) return <Badge variant="neutral">{NO_RECORD_STATUS}</Badge>;
   return <Badge variant="danger">{status}</Badge>;
 }
 
@@ -158,7 +168,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
     setFetchError(null);
     const url =
       `/api/attendance/employee-attendance` +
-      `?hrId=${encodeURIComponent(targetHrId)}&dateFrom=${from}&dateTo=${to}`;
+      `?hrId=${encodeURIComponent(targetHrId)}&dateFrom=${from}&dateTo=${to}&noRecordDays=1`;
     startTransition(async () => {
       try {
         const res = await fetch(url);
@@ -207,7 +217,10 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
     `/api/attendance/employee-fingerprint-export` +
     `?hrId=${encodeURIComponent(selectedHrId)}&dateFrom=${data.dateFrom}&dateTo=${data.dateTo}`;
 
-  const { summary, rows } = data;
+  const { summary } = data;
+  // Working days with no punch at all sit in the list as "No record" rows (never "Absent", and
+  // counted in no card) instead of silently missing from it.
+  const rows = mergeNoRecordDays(data.rows, data.noRecordDates);
   const rangeLabel = `${displayDate(data.dateFrom)} – ${displayDate(data.dateTo)}`;
 
   return (
@@ -316,7 +329,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           <PortalMetricCard accent="slate" icon={CalendarDays} label="Days recorded" value={summary.totalRows} />
           <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
-          <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateDays} />
+          <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
           <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.shortDays + summary.absentDays} />
         </div>
 
@@ -339,11 +352,21 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               {/* Phone: one card per day. */}
               <div className="divide-y divide-slate-100 md:hidden">
                 {rows.map((row) => {
+                  if (isNoRecordDay(row)) {
+                    return (
+                      <div className="px-4 py-3" key={row.rawDate}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-phx-md font-bold tabular-nums text-slate-500">{displayDate(row.rawDate)}</span>
+                          <StatusBadge status={NO_RECORD_STATUS} />
+                        </div>
+                      </div>
+                    );
+                  }
                   const lateMin = lateMinutesOf(row.lateMinutes);
                   return (
                     <div className="px-4 py-3" key={row.rawDate}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-phx-md font-bold tabular-nums text-slate-900">{row.date}</span>
+                        <span className="text-phx-md font-bold tabular-nums text-slate-900">{displayDate(row.rawDate)}</span>
                         <StatusBadge status={row.status} />
                       </div>
                       <dl className="mt-2.5 grid grid-cols-3 gap-2">
@@ -357,7 +380,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                         </div>
                         <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
                           <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
-                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.timeLong || "—"}</dd>
+                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{workedHoursLabel(row.timeLong) || "—"}</dd>
                         </div>
                       </dl>
                       {lateMin > 0 && (
@@ -390,10 +413,21 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map((row) => {
+                      if (isNoRecordDay(row)) {
+                        return (
+                          <tr className="bg-white" key={row.rawDate}>
+                            <td className="px-3 py-2.5 font-bold tabular-nums text-slate-500">{displayDate(row.rawDate)}</td>
+                            <td className="px-3 py-2.5 text-slate-400">—</td>
+                            <td className="px-3 py-2.5 text-slate-400">—</td>
+                            <td className="px-3 py-2.5 text-slate-400">—</td>
+                            <td className="px-3 py-2.5"><StatusBadge status={NO_RECORD_STATUS} /></td>
+                          </tr>
+                        );
+                      }
                       const lateMin = lateMinutesOf(row.lateMinutes);
                       return (
                         <tr className="bg-white transition hover:bg-orange-50/30" key={row.rawDate}>
-                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{row.date}</td>
+                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{displayDate(row.rawDate)}</td>
                           <td className="px-3 py-2.5 tabular-nums text-slate-700">
                             {row.firstPunch || row.lastPunch ? (
                               <span className="flex flex-wrap items-center gap-x-1">
@@ -406,7 +440,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                               <span className="text-slate-400">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 tabular-nums text-slate-700">{row.timeLong || "—"}</td>
+                          <td className="px-3 py-2.5 tabular-nums text-slate-700">{workedHoursLabel(row.timeLong) || "—"}</td>
                           <td className="px-3 py-2.5 tabular-nums">
                             {lateMin > 0 ? (
                               <span className="font-bold text-amber-700">{lateMin} min</span>

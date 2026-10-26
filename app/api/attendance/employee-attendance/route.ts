@@ -30,7 +30,10 @@ export async function GET(request: Request) {
     const targetHrId = requestedHrId && requestedHrId.length > 0 ? requestedHrId : callerHrId;
     await assertCanViewEmployeeAttendance(access, targetHrId);
 
-    return NextResponse.json(await getEmployeeAttendanceData(targetHrId, dateFrom, dateTo));
+    // Attendance Analytics asks for the working days with no punch at all, shown as "No record"
+    // rows; every other reader of this route keeps the rows-only shape.
+    const includeNoRecordDays = url.searchParams.get("noRecordDays") === "1";
+    return NextResponse.json(await getEmployeeAttendanceData(targetHrId, dateFrom, dateTo, { includeNoRecordDays }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
