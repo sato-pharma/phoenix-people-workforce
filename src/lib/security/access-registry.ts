@@ -2509,7 +2509,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "update" }, guard: "domain-helper", csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
   // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
   // The per-area drill-down READ is sales:read so the scoped read-only Targets view can expand a
-  // row, but it additionally enforces assertTargetsAreaInScope on the caller-supplied `area` — the
+  // row, but it additionally enforces assertTargetsAreaInScope on the caller-supplied `area` and `line` — the
   // permission alone would let any DM enumerate another area's distributor/brick/customer detail.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown/export", permission: { resource: "sales", action: "import" } }),

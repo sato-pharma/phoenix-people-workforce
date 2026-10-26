@@ -23,7 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
-import { resolveSalesAccessScope, resolveSalesGeographyBound } from "@/lib/sales/access-scope";
+import { resolveSalesAccessScope, resolveSalesGeographyBound, type SalesAccessScope } from "@/lib/sales/access-scope";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 
 /**
@@ -91,7 +91,26 @@ export type TargetsScopeBound = {
   areaCodes: Set<string> | null;
   /** Sales line codes ("cns" | "pedia" | "anti_infective"); null = every line. */
   lineCodes: Set<string> | null;
+  /**
+   * True for a District-Manager-class viewer (TEAM / HIERARCHY sales scope) whose organogram seat gave
+   * no areas — unseated, a seat with no mapped areas, or a seat map that could not be read. The bound
+   * is then an EMPTY area set (no rows) and the page says so in words; it is never his whole line.
+   */
+  territoryUnresolved?: boolean;
 };
+
+/** What the Targets page says when a District-Manager-class viewer has no areas to bound him to. */
+export const TARGETS_TERRITORY_UNRESOLVED_MESSAGE =
+  "Your areas could not be found on the organogram right now, so there are no targets to show. Refresh in a minute; if it stays empty, ask HR to check your seat on the People Organogram.";
+
+/**
+ * District-Manager-class sales scopes — TEAM (District Manager) and HIERARCHY (Regional Manager). Their
+ * reach is their organogram seat's AREAS; with no areas they get nothing, never the line bound a
+ * National Sales Manager or Product Manager legitimately holds (owner, 2026-10-26).
+ */
+export function isAreaBoundSalesScope(businessScope: string | null | undefined): boolean {
+  return businessScope === "TEAM" || businessScope === "HIERARCHY";
+}
 
 /**
  * Official Source-of-Sales line name -> the `lineCode` used by phx_monthly_achievement / SALES_LINES.
@@ -147,7 +166,11 @@ export function filterAchievementForScope(rows: AchievementRow[], bound: Targets
  * bound and the region fallback internally).
  */
 export async function resolvePortalTargetsBound(ctx: AccessContext): Promise<TargetsScopeBound> {
-  const scope = await resolveSalesAccessScope(ctx);
+  return targetsBoundFromSalesScope(await resolveSalesAccessScope(ctx));
+}
+
+/** The pure half of resolvePortalTargetsBound — no DB, directly unit-tested. */
+export function targetsBoundFromSalesScope(scope: SalesAccessScope): TargetsScopeBound {
   if (scope.canViewAllSales) return { canViewAllTargets: true, areaCodes: null, lineCodes: null };
 
   // Region NAMES are not a usable bound for target rows (they key off region CODE + area code), so
@@ -165,9 +188,19 @@ export async function resolvePortalTargetsBound(ctx: AccessContext): Promise<Tar
       )
     : null;
 
+  const areaCodes =
+    bound.areaCodes && bound.areaCodes.size > 0 ? new Set(Array.from(bound.areaCodes).map(normalizeAreaCode)) : null;
+
+  // A District / Regional Manager with no seat areas used to come back { areaCodes: null, lineCodes:
+  // {his line} }, and filterAchievementForScope reads a null area bound as "the whole line" — every
+  // sibling district's targets. Fail closed instead: an EMPTY area set matches no row.
+  if (!areaCodes && isAreaBoundSalesScope(scope.businessScope)) {
+    return { canViewAllTargets: false, areaCodes: new Set(), lineCodes, territoryUnresolved: true };
+  }
+
   return {
     canViewAllTargets: false,
-    areaCodes: bound.areaCodes && bound.areaCodes.size > 0 ? new Set(Array.from(bound.areaCodes).map(normalizeAreaCode)) : null,
+    areaCodes,
     // An empty line set means "no line resolved" -> keep it as an empty Set (matches nothing) rather
     // than null (matches everything). filterAchievementForScope then returns [] unless areas bound.
     lineCodes,
@@ -181,13 +214,36 @@ export async function resolvePortalTargetsBound(ctx: AccessContext): Promise<Tar
  * `sales:read` WITHOUT this check would let any District Manager enumerate every other area's
  * distributor / brick / customer detail just by editing the URL — the single biggest risk in opening
  * targets up for reading.
+ *
+ * The LINE is checked too (2026-10-26). An area code is not unique across lines — CA1 is a CNS area
+ * AND a Pedia area, each with its own manager — and the route hands the caller's `line` straight to
+ * the breakdown and trend reads. Checking the area alone let a CNS District Manager read the Pedia
+ * detail of his own area code by editing `?line=`.
  */
-export async function assertTargetsAreaInScope(ctx: AccessContext, areaCode: string): Promise<void> {
-  const bound = await resolvePortalTargetsBound(ctx);
+export async function assertTargetsAreaInScope(
+  ctx: AccessContext,
+  areaCode: string,
+  line: string | null | undefined,
+): Promise<void> {
+  assertTargetsAreaInBound(await resolvePortalTargetsBound(ctx), areaCode, line);
+}
+
+/** The pure half of assertTargetsAreaInScope — no DB, directly unit-tested. */
+export function assertTargetsAreaInBound(
+  bound: TargetsScopeBound,
+  areaCode: string,
+  line: string | null | undefined,
+): void {
   if (bound.canViewAllTargets) return;
   const requested = normalizeAreaCode(areaCode);
   if (!requested) throw new Error("Forbidden: an area is required.");
   if (!bound.areaCodes || !bound.areaCodes.has(requested)) {
     throw new Error("Forbidden: that area is outside your territory.");
+  }
+  if (bound.lineCodes) {
+    const lineCode = salesLineCodeForOfficialLine(line);
+    if (!lineCode || !bound.lineCodes.has(lineCode)) {
+      throw new Error("Forbidden: that line is outside your territory.");
+    }
   }
 }

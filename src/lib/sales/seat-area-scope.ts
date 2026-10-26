@@ -74,6 +74,65 @@ export function __resetSeatAreaScopeCacheForTests(): void {
   cache.clear();
 }
 
+let seatAreaInputsLoaderForTests: typeof loadSeatAreaInputs | null = null;
+
+/** Test-only: replace the organogram reads (null restores them). */
+export function __setSeatAreaInputsLoaderForTests(loader: typeof loadSeatAreaInputs | null): void {
+  seatAreaInputsLoaderForTests = loader;
+}
+
+/** The three organogram reads behind resolveSeatAreaScope. Throws on any read error. */
+async function loadSeatAreaInputs(): Promise<{
+  seats: OrgTreeSeat[];
+  lineAreas: LineAreaRow[];
+  factRegionByAreaCode: Map<string, string>;
+}> {
+  const supabase = getSupabaseAdmin();
+  const [seatRows, areaRows, canonicalRows] = await Promise.all([
+    supabase.from("au_v_org_tree").select("seat_id,seat_tier,line_code,path,occupant_hr_id"),
+    // Current rows only: superseded (line, area, dm_seat) mappings must not widen or
+    // contaminate a manager's area set after a re-map. Matches region-resolver.ts's policy.
+    supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
+    supabase.from("au_v_canonical_areas").select("area_code,code_region_code"),
+  ]);
+  if (seatRows.error) throw seatRows.error;
+  if (areaRows.error) throw areaRows.error;
+  if (canonicalRows.error) throw canonicalRows.error;
+
+  const seats: OrgTreeSeat[] = (seatRows.data ?? []).map((row) => {
+    const typed = row as {
+      seat_id?: string | null;
+      seat_tier?: string | null;
+      line_code?: string | null;
+      path?: string[] | null;
+      occupant_hr_id?: string | null;
+    };
+    return {
+      seatId: String(typed.seat_id ?? "").trim(),
+      seatTier: String(typed.seat_tier ?? "").trim().toUpperCase(),
+      lineCode: String(typed.line_code ?? "").trim(),
+      path: Array.isArray(typed.path) ? typed.path.map((value) => String(value ?? "").trim()) : [],
+      occupantHrId: String(typed.occupant_hr_id ?? "").trim(),
+    };
+  });
+  const lineAreas: LineAreaRow[] = (areaRows.data ?? []).map((row) => {
+    const typed = row as { line_code?: string | null; area_code?: string | null; dm_seat_id?: string | null };
+    return {
+      lineCode: String(typed.line_code ?? "").trim(),
+      areaCode: String(typed.area_code ?? "").trim(),
+      dmSeatId: String(typed.dm_seat_id ?? "").trim(),
+    };
+  });
+  const factRegionByAreaCode = new Map<string, string>();
+  for (const row of canonicalRows.data ?? []) {
+    const typed = row as { area_code?: string | null; code_region_code?: string | null };
+    const code = String(typed.area_code ?? "").trim().toUpperCase();
+    const region = String(typed.code_region_code ?? "").trim();
+    if (code && region) factRegionByAreaCode.set(code, region);
+  }
+  return { seats, lineAreas, factRegionByAreaCode };
+}
+
 /**
  * Pure core: given the org tree, the line→area seat map and the area→fact-region map, resolve the
  * seat area scope for one viewer. Returns null when the viewer occupies no DM/ACTING_DM/RSM seat, which the
@@ -160,64 +219,26 @@ export async function resolveSeatAreaScope(ctx: AccessContext): Promise<SeatArea
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.scope;
 
   let scope: SeatAreaScope | null = null;
+  let readFailed = false;
   try {
-    const supabase = getSupabaseAdmin();
-    const [seatRows, areaRows, canonicalRows] = await Promise.all([
-      supabase.from("au_v_org_tree").select("seat_id,seat_tier,line_code,path,occupant_hr_id"),
-      // Current rows only: superseded (line, area, dm_seat) mappings must not widen or
-      // contaminate a manager's area set after a re-map. Matches region-resolver.ts's policy.
-      supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
-      supabase.from("au_v_canonical_areas").select("area_code,code_region_code"),
-    ]);
-    if (seatRows.error) throw seatRows.error;
-    if (areaRows.error) throw areaRows.error;
-    if (canonicalRows.error) throw canonicalRows.error;
-
-    const seats: OrgTreeSeat[] = (seatRows.data ?? []).map((row) => {
-      const typed = row as {
-        seat_id?: string | null;
-        seat_tier?: string | null;
-        line_code?: string | null;
-        path?: string[] | null;
-        occupant_hr_id?: string | null;
-      };
-      return {
-        seatId: String(typed.seat_id ?? "").trim(),
-        seatTier: String(typed.seat_tier ?? "").trim().toUpperCase(),
-        lineCode: String(typed.line_code ?? "").trim(),
-        path: Array.isArray(typed.path) ? typed.path.map((value) => String(value ?? "").trim()) : [],
-        occupantHrId: String(typed.occupant_hr_id ?? "").trim(),
-      };
-    });
-    const lineAreas: LineAreaRow[] = (areaRows.data ?? []).map((row) => {
-      const typed = row as { line_code?: string | null; area_code?: string | null; dm_seat_id?: string | null };
-      return {
-        lineCode: String(typed.line_code ?? "").trim(),
-        areaCode: String(typed.area_code ?? "").trim(),
-        dmSeatId: String(typed.dm_seat_id ?? "").trim(),
-      };
-    });
-    const factRegionByAreaCode = new Map<string, string>();
-    for (const row of canonicalRows.data ?? []) {
-      const typed = row as { area_code?: string | null; code_region_code?: string | null };
-      const code = String(typed.area_code ?? "").trim().toUpperCase();
-      const region = String(typed.code_region_code ?? "").trim();
-      if (code && region) factRegionByAreaCode.set(code, region);
-    }
-
+    const { seats, lineAreas, factRegionByAreaCode } = await (seatAreaInputsLoaderForTests ?? loadSeatAreaInputs)();
     scope = computeSeatAreaScope({ viewerHrId, seats, lineAreas, factRegionByAreaCode });
   } catch (error) {
-    // Fail SOFT, deliberately: null keeps the caller's pre-existing region-name bound, which is what
-    // every one of these viewers already sees today. Failing closed here would black out a manager's
-    // entire dashboard on a transient organogram read error.
+    // null = "no seat scope". The callers decide what that means: the closing portal keeps its
+    // region-name bound, while the Targets and Sales vs Target bounds fail CLOSED for a District /
+    // Regional Manager (an honest "areas not found" message) rather than widening to his whole line.
+    // The failure is never cached (below), so the next request reads the organogram again.
     console.log("Seat area scope resolution failed; falling back to region-name scope", {
       level: "warning",
       tags: { component: "sales-seat-area-scope", action: "resolveSeatAreaScope" },
       extra: { message: error instanceof Error ? error.message : String(error) },
     });
     scope = null;
+    readFailed = true;
   }
 
-  cache.set(viewerHrId, { scope, at: Date.now() });
+  // A read FAILURE is never cached as "no seat scope": that would pin a District Manager to the
+  // no-areas answer for a full minute after the organogram came back. Only a real answer is cached.
+  if (!readFailed) cache.set(viewerHrId, { scope, at: Date.now() });
   return scope;
 }

@@ -322,7 +322,7 @@ export function runDmSeatAreaScopeTests() {
     "the synthetic per-region Direct row is dropped too",
   );
 
-  // applyRegionScope: area bound wins; falls back to the region bound; fails OPEN on a total miss.
+  // applyRegionScope: area bound wins; region name only with no area bound; a seat-scoped miss is EMPTY.
   const viaAreaBound = applyRegionScope(matrixFixture(), new Set(["alex-bhr"]), dmScope.allowedAreaCodes);
   assert.deepEqual(
     viaAreaBound.regions.flatMap((region) => region.areas.map((area) => area.areaCode)).sort(),
@@ -335,8 +335,13 @@ export function runDmSeatAreaScopeTests() {
     ["AB"],
     "with no area bound the legacy region-name narrowing still applies",
   );
+  // 🔴 Flipped 2026-10-26: this used to fail OPEN to the whole matrix — a District Manager whose seat
+  // areas had no row this month saw every sibling district. A seat-scoped miss is now an honest empty
+  // closing, and the page says "No rows for your areas".
   const unmatchedAreas = applyRegionScope(matrixFixture(), null, new Set(["ZZ9"]));
-  assert.equal(unmatchedAreas.regions.length, 2, "an area bound matching nothing fails OPEN, never a blank sheet");
+  assert.equal(unmatchedAreas.regions.length, 0, "🔴 an area bound matching nothing is EMPTY, never the full matrix");
+  const unmatchedWithRegion = applyRegionScope(matrixFixture(), new Set(["alex-bhr"]), new Set(["ZZ9"]));
+  assert.equal(unmatchedWithRegion.regions.length, 0, "🔴 nor the region: the seat's areas are the whole reach");
 
   // ── Monthly Closing details row guard ──────────────────────────────────────
   const detailRows = [detailRow("AB1", "AB"), detailRow("D16", "D1"), detailRow("D11", "D1")];
