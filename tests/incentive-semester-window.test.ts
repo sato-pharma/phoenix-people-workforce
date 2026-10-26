@@ -134,7 +134,8 @@ export function runIncentiveSemesterWindowTests() {
   ).replace(/\s+/g, " ");
 
   assert.ok(
-    service.includes("const overviewAchievementPercent = semesterTarget > 0 ? (semesterSales / semesterTarget) * 100 : 0;"),
+    service.includes("? (semesterSales / semesterTarget) * 100 : 0;") &&
+      service.includes("const overviewAchievementPercent = closingSemester ? closingSemester.totalAchievementPercent : semesterTarget > 0"),
     "the incentive achievement must divide TOTAL semester sales by the semester target — the owner's "
       + "stated basis, and the number the payout curve is fed",
   );
