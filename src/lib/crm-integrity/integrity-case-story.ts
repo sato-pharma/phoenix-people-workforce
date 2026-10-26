@@ -666,7 +666,7 @@ function flagOrdinaryCause(flag: string): string | null {
     case "photo_pin_drifted":
       return "A picture taken at the door and the pin saved a few steps away gives this.";
     case "photo_pin_disagrees":
-      return "A phone's first reading after its location switches on comes from nearby Wi-Fi and phone masts before the satellites lock, and it can land kilometres away while claiming tens of metres; a cached position does the same.";
+      return "A phone guesses where it is from the Wi-Fi and phone masts around it before the satellites lock. If one of those routers was moved from another town, or the phone hands back a position it saved earlier, that guess can land kilometres away. The phone cannot tell, so it still shows a small accuracy figure, such as tens of metres.";
     case "photo_pin_gap_long":
       return "A picture taken at the door and the pin saved from the car does this, and so does a form left open.";
     case "sign_other_name":
