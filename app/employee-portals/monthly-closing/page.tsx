@@ -93,15 +93,22 @@ export default async function PortalMonthlyClosingPage({
           title="Awaiting publish"
         />
       ) : (
-        <PortalMonthlyClosingView
-          availableLines={result.availableLines}
-          availablePeriods={result.availablePeriods}
-          isMedicalRep={isMedicalRep}
-          line={result.line}
-          matrix={result.matrix}
-          office={result.office}
-          selectedPeriod={result.selectedPeriod}
-        />
+        <>
+          {result.areasEmptyMessage ? (
+            // His own areas have no rows this month. Said in words, and never filled with his region
+            // or the line — the sheet below stays so its month picker can reach another month.
+            <EmployeePortalEmptyState message={result.areasEmptyMessage} title="No rows for your areas" />
+          ) : null}
+          <PortalMonthlyClosingView
+            availableLines={result.availableLines}
+            availablePeriods={result.availablePeriods}
+            isMedicalRep={isMedicalRep}
+            line={result.line}
+            matrix={result.matrix}
+            office={result.office}
+            selectedPeriod={result.selectedPeriod}
+          />
+        </>
       )}
     </EmployeePortalPageShell>
   );
