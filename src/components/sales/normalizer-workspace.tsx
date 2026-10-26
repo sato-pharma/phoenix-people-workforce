@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   phxButtonApproveDenseClassName,
+  phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 
@@ -314,6 +315,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   // One raw sheet, or several of the same distributor chosen together (up to MAX_UPLOAD_FILES): sheets
   // of the same month are analyzed, mapped and imported as ONE part, so the month is one batch.
   const [files, setFiles] = useState<File[]>([]);
+  // The month to file a sheet under when the sheet itself carries no date (an older summary export).
+  // It never overrides a date the sheet does carry.
+  const [undatedPeriod, setUndatedPeriod] = useState("");
   // A filled Phoenix template may name SEVERAL distributors, so one Analyze answers with one preview
   // per distributor. `preview` is the one on screen, and everything below reads it exactly as it did
   // when a file was always a single distributor.
@@ -407,6 +411,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     // and only a route that answers per distributor reads it (the unmapped list, whose Phoenix Code
     // column is learned under one distributor). The rest act on the whole file and ignore it.
     if (preview?.distributorCode) f.set("partDistributorCode", preview.distributorCode);
+    if (undatedPeriod) f.set("undatedPeriod", undatedPeriod);
     if (extra) f.set("file", extra);
     else for (const chosen of files) f.append("file", chosen);
     return f;
@@ -942,6 +947,17 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               {files.length > 1 ? (
                 <span className="text-phx-xs text-slate-500">{files.length} sheets chosen — sheets of the same month are analyzed and imported as one batch.</span>
               ) : null}
+            </label>
+            <label className="flex flex-col gap-1 sm:w-44">
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month of a sheet with no date</span>
+              <input
+                className={cn(phxFieldClassName, "h-11 text-xs")}
+                disabled={busy !== null}
+                onChange={(e) => { setUndatedPeriod(e.target.value); resetParts(); }}
+                title="Only for a sheet that carries no invoice date at all. A sheet with its own dates keeps them."
+                type="month"
+                value={undatedPeriod}
+              />
             </label>
             <Button className="gap-2" disabled={busy !== null || files.length === 0} onClick={() => void analyze()}>
               {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze

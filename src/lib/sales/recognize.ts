@@ -4,7 +4,7 @@ import { stripRestrictedRows } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { headerRowTexts, normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
+import { headerRowTexts, normalizeRows, pickBestSheet, sheetCarriesDate, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import {
   PHOENIX_TEMPLATE_BASE_PROFILE,
@@ -137,8 +137,19 @@ export type NormalizePartsResult =
       prices?: Pick<ProductPeriodPrices, "priceFor">;
       hasDateColumn: boolean;
       regionOnly: boolean;
+      /** True when the sheet carried no date and every row was filed under the month picked on screen. */
+      monthPicked?: boolean;
     }
   | Exclude<NormalizeFileResult, { status: "ok" }>;
+
+export type RecognizeOptions = {
+  /**
+   * The month ("YYYY-MM") picked on the Source Normalizer for a sheet that carries NO date column —
+   * EGD's 2024 summaries (owner, 2026-10-26). Used only when the sheet has none of its profile's
+   * date columns; a dated sheet keeps every row's own month and ignores it.
+   */
+  undatedPeriod?: string | null;
+};
 
 /**
  * The sentence to show the user for a non-ok recognition.
@@ -177,7 +188,7 @@ function buildPriceMap(products: { productCode: string; factoryPrice: number }[]
 // branch on, SPLIT INTO ONE PART PER DISTRIBUTOR — one for every file but a Phoenix template naming
 // several. `recognizeDistributorWorkbook` below is the one-distributor face of this, and what every
 // caller outside the Source Normalizer uses (`normalizeUploadedFile` is its long-standing alias).
-export async function recognizeWorkbookParts(distributorCode: string, file: File): Promise<NormalizePartsResult> {
+export async function recognizeWorkbookParts(distributorCode: string, file: File, options?: RecognizeOptions): Promise<NormalizePartsResult> {
   // The Phoenix template is not a distributor: the sheet NAMES its distributor, and we resolve that
   // name to a real code below, after the workbook is open. Until then it borrows the template's
   // headers-only profile so the right worksheet can be picked.
@@ -246,7 +257,9 @@ export async function recognizeWorkbookParts(distributorCode: string, file: File
 
   // Per-distributor pre-flight header validation. The fingerprint cross-check scores against the MERGED
   // profile set (code ∪ DB overrides) so an in-app edited/onboarded distributor participates too.
-  const headerValidation = validateSheetHeaders(sheet, profile, await merged());
+  // A month picked on screen stands in for the date ONLY on a sheet that carries no date column.
+  const undatedPeriod = options?.undatedPeriod && !sheetCarriesDate(sheet, profile) ? options.undatedPeriod : undefined;
+  const headerValidation = validateSheetHeaders(sheet, profile, await merged(), { monthPicked: Boolean(undatedPeriod) });
   if (!headerValidation.valid) {
     return {
       status: "header_error",
@@ -267,15 +280,15 @@ export async function recognizeWorkbookParts(distributorCode: string, file: File
     // would have keyed it.
     for (const run of templateRuns) {
       const partProfile = phoenixTemplateProfile(run.distributorCode, run.distributorName);
-      const result = normalizeRows(sheet, partProfile, maps, { includeRow: (r) => rowOwner.get(r) === run.distributorCode });
+      const result = normalizeRows(sheet, partProfile, maps, { includeRow: (r) => rowOwner.get(r) === run.distributorCode, undatedPeriod });
       parts.push({ distributorCode: partProfile.distributorCode, distributorName: run.distributorName, period: dominantPeriod(result.coded), result });
     }
   } else {
     // The ordinary file: one distributor, no filter, byte-for-byte the pass this has always made.
-    const result = normalizeRows(sheet, profile, maps);
+    const result = normalizeRows(sheet, profile, maps, { undatedPeriod });
     parts.push({ distributorCode: profile.distributorCode, distributorName: profile.distributorName, period: dominantPeriod(result.coded), result });
   }
-  return { status: "ok", parts, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), prices: maps.prices, hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
+  return { status: "ok", parts, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), prices: maps.prices, hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly), monthPicked: Boolean(undatedPeriod) };
 }
 
 /**

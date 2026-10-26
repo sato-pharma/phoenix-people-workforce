@@ -283,6 +283,7 @@ export function validateSheetHeaders(
   sheet: ExcelJS.Worksheet,
   profile: DistributorProfile,
   allProfiles: DistributorProfile[],
+  options?: { monthPicked?: boolean },
 ): HeaderValidationResult {
   const header = buildHeaderMap(sheet, profile);
   const found = new Set(header.col.keys()); // already lowercase-trimmed by buildHeaderMap
@@ -305,7 +306,9 @@ export function validateSheetHeaders(
   const missingGroups = [
     check("Product name",        productNameCols),
     check("Quantity",            profile.qtyColumns),
-    check("Date",                profile.dateColumns),
+    // A sheet that carries no date at all is taken only when the person picked its month on screen
+    // (an EGD 2024 summary, owner 2026-10-26); without one the month is unknown, so it is refused.
+    options?.monthPicked ? null : check("Date", profile.dateColumns),
     check("Customer code / Area", locationCols.length > 0 ? locationCols : undefined),
   ].filter((g): g is HeaderValidationFailure => g !== null);
 
@@ -329,6 +332,12 @@ export function validateSheetHeaders(
       ? { likelyCode: bestOther.distributorCode, likelyName: bestOther.distributorName }
       : undefined,
   };
+}
+
+/** Whether the sheet carries any of the profile's date columns. A profile with none never does. */
+export function sheetCarriesDate(sheet: ExcelJS.Worksheet, profile: DistributorProfile): boolean {
+  const found = buildHeaderMap(sheet, profile).col;
+  return (profile.dateColumns ?? []).some((c) => found.has(normalizeHeaderKey(c)));
 }
 
 // The raw (un-normalized) cell texts of the chosen header row — used to show the operator (and the AI
@@ -399,6 +408,13 @@ export type NormalizeRowsOptions = {
    * own rows, so each becomes its own batch. Left out, every row is read — as always.
    */
   includeRow?: (rowNumber: number) => boolean;
+  /**
+   * The month every row is filed under when the sheet has NO date column — the month the person
+   * picked on the Source Normalizer for a date-less sheet ("YYYY-MM"). Only recognize.ts passes it,
+   * and only after it found the sheet carries none of the profile's date columns, so a dated row
+   * never has its own month overwritten.
+   */
+  undatedPeriod?: string;
 };
 
 export function normalizeRows(
@@ -582,7 +598,7 @@ export function normalizeRows(
     const discount = discountFrac(discountRaw);
     const sheetValue = parseNum(valueCell, true);
     // The month this row is invoiced in — what it is stored under, and so the month whose price values it.
-    const rowPeriod = periodFrom(firstValue(row, header, profile.dateColumns), dayFirst);
+    const rowPeriod = periodFrom(firstValue(row, header, profile.dateColumns), dayFirst) ?? options?.undatedPeriod ?? null;
     // Units times the factory price, full stop — the discount factor came out on 2026-09-07 by the
     // owner's instruction. `discount` is still parsed and still stored on the row; it just no longer
     // multiplies anything. The price is the one OF THE ROW'S MONTH, never the master's flat price: the

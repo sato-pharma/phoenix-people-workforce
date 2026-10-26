@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
-import { recognitionErrorMessage, recognizeWorkbookParts, type NormalizePart, type NormalizePartsResult } from "@/lib/sales/recognize";
+import { recognitionErrorMessage, recognizeWorkbookParts, type NormalizePart, type NormalizePartsResult, type RecognizeOptions } from "@/lib/sales/recognize";
 import { MAX_UPLOAD_FILES, findRepeatedSheet, mergeNormalizeResults, type UploadFileFingerprint } from "@/lib/sales/sales-upload-files";
 
 /** One distributor-and-month of the chosen sheets, and which sheets it was read from. */
@@ -34,6 +34,22 @@ export type RecognizedFiles =
 /** Every file the form carries under "file", in the order they were chosen. */
 export function formFiles(form: FormData): File[] {
   return form.getAll("file").filter((value): value is File => value instanceof File);
+}
+
+/**
+ * The month picked on screen for a sheet with no date ("YYYY-MM"), or null when none was picked.
+ *
+ * Only a well-formed month is taken: anything else is refused in words, never read as "no month",
+ * because a typo would otherwise drop back to the sheet's own (missing) date and refuse the sheet
+ * for a reason the person did not cause.
+ */
+export function formUndatedPeriod(form: FormData): string | null {
+  const raw = String(form.get("undatedPeriod") ?? "").trim();
+  if (!raw) return null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) {
+    throw new SalesWorkflowError("bad_undated_period", `"${raw}" is not a month — pick it as year and month (for example 2024-07).`, 400);
+  }
+  return raw;
 }
 
 /**
@@ -80,20 +96,34 @@ async function fingerprintFile(file: File, parts: readonly NormalizePart[]): Pro
  * One sheet answers exactly as recognizeWorkbookParts does. With several, a sheet that cannot be read
  * refuses the whole selection, named ("branch-2.xlsx": …), so the person knows which file to take out.
  */
-export async function recognizeWorkbookFiles(distributorCode: string, files: readonly File[]): Promise<RecognizedFiles> {
+export async function recognizeWorkbookFiles(distributorCode: string, files: readonly File[], options?: RecognizeOptions): Promise<RecognizedFiles> {
   if (files.length > MAX_UPLOAD_FILES) {
     throw new SalesWorkflowError("too_many_files", `Choose at most ${MAX_UPLOAD_FILES} files at a time (${files.length} were chosen).`, 400);
   }
   const recognized: { fileName: string; rec: RecognizedOk }[] = [];
   const fingerprints: UploadFileFingerprint[] = [];
   for (const file of files) {
-    const rec = await recognizeWorkbookParts(distributorCode, file);
+    const rec = await recognizeWorkbookParts(distributorCode, file, options);
     if (rec.status !== "ok") {
-      if (files.length === 1) return rec;
-      return { status: "template_error", distributorName: rec.distributorName, message: `"${file.name}": ${recognitionErrorMessage(rec)}` };
+      // A sheet refused only for its missing date can still go in under a month picked on screen.
+      const dateOnly = rec.status === "header_error" && rec.missingGroups.length > 0 && rec.missingGroups.every((g) => g.label === "Date");
+      const hint = dateOnly ? ` If this sheet carries no date at all, pick its month under "Month of a sheet with no date" and analyze it again.` : "";
+      if (files.length === 1 && !hint) return rec;
+      const prefix = files.length === 1 ? "" : `"${file.name}": `;
+      return { status: "template_error", distributorName: rec.distributorName, message: `${prefix}${recognitionErrorMessage(rec)}${hint}` };
     }
     recognized.push({ fileName: file.name, rec });
     fingerprints.push(await fingerprintFile(file, rec.parts));
+  }
+  // The picked month is ONE month, so it may stand in for the date of one sheet only: two date-less
+  // sheets under it would be filed as one month whether or not they are. Each goes in on its own.
+  const undated = recognized.filter((r) => r.rec.monthPicked).map((r) => r.fileName);
+  if (undated.length > 1) {
+    throw new SalesWorkflowError(
+      "several_undated_sheets",
+      `${undated.map((name) => `"${name}"`).join(", ")} carry no date, and the month you picked can stand in for one sheet only. Analyze each of them on its own, with its own month.`,
+      422,
+    );
   }
   const repeated = findRepeatedSheet(fingerprints);
   if (repeated) throw new SalesWorkflowError("repeated_sales_sheet", repeated, 422);

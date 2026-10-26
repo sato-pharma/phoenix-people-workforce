@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { formFiles, recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
+import { formFiles, formUndatedPeriod, recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { recognitionErrorMessage, summarizePreview } from "@/lib/sales/normalizer/service";
 import { labelPreviewRows } from "@/lib/sales/sales-upload-files";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (files.length === 0) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await recognizeWorkbookFiles(distributorCode, files);
+    const normalized = await recognizeWorkbookFiles(distributorCode, files, { undatedPeriod: formUndatedPeriod(form) });
     if (normalized.status !== "ok") {
       return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
