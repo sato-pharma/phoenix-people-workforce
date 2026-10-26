@@ -89,7 +89,8 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
     !wizard.includes('(transportationType === "car" && !hasCarEvidence)'),
     "neither submit button may be car-gated: on train/bus the button stayed enabled, so the refusal came from the server instead of from the form",
   );
-  // Owner waiver 2026-08-19: the three roles in evidence-waiver.ts owe no photo, so the guard is
+  // Owner waiver 2026-08-19 (the Training Manager added 2026-10-26): the roles in
+  // evidence-waiver.ts owe no photo, so the guard is
   // now "missing AND not waived" rather than a bare "missing". The COUNT is what this pins — both
   // buttons, never one — because a single-button regression is exactly how the mobile action bar
   // once stayed live while the desktop card was fixed.

@@ -5,13 +5,18 @@
  * submit outstation requests without any evidence photo. On a car trip there is no photo at all;
  * on a train or bus trip the ticket may be attached — as a PDF or an image — but is optional.
  *
+ * Extended to the Training Manager on 2026-10-26, on the owner's instruction: "MAKE SURE THE
+ * OUTSTATION EXPENSES REQUESTS FROM THE TRAINING MANAGER DOESN'T ASK FOR EVIDENCE PHOTO LIKE THE
+ * NSM AND GPM" — asked and answered as the full waiver the other three hold, photos and ticket
+ * alike, so her bus trips are not left owing the one piece of evidence the others may skip.
+ *
  * Three things are worth being explicit about, because each one is a way this could go wrong:
  *
  *   1. The waiver covers BOTH photos, not just the one on the submission form. The two-photo
  *      rule is a pair: arrival at submit time, departure before leaving. Waiving only the
  *      arrival photo would leave every one of these requests parked at `pending_arrival_photo`
  *      forever — the gate demands the arrival photo before it will even look at anything else —
- *      so the money would simply stop moving for these three roles. A half-waiver is worse than
+ *      so the money would simply stop moving for these roles. A half-waiver is worse than
  *      no waiver.
  *
  *   2. The role is read from the REQUEST's stored `employee_role`, never from the caller's
@@ -30,18 +35,20 @@
  */
 
 /**
- * The three roles the owner named. Canonical job-function role names, exactly as
+ * The four roles the owner named. Canonical job-function role names, exactly as
  * `resolveJobFunctionRole` produces them (src/lib/employees/job-function.ts) and exactly as
  * `outstation_expense_requests.employee_role` stores them.
  *
- * Deliberately an allowlist of three, not a tier or a seniority test. "Everyone above a District
- * Manager" would silently swallow the CEO, Marketing Manager and every future senior title into
- * an evidence exemption nobody asked for.
+ * Deliberately an allowlist, not a tier or a seniority test. "Everyone above a District Manager"
+ * would silently swallow the CEO, Marketing Manager and every future senior title into an
+ * evidence exemption nobody asked for — and it is why the Training Manager had to be NAMED here
+ * on 2026-10-26 rather than arriving on her own as a senior title.
  */
 export const OUTSTATION_EVIDENCE_WAIVED_ROLES: ReadonlySet<string> = new Set([
   "Group Product Manager",
   "National Sales Manager",
   "Product Manager",
+  "Training Manager",
 ]);
 
 /**
@@ -63,7 +70,7 @@ export function isOutstationEvidenceWaivedRole(role: string | null | undefined):
 /**
  * True when a train or bus ticket is optional for this role rather than mandatory.
  *
- * Same three roles, but a separate function on purpose: the ticket and the photos are two
+ * Same roles, but a separate function on purpose: the ticket and the photos are two
  * different pieces of evidence, and one of them could be reinstated later without the other.
  * Delegating keeps them in step until somebody deliberately separates them.
  */
