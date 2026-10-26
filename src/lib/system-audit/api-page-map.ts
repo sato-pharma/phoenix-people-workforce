@@ -206,6 +206,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
     portal: "/employee-portals/double-visit-requests",
   },
   "/api/phoenix-crm/forecast": { admin: "/admin/field-crm", portal: "/employee-portals/field-crm/forecast" },
+  "/api/phoenix-crm/master-list": { admin: "/admin/phoenix-crm/master-list" },
   "/api/phoenix-crm/recording": { admin: "/admin/field-crm/visit-recording", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/refused-readings": { admin: "/admin/phoenix-crm/refused-readings", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/touch-trail": { admin: "/admin/field-crm/touch-trail", portal: "/employee-portals/field-crm" },

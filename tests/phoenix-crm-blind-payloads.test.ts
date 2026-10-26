@@ -447,6 +447,7 @@ async function checkGateOne(): Promise<void> {
   for (const [page, reader] of [
     ["app/(admin)/admin/phoenix-crm/integrity/page.tsx", "canReadIntegrityBoard(viewer)"],
     ["app/(admin)/admin/phoenix-crm/duplicates/page.tsx", "canReadDuplicateCustomers(viewer)"],
+    ["app/(admin)/admin/phoenix-crm/master-list/page.tsx", "canReadMasterList(viewer)"],
     ["app/(admin)/admin/phoenix-crm/refused-readings/page.tsx", "canReadRefusedReadings(viewer)"],
     ["app/(admin)/admin/phoenix-crm/visit-report/page.tsx", "canReadVisitReport(viewer)"],
     ["app/employee-portals/visit-report/page.tsx", "canReadVisitReport(viewer)"],

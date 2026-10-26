@@ -1846,6 +1846,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // its pharmacy's area, with every month's value and units unchanged (EGP 1,506,624.57 in all). Pinned by
   // tests/weekly-direct-orders-injection.test.ts.
   "20261026160001_weekly_direct_orders_count_at_the_pharmacys_area.sql",
+
+  // THE CRM MASTER LIST'S DECISIONS TABLE — applied 26 Oct 2026 on STAGING then PRODUCTION through
+  // scripts/apply-sql-file.mjs, the standing route of AGENTS.md §8, on the owner's word in chat: the Supabase
+  // MCP's apply_migration answered {"status":"declined"} on staging three times (both servers). The route
+  // writes no ledger row on either project, hence this entry rather than a ledger write.
+  //
+  // The file defines no function, so there is no prosrc digest; the evidence is the end state, read live on
+  // BOTH projects after the apply and identical on each: public.phoenix_crm_master_decisions present,
+  // relrowsecurity true, 0 rows, table grants held by postgres and service_role only (anon and authenticated
+  // none), one policy (phoenix_crm_master_decisions_service_role, to service_role). The pre-image is the
+  // apply's own NOTICE — the policy "does not exist, skipping" — so neither project had the table before.
+  // Purely additive: production's phoenix_crm_places still holds its 3,817 rows. Pinned by
+  // tests/phoenix-crm-master-list.test.ts (the migration's grants).
+  "20261026165500_phoenix_crm_master_decisions.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

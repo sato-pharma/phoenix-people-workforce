@@ -4611,6 +4611,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The Master List (owner, 2026-10-26: "build a master page for only the admin, and the CEO ... the list
+    // source of trust"): one profile per real place, by region, area, brick and speciality. The enforcing
+    // gate is `canReadMasterList` inside the page; this card only draws the link.
+    href: "/admin/phoenix-crm/master-list",
+    icon: MapPinned,
+    label: "Master List",
+    description: "Every validated customer once, at the place the photographs agree on, filed by region, area, brick and speciality, with who visits and when.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
     // One doctor, two rows — the SFE's housekeeping list (the owner, 2026-10-02: "show the
     // same-rep duplicate customers to the SFE").
     //
@@ -5341,6 +5352,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside the board rather than inside it, and in this band because a duplicate on a
           // rep's list IS a CRM data-quality question — the same kind the two rows above ask.
           "/admin/phoenix-crm/duplicates",
+          // The Master List: the same CRM data-quality band — one profile per real place.
+          "/admin/phoenix-crm/master-list",
           // A rep turned away on his location: housekeeping like the duplicates row, same band.
           "/admin/phoenix-crm/refused-readings",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
