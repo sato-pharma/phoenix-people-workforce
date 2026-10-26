@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { offerLetterLapsed } from "../src/lib/offers/dates.ts";
 import { buildOfferHireDraft } from "../src/lib/offers/hire-draft.ts";
 import { deriveSalaryFromNet } from "../src/lib/payroll/salary-autofill.ts";
 import { formatSeatOfferOut, offerSeatKeyForVacancy } from "../src/lib/offers/seat-offer-label.ts";
@@ -194,4 +195,28 @@ export function runOfferOutOnSeatsTests() {
     !/from "@\/lib\/offers\/seat-offers"/.test(headOffice),
     "the Head Office builder stays free of the reader, and so of the Supabase client",
   );
+
+  // ── 9 · A SENT letter past its valid-until day is over (production, 2026-10-26) ──────────────
+  //
+  // Two duplicate letters to Bassant Samir Mousa, valid until 21 October and never answered, kept a
+  // Pedia Giza chair reading "Offer out … starts 25 October 2026" after her candidate record had
+  // been rejected — the chair looked spoken for when it was free.
+  assert.equal(offerLetterLapsed("21 October 2026", "2026-10-26"), true, "a letter valid until 21 October is over on the 26th");
+  assert.equal(offerLetterLapsed("21 October 2026", "2026-10-22"), true, "and on the 22nd, the first day after it");
+  assert.equal(offerLetterLapsed("21 October 2026", "2026-10-21"), false, "but its own valid-until day still counts");
+  assert.equal(offerLetterLapsed("1 November 2026", "2026-10-26"), false, "a letter still inside its window stays");
+  assert.equal(offerLetterLapsed("2026-10-21", "2026-10-26"), true, "an ISO date reads the same way");
+  assert.equal(offerLetterLapsed("", "2026-10-26"), false, "a missing date is never declared over on a guess");
+  assert.equal(offerLetterLapsed("sometime soon", "2026-10-26"), false, "nor an unreadable one");
+  assert.match(
+    seatOffers,
+    /\.select\("id, candidate_name, reference, start_date, status, valid_until, vacancy_id"\)/,
+    "the reader selects valid_until",
+  );
+  assert.match(
+    seatOffers,
+    /row\.status === "accepted" \|\| !offerLetterLapsed\(row\.valid_until, today\)/,
+    "a lapsed SENT letter is dropped, and an ACCEPTED one is always kept",
+  );
+  assert.match(seatOffers, /const today = todayInCairo\(\);/, "and the day is Cairo's, not the server's");
 }
