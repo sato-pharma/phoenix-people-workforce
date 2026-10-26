@@ -263,6 +263,30 @@ function runVacantDistrictAndRegionalManagerTests() {
   assert.equal(upperEgypt.length, 1);
   assert.equal(upperEgypt[0].name, "Upper Egypt — no regional manager");
   assert.equal(upperEgypt[0].totalSales, 40);
+  // A month earned under a seat since retired (live: the single Upper Egypt seat, split in two) names a seat
+  // the tree no longer holds. It joins the live district of its own region code — never dropped, so the
+  // roll-up still foots (live bug: a whole district's EGP 992K appeared in no roll-up row).
+  const withRetiredSeat = regionalManagerMembersFromRows(
+    [
+      pediaRow({ repHrId: "M-1", dmSeatId: "DM-UE1", dmHrId: "D-4", regionCode: "UE", actualValue: 10, targetValue: 20 }),
+      pediaRow({ repHrId: "M-2", dmSeatId: "DM-UE2", dmHrId: "D-5", regionCode: "UE", actualValue: 30, targetValue: 40 }),
+      pediaRow({ repHrId: "M-4", dmSeatId: "DM-UE-OLD", dmHrId: "D-6", regionCode: "UE", actualValue: 5, targetValue: 7 }),
+      pediaRow({ repHrId: "M-5", dmSeatId: "DM-GONE", dmHrId: "D-7", regionCode: "ZZ", actualValue: 2, targetValue: 3 }),
+    ],
+    upperEgyptSeats,
+    names,
+    products,
+    { hrId: "N-1", name: "Nadia National" },
+    "N-1",
+  );
+  assert.deepEqual(
+    withRetiredSeat.map((member) => [member.name, member.totalSales]).sort(),
+    [
+      ["Other districts — no regional manager", 2],
+      ["Upper Egypt — no regional manager", 45],
+    ],
+    "a retired seat joins its region's live row; one with no live district of its region is totalled, not dropped",
+  );
   assert.equal(regionWithoutManagerOf("DM-OTHERS", upperEgyptSeats), null, "the Others bucket is not a region");
   assert.equal(regionWithoutManagerOf("DM-UE1", new Map()), null, "an empty seat tree names no region");
 
@@ -285,7 +309,14 @@ function runVacantDistrictAndRegionalManagerTests() {
     seat("SEAT-RSM", null, "RSM", null, null),
     seat("DM-D1", "SEAT-RSM", "DM", "Delta (1)", "D-1"),
   ]);
-  const underVacantRsm = regionalManagerMembersFromRows(rows, vacantRsmSeats, names, products, { hrId: "N-1", name: null });
+  // Only the district this small tree describes — rows of seats it does not hold are the retired-seat case above.
+  const underVacantRsm = regionalManagerMembersFromRows(
+    rows.filter((candidate) => candidate.dmSeatId === "DM-D1"),
+    vacantRsmSeats,
+    names,
+    products,
+    { hrId: "N-1", name: null },
+  );
   assert.deepEqual(
     underVacantRsm.map((member) => [member.name, member.totalSales]),
     [["Delta — no regional manager", 100]],

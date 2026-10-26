@@ -424,13 +424,29 @@ export function regionalManagerMembersFromRows(
   // region: his bound holds just his districts, and a region row there would be noise. The NSM page
   // passes the NSM's own id as `exclude` too, so "an id was excluded" is NOT "the viewer is an RM" —
   // the viewer is an RM only when that id is a Regional Manager seated above one of these rows.
+  const regionLabels = new Map<string, string>();
+  // A month earned under a seat since retired (the single "Upper Egypt" seat, now split in two) names a
+  // seat the tree no longer holds, so its district cannot be read from the seat. It is placed with the
+  // live district seat that carries the same region code — the row's own region — so it lands under the
+  // same Regional Manager, or the same "no regional manager" row, as that region's live districts.
+  const liveSeatOfRegionCode = new Map<string, string>();
+  for (const row of rows) {
+    const code = (row.regionCode ?? "").trim().toUpperCase();
+    if (code && row.dmSeatId && !liveSeatOfRegionCode.has(code) && regionWithoutManagerOf(row.dmSeatId, seats)) {
+      liveSeatOfRegionCode.set(code, row.dmSeatId);
+    }
+  }
+  const seatToReadFrom = (row: AchievementRow): string | null => {
+    if (!row.dmSeatId || seats.size === 0 || seats.has(row.dmSeatId)) return row.dmSeatId;
+    return liveSeatOfRegionCode.get((row.regionCode ?? "").trim().toUpperCase()) ?? row.dmSeatId;
+  };
   const viewerIsRegionalManager =
     exclude !== "" &&
-    rows.some((row) => regionalManagerAbove(row.dmSeatId, seats)?.hrId.trim().toUpperCase() === exclude);
-  const regionLabels = new Map<string, string>();
+    rows.some((row) => regionalManagerAbove(seatToReadFrom(row), seats)?.hrId.trim().toUpperCase() === exclude);
   for (const row of rows) {
     if (!row.dmHrId) continue;
-    const rsm = regionalManagerAbove(row.dmSeatId, seats);
+    const seatId = seatToReadFrom(row);
+    const rsm = regionalManagerAbove(seatId, seats);
     if (rsm) {
       if (exclude && rsm.hrId.trim().toUpperCase() === exclude) continue;
       // Re-keyed, never re-priced: the row's own values go under the RSM's occupant.
@@ -438,7 +454,10 @@ export function regionalManagerMembersFromRows(
       continue;
     }
     if (viewerIsRegionalManager) continue;
-    const region = regionWithoutManagerOf(row.dmSeatId, seats);
+    // A retired seat with no live district of its region is still a seated district's money — it is
+    // totalled as "Other districts" rather than dropped, so the rows always foot.
+    const retiredSeat = !!row.dmSeatId && seats.size > 0 && !seats.has(row.dmSeatId);
+    const region = regionWithoutManagerOf(seatId, seats) ?? (retiredSeat ? "Other districts" : null);
     if (!region) continue;
     const key = `${REGION_WITHOUT_MANAGER_KEY_PREFIX}${region.toLowerCase()}`;
     regionLabels.set(key, `${region} — no regional manager`);
