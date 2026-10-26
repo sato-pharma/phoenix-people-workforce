@@ -23,6 +23,7 @@ import {
   type IdentityEntry,
 } from "../src/lib/devices/device-identity.ts";
 import { permissionMatrix, phoenixRoles } from "../src/lib/auth/permissions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import type { CompanyDevice, DeviceStatus, HolderEmploymentState } from "../src/lib/devices/types.ts";
 
 /**
@@ -649,6 +650,52 @@ function testThePrintLinkCarriesTheDeviceAndPicksTheRightForm(): void {
   );
 }
 
+/**
+ * The PDF of a custody receipt is the SAME paper as its page - the device facts are not dropped.
+ *
+ * `format=pdf` renders its own single copy, and it once listed the renderer's inputs by hand and
+ * left `deviceId` out: the page filled the Manufacturer / Serial / Device name / Processor / RAM
+ * block and the item values, the download printed them as ruled blanks (OF-0006, DEC-2026-0003,
+ * 26 Oct 2026). The inputs that choose the paper are now written once (`paperInput`) and spread
+ * into both renders, so this pins that shape: the object carries the device, both calls spread it,
+ * and the PDF call lists nothing of its own but the two counts that differ by design.
+ *
+ * Reads CODE only - comments are stripped first, because a comment explaining the spread is
+ * enough to satisfy a bare `includes` after the spread itself is deleted.
+ */
+function testThePdfOfACustodyReceiptCarriesTheSameDeviceAsThePage(): void {
+  const raw = readFileSync("app/api/hiring-pack/[hrId]/print/route.ts", "utf8");
+  const code = stripComments(raw);
+
+  const input = code.match(/const paperInput = \{([\s\S]*?)\n {4}\};/);
+  assert.ok(input, "the route must build the paper's inputs once, as `paperInput`");
+  assert.ok(
+    /custodyDeviceId: url\.searchParams\.get\("deviceId"\)/.test(input[1]),
+    "paperInput must carry deviceId= - without it the PDF prints the custody receipt as ruled blanks",
+  );
+
+  const renders = [...code.matchAll(/await renderHiringPaper\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
+  assert.equal(renders.length, 2, "the route renders twice: the page, and the single PDF copy");
+  for (const body of renders) {
+    assert.ok(
+      /\.\.\.paperInput/.test(body),
+      "both renders must spread paperInput, or the PDF and the page resolve different papers",
+    );
+  }
+
+  const pdfStart = code.indexOf('url.searchParams.get("format") === "pdf"');
+  assert.ok(pdfStart > 0, "the format=pdf branch must exist");
+  const pdfRender = renders.find((body) => code.indexOf(body) > pdfStart);
+  assert.ok(pdfRender, "the format=pdf branch must render its own copy");
+  const own = [...pdfRender.matchAll(/^\s*([A-Za-z]+)[:,]/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(
+    own,
+    ["copies", "statedCopies"],
+    "the PDF render may add only the counts that differ by design - any other hand-listed " +
+      "input is how deviceId was dropped",
+  );
+}
+
 /** The API declares both gates in the access registry, and the mutation is CSRF-guarded. */
 function testTheApiIsDeclaredInTheAccessRegistry(): void {
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
@@ -1025,6 +1072,7 @@ export function runDeviceRegisterTests(): void {
   testTheRegisterIsNotBackfilled();
   testEveryEmployeesColumnThisModuleReadsExists();
   testThePrintLinkCarriesTheDeviceAndPicksTheRightForm();
+  testThePdfOfACustodyReceiptCarriesTheSameDeviceAsThePage();
   testTheResourceIsDeclaredAndScoped();
   testTheApiIsDeclaredInTheAccessRegistry();
   testATypedImeiIsReadAsItsDigits();
