@@ -51,6 +51,14 @@ updates:
       # tests/pdfjs-browser-polyfill.test.ts.
       - dependency-name: pdfjs-dist
         update-types: ["version-update:semver-major"]
+      # puppeteer-core and sharp are installed into the production image a SECOND time, from
+      # infra/runtime-extras, whose pins must equal pnpm-lock.yaml (tests/offer-pdf-runtime.test.ts,
+      # tests/dockerfile-reproducible.test.ts). Dependabot rewrites package.json and the lockfile
+      # but cannot run scripts/sync-runtime-extras.mjs, so every PR it opens for either is red by
+      # construction: puppeteer-core 25.13.0 went red twice, 19 and 20 Oct 2026. Both move with the
+      # weekly dependency refresh instead, whose lockfile.yml run syncs the image's pin (26 Oct).
+      - dependency-name: puppeteer-core
+      - dependency-name: sharp
       # NOT ignored, and worth actually reading when one arrives: pdf-parse is the ONLY reason a
       # second pdfjs-dist (5.4.296) is in the tree, because 2.4.5 pins that version exactly. If a
       # future pdf-parse moves to pdfjs-dist 6.x, that PR is what collapses the two copies into

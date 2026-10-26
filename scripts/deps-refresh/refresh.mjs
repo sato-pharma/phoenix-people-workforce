@@ -45,7 +45,10 @@ refuseUnknownFlags({
 /** Every refresh branch starts with this. It must not prefix any other branch, or the one-open-PR guard misfires. */
 export const BRANCH_PREFIX = "codex/weekly-deps-refresh-";
 const WORKFLOW = "lockfile.yml";
-const FILES = ["pnpm-lock.yaml", "pnpm-workspace.yaml"];
+// The runtime image's two pin files come back too: lockfile.yml runs sync-runtime-extras after the update, so a
+// refresh that moves puppeteer-core or sharp brings the image's own pin with it (the 25 Oct refresh PR did not,
+// and went red on tests/offer-pdf-runtime.test.ts).
+const FILES = ["pnpm-lock.yaml", "pnpm-workspace.yaml", "infra/runtime-extras/package.json", "infra/runtime-extras/package-lock.json"];
 const WAIT_MINUTES = 30;
 
 /**
@@ -193,6 +196,8 @@ function main() {
       "The weekly dependency refresh (`scripts/deps-refresh/refresh.mjs`, scheduled on the laptop by `scripts/deps-refresh/install-task.ps1`).",
       "",
       "`lockfile.yml` ran `pnpm update --depth Infinity --no-save` on this branch: every package, transitive ones included, re-resolved to the newest version its declared range allows. `--no-save` leaves every range in `package.json` as written, so exact pins do not move, and the release-age quarantine still applies.",
+      "",
+      "It then ran `node scripts/sync-runtime-extras.mjs`, so the production image's own pins for puppeteer-core and sharp (`infra/runtime-extras/`) follow the lockfile.",
       "",
       "| Package | Was | Now |",
       "| --- | --- | --- |",

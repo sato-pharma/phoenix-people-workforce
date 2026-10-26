@@ -232,6 +232,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/action-center/inbox-reach.ts",
   "src/lib/admin/access-control.ts",
   // src/lib/auth/account-job-titles.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
+  // Names HR Operations, HR Resourcing and HR Administration in adminShellEmployeeRoles, MOVED here
+  // from permissions.ts on 2026-10-26 so the sidebar's definition can load without a database client.
+  // Reviewed verdict: it grants nothing new — the same list, unchanged, which permissions.ts imports
+  // and re-exports, so isAdminShellEmployeeRole and every importer read exactly what they read before.
+  // It picks the shell a seat lands in; what the seat may do there is still the permission matrix.
+  "src/lib/auth/admin-shell-roles.ts",
   "src/lib/auth/hr-functions.ts",
   "src/lib/auth/permissions.ts",
   // Names HR Operations in mapPhoenixRoleToAccessScopeType, which fills the access_scope COLUMN

@@ -225,7 +225,8 @@ export const CONTRACT_GATES = [
   //   - tests/unknown-flag-gates.test.ts (6 PRs) spawns every argument-parsing script and ran past
   //     five minutes here — its source half is a gate since 26 Oct, see the end of this list;
   //   - HR function governance (5), sidebar labels never clip (3), Phoenix CRM edges (3) and the
-  //     malformed uuid id guards (2) reach @/lib/supabase/server, so they are not offline.
+  //     malformed uuid id guards (2) reach @/lib/supabase/server, so they are not offline. (The
+  //     sidebar test's missing-width half is a gate since 26 Oct — see the end of this list.)
   {
     // 3 PRs.
     slug: 'recruitment-premium-depth',
@@ -285,6 +286,43 @@ export const CONTRACT_GATES = [
     namePrefix: 'the CRM manager-plan source scans',
     redJobs: null,
     costMs: 2660,
+  },
+  // THE 2026-10-26 FORGOTTEN STEPS. Two more reds of 18-25 Oct were a step a session forgot, not a bug:
+  // a sidebar label added without re-measuring it, and a puppeteer-core bump that never reached the
+  // runtime image's pin. Both checks are offline once a value import is moved out of the way, so they
+  // are here, and dockerfile-reproducible comes with the second because it reads the same pin.
+  {
+    // 4 jobs on 4 branches, all the missing-width message. Offline since system-navigation.ts reads
+    // adminShellEmployeeRoles from src/lib/auth/admin-shell-roles.ts instead of permissions.ts; the
+    // no-clip half needs the permission matrix and stays in tests/sidebar-label-width.test.ts.
+    slug: 'sidebar-label-snapshot',
+    file: 'tests/sidebar-label-snapshot.test.ts',
+    export: 'runSidebarLabelSnapshotTests',
+    namePrefix: 'sidebar label snapshot has a measured width',
+    redJobs: null,
+    costMs: 400,
+  },
+  {
+    // 3 jobs on 2 branches: the weekly dependency refresh of 25 Oct (image 25.15.0, lock 25.16.0) and
+    // Dependabot's 25.13.0 bump, twice. Neither could have run sync-runtime-extras; both now do or
+    // are told to (lockfile.yml, dependabot.yml).
+    slug: 'offer-pdf-runtime',
+    file: 'tests/offer-pdf-runtime.test.ts',
+    export: 'runOfferPdfRuntimeTests',
+    namePrefix: "offer PDF runtime (the image's puppeteer pin matches package.json",
+    redJobs: null,
+    costMs: 300,
+  },
+  {
+    // Never red on its own in that window only because the old rethrow stopped the run at the
+    // puppeteer gate first: it pins the same two versions (puppeteer-core AND sharp) against
+    // pnpm-lock.yaml, from file text alone.
+    slug: 'dockerfile-reproducible',
+    file: 'tests/dockerfile-reproducible.test.ts',
+    export: 'runDockerfileReproducibleTests',
+    namePrefix: 'the production image is built from pinned inputs',
+    redJobs: null,
+    costMs: 200,
   },
 ];
 

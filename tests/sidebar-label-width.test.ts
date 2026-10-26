@@ -43,6 +43,10 @@ import {
  * rewrites the snapshot. A label with no snapshot entry FAILS here rather than being skipped, so
  * adding or renaming one cannot quietly bypass the check.
  *
+ * The missing-entry half also runs before the push: tests/sidebar-label-snapshot.test.ts holds it with
+ * no database import, so `node scripts/check-contracts.mjs` can run it. This file still needs
+ * permissions.ts for the per-role rows, so it stays in the PR's own CI.
+ *
  * Both the budget and the measurement are PER SHELL. The admin rail and the employee portal share
  * no geometry and no type scale, and until #2353's follow-up this test charged every portal row an
  * admin budget — so widening the admin rail silently raised the allowance for portal labels that
