@@ -236,6 +236,7 @@ import { runCustomer360HubTests } from "./customer-360-hubs.test.ts";
 import { runCustomer360WiringTests } from "./customer-360-wiring.test.ts";
 import { runCustomer360ReportTests } from "./customer-360-report.test.ts";
 import { runMarketingValidationDeskAliasTests } from "./marketing-validation-desk-confirmed-aliases.test.ts";
+import { runMarketingRoiFrontierTests } from "./marketing-roi-frontier.test.ts";
 import { runMarketingRoiSalesDataAsOfTests } from "./marketing-roi-sales-data-asof.test.ts";
 import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
 import { runPhoenixCrmDuplicateCustomerTests } from "./phoenix-crm-duplicate-customers.test.ts";
@@ -4444,6 +4445,10 @@ await runTest("Customer 360 judges only months closed for every line, counts dir
 await runTest(
   "the marketing validation desk's \"also known as\" is a note and never a verdict: confirmed links only, read from the VISIBLE links, never deciding validationStatus, and in neutral ink on a screen that records permanent verdicts",
   runMarketingValidationDeskAliasTests,
+);
+await runTest(
+  "the ROI frontier never counts the direct-orders feed as a month of distributor files and never reaches past the last finished Cairo month",
+  runMarketingRoiFrontierTests,
 );
 await runTest(
   "'sales loaded through' means every-month-set LOADED, not the newest period any batch mentions, and the ROI duration warns at entry without ever being capped",

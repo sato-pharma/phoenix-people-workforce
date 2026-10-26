@@ -7,6 +7,7 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { logError } from "@/lib/observability/log";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import { resolveRoiDataCoverage } from "@/lib/marketing-requests/roi-labels";
+import { lastFinishedCairoMonth, pickLoadedFrontier } from "@/lib/marketing-requests/roi-frontier";
 import { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
 import {
   assertMarketingWorkspaceAccess,
@@ -426,35 +427,13 @@ export async function loadLatestValidatedPeriod(supabase: SupabaseAdmin): Promis
   try {
     const { data, error } = await supabase
       .from("source_of_sales_import_batches")
-      .select("period, distributor_code")
+      .select("period, distributor_code, template_key")
       .eq("status", "validated");
     if (error) throw error;
-
-    const byPeriod = new Map<string, Set<string>>();
-    for (const row of (data ?? []) as Array<{ period?: string | null; distributor_code?: string | null }>) {
-      const period = (row.period ?? "").trim();
-      const distributor = (row.distributor_code ?? "").trim();
-      if (!period || !distributor) continue;
-      const held = byPeriod.get(period) ?? new Set<string>();
-      held.add(distributor);
-      byPeriod.set(period, held);
-    }
-    const months = [...byPeriod.keys()].sort();
-    if (months.length === 0) return null;
-    // One month of history is no history: there is no every-month set, the test below would pass
-    // vacuously, and reporting nothing would leave every campaign waiting for ever.
-    if (months.length === 1) return months[0] ?? null;
-
-    const settled = months.slice(0, -1);
-    const everyMonth = [...(byPeriod.get(settled[0] ?? "") ?? new Set<string>())].filter((distributor) =>
-      settled.every((period) => byPeriod.get(period)?.has(distributor)),
+    return pickLoadedFrontier(
+      (data ?? []) as Array<{ period?: string | null; distributor_code?: string | null; template_key?: string | null }>,
+      lastFinishedCairoMonth(),
     );
-
-    for (const period of [...months].reverse()) {
-      const present = byPeriod.get(period) ?? new Set<string>();
-      if (everyMonth.every((distributor) => present.has(distributor))) return period;
-    }
-    return null;
   } catch {
     return null;
   }

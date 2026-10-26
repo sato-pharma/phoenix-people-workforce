@@ -140,6 +140,9 @@ const REQUEST_STATUS_LABEL: Record<string, string> = {
   returned: "Sent back",
   roi_tracking: "In ROI tracking",
 };
+/** "1 request", "3 requests" — never "request(s)". */
+const countOf = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+
 const readableRequestStatus = (status: string) => REQUEST_STATUS_LABEL[status] ?? "Unknown";
 
 const STEP_STATUS_LABEL: Record<string, string> = {
@@ -171,7 +174,7 @@ function requesterLabel(row: RoiTrackerRow): string {
 
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
+    <span className={cn("inline-flex items-center border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
       {children}
     </span>
   );
@@ -254,6 +257,8 @@ function appliedDisplayScale(): number {
  * a 256px panel straight off the side of a phone (and, inside a clipping card, off the side of every
  * screen). It is measured when the summary is pressed and re-fitted if the viewport changes while
  * it is open — the same clamp the top bar's panels use (src/lib/navigation/panel-position.ts).
+ * On a phone (below md) no measuring is involved: the pop-up spans the filter bar itself, so it fits at
+ * 375px whatever the order of the buttons.
  */
 function FacetSelect({
   facet,
@@ -291,10 +296,10 @@ function FacetSelect({
     onChange(selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value]);
 
   return (
-    <details className="relative" onToggle={(event) => setOpen(event.currentTarget.open)} ref={detailsRef}>
+    <details className="max-md:static md:relative" onToggle={(event) => setOpen(event.currentTarget.open)} ref={detailsRef}>
       <summary
         className={cn(
-          "flex min-h-10 cursor-pointer list-none items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-semibold transition md:min-h-0",
+          "flex min-h-10 cursor-pointer list-none items-center gap-1.5 border px-2 py-1 text-xs font-semibold transition md:min-h-0",
           selected.length > 0
             ? "border-slate-900 bg-slate-900 text-white"
             : "border-slate-200 text-slate-700 hover:border-slate-300",
@@ -311,8 +316,12 @@ function FacetSelect({
         <ChevronDown className="h-3 w-3" />
       </summary>
       <div
-        className="absolute left-0 z-30 mt-1 flex max-h-72 w-64 flex-col gap-0.5 overflow-y-auto rounded-sm border border-slate-200 bg-white p-2 shadow-lg"
-        style={placement ? { marginLeft: placement.offsetLeft, width: placement.width } : undefined}
+        className="absolute z-30 mt-1 flex max-h-72 flex-col gap-0.5 overflow-y-auto border border-slate-200 bg-white p-2 shadow-lg max-md:inset-x-3 md:left-0 md:w-64 md:[margin-left:var(--facet-offset)] md:[width:var(--facet-width)]"
+        style={
+          placement
+            ? ({ "--facet-offset": `${placement.offsetLeft}px`, "--facet-width": `${placement.width}px` } as React.CSSProperties)
+            : undefined
+        }
       >
         {selected.length > 0 ? (
           <button
@@ -324,7 +333,7 @@ function FacetSelect({
           </button>
         ) : null}
         {options.map((option) => (
-          <label className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1 text-xs hover:bg-slate-50" key={option}>
+          <label className="flex cursor-pointer items-center gap-2 px-1 py-1 text-xs hover:bg-slate-50" key={option}>
             <input checked={selected.includes(option)} onChange={() => toggle(option)} type="checkbox" />
             <span className="min-w-0 flex-1 break-words text-slate-700">{option}</span>
           </label>
@@ -370,7 +379,7 @@ function FlightPath({
   const notCounted = totals.rejected.cost + totals.cancelled.cost;
 
   return (
-    <section className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white p-4">
+    <section className="flex flex-col gap-3 border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Where the money is right now</h2>
         <span className="text-xs text-slate-500">
@@ -381,7 +390,7 @@ function FlightPath({
       </div>
 
       {pipeline > 0 ? (
-        <div className="flex h-7 w-full overflow-hidden rounded-sm bg-slate-100">
+        <div className="flex h-7 w-full overflow-hidden bg-slate-100">
           {STAGE_ORDER.filter((stage) => !refusedOrCalledOff(stage)).map((stage) => {
             const share = totals[stage].cost / pipeline;
             if (share <= 0) return null;
@@ -403,7 +412,7 @@ function FlightPath({
           })}
         </div>
       ) : (
-        <div className="h-7 w-full rounded-sm bg-slate-100" />
+        <div className="h-7 w-full bg-slate-100" />
       )}
 
       {/* Six stages: 2 · 3 · 6 across, so no width leaves one card alone on a second row. */}
@@ -411,7 +420,7 @@ function FlightPath({
         {STAGE_ORDER.map((stage) => (
           <button
             className={cn(
-              "flex min-w-0 flex-col items-start gap-0.5 break-words rounded-sm border p-2 text-left transition",
+              "flex min-w-0 flex-col items-start gap-0.5 break-words border p-2 text-left transition",
               focus === stage ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300",
             )}
             key={stage}
@@ -419,12 +428,12 @@ function FlightPath({
             type="button"
           >
             <span className="flex items-center gap-1.5">
-              <span className={cn("h-2 w-2 rounded-sm", STAGE_META[stage].bar)} />
+              <span className={cn("h-2 w-2", STAGE_META[stage].bar)} />
               <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{STAGE_META[stage].label}</span>
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[stage].cost)}</span>
             <span className="text-phx-xs text-slate-500">
-              {totals[stage].count} request(s) · {STAGE_META[stage].help}
+              {countOf(totals[stage].count, "request")} · {STAGE_META[stage].help}
             </span>
           </button>
         ))}
@@ -471,7 +480,7 @@ function JudgementCalendar({ rows, dataFrontier }: { rows: RoiTrackerRow[]; data
     .reduce((sum, [, entry]) => sum + entry.committed, 0);
 
   return (
-    <section className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-4">
+    <section className="flex flex-col gap-2 border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-500">
           <CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />
@@ -496,9 +505,9 @@ function JudgementCalendar({ rows, dataFrontier }: { rows: RoiTrackerRow[]; data
                 {monthLabel(month)}
               </span>
               <span className="w-16 shrink-0 text-right text-xs tabular-nums text-slate-500">{compact(entry.committed)}</span>
-              <div className="h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
+              <div className="h-2 flex-1 overflow-hidden bg-slate-100">
                 <div
-                  className={cn("h-full rounded-sm", knowable ? "bg-emerald-500" : "bg-slate-300")}
+                  className={cn("h-full", knowable ? "bg-emerald-500" : "bg-slate-300")}
                   style={{ width: `${Math.max(Math.round(share * 100), 2)}%` }}
                 />
               </div>
@@ -554,32 +563,34 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
   const held = waiting.reduce((sum, entry) => sum + entry.row.estimatedCost, 0);
 
   return (
-    <section className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-4">
+    <section className="flex flex-col gap-2 border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Waiting on a person</h2>
         <span className="text-xs text-slate-500">
-          {money(held)} across {waiting.length} request(s)
+          {money(held)} across {countOf(waiting.length, "request")}
         </span>
       </div>
       <ul className="flex flex-col divide-y divide-slate-100">
         {waiting.slice(0, 8).map((entry) => (
-          <li className="flex flex-wrap items-center gap-2 py-1.5" key={entry.row.requestId}>
+          <li className="flex flex-col gap-1 py-2" key={entry.row.requestId}>
+            {/* The customer leads, on a full-width line of its own so an Arabic name never stacks a letter per line. */}
             <button
-              className="text-xs font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2"
+              className="w-full text-left text-sm font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2 [overflow-wrap:anywhere]"
+              dir="auto"
               onClick={() => onPick(entry.row.requestId)}
               type="button"
             >
-              {entry.row.requestCode}
+              {entry.row.customerName}
             </button>
-            <span className="min-w-0 flex-1 break-words text-xs text-slate-600">{entry.row.customerName}</span>
-            <Badge className="border-amber-200 bg-amber-50 text-amber-800">{entry.stepName}</Badge>
-            <span className="text-xs text-slate-500">{entry.assignedRole}</span>
-            <span className="w-28 text-right text-xs tabular-nums text-slate-500">
-              {entry.since ? `since ${cairoDate(entry.since)}` : "not started"}
-            </span>
-            <span className="w-24 text-right text-xs font-semibold tabular-nums text-slate-700">
-              {money(entry.row.estimatedCost)}
-            </span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Badge className="border-amber-200 bg-amber-50 text-amber-800">{entry.stepName}</Badge>
+              <span className="text-xs text-slate-500">{entry.assignedRole}</span>
+              <span className="text-xs tabular-nums text-slate-500">
+                {entry.since ? `since ${cairoDate(entry.since)}` : "not started"}
+              </span>
+              <span className="ml-auto text-xs font-semibold tabular-nums text-slate-700">{money(entry.row.estimatedCost)}</span>
+              <span className="text-phx-2xs text-slate-400">{entry.row.requestCode}</span>
+            </div>
           </li>
         ))}
       </ul>
@@ -634,8 +645,8 @@ function ApprovalTracker({ row }: { row: RoiTrackerRow }) {
       : current
         ? `Step ${currentIndex + 1} of ${steps.length} — waiting on ${current.assignedRole}`
         : decidedCount === steps.length
-          ? `Fully approved — all ${steps.length} step(s) signed off`
-          : `${decidedCount} of ${steps.length} step(s) approved`;
+          ? `Fully approved — all ${countOf(steps.length, "step")} signed off`
+          : `${decidedCount} of ${countOf(steps.length, "step")} approved`;
 
   return (
     <div className="flex flex-col gap-1">
@@ -646,10 +657,10 @@ function ApprovalTracker({ row }: { row: RoiTrackerRow }) {
             <div className="flex min-w-0 flex-1 items-center gap-1" key={`${step.sequence}-${step.stepName}`}>
               <span
                 aria-hidden="true"
-                className={cn("h-1.5 min-w-0 flex-1 rounded-sm", tone.bar)}
+                className={cn("h-1.5 min-w-0 flex-1", tone.bar)}
                 title={`${step.stepName} — ${readableStepStatus(step.status)}`}
               />
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", tone.dot)} title={step.assignedRole} />
+              <span className={cn("h-2 w-2 shrink-0", tone.dot)} title={step.assignedRole} />
               {index === steps.length - 1 ? null : null}
             </div>
           );
@@ -682,18 +693,22 @@ function RequestCard({
   const unitFigures = singleProductUnits(row);
   const measured = row.dataCoverage !== "no_validated_data";
   const month = judgementMonth(row);
+  const paidOut = stage === "judged" || stage === "measuring";
 
   return (
-    <article className={cn("overflow-hidden rounded-sm border bg-white", open ? "border-slate-900" : "border-slate-200")}>
+    <article className={cn("overflow-hidden border bg-white", open ? "border-slate-900" : "border-slate-200")}>
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-        <span className="font-semibold text-slate-900">{row.requestCode}</span>
+        <span className="min-w-0 basis-full break-words font-semibold text-slate-900 [overflow-wrap:anywhere]" dir="auto">
+          {row.customerName}
+        </span>
+        <span className="text-phx-xs text-slate-500">{row.requestCode}</span>
         <Badge className={STAGE_META[stage].chip}>{STAGE_META[stage].label}</Badge>
         <Badge className={VERDICT_STYLE[row.resultStatus] ?? VERDICT_STYLE.no_data}>
           {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
         </Badge>
         {row.suspectPharmacyCount > 0 ? (
           <Badge className="border-rose-200 bg-rose-50 text-rose-700">
-            {row.suspectPharmacyCount} unverified pharmacy code(s)
+            {countOf(row.suspectPharmacyCount, "unverified pharmacy code")}
           </Badge>
         ) : null}
         {/*
@@ -708,7 +723,7 @@ function RequestCard({
         </Badge>
         <button
           aria-expanded={open}
-          className="ml-auto inline-flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+          className="ml-auto inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
           onClick={onToggle}
           type="button"
         >
@@ -720,7 +735,6 @@ function RequestCard({
       {/* Three columns from `md` (768px) — a tablet has room for them — one column on a phone. */}
       <div className="grid gap-4 px-3 py-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="break-words text-sm font-medium text-slate-800">{row.customerName}</span>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs">
             <dt className="text-slate-400">Region</dt>
             <dd className={row.region ? "break-words text-slate-700" : "text-slate-400 italic"}>{row.region ?? "Not recorded yet"}</dd>
@@ -730,8 +744,9 @@ function RequestCard({
             <dd className="break-words text-slate-700">{requesterLabel(row)}</dd>
             <dt className="text-slate-400">Status</dt>
             <dd className="text-slate-700">{readableRequestStatus(row.status)}</dd>
-            <dt className="text-slate-400">Paid</dt>
-            <dd className="tabular-nums text-slate-700">{row.payDate ? utcDate(row.payDate) : "Not yet"}</dd>
+            {/* "Paid" only once the money has actually gone out; before that the date is a plan. */}
+            <dt className="text-slate-400">{paidOut ? "Paid" : "Pay date (planned)"}</dt>
+            <dd className="tabular-nums text-slate-700">{row.payDate ? utcDate(row.payDate) : "Not set"}</dd>
           </dl>
           <div className="mt-1 border-t border-slate-100 pt-2">
             <ApprovalTracker row={row} />
@@ -739,7 +754,7 @@ function RequestCard({
         </div>
 
         {/* The clock — this surface's signature, in place of the archive's static coverage label. */}
-        <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
+        <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/50 p-2">
           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Judgeable</span>
           <span className="text-lg font-bold text-slate-900">{month ? monthLabel(month) : "—"}</span>
           <span className="text-phx-xs text-slate-500">
@@ -748,7 +763,7 @@ function RequestCard({
           <span className="text-phx-xs text-slate-500">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</span>
         </div>
 
-        <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
+        <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/50 p-2">
           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
           <div className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="text-lg font-bold tabular-nums text-slate-900">
@@ -756,10 +771,10 @@ function RequestCard({
             </span>
             <span className="text-xs text-slate-500">of {money(row.requiredRoiValue)} required</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-sm bg-slate-200">
+          <div className="h-1.5 w-full overflow-hidden bg-slate-200">
             {measured ? (
               <div
-                className={cn("h-full rounded-sm", row.actualCoverageRatio >= 1 ? "bg-emerald-500" : "bg-orange-400")}
+                className={cn("h-full", row.actualCoverageRatio >= 1 ? "bg-emerald-500" : "bg-orange-400")}
                 style={{ width: `${Math.min(Math.round(row.actualCoverageRatio * 100), 100)}%` }}
               />
             ) : null}
@@ -1075,7 +1090,7 @@ export function MarketingRoiLiveTracker({
                 <div className="flex flex-wrap items-center gap-2">
                   {stageFocus ? (
                     <button
-                      className="inline-flex min-h-10 items-center gap-1 rounded-sm border border-slate-900 bg-slate-900 px-2 py-1 text-xs font-semibold text-white md:min-h-0"
+                      className="inline-flex min-h-10 items-center gap-1 border border-slate-900 bg-slate-900 px-2 py-1 text-xs font-semibold text-white md:min-h-0"
                       onClick={() => setStageFocus(null)}
                       type="button"
                     >
@@ -1098,7 +1113,7 @@ export function MarketingRoiLiveTracker({
                     label="Export XLSX"
                     rows={rows.map((row) => toExportRow(row))}
                     sheetName="ROI Tracker"
-                    subtitle={`${rows.length} of ${allRows.length} request(s) · ${
+                    subtitle={`${rows.length} of ${countOf(allRows.length, "request")} · ${
                       dataFrontier ? `validated sales through ${monthLabel(dataFrontier)}` : "no validated sales data loaded"
                     }`}
                     title="Marketing ROI Tracker — live"
@@ -1108,7 +1123,7 @@ export function MarketingRoiLiveTracker({
               description="Grouped by the month each campaign becomes judgeable — the soonest its result can honestly be called."
               title={`Requests (${rows.length}${rows.length !== allRows.length ? ` of ${allRows.length}` : ""})`}
             />
-            <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/50 px-3 py-2">
+            <div className="relative flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/50 px-3 py-2">
               <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
               {FACETS.map((facet) => (
                 <FacetSelect
@@ -1125,7 +1140,7 @@ export function MarketingRoiLiveTracker({
                   onClick={() => setFacets({})}
                   type="button"
                 >
-                  Clear {activeFilterCount} filter(s)
+                  Clear {countOf(activeFilterCount, "filter")}
                 </button>
               ) : null}
             </div>
@@ -1153,7 +1168,7 @@ export function MarketingRoiLiveTracker({
                           {knowable ? "Data has arrived" : "Waiting for data"}
                         </Badge>
                         <span className="ml-auto text-xs tabular-nums text-slate-500">
-                          {groupRows.length} request(s) · {money(groupCost)}
+                          {countOf(groupRows.length, "request")} · {money(groupCost)}
                         </span>
                       </div>
                       <div className="flex flex-col gap-3">
