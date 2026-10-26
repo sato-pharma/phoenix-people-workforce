@@ -51,6 +51,14 @@ import {
   buildOrganogramExportRows,
 } from "@/lib/reports/organogram-audience";
 import { fetchOrganogramMobileNumbers } from "@/lib/reports/organogram-contact-numbers-client";
+import {
+  buildOrganogramChartCounts,
+  countLaneSeats,
+  countRegionOpenSeats,
+  describeOrganogramCounts,
+  formatDistrictLaneCount,
+  formatLaneSeatSummary,
+} from "@/lib/reports/organogram-counts";
 import { calculateOrganogramStructureKpis } from "@/lib/reports/organogram-safety";
 import {
   type ManagerLane,
@@ -190,6 +198,23 @@ function laneGridColumnCount(count: number) {
   return count > 4 ? Math.ceil(count / 2) : Math.max(count, 1);
 }
 
+// The lanes STACK on a phone (the fits-the-screen golden rule, 2026-10-26). The grid used to be
+// `repeat(n, minmax(240px, 1fr))` at every width, so seven lanes needed 1,008px and a 375px phone
+// scrolled sideways, each lane squeezed until a district manager's name wrapped to four lines.
+// The columns now follow the CANVAS's own width (`@container` on it): one column of full-width
+// cards on a phone, two on a tablet, three on a narrow desktop, and the balanced count above.
+const LANE_GRID_CLASS_NAME =
+  "grid grid-cols-1 gap-3 @xl:[grid-template-columns:repeat(var(--lane-cols-sm),minmax(0,1fr))] @4xl:[grid-template-columns:repeat(var(--lane-cols-md),minmax(0,1fr))] @5xl:[grid-template-columns:repeat(var(--lane-cols),minmax(0,1fr))] print:[grid-template-columns:repeat(var(--lane-cols),minmax(0,1fr))]";
+
+function laneGridStyle(count: number): React.CSSProperties {
+  const columns = laneGridColumnCount(count);
+  return {
+    "--lane-cols": columns,
+    "--lane-cols-md": Math.min(columns, 3),
+    "--lane-cols-sm": Math.min(columns, 2),
+  } as React.CSSProperties;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Edit / Resign buttons on a person's tile                          */
 /* ------------------------------------------------------------------ */
@@ -327,7 +352,6 @@ function PersonNode({
           ) : null}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-2xs text-slate-500">
-          <span className="font-mono font-semibold text-slate-400">{row.hrId}</span>
           {/* A vacancy normally hides its title because the PLACE already says which seat is
               open — "Open Vacancy" over a Cairo pin reads correctly on a sales chart. A Head
               Office vacancy has no area, so hiding the title left it as "Open Vacancy" and a
@@ -520,9 +544,8 @@ function ManagerLane({
 }) {
   const isVacantManagerSeat = group.dsm?.type === "vacancy";
   const laneCollapsed = collapsedKeys.has(laneKey);
-  const groupVacancies =
-    group.members.filter((member) => member.type === "vacancy").length +
-    (isVacantManagerSeat ? 1 : 0);
+  // Seats, not rows: a seat in handover carries two people and is one filled seat.
+  const seatCount = countLaneSeats(group);
   const managerScope = isVacantManagerSeat
     ? [group.dsm?.lineName, group.dsm?.areaName ?? group.dsm?.regionName]
         .filter(Boolean)
@@ -542,7 +565,7 @@ function ManagerLane({
     : "bg-gradient-to-br from-slate-800 to-slate-950 text-white";
 
   return (
-    <div className="min-w-[240px] overflow-hidden border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow duration-300 hover:shadow-[0_10px_28px_rgba(15,23,42,0.1)]">
+    <div className="min-w-0 overflow-hidden border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow duration-300 hover:shadow-[0_10px_28px_rgba(15,23,42,0.1)]">
       {/* Manager header — filled seats are dark slate, vacant seats warm orange */}
       <div className={cn("flex items-start gap-2.5 px-3 py-2.5", headerSurface)}>
         {(() => {
@@ -618,7 +641,7 @@ function ManagerLane({
                 : "bg-white/10 text-white ring-white/20",
             )}
           >
-            {isVacantManagerSeat ? "Vacant" : group.members.length}
+            {isVacantManagerSeat ? "Vacant" : seatCount.seats}
           </span>
           {group.members.length > 0 ? (
             <button
@@ -653,16 +676,14 @@ function ManagerLane({
 
       {/* Team summary */}
       <div className="flex items-center justify-between border-y border-slate-100 bg-slate-50/70 px-3 py-1.5 text-phx-2xs">
-        <span className="font-semibold text-slate-500">
-          {group.members.length} team {group.members.length === 1 ? "member" : "members"}
-        </span>
-        {groupVacancies > 0 ? (
+        <span className="font-semibold text-slate-500">{formatLaneSeatSummary(seatCount)}</span>
+        {seatCount.vacant > 0 ? (
           <span className="font-black uppercase tracking-[0.08em] text-orange-600">
-            {groupVacancies} vacant
+            {seatCount.vacant} vacant
           </span>
-        ) : (
+        ) : seatCount.seats > 0 ? (
           <span className="font-semibold text-emerald-600">Fully staffed</span>
-        )}
+        ) : null}
       </div>
 
       {/* Team members with drawn connectors + collapse */}
@@ -901,14 +922,12 @@ function CompletionBar({
   actual,
   total,
   vacant,
-  employees,
-  scopeLabel,
+  summary,
 }: {
   actual: number;
   total: number;
   vacant: number;
-  employees: number;
-  scopeLabel: string;
+  summary: string;
 }) {
   const filledPct = total > 0 ? Math.round((actual / total) * 100) : 0;
   const vacantPct = 100 - filledPct;
@@ -921,7 +940,7 @@ function CompletionBar({
           <div>
             <h3 className="text-sm font-black text-slate-900">Structure Completion</h3>
             <p className="mt-0.5 text-phx-xs text-slate-500">
-              {employees} employees across {scopeLabel}
+              {summary}
             </p>
           </div>
         </div>
@@ -960,7 +979,7 @@ function CompletionBar({
               <span className="font-medium">Vacant {vacantPct}%</span>
             </span>
             <span className="ml-auto text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
-              Total {total}
+              Total {total} {total === 1 ? "seat" : "seats"}
             </span>
           </div>
         </>
@@ -983,7 +1002,7 @@ function TierLabel({
   text,
   textClassName,
 }: {
-  count?: number;
+  count?: string;
   dotClassName: string;
   text: string;
   textClassName: string;
@@ -994,9 +1013,9 @@ function TierLabel({
       <p className={cn("text-phx-2xs font-black uppercase tracking-[0.14em]", textClassName)}>
         {text}
       </p>
-      {typeof count === "number" ? (
+      {count ? (
         <span className="text-phx-2xs font-semibold text-slate-400">
-          · {count} {count === 1 ? "lane" : "lanes"}
+          · {count}
         </span>
       ) : null}
     </div>
@@ -1122,7 +1141,7 @@ function OrgChartTreeBody({
   const [isExportingPng, setIsExportingPng] = React.useState(false);
 
   const structureKpis = React.useMemo(() => calculateOrganogramStructureKpis(rows), [rows]);
-  const { chiefExecutive, filledLaneCount, groups, laneLeaderName, lineLeader } = React.useMemo(() => {
+  const { chiefExecutive, groups, laneLeaderName, lineLeader } = React.useMemo(() => {
     const lanes = buildOrganogramLanes(rows);
     return {
       ...lanes,
@@ -1132,7 +1151,8 @@ function OrgChartTreeBody({
     };
   }, [rows, lineName]);
 
-  const employeeCount = rows.filter((row) => row.type === "employee").length;
+  // Every figure the chart prints comes from this one count (src/lib/reports/organogram-counts.ts).
+  const chartCounts = React.useMemo(() => buildOrganogramChartCounts(rows, groups), [rows, groups]);
   const resolvedLineName = lineName ?? "Selected line";
 
   const directDsms = groups.filter((group) => group.dsm && !group.rsm);
@@ -1287,7 +1307,7 @@ function OrgChartTreeBody({
                 resolveRows={resolveExportRows}
                 rows={exportRows}
                 sheetName="Organogram"
-                subtitle={`${resolvedLineName} · ${employeeCount} employees`}
+                subtitle={`${resolvedLineName} · ${chartCounts.people.shown} people`}
                 title={`Organogram — ${resolvedLineName}`}
               />
               <button
@@ -1328,8 +1348,7 @@ function OrgChartTreeBody({
 
       <CompletionBar
         actual={structureKpis.total.actual}
-        employees={employeeCount}
-        scopeLabel={resolvedLineName}
+        summary={describeOrganogramCounts(chartCounts)}
         total={structureKpis.total.total}
         vacant={structureKpis.total.vacant}
       />
@@ -1340,7 +1359,7 @@ function OrgChartTreeBody({
           of just clipping the extra lanes with no way to reach them. */}
       <div
         className={cn(
-          "overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5 print:overflow-visible print:rounded-none print:border-none print:bg-white print:p-0 print:shadow-none",
+          "@container overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5 print:overflow-visible print:rounded-none print:border-none print:bg-white print:p-0 print:shadow-none",
           theme === "admin" ? "shadow-[0_2px_16px_rgba(15,23,42,0.06)] print:shadow-none" : "",
         )}
         onWheel={handleCanvasWheel}
@@ -1413,14 +1432,14 @@ function OrgChartTreeBody({
             {directDsms.length > 0 ? (
               <div>
                 <TierLabel
-                  count={directDsms.length}
+                  count={formatDistrictLaneCount(directDsms.length)}
                   dotClassName="bg-slate-400"
                   text="Reports to NSM"
                   textClassName="text-slate-500"
                 />
                 <div
-                  className="grid gap-3"
-                  style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(directDsms.length)}, minmax(240px, 1fr))` }}
+                  className={LANE_GRID_CLASS_NAME}
+                  style={laneGridStyle(directDsms.length)}
                 >
                   {directDsms.map((group, index) => {
                     const laneKey = tierLaneKey("t1", group, index);
@@ -1447,13 +1466,7 @@ function OrgChartTreeBody({
               const laneKey = tierLaneKey("t2", group, index);
               const rsmRow = group.rsm ?? null;
               const rsmFacts = personFactsLine(rsmRow);
-              const groupVacancies = childLanes.reduce(
-                (total, lane) =>
-                  total +
-                  lane.members.filter((member) => member.type === "vacancy").length +
-                  (lane.dsm?.type === "vacancy" ? 1 : 0),
-                0,
-              );
+              const groupVacancies = countRegionOpenSeats(childLanes);
               return (
                 <div key={laneKey}>
                   <TierLabel
@@ -1504,18 +1517,18 @@ function OrgChartTreeBody({
                       <div className="flex items-center gap-1.5 text-phx-2xs">
                         <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 font-bold text-slate-600 ring-1 ring-orange-200">
                           <Layers className="h-3 w-3 text-orange-500" />
-                          {childLanes.length} DSM lanes
+                          {formatDistrictLaneCount(childLanes.length)}
                         </span>
                         {groupVacancies > 0 ? (
                           <span className="rounded-md bg-orange-200/70 px-1.5 py-1 font-black text-orange-700">
-                            {groupVacancies} vacant
+                            {groupVacancies} open {groupVacancies === 1 ? "seat" : "seats"}
                           </span>
                         ) : null}
                       </div>
                     </div>
                     <div
-                      className="grid gap-3 bg-orange-50/30 p-3"
-                      style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(childLanes.length)}, minmax(240px, 1fr))` }}
+                      className={cn(LANE_GRID_CLASS_NAME, "bg-orange-50/30 p-3")}
+                      style={laneGridStyle(childLanes.length)}
                     >
                       {childLanes.length > 0 ? (
                         childLanes.map((lane, laneIndex) => {
@@ -1548,14 +1561,14 @@ function OrgChartTreeBody({
             {otherGroups.length > 0 ? (
               <div>
                 <TierLabel
-                  count={otherGroups.length}
+                  count={`${otherGroups.length} ${otherGroups.length === 1 ? "group" : "groups"}`}
                   dotClassName="bg-slate-400"
                   text="Other reporting groups"
                   textClassName="text-slate-500"
                 />
                 <div
-                  className="grid gap-3"
-                  style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(otherGroups.length)}, minmax(240px, 1fr))` }}
+                  className={LANE_GRID_CLASS_NAME}
+                  style={laneGridStyle(otherGroups.length)}
                 >
                   {otherGroups.map((group, index) => {
                     const laneKey = `other-${group.name}-${index}`;
@@ -1577,7 +1590,10 @@ function OrgChartTreeBody({
             ) : null}
 
             <p className="pt-1 text-phx-2xs font-semibold text-slate-400">
-              {filledLaneCount} staffed {filledLaneCount === 1 ? "lane" : "lanes"} shown
+              {formatDistrictLaneCount(chartCounts.lanes.district)} shown
+              {chartCounts.lanes.other > 0
+                ? ` and ${chartCounts.lanes.other} other reporting ${chartCounts.lanes.other === 1 ? "group" : "groups"}`
+                : ""}
             </p>
           </div>
         )}

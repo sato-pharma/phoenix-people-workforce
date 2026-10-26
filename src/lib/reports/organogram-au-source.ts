@@ -37,7 +37,7 @@ import type {
  *  - the per-line "Others" pseudo-DM has no people and is not emitted.
  */
 
-type AuTreeRow = {
+export type AuTreeRow = {
   seat_id: string;
   parent_seat_id: string | null;
   seat_tier: OrgSeatTier;
@@ -105,6 +105,151 @@ const emptySummary = {
 
 function nodeKeyOf(row: Pick<AuTreeRow, "occupant_hr_id" | "seat_id">): string {
   return row.occupant_hr_id && row.occupant_hr_id.trim() ? row.occupant_hr_id.trim() : row.seat_id;
+}
+
+export type SeatTreeRowDeps = {
+  asOfMonth: string | null;
+  displayNameFor: (hrId: string | null) => string;
+  hireDateFor: (hrId: string | null) => string | null;
+  offerOutBySeat: Awaited<ReturnType<typeof loadOfferOutBySeat>>;
+  workFieldsFor: (hrId: string | null) => OrganogramWorkFields;
+};
+
+/**
+ * The seat tree → the flat organogram rows. Pure: every read it needs is passed in, so the mapping
+ * (who a card is, whom it hangs off, which seats are dropped) is tested without a database.
+ */
+export function buildSeatTreeRows(
+  tree: AuTreeRow[],
+  { asOfMonth, displayNameFor, hireDateFor, offerOutBySeat, workFieldsFor }: SeatTreeRowDeps,
+): {
+  isDropped: (s: AuTreeRow) => boolean;
+  nodeKeyBySeat: Map<string, string>;
+  rows: OrganogramReportRow[];
+} {
+  const nodeKeyBySeat = new Map<string, string>();
+  const occupantBySeat = new Map<string, string | null>();
+  for (const s of tree) {
+    nodeKeyBySeat.set(s.seat_id, nodeKeyOf(s));
+    occupantBySeat.set(s.seat_id, s.occupant_hr_id && s.occupant_hr_id.trim() ? s.occupant_hr_id.trim() : null);
+  }
+
+  // Acting-DM occupants (their own REP seat is collapsed into the ACTING_DM node).
+  // Keyed by occupant ALONE — never by line_code. Gating the collapse on a matching
+  // line_code would let the same person be emitted twice (once as the ACTING_DM node,
+  // once as an un-collapsed REP seat) whenever the ACTING_DM seat's line_code is null
+  // or differs from the REP seat's — two rows sharing one nodeKey (the HR_ID), i.e. a
+  // duplicate node and a self-referential manager lookup. An occupant who holds any
+  // ACTING_DM seat is always rendered from it, so their REP seat is always collapsed.
+  const actingOccupants = new Set<string>();
+  for (const s of tree) {
+    if (s.seat_tier === "ACTING_DM" && s.occupant_hr_id && s.occupant_hr_id.trim()) {
+      actingOccupants.add(s.occupant_hr_id.trim().toLowerCase());
+    }
+  }
+
+  // A seat is DROPPED from the emitted tree when it is the per-line "Others" pseudo-DM
+  // (holds no people) or the acting DM's own REP seat (collapsed into the ACTING_DM
+  // node). Centralised so manager resolution can climb past a dropped seat.
+  const isDropped = (s: AuTreeRow): boolean => {
+    if (s.is_other_pseudo_dm) return true; // "Others" holds no people
+    if (
+      s.seat_tier === "REP" &&
+      s.occupant_hr_id &&
+      actingOccupants.has(s.occupant_hr_id.trim().toLowerCase())
+    ) {
+      return true; // acting DM's own area — represented by the ACTING_DM node
+    }
+    return false;
+  };
+
+  const seatById = new Map<string, AuTreeRow>();
+  for (const s of tree) seatById.set(s.seat_id, s);
+
+  // Nearest ANCESTOR seat that is actually emitted, climbing parent_seat_id and
+  // skipping any dropped seat. Without this, a child whose immediate parent seat was
+  // dropped (an "Others" pseudo-DM, or a collapsed acting-DM REP seat) would carry a
+  // managerHrId pointing at a node that was never emitted — orphaning it in the
+  // client's tree-climb. Re-homing to the closest real manager above keeps it placed.
+  // The `seen` guard makes a malformed cyclic parent chain terminate instead of hang.
+  const nearestEmittedParentSeat = (s: AuTreeRow): AuTreeRow | null => {
+    const seen = new Set<string>([s.seat_id]);
+    let parentId = s.parent_seat_id;
+    while (parentId && !seen.has(parentId)) {
+      const parent = seatById.get(parentId);
+      if (!parent) break;
+      if (!isDropped(parent)) return parent;
+      seen.add(parentId);
+      parentId = parent.parent_seat_id;
+    }
+    return null;
+  };
+
+  const rows: OrganogramReportRow[] = [];
+  for (const s of tree) {
+    if (isDropped(s)) continue;
+
+    // THE ROW'S OWN OCCUPANT, NEVER THE SEAT'S LAST ONE (2026-10-26). A seat in handover is listed
+    // twice by the tree — the leaver still on it until her last day, and her successor — and
+    // `nodeKeyBySeat` holds ONE key per seat, the last occupant read. Reading it here gave the
+    // leaver her successor's HR id: Hana Abdelaziz was drawn as PD-0029, Aya Mamdouh's, so both
+    // cards shared one key (one of them deduplicated away) and the leaver's Edit, Resign and
+    // WhatsApp pointed at Aya. Only the MANAGER pointer below reads the seat map — that is the
+    // skeleton, and a report hangs off whoever holds the chair.
+    const nodeKey = nodeKeyOf(s);
+    const managerSeat = nearestEmittedParentSeat(s);
+    const managerHrId = managerSeat ? (nodeKeyBySeat.get(managerSeat.seat_id) ?? null) : null;
+    // Manager display name = the parent seat's occupant name (never an HR_ID/seat code). Left null
+    // when the manager seat is vacant, so the vacant-seat labeller (area/team/line name) takes over.
+    const managerOccupant = managerSeat ? (occupantBySeat.get(managerSeat.seat_id) ?? null) : null;
+    const managerName = managerOccupant ? displayNameFor(managerOccupant) : null;
+    const occupied = Boolean(s.occupant_hr_id && s.occupant_hr_id.trim());
+
+    rows.push({
+      ...workFieldsFor(s.occupant_hr_id),
+      areaId: null,
+      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef", and CNS does
+      // the same from 2026-08 (owner, 2026-09-07). Pedia has a single GZ6 seat and no UE9 seat, so
+      // this only renames that node. Anti Infective folds Ismailia (OT9) + Suez (OT2) into ONE area
+      // "Ismailia and Suez" from 2026-09 (owner, 2026-09-19): the Delta (3) rep seat sits on OT2, so
+      // it reads "Ismailia and Suez" here. On that line Fayoum / Beni Suef stay separate. No period
+      // is passed for the LIVE chart on purpose: it shows the org as it stands NOW. An as-of view
+      // passes its month, so August reads "Fayoum" and September reads "Ismailia and Suez" exactly
+      // as the closings of those months do (a null period means "now" to the rule table).
+      areaName: getMergedAreaName(s.line_code, s.area_code ?? "", asOfMonth) ?? s.area_name,
+      departmentId: null,
+      // Stays null, as it always has. The employee master's department reaches the
+      // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
+      departmentName: null,
+      displayName: displayNameFor(s.occupant_hr_id),
+      fullName: displayNameFor(s.occupant_hr_id),
+      hireDate: hireDateFor(s.occupant_hr_id),
+      hrId: nodeKey,
+      jobTitle: TITLE_BY_TIER[s.seat_tier],
+      lineId: s.line_id,
+      lineName: s.line_name,
+      managerHrId,
+      managerReplacementForHrId: null,
+      managerName,
+      positionId: null,
+      positionTitle: TITLE_BY_TIER[s.seat_tier],
+      regionName: s.region_name,
+      replacementForHrId: null,
+      seatId: s.seat_id,
+      sourceRowNumber: null,
+      // Only a VACANT seat can carry one. An occupied chair has nothing pending, and reading the
+      // map for it would be the first step towards labelling a filled seat with somebody else's
+      // letter.
+      pendingOffer: occupied ? null : (offerOutBySeat.get(s.seat_id) ?? null),
+      status: occupied ? "active" : "open",
+      teamId: null,
+      teamName: null,
+      type: occupied ? "employee" : "vacancy",
+      vacancyCode: null,
+    });
+  }
+
+  return { isDropped, nodeKeyBySeat, rows };
 }
 
 /**
@@ -269,120 +414,13 @@ export async function buildOrganogramSeatReport(
     return hireDateByHr.get(hrId.trim().toLowerCase()) ?? null;
   };
 
-  const nodeKeyBySeat = new Map<string, string>();
-  const occupantBySeat = new Map<string, string | null>();
-  for (const s of tree) {
-    nodeKeyBySeat.set(s.seat_id, nodeKeyOf(s));
-    occupantBySeat.set(s.seat_id, s.occupant_hr_id && s.occupant_hr_id.trim() ? s.occupant_hr_id.trim() : null);
-  }
-
-  // Acting-DM occupants (their own REP seat is collapsed into the ACTING_DM node).
-  // Keyed by occupant ALONE — never by line_code. Gating the collapse on a matching
-  // line_code would let the same person be emitted twice (once as the ACTING_DM node,
-  // once as an un-collapsed REP seat) whenever the ACTING_DM seat's line_code is null
-  // or differs from the REP seat's — two rows sharing one nodeKey (the HR_ID), i.e. a
-  // duplicate node and a self-referential manager lookup. An occupant who holds any
-  // ACTING_DM seat is always rendered from it, so their REP seat is always collapsed.
-  const actingOccupants = new Set<string>();
-  for (const s of tree) {
-    if (s.seat_tier === "ACTING_DM" && s.occupant_hr_id && s.occupant_hr_id.trim()) {
-      actingOccupants.add(s.occupant_hr_id.trim().toLowerCase());
-    }
-  }
-
-  // A seat is DROPPED from the emitted tree when it is the per-line "Others" pseudo-DM
-  // (holds no people) or the acting DM's own REP seat (collapsed into the ACTING_DM
-  // node). Centralised so manager resolution can climb past a dropped seat.
-  const isDropped = (s: AuTreeRow): boolean => {
-    if (s.is_other_pseudo_dm) return true; // "Others" holds no people
-    if (
-      s.seat_tier === "REP" &&
-      s.occupant_hr_id &&
-      actingOccupants.has(s.occupant_hr_id.trim().toLowerCase())
-    ) {
-      return true; // acting DM's own area — represented by the ACTING_DM node
-    }
-    return false;
-  };
-
-  const seatById = new Map<string, AuTreeRow>();
-  for (const s of tree) seatById.set(s.seat_id, s);
-
-  // Nearest ANCESTOR seat that is actually emitted, climbing parent_seat_id and
-  // skipping any dropped seat. Without this, a child whose immediate parent seat was
-  // dropped (an "Others" pseudo-DM, or a collapsed acting-DM REP seat) would carry a
-  // managerHrId pointing at a node that was never emitted — orphaning it in the
-  // client's tree-climb. Re-homing to the closest real manager above keeps it placed.
-  // The `seen` guard makes a malformed cyclic parent chain terminate instead of hang.
-  const nearestEmittedParentSeat = (s: AuTreeRow): AuTreeRow | null => {
-    const seen = new Set<string>([s.seat_id]);
-    let parentId = s.parent_seat_id;
-    while (parentId && !seen.has(parentId)) {
-      const parent = seatById.get(parentId);
-      if (!parent) break;
-      if (!isDropped(parent)) return parent;
-      seen.add(parentId);
-      parentId = parent.parent_seat_id;
-    }
-    return null;
-  };
-
-  const rows: OrganogramReportRow[] = [];
-  for (const s of tree) {
-    if (isDropped(s)) continue;
-
-    const nodeKey = nodeKeyBySeat.get(s.seat_id)!;
-    const managerSeat = nearestEmittedParentSeat(s);
-    const managerHrId = managerSeat ? (nodeKeyBySeat.get(managerSeat.seat_id) ?? null) : null;
-    // Manager display name = the parent seat's occupant name (never an HR_ID/seat code). Left null
-    // when the manager seat is vacant, so the vacant-seat labeller (area/team/line name) takes over.
-    const managerOccupant = managerSeat ? (occupantBySeat.get(managerSeat.seat_id) ?? null) : null;
-    const managerName = managerOccupant ? displayNameFor(managerOccupant) : null;
-    const occupied = Boolean(s.occupant_hr_id && s.occupant_hr_id.trim());
-
-    rows.push({
-      ...workFieldsFor(s.occupant_hr_id),
-      areaId: null,
-      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef", and CNS does
-      // the same from 2026-08 (owner, 2026-09-07). Pedia has a single GZ6 seat and no UE9 seat, so
-      // this only renames that node. Anti Infective folds Ismailia (OT9) + Suez (OT2) into ONE area
-      // "Ismailia and Suez" from 2026-09 (owner, 2026-09-19): the Delta (3) rep seat sits on OT2, so
-      // it reads "Ismailia and Suez" here. On that line Fayoum / Beni Suef stay separate. No period
-      // is passed for the LIVE chart on purpose: it shows the org as it stands NOW. An as-of view
-      // passes its month, so August reads "Fayoum" and September reads "Ismailia and Suez" exactly
-      // as the closings of those months do (a null period means "now" to the rule table).
-      areaName: getMergedAreaName(s.line_code, s.area_code ?? "", asOfMonth) ?? s.area_name,
-      departmentId: null,
-      // Stays null, as it always has. The employee master's department reaches the
-      // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
-      departmentName: null,
-      displayName: displayNameFor(s.occupant_hr_id),
-      fullName: displayNameFor(s.occupant_hr_id),
-      hireDate: hireDateFor(s.occupant_hr_id),
-      hrId: nodeKey,
-      jobTitle: TITLE_BY_TIER[s.seat_tier],
-      lineId: s.line_id,
-      lineName: s.line_name,
-      managerHrId,
-      managerReplacementForHrId: null,
-      managerName,
-      positionId: null,
-      positionTitle: TITLE_BY_TIER[s.seat_tier],
-      regionName: s.region_name,
-      replacementForHrId: null,
-      seatId: s.seat_id,
-      sourceRowNumber: null,
-      // Only a VACANT seat can carry one. An occupied chair has nothing pending, and reading the
-      // map for it would be the first step towards labelling a filled seat with somebody else's
-      // letter.
-      pendingOffer: occupied ? null : (offerOutBySeat.get(s.seat_id) ?? null),
-      status: occupied ? "active" : "open",
-      teamId: null,
-      teamName: null,
-      type: occupied ? "employee" : "vacancy",
-      vacancyCode: null,
-    });
-  }
+  const { rows, nodeKeyBySeat, isDropped } = buildSeatTreeRows(tree, {
+    asOfMonth,
+    displayNameFor,
+    hireDateFor,
+    offerOutBySeat,
+    workFieldsFor,
+  });
 
   // A past month stops here: the Head Office branch below is built from the employee master and
   // `position_vacancies`, neither of which carries the dates to say who held a Head Office role in

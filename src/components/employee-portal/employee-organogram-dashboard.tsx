@@ -6,6 +6,7 @@ import { OrgChartTree, type OrgChartKpiLabels } from "@/components/organogram/or
 import { OrganogramAsOfPicker } from "@/components/organogram/organogram-as-of";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { buildOrganogramChartCounts, formatDistrictLaneCount } from "@/lib/reports/organogram-counts";
 import {
   buildLinePickerOptions,
   buildOrganogramLanes,
@@ -49,7 +50,7 @@ const PORTAL_KPI_LABELS: OrgChartKpiLabels = {
   medicalRep: "Medical Reps",
   nsm: "National Managers",
   rsm: "Regional Managers",
-  total: "Total Structure",
+  total: "All Sales Seats",
 };
 
 /* ------------------------------------------------------------------ */
@@ -135,19 +136,16 @@ export function EmployeeOrganogramDashboard({
     [effectiveLineFilter, rows],
   );
 
-  const employees = useMemo(
-    () => filteredRows.filter((r) => r.type === "employee").length,
-    [filteredRows],
-  );
-
-  const vacancies = useMemo(
-    () => filteredRows.filter((r) => r.type === "vacancy").length,
-    [filteredRows],
-  );
-
   const lanes = useMemo(
     () => (effectiveLineFilter ? buildOrganogramLanes(filteredRows) : null),
     [effectiveLineFilter, filteredRows],
+  );
+
+  // The header chips and the chart's own figures are ONE count (src/lib/reports/organogram-counts.ts):
+  // the header used to say "37 employees" and "6 lanes" over a chart that said 32 of 47 seats and 4 lanes.
+  const counts = useMemo(
+    () => (lanes ? buildOrganogramChartCounts(filteredRows, lanes.groups) : null),
+    [filteredRows, lanes],
   );
 
   const lineName = effectiveLineFilter || "Select Line";
@@ -250,7 +248,7 @@ export function EmployeeOrganogramDashboard({
       )}
 
       {/* ---- Organogram Chart ---- */}
-      {report && lanes && (
+      {report && lanes && counts && (
         <WorkspaceErrorBoundary fallbackTitle="Organogram tree unavailable">
           <Card className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
             {/* Section header */}
@@ -269,15 +267,18 @@ export function EmployeeOrganogramDashboard({
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
-                    {employees} employees
+                    {counts.seats.filled} of {counts.seats.total} sales seats filled
                   </span>
-                  {vacancies > 0 && (
+                  {counts.seats.open > 0 && (
                     <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-                      {vacancies} vacancies
+                      {counts.seats.open} open {counts.seats.open === 1 ? "seat" : "seats"}
                     </span>
                   )}
                   <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
-                    {lanes.groups.length} lanes
+                    {counts.people.shown} {counts.people.shown === 1 ? "person" : "people"} shown
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
+                    {formatDistrictLaneCount(counts.lanes.district)}
                   </span>
                 </div>
               </div>
