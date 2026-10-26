@@ -33,6 +33,7 @@ import type {
   DirectOrderOrdersFilterKey,
   DirectOrderWorkspaceTabKey,
 } from "@/lib/direct-orders/workspace-data";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminThumbBarDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -152,7 +153,8 @@ function DeskGroup({
 // shell and this component cannot disagree about what a tab is called.
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
-const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
+// `createdAt` is an instant: read it on the Cairo calendar, never the first ten characters of its UTC text.
+const shortDate = (value: string | null) => cairoDate(value);
 
 /** The two visual families the owner's rule preserves: square admin, rounded portal. */
 const surface = (variant: Variant) =>

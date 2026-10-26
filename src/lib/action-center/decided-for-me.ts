@@ -21,6 +21,7 @@ import { resolveNavigationMode, normalizeRole, type AccessContext } from "@/lib/
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { HistoricalApprovalItem } from "@/components/action-center/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { historyDate, historyPlanPeriod, historyWeekLabel } from "@/lib/action-center/approval-history-format";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { loadManagerPlanDecisions } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -57,7 +58,7 @@ type DecidedExcuseRow = {
   manager_decision_by_hr_id: unknown; manager_decision_comment: unknown;
 };
 type DecidedPlanRow = {
-  id: unknown; employee_name: unknown; employee_hr_id: unknown; period_key: unknown;
+  id: unknown; employee_name: unknown; employee_hr_id: unknown; period_key: unknown; period_start_date: unknown; period_end_date: unknown;
   plan_kind: unknown; status: unknown; manager_decision_at: unknown;
   manager_decision_by_hr_id: unknown; manager_decision_comment: unknown;
 };
@@ -263,7 +264,7 @@ export async function getDecisionsMadeForMe(
       fetchAllApprovalRows<DecidedPlanRow>(() =>
         db
           .from("employee_plan_headers")
-          .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
+          .select("id,employee_name,employee_hr_id,period_key,period_start_date,period_end_date,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
           .in("employee_hr_id", batch)
           .not("manager_decision_at", "is", null)
           .gte("manager_decision_at", since)
@@ -289,7 +290,7 @@ export async function getDecisionsMadeForMe(
         module: "leave",
         employeeName: cleanText(row.employee_name),
         employeeHrId: cleanText(row.employee_hr_id),
-        title: `Leave · from ${cleanText(row.start_date)}`,
+        title: `Leave${historyDate(cleanText(row.start_date)) ? ` · from ${historyDate(cleanText(row.start_date))}` : ""}`,
         decision: normalizeDecidedForMeOutcome(row.manager_decision),
         decidedAt: cleanText(row.manager_decision_at),
         href: href("vacation", row.id),
@@ -306,7 +307,7 @@ export async function getDecisionsMadeForMe(
         module: "excuse",
         employeeName: cleanText(row.employee_name),
         employeeHrId: cleanText(row.employee_hr_id),
-        title: `${type} excuse · ${cleanText(row.excuse_date)}`,
+        title: `${type} excuse${historyDate(cleanText(row.excuse_date)) ? ` · ${historyDate(cleanText(row.excuse_date))}` : ""}`,
         decision: normalizeDecidedForMeOutcome(row.manager_decision),
         decidedAt: cleanText(row.manager_decision_at),
         href: href("excuse", row.id),
@@ -323,7 +324,7 @@ export async function getDecisionsMadeForMe(
         module: "weekly_plan",
         employeeName: cleanText(row.employee_name),
         employeeHrId: cleanText(row.employee_hr_id),
-        title: `${kind} · ${cleanText(row.period_key)}`,
+        title: `${kind} · ${historyPlanPeriod(cleanText(row.period_start_date), cleanText(row.period_end_date), cleanText(row.period_key))}`,
         decision: normalizeDecidedForMeOutcome(row.status),
         decidedAt: cleanText(row.manager_decision_at),
         href: href("plan", row.id),
@@ -346,7 +347,7 @@ export async function getDecisionsMadeForMe(
         module: "weekly_plan",
         employeeName: nameFor(decision.managerHrId),
         employeeHrId: decision.managerHrId,
-        title: `Weekly plan · Phoenix CRM · ${decision.weekStart}`,
+        title: `Weekly plan · Phoenix CRM · ${historyWeekLabel(decision.weekStart, decision.weekStart)}`,
         decision: decision.decision,
         decidedAt: decision.decidedAt,
         href: href("plan", decision.planId),

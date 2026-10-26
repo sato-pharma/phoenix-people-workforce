@@ -457,15 +457,20 @@ export function runVacationApprovalFlowTests() {
   // A return cannot write manager_decision (its check allows only approved/rejected), so after HR returns
   // a request the direct manager already approved it still reads "approved" - History and All Decisions
   // listed the return as an approval. The request's current status must win.
-  const actionCenterServiceSource = readFileSync(new URL("../src/lib/action-center/service.ts", import.meta.url), "utf8");
+  // History builds its leave rows in approval-history-outcome.ts (tests/approval-history-final-state.test.ts
+  // runs that rule on real shapes); All Decisions still builds them inline in the hub service.
+  const historyOutcomeSource = readFileSync(new URL("../src/lib/action-center/approval-history-outcome.ts", import.meta.url), "utf8");
   const hubServiceSource = readFileSync(new URL("../src/lib/approvals-hub/service.ts", import.meta.url), "utf8");
-  for (const [label, source] of [["History", actionCenterServiceSource], ["All Decisions", hubServiceSource]] as const) {
-    assert.match(
-      source,
-      /row\.status === "returned" \? \("returned" as const\) : decodeDecision\(/,
-      `${label} must show a returned request as returned even when manager_decision still reads approved`,
-    );
-  }
+  assert.match(
+    historyOutcomeSource,
+    /norm\(row\.status\) === "returned" \? \("returned" as const\) : null/,
+    "History must show a returned request as returned even when manager_decision still reads approved",
+  );
+  assert.match(
+    hubServiceSource,
+    /row\.status === "returned" \? \("returned" as const\) : decodeDecision\(/,
+    "All Decisions must show a returned request as returned even when manager_decision still reads approved",
+  );
 
   // Owner rule, 2026-10-08: a compensatory leave needs a photo of the event, so it cannot be submitted
   // before the event date has arrived (the leave day itself was already checked against the event date).

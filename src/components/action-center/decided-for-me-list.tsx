@@ -118,10 +118,7 @@ export function DecidedForMeList({ items, windowDays, failed }: Props) {
                 </span>
               </div>
               <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-              <p className="text-xs text-slate-500">
-                {item.employeeName}
-                {item.employeeHrId ? <span className="ml-1 text-slate-400">({item.employeeHrId})</span> : null}
-              </p>
+              <p className="text-xs text-slate-500">{item.employeeName}</p>
               <p className="text-xs font-semibold text-slate-600">
                 Decided by {item.decidedByName || item.decidedByHrId}
               </p>

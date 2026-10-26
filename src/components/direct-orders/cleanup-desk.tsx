@@ -9,7 +9,7 @@ import type {
   DirectOrderCleanupPlan,
   DirectOrderCleanupRequestSummary,
 } from "@/lib/direct-orders/service";
-import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableEnGbFormatter, utcDate } from "@/lib/format/cairo-datetime";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -55,7 +55,7 @@ function OrderLine({ request }: { request: DirectOrderCleanupRequestSummary }) {
       <div className="mt-0.5 text-phx-xs text-slate-600">
         {request.qty.toLocaleString("en-US")} units · {request.dealType}
         {request.discountPct != null ? ` ${request.discountPct}%` : ""} · {money(request.salesValue)} · collection{" "}
-        {request.collectionDate ?? "—"}
+        {utcDate(request.collectionDate)}
       </div>
       <div className="text-phx-xs text-slate-500" dir="auto">
         {request.requesterName} · {request.pharmacyName} ({request.pharmacyCode}) · submitted{" "}
