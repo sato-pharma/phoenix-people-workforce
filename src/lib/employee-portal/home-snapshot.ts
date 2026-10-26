@@ -24,6 +24,7 @@ import {
   isActiveDirectoryEmployee,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { personNameLookup } from "@/lib/employees/person-name-lookup";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 // NOTE there is deliberately no `getAwaitingMyActionItems` import here any more.
 //
@@ -826,17 +827,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       ]);
       if (!national) return emptyRoleExtras;
 
-      // Show the nickname when set, else the full name. The performance services return
-      // raw full names, so resolve the directory's nickname-aware displayName by a
-      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
-      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const displayByKey = new Map<string, string>();
-      for (const row of directoryRows) {
-        const key = nameKey(row.hrId);
-        if (key) displayByKey.set(key, row.displayName);
-      }
-      const display = (hrId: string | null | undefined, fallback: string) =>
-        displayByKey.get(nameKey(hrId)) ?? fallback;
+      // Every name on this board — district managers, reps, and the manager printed beside each top
+      // rep — goes through personNameLookup: the directory's nickname-aware name, then the employees
+      // row for anyone who has LEFT (a resigned manager still heads a rep's sales window, and printed
+      // in the sales file's raw capitals until 2026-10-26), then a capitals tidy.
+      const display = await personNameLookup(directoryRows, [
+        ...national.dsms.map((d) => d.hrId),
+        ...(repTeam?.members ?? []).flatMap((m) => [m.hrId, m.managerHrId]),
+      ]);
 
       // Same rule as the district board: people who have left come off the leaderboards before the
       // slice, and their sales stay in the line total (see splitDepartedRoster).
@@ -916,17 +914,11 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       ]);
       if (!regional) return emptyRoleExtras;
 
-      // Same nickname resolution as the DSM/NSM branches above: the performance services return
-      // raw full names, so resolve the directory's nickname-aware displayName by a
-      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
-      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const displayByKey = new Map<string, string>();
-      for (const row of directoryRows) {
-        const key = nameKey(row.hrId);
-        if (key) displayByKey.set(key, row.displayName);
-      }
-      const display = (hrId: string | null | undefined, fallback: string) =>
-        displayByKey.get(nameKey(hrId)) ?? fallback;
+      // Same name resolution as the line board above, departed managers included (personNameLookup).
+      const display = await personNameLookup(directoryRows, [
+        ...regional.dsms.map((d) => d.hrId),
+        ...regional.topReps.flatMap((m) => [m.hrId, m.managerHrId]),
+      ]);
 
       // Same rule as the district and line boards — see splitDepartedRoster.
       const dsmRoster = splitDepartedRoster(regional.dsms, directoryRows);

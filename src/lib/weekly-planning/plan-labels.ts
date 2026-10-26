@@ -1,5 +1,6 @@
 import { utcDate } from "@/lib/format/cairo-datetime";
 import { planKindLabel, planSlotLabel } from "@/lib/weekly-planning/calendar";
+import { weekStartDateFromWeekKey } from "@/lib/weekly-planning/week";
 
 // Plain wording for the Weekly / Monthly Plan screens, notifications and emails.
 //
@@ -23,6 +24,28 @@ export function planPeriodLabel(startDate: string | null | undefined, endDate: s
   const end = dateOrEmpty(endDate);
   if (start && end) return start === end ? start : `${start} to ${end}`;
   return start || end;
+}
+
+/**
+ * `Week of 18 Oct` — a week named by the day it starts on, never by its code ("2026-W42") or a bare
+ * ISO date ("Week: 2026-10-24"). Takes the week's start date, or a week key it turns into one;
+ * "" when neither parses.
+ */
+export function weekOfLabel(weekStartOrKey: string | null | undefined): string {
+  const raw = String(weekStartOrKey ?? "").trim();
+  const start = weekStartDateFromWeekKey(raw) ?? raw;
+  const label = dateOrEmpty(start);
+  return label ? `Week of ${label.replace(/ \d{4}$/, "").replace(/^0/, "")}` : "";
+}
+
+/**
+ * The period a plan covers, in words: `Week of 18 Oct` for a weekly plan, `Aug 2026` for a monthly
+ * one. Falls back to the stored key only when nothing parses, so a code is the last resort.
+ */
+export function planPeriodShortLabel(plan: { periodKey: string; periodStartDate?: string | null; planKind: string }): string {
+  if (plan.planKind === "weekly") return weekOfLabel(plan.periodStartDate || plan.periodKey) || plan.periodKey;
+  const month = /^\d{4}-\d{2}$/.test(plan.periodKey) ? dateOrEmpty(`${plan.periodKey}-01`).replace(/^\d{1,2} /, "") : "";
+  return month || planPeriodLabel(plan.periodStartDate, null) || plan.periodKey;
 }
 
 /** `Weekly plan` / `Monthly plan`; a kind it does not know is left as "Plan" rather than guessed. */

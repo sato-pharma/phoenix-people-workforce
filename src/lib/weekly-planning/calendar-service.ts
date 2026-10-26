@@ -22,6 +22,7 @@ import {
   buildAreaRegionIndex,
   regionOfArea,
   resolvePlanItemArea,
+  planItemStoredRegion,
   resolvePlanItemRegion,
   sharedPlanningCalendarStatuses,
   mergeFullDayPlanItems,
@@ -423,7 +424,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const area = resolvePlanItemArea(row.area, medicalRepEmployee?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(header.employee_hr_id, row.activity_date)));
-    const region = resolvePlanItemRegion(row.location_text, medicalRepEmployee?.regionName, employee.regionName, regionOfArea(areaRegions, area));
+    const region = resolvePlanItemRegion(planItemStoredRegion(row.activity_type, row.location_text), medicalRepEmployee?.regionName, employee.regionName, regionOfArea(areaRegions, area));
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const employeeDisplayName = employee?.displayName || header.employee_name;
     const item: PlanningCalendarPlanItem = {

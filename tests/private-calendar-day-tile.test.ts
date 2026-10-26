@@ -83,6 +83,36 @@ function phoenixVisit(overrides: Partial<ManagerDayVisit> = {}): ManagerDayVisit
 }
 
 export function runPrivateCalendarDayTileTests(): void {
+  // ── ONE PERSON IS NAMED ONCE, WHATEVER SPELLING EACH SOURCE CARRIES (audit, 2026-10-26) ─────────────────────────
+  // The visit mirror names a rep by her full name and the Phoenix visit by her nickname; a text-only dedupe printed
+  // "WITH Hana Abdelaziz Samir Abdelaziz, Hana Abdelaziz". Same HR id → one name, the Phoenix visit's.
+  {
+    const tile = privateCalendarDayTile(
+      entry({
+        tileWith: ["Hana Abdelaziz Samir Abdelaziz"],
+        tileWithPeople: [{ hrId: "B-110", name: "Hana Abdelaziz Samir Abdelaziz" }],
+        managerVisits: [phoenixVisit({ withPeople: [{ hrId: "b110", name: "Hana Abdelaziz", role: "Medical rep" }] })],
+      }),
+    );
+    assert.deepEqual(tile?.withNames, ["Hana Abdelaziz"], "one person, one name — matched on the HR id in any spelling");
+
+    const two = privateCalendarDayTile(
+      entry({
+        tileWithPeople: [{ hrId: "B-110", name: "Hana Abdelaziz Samir Abdelaziz" }],
+        managerVisits: [phoenixVisit({ withPeople: [{ hrId: "B-94", name: "Taha Mohamed", role: "Manager" }] })],
+      }),
+    );
+    assert.deepEqual(two?.withNames, ["Hana Abdelaziz Samir Abdelaziz", "Taha Mohamed"], "two people stay two");
+
+    const legacy = privateCalendarDayTile(
+      entry({
+        tileWith: ["Mina Farouk"],
+        managerVisits: [phoenixVisit({ withPeople: [{ name: "mina farouk", role: "District Manager" }] })],
+      }),
+    );
+    assert.deepEqual(legacy?.withNames?.length, 1, "with no HR id on either side, the same text is still one person");
+  }
+
   // ── 1. A visit entry is a summary read from structured fields ────────────────────────────────────────────────
   {
     const tile = privateCalendarDayTile(entry({ tileAreas: ["Nasr City"], tileWith: ["Mina Farouk"] }));

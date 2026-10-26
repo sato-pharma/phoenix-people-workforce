@@ -512,8 +512,8 @@ async function loadWaitingOffPlanRows(input: { start: string; end: string; isTes
 }
 
 /** Who was on a ride-along beside the manager whose day it is: the rep first, then the others, each with their part. */
-function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Array<{ name: string; role: string }> {
-  const out: Array<{ name: string; role: string }> = [];
+function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Array<{ hrId: string; name: string; role: string }> {
+  const out: Array<{ hrId: string; name: string; role: string }> = [];
   const seen = new Set<string>([managerHrId]);
   for (const [column, role] of [
     ["rep_hr_id", "Medical rep"],
@@ -525,7 +525,7 @@ function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Arra
     const hrId = personKey(textOrNull(row[column]));
     if (!hrId || seen.has(hrId)) continue;
     seen.add(hrId);
-    out.push({ name: nameOf(names, hrId), role });
+    out.push({ hrId, name: nameOf(names, hrId), role });
   }
   return out;
 }

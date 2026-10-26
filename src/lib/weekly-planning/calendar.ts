@@ -296,6 +296,17 @@ export function resolvePlanItemRegion(
 }
 
 /**
+ * The region a plan item's own text names, or null. A Training item stores its FORMAT there ("Zoom",
+ * "Physical", "Other" — `normalizeTrainingFormat`), never a place, so it is not a region: the calendar
+ * filed "PHYSICAL" as a region band beside Delta 1 and Alex Center (NSM audit, 2026-10-26). A Training
+ * day then groups under the region `resolvePlanItemRegion` falls back to.
+ */
+export function planItemStoredRegion(activityType: string | null | undefined, locationText: string | null | undefined): string | null {
+  if (cleanText(activityType) === "Training") return null;
+  return cleanText(locationText) || null;
+}
+
+/**
  * One group per region however it was typed: a plan says "Delta 1" or "ALEX-BHR" where the employee
  * file says "Delta (1)" or "Alex-BHR", so the key drops case, brackets and punctuation.
  */
@@ -356,6 +367,26 @@ export function groupPlanItemsByRegion<T extends { area: string | null; region: 
     ...region,
     areas: groupBy(region.items, (item) => item.area, false, NO_AREA_LABEL),
   }));
+}
+
+export type PlanningTilePerson<T> = { items: T[]; key: string; slots: string | null };
+
+/**
+ * The people a month tile draws under one region: each PERSON once (NSM audit, 2026-10-26: the tile
+ * printed "Taha Mohamed" twice in one region — his AM and his PM were two different half-days, so
+ * `mergeFullDayPlanItems` rightly kept them apart). A person with more than one item reads
+ * "AM · PM" beside the name; one item reads as before. Order is the first item's.
+ */
+export function planningTilePeople<T extends { employeeHrId: string; id: string; time: string | null }>(items: T[]): PlanningTilePerson<T>[] {
+  const people = new Map<string, T[]>();
+  for (const item of items) {
+    const key = normalizedPlanningCalendarKey(item.employeeHrId) || item.id;
+    people.set(key, [...(people.get(key) ?? []), item]);
+  }
+  return [...people.entries()].map(([key, personItems]) => {
+    const slots = [...new Set(personItems.map((item) => cleanText(item.time)).filter(Boolean))];
+    return { items: personItems, key, slots: personItems.length > 1 && slots.length > 0 ? slots.join(" · ") : null };
+  });
 }
 
 export type PlaceEvidenceVisit = { areaName: string | null; date: string; hrId: string };

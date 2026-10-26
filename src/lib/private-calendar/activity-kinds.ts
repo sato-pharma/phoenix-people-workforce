@@ -186,6 +186,8 @@ export type ClassifiedDoubleVisitRow<T extends PairableDoubleVisitRow> = {
   row: T;
   /** On the rep's row of a paired chain: the senior manager who joined. */
   seniorName: string | null;
+  /** That senior manager's HR id, where the row carries it. */
+  seniorHrId?: string | null;
 };
 
 function hrKey(value: string | null | undefined) {
@@ -203,6 +205,7 @@ export function classifyDoubleVisitRows<T extends PairableDoubleVisitRow>(rows: 
     physicalId: row.id,
     row,
     seniorName: row.double_visitor2_name ?? null,
+    seniorHrId: row.double_visitor2_hr_id ?? null,
   }));
 
   const exact = new Map<string, number[]>();
@@ -227,6 +230,7 @@ export function classifyDoubleVisitRows<T extends PairableDoubleVisitRow>(rows: 
     const repRow = classified[partner];
     repRow.companion = "chain";
     repRow.seniorName = entry.row.double_visitor_name;
+    repRow.seniorHrId = entry.row.double_visitor_hr_id;
     entry.absorbed = true;
     entry.physicalId = repRow.physicalId;
     entry.bucket = repRow.bucket;
@@ -239,16 +243,28 @@ export function doubleVisitCompanions<T extends PairableDoubleVisitRow>(
   entry: ClassifiedDoubleVisitRow<T>,
   side: "performed" | "received",
 ): Array<string | null> {
+  return doubleVisitCompanionPeople(entry, side).map((person) => person.name);
+}
+
+/** The same people as `doubleVisitCompanions`, each with the HR id the row carries for them — the day tile dedupes on it. */
+export function doubleVisitCompanionPeople<T extends PairableDoubleVisitRow>(
+  entry: ClassifiedDoubleVisitRow<T>,
+  side: "performed" | "received",
+): Array<{ hrId: string | null; name: string | null }> {
   const { row } = entry;
+  const rep = { hrId: row.visited_employee_hr_id, name: row.visited_employee_name };
+  const visitor = { hrId: row.double_visitor_hr_id, name: row.double_visitor_name };
+  const hinge = { hrId: row.chain_hinge_hr_id ?? null, name: row.chain_hinge_name ?? null };
+  const senior = { hrId: entry.seniorHrId ?? null, name: entry.seniorName };
   if (side === "performed") {
-    if (entry.companion === "double") return [row.visited_employee_name];
+    if (entry.companion === "double") return [rep];
     // The senior manager's own row: the rep, and the manager in between.
-    if (row.resolved_via_chain) return [row.visited_employee_name, row.chain_hinge_name ?? null];
+    if (row.resolved_via_chain) return [rep, hinge];
     // The manager's row of a paired chain: the rep, and the senior manager who joined.
-    return [row.visited_employee_name, entry.seniorName];
+    return [rep, senior];
   }
-  if (entry.companion === "double") return [row.double_visitor_name];
+  if (entry.companion === "double") return [visitor];
   // An unpaired senior row reaches the rep with the manager in between.
-  if (row.resolved_via_chain) return [row.double_visitor_name, row.chain_hinge_name ?? null];
-  return [row.double_visitor_name, entry.seniorName];
+  if (row.resolved_via_chain) return [visitor, hinge];
+  return [visitor, senior];
 }

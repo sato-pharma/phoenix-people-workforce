@@ -19,3 +19,22 @@ export function resolveEmployeeDisplayName(
   const trimmedNickname = nickname?.trim();
   return trimmedNickname ? trimmedNickname : fullName;
 }
+
+/**
+ * Display only. A name stored ENTIRELY in capitals — "SAHAR EL GALLAD", the way the Source of Sales
+ * files carry every manager and a few HR rows were typed — reads as "Sahar El Gallad". A name with
+ * any lower-case letter is a spelling somebody chose ("AboElftouh", "Kamal eldeen") and is returned
+ * exactly as stored; a name with no Latin capitals at all (Arabic) is untouched.
+ *
+ * Never feed the result to identity matching, a legal document or a payroll export — those keep the
+ * stored full name, character for character.
+ */
+export function tidyAllCapitalsName(name: string): string {
+  if (!/[A-Z]/.test(name) || /[a-z]/.test(name)) return name;
+  return name.toLowerCase().replace(/(^|[\s\-'’.(/])([a-z])/g, (_match, edge: string, letter: string) => edge + letter.toUpperCase());
+}
+
+/** `resolveEmployeeDisplayName`, then `tidyAllCapitalsName`: the name a manager's screen prints. */
+export function resolvePersonDisplayName(fullName: string, nickname?: string | null, hrId?: string | null): string {
+  return tidyAllCapitalsName(resolveEmployeeDisplayName(fullName, nickname, hrId));
+}

@@ -108,6 +108,7 @@ import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
+import { planItemStoredRegion } from "@/lib/weekly-planning/calendar";
 import { viewerMayEditPlan } from "@/lib/weekly-planning/plan-editor-state";
 import { planEmailMetrics, planNounLabel, planSentenceLabel } from "@/lib/weekly-planning/plan-labels";
 import {
@@ -2957,7 +2958,8 @@ function mapApproverPlanItem(item: {
     isCoaching,
     notes: nullableText(item.notes),
     objective: nullableText(item.objective),
-    region: nullableText(item.location_text),
+    // A Training item's text is its format, never a region (planItemStoredRegion).
+    region: planItemStoredRegion(item.activity_type, item.location_text),
     // The approver calendar prints "with <repName>"; a Marketing Double Visit's partner is the name there.
     repName: isMarketingDoubleVisit(item.activity_type, item.activity_title)
       ? nullableText(item.attendees)

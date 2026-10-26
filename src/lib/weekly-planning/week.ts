@@ -180,6 +180,15 @@ function sundayFromWeekKey(weekKey: string): Date {
 }
 
 /**
+ * The Sunday a week key's week starts on, as YYYY-MM-DD — "2026-W42" is "2026-10-18" — or null for a
+ * string that is not a week key. The inverse of buildWeekKey, for wording a week by its date.
+ */
+export function weekStartDateFromWeekKey(weekKey: string | null | undefined): string | null {
+  const key = String(weekKey ?? "").trim();
+  return validateWeekKey(key) ? toDateStr(sundayFromWeekKey(key)) : null;
+}
+
+/**
  * Compute the UTC instant corresponding to a specific Africa/Cairo wall-clock time
  * (hour:minute, on the UTC calendar date given) — DST-safe. Builds a naive UTC
  * guess, reads back what wall-clock time that guess actually displays in
