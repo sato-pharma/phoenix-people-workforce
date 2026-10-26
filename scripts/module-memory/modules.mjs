@@ -170,9 +170,9 @@ export const MODULES = [
     globs: [
       "src/lib/sales/territory/**",
       "src/lib/sales/{attribution,brick,vs-target,rep,portal,targets}-*",
-      "src/lib/sales/{monthly-attribution,monthly-targets,employee-achievement,seat-area-scope,medical-rep-area-scope,closing-area-merges,channels-by-rep,sfe-performance,vs-target}.ts",
+      "src/lib/sales/{monthly-attribution,monthly-targets,employee-achievement,seat-area-scope,medical-rep-area-scope,closing-area-merges,channels-by-rep,sfe-performance,vs-target,seat-tenure-credit}.ts",
       "app/**/{targets,territory-drilldown,brick-coverage}/**",
-      "tests/*{attribution,achievement,brick,upper-egypt,kafr-el-sheikh,delta}*",
+      "tests/*{attribution,achievement,brick,upper-egypt,kafr-el-sheikh,delta,seat-tenure}*",
       "supabase/migrations/*{attribution,achievement,brick,monthly_targets}*",
     ],
     keywords: ["attribution", "achievement", "sales vs target", "monthly target", "monthly targets", "brick", "bricks", "line area map"],

@@ -64,7 +64,7 @@ export default async function EmployeePortalTeamPerformancePage({
 
   let data = null;
   try {
-    data = await getDsmTeamPerformance(access, { period: requestedPeriod });
+    data = await getDsmTeamPerformance(access, { period: requestedPeriod, creditRepsByTenure: true });
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals/team-performance", module: "team-performance", role: access.role, hrId: access.hrId },

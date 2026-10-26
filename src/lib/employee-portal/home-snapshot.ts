@@ -769,7 +769,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         crmComplianceFor(access, "dsm-crm-compliance", { reps: roster.reps, dsms: [], limit: Number.POSITIVE_INFINITY }),
       );
       const [team, directoryRows, servingRoster] = await Promise.all([
-        getDsmTeamPerformance(access, {}),
+        // Ranked by who made the sales: each month goes to the rep who held the seat then (owner, 26 Oct 2026).
+        getDsmTeamPerformance(access, { creditRepsByTenure: true }),
         getEmployeeDirectoryRows().catch(() => []),
         rosterPromise,
       ]);
@@ -818,7 +819,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       );
       const [national, repTeam, directoryRows, servingRoster] = await Promise.all([
         getNsmDsmPerformance(access, {}),
-        getDsmTeamPerformance(access, {}),
+        // Ranked by who made the sales: each month goes to the rep who held the seat then (owner, 26 Oct 2026).
+        getDsmTeamPerformance(access, { creditRepsByTenure: true }),
         getEmployeeDirectoryRows().catch(() => []),
         rosterPromise,
       ]);
