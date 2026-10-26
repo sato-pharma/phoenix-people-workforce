@@ -19,6 +19,8 @@
 //   • One product at a time (owner, 2026-09-19): a group row still totals VALUE only, and beside it the
 //     screen shows ONE picked product's own units there (weeklyStockProductUnitsByGroup).
 
+import { weeklyDistributorLabel } from "@/lib/sales/weekly/display-labels";
+
 export const WEEKLY_STOCK_COVER_LOW_WEEKS = 2;
 export const WEEKLY_STOCK_COVER_OVER_WEEKS = 8;
 /** How many week-of-month slots the average weekly sales looks back over. */
@@ -468,7 +470,7 @@ export function buildWeeklyStockView(
     .filter((cell) => {
       areaOptions.set(cell.areaCode ?? WEEKLY_STOCK_UNMAPPED_AREA, cell.areaName);
       if (areaFilter.size > 0 && !areaFilter.has(up(cell.areaCode ?? WEEKLY_STOCK_UNMAPPED_AREA))) return false;
-      branchOptions.set(cell.branchKey, `${cell.branchName} · ${cell.distributorName}`);
+      branchOptions.set(cell.branchKey, `${cell.branchName} · ${weeklyDistributorLabel(cell.distributorName, cell.distributorCode)}`);
       if (branchFilter.size > 0 && !branchFilter.has(up(cell.branchKey))) return false;
       if (statusFilter.size > 0 && !statusFilter.has(cell.status)) return false;
       return true;

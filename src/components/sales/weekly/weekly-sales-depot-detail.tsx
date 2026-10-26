@@ -21,6 +21,7 @@ import {
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
+import { weeklyAreaLabel, weeklyDistributorLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import {
   WEEKLY_SALES_DETAIL_BASIS_LABELS,
   WEEKLY_SALES_DETAIL_MOVEMENT_LABELS,
@@ -189,10 +190,13 @@ export function WeeklySalesDepotDetail({
 
   const weekOptions = useMemo(() => (view?.availableWeeks ?? []).map((o) => ({ code: o.code, label: o.name })), [view]);
   const distributorOptions = useMemo(
-    () => (view?.availableDistributors ?? []).map((o) => ({ code: o.code, label: o.name })),
+    () => (view?.availableDistributors ?? []).map((o) => ({ code: o.code, label: weeklyDistributorLabel(o.name, o.code) })),
     [view],
   );
-  const areaOptions = useMemo(() => (view?.availableAreas ?? []).map((o) => ({ code: o.code, label: o.name })), [view]);
+  const areaOptions = useMemo(
+    () => (view?.availableAreas ?? []).map((o) => ({ code: o.code, label: weeklyAreaLabel(o.name) })),
+    [view],
+  );
   const depotOptions = useMemo(() => (view?.availableBranches ?? []).map((o) => ({ code: o.code, label: o.name })), [view]);
   const productOptions = useMemo(() => (view?.availableProducts ?? []).map((o) => ({ code: o.code, label: o.name })), [view]);
 
@@ -818,7 +822,10 @@ const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
 const cellKey = (cell: WeeklySalesDetailCell) => `${cell.branchKey}|${cell.productCode}|${cell.areaCode ?? ""}`;
 
 function cellPlace(cell: WeeklySalesDetailCell, isRep: boolean): string {
-  return (isRep ? [cell.areaName, cell.distributorName] : [cell.areaName, cell.regionName, cell.distributorName])
+  const area = cell.areaName ? weeklyAreaLabel(cell.areaName) : "";
+  const region = cell.regionName ? weeklyRegionLabel(cell.regionName) : "";
+  const distributor = weeklyDistributorLabel(cell.distributorName, cell.distributorCode);
+  return (isRep ? [area, distributor] : [area, region, distributor])
     .filter(Boolean)
     .join(" · ");
 }
@@ -990,6 +997,24 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
 /** One product's own units at each group row, by the row's code (weeklySalesDetailProductUnitsByGroup). */
 type GroupUnits = { productName: string; byCode: Record<string, WeeklySalesDetailProductUnits> };
 
+/** A group row's name for the screen: distributors, areas and regions are relabelled, a branch is as filed (display only). */
+function groupName(nameLabel: string, row: WeeklySalesDetailGroupRow): string {
+  if (nameLabel === "Distributor") return weeklyDistributorLabel(row.name, row.code);
+  if (nameLabel === "Area") return weeklyAreaLabel(row.name);
+  if (nameLabel === "Region") return weeklyRegionLabel(row.name);
+  return row.name;
+}
+
+/** The line under a group's name: an area's region, or a depot's "Region · Distributor" (the rep's view has the distributor alone). */
+function groupParent(nameLabel: string, row: WeeklySalesDetailGroupRow): string {
+  if (!row.parentName) return "";
+  if (nameLabel === "Area") return weeklyRegionLabel(row.parentName);
+  if (nameLabel !== "Branch") return row.parentName;
+  const parts = row.parentName.split(" · ");
+  if (parts.length === 1) return weeklyDistributorLabel(parts[0]);
+  return [weeklyRegionLabel(parts[0]), ...parts.slice(1).map((part) => weeklyDistributorLabel(part))].join(" · ");
+}
+
 /** A row with no code of its own ("Region not mapped") has nothing to filter the page by, so its name is not a link. */
 function GroupTable({
   nameLabel,
@@ -1032,8 +1057,8 @@ function GroupTable({
             {rows.map((row) => (
               <tr key={`${row.code}|${row.parentName}`} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
-                  <DrillName name={row.name} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
-                  {row.parentName ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.parentName}</p> : null}
+                  <DrillName name={groupName(nameLabel, row)} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
+                  {row.parentName ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{groupParent(nameLabel, row)}</p> : null}
                   <div className="mt-1.5">
                     <MovementBadge movement={weeklySalesMovement(0, row.value)} />
                   </div>
@@ -1067,9 +1092,9 @@ function GroupTable({
               <div className="min-w-0 flex-1 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <DrillName name={row.name} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
+                    <DrillName name={groupName(nameLabel, row)} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
                     <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                      {[row.parentName, `${row.productCount} products`, `${row.soldCount} sold`, `${row.returnsCount} returns`]
+                      {[groupParent(nameLabel, row), `${row.productCount} products`, `${row.soldCount} sold`, `${row.returnsCount} returns`]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>

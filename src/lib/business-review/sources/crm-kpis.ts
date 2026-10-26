@@ -21,6 +21,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getKpisBoard, kpiTeamFigures, sumKpiTeamTotals, type KpiRepRow } from "@/lib/crm/kpis-board";
 import type { KpiRules } from "@/lib/crm/phoenix-kpi-rules";
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** A team's plan KPIs and call rate, in the board's own arithmetic. */
@@ -88,7 +89,7 @@ export function reviewKpiMonthOf(input: {
   });
   const byManager = new Map<string, KpiRepRow[]>();
   for (const row of rows) {
-    const manager = row.managerName?.trim() || NO_MANAGER_RECORDED;
+    const manager = tidyAllCapitalsName(row.managerName?.trim() ?? "") || NO_MANAGER_RECORDED;
     byManager.set(manager, [...(byManager.get(manager) ?? []), row]);
   }
   return {

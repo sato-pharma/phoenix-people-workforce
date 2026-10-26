@@ -41,6 +41,7 @@ import {
   type WeeklyProductUnitsMatrix,
   type WeeklyProductUnitsRow,
 } from "@/lib/sales/weekly/product-units-shape";
+import { weeklyAreaLabel, weeklyPersonLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 
 const EM = "—";
@@ -389,13 +390,13 @@ export function WeeklyProductUnitsView({
                         {rowHeading(row)}
                       </td>
                       <td className={cellClassName}>
-                        {row.areaName ?? (isTotal ? "" : <span className="text-slate-300">{EM}</span>)}
+                        {(row.areaName ? weeklyAreaLabel(row.areaName) : null) ?? (isTotal ? "" : <span className="text-slate-300">{EM}</span>)}
                       </td>
                       <td className={cellClassName}>
                         {isTotal ? (
                           row.kind === "grandTotal" ? "" : row.lineName
                         ) : (
-                          row.managerName ?? <span className="text-slate-300">{EM}</span>
+                          (row.managerName ? weeklyPersonLabel(row.managerName) : null) ?? <span className="text-slate-300">{EM}</span>
                         )}
                       </td>
                       <td className={cellClassName}>
@@ -403,7 +404,7 @@ export function WeeklyProductUnitsView({
                           <span className="flex items-center gap-2">
                             <RegionSwatch regionCode={row.regionCode} />
                             <span className={row.kind === "grandTotal" ? "" : "text-slate-500"}>
-                              {row.regionName}
+                              {weeklyRegionLabel(row.regionName)}
                             </span>
                           </span>
                         ) : isTotal ? (

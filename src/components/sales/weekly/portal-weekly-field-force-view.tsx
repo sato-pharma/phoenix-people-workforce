@@ -49,6 +49,7 @@ import type {
   FieldForceRep,
   PortalWeeklyFieldForce,
 } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { weeklyAreaLabel, weeklyPersonLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 
 // ── formatting (kept identical to the sibling tab so one screen speaks one language) ──────────
@@ -135,7 +136,7 @@ export function PortalWeeklyFieldForceView({
     const byLine = new Map<string, Map<string, FieldForceRep[]>>();
     for (const rep of rows) {
       const line = rep.lineName || rep.lineCode || "Unassigned line";
-      const region = rep.regionName || "No region";
+      const region = weeklyRegionLabel(rep.regionName) || "No region";
       const regions = byLine.get(line) ?? new Map<string, FieldForceRep[]>();
       regions.set(region, [...(regions.get(region) ?? []), rep]);
       byLine.set(line, regions);
@@ -158,7 +159,7 @@ export function PortalWeeklyFieldForceView({
 
   const showLineBands = groups.length > 1;
   // One region across the whole view means the region is the viewer's own scope, not a grouping.
-  const showRegionBands = new Set(rows.map((rep) => rep.regionName || "No region")).size > 1;
+  const showRegionBands = new Set(rows.map((rep) => weeklyRegionLabel(rep.regionName) || "No region")).size > 1;
 
   if (!fieldForce || fieldForce.reps.length === 0) {
     return (
@@ -355,7 +356,7 @@ export function PortalWeeklyFieldForceView({
                             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                               <span className="flex min-w-0 items-center gap-2">
                                 <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
-                                <span className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
+                                <span className="break-words text-phx-2xs font-black tracking-[0.06em] text-slate-600">
                                   {region.region}
                                 </span>
                               </span>
@@ -406,7 +407,7 @@ export function PortalWeeklyFieldForceView({
                     <div className="flex items-baseline justify-between gap-3 border-y border-slate-200 bg-slate-50 px-4 py-1.5">
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
-                        <span className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
+                        <span className="break-words text-phx-2xs font-black tracking-[0.06em] text-slate-600">
                           {region.region}
                         </span>
                       </span>
@@ -510,14 +511,14 @@ function RepRow({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="min-w-0 break-words text-sm font-black text-slate-900">{rep.label}</span>
+                <span className="min-w-0 break-words text-sm font-black text-slate-900">{weeklyPersonLabel(rep.label)}</span>
                 <AttributionDot rep={rep} />
               </div>
               <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
-                {rep.areaName ?? "—"}
+                {rep.areaName ? weeklyAreaLabel(rep.areaName) : "—"}
                 {rep.regionName ? (
-                  <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-                    {rep.regionName}
+                  <span className="ml-1.5 text-phx-2xs font-bold tracking-wide text-slate-400">
+                    {weeklyRegionLabel(rep.regionName)}
                   </span>
                 ) : null}
               </p>
@@ -526,7 +527,7 @@ function RepRow({
                   <span className="mr-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
                     District manager
                   </span>
-                  {rep.managerName}
+                  {weeklyPersonLabel(rep.managerName)}
                 </p>
               ) : null}
             </div>
@@ -602,8 +603,8 @@ function ProductGrid({
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-3 py-2">
         <Package className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-        <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-500">
-          {`${rep.label} · units per product, week by week`}
+        <p className="min-w-0 break-words text-phx-2xs font-black tracking-[0.04em] text-slate-500">
+          {`${weeklyPersonLabel(rep.label)} · units per product, week by week`}
         </p>
         <span className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           {`${rep.products.length} product${rep.products.length === 1 ? "" : "s"} · ${rep.lineName}`}
@@ -756,9 +757,15 @@ function RepCard({
             <UserRound className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="break-words text-sm font-black text-slate-900">{rep.label}</p>
-            <p className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-              {[rep.areaName, rep.regionName, rep.managerName].filter(Boolean).join(" · ") || rep.lineName}
+            <p className="break-words text-sm font-black text-slate-900">{weeklyPersonLabel(rep.label)}</p>
+            <p className="break-words text-phx-2xs font-bold tracking-wide text-slate-400">
+              {[
+                rep.areaName ? weeklyAreaLabel(rep.areaName) : null,
+                rep.regionName ? weeklyRegionLabel(rep.regionName) : null,
+                rep.managerName ? weeklyPersonLabel(rep.managerName) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || rep.lineName}
             </p>
           </div>
         </div>

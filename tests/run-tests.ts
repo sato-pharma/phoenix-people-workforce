@@ -1364,6 +1364,7 @@ import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runPortalSosNoCoverageBannerTests } from "./portal-sos-no-coverage-banner.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
 import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
+import { runWeeklyDisplayLabelsTests } from "./weekly-display-labels.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runDmSalesScopeFailClosedTests } from "./dm-sales-scope-fail-closed.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
@@ -11232,6 +11233,10 @@ await runTest(
 await runTest(
   "the public surface answers less and costs less: /api/readyz reads one id instead of an exact count and reuses a successful workflow-registry audit for a minute (never a failed one), /api/health/email tells an anonymous caller only its status, and no response carries X-Powered-By",
   runPublicSurfaceHardeningTests,
+);
+await runTest(
+  "Weekly Sales screens print display labels, never stored spellings: a region typed in capitals and a manager typed in capitals read in title case, a distributor reads its registry name by code or by name (overseas to Overseas, Ibn sina to Ibn Sina, ramco to RAMCO), an area reads Sohag 1, October - Zayed and Port Said - Damietta, and the dashboard payload keeps every code and figure untouched",
+  runWeeklyDisplayLabelsTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

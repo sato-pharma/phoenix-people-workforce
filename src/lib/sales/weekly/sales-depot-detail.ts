@@ -31,6 +31,7 @@
 // A non-cumulative distributor (Direct) and an untagged upload cover exactly one week each.
 
 import { weeklyDistributorIsCumulative } from "@/lib/sales/weekly/distributors";
+import { weeklyDistributorLabel } from "@/lib/sales/weekly/display-labels";
 import type { WeeklyFilterMode } from "@/lib/sales/weekly/types";
 
 /** Filter code for depots that carry no area mapping — the same code Weekly Stock uses. */
@@ -701,7 +702,7 @@ export function buildWeeklySalesDepotDetail(input: {
       if (distributorFilter.size > 0 && !distributorFilter.has(cell.distributorCode)) return false;
       areaOptions.set(cell.areaCode ?? WEEKLY_SALES_DETAIL_UNMAPPED_AREA, cell.areaName);
       if (areaFilter.size > 0 && !areaFilter.has(up(cell.areaCode ?? WEEKLY_SALES_DETAIL_UNMAPPED_AREA))) return false;
-      branchOptions.set(cell.branchKey, `${cell.branchName} · ${cell.distributorName}`);
+      branchOptions.set(cell.branchKey, `${cell.branchName} · ${weeklyDistributorLabel(cell.distributorName, cell.distributorCode)}`);
       if (branchFilter.size > 0 && !branchFilter.has(up(cell.branchKey))) return false;
       productOptions.set(cell.productCode, cell.productName);
       if (productFilter.size > 0 && !productFilter.has(cell.productCode)) return false;
