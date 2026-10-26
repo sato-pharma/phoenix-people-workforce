@@ -56,30 +56,29 @@ export function DirectOrdersTabStrip({
   if (tabs.length === 0) return null;
   const control = rounded ? "rounded-lg" : "";
   return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control}`} role="tablist">
-        {tabs.map((key) => {
-          const active = activeTab === key;
-          return (
-            <Link
-              key={key}
-              href={key === "overview" ? basePath : `${basePath}?view=${key}`}
-              role="tab"
-              aria-selected={active}
-              className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control} ${
-                active ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
-              }`}
-            >
-              {TAB_LABEL[key]}
-              {key === "needs-action" && needsActionCount > 0 ? (
-                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
-                  {needsActionCount}
-                </span>
-              ) : null}
-            </Link>
-          );
-        })}
-      </div>
+    // The tabs WRAP onto a second row rather than scroll sideways (fits-the-screen golden rule).
+    <div className={`inline-flex max-w-full flex-wrap border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control}`} role="tablist">
+      {tabs.map((key) => {
+        const active = activeTab === key;
+        return (
+          <Link
+            key={key}
+            href={key === "overview" ? basePath : `${basePath}?view=${key}`}
+            role="tab"
+            aria-selected={active}
+            className={`min-h-[40px] px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control} ${
+              active ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+            }`}
+          >
+            {TAB_LABEL[key]}
+            {key === "needs-action" && needsActionCount > 0 ? (
+              <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
+                {needsActionCount}
+              </span>
+            ) : null}
+          </Link>
+        );
+      })}
     </div>
   );
 }

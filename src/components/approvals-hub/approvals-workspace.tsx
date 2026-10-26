@@ -165,13 +165,15 @@ export function ApprovalsWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1 overflow-x-auto border-b border-phx-line">
+      {/* The tabs WRAP onto a second row: at 375px a Leave strip is 513px and a Plan strip 935px, and
+          a sideways-scrolling strip hides the tabs past the edge (the fits-the-screen golden rule). */}
+      <div className="flex flex-wrap gap-x-1 border-b border-phx-line">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
+            className={`flex items-center gap-2 px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
               tab === key
                 ? "border-b-2 border-orange-500 text-slate-900"
                 : "border-b-2 border-transparent text-slate-400 hover:text-slate-600"
