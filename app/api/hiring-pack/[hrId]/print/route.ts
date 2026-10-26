@@ -109,12 +109,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // or `office`). Absent — every link that predates the prompt — is the registered head office.
     const address = url.searchParams.get("address");
 
-    const paper = await renderHiringPaper({
+    // EVERYTHING THAT DECIDES WHICH PAPER THIS IS, written ONCE and spread into BOTH renders below.
+    // The `format=pdf` branch renders its own single copy, and when it listed these by hand it
+    // dropped `deviceId` - so the same URL with `&format=pdf` printed a custody receipt with its
+    // technical block and item values as ruled blanks (OF-0006, 26 Oct 2026) while the page filled
+    // them. A parameter added here now reaches the page AND the file; the only things a render adds
+    // on its own are the copy count and `statedCopies`, which differ by design.
+    const paperInput = {
       access,
       address,
-      copies: url.searchParams.get("copies"),
       // Which DEVICE a custody receipt is for. Only the two custody forms read it; every other
-      // document ignores it, and absent is the normal case — see renderHiringPaper. Not validated
+      // document ignores it, and absent is the normal case - see renderHiringPaper. Not validated
       // here on purpose: `getCustodyDeviceFacts` answers null for an id that names nothing, and a
       // custody receipt must always print. Refusing to render a signed instrument because a lookup
       // missed would be a worse failure than the ruled blanks it falls back to.
@@ -131,6 +136,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       // the renderer resolves the version this employee signed. The parameter is only for
       // deliberately asking for a superseded template from the Archive.
       version: url.searchParams.get("version"),
+    };
+
+    const paper = await renderHiringPaper({
+      ...paperInput,
+      copies: url.searchParams.get("copies"),
     });
 
     // Every refusal already carries the status this route has always answered, so the shaping here
@@ -246,18 +256,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
         // so it is numbered against itself. The copies are byte-identical by construction, so this
         // is the same output for one Chromium run instead of four.
         const one = await renderHiringPaper({
-          access,
-          address,
+          ...paperInput,
           copies: "1",
-          document: requested,
-          hrId,
-          // THE SAME MARKS AS THE PAGE ABOVE. This renders its own single copy, so a
-          // selection left out here would download an unstamped PDF of a stamped page.
-          marks: url.searchParams.get("marks"),
           // The letter that says how many copies it was drawn up in must say the count being
           // printed, not the one copy drawn here.
           statedCopies: url.searchParams.get("copies"),
-          version: url.searchParams.get("version"),
         });
         if (!one.ok) {
           return NextResponse.json({ error: one.code, message: one.message }, { status: one.status });
