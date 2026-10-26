@@ -57,6 +57,7 @@ import { NO_SHUTTER_FIX, readShutterFix, type ShutterFix } from "@/lib/evidence/
 import { LINK_STATUS_PRECEDENCE, linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import {
   describeRestoredDraft,
+  describeUnsendableQueue,
   isDraftWorthKeeping,
   MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS,
   MARKETING_DRAFT_VERSION,
@@ -298,10 +299,14 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>, viewerHr
   return {
     dismissExpired: () => setUnsendableOwners([]),
     enqueue,
-    // Another person's lost submission is theirs to be told about, not the viewer's.
-    expiredCount: unsendableOwners.filter((owner) => owner === "" || owner === viewer).length,
     isOnline,
     queueLength: queue.filter((item) => isOwnedByViewer(item.ownerHrId, viewerHrId)).length,
+    // Another person's lost submission is theirs to be told about, not the viewer's. An entry with no
+    // owner can only be unusable for that reason, so it is counted apart from the viewer's aged ones.
+    unsendable: {
+      noOwner: unsendableOwners.filter((owner) => owner === "").length,
+      tooOld: unsendableOwners.filter((owner) => owner !== "" && owner === viewer).length,
+    },
   };
 }
 
@@ -2074,7 +2079,8 @@ export function MarketingValidationWorkspace() {
       return { ...current, rows: [...rows, ...current.rows], summary };
     });
   }, []);
-  const { dismissExpired, enqueue, expiredCount, isOnline, queueLength } = useOfflineQueue(replaySubmission, workspace.viewerHrId);
+  const { dismissExpired, enqueue, isOnline, queueLength, unsendable } = useOfflineQueue(replaySubmission, workspace.viewerHrId);
+  const unsendableNotice = describeUnsendableQueue(unsendable);
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -3055,12 +3061,12 @@ export function MarketingValidationWorkspace() {
         </div>
       ) : null}
 
-      {/* --------- Offline Submissions That Aged Out --------- */}
-      {hasMounted && expiredCount > 0 ? (
+      {/* --------- Offline Submissions That Can No Longer Be Sent --------- */}
+      {hasMounted && unsendableNotice ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-red-200 bg-red-50 px-3.5 py-2.5 text-phx-md font-semibold text-red-800">
           <span className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {`${expiredCount} offline submission${expiredCount > 1 ? "s were" : " was"} waiting to sync but the live photo and location on ${expiredCount > 1 ? "them are" : "it is"} now too old to count as evidence of the visit. Capture ${expiredCount > 1 ? "them" : "it"} again.`}
+            {unsendableNotice}
           </span>
           <button
             className="shrink-0 rounded-none border border-red-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-red-800 hover:bg-red-100"
