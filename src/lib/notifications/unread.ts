@@ -13,6 +13,8 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { NOTIFICATION_STATE_CONFLICT_TARGET, testNoticeVisibleToViewer, viewerIdentity } from "@/lib/notifications/in-app";
+import { todayInCairo } from "@/lib/date-only";
+import { noticeIsDue } from "@/lib/notifications/due-today";
 import { canViewerSeeNotification } from "@/lib/notifications/recipients";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -35,6 +37,7 @@ type EventRow = {
   id?: string | number | null;
   metadata?: unknown;
   recipients?: unknown;
+  scheduled_for?: string | null;
   subject?: string | null;
   test_login_id?: string | null;
 };
@@ -61,15 +64,18 @@ export async function listUnreadModuleNotices(
   const viewerHrId = identity.hrId;
   const supabase = getSupabaseAdmin();
   const since = new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000).toISOString();
+  // A reminder written ahead of time is not unread until its day, exactly as on the bell (noticeIsDue).
+  const today = todayInCairo();
 
   // Each event row is per-recipient (`employee_hr_id` is the person it was written for), so one filter
   // finds the viewer's own.
   const { data, error } = await supabase
     .from("notification_events")
-    .select("id,subject,event_type,action_url,created_at,employee_hr_id,recipients,metadata,test_login_id")
+    .select("id,subject,event_type,action_url,created_at,employee_hr_id,recipients,metadata,scheduled_for,test_login_id")
     .eq("module", input.module)
     .eq("employee_hr_id", identity.hrId.toUpperCase())
     .gte("created_at", since)
+    .lte("scheduled_for", today)
     .order("created_at", { ascending: false })
     .limit(input.limit);
   if (error) throw error;
@@ -82,7 +88,8 @@ export async function listUnreadModuleNotices(
         recipients: Array.isArray(row.recipients) ? row.recipients : [],
       }),
     )
-    .filter((row) => testNoticeVisibleToViewer(identity.testLoginId, row));
+    .filter((row) => testNoticeVisibleToViewer(identity.testLoginId, row))
+    .filter((row) => noticeIsDue(row, today));
   const ids = rows.map((row) => String(row.id ?? "")).filter(Boolean);
   if (ids.length === 0) return [];
 
