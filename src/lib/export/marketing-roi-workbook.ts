@@ -1,3 +1,4 @@
+import { countOf } from "@/lib/i18n/format";
 import ExcelJS from "exceljs";
 
 // The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
@@ -182,7 +183,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
   totals[11] = report.rows.reduce((s, r) => s + r.requiredRoiValue, 0);
   totals[12] = report.rows.reduce((s, r) => s + r.expectedRoiValue, 0);
   totals[13] = report.rows.reduce((s, r) => s + r.actualSalesValue, 0);
-  writeHouseTable(requestSheet, 1, { columns: requestColumns, rows: requestRows, title: "Requests — actual vs required return", totals, note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.` });
+  writeHouseTable(requestSheet, 1, { columns: requestColumns, rows: requestRows, title: "Requests — actual vs required return", totals, note: `${countOf(report.rows.length, "request")}. Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.` });
 
   // ── Products ──────────────────────────────────────────────────────────────
   const productSheet = workbook.addWorksheet(sanitizeSheetName("Products"));
@@ -262,7 +263,7 @@ export async function buildMarketingRoiReportWorkbook(input: {
       ],
       rows: matchedSales.map((r) => [r.requestCode, r.invoicePeriod, r.distributorName, r.productName, r.customerCode, r.customerName ?? "—", r.regionName ?? "—", r.qty, r.value]),
       totals: ["TOTAL", null, null, null, null, null, null, totalUnits, totalValue],
-      note: `${matchedSales.length} matched line(s) across ${requestCount} request(s).`,
+      note: `${matchedSales.length} matched line(s) across ${countOf(requestCount, "request")}.`,
     });
   }
 
@@ -384,7 +385,7 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
       { label: "Shared customer codes", width: 40 },
     ],
     rows: data.reverseLookup.map((r) => [r.requestCode, r.requesterName ?? "—", r.status, r.sharedPharmacyCodes.length, r.sharedPharmacyCodes.join(", ")]),
-    note: data.reverseLookup.length === 0 ? "No other in-scope requests share these pharmacies." : `${data.reverseLookup.length} related request(s).`,
+    note: data.reverseLookup.length === 0 ? "No other in-scope requests share these pharmacies." : `${countOf(data.reverseLookup.length, "related request")}.`,
   });
 
   return bufferOf(workbook);

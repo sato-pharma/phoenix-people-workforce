@@ -1,5 +1,6 @@
 "use client";
 
+import { countOf } from "@/lib/i18n/format";
 import * as React from "react";
 import {
   AlertTriangle,
@@ -773,7 +774,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
         ) : null}
         {kpi.restrictedExcludedCount > 0 ? (
           <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-phx-paper px-2 py-1 text-phx-ink-soft">
-            {kpi.restrictedExcludedCount} request(s) with confidential products excluded
+            {countOf(kpi.restrictedExcludedCount, "request")} with confidential products excluded
           </span>
         ) : null}
       </div>

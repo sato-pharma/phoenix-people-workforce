@@ -4,7 +4,7 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { MarketAwarenessWorkspace } from "@/components/market-awareness/market-awareness-workspace";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canCreateActivity } from "@/lib/market-awareness/scope";
+import { canCreateActivity, seesEveryActivity } from "@/lib/market-awareness/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,7 @@ export default async function EmployeePortalMarketAwarenessPage() {
     >
       {/* `canCreate` decides whether the button is drawn. The route re-checks it on every POST — a
           hidden button is not access control. */}
-      <MarketAwarenessWorkspace canCreate={canCreateActivity(access)} />
+      <MarketAwarenessWorkspace canCreate={canCreateActivity(access)} seesAll={seesEveryActivity(access)} />
     </EmployeePortalPageShell>
   );
 }

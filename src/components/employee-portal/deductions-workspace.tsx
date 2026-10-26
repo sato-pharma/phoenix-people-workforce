@@ -14,6 +14,7 @@ import { deductionsCategoryLabel, deductionsUnitLabel } from "@/lib/deductions/c
 import {
   PORTAL_LEDGER_ANY,
   PORTAL_LEDGER_OUTCOME_EXPLANATION,
+  PORTAL_LEDGER_NO_REPLY_NOTE,
   PORTAL_LEDGER_OUTCOME_LABEL,
   filterPortalLedgerRows,
   portalLedgerCategories,
@@ -71,6 +72,12 @@ function formatDeductionDate(value: string): string {
 /** Days read as "2 Days"; an amount-unit deduction is money, so it reads as EGP like the admin screen. */
 function formatDeductionValue(value: number, unit: DeductionsUnit): string {
   return unit === "amount" ? formatMoney(value) : `${formatNumber(value)} ${deductionsUnitLabel(unit)}`;
+}
+
+/** "Finger Print" and "Fingerprint", "Unpaid Vacations" and "Unpaid Vacation" are one label. */
+function sameLabel(left: string, right: string) {
+  const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/s$/, "");
+  return key(left) === key(right);
 }
 
 function payrollColumnLabel(column: DeductionsSalaryRecordsColumn) {
@@ -322,7 +329,11 @@ export function DeductionsPortalWorkspace({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={OUTCOME_TONE[row.outcome]}>{PORTAL_LEDGER_OUTCOME_LABEL[row.outcome]}</Badge>
                     <Badge tone="neutral">{periodLabel(row.monthKey)}</Badge>
-                    <Badge tone="neutral">{payrollColumnLabel(row.payrollColumn)}</Badge>
+                    {/* The salary column only when it says something the category below does not —
+                        "FINGER PRINT" over "Fingerprint" read as the same word twice. */}
+                    {sameLabel(payrollColumnLabel(row.payrollColumn), deductionsCategoryLabel(row.category)) ? null : (
+                      <Badge tone="neutral">{payrollColumnLabel(row.payrollColumn)}</Badge>
+                    )}
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-700">{deductionsCategoryLabel(row.category)}</p>
                   <p className="mt-1 text-xs text-slate-600">{PORTAL_LEDGER_OUTCOME_EXPLANATION[row.outcome]}</p>
@@ -462,9 +473,7 @@ export function DeductionsPortalWorkspace({
                 </div>
               ) : (
                 <p className="mt-3 text-xs font-semibold text-slate-500">
-                  {ownRow
-                    ? "You can reply to HR on this one once it is released with the month's deductions."
-                    : "Manager view is read-only."}
+                  {ownRow ? PORTAL_LEDGER_NO_REPLY_NOTE[row.outcome] : "Manager view is read-only."}
                 </p>
               )}
             </Card>

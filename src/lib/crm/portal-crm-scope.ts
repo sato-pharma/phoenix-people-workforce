@@ -19,6 +19,7 @@
 // seats: their line (and a second line from its overrides), downward only, nobody at or above them.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { countOf } from "@/lib/i18n/format";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
@@ -67,10 +68,10 @@ export function toPortalCrmScopeView(scope: CrmViewerScope, role: string): Porta
     role === "Medical Rep"
       ? "Your own visits"
       : role === "District Manager"
-        ? `Your district · ${agentCount} team member(s)`
+        ? `Your district · ${countOf(agentCount, "team member")}`
         : role === "Regional Manager"
-          ? `Your region · ${agentCount} team member(s)`
-          : `Your line · ${agentCount} team member(s)`;
+          ? `Your region · ${countOf(agentCount, "team member")}`
+          : `Your line · ${countOf(agentCount, "team member")}`;
   return { role, scopeSummary: agentCount === 0 ? "No team resolved" : summary, agentCount };
 }
 

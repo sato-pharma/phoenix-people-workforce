@@ -50,6 +50,7 @@ import {
 } from "@/lib/outstation/approval-state";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
+import { flagDuplicateTripRows } from "@/lib/outstation/duplicate-trip-guard";
 import {
   buildExpenseApprovalFilterOptions,
   countActiveExpenseApprovalFilters,
@@ -421,6 +422,10 @@ export function ExpenseApprovalsWorkspace({
   // Month/employee choices come from the loaded queue itself, so every option has at least one
   // trip behind it — a fixed calendar or the full directory would offer dead ends.
   const filterOptions = useMemo(() => buildExpenseApprovalFilterOptions(records), [records]);
+  // Same employee, same day, same destination, both still live: a trip claimed twice. Read over the
+  // WHOLE loaded queue (not the open tab), so a pending copy of an already-approved trip is flagged.
+  // A flag is a review signal only — nothing is refused or held by it (duplicate-trip-guard.ts).
+  const duplicateFlags = useMemo(() => flagDuplicateTripRows(records), [records]);
   const activeFilterCount = countActiveExpenseApprovalFilters(filters);
   const narrowed = activeFilterCount > 0 || search.trim().length > 0;
 
@@ -1262,6 +1267,7 @@ export function ExpenseApprovalsWorkspace({
                             {record.tripId} · {record.location || record.to || "—"}
                           </p>
                           <p className="mt-0.5 text-phx-xs text-slate-400">{formatDateValue(record.date)}</p>
+                          <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="font-mono text-sm font-bold text-slate-900">{egp(decision.approvedAmount)}</p>
@@ -1303,6 +1309,7 @@ export function ExpenseApprovalsWorkspace({
           ) : (
             <ExpenseDecisionPanel
               key={selected.tripId}
+              duplicateOf={duplicateFlags.get(selected.tripId)}
               decision={decisionFor(selected)}
               onApprove={() => {
                 // Also clears a stale "Rejected" status, so a row can never be approved AND
@@ -1671,9 +1678,28 @@ function SystemNoteRewriteControl({
   );
 }
 
+/** "Same trip as OUTSTATION-292" — flat, square, amber; never a decision. */
+function DuplicateTripFlag({ copies, wide = false }: { copies?: string[]; wide?: boolean }) {
+  if (!copies || copies.length === 0) return null;
+  return (
+    <p
+      className={`mt-1 inline-flex items-start gap-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800 ${
+        wide ? "text-phx-xs" : "text-phx-2xs"
+      }`}
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+      <span className="break-words">
+        Same trip as {copies.join(", ")}
+        {wide ? " — same employee, same day, same destination" : ""}
+      </span>
+    </p>
+  );
+}
+
 function ExpenseDecisionPanel({
   record,
   decision,
+  duplicateOf,
   canDecide,
   onApprove,
   onReject,
@@ -1685,6 +1711,8 @@ function ExpenseDecisionPanel({
 }: {
   canDecide: boolean;
   decision: Decision;
+  /** Other live claims for the same employee, day and destination (duplicate-trip-guard.ts). */
+  duplicateOf?: string[];
   onApprove: () => void;
   onChangeAmount: (value: number) => void;
   onChangeReason: (value: string) => void;
@@ -1718,9 +1746,8 @@ function ExpenseDecisionPanel({
               {valuesOnly ? "Imported trip · values only" : "Trip under review"}
             </p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">{record.specialist || "Unassigned"}</h2>
-            <p className="mt-0.5 font-mono text-xs text-slate-400">
-              {record.hrId ? record.hrId : "HR ID not mapped"} · {record.tripId}
-            </p>
+            <p className="mt-0.5 font-mono text-xs text-slate-400">{record.tripId}</p>
+            <DuplicateTripFlag copies={duplicateOf} wide />
           </div>
           {/* A rejected trip used to read "Pending" here — the badge only knew about approval. */}
           {decision.hrApproved ? (

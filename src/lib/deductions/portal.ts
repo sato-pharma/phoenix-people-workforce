@@ -29,6 +29,7 @@ import { salaryRecordsColumnForCategory } from "./calculations.ts";
 import { listDeductionsComments, listRecentDeductionsComments } from "./comments.ts";
 import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
 import { resolveDisputeAudience, toDisputeAudience } from "./dispute-audience.ts";
+import { meaningfulHrText } from "./portal-ledger-filters.ts";
 import {
   buildDisputeBasis,
   type DisputeCandidateRow,
@@ -336,8 +337,8 @@ export function mapPortalLedgerRow(input: {
     chargedAmount,
     outcome,
     hrStatus: String(decision?.decision_status ?? "").trim() || "Pending",
-    hrResponse: String(decision?.decision_reason ?? "").trim() || null,
-    hrNote: String(decision?.hr_note ?? "").trim() || null,
+    hrResponse: meaningfulHrText(decision?.decision_reason),
+    hrNote: meaningfulHrText(decision?.hr_note),
     decidedByName: input.decidedByName,
     decidedAt: decision?.decided_at ?? null,
     // His ruling, 2026-10-09: a dispute is for money actually taken, so the comment box stays on

@@ -1,3 +1,4 @@
+import { countOf } from "@/lib/i18n/format";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free threshold module (it says so at the top of the file, and the plain-TS test loader
 // imports it directly) — so a server service can use it without dragging a component in.
@@ -8621,7 +8622,7 @@ export async function confirmDirectOrderCleanup(
         summary:
           `Pharmacy "${loser.pharmacyName}" (${loser.phoenixPharmacyCode}) merged into ` +
           `"${survivor.pharmacyName}" (${survivor.phoenixPharmacyCode}) — the same distributor customer ` +
-          `proves they are one pharmacy. ${(moved ?? []).length} request(s) moved. Reason: ${reason}`,
+          `proves they are one pharmacy. ${countOf((moved ?? []).length, "request")} moved. Reason: ${reason}`,
       });
     }
   }

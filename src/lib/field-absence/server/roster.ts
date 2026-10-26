@@ -14,6 +14,7 @@
  * holds no seat, so it never appears. Vacant seats hold no person and list nobody.
  */
 
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -126,7 +127,8 @@ export async function loadFieldAbsenceRoster(input: {
   const nameOf = (key: string | null) => {
     if (!key) return null;
     const employee = employeeByKey.get(key);
-    return employee ? employee.displayName || employee.fullName : null;
+    // "SAHAR EL GALLAD" and "Aya Mamdouh sdeek Ali" are stored that way; the calendar shows title case.
+    return employee ? tidyAllCapitalsName(employee.displayName || employee.fullName) : null;
   };
 
   const occupancyBySeat = new Map<string, OccupancyRow[]>();

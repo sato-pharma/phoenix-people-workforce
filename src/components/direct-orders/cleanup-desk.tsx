@@ -1,5 +1,6 @@
 "use client";
 
+import { countOf } from "@/lib/i18n/format";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -122,7 +123,7 @@ function LookAlikes({ groups }: { groups: DirectOrderCleanupLookAlike[] }) {
                   <p className="text-phx-xs text-slate-600">
                     {member.linkedCodes.length > 0 ? member.linkedCodes.join(" · ") : "no distributor code linked"}
                     {" · "}
-                    {member.openRequestCount} open request(s) · registered by {member.createdByName} on{" "}
+                    {countOf(member.openRequestCount, "open request")} · registered by {member.createdByName} on{" "}
                     {cairoStamp(member.createdAt)}
                   </p>
                   {member.approvedRequestCount > 0 ? (
@@ -236,9 +237,9 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
         return;
       }
       setOk(
-        `Done — ${data.pharmaciesMerged ?? 0} venue record(s) merged, ${data.requestsMoved ?? 0} request(s) moved, ` +
+        `Done — ${data.pharmaciesMerged ?? 0} venue record(s) merged, ${countOf(data.requestsMoved ?? 0, "request")} moved, ` +
           `${data.requestsCancelled ?? 0} duplicate(s) cancelled, ${data.codesRepaired ?? 0} code(s) repaired, ` +
-          `${data.requestsReleased ?? 0} held request(s) released.`,
+          `${countOf(data.requestsReleased ?? 0, "held request")} released.`,
       );
       setReason("");
       router.refresh();
@@ -356,7 +357,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                             <span className="block text-phx-xs text-slate-600">
                               {pharmacy.linkedCodes.length > 0 ? pharmacy.linkedCodes.join(" · ") : "no distributor code linked"}
                               {" · "}
-                              {pharmacy.openRequestCount} open request(s) · registered by {pharmacy.createdByName} on{" "}
+                              {countOf(pharmacy.openRequestCount, "open request")} · registered by {pharmacy.createdByName} on{" "}
                               {cairoStamp(pharmacy.createdAt)}
                             </span>
                             {pharmacy.approvedRequestCount > 0 ? (
@@ -370,7 +371,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                       ))}
                     </div>
                     <p className="mt-1.5 text-phx-xs text-slate-500">
-                      Kept because {merge.reason}. {merge.requestsMoved.length} open request(s)
+                      Kept because {merge.reason}. {countOf(merge.requestsMoved.length, "open request")}
                       {approvedMoving(merge) > 0
                         ? ` and ${approvedMoving(merge)} approved order(s) move across`
                         : " move across"}
@@ -478,7 +479,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffReleases)(release.pharmacyId)} className="mt-1" />
                     <span className="min-w-0">
                       <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                        {release.pharmacyName} ({release.pharmacyCode}) — {release.requests.length} held request(s)
+                        {release.pharmacyName} ({release.pharmacyCode}) — {countOf(release.requests.length, "held request")}
                       </span>
                       <span className="block text-phx-xs text-slate-600">
                         Once this venue is resolved, every one of its held requests enters the approval chain at

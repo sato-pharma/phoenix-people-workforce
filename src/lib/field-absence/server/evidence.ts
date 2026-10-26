@@ -64,14 +64,18 @@ function clock(minutes: number | null): string {
 /**
  * The CRM day's label for the screen. The old CRM's own description reads "Regular Visit: <the
  * customer or the rep's comment>", and a free-text comment has no place on a page that names people,
- * so only the visit type before the colon is kept. Phoenix CRM's label is already a count
+ * so only the visit type before the colon is kept, as "Regular visit in the old CRM". Phoenix CRM's label is already a count
  * ("Phoenix CRM: 3 visits") and stays whole.
  */
 export function crmDayLabel(detail: string | undefined, fallback: string): string {
   if (!detail) return fallback;
   if (detail.startsWith("Phoenix CRM:")) return detail;
   const colon = detail.indexOf(": ");
-  return colon > 0 ? `Old CRM: ${detail.slice(0, colon)}` : fallback;
+  if (colon <= 0) return fallback;
+  // "Regular Visit: …" reads "Regular visit in the old CRM" — a sentence, not a system prefix
+  // and a title-cased code (owner's NSM audit, 2026-10-26).
+  const type = detail.slice(0, colon).trim();
+  return `${type.charAt(0).toUpperCase()}${type.slice(1).toLowerCase()} in the old CRM`;
 }
 
 /**

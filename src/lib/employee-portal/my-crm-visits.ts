@@ -15,7 +15,10 @@ import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/c
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { queryCheckins, queryVisits, queryVisitsLimited, resolveVisitTime } from "@/lib/crm/reads";
 import type { VisitTimeSource } from "@/lib/crm/reads";
+import { crmRepDisplayName } from "@/lib/crm/rep-name";
 import { isFieldWorkVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
 
 export type MyCrmWindow = { dateFrom: string; dateTo: string };
@@ -124,8 +127,17 @@ export { TEAM_VISIT_ROW_CAP };
 // `agent_hr_id` on both column lists: a rep with no CRM id matches his check-ins on it (checkin-match).
 const CHECKIN_COLUMNS = "id,check_date,agent_crm_id,agent_hr_id,contact_crm_id,contact_name,address";
 
-function byVisitDateDesc(a: { visitDate: string | null }, b: { visitDate: string | null }): number {
-  return (b.visitDate ?? "").localeCompare(a.visitDate ?? "");
+/** Newest day first, and inside a day the latest visit first; a visit with no known time goes last. */
+function byVisitDateDesc(
+  a: { visitDate: string | null; visitTime?: string | null },
+  b: { visitDate: string | null; visitTime?: string | null },
+): number {
+  const byDay = (b.visitDate ?? "").slice(0, 10).localeCompare((a.visitDate ?? "").slice(0, 10));
+  if (byDay !== 0) return byDay;
+  const timeA = a.visitTime ? Date.parse(a.visitTime) : Number.NaN;
+  const timeB = b.visitTime ? Date.parse(b.visitTime) : Number.NaN;
+  if (Number.isNaN(timeA) || Number.isNaN(timeB)) return Number.isNaN(timeA) ? (Number.isNaN(timeB) ? 0 : 1) : -1;
+  return timeB - timeA;
 }
 
 /**
@@ -201,7 +213,7 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
       comment: row.comment,
       contactName: row.contact_name,
       customerName: row.customer_name,
-      doubleName: row.double_name,
+      doubleName: crmRepDisplayName(row.double_name),
       fieldWork: isFieldWorkVisit(row.visit_type, row.comment, row.visit_type_description),
       id: row.id,
       visitDate: row.visit_date,
@@ -238,7 +250,7 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
   );
   if (agentHrIds.length === 0) return [];
 
-  const [visits, checkins] = await Promise.all([
+  const [visits, checkins, names] = await Promise.all([
     // Hard-capped, DB-ordered (newest first) — NOT the full-scan queryVisits the self tabs use.
     // A manager's set is one-to-two orders of magnitude larger than one person's: the live Regional
     // Manager's 17-person subtree logged 9,253 visits in a 90-day window, which rendered a 5.1 MB
@@ -257,6 +269,9 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
       dateFrom: window.dateFrom,
       dateTo: window.dateTo,
     }),
+    // The rep's HR name: the CRM's agent_name is a login handle, and a few are a territory alone
+    // ("( Alex Center 2 / P )"), which names nobody.
+    namesByHrId(agentHrIds),
   ]);
 
   const index = indexCheckinsByAgentContactDay(checkins);
@@ -274,12 +289,12 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
       );
       const resolved = resolveVisitTime({ crmSaveDate: row.crm_save_date, nearestCheckinTime: match?.check_date ?? null });
       return {
-        agentName: row.agent_name,
+        agentName: tidyAllCapitalsName(names.get(row.agent_hr_id) ?? "") || crmRepDisplayName(row.agent_name),
         ampm: row.ampm,
         comment: row.comment,
         contactName: row.contact_name,
         customerName: row.customer_name,
-        doubleName: row.double_name,
+        doubleName: crmRepDisplayName(row.double_name),
         fieldWork: isFieldWorkVisit(row.visit_type, row.comment, row.visit_type_description),
         id: row.id,
         visitDate: row.visit_date,
@@ -317,7 +332,7 @@ export async function fetchMyDoubleVisits(hrId: string, window: MyCrmWindow): Pr
         contactName: row.contact_name,
         customerName: row.customer_name,
         id: row.id,
-        primaryAgentName: row.agent_name,
+        primaryAgentName: crmRepDisplayName(row.agent_name),
         visitDate: row.visit_date,
         visitTime: resolved.time,
         visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),

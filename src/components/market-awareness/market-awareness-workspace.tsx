@@ -569,7 +569,7 @@ function DeltaBlock({ after, before, label }: { after: number; before: number; l
 
 /* ─────────────────────────────── workspace ─────────────────────────────── */
 
-export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) {
+export function MarketAwarenessWorkspace({ canCreate, seesAll = false }: { canCreate: boolean; seesAll?: boolean }) {
   const [tab, setTab] = useState<"request" | "tracking">("request");
   // `null` means "not loaded yet", so loading is DERIVED. An effect that calls a loader which sets
   // state before its first `await` is still a synchronous setState, and that is a lint ERROR here.
@@ -746,6 +746,7 @@ export function MarketAwarenessWorkspace({ canCreate }: { canCreate: boolean }) 
           activities={rows}
           busyId={busyId}
           canCreate={canCreate}
+          seesAll={seesAll}
           loading={loading}
           onSubmitActivity={(id) => void submitActivity(id)}
           onCreated={() => {
@@ -783,6 +784,7 @@ function RequestTab({
   onRefresh,
   onSubmitActivity,
   onTrack,
+  seesAll,
   setShowForm,
   showForm,
 }: {
@@ -794,6 +796,8 @@ function RequestTab({
   onRefresh: () => void;
   onSubmitActivity: (id: string) => void;
   onTrack: (id: string) => void;
+  /** A see-every-activity role (scope.ts) reads everyone's activities here, not only its own. */
+  seesAll: boolean;
   setShowForm: (value: boolean) => void;
   showForm: boolean;
 }) {
@@ -818,7 +822,7 @@ function RequestTab({
           </button>
         }
         kicker={activities.length === 1 ? "1 in total" : `${activities.length} in total`}
-        title="Your activities"
+        title={seesAll ? "All activities" : "Your activities"}
       >
         {loading ? (
           <SkeletonRows />
