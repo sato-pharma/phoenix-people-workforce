@@ -29,6 +29,7 @@ import {
   type DirectOrderOperationalPage,
   type DirectOrderStatusGroupKey,
 } from "@/lib/direct-orders/operational-query";
+import { isRaisedByViewer, parseRequestedOrdersScope } from "@/lib/direct-orders/orders-scope";
 import type {
   DirectOrderOrdersFilterKey,
   DirectOrderWorkspaceTabKey,
@@ -78,6 +79,21 @@ export type DirectOrdersWorkspaceProps = {
    * fallback below exists only for a caller that passes no page at all.
    */
   ordersPage?: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
+  /**
+   * The Orders slice the SERVER chose when the URL names none (`resolveEffectiveOrdersScope`): the
+   * viewer's own orders, or — for a viewer with a wider scope who has raised nothing — everything
+   * in scope. An explicit `?scope=` in the URL wins over this.
+   */
+  ordersScope?: DirectOrderOrdersFilterKey;
+  /** Overview's "Recent orders", already chosen by the server (see `recentOrdersScope`). */
+  recentOrders?: readonly DirectOrderQueueRow[];
+  /** "all" when the viewer has raised nothing and these are the latest in their wider scope. */
+  recentOrdersScope?: DirectOrderOrdersFilterKey;
+  /**
+   * The signed-in person's HR id, so a returned order says "Needs Your Correction" only on the
+   * orders THEY raised. Compared by canonical key; null reads as "raised by somebody else".
+   */
+  viewerHrId?: string | null;
   /** Admin desks the viewer may open — passed in so this component owns no permission rule. */
   adminTools: readonly { href: string; label: string; description: string }[];
   /**
@@ -435,11 +451,13 @@ function OrderRow({
   basePath,
   variant,
   returnTo,
+  viewerHrId,
 }: {
   row: DirectOrderQueueRow;
   basePath: string;
   variant: Variant;
   returnTo?: string | null;
+  viewerHrId?: string | null;
 }) {
   return (
     <li className="border-b border-slate-100 last:border-b-0">
@@ -475,6 +493,7 @@ function OrderRow({
             status={row.status}
             salesMonth={row.salesMonth}
             variant={variant === "portal" ? "ring" : "solid"}
+            viewerIsRequester={isRaisedByViewer(row.requesterHrId, viewerHrId)}
           />
           <span className="text-phx-xs text-slate-500">
             {row.areaName || row.regionName || "—"} · {shortDate(row.createdAt)}
@@ -496,6 +515,7 @@ function OrdersList({
   initialFilter,
   server,
   returnTo,
+  viewerHrId,
 }: {
   rows: readonly DirectOrderQueueRow[];
   basePath: string;
@@ -504,6 +524,7 @@ function OrdersList({
   initialFilter?: FilterKey;
   /** The list URL to return to from an order's detail. See withReturnTo. */
   returnTo?: string | null;
+  viewerHrId?: string | null;
   /**
    * SERVER MODE. When set, `rows` is one already-searched, already-filtered page from the database
    * and this component must not narrow it again — the search box and status chips push to the URL
@@ -629,7 +650,7 @@ function OrdersList({
         <div className={surface(variant)}>
           <ul>
             {filtered.slice(0, shown).map((row) => (
-              <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} />
+              <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} viewerHrId={viewerHrId} />
             ))}
           </ul>
           {/* Never in server mode: `filtered` IS one page there, and a second "show more" above the
@@ -653,7 +674,11 @@ function OrdersList({
 // ── The workspace ────────────────────────────────────────────────────────────
 
 export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
-  const { variant, basePath, newOrderHref, tabs, summary, needsAction, myOrders, adminTools } = props;
+  const { variant, basePath, newOrderHref, tabs, summary, needsAction, myOrders, adminTools, viewerHrId } = props;
+  // Overview's card: the server's pick (own latest five, or the latest in a wider scope for a viewer
+  // who has raised nothing); `myOrders` only for a caller that passes no pick.
+  const recentOrders = props.recentOrders ?? myOrders.slice(0, 5);
+  const recentInScope = props.recentOrdersScope === "all";
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -668,8 +693,11 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   // right page: a tab change is now a navigation, so `loadDirectOrderWorkspaceView` runs again for
   // the view being opened rather than the view you left.
   const tab: DirectOrderWorkspaceTabKey = tabs.includes(props.initialTab) ? props.initialTab : "overview";
+  // An explicit ?scope= wins; with none, the server's default for this viewer (their own orders, or
+  // the whole scope when they have raised nothing). "mine" is therefore written to the URL too —
+  // an absent param no longer means "mine".
   const ordersFilter: DirectOrderOrdersFilterKey =
-    searchParams.get("scope") === "all" ? "all" : "mine";
+    parseRequestedOrdersScope(searchParams.get("scope")) ?? props.ordersScope ?? "mine";
   // Read from the URL, not held in state: this is what makes a filtered, searched list a link
   // somebody can send, and what makes Back return to the previous filter rather than leaving
   // Direct Orders entirely.
@@ -710,7 +738,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   // is how you end up looking at an empty list and concluding there are no results.
   const goTab = (next: DirectOrderWorkspaceTabKey) => pushParams({ view: next, page: null });
   const goOrdersFilter = (next: DirectOrderOrdersFilterKey) =>
-    pushParams({ scope: next === "mine" ? null : next, page: null });
+    pushParams({ scope: next, page: null });
   const goPage = (next: number) => pushParams({ page: next <= 1 ? null : String(next) });
 
   // The server page wins whenever it is present: it is already scoped, filtered and paginated in
@@ -838,7 +866,9 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
           />
           <section className={surface(variant)}>
             <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h3 className="text-sm font-black text-slate-950">Recent orders</h3>
+              <h3 className="text-sm font-black text-slate-950">
+                {recentInScope ? "Recent orders in your scope" : "Recent orders"}
+              </h3>
               {/* min-h-[44px] and -my-2 so the tap target reaches the floor without pushing the
                   header taller. Measured at 375x812 before the fix: 17px, the only control in the
                   workspace under 40. */}
@@ -850,12 +880,14 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                 See all
               </button>
             </header>
-            {myOrders.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">You have not raised a direct order yet.</p>
+            {recentOrders.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-slate-500">
+                {recentInScope ? "No direct orders in your scope yet." : "You have not raised a direct order yet."}
+              </p>
             ) : (
               <ul>
-                {myOrders.slice(0, 5).map((row) => (
-                  <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} />
+                {recentOrders.map((row) => (
+                  <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} viewerHrId={viewerHrId} />
                 ))}
               </ul>
             )}
@@ -902,6 +934,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
             rows={ordersRows}
             basePath={basePath}
             variant={variant}
+            viewerHrId={viewerHrId}
             emptyMessage={
               ordersFilter === "mine"
                 ? "You have not raised a direct order yet."

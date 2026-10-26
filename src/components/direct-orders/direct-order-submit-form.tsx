@@ -1560,7 +1560,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                             the longest label ("Customer Verification Required", 206px unwrapped) on
                             every row just for the rare one that needs it, and shrinking the label's
                             type is the one fix the FITS-THE-SCREEN GOLDEN RULE forbids. */}
-                        <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap />
+                        <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap viewerIsRequester />
                         <div className="mt-1 text-phx-xs text-slate-600">
                           Waiting on: {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}
                         </div>
@@ -1597,7 +1597,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     </div>
                     {/* `wrap` — see the desktop cell above for why. */}
                     <div className="shrink-0 text-right">
-                      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap />
+                      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap viewerIsRequester />
                     </div>
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-700">{r.pharmacyName}</p>

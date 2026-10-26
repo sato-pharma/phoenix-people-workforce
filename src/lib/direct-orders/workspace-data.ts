@@ -23,7 +23,9 @@ import {
 import type {
   DirectOrderOperationalFilters,
   DirectOrderOperationalPage,
+  DirectOrderOrdersScopeFilter,
 } from "@/lib/direct-orders/operational-query";
+import { resolveEffectiveOrdersScope } from "@/lib/direct-orders/orders-scope";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import type { DirectOrderApprovalListItem, DirectOrderReportScope } from "@/lib/direct-orders/types";
 
@@ -215,6 +217,20 @@ export type DirectOrderWorkspaceView = {
    * routine screen.
    */
   orders: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
+  /**
+   * The slice the Orders list is showing — the viewer's own orders, or the whole scope they may
+   * see. Resolved here because the default depends on whether they have raised anything
+   * (`resolveEffectiveOrdersScope`); the client reads an explicit `?scope=` itself and falls back
+   * to this.
+   */
+  ordersScope: DirectOrderOrdersScopeFilter;
+  /**
+   * Overview's "Recent orders": the viewer's own latest five, or — for a viewer with a wider scope
+   * who has raised none — the latest five in their scope, so the card is not "You have not raised
+   * a direct order yet" above 91 orders they can see. Empty for every other view.
+   */
+  recentOrders: DirectOrderQueueRow[];
+  recentOrdersScope: DirectOrderOrdersScopeFilter;
   scope: DirectOrderReportScope;
   /** Which tabs to render. A tab the viewer cannot use is never shown — not shown-and-empty. */
   tabs: DirectOrderWorkspaceTabKey[];
@@ -295,29 +311,65 @@ export async function loadDirectOrderWorkspaceView(
   const view = options.view ?? "overview";
   // Pharmacy Control renders the validation queue; Overview and Needs Action need only its COUNT,
   // which the list already gives us for free once loaded. No other view mentions it.
-  const needsValidations =
-    canDecideCustomerValidations &&
-    (view === "overview" || view === "needs-action" || view === "pharmacy-control");
+  //
+  // EVERY view, not only those three: the "Needs my action" tile renders above every tab, and its
+  // number includes this count. Skipping the read on Orders printed a smaller number there than on
+  // Overview for the same person.
+  const needsValidations = canDecideCustomerValidations;
 
   // The Orders view's page is fetched ONLY for that view, and it is the only read that view needs:
   // the query scopes, filters and paginates in the database and decorates just the returned page.
   const needsOrdersPage = view === "orders";
 
-  const [workspace, myOrders, pendingValidations, ordersPage] = await Promise.all([
+  // What the Orders list and Overview's "Recent orders" show when the URL names no scope depends on
+  // whether the viewer has raised anything, so the Orders page waits on `myOrders` — only when the
+  // URL left the choice open; an explicit `?scope=` needs nothing from it.
+  const requestedScope = options.ordersFilters?.scopeFilter ?? null;
+  const myOrdersRead = listMyDirectOrders(access);
+  const scopeRead = requestedScope
+    ? Promise.resolve(
+        resolveEffectiveOrdersScope({ requested: requestedScope, canSeeAllOrders, ownOrderCount: 0 }),
+      )
+    : myOrdersRead.then((own) =>
+        resolveEffectiveOrdersScope({ requested: null, canSeeAllOrders, ownOrderCount: own.length }),
+      );
+
+  const [workspace, myOrders, pendingValidations, ordersScope, ordersPage] = await Promise.all([
     getDirectOrderWorkspaceData(access),
-    listMyDirectOrders(access),
+    myOrdersRead,
     needsValidations
       ? listDirectOrderPharmacyValidations(access, { status: "pending" })
       : Promise.resolve([]),
+    scopeRead,
     needsOrdersPage
-      ? listDirectOrderOperationalPage(access, {
-          page: options.ordersPage ?? null,
-          pageSize: options.ordersPageSize ?? null,
-          filters: options.ordersFilters ?? null,
-        })
+      ? scopeRead.then((resolved) =>
+          listDirectOrderOperationalPage(access, {
+            page: options.ordersPage ?? null,
+            pageSize: options.ordersPageSize ?? null,
+            filters: { ...(options.ordersFilters ?? {}), scopeFilter: resolved },
+          }),
+        )
       : Promise.resolve(null),
   ]);
 
+  // Overview's "Recent orders". The viewer's own five when they have any; otherwise, for a viewer
+  // who can see more than their own, the latest five in that scope.
+  const ownRecent: DirectOrderQueueRow[] = myOrders.slice(0, 5);
+  const recentFromScope =
+    view === "overview" && canSeeAllOrders && myOrders.length === 0;
+  const recentOrdersScope: DirectOrderOrdersScopeFilter = recentFromScope ? "all" : "mine";
+  const recentOrders: DirectOrderQueueRow[] =
+    view !== "overview"
+      ? []
+      : recentFromScope
+        ? (
+            await listDirectOrderOperationalPage(access, {
+              page: 1,
+              pageSize: 5,
+              filters: { scopeFilter: "all" },
+            })
+          ).rows
+        : ownRecent;
 
   // The Finance queue is its OWN focused read (2026-08-12) — `status = 'approved' AND sales_month
   // IS NULL`, straight from the database — rather than a filter over the whole report. It used to
@@ -342,12 +394,11 @@ export async function loadDirectOrderWorkspaceView(
   // groups — it is a count of things already in memory, so it costs nothing and must not drift from
   // the inbox it summarises.
   //
-  // Only fetched for the view that renders them. Every other view got these four numbers for free
-  // from a full-table read it was doing anyway; now nobody does that read, so nobody gets them by
-  // accident either.
-  const totals = view === "overview"
-    ? await countDirectOrderWorkspaceTotals(access, currentCairoSalesMonth(options.now))
-    : { inProgress: 0, returned: 0, completedThisMonth: 0 };
+  // Fetched on EVERY view. The four tiles render above every tab, so a view that skipped this read
+  // printed `0 / 0 / 0 / 0` where Overview printed `0 / 24 / 3 / 3` for the same person (National
+  // Sales Manager, 26 Oct 2026) — a false zero, which reads as "nothing in progress". They are four
+  // COUNT queries, and if one fails the page fails, as Overview always did, rather than show a zero.
+  const totals = await countDirectOrderWorkspaceTotals(access, currentCairoSalesMonth(options.now));
   const summary: DirectOrderWorkspaceSummary = {
     needsMyAction: countDirectOrderNeedsAction(needsAction),
     ...totals,
@@ -366,6 +417,9 @@ export async function loadDirectOrderWorkspaceView(
     needsAction,
     myOrders,
     orders: ordersPage,
+    ordersScope,
+    recentOrders,
+    recentOrdersScope,
     scope,
     tabs,
     capabilities: {

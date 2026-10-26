@@ -90,6 +90,13 @@ const HELD_EXPLANATION =
 export function describeDirectOrderStatus(
   status: DirectOrderStatus | string,
   salesMonth: string | null,
+  /**
+   * Who is reading. `returned` is a question put to ONE person — the one who raised the order — so
+   * "Needs Your Correction" is true for them and false for everyone else (a National Sales Manager
+   * was told it on orders two other people raised, 26 Oct 2026). Omitted means "not known to be the
+   * raiser": the neutral wording is the safe default, because the personal one is a claim.
+   */
+  viewer: { isRequester?: boolean } = {},
 ): DirectOrderStatusPresentation {
   const key = String(status ?? "").trim().toLowerCase();
 
@@ -132,13 +139,22 @@ export function describeDirectOrderStatus(
         actionable: true,
       };
     case "returned":
-      return {
-        label: "Needs Your Correction",
-        explanation: "An approver sent this back for a change. Fix it and resubmit — it is not rejected.",
-        stage: "approval",
-        tone: "attention",
-        actionable: true,
-      };
+      return viewer.isRequester
+        ? {
+            label: "Needs Your Correction",
+            explanation: "An approver sent this back for a change. Fix it and resubmit — it is not rejected.",
+            stage: "approval",
+            tone: "attention",
+            actionable: true,
+          }
+        : {
+            label: "Returned for correction",
+            explanation:
+              "An approver sent this back to the person who raised it for a change. It is not rejected — it moves on again once they correct and resubmit it.",
+            stage: "approval",
+            tone: "attention",
+            actionable: true,
+          };
     case "approved":
       // Only reachable with a sales month set — the null case was handled above.
       return {
