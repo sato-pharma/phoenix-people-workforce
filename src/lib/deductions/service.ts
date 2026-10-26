@@ -21,6 +21,7 @@ import {
   scaleDeductionAmountToDays,
 } from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
+import { allowedDraftDateWindow } from "./cycle.ts";
 import { dropDeductionExemptDrafts } from "./exempt-employees.ts";
 import { computeHolidayBridgeDays, isFieldForceWorkingDay, type HolidayBridgeDay } from "./holiday-bridge.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -128,11 +129,17 @@ export function validateCandidateDraft(draft: DeductionsCandidateDraft): Candida
       // boundary silently got deducted twice — once in each month, each time
       // for the FULL span. It also breaks same-day overlap detection, which
       // groups by (employee, month, day).
+      //
+      // ONE exception (owner, 2026-10-26): a Head Office cycle row — the one-part employees'
+      // 22nd → 21st window — is keyed to its payroll month and carries the previous month's
+      // 22nd onward. It is let through only inside EXACTLY the window cycle.ts computes for that
+      // month; the windows never overlap, so no day can be charged in two payroll months.
       if (normalizedMonthKey) {
-        const outOfMonth = normalized.filter((date) => !date.startsWith(`${normalizedMonthKey}-`));
+        const window = allowedDraftDateWindow(draft);
+        const outOfMonth = normalized.filter((date) => date < window.start || date > window.end);
         if (outOfMonth.length > 0) {
           errors.push(
-            `dates must fall inside monthKey ${normalizedMonthKey}; found ${outOfMonth.length} outside it (${outOfMonth.slice(0, 3).join(", ")}${outOfMonth.length > 3 ? ", …" : ""})`,
+            `dates must fall inside monthKey ${normalizedMonthKey}${window.start.startsWith(normalizedMonthKey) ? "" : ` or its Head Office cycle (${window.start} → ${window.end})`}; found ${outOfMonth.length} outside it (${outOfMonth.slice(0, 3).join(", ")}${outOfMonth.length > 3 ? ", …" : ""})`,
           );
         }
       }
@@ -608,6 +615,18 @@ export async function insertCandidateDrafts(input: {
   return { created, insertedByIdentity, skippedExisting, warnings };
 }
 
+/** True when no window is given, or every one of the row's days sits inside it. Pure. */
+export function candidateInsideDateWindow(
+  dates: readonly string[] | null | undefined,
+  window: { start: string; end: string } | undefined,
+): boolean {
+  if (!window) return true;
+  return (dates ?? []).every((date) => {
+    const day = String(date ?? "").slice(0, 10);
+    return day >= window.start && day <= window.end;
+  });
+}
+
 /**
  * Reconciles a connector's fresh output against what is already in the ledger:
  * inserts what's new, and RETIRES live unlocked candidates that the source no
@@ -644,6 +663,10 @@ export async function reconcileCandidateDrafts(input: {
     category: DeductionsCandidate["category"];
     monthKey: string;
     sourceSystems?: readonly string[];
+    /** Only this run's population may be retired (two cycles; docs/deductions-two-cycles.md). */
+    employeeFilter?: (employeeHrIdCompact: string) => boolean;
+    /** Only rows whose days ALL sit inside the office run's window may be retired. */
+    dateWindow?: { start: string; end: string };
   };
   autoDecideStatus?: DeductionsDecisionStatus;
   autoDecideReason?: string;
@@ -695,9 +718,11 @@ export async function reconcileCandidateDrafts(input: {
       }
     }
 
-    const scoped = input.scope.sourceSystems
-      ? live.filter((candidate) => input.scope.sourceSystems!.includes(candidate.sourceSystem))
-      : live;
+    const employeeFilter = input.scope.employeeFilter;
+    const scoped = live
+      .filter((candidate) => !input.scope.sourceSystems || input.scope.sourceSystems.includes(candidate.sourceSystem))
+      .filter((candidate) => !employeeFilter || employeeFilter(candidate.employeeHrIdCompact ?? ""))
+      .filter((candidate) => candidateInsideDateWindow(candidate.dates, input.scope.dateWindow));
 
     // A SOURCE THAT PRODUCED NOTHING DOES NOT GET TO RETIRE EVERYTHING.
     //
@@ -1051,6 +1076,16 @@ export async function listCandidatesForMonth(input: {
   // Annotation only — an unreachable calendar just means no badges on the table,
   // which is harmless. The CONNECTOR refuses outright in that case; see there.
   const bridgeByDate = new Map(bridgeDays.bridgeDays.map((bridge) => [bridge.date, bridge]));
+  // A Head Office cycle row (cycle.ts) also holds the previous month's days from the 22nd on — badge
+  // those too. Read only when such a row is on the page.
+  if (rows.some((row) => Array.isArray(row.dates) && row.dates.some((date) => !String(date).startsWith(monthKey)))) {
+    const [yearText, monthText] = monthKey.split("-");
+    const previous = new Date(Date.UTC(Number(yearText), Number(monthText) - 2, 1));
+    const previousKey = `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}`;
+    for (const bridge of (await getHolidayBridgeDaysForMonth(previousKey)).bridgeDays) {
+      if (!bridgeByDate.has(bridge.date)) bridgeByDate.set(bridge.date, bridge);
+    }
+  }
 
   return rows
     .map((row) => {

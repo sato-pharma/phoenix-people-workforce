@@ -64,6 +64,7 @@ import { assertBaseSalaryMapLoaded } from "./health.ts";
 // paths agree on which days a sync outage made unmeasurable — and so the DSM run
 // inherits its fail-closed throw on a CRM outage instead of charging through one.
 import { getSuspectDatesForMonth } from "./crm.ts";
+import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
 
 /** District sales managers only — never a broader manager title. */
@@ -376,7 +377,7 @@ export async function collectDsmNoRecordCandidates(input: {
   const { data: existing, error: existingError } = await supabase
     .from("deductions_candidates")
     .select("employee_hr_id_compact, dates, locked_at, source_system")
-    .eq("month_key", monthKey)
+    .in("month_key", ledgerClaimMonthKeys(monthKey))
     .is("superseded_at", null);
   if (existingError) throw new Error(`Failed to load already-deducted days: ${existingError.message}`);
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating

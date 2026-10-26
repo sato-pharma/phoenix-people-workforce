@@ -62,8 +62,11 @@ export default async function AdminDeductionsPage({
   // Cairo, not UTC: this key seeds the workspace's state and is what the publish action files
   // deductions under. In the first 2-3 hours of a Cairo month a UTC key still reads the previous
   // month, which would land real deductions on the wrong payslip month.
-  const { year, month } = currentCairoDateParts();
+  const { year, month, day } = currentCairoDateParts();
   const initialMonthKey = `${year}-${String(month).padStart(2, "0")}`;
+  // The Head Office cycle (22nd → 21st) can be collected from the 22nd of its own payroll month, so its
+  // control compares against today's DATE, not only the month.
+  const currentCairoDateIso = `${initialMonthKey}-${String(day).padStart(2, "0")}`;
 
   return (
     <div className="space-y-6">
@@ -79,6 +82,7 @@ export default async function AdminDeductionsPage({
           finished, which is what stops it firing six requests the server will refuse. */}
       <DeductionsWorkspace
         canDecide={access.role === "Super Admin"}
+        currentCairoDateIso={currentCairoDateIso}
         currentCairoMonthKey={initialMonthKey}
         highlightCandidateId={candidateParam}
         initialMonthKey={initialMonthKey}

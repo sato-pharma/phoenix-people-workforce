@@ -14,6 +14,12 @@ import {
   visibleDeductionsCategories,
   type DeductionsCategory,
 } from "@/lib/deductions/types.ts";
+import {
+  cycleWindow,
+  isCycleWindowCollectable,
+  isSplitCycleMonth,
+  type DeductionCycle,
+} from "@/lib/deductions/cycle.ts";
 import { findSameDayOverlaps, type SameDayOverlap } from "@/lib/deductions/day-overlap.ts";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
@@ -83,6 +89,29 @@ function dayOfMonth(date: string): number {
   return Number(String(date).slice(8, 10));
 }
 
+const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "22 Oct" — a day WITH its month. Used once a row's days run across two months: a Head Office cycle
+ * row (lib/deductions/cycle.ts) holds the 22nd of the previous month → the 21st, and day numbers alone
+ * would make 22 October read as 22 November.
+ */
+function dayWithMonth(date: string): string {
+  const month = Number(String(date).slice(5, 7));
+  return `${dayOfMonth(date)} ${MONTH_ABBREVIATIONS[month - 1] ?? ""}`.trim();
+}
+
+/** True when any of the row's days fall outside its own payroll month (a Head Office cycle row). */
+function rowSpansMonths(row: Pick<CandidateApiRow, "monthKey" | "dates">): boolean {
+  const monthKey = String(row.monthKey).slice(0, 7);
+  return (row.dates ?? []).some((date) => !String(date).startsWith(monthKey));
+}
+
+/** A row's day as the reviewer reads it — the day number, or "22 Oct" on a row spanning two months. */
+function rowDayLabel(row: Pick<CandidateApiRow, "monthKey" | "dates">, date: string): string {
+  return rowSpansMonths(row) ? dayWithMonth(date) : String(dayOfMonth(date));
+}
+
 /**
  * A person is shown by NAME, never by an HR code — the owner's standing rule,
  * and the reason this helper exists rather than a `?? row.employeeHrId`
@@ -125,14 +154,20 @@ const FRIDAY_COLUMN = 5;
  * first-of-month on the wrong weekday for anyone east of GMT, which silently
  * rotates the entire grid by a day.
  */
-function buildMonthGrid(monthKey: string): Array<string | null> {
+function buildMonthGrid(monthKey: string, dates: readonly string[] = []): Array<string | null> {
   const [year, month] = monthKey.split("-").map(Number);
   if (!year || !month) return [];
-  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const cells: Array<string | null> = Array.from({ length: firstWeekday }, () => null);
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+  // A Head Office cycle row starts on the 22nd of the PREVIOUS month — the grid starts there too, so
+  // every one of its days can be seen and unticked, not only the ones inside the payroll month.
+  const monthStart = Date.UTC(year, month - 1, 1);
+  const earliest = dates
+    .filter((date) => /^\d{4}-\d{2}-\d{2}/.test(date))
+    .map((date) => Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))))
+    .reduce((min, value) => Math.min(min, value), monthStart);
+  const end = Date.UTC(year, month, 0);
+  const cells: Array<string | null> = Array.from({ length: new Date(earliest).getUTCDay() }, () => null);
+  for (let at = earliest; at <= end; at += 86_400_000) {
+    cells.push(new Date(at).toISOString().slice(0, 10));
   }
   while (cells.length % 7 !== 0) cells.push(null);
   return cells;
@@ -150,7 +185,7 @@ function HolidayBridgeCell({ row }: { row: CandidateApiRow }) {
     <span className="flex flex-col gap-0.5">
       {bridges.map((bridge) => (
         <span className="break-words text-phx-xs font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
-          {dayOfMonth(bridge.date)} {bridge.adjacentTo === "before" ? "before" : "after"} {bridge.holidayName}
+          {rowDayLabel(row, bridge.date)} {bridge.adjacentTo === "before" ? "before" : "after"} {bridge.holidayName}
         </span>
       ))}
     </span>
@@ -180,7 +215,7 @@ function DayList({ row }: { row: CandidateApiRow }) {
     <span className="tabular-nums">
       {detected.map((date, index) => (
         <span className={applied.has(date) ? "text-slate-700" : "text-slate-400 line-through"} key={date}>
-          {dayOfMonth(date)}
+          {rowDayLabel(row, date)}
           {index < detected.length - 1 ? ", " : ""}
         </span>
       ))}
@@ -251,7 +286,8 @@ function DeductionDaysEditor({
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const detectedSet = useMemo(() => new Set(detected), [detected]);
-  const monthGrid = useMemo(() => buildMonthGrid(row.monthKey), [row.monthKey]);
+  const monthGrid = useMemo(() => buildMonthGrid(row.monthKey, row.dates ?? []), [row.monthKey, row.dates]);
+  const spansMonths = rowSpansMonths(row);
   const parsedQuantity = Number(quantity);
   const quantityValid = quantity.trim() !== "" && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
   const overDetected = quantityValid && row.unit === "days" && parsedQuantity > row.rawValue;
@@ -365,6 +401,12 @@ function DeductionDaysEditor({
               the day number instead of beside it — the number is the same size, and
               the cell now needs about 17px rather than 33px. From `sm` up it is the
               compact inline calendar it always was. */}
+          {spansMonths && detected.length > 0 ? (
+            <p className="text-xs font-semibold text-slate-600">
+              Head Office cycle — this row runs {dayWithMonth(detected[0])} to{" "}
+              {dayWithMonth(detected[detected.length - 1])}. The calendar starts on the first of those days.
+            </p>
+          ) : null}
           <div className="block w-full border border-slate-200 bg-white p-2 sm:inline-block sm:w-auto">
             <div className="grid grid-cols-7 gap-1">
               {WEEKDAY_LABELS.map((label, index) => (
@@ -2677,12 +2719,15 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
 
 export function DeductionsWorkspace({
   canDecide,
+  currentCairoDateIso,
   currentCairoMonthKey,
   highlightCandidateId,
   initialMonthKey,
   initialTab,
 }: {
   canDecide: boolean;
+  /** Today in Cairo, YYYY-MM-DD — the Head Office cycle's own end (the 21st) is compared against it. */
+  currentCairoDateIso: string;
   currentCairoMonthKey: string;
   /** Candidate id from a deduction-comment notification link — opens the Disputes tab on it. */
   highlightCandidateId?: string;
@@ -2711,13 +2756,26 @@ export function DeductionsWorkspace({
 
   const [year, month] = useMemo(() => monthKey.split("-").map(Number), [monthKey]);
 
+  // THE TWO CYCLES (owner, 2026-10-26). From the October 2026 payroll month the one-part employees are
+  // collected on the Head Office cycle — the 22nd of the previous month → the 21st — so Part 1 can carry
+  // their deductions before the month ends; everyone paid in two parts stays on the calendar month.
+  // Each choice is gated on ITS OWN window's end; the server re-checks both (collect.ts).
+  const [cycleChoice, setCycleChoice] = useState<DeductionCycle>("office");
+  const splitCycleMonth = Boolean(year && month) && isSplitCycleMonth({ year, month });
+  const cycle: DeductionCycle = splitCycleMonth ? cycleChoice : "calendar";
+  const officeWindow = cycle === "office" ? cycleWindow("office", { year, month }) : null;
+  const windowHasFinished = officeWindow ? isCycleWindowCollectable(officeWindow, currentCairoDateIso) : monthHasFinished;
+  const cycleRunLabel = officeWindow
+    ? `Head Office cycle (${dayWithMonth(officeWindow.start)} → ${dayWithMonth(officeWindow.end)})`
+    : monthLabel(monthKey);
+
   // Connectors are run ONE PER REQUEST. Bundling all five into a single call is
   // what blew the 300s Cloud Run limit and got this module reverted (#1377);
   // stepping through them keeps every request bounded and lets a slow connector
   // fail on its own instead of taking the whole run down with it.
   async function runCollection() {
     // The button is disabled, but never let a stray call fan out into six refusals.
-    if (!monthHasFinished) return;
+    if (!windowHasFinished) return;
     setCollecting(true);
     setCollectMessage(null);
     setCollectorRuns([]);
@@ -2742,7 +2800,7 @@ export function DeductionsWorkspace({
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ month, year, connector: entry.key }),
+              body: JSON.stringify({ month, year, connector: entry.key, cycle }),
             },
             COLLECT_REQUEST_TIMEOUT_MS,
           );
@@ -2795,16 +2853,30 @@ export function DeductionsWorkspace({
             value={monthKey}
           />
         </label>
+        {canDecide && splitCycleMonth ? (
+          <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+            Cycle
+            <select
+              className={phxSelectClassName}
+              disabled={collecting}
+              onChange={(event) => setCycleChoice(event.target.value === "calendar" ? "calendar" : "office")}
+              value={cycleChoice}
+            >
+              <option value="office">Head Office cycle (22nd → 21st) — paid in one part</option>
+              <option value="calendar">Calendar month — paid in two parts</option>
+            </select>
+          </label>
+        ) : null}
         <div className="ml-auto flex items-center gap-2">
           {canDecide ? (
             <button
               className="inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
-              disabled={collecting || !monthHasFinished}
+              disabled={collecting || !windowHasFinished}
               onClick={runCollection}
               type="button"
             >
               <PlayCircle className="h-3.5 w-3.5" />
-              {collecting ? "Running…" : `Run collection for ${monthLabel(monthKey)}`}
+              {collecting ? "Running…" : `Run collection for ${cycleRunLabel}`}
             </button>
           ) : null}
         </div>
@@ -2817,7 +2889,18 @@ export function DeductionsWorkspace({
           tab, never replacing it. */}
       <MasterExportBar monthKey={monthKey} />
 
-      {canDecide && !monthHasFinished ? (
+      {canDecide && !windowHasFinished && officeWindow ? (
+        <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <span>
+            The Head Office cycle for {monthLabel(monthKey)} runs to {dayWithMonth(officeWindow.end)} and has not
+            finished — it can be collected from the day after. A day with no activity only means something after
+            that day has ended, so collecting now would charge people for days they are still working.
+          </span>
+        </div>
+      ) : null}
+
+      {canDecide && !windowHasFinished && !officeWindow ? (
         <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           <span>

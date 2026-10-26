@@ -20,6 +20,7 @@ import { assertBaseSalaryMapLoaded, assertSourceScanned } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
 import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
+import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 
 type VacationRequestRow = {
@@ -304,7 +305,7 @@ async function loadAlreadyDeductedDays(input: {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
     .select("employee_hr_id_compact, dates, category, locked_at, source_system")
-    .eq("month_key", input.monthKey)
+    .in("month_key", ledgerClaimMonthKeys(input.monthKey))
     .is("superseded_at", null);
   // Fail closed. An unreadable ledger is not an empty one, and continuing would
   // recreate exactly the duplicates this guard exists to stop.

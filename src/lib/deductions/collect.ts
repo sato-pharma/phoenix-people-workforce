@@ -13,6 +13,22 @@
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { crmCutoverMonthDeductionNote, isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 
+import { compactDeductionsHrId, deductionsCandidateIdentityKey } from "./candidate-key.ts";
+import {
+  calendarMonthLabel,
+  calendarMonthsInWindow,
+  clipDraftToCycleWindow,
+  cycleCoversEmployee,
+  cycleWindow,
+  cycleWindowLabel,
+  isCycleWindowCollectable,
+  isSplitCycleMonth,
+  mergeCycleDrafts,
+  monthKeyOf,
+  shiftMonth,
+  type DeductionCycle,
+  type PayrollMonth,
+} from "./cycle.ts";
 import { dropDeductionExemptDrafts } from "./exempt-employees.ts";
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
 import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
@@ -23,8 +39,16 @@ import {
   collectInsufficientBalanceVacationCandidates,
   collectUnpaidVacationCandidates,
 } from "./connectors/vacation.ts";
-import { insertCandidateDrafts, reconcileCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
-import type { DeductionsCandidateDraft, DeductionsCategory } from "./types.ts";
+import { splitDraftsByClaimedDays } from "./conflict.ts";
+import { loadOnePartEmployeeCompacts } from "./cycle-population.ts";
+import {
+  insertCandidateDrafts,
+  listCandidatesForMonth,
+  prepareCandidateInsertPayload,
+  reconcileCandidateDrafts,
+  type CandidateDraftInsertResult,
+} from "./service.ts";
+import type { DeductionsCandidate, DeductionsCandidateDraft, DeductionsCategory } from "./types.ts";
 
 export type DeductionCollectorKey =
   | "fingerprint"
@@ -39,6 +63,12 @@ export type DeductionCollectorKey =
 export type MonthlyCollectionResult = Record<DeductionCollectorKey, CandidateDraftInsertResult>;
 
 type CollectorInput = { month: number; year: number; createdBy: string };
+
+/** Today in Cairo as YYYY-MM-DD — the office window's own end is compared against it. */
+function cairoTodayIso(): string {
+  const { year, month, day } = currentCairoDateParts();
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 /**
  * Owner decision 18's visible half. The CRM connector returns nothing for the cutover month; this
@@ -222,11 +252,16 @@ export function isCollectableMonth(input: { month: number; year: number }): bool
  * be mistaken for "the source retracted everything".
  */
 export async function collectOneConnectorForMonth(
-  input: CollectorInput & { connector: DeductionCollectorKey },
+  input: CollectorInput & { connector: DeductionCollectorKey; cycle?: DeductionCycle },
 ): Promise<CandidateDraftInsertResult> {
   const collector = COLLECTORS_BY_KEY.get(input.connector);
   if (!collector) {
     throw new Error(`Validation: unknown deductions connector "${input.connector}".`);
+  }
+
+  // The Head Office cycle (owner, 2026-10-26) has its own door with its own end-of-window guard.
+  if ((input.cycle ?? "calendar") === "office") {
+    return collectOneConnectorForOfficeCycle({ ...input, collector });
   }
 
   // Before anything reads source data. THROWS rather than returning an empty
@@ -243,12 +278,23 @@ export async function collectOneConnectorForMonth(
 
   const { month, year, createdBy } = input;
   try {
+    // From October 2026 the calendar month covers only the employees paid in TWO parts; the one-part
+    // employees are on the Head Office cycle. Read BEFORE the connector, so an unreadable directory
+    // refuses the run rather than charging the one-part employees' days a second time.
+    const employeeFilter = await calendarEmployeeFilter({ month, year });
     const output = await collector.run({ month, year, createdBy });
     const parts = collectorOutputParts(output);
     // People the owner took out of every deduction type are dropped BEFORE reconciling, so a
     // re-run also retires their still-live rows rather than leaving them standing.
-    const { kept: drafts } = dropDeductionExemptDrafts(parts.drafts);
-    const notes = parts.notes;
+    const { kept: exemptionFree } = dropDeductionExemptDrafts(parts.drafts);
+    // From the cutover the calendar run keeps only its own population (two-part pay).
+    const unheld = employeeFilter
+      ? exemptionFree.filter((draft) => employeeFilter(compactDeductionsHrId(draft.employeeHrId) ?? ""))
+      : exemptionFree;
+    // From the cutover, a day already on the OTHER cycle's row is never added again.
+    const crossCycle = employeeFilter ? await applyCrossCycleHold(unheld, { month, year }) : { drafts: unheld, notes: [] };
+    const drafts = crossCycle.drafts;
+    const notes = [...parts.notes, ...crossCycle.notes];
     const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
       notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
     if (collector.reconcilesWholeCategory) {
@@ -258,6 +304,7 @@ export async function collectOneConnectorForMonth(
         scope: {
           category: collector.reconcilesWholeCategory,
           monthKey: `${year}-${String(month).padStart(2, "0")}`,
+          employeeFilter,
         },
         sourceLabel: collector.label,
       }));
@@ -270,6 +317,7 @@ export async function collectOneConnectorForMonth(
           category: collector.reconcilesSourceScope.category,
           monthKey: `${year}-${String(month).padStart(2, "0")}`,
           sourceSystems: collector.reconcilesSourceScope.sourceSystems,
+          employeeFilter,
         },
         sourceLabel: collector.label,
       });
@@ -281,6 +329,215 @@ export async function collectOneConnectorForMonth(
       created: 0,
       skippedExisting: 0,
       warnings: [`${collector.label}: connector failed: ${error instanceof Error ? error.message : String(error)}`],
+    };
+  }
+}
+
+/**
+ * Who the CALENDAR run covers in a month, as a compact-HR-id filter — or undefined before the
+ * October 2026 cutover, when it covers everyone exactly as it always has.
+ */
+async function calendarEmployeeFilter(period: PayrollMonth): Promise<((compact: string) => boolean) | undefined> {
+  if (!isSplitCycleMonth(period)) return undefined;
+  const onePart = await loadOnePartEmployeeCompacts();
+  return (compact) => cycleCoversEmployee("calendar", period, onePart.has(compact));
+}
+
+type CrossCycleLiveRow = Pick<
+  DeductionsCandidate,
+  "monthKey" | "employeeHrIdCompact" | "category" | "sourceSystem" | "dates" | "candidateKey"
+>;
+
+/**
+ * THE CROSS-CYCLE HOLD. Who is on which cycle is read from the employee directory when a run starts,
+ * so an employee whose payment mode changes between two runs can be judged by BOTH: paid in two parts
+ * for October (calendar run, 1–31 October), then in one part for November (office window, 22 October
+ * → 21 November) — 22–31 October charged twice. A row an older path keyed to the calendar month for a
+ * day the office cycle now owns is the same overlap.
+ *
+ * A draft is HELD — never inserted — when a live row of the same person and category, keyed to a
+ * DIFFERENT payroll month, already claims one of its days (any decision, as splitDraftsByClaimedDays
+ * reads a claim). A row keyed to the draft's own month is the reconcile's business, and a draft whose
+ * identity is already live under its own month is KEPT: it inserts nothing new, and dropping it would
+ * make the reconcile retire that row as "no longer emitted".
+ *
+ * Pure — the caller reads the live rows.
+ */
+export function holdCrossCycleClaimedDrafts(input: {
+  drafts: readonly DeductionsCandidateDraft[];
+  live: ReadonlyArray<CrossCycleLiveRow>;
+  identityOf: (draft: DeductionsCandidateDraft) => string | null;
+}): { keep: DeductionsCandidateDraft[]; notes: string[] } {
+  const ownMonthIdentities = new Set(
+    input.live.map((row) => `${row.monthKey}\u0000${deductionsCandidateIdentityKey(row.candidateKey)}`),
+  );
+  const keep: DeductionsCandidateDraft[] = [];
+  const notes: string[] = [];
+  const byMonth = new Map<string, DeductionsCandidateDraft[]>();
+  for (const draft of input.drafts) {
+    const identity = input.identityOf(draft);
+    if (identity && ownMonthIdentities.has(`${draft.monthKey}\u0000${identity}`)) {
+      keep.push(draft);
+      continue;
+    }
+    const group = byMonth.get(draft.monthKey) ?? [];
+    group.push(draft);
+    byMonth.set(draft.monthKey, group);
+  }
+  for (const [monthKey, drafts] of byMonth) {
+    const otherMonths = input.live
+      .filter((row) => row.monthKey !== monthKey)
+      .map((row) => ({
+        employeeHrIdCompact: row.employeeHrIdCompact,
+        category: row.category,
+        sourceSystem: row.sourceSystem,
+        dates: row.dates ?? [],
+      }));
+    const split = splitDraftsByClaimedDays(drafts, otherMonths);
+    keep.push(...split.keep);
+    for (const { draft, claimedDates, openDates } of split.held) {
+      const who = draft.employeeName?.trim() || "An employee";
+      notes.push(
+        `${who}: ${claimedDates.join(", ")} already sit on a deduction of another payroll month (the other collection cycle), ` +
+          `so this finding was held back, not added` +
+          (openDates.length ? `. Days it also found that are not charged yet: ${openDates.join(", ")} — add them by hand if they stand.` : "."),
+      );
+    }
+  }
+  return { keep, notes };
+}
+
+/**
+ * The live rows the cross-cycle hold reads: the month before, the month and the month after, for every
+ * category the drafts carry. Throws on a failed read, so the connector fails before any write.
+ */
+async function applyCrossCycleHold(
+  drafts: DeductionsCandidateDraft[],
+  period: PayrollMonth,
+): Promise<{ drafts: DeductionsCandidateDraft[]; notes: string[] }> {
+  if (drafts.length === 0) return { drafts, notes: [] };
+  const months = [shiftMonth(period, -1), period, shiftMonth(period, 1)].map(monthKeyOf);
+  const categories = [...new Set(drafts.map((draft) => draft.category))];
+  const live: CrossCycleLiveRow[] = [];
+  for (const monthKey of months) {
+    for (const category of categories) {
+      live.push(...(await listCandidatesForMonth({ monthKey, category })));
+    }
+  }
+  const held = holdCrossCycleClaimedDrafts({
+    drafts,
+    live,
+    identityOf: (draft) => {
+      try {
+        return deductionsCandidateIdentityKey(prepareCandidateInsertPayload(draft, { createdBy: "system" }).candidate_key);
+      } catch {
+        return null;
+      }
+    },
+  });
+  return { drafts: held.keep, notes: held.notes };
+}
+
+/**
+ * THE HEAD OFFICE CYCLE (owner, 2026-10-26): one connector, one payroll month, the one-part
+ * employees only, judged over the 22nd of the previous month → the 21st (1 → 21 October for the
+ * first, October 2026, payroll month — September was collected on the calendar month for everyone).
+ *
+ * The connectors are built for a calendar month, so the window is assembled from them: the connector
+ * runs for EVERY calendar month the window touches, its drafts are kept for the one-part employees,
+ * clipped to the window, re-keyed to the payroll month and merged where one record spans both months.
+ * The month in progress is fine to read — every day after the window's end is clipped away, and the
+ * window itself must have ENDED in Cairo before anything runs (the same rule as the calendar guard,
+ * drawn at the 21st instead of the month's last day).
+ *
+ * Any connector run that throws fails the whole window BEFORE a write, so a half-read window can
+ * never be reconciled as "the source retracted the rest".
+ */
+async function collectOneConnectorForOfficeCycle(
+  input: CollectorInput & { connector: DeductionCollectorKey; collector: Collector },
+): Promise<CandidateDraftInsertResult> {
+  const { collector, createdBy } = input;
+  const period = { month: input.month, year: input.year };
+  // Throws for a payroll month before October 2026 — there is no office window there.
+  const window = cycleWindow("office", period);
+  const today = cairoTodayIso();
+  if (!isCycleWindowCollectable(window, today)) {
+    throw new Error(
+      `Validation: the Head Office cycle for ${calendarMonthLabel(period)} (${cycleWindowLabel(window)}) has not finished — ` +
+        `it can be collected from the day after ${window.end}. Today is ${today} in Cairo. Collecting an unfinished window ` +
+        `charges people for days that have not ended, and CRM candidates publish without an approval step.`,
+    );
+  }
+
+  try {
+    const onePart = await loadOnePartEmployeeCompacts();
+    const employeeFilter = (compact: string) => cycleCoversEmployee("office", period, onePart.has(compact));
+
+    const clipped: DeductionsCandidateDraft[] = [];
+    const notes: string[] = [];
+    const cutoverNotes: string[] = [];
+    for (const calendarMonth of calendarMonthsInWindow(window)) {
+      const output = await collector.run({ ...calendarMonth, createdBy });
+      const parts = collectorOutputParts(output);
+      const label = calendarMonthLabel(calendarMonth);
+      for (const note of parts.notes) notes.push(`${label}: ${note}`);
+      for (const draft of parts.drafts) {
+        if (!employeeFilter(compactDeductionsHrId(draft.employeeHrId) ?? "")) continue;
+        const kept = clipDraftToCycleWindow(draft, window, monthKeyOf(calendarMonth));
+        if (kept) clipped.push(kept);
+      }
+      if (collector.key === "crm") {
+        const noted = await withCrmCutoverMonthNote({ created: 0, skippedExisting: 0, warnings: [] }, calendarMonth);
+        cutoverNotes.push(...noted.warnings);
+      }
+    }
+    const merged = mergeCycleDrafts(clipped);
+    notes.push(...merged.notes, ...cutoverNotes);
+    // People the owner took out of every deduction type — dropped before reconciling, as on the
+    // calendar path, so a re-run retires their still-live rows.
+    const { kept: unheld } = dropDeductionExemptDrafts(merged.drafts);
+    // A day already on the CALENDAR cycle's row (a payment-mode change between runs, or an older row)
+    // is never added again.
+    const crossCycle = await applyCrossCycleHold(unheld, period);
+    const drafts = crossCycle.drafts;
+    notes.push(...crossCycle.notes);
+    const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
+      notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
+
+    const sourceLabel = `${collector.label} — Head Office cycle (${cycleWindowLabel(window)})`;
+    if (collector.reconcilesWholeCategory) {
+      return withNotes(await reconcileCandidateDrafts({
+        createdBy,
+        drafts,
+        scope: {
+          category: collector.reconcilesWholeCategory,
+          monthKey: window.monthKey,
+          employeeFilter,
+          dateWindow: { start: window.start, end: window.end },
+        },
+        sourceLabel,
+      }));
+    }
+    if (collector.reconcilesSourceScope) {
+      return withNotes(await reconcileCandidateDrafts({
+        createdBy,
+        drafts,
+        scope: {
+          category: collector.reconcilesSourceScope.category,
+          monthKey: window.monthKey,
+          sourceSystems: collector.reconcilesSourceScope.sourceSystems,
+          employeeFilter,
+          dateWindow: { start: window.start, end: window.end },
+        },
+        sourceLabel,
+      }));
+    }
+    return withNotes(await insertCandidateDrafts({ createdBy, drafts, sourceLabel }));
+  } catch (error) {
+    return {
+      created: 0,
+      skippedExisting: 0,
+      warnings: [`${collector.label} (Head Office cycle): connector failed: ${error instanceof Error ? error.message : String(error)}`],
     };
   }
 }

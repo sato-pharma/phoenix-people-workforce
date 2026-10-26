@@ -35,6 +35,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { DEDUCTION_COLLECTORS, collectorOutputParts, type DeductionCollectorKey } from "./collect.ts";
 import { splitDraftsByClaimedDays } from "./conflict.ts";
+import { ledgerClaimMonthKeys } from "./cycle.ts";
 import { insertCandidateDrafts, listCandidatesForMonth, type CandidateDraftInsertResult } from "./service.ts";
 import type { DeductionsCategory } from "./types.ts";
 
@@ -210,7 +211,14 @@ export async function collectSettlementForLeaver(input: {
     const warnings: string[] = [];
     const live: Awaited<ReturnType<typeof listCandidatesForMonth>> = [];
     try {
-      const scopes = new Set(mine.map((draft) => `${draft.monthKey}\u0000${draft.category}`));
+      // The draft's own month AND the next one: from October 2026 a one-part employee's days from the
+      // 22nd on sit on the Head Office cycle row of the FOLLOWING payroll month (cycle.ts), and reading
+      // only this month would add those days a second time.
+      const scopes = new Set(
+        mine.flatMap((draft) =>
+          ledgerClaimMonthKeys(draft.monthKey).map((monthKey) => `${monthKey}\u0000${draft.category}`),
+        ),
+      );
       for (const scope of scopes) {
         const [monthKey, category] = scope.split("\u0000");
         live.push(

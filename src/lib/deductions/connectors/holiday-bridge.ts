@@ -36,6 +36,7 @@ import {
 import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
+import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
 import type { HolidayBridgeDay } from "../holiday-bridge.ts";
 
@@ -75,7 +76,7 @@ async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
   const { data, error } = await getSupabaseAdmin()
     .from("deductions_candidates")
     .select("employee_hr_id_compact, dates, locked_at, source_system")
-    .eq("month_key", monthKey)
+    .in("month_key", ledgerClaimMonthKeys(monthKey))
     .is("superseded_at", null);
   if (error) throw new Error(`Failed to load already-deducted days: ${error.message}`);
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating

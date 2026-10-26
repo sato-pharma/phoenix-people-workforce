@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6347cf50-abe9-435e-a00f-ef98cd30cc95
-  modified: 2026-10-20T19:10:00.000Z
+  modified: 2026-10-26T13:52:01.291Z
 ---
 
 🔴 **The CLI link in `F:\Phoenix Workforce\phoenix-workforce` names ONE service, and it has never
@@ -43,5 +43,12 @@ three times.
 - A WORKTREE is not linked at all and answers `No linked project found`; `new-session.mjs` copies
   `.env.local` but not the link. Run from the primary with `--service`.
 - Prove injection by printing variable NAMES only, never values.
+- 🔴 **It bit again 2026-10-26 (PR 6564):** an unflagged `railway deployment list` showed the
+  WORKER's `60c9d1f05` deploy FAILED twice during Railway's EU-West snapshot-upload incident, and it
+  was reported to him as "production not live" while the web service's own `ad4993dd` was SUCCESS and
+  `/api/healthz` already served `60c9d1f05`. Worse, `railway redeploy -s phoenix-people-workforce`
+  (run on his word to "redeploy 60c9d1f05") rebuilt an OLDER commit, `015d9021e` — it failed in the
+  outage, but had it built it would have ROLLED PRODUCTION BACK. `railway redeploy` never takes a sha;
+  the healthz `revision` is the verdict, read it before anything else.
 - Same shape as [[commands-handed-to-the-owner-must-be-powershell]]: the tool answers plausibly for
   the wrong reason, and the wrong reason is the one you act on.
