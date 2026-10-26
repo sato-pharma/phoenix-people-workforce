@@ -1241,9 +1241,10 @@ Pinned by `tests/error-screenshot-intake.test.ts`.
 ## The audit trail stopped losing rows — the outbox (2026-10-23)
 
 `writeAuditLog` and `writeRequiredAuditLog` both go through `insertAuditLog`, which opens its client
-with `requestTimeoutMs: 3000`. That 3 seconds is deliberate: the audit trail must not sit in front
-of somebody's request. What was not deliberate is what happened when it expired — a log line, and
-nothing else. **109 `audit_persistence_failed` errors on production in 21 days, 40 of them on 22
+on `OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS` — 3 seconds when this was written, **8 seconds since 26 Oct
+2026** (see "The first attempt's budget is measured" below). A bounded first attempt is deliberate:
+the audit trail must not sit in front of somebody's request. What was not deliberate is what
+happened when it expired — a log line, and nothing else. **109 `audit_persistence_failed` errors on production in 21 days, 40 of them on 22
 Oct alone.**
 
 **The rows were genuinely lost, not merely slow.** Read off `ozucdzovmcqvepbozvqf`: the notification
@@ -1256,8 +1257,10 @@ Owner's instruction that afternoon, choosing between the timeout fix and the re-
 
 ### How a row is kept now
 
-1. **The fast attempt is unchanged** — 3 seconds, on the request path.
-2. **One retry at 10 seconds**, which only ever runs after the fast attempt has already failed.
+1. **The fast attempt** — `OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS`, on the request path (3s originally, 8s
+   since 26 Oct 2026).
+2. **One retry at 10 seconds**, which only ever runs after the fast attempt has already failed
+   *inside* its budget. An attempt that spent the whole budget skips straight to step 3.
 3. **Anything that fails both is parked in `audit_log_outbox`** (migration `20261023190001`) with
    the whole `AuditLogInput` as `payload`, and retried on a doubling back-off — 1, 2, 4, 8, 16, 32
    minutes, then hourly for ever. Nothing is ever abandoned: a row that cannot be written today is
@@ -1280,6 +1283,49 @@ there is no schedule to rot.
 `writeRequiredAuditLog` **still throws** `AuditPersistenceError` after queueing. Its callers treat an
 unwritten audit row as a failed act and decide for themselves what to do about it; the queue stops
 the row being lost and deliberately does not quieten the alarm that says it was not written in time.
+
+### The first attempt's budget is measured — 3s → 8s (26 October 2026)
+
+The 3 seconds above was chosen as "short, because it runs on somebody's request". That was the right
+instinct and the wrong number, and the writes it aborted were healthy ones.
+
+**What the client's own round trip actually costs on this container.** From `process_health`'s
+`timings.supabase.fetch` — the whole client round trip, not the query — on production, 26 Oct 2026:
+
+| Minute (UTC) | Calls | p50 | p95 | max |
+| --- | --- | --- | --- | --- |
+| 09:31 | 2,060 | 1,396 ms | 2,988 ms | 8,061 ms |
+| 09:32 | 2,266 | 1,998 ms | 3,494 ms | 5,762 ms |
+| 09:33 | 2,143 | 1,760 ms | 3,512 ms | 5,680 ms |
+
+A 3,000 ms budget sat **between that p50 and that p95**, so it was cutting off ordinary writes: 13
+`supabase.fetch.timeout` in those three minutes, every `elapsedMs` reading 3,000–3,107 ms, **every
+one of them a first attempt** — never the 10-second retry — and six of them inside a single
+millisecond at 09:32:50.358.
+
+🔴 **THE DATABASE WAS NEVER THE REASON.** `pg_stat_statements` on `ozucdzovmcqvepbozvqf` for the four
+inserts sitting behind those aborts: `notification_deliveries` 2,754 calls at a mean of 2.449 ms
+(max 21.0) and 2,616 at 0.544 ms, `audit_logs` 2,206 at 2.278 ms (max 118.8), `notification_events`
+1,050 at 3.333 ms (max 20.1). **8,626 calls and nothing over 119 ms.** The whole three seconds was
+transport. Pool queueing is ruled out too — `src/lib/observability/keep-alive.ts` leaves the undici
+dispatcher deliberately unbounded.
+
+**8 seconds** clears the measured p95 with better than twice the margin, covers the worst round trip
+seen, and stays under both `OUTBOX_RETRY_TIMEOUT_MS` (10s) and `supabaseRequestTimeoutMs` (15s) in
+`src/lib/supabase/server.ts`.
+
+🔴 **AND THE RAISE IS CHEAPER ON THE REQUEST PATH, NOT DEARER.** A first attempt that *spent* its
+whole budget — `firstAttemptSpentItsBudget(elapsedMs)`, with 250 ms of slack because the abort timer
+fires late under event-loop pressure (`eventLoopDelayMs` max 920 / 811 / 1,725 ms in the same three
+minutes) — is now queued **at once, with no probe and no retry on that request**. The old shape
+allowed 3s + a 10s probe + a 10s retry + a 10s queue write ≈ 33s of one request for a single write;
+the new shape is 8s + a 10s queue write ≈ 18s. The duplicate guard is not weakened, only moved: the
+drain calls `alreadyLanded` before it lands anything. An attempt that fails *inside* its budget — a
+PostgREST rejection, a gateway 5xx, a reset connection — still gets the probe and the patient retry,
+which is the database-restart case this file was built for.
+
+Pinned by `tests/audit-outbox.test.ts`, which stubs the clock to exercise the spent-budget branch and
+refuses a budget below the measured p95.
 
 ### The flag that was eating everyone else's errors
 

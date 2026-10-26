@@ -125,7 +125,7 @@ export function runNotificationOutboxTests() {
   );
   assert.ok(
     createEventBody.includes("OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS"),
-    "and its first attempt must stay on the short request-path timeout.",
+    "and its first attempt must stay on the shared request-path budget, not a number of its own.",
   );
 
   // ── THE QUEUE HAS A TABLE TO LAND IN ─────────────────────────────────────────────────────────
