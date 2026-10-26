@@ -8,6 +8,7 @@ import {
   styleDataRow,
   styleHeaderRow,
 } from "@/lib/payroll/exports/excel-style";
+import { isHeldReleaseOnlyRecord } from "@/lib/payroll/held-release";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   statutoryFromInsuranceWage,
@@ -81,7 +82,9 @@ export function buildStatutorySummaryRows(
   config: StatutoryConfig,
   insuranceWages: InsuranceWageMap,
 ): { rows: StatutorySummaryRow[]; totals: StatutorySummaryTotals } {
-  const rows: StatutorySummaryRow[] = records.map((record) => {
+  // A row that pays only an earlier month's held salary is not part of this month's filing: that
+  // person worked nothing this month, and the held money was filed in the month it was earned.
+  const rows: StatutorySummaryRow[] = records.filter((record) => !isHeldReleaseOnlyRecord(record)).map((record) => {
     const deductedEmployeeSi = roundCurrency(record.socialInsurance);
     const incomeTax = roundCurrency(record.employmentIncomeTax);
     const hrId = record.employeeCode || record.hrId;

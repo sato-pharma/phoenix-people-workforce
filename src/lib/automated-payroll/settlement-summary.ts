@@ -52,6 +52,9 @@ export const ADDITION_COMPONENT_KEYS = [
   // The Additions step's Other additions cell (a dispute refund, 2026-10-09) — also part of
   // `otherAdditions` in assembleParts, beside the Special Situations addition.
   "otherAdditions",
+  // Held Salary Release (2026-10-26): an earlier month's withheld salary paid now — also part of
+  // `otherAdditions` in assembleParts.
+  "heldReleaseValue",
 ] as const;
 
 /**

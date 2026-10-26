@@ -50,6 +50,7 @@ export type StepKey =
   | "p2_crm"
   | "p2_additions"
   | "p2_manual_deductions"
+  | "p2_held_release"
   | "p2_holds";
 
 export const PART1_STEP_KEYS: readonly StepKey[] = [
@@ -71,6 +72,7 @@ export const PART2_STEP_KEYS: readonly StepKey[] = [
   "p2_crm",
   "p2_additions",
   "p2_manual_deductions",
+  "p2_held_release",
   "p2_holds",
 ] as const;
 
@@ -174,6 +176,13 @@ export type DraftRow = {
    * Special Situations addition. Optional so a row read before the column existed still types.
    */
   otherAdditions?: number | null;
+  /**
+   * Held Salary Release step -> the part of an earlier month's withheld salary paid out in this
+   * month's Part 2 (owner, 2026-10-26: a salary held in a published month was never paid later).
+   * Paid in the Other Additions column; publish records it against the held balance so it is
+   * released once. Optional so a row read before the column existed still types.
+   */
+  heldReleaseValue?: number | null;
   // Part 2 — deductions.
   unpaidVacations: number | null;
   crm: number | null;

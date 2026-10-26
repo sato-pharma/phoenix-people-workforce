@@ -97,7 +97,12 @@ import {
   releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
 import { buildBankCoverage, describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
-import { getHeldSettlements, loadHeldBalances } from "./held-settlements.ts";
+import {
+  getHeldSettlements,
+  loadHeldBalances,
+  outstandingHeldByEmployee,
+  recordHeldReleases,
+} from "./held-settlements.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import { heldDraftHrIds, readPublishedHoldRecord } from "./published-holds.ts";
@@ -150,6 +155,7 @@ import {
   isSettledInPart1,
   loadStepContext,
   recommendStep,
+  releaseOnlyMembersFor,
   type PopulationMember,
 } from "./recommend.ts";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
@@ -198,6 +204,7 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "bonus",
   "overtime",
   "otherAdditions",
+  "heldReleaseValue",
   "unpaidVacations",
   "resignationCrmDays",
   "crm",
@@ -674,8 +681,12 @@ async function loadRunContext(period: PayrollPeriod, runId: string): Promise<{
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
+  /** Every employee record, leavers included — the Held Salary Release step pays people who left. */
+  directory: Awaited<ReturnType<typeof loadStepContext>>["directory"];
+  /** People outside the population on the sheet only to be paid a held salary (releaseOnlyMembersFor). */
+  releaseOnlyMembers: PopulationMember[];
 }> {
-  const [{ members, sources }, draftRows] = await Promise.all([
+  const [{ members, sources, directory }, draftRows] = await Promise.all([
     loadStepContext(period),
     listDraftRows(runId),
   ]);
@@ -687,7 +698,93 @@ async function loadRunContext(period: PayrollPeriod, runId: string): Promise<{
   const excludedCompacts = new Set(
     draftRows.filter((row) => row.excluded).map((row) => row.employeeHrIdCompact),
   );
-  return { members: filterExcludedMembers(members, excludedCompacts), sources, draftRows };
+  const included = filterExcludedMembers(members, excludedCompacts);
+  const releaseOnlyMembers = releaseOnlyMembersFor({ members: included, directory, draftRows, sources, period });
+  return { members: included, sources, draftRows, directory, releaseOnlyMembers };
+}
+
+/** What the sheet releases of earlier months' held salary, row by row — never a held row's. */
+function heldReleasesOf(rows: AssembledRow[]): { hrId: string; amount: number }[] {
+  return rows
+    .filter((entry) => !entry.onHold && entry.heldReleaseApplied > 0)
+    .map((entry) => ({ hrId: entry.row.hrId, amount: entry.heldReleaseApplied }));
+}
+
+/**
+ * What the Held Salary Release step needs beyond the population: every outstanding held balance from
+ * earlier published months and the employee records to pay them to. Loaded only for that step, so
+ * no other step pays for the read.
+ */
+async function heldReleaseInputs(
+  stepKey: StepKey,
+  runId: string,
+  directory: Awaited<ReturnType<typeof loadRunContext>>["directory"],
+): Promise<{ heldBalances?: Awaited<ReturnType<typeof outstandingHeldByEmployee>>; directory?: typeof directory }> {
+  if (stepKey !== "p2_held_release") return {};
+  return { heldBalances: await outstandingHeldByEmployee(runId), directory };
+}
+
+/**
+ * A held salary release may be lowered, never raised past what is still owed, and only for someone
+ * the step lists. Judged against the step's own Outstanding column, which is the balance read at
+ * the moment of the save. Both the grid and a re-uploaded sheet come through saveStep.
+ */
+function assertHeldReleaseEdits(edits: StepEditInput[], rows: StepRow[]): void {
+  const byHrId = new Map(rows.map((row) => [row.hrId.toLowerCase(), row]));
+  const problems: string[] = [];
+  for (const edit of edits) {
+    const value = edit.values?.heldReleaseValue;
+    if (value === undefined || value === null) continue;
+    const row = byHrId.get(String(edit.hrId ?? "").toLowerCase());
+    if (!row) {
+      problems.push(`${edit.hrId} has no held salary to release`);
+      continue;
+    }
+    const outstanding = roundCurrency(Number(row.context?.Outstanding ?? 0));
+    if (roundCurrency(Number(value)) > outstanding) {
+      problems.push(`${row.fullName}: ${roundCurrency(Number(value)).toFixed(2)} is more than the ${outstanding.toFixed(2)} still held`);
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Validation: a held salary release can never be more than what is still held. ${problems.slice(0, 6).join("; ")}`,
+    );
+  }
+}
+
+/**
+ * Every held salary release saved on the run is paid in full by the rows about to be confirmed or
+ * published, and is still owed. Checked at Part 2 confirm and again at publish, because a by-hand
+ * settlement recorded in between lowers the balance, and a release with no employee record would
+ * otherwise vanish from the sheet while the step still showed it.
+ */
+async function assertHeldReleasesPayable(runId: string, draftRows: DraftRow[], rows: AssembledRow[]): Promise<void> {
+  // A row held again this month releases nothing (assemble.ts): its release stays owed, so it is not
+  // checked against the sheet here and not recorded by recordHeldReleases.
+  const releases = draftRows.filter(
+    (draft) => !draft.excluded && !draft.onHold && Number(draft.heldReleaseValue ?? 0) > 0,
+  );
+  if (releases.length === 0) return;
+  const balances = await outstandingHeldByEmployee(runId);
+  const paidByCompact = new Map(rows.map((entry) => [entry.compact, entry.heldReleaseApplied]));
+  const problems: string[] = [];
+  for (const draft of releases) {
+    const compact = compactHrKey(draft.employeeHrIdCompact);
+    const owed = balances.get(compact) ?? [];
+    const name = owed[0]?.name || draft.employeeHrId;
+    const amount = roundCurrency(Number(draft.heldReleaseValue));
+    const outstanding = roundCurrency(owed.reduce((sum, balance) => sum + balance.outstanding, 0));
+    if (amount > outstanding) {
+      problems.push(`${name}: release ${amount.toFixed(2)} is more than the ${outstanding.toFixed(2)} still held`);
+    } else if (roundCurrency(paidByCompact.get(compact) ?? 0) !== amount) {
+      problems.push(`${name}: release ${amount.toFixed(2)} is not on the sheet (no employee record to pay it to)`);
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Validation: re-open Held Salary Release and correct it. ${problems.slice(0, 6).join("; ")}`,
+    );
+  }
 }
 
 /**
@@ -769,12 +866,13 @@ async function loadStepView(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period, runId);
+  const { members, sources, draftRows, directory } = await loadRunContext(period, runId);
   // Needed only by the four-figure summary each card shows (owner 2026-08-30):
   // a previous run's overpayment being recovered is a real deduction, so
   // leaving it out would overstate take-home for exactly the people whose pay
   // has already gone wrong once. One indexed lookup, on the read path only.
   const carryForwardByCompact = await outstandingCarryForwardFor(runId);
+  const releaseInputs = await heldReleaseInputs(stepKey, runId, directory);
   const [recommended, states] = await Promise.all([
     recommendStep({
       access,
@@ -784,6 +882,7 @@ async function loadStepView(
       sources,
       draftRows,
       carryForwardByCompact,
+      ...releaseInputs,
     }),
     listStepStates(runId),
   ]);
@@ -887,6 +986,7 @@ export async function saveStep(
   // Nothing on a step may be negative (audit finding 42): a negative addition is a deduction no
   // deduction check can see. Here because both the inline grid and a re-uploaded xlsx come through.
   assertNoNegativeStepValues(stepDefinition(stepKey), applicable, currentRows);
+  if (stepKey === "p2_held_release") assertHeldReleaseEdits(applicable, currentRows);
 
   // A hold may not be saved without a reason.
   //
@@ -981,11 +1081,19 @@ export async function confirmStep(
   assertStepPhaseAllowed(run, stepKey);
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const [{ members, sources, draftRows }, states] = await Promise.all([
+  const [{ members, sources, draftRows, directory }, states] = await Promise.all([
     loadRunContext(period, runId),
     listStepStates(runId),
   ]);
-  const recommended = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+  const recommended = await recommendStep({
+    access,
+    period,
+    stepKey,
+    members,
+    sources,
+    draftRows,
+    ...(await heldReleaseInputs(stepKey, runId, directory)),
+  });
   // RE-CONFIRMING TAKES THE MODULE'S CURRENT FIGURE for every line nobody overrode — the remedy the
   // drift block names. Without this the saved figure won and the re-confirm stored it again.
   const rows = withCurrentModuleFigures(
@@ -1620,13 +1728,14 @@ export async function confirmPart2(
     });
   }
 
-  const { rows, members: assembledMembers } = await assembleForRun(run);
+  const { rows, members: assembledMembers, draftRows: assembledDraftRows } = await assembleForRun(run);
   const { preflightValidate } = await import("./validate.ts");
   const preflight = preflightValidate(rows);
   if (!preflight.ok) {
     const sample = preflight.issues.slice(0, 6).map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
     throw new Error(`Validation: fix ${preflight.errorCount} issue(s) before confirming Part 2. ${sample.join("; ")}`);
   }
+  await assertHeldReleasesPayable(runId, assembledDraftRows, rows);
 
   // ONE ABSENCE DAY, CHARGED ONCE.
   //
@@ -1802,6 +1911,14 @@ export async function confirmPart2(
       detail: { [PART2_TOTALS_KEY]: confirmedTotals, [PART2_BANK_DETAILS_KEY]: confirmedBankDetails },
     });
     const recorded = await recordOverpaidCarryForward({ runId, rows, actorHrId: actorId(access) });
+    // RESERVE THE HELD SALARY THIS MONTH RELEASES, before the run is ready: from here the Part 2 bank
+    // files can pay it, so another run or the held-salary sheet must no longer see it as owed.
+    await recordHeldReleases({
+      runId,
+      actorHrId: actorId(access),
+      stage: "part2_confirmed",
+      releases: heldReleasesOf(rowsUnderClaim),
+    });
     const confirmed = await updateRun(
       runId,
       { phase: "ready", part2ConfirmedAt: nowIso(), part2ConfirmedBy: actorId(access) },
@@ -1841,9 +1958,10 @@ async function assembleForRun(run: MonthlySalaryRun): Promise<{
   rows: AssembledRow[];
   members: PopulationMember[];
   carryForwardByCompact: Map<string, number>;
+  draftRows: DraftRow[];
 }> {
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const [{ members, sources, draftRows }, carryForwardByCompact, statutoryConfig, insuranceWages] =
+  const [{ members, sources, draftRows, releaseOnlyMembers }, carryForwardByCompact, statutoryConfig, insuranceWages] =
     await Promise.all([
       loadRunContext(period, run.id),
       // Overpayments from PREVIOUS runs that this run recovers (owner rule
@@ -1870,8 +1988,10 @@ async function assembleForRun(run: MonthlySalaryRun): Promise<{
     // joined the run after the freeze — they must not have one recomputed for
     // them, because that silently moves a total finance already paid.
     part1Confirmed: run.part1ConfirmedAt != null,
+    // Leavers paid only an earlier month's held salary (Held Salary Release, 2026-10-26).
+    releaseOnlyMembers,
   });
-  return { rows, members, carryForwardByCompact };
+  return { rows, members, carryForwardByCompact, draftRows };
 }
 
 export async function getReconciliation(
@@ -2216,7 +2336,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     throw new Error("Conflict: confirm Part 2 before publishing to payslips.");
   }
 
-  const { rows } = await assembleForRun(run);
+  const { rows, draftRows: publishDraftRows } = await assembleForRun(run);
   const heldRows = rows.filter((entry) => entry.onHold);
   const heldExcluded = heldRows.length;
   const publishRows = rows.filter((entry) => !entry.onHold).map((entry) => entry.row);
@@ -2242,6 +2362,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
         `${sample.join("; ")} (These passed at Part 2 confirm, so something has changed since.)`,
     );
   }
+  await assertHeldReleasesPayable(runId, publishDraftRows, rows);
 
   const publishTotals = reconcile(rows);
   if (publishTotals.splitMismatches.length > 0) {
@@ -2285,6 +2406,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       // The first instalment is money that has ALREADY left the company; the second is what this
       // publish would have paid and did not. Both are needed to settle the person by hand.
       firstPartAlreadyPaid: roundCurrency(entry.row.firstPart),
+      // A held row releases no earlier held salary (assemble.ts), so these are this month's own figures.
       secondPartWithheld: roundCurrency(entry.row.secondPart),
       monthTotal: roundCurrency(entry.row.monthSalary),
       // The filing figures too (audit finding 43): a held person has no salary record, so the statutory
@@ -2440,12 +2562,22 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
         .filter((compact): compact is string => Boolean(compact)),
     });
 
+    // RECORD WHAT THIS RUN RELEASED OF AN EARLIER MONTH'S HELD SALARY, from the rows actually published
+    // — the same rule as the carry-forward above. It REPLACES what Part 2 confirm reserved, so a retried
+    // publish writes the same record again rather than a second one.
+    const heldReleased = await recordHeldReleases({
+      runId,
+      actorHrId: actorId(access),
+      stage: "published",
+      releases: heldReleasesOf(rows),
+    });
+
     const updated = await updateRun(
       runId,
       { phase: "published", publishedBatchId: batchId, publishedAt: nowIso(), publishedBy: actorId(access) },
       { transitionToken: transition },
     );
-    return { batchId, carryForwardRecovered, updated };
+    return { batchId, carryForwardRecovered, heldReleased, updated };
   }).catch((publishError: unknown) => {
     // A lost claim HERE is not "nothing happened": the payslips are live and the run is not marked.
     // Saying otherwise invites the two moves that make it worse — re-publishing, or reopening Part 2 and
@@ -2461,7 +2593,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     }
     throw publishError;
   });
-  const { batchId, carryForwardRecovered, updated } = published;
+  const { batchId, carryForwardRecovered, heldReleased, updated } = published;
 
   // Mark the outstation trips this month paid (owner ruling 2026-09-12). Never throws: expense-stamp.ts.
   const expenseStamp = await recordPaidExpenseStamp({
@@ -2498,6 +2630,8 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       payslipNoticeFailed: payslipNotice.failed,
       payslipNoticeError: payslipNotice.error,
       carryForwardRecovered,
+      // Earlier months' held salary this month paid, by person and held month.
+      heldReleased,
       // Which outstation trips this month paid, or why marking them failed.
       expenseStamp,
       // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
@@ -2868,10 +3002,17 @@ export async function importStepUpload(
  * Since 2026-10-23 the destination is held too, not only the amount: a bank or account changed on the
  * employee record after the confirm refuses the file (owner, "block it"), naming whose changed.
  */
-async function assertFileMatchesPart2Confirm(run: MonthlySalaryRun, rows: AssembledRow[]): Promise<void> {
+async function assertFileMatchesPart2Confirm(
+  run: MonthlySalaryRun,
+  rows: AssembledRow[],
+  draftRows: DraftRow[],
+): Promise<void> {
   // The rule is assertPart2FileMatchesStamp's; the phase test here only saves a read for a month that
   // is not held to the stamp.
   if (run.phase !== "ready") return;
+  // A held salary this file would pay must still be owed — a by-hand transfer recorded after the
+  // confirm would otherwise be paid a second time by the bank.
+  await assertHeldReleasesPayable(run.id, draftRows, rows);
   const stamp = await readPart2ConfirmedStamp(run.id);
   const names = new Map(rows.map((entry) => [entry.compact, entry.row.fullName]));
   assertPart2FileMatchesStamp(run, stamp.totals, part2Totals(rows.length, reconcile(rows)), {
@@ -2902,8 +3043,8 @@ export async function buildFinanceSheet(
 
   // ONE assembly path — see buildFabSheet. The finance sheet is the document the month is executed
   // from, and it used to re-assemble without the carry-forward ledger.
-  const { rows } = await assembleForRun(run);
-  if (scope === "full") await assertFileMatchesPart2Confirm(run, rows);
+  const { rows, draftRows } = await assembleForRun(run);
+  if (scope === "full") await assertFileMatchesPart2Confirm(run, rows, draftRows);
   const buffer = await buildFinanceSheetWorkbook({
     run,
     rows,
@@ -2986,8 +3127,8 @@ export async function buildFabSheet(
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   // ONE assembly path — the same call publish makes. This used to re-assemble by hand WITHOUT the
   // carry-forward ledger, so a recovery that the payslip carried reached neither bank file.
-  const { rows } = await assembleForRun(run);
-  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);
+  const { rows, draftRows } = await assembleForRun(run);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
@@ -3036,8 +3177,8 @@ export async function buildCibSheet(
   }
 
   // ONE assembly path — see buildFabSheet. Carry-forward recoveries reached neither bank file.
-  const { rows } = await assembleForRun(run);
-  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows);
+  const { rows, draftRows } = await assembleForRun(run);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
   // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
   // source that cibRowsForScope never sees on its own.

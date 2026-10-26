@@ -250,6 +250,7 @@ export async function runDeductionPayrollResyncTests() {
           { compact: "ai0001", lifecycle: "leaver", employee: { hrId: "AI-0001" } } as unknown as PopulationMember,
         ],
         sources: new Map(),
+        directory: new Map(),
       }),
       listDraftRows: async () => [
         { employeeHrIdCompact: "ai0001", employeeHrId: "AI-0001", settledInPart1: null } as unknown as DraftRow,
@@ -308,7 +309,7 @@ export async function runDeductionPayrollResyncTests() {
         { runId: "run-2", stepKey: "p1_crm", status: "confirmed" } as unknown as StepState,
       ],
       // The employee is GONE from the live population — no member, no source.
-      loadStepContext: async () => ({ members: [], sources: new Map() }),
+      loadStepContext: async () => ({ members: [], sources: new Map(), directory: new Map() }),
       // …but the run's own draft still records that Part 1 froze them.
       listDraftRows: async () => [
         { employeeHrIdCompact: "ai0002", employeeHrId: "AI-0002", settledInPart1: true } as unknown as DraftRow,
