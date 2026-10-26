@@ -374,6 +374,20 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(nextManagerPlanStatus({ action: "return", status: "submitted", stage: "first", hasSecond: false }), "returned");
   assert.equal(nextManagerPlanStatus({ action: "return", status: "first_approved", stage: "second", hasSecond: true }), "returned");
   assert.equal(nextManagerPlanStatus({ action: "approve", status: "approved", stage: "first", hasSecond: false }), null, "an approved week is never approved again");
+  assert.equal(nextManagerPlanStatus({ action: "approve", status: "approved", stage: "second", hasSecond: true }), null, "nor at its second stage");
+  // An approved week still opens the decision panel for its last approver — to return it — so the panel
+  // offers Approve only where the state machine does; it had offered Approve on an approved week, and the
+  // press could only answer "This week has already moved on" (owner's screenshot, 2026-10-26).
+  assert.ok(
+    functionBody(source("src/lib/phoenix-crm/server/manager-plan-hub.ts"), "async function planDetail(").includes(
+      'canApprove: nextManagerPlanStatus({ action: "approve", status: plan.status, stage, hasSecond }) !== null,',
+    ),
+    "the Hub opens Approve from the state machine",
+  );
+  const planActions = source("src/components/approvals-hub/manager-plan-decision-actions.tsx");
+  assert.equal(planActions.split('open("approve")').length - 1, 1, "the panel has one Approve button");
+  assert.match(planActions, /\{target\.canApprove \? \(\s*<button type="button" onClick=\{\(\) => open\("approve"\)\}/, "the panel shows it only when Approve is open");
+  assert.ok(source("src/components/approvals-hub/manager-plan-request-detail.tsx").includes("canApprove: detail.canApprove,"), "the page passes it to the panel");
 
   // The status names the person it waits on; the Administrator's decision says so.
   assert.equal(managerPlanStatusLine({ status: "submitted", firstName: "Hany Saad" }), "Waiting for Hany Saad to approve");

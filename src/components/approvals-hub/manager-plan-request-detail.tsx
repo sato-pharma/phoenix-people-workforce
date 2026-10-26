@@ -235,7 +235,7 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
             />
           ) : detail.decideAs ? (
             <ManagerPlanDecisionActions
-              target={{ kind: "plan", planId: detail.planId, version: detail.version, returnableDays: detail.returnableDays, thenName: detail.thenName }}
+              target={{ kind: "plan", planId: detail.planId, version: detail.version, canApprove: detail.canApprove, returnableDays: detail.returnableDays, thenName: detail.thenName }}
               byAdministrator={detail.decideAs === "administrator"}
               backHref={backHref}
             />
