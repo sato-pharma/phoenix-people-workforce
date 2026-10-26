@@ -8,6 +8,7 @@ import { hrBundleGrants, isSalaryBlindRole } from "@/lib/auth/hr-functions";
 // Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
 // TYPES back from this file, so there is no runtime cycle between the two.
 import { isModuleLockedForAccess } from "@/lib/auth/module-locks";
+import { SignedOutRefusal } from "@/lib/auth/signed-out-refusal";
 // The admin-shell role list, read by the sidebar without this module. It imports only a TYPE back.
 import { adminShellEmployeeRoles } from "@/lib/auth/admin-shell-roles";
 // The one portal-role list, shared with the landing path. It imports only a TYPE back from here.
@@ -2682,6 +2683,11 @@ export async function assertPermission(
   action: PermissionAction = "read",
 ) {
   if (await canAccess(context, resource, action)) return;
+
+  // Nobody is signed in (the session ended or never existed): the SAME "Forbidden:" sentence, so every
+  // route answers as before, but marked, so a module's one failure handler can say "sign in again"
+  // instead of "not allowed" (signed-out-refusal.ts). Asked before the lock, which is not his problem yet.
+  if (context.source === "guest") throw new SignedOutRefusal(`Forbidden: ${context.role} cannot ${action} ${resource}.`);
 
   // A locked module says so. The message still starts with "Forbidden:" because ~200 route handlers
   // key their 403 on exactly that prefix (isForbiddenError in ./server.ts) — changing the shape of
