@@ -190,15 +190,25 @@ function rowLabel(fileNames: readonly string[], encoded: number): string {
   return `${fileNames[fileIndex] ?? `File ${fileIndex + 1}`} row ${rawRowNumber}`;
 }
 
+/**
+ * Every "Row <n>" a sentence cites, named by its file — "Branch-2.xlsx row 14". The sentences that
+ * write a row into the text (row-messages.ts, and the Normalizer's "Row 145: product … not mapped")
+ * would read the shifted number otherwise. With one file the sentence is returned as it is.
+ */
+export function labelRowText(text: string, fileNames: readonly string[]): string {
+  if (fileNames.length < 2) return text;
+  return text.replace(/\bRow (\d+)/g, (_match, n: string) => {
+    const label = rowLabel(fileNames, Number(n));
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  });
+}
+
 /** One finding with its cited rows named by file. With one file it is returned as it is. */
 export function labelFindingRows(finding: ValidationFinding, fileNames: readonly string[]): LabelledFinding {
   if (fileNames.length < 2) return finding;
   return {
     ...finding,
-    detail: finding.detail.replace(/\bRow (\d+)/g, (_match, n: string) => {
-      const label = rowLabel(fileNames, Number(n));
-      return label.charAt(0).toUpperCase() + label.slice(1);
-    }),
+    detail: labelRowText(finding.detail, fileNames),
     sampleRows: finding.sampleRows.map((n) => decodeFileRow(n).rawRowNumber),
     sampleRowLabels: finding.sampleRows.map((n) => rowLabel(fileNames, n)),
   };

@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
-import { persistNormalizedBatch, recognitionErrorMessage, recognizeWorkbookParts } from "@/lib/sales/normalizer/service";
+import { formFiles, recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
+import { persistNormalizedBatch, recognitionErrorMessage } from "@/lib/sales/normalizer/service";
+import { combinedFileName } from "@/lib/sales/sales-upload-files";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -18,12 +20,13 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const form = await request.formData();
-    const file = form.get("file");
+    // One raw sheet, or several of the same distributor chosen together (multi-file.ts).
+    const files = formFiles(form);
     const distributorCode = String(form.get("distributorCode") ?? "");
-    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
+    if (files.length === 0) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await recognizeWorkbookParts(distributorCode, file);
+    const normalized = await recognizeWorkbookFiles(distributorCode, files);
     if (normalized.status !== "ok") {
       return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
@@ -32,8 +35,9 @@ export async function POST(request: Request) {
     if (coded === 0) {
       return NextResponse.json({ success: false, error: "Nothing to import — no rows could be coded. Map the exceptions first." }, { status: 400 });
     }
-    // One batch per distributor — a batch is one distributor and one month everywhere in the
-    // system, so a template naming several is imported as several, never merged into one.
+    // One batch per distributor and month — a batch is one distributor and one month everywhere in
+    // the system, so a template naming several is imported as several, never merged into one, and
+    // several sheets of one month are imported as ONE batch rather than one superseding the next.
     const batches: Array<{ batchId: string; distributorName: string; exceptions: number; importedRows: number; period: string | null }> = [];
     for (const part of parts) {
       if (part.result.coded.length === 0) continue;
@@ -42,7 +46,10 @@ export async function POST(request: Request) {
         // names the real distributor. Filing the batch under the sentinel would invent a distributor.
         distributorCode: part.distributorCode,
         distributorName: part.distributorName,
-        fileName: file.name,
+        // Every sheet the batch was read from ("branch-1.xlsx + branch-2.xlsx"); one sheet keeps its name.
+        fileName: combinedFileName(part.fileNames),
+        // The part's own month — the month its sheets were read as (each sheet's dominant month).
+        period: part.period ?? undefined,
         result: part.result,
         uploadedBy: access.loginId ?? access.hrId ?? "admin",
       });

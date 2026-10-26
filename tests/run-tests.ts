@@ -822,6 +822,7 @@ import { runSalesUploadRefusedRowsTests } from "./sales-upload-refused-rows.test
 import { runSosNumberCellsAutoFixTests } from "./sos-number-cells-auto-fix.test.ts";
 import { runSalesUploadRedatedRowsTests } from "./sales-upload-redated-rows.test.ts";
 import { runSalesUploadMultiFileTests } from "./sales-upload-multi-file.test.ts";
+import { runNormalizerMultiFileTests } from "./normalizer-multi-file.test.ts";
 import { runSosEuropeanDecimalMisreadTests } from "./sos-european-decimal-misread.test.ts";
 import { runProductSourceRowNumberCommaTests, runSosMonthlyImportCommaMisreadTests } from "./sos-monthly-import-comma-misread.test.ts";
 import { runSalesUploadVerificationTests } from "./sales-upload-verification.test.ts";
@@ -4634,6 +4635,10 @@ await runTest(
 await runTest(
   "several sheets of one distributor validate and upload as one: every row kept and named by its file, one batch per month, the same sheet twice refused",
   runSalesUploadMultiFileTests,
+);
+await runTest(
+  "several raw sheets of one distributor on the Source Normalizer: one month is one part and one batch, months stay apart, every row named by its file",
+  runNormalizerMultiFileTests,
 );
 await runTest(
   "sales upload reads a European \"1.234,56\" as 1234.56 and lists it, never as 1.23456; a text \"1.234\" or \"12,5\" it would have to guess at is refused and named",

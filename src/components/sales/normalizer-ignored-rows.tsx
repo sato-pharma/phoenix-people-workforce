@@ -66,7 +66,7 @@ export function NormalizerIgnoredRows({ rows, ignoredCount }: { rows: readonly P
               <tr className={cn("hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={`${row.rowNumber}-${i}`}>
                 <td className="break-words px-3 py-1.5 align-top text-slate-600">
                   <span className="block font-semibold text-slate-900" dir="auto">{row.productName}</span>
-                  <span className="block font-mono text-xs">{row.rawProduct} · row {row.rowNumber.toLocaleString("en-US")}</span>
+                  <span className="block font-mono text-xs">{row.rawProduct} · {row.fileName ? `${row.fileName} · ` : ""}row {row.rowNumber.toLocaleString("en-US")}</span>
                 </td>
                 <td className="px-3 py-1.5 align-top font-semibold tabular-nums text-slate-900">{row.qty.toLocaleString("en-US")}</td>
                 <td className="break-words px-3 py-1.5 align-top text-slate-600">{REASON_LABEL[row.reason]}</td>
