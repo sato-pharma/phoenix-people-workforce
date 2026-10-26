@@ -85,6 +85,7 @@
   "a-merge-burst-marks-earlier-production-deploys-failure": "engineering-deploys",
   "a-merge-mid-session-orphans-your-next-push-silently": "git-worktrees",
   "a-minimized-window-makes-every-browser-test-lie": "engineering-tests",
+  "a-minute-long-portal-load-in-the-app-pane-is-the-laptop": "org",
   "a-mirror-refresh-must-carry-assignments-json-or-main-goes-red": "sessions",
   "a-mismatch-query-hides-the-row-that-matches": "marketing",
   "a-missing-suggestion-after-a-resume-is-the-session-being-unloaded": "sessions",

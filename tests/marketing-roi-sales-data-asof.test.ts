@@ -36,9 +36,12 @@ export function runMarketingRoiSalesDataAsOfTests() {
 
   // ── "Sales loaded through" means LOADED ──────────────────────────────────────────────────────
   const roi = stripComments(readFileSync("src/lib/marketing-requests/roi-report-service.ts", "utf8"));
-  const reader = roi.slice(roi.indexOf("export async function loadLatestValidatedPeriod"));
-  const readerBody = reader.slice(0, reader.indexOf("\n}\n") + 1);
-  assert.ok(readerBody.length > 0 && readerBody.length < roi.length / 4, "the reader slice must find its markers");
+  const fetcher = roi.slice(roi.indexOf("export async function loadLatestValidatedPeriod"));
+  const fetcherBody = fetcher.slice(0, fetcher.indexOf("\n}\n") + 1);
+  const picker = stripComments(readFileSync("src/lib/marketing-requests/roi-frontier.ts", "utf8"));
+  // The reader is the fetch plus the pure picker it hands the rows to — together they are the rule.
+  const readerBody = fetcherBody + picker;
+  assert.ok(readerBody.length > 0 && fetcherBody.length > 0 && fetcherBody.length < roi.length / 4, "the reader slice must find its markers");
 
   // 🔴 THE BUG THIS REPLACES: `max(period)` over validated batches. On 2026-10-02 that answered
   //    2026-09 from ONE batch of eighteen — 41 rows against August's ~44,500 — and three campaigns
@@ -48,7 +51,7 @@ export function runMarketingRoiSalesDataAsOfTests() {
   // shape this regresses to, and a looser check passes straight through it. Found by breaking it.
   assert.match(
     readerBody,
-    /\.select\("period, distributor_code"\)/,
+    /\.select\("period, distributor_code, template_key"\)/,
     "the fallback asks the database WHICH distributors filed, not just which periods exist",
   );
   assert.doesNotMatch(

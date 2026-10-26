@@ -35,6 +35,7 @@
 - [plan-mode prompts are auto-approved by a hook](plan-mode-prompts-are-auto-approved.md) - PermissionRequest hook allows all in plan mode; only the plan approval and his MCQ answers stay his.
 - [a later "max" bust cancels {expire:0}; a worker bust never reaches the website](revalidatetag-max-cancels-expire-zero-and-never-crosses-processes.md) - no cacheHandler, tag state is per process; use {expire:0} where the writer's next screen must show the write.
 - [ALL production backup schemas are kept](production-backup-schemas-are-all-kept.md) - his word 26 Oct: never drop one, never suggest an age-based cleanup, never re-raise it.
+- [a minute-long portal load in the app pane is the laptop](a-minute-long-portal-load-in-the-app-pane-is-the-laptop.md) - 26 Oct: server sent A-12's pages in 0.4–2 s while the starved pane painted at 20–75 s; read HTTP totalDuration first.
 
 
 
