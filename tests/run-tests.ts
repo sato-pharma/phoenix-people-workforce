@@ -2101,6 +2101,7 @@ import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.te
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
+import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmTouchTrailTests } from "./phoenix-crm-touch-trail.test.ts";
 import { runPhoenixCrmTouchTrailReaderTests } from "./phoenix-crm-touch-trail-reader.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
@@ -7522,6 +7523,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM place checks' REP SCORECARD — each rep's captures on one line, worst first (owner, 2026-10-17: \"is this a report that really shows me data? or it's a bunch of chaos\"; the board drew every row and summed nothing, 104,455 px tall on its Clinics tab). Pinned: every place sits in exactly one of six columns so a line adds up to its own Places figure; a place waiting for a decision is counted there once, never again among the places in use, and a place listed twice is one place; a customer sent back sits beside the sum; a seated customer is judged on the timetable and never on a signboard reading; a lost call is 'not read', never a bad photograph; reps sort by the SHARE of photographs that went wrong, then the count, then the name; the total reads every count a line carries; the phone cards come before the table and the header is mapped from the same columns; a manager's line says 'Being checked', never 'Waiting for you'; and tapping a rep narrows the whole board through its own Rep filter",
   runPhoenixCrmPlaceCheckScorecardTests,
+);
+
+await runTest(
+  "the Phoenix CRM MASTER LIST — every validated customer once, at the place the photographs agree on (owner, 2026-10-26: \"build a master page for only the admin, and the CEO ... the list source of trust ... separate regions and areas ... and bricks, and put in each brick per speciality\"; who confirms: \"my click and automatic\"; the photo pick: \"Master profile only\"). Pinned: one name on one list within 500 m folds into one profile and further apart stays two, AM and PM never mix, a two-word name matches only whole; a photograph of the door anchors the profile over a sharper pin, and the photograph most others agree with wins; confirmed is earned — two reps' photographs that agree, or one photograph and three visits read at the place — and points that do not sit together, or no photograph, need a look with a neutral reason; his Confirm, Not confirmed and photo pick win; the usual window, earliest and latest, visit length and weekdays read Cairo's clock; pharmacies are their own group last in a brick and the unset brick sorts last; only the Super Admin and the CEO read it, only the Super Admin decides; the route checks same-origin and the permission, nothing writes a rep's place, and the table is the service role's alone",
+  runPhoenixCrmMasterListTests,
 );
 
 await runTest(

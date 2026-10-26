@@ -176,6 +176,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/move", "approve"),
   // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
   post("list/places/seat", "update"),
+  // The Master List's confirm / not confirmed / clear and its chosen photo (owner, 2026-10-26: "my click
+  // and automatic"): the Super Admin alone — `update` at the route, `saveMasterDecision` refuses everyone
+  // else in the service. It writes only the decisions table; no rep's place moves.
+  post("master-list/decision", "update"),
   // A comment on one place check, and a recommendation about it (owner, 2026-10-13): the Super Admin,
   // or a district manager on his OWN team's seats. `approve` and NOT `update` — a District Manager
   // holds phoenix_crm ["read", "create", "approve"] and no `update` at all, so `update` would 403 the
@@ -1007,6 +1011,9 @@ const LATER_MIGRATIONS = [
   // The same tool taught a month's plan and a district manager's own visit: it REPLACES that function and widens
   // one CHECK on its log table, so it appends after the migration that made them.
   "supabase/migrations/20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql",
+  // The Master List's decisions (owner, 2026-10-26): one new table, locked by the same four statements, and no
+  // function — it replaces nothing and moves no rep's place, so it appends at the end.
+  "supabase/migrations/20261026165500_phoenix_crm_master_decisions.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

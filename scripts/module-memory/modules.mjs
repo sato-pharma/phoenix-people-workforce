@@ -523,9 +523,15 @@ export const MODULES = [
       "app/api/admin/phoenix-crm/integrity/cases/**",
       "tests/place-review-deck*",
       "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks}*",
+      // The Master List (owner, 2026-10-26): one profile per real place, by region, area, brick and speciality.
+      "src/lib/phoenix-crm/master-list.ts",
+      "src/lib/phoenix-crm/server/master-list.ts",
+      "src/components/phoenix-crm/master-list-board.tsx",
+      "app/**/phoenix-crm/master-list/**",
+      "tests/phoenix-crm-master-list*",
     ],
-    keywords: ["place checks", "same place", "same customer", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks"],
-    tables: ["phoenix_crm_place_match_answers"],
+    keywords: ["place checks", "same place", "same customer", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks", "master list", "master profile"],
+    tables: ["phoenix_crm_place_match_answers", "phoenix_crm_master_decisions"],
   },
   // 🔴 SPLIT, 2026-10-19, FOR THE SAME REASON AGAIN: `phoenix-crm-validation` measured a 4,144-byte
   // pointer against the 4,000 margin the moment the AM short forms and the new-photo advice taught their
