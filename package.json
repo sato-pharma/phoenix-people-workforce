@@ -194,7 +194,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mailparser": "^3.4.6",
