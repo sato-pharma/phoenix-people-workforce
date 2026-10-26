@@ -636,6 +636,7 @@ import { runFieldAbsenceCalendarTests } from "./field-absence-calendar.test.ts";
 import { runVisitCountGoldenRuleTests } from "./visit-count-golden-rule.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
+import { runVacationDeciderHrIdStorageTests } from "./vacation-decider-hr-id-storage.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
 import { runRecruitmentRequisitionOpenGateTests } from "./recruitment-requisition-open-gate.test.ts";
 import { runRecruitmentInterviewClashTests } from "./recruitment-interview-clash.test.ts";
@@ -4258,6 +4259,7 @@ await runTest(
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
+await runTest("a leave decision stores the decider's HR id upper-case (the lowercase comparison key left 162 decider cells in production), and the repair migration touches only the two decision columns", runVacationDeciderHrIdStorageTests);
 await runTest("hiring analytics (a batch sweep is not a decision, and a rate needs a denominator)", runRecruitmentHiringAnalyticsTests);
 await runTest("requisition open gate (no hire for nobody, and no replacing somebody who is still here)", runRecruitmentRequisitionOpenGateTests);
 await runTest("interview clash (one interviewer cannot be in two interviews at once)", runRecruitmentInterviewClashTests);
