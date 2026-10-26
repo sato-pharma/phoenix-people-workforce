@@ -38,7 +38,7 @@ import {
   type SosDashboardData,
   type SosDashboardFilters,
   type SosFilterOptions,
-  type SosScopeOverrides,
+  type SosDashboardOptions,
 } from "@/lib/sales/sos-dashboard";
 import { maskCodeKeyedDistributorMap, maskPortalSosDashboard } from "@/lib/sales/closing-source-mask";
 import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
@@ -568,7 +568,7 @@ function valueByCode(rows: { code: string; value: number }[]): Record<string, nu
 async function computeComparison(
   filters: SosDashboardFilters,
   ctx: AccessContext,
-  options: SosScopeOverrides,
+  options: SosDashboardOptions,
   current: SosDashboardData,
 ): Promise<PortalSosComparison | null> {
   if (!current.period) return null;
@@ -614,6 +614,27 @@ async function computeComparison(
   };
 }
 
+/**
+ * The engine options every portal read passes. 🔴 `omitCoverageWarning` is ALWAYS on: the
+ * data-gap banner ("overseas is missing from 2026-10, 2026-11 … not like-for-like") is never
+ * shown on the employee portal's Source of Sales dashboard (owner, 2026-10-26).
+ */
+export function buildPortalSosOptions(
+  scope: Pick<PortalSosScope, "allowedProductCodes" | "areaCodes" | "regionOverride">,
+): SosDashboardOptions {
+  const options: SosDashboardOptions = {
+    allowedProductCodes: scope.allowedProductCodes,
+    omitCoverageWarning: true,
+  };
+  // Only forward a region override when one was resolved (RM, or a seat-derived area bound whose
+  // regions must be reachable). Omitting the key lets the engine keep the role's base region scope
+  // (e.g. a DSM's single-region lock when the seat map couldn't answer).
+  if (scope.regionOverride !== undefined) options.allowedRegionCodes = scope.regionOverride;
+  // The area bound must travel with any widened region set — never one without the other.
+  if (scope.areaCodes !== null) options.allowedAreaCodes = scope.areaCodes;
+  return options;
+}
+
 export async function getPortalSosDashboard(
   filters: SosDashboardFilters,
   ctx: AccessContext,
@@ -625,14 +646,7 @@ export async function getPortalSosDashboard(
 }> {
   const scope = await resolvePortalSosScope(ctx);
 
-  const options: SosScopeOverrides = { allowedProductCodes: scope.allowedProductCodes };
-  // Only forward a region override when one was resolved (RM, or a seat-derived area bound whose
-  // regions must be reachable). Omitting the key lets the engine keep the role's base region scope
-  // (e.g. a DSM's single-region lock when the seat map couldn't answer).
-  if (scope.regionOverride !== undefined) options.allowedRegionCodes = scope.regionOverride;
-  // The area bound must travel with any widened region set — never one without the other.
-  if (scope.areaCodes !== null) options.allowedAreaCodes = scope.areaCodes;
-
+  const options = buildPortalSosOptions(scope);
   const data = await getSosDashboard(filters, ctx, options);
   const [comparison, uploadStatus] = await Promise.all([
     computeComparison(filters, ctx, options, data),
