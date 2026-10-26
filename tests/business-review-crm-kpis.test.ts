@@ -296,6 +296,28 @@ export function runBusinessReviewCrmKpisTests() {
     assert.equal(month.unread, false);
   }
 
+  // ------------------------------------------------------------------ 2b. a manager stored in capitals reads in title case
+  {
+    const month = reviewKpiMonthOf({
+      boardRows: [
+        kpiRow({ agentHrId: "rep-1", managerName: "SAHAR EL GALLAD", repName: "Rep One" }),
+        kpiRow({ agentHrId: "rep-2", managerName: "Sahar El Gallad", repName: "Rep Two" }),
+        kpiRow({ agentHrId: "rep-3", managerName: "Manager Two", repName: "Rep Three" }),
+      ],
+      holidaysComplete: true,
+      month: "2026-08",
+      repHrIds: ["rep-1", "rep-2", "rep-3"],
+      rules: "legacy",
+      workingDays: 20,
+    });
+    assert.deepEqual(
+      month.teams.map((team) => team.managerName).sort(),
+      ["Manager Two", "Sahar El Gallad"],
+      "an all-capitals manager reads in title case, and the same person in two spellings is ONE team card",
+    );
+    assert.equal(month.teams.find((team) => team.managerName === "Sahar El Gallad")?.figures.reps, 2);
+  }
+
   // ------------------------------------------------------------------ 3. a rep's own months, in plain lines
   {
     const july = monthOf("2026-07", [kpiRow({ agentHrId: "rep-1", repName: "Rep One" })]);

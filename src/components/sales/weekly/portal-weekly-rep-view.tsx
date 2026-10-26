@@ -47,6 +47,7 @@ import type {
   PortalWeeklyRepStatus,
   RepWeeklyWeek,
 } from "@/lib/sales/weekly/portal-weekly-rep";
+import { weeklyAreaLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 
@@ -108,10 +109,10 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
   ).length;
   const gapWeeks = weeks.filter((week) => week.spansGap).map((week) => week.weekNumber);
 
-  const areaSummary = [...new Set(areas.map((area) => area.areaName))].join(", ");
+  const areaSummary = [...new Set(areas.map((area) => weeklyAreaLabel(area.areaName)))].join(", ");
   const placeSummary = [
     ...new Set(areas.map((area) => area.lineName)),
-    ...new Set(areas.map((area) => area.regionName).filter(Boolean)),
+    ...new Set(areas.map((area) => weeklyRegionLabel(area.regionName)).filter(Boolean)),
   ].join(" · ");
 
   const goToMonth = (code: string) => {
@@ -142,7 +143,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
             </p>
             <p className="break-words text-sm font-black text-slate-900">{areaSummary}</p>
             {placeSummary ? (
-              <p className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">{placeSummary}</p>
+              <p className="break-words text-phx-2xs font-bold tracking-wide text-slate-400">{placeSummary}</p>
             ) : null}
           </div>
         </div>
@@ -277,9 +278,9 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
                   <div key={area.key} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                       <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-                      <span className="break-words text-xs font-black text-slate-800">{area.areaName}</span>
-                      <span className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-                        {[area.lineName, area.regionName].filter(Boolean).join(" · ")}
+                      <span className="break-words text-xs font-black text-slate-800">{weeklyAreaLabel(area.areaName)}</span>
+                      <span className="break-words text-phx-2xs font-bold tracking-wide text-slate-400">
+                        {[area.lineName, weeklyRegionLabel(area.regionName)].filter(Boolean).join(" · ")}
                       </span>
                     </span>
                     <span className="text-xs font-black tabular-nums text-slate-900">{formatEgp(area.value)}</span>

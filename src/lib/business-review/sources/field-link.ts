@@ -32,6 +32,7 @@
 //   * MARKET AWARENESS activities are read at their area and line, from their start date.
 
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { collapseDuplicateVisitSubmissions, isCrmDoubleVisitRow, queryVisits } from "@/lib/crm/reads";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket } from "@/lib/crm/visit-count-buckets";
@@ -344,7 +345,7 @@ async function loadNames(db: Db, hrIds: readonly string[]): Promise<Record<strin
     for (const row of (data ?? []) as { hr_id: string | null; full_name: string | null }[]) {
       const key = hrKey(row.hr_id);
       const name = text(row.full_name);
-      if (key && name) out[key] = name;
+      if (key && name) out[key] = tidyAllCapitalsName(name);
     }
   }
   return out;

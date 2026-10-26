@@ -1265,7 +1265,7 @@ export async function runWeeklySalesDepotDetailTests() {
   assert.match(detail, /<div className="space-y-2 p-3 md:hidden">/, "a phone reads cards");
   assert.match(detail, /const exportHref = `\$\{exportPath\}\$\{query \? `\?\$\{query\}` : ""\}`;/, "Export sends the screen's own query");
   assert.equal(
-    (detail.match(/<DrillName name=\{row\.name\} onClick=\{onDrill && row\.code \? /g) ?? []).length,
+    (detail.match(/<DrillName name=\{groupName\(nameLabel, row\)\} onClick=\{onDrill && row\.code \? /g) ?? []).length,
     2,
     "a group row with no code of its own (Region not mapped) is not a drill, on desktop or on a phone",
   );

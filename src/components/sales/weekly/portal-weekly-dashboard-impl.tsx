@@ -47,6 +47,7 @@ import {
   cairoCycleMonthNow,
   portalNsmDsmExportMonths,
 } from "@/lib/sales/weekly/nsm-dsm-export-months";
+import { labelWeeklyDashboardNames } from "@/lib/sales/weekly/display-labels";
 import type {
   PortalWeeklyComparison,
   PortalWeeklyScopeView,
@@ -128,7 +129,9 @@ type CachedPayload = {
 export function PortalWeeklyDashboard({ initialData, scope, initialComparison, initialFieldForce }: Props) {
   const vis = scope.visibility;
 
-  const [data, setData] = useState<WeeklyDashboard>(initialData);
+  const [rawData, setData] = useState<WeeklyDashboard>(initialData);
+  // The stored region and distributor spellings ("overseas", "ramco") are labelled once here; codes are untouched.
+  const data = useMemo(() => labelWeeklyDashboardNames(rawData), [rawData]);
   const [comparison, setComparison] = useState<PortalWeeklyComparison | null>(initialComparison);
   const [fieldForce, setFieldForce] = useState<PortalWeeklyFieldForce | null>(initialFieldForce);
   const [activeTab, setActiveTab] = useState<WeeklyTab>("field");

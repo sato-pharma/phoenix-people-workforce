@@ -318,5 +318,10 @@ export function runWeeklyStockDashboardTests() {
   assert.match(dashboard, /out_of_stock: "bg-slate-900"/, "and wears its own rail");
   assert.match(dashboard, /value=\{formatUnits\(kpis\.healthyCount\)\}/, "Healthy counts healthy rows, so the tiles add up");
   assert.doesNotMatch(dashboard, /\{cell\.areaName\} · \{cell\.regionName\}/, "an empty region is skipped, not printed as a bare separator");
-  assert.match(dashboard, /joinParts\(\[cell\.areaName, cell\.regionName, cell\.distributorName\]\)/, "the branch cards join only the parts that exist");
+  assert.match(
+    dashboard,
+    /function cellPlace\(cell: WeeklyStockCell\): string \{\s*return joinParts\(\[\s*cell\.areaName \? weeklyAreaLabel\(cell\.areaName\) : "",\s*cell\.regionName \? weeklyRegionLabel\(cell\.regionName\) : "",\s*weeklyDistributorLabel\(cell\.distributorName, cell\.distributorCode\),/,
+    "the branch cards join only the parts that exist, in the screen's labels",
+  );
+  assert.equal((dashboard.match(/\{cellPlace\(cell\)\}/g) ?? []).length, 2, "the desktop table and the phone cards both print the joined place");
 }
