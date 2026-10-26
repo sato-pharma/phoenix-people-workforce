@@ -1188,6 +1188,61 @@ export function rollupByProduct(
 }
 
 /**
+ * The prior month's rows, re-homed onto the SELECTED month's area → region → district map.
+ *
+ * Growth is "the same territory, this month against last month". The region, district-manager seat
+ * and district manager on a prior row are the ones that held the area THEN, so an area that moved
+ * region between the two months folded its prior sales under a key the selected month no longer has:
+ * Anti Infective's areas moved into Upper Egypt 1 and Upper Egypt 2 in September, the two regions and
+ * their District Managers (Osama Mohamed El-said, Mohamed Ramadan) found no August node, and printed
+ * "—" against August.
+ *
+ * Each prior row whose (line, area) the selected month also carries takes that month's region code,
+ * district-manager seat and district manager, so the region and district roll-ups compare like with
+ * like. A prior row with no area (Direct Orders spread by region, the unplaced remainder) or an area
+ * the selected month does not carry keeps its own fields. Only the prior side moves: the selected
+ * month's rows, and every total built from them, are untouched — and so is the prior month's own
+ * headline total, which is a sum over the same rows whatever key they carry. Pure.
+ */
+export function regroupPriorRowsByCurrentMap(
+  rows: readonly AchievementRow[],
+  priorRows: AchievementRow[] | null,
+): AchievementRow[] | null {
+  if (!priorRows) return null;
+  const keyOf = (row: AchievementRow) =>
+    row.areaCode ? `${row.lineCode ?? ""}::${row.areaCode.trim().toUpperCase()}` : null;
+  const homes = new Map<string, Pick<AchievementRow, "regionCode" | "dmSeatId" | "dmHrId">>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (key && !homes.has(key)) {
+      homes.set(key, { regionCode: row.regionCode, dmSeatId: row.dmSeatId, dmHrId: row.dmHrId });
+    }
+  }
+  return priorRows.map((row) => {
+    const key = keyOf(row);
+    const home = key ? homes.get(key) : undefined;
+    return home ? { ...row, ...home } : row;
+  });
+}
+
+/**
+ * Whether the rows' units may be added into one figure: true only when they carry ONE product code.
+ *
+ * A unit is a pack of one product at one concentration. Guamusin 698 + Ivyronc 10,642 + Lacto
+ * Advanced 1 5,561 + Lacto Advanced 2 3,620 printed "Units sold 20,521 / Target 38,503" on the Pedia
+ * line — a count of nothing. Above one product the comparison is the value, which the band already
+ * shows, so the units figure is shown only where it means something.
+ */
+export function unitsAreAddable(rows: readonly AchievementRow[]): boolean {
+  const codes = new Set<string>();
+  for (const row of rows) {
+    if (row.productCode) codes.add(row.productCode.trim().toUpperCase());
+    if (codes.size > 1) return false;
+  }
+  return codes.size === 1;
+}
+
+/**
  * The N best and N worst nodes by achievement.
  *
  * Nodes with no target are excluded from BOTH ends rather than sorted as zero: an area

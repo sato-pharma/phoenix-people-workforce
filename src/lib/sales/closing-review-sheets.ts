@@ -181,7 +181,8 @@ export function buildReviewSheets(
         row.label,
         row.subLabel,
         ...row.perMonth.map((value) => money(value)),
-        ratio(row.growth),
+        // "—" (a base of zero or below) has no ratio, so the cell stays blank like "new".
+        ratio(typeof row.growth === "number" ? row.growth : null),
       ]),
       subtitle:
         `${months.length === 1 ? "One month" : `${months.length} months`}, oldest first. `

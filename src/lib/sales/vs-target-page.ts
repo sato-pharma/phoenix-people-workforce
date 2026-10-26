@@ -37,6 +37,7 @@ import {
   pickLandingPeriod,
   priorPeriodOf,
   rankByAchievement,
+  regroupPriorRowsByCurrentMap,
   rollupByArea,
   rollupByDm,
   rollupByProduct,
@@ -48,6 +49,7 @@ import {
   shiftPeriod,
   splitPeriodAtPublication,
   totalRows,
+  unitsAreAddable,
   type TrendPoint,
   type VsTargetNames,
   type VsTargetNode,
@@ -87,6 +89,12 @@ export type VsTargetDashboardData = {
   scopeLabel: string;
   levels: ReturnType<typeof visibleLevelsForBound>;
   totals: VsTargetTotals;
+  /**
+   * True only when this view's rows carry ONE product code — the only case where `totals.actualUnits`
+   * and `totals.targetUnits` count one thing. Above that the "Units sold" figure is hidden: units of
+   * different products are never added (Pedia's four products printed 20,521 / 38,503).
+   */
+  unitsAddable: boolean;
   priorTotals: VsTargetTotals | null;
   growth: number | null;
   coverage: number | null;
@@ -255,6 +263,7 @@ export async function buildVsTargetDashboard(
       scopeLabel: boundLabel(bound),
       levels,
       totals: emptyTotals(),
+      unitsAddable: false,
       priorTotals: null,
       growth: null,
       coverage: null,
@@ -324,7 +333,13 @@ export async function buildVsTargetDashboard(
     publishedKeys,
   );
 
-  const priorRows = priorPeriod ? scopedAll.filter((row) => row.period === priorPeriod) : null;
+  // Re-homed onto the selected month's area → region → district map, so an area that changed region
+  // between the two months is compared with itself rather than folded under a region the selected
+  // month no longer has (Upper Egypt 1 / 2 printed "—" against August). Totals are unaffected.
+  const priorRows = regroupPriorRowsByCurrentMap(
+    rows,
+    priorPeriod ? scopedAll.filter((row) => row.period === priorPeriod) : null,
+  );
 
   const totals = totalRows(rows);
   const priorTotals = priorRows ? totalRows(priorRows) : null;
@@ -366,6 +381,7 @@ export async function buildVsTargetDashboard(
     scopeLabel: boundLabel(bound),
     levels,
     totals,
+    unitsAddable: unitsAreAddable(rows),
     priorTotals,
     growth: growthOf(totals, priorTotals),
     coverage: coverageRatio(totals),

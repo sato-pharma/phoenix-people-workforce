@@ -622,8 +622,8 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               {`${formatEgpFull(notGraded)} of this line's sales sits on a product with no target this month.`}
             </p>
             <p>
-              Achievement counts only sales that have a target, so an untargeted product is never shown as
-              under-performing — it is simply not measured.
+              Achievement is every sale in a targeted month over that month&apos;s target — the same Ach % the
+              Monthly Closing prints — so this untargeted value is counted in it too.
             </p>
           </div>
         </div>

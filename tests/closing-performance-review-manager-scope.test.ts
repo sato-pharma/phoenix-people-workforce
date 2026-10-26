@@ -20,6 +20,8 @@ import {
 import {
   boundPeriodsToPublished,
   narrowMatrixToViewerScope,
+  reviewScopeIsBounded,
+  viewerBoundNarrowsTheLine,
   type PerformanceReviewViewerScope,
 } from "../src/lib/sales/closing-performance-review-scope.ts";
 import { scopeLabel } from "../src/lib/sales/closing-performance-review-export.ts";
@@ -178,14 +180,16 @@ const DISTRICT_SCOPE: PerformanceReviewViewerScope = {
 
 /** Built exactly as the loader builds one: scope the matrix, derive the options from the SCOPED one. */
 function reviewFor(scope: PerformanceReviewViewerScope | null) {
-  const headline = narrowMatrixToViewerScope(matrixFor("2026-09"), scope);
+  const unscoped = matrixFor("2026-09");
+  const headline = narrowMatrixToViewerScope(unscoped, scope);
   return buildClosingPerformanceReview({
     availableLines: ["CNS"],
     availablePeriods: ["2026-09", "2026-08", "2026-01"],
     filterOptions: monthlyClosingFilterOptions(headline),
     generatedAt: "2026-10-13T09:00:00.000Z",
     matrix: headline,
-    scopeIsBounded: scope != null,
+    // The loader's own predicate, not a copy of it.
+    scopeIsBounded: reviewScopeIsBounded(unscoped, scope),
     seatAssignments: SEATS,
     seriesMatrices: [{ matrix: headline, period: "2026-09" }],
   });
@@ -315,6 +319,59 @@ export async function runClosingPerformanceReviewManagerScopeTests() {
     "the admin's unfiltered review still closes with a national total",
   );
   assert.equal(scopeLabel(adminReview), "", "and its masthead still carries no scope at all");
+
+  // ── (4b) A BOUND THAT COVERS THE WHOLE LINE IS NATIONAL ───────────────────────────────────────
+  //
+  // A National Sales Manager is bound to his line and nothing narrower. On Pedia in September he held
+  // all fifty areas and 2,786,792, and his bottom row read "Filtered total" because the test was
+  // `viewerScope != null`. What decides it is whether the bound LEAVES SOMETHING OUT, measured
+  // against the line as every portal reader receives it (the confidential strip is a lock on everyone).
+  const NATIONAL_SCOPE: PerformanceReviewViewerScope = {
+    allowedLines: ["CNS"],
+    areaCodes: null,
+    line: "CNS",
+    productCodes: null,
+    regionNames: null,
+  };
+  const nationalReview = reviewFor(NATIONAL_SCOPE);
+  assert.equal(
+    nationalReview.scopeIsBounded,
+    false,
+    "a line-wide bound holding every area and every readable product is not a narrowing",
+  );
+  assert.equal(
+    reviewTotalRowLabel(nationalReview),
+    "National total",
+    "a National Sales Manager's unfiltered bottom row reads National total, not Filtered total",
+  );
+  // The confidential column is stripped from HIM and from the comparison alike — so it never makes
+  // a whole-line bound look narrowed.
+  assert.ok(
+    !nationalReview.matrixByProduct.columns.some((column) => column.key === "SS001"),
+    "and the restricted column is still stripped from him",
+  );
+  // A genuinely narrowed view still never says National.
+  assert.equal(
+    reviewScopeIsBounded(matrixFor("2026-09"), { ...NATIONAL_SCOPE, regionNames: new Set(["cairo"]) }),
+    true,
+    "a regional manager's one region of two is still a narrowing",
+  );
+  assert.equal(
+    reviewScopeIsBounded(matrixFor("2026-09"), { ...NATIONAL_SCOPE, productCodes: new Set(["TB001"]) }),
+    true,
+    "a product bound that leaves out a readable product is a narrowing even with every area kept",
+  );
+  assert.equal(
+    reviewScopeIsBounded(matrixFor("2026-09"), { ...NATIONAL_SCOPE, areaCodes: new Set(["CA9"]) }),
+    true,
+    "a bound that matched NOTHING is never called national — zero rows is not the line",
+  );
+  assert.equal(
+    viewerBoundNarrowsTheLine(matrixFor("2026-09"), narrowMatrixToViewerScope(matrixFor("2026-09"), DISTRICT_SCOPE)),
+    true,
+    "the district manager's two areas of three narrow the line",
+  );
+  assert.equal(reviewScopeIsBounded(matrixFor("2026-09"), null), false, "no bound at all is the admin read");
 
   // ── (5) A manager's history starts at JULY, the same floor the admin screen has ───────────────
   //
