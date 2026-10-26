@@ -110,3 +110,31 @@ export function startTierLabel(minutes: number | null, expectedWeight: number): 
 export function formatFortnightHeading(periodLabel: string, closed: boolean): string {
   return `${closed ? "Fortnight" : "This fortnight"} · ${periodLabel}`;
 }
+
+/**
+ * What the board's figures are ABOUT, when it is showing one district out of a wider scope.
+ *
+ * The page resolves `scope.scopeLabel` for the VIEWER ("your line", "the company") and the board
+ * shows ONE district of it — a National Sales Manager lands on the first of his six districts. The
+ * tiles used to read "across your line" and the chip "Your line · 6 districts" over that one
+ * district's figures (owner audit, 2026-10-26). "Your line" is true only when the whole line is on
+ * screen, which is `districtCount <= 1`; otherwise the district shown is named. A vacant seat is
+ * named by its region ("Vacant — Alex Center"), never by the departed manager's HR id.
+ */
+export function formatShownScopeLabel(input: {
+  scopeLabel: string;
+  districtCount: number;
+  districtName: string;
+}): string {
+  if (input.districtCount <= 1) return input.scopeLabel;
+  const name = input.districtName.trim();
+  const vacant = /^Vacant\s*[—–-]\s*(.+)$/.exec(name);
+  if (vacant) return `the vacant ${vacant[1]} district`;
+  if (!name || /^Vacant(\s|$)/i.test(name)) return "the vacant district";
+  return `${name}'s district`;
+}
+
+/** The scope chip when several districts are selectable: how many, and of what — never "the line" itself. */
+export function formatDistrictCountChip(scopeLabel: string, districtCount: number): string {
+  return `One of ${districtCount} districts in ${scopeLabel}`;
+}

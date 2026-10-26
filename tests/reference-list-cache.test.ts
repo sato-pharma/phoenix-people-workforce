@@ -57,6 +57,7 @@ const ADOPTERS: ReadonlyArray<{ file: string; what: string }> = [
   { file: "src/lib/crm/master.ts", what: "lines, for the master table's Line filter" },
   { file: "src/lib/customer-360/server/sources.ts", what: "lines, for the reps behind a hub's visits" },
   { file: "src/lib/customer-360/service.ts", what: "areas, lines and employees, for the page's name maps" },
+  { file: "src/lib/early-birds/winner-identity.ts", what: "areas, for the Hall of Fame winner's current area when the row stored none" },
   { file: "src/lib/hiring-pack/field-fill-rate.ts", what: "departments, for the fill-rate report" },
   { file: "src/lib/hiring-pack/service.ts", what: "lines, for the facts editor's picker" },
   { file: "src/lib/outstation/area-rep-options.ts", what: "employees, for the rep names on the wizard" },

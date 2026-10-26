@@ -8,11 +8,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { normalizeHrIdForAccess, resolveStoredHrId } from "@/lib/hr-id";
+import { canonicalHrIdKey, normalizeHrIdForAccess, resolveStoredHrId } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { earlyBirdsPeriodFromKey, isEarlyBirdsPeriodKey } from "@/lib/early-birds/period";
 import { resolveCurrentEarlyBirdsCandidate } from "@/lib/early-birds/current-candidate";
 import { resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
+import { loadWinnerIdentities } from "@/lib/early-birds/winner-identity";
 import { formatStartClock } from "@/components/early-birds/early-birds-format";
 
 export type EarlyBirdsPendingCandidate = {
@@ -340,8 +341,16 @@ export async function decideEarlyBirdsCandidate(
   }
 }
 
-/** The frozen announcement payload — copied, never joined, so a later transfer cannot relabel it. */
-async function buildAnnouncement(
+/**
+ * The frozen announcement payload — copied, never joined, so a later transfer cannot relabel it.
+ *
+ * Used by BOTH crowning paths: the manager's approval and the automatic confirmation in close.ts.
+ * The automatic path used to send a bare `{ confirmation_source: "auto" }`, so every winner it crowned
+ * was stored with no area, region, line, hire date, stats or timeline — the Hall of Fame's blank
+ * area slots. A rep the active-only directory no longer lists (left, or spelled differently) falls
+ * back to the employee's own record for name and area.
+ */
+export async function buildAnnouncement(
   candidateId: string,
   source: "manager" | "auto",
 ): Promise<Record<string, unknown>> {
@@ -361,6 +370,12 @@ async function buildAnnouncement(
       (entry) => normalizeHrIdForAccess(entry.hrId) === normalizeHrIdForAccess(String(row.employee_hr_id ?? "")),
     );
 
+    const live = profile?.areaName
+      ? null
+      : (await loadWinnerIdentities([String(row.employee_hr_id ?? "")])).get(
+          canonicalHrIdKey(String(row.employee_hr_id ?? "")) ?? "",
+        ) ?? null;
+
     const evidence = (row.evidence as { timeline?: unknown[]; visitStartDays?: unknown } | null) ?? null;
     const timeline = Array.isArray(evidence?.timeline) ? evidence.timeline : [];
     // A Phoenix CRM fortnight (close.ts): its starts are first visits, never GPS — the card a whole
@@ -373,7 +388,7 @@ async function buildAnnouncement(
     return {
       confirmation_source: source,
       employee_name: profile?.displayName ?? row.employee_name ?? row.employee_hr_id,
-      area_name: profile?.areaName ?? null,
+      area_name: profile?.areaName ?? live?.areaName ?? null,
       region_name: profile?.regionName ?? null,
       line_name: profile?.lineName ?? null,
       hire_date: profile?.hireDate ?? null,

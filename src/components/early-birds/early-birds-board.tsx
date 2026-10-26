@@ -65,7 +65,7 @@ export function EarlyBirdsBoard({
     {
       icon: Sunrise,
       label: "Fortnight leader",
-      value: leader ? leader.name.split(/\s+/)[0] : "—",
+      value: leader ? leader.name : "—",
       sub: leader ? (data.closed ? "finished #1" : "current #1") : "nobody eligible yet",
       accent: "bg-amber-400",
       valueClass: "text-slate-900",
