@@ -577,7 +577,7 @@ export function runOrganogramHardeningTests() {
   );
   assert.match(
     orgChartSource,
-    /isVacantManagerSeat \? "Vacant" : group\.members\.length/,
+    /isVacantManagerSeat \? "Vacant" : seatCount\.seats/,
     "Vacant manager seats must be visually labeled as vacant boxes, not only counted in totals.",
   );
   assert.match(

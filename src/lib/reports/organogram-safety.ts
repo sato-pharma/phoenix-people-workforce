@@ -67,6 +67,22 @@ export function isOrganogramSalesStructureRole(
   return classifyOrganogramStructureLevel(row) !== null;
 }
 
+/**
+ * The key one sales seat is counted under. A seat-model row counts BY ITS SEAT (2026-10-26): a seat
+ * in handover is drawn twice — the leaver until her last day and her successor — and it is still
+ * ONE seat, filled. Counting people there gave Pedia "37 employees" over "32 / 47" seats. A row with
+ * no seat (the legacy mirror) keeps the old person / vacancy-slot key.
+ */
+export function organogramSeatCountKey(row: OrganogramReportRow): string {
+  if (row.seatId) return `seat:${row.seatId}`;
+  // Dedupe key intentionally excludes the array index so genuinely duplicated
+  // logical rows (same person / same vacancy slot) collapse to a single KPI
+  // count instead of being counted twice.
+  return row.type === "vacancy"
+    ? `vacancy:${normalizeCode(row.vacancyCode ?? row.hrId)}:${row.sourceRowNumber ?? ""}`
+    : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}`;
+}
+
 export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
   const summary: StructureKpiSummary = {
     dsm: emptyKpi(),
@@ -75,31 +91,30 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
     rsm: emptyKpi(),
     total: emptyKpi(),
   };
-  const counted = new Set<string>();
+  // One entry per seat. A seat is FILLED when anyone sits on it, whichever of its rows came first.
+  const seats = new Map<string, { filled: boolean; level: StructureKpiLevel }>();
 
   rows.forEach((row) => {
     const level = classifyOrganogramStructureLevel(row);
-    // Dedupe key intentionally excludes the array index so genuinely duplicated
-    // logical rows (same person / same vacancy slot) collapse to a single KPI
-    // count instead of being counted twice.
-    const key = row.type === "vacancy"
-      ? `vacancy:${normalizeCode(row.vacancyCode ?? row.hrId)}:${row.sourceRowNumber ?? ""}`
-      : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}`;
-
-    if (!level || counted.has(key)) {
+    if (!level) return;
+    const key = organogramSeatCountKey(row);
+    const seat = seats.get(key);
+    if (seat) {
+      if (row.type !== "vacancy") seat.filled = true;
       return;
     }
+    seats.set(key, { filled: row.type !== "vacancy", level });
+  });
 
-    counted.add(key);
+  seats.forEach(({ filled, level }) => {
     summary[level].total += 1;
     summary.total.total += 1;
-
-    if (row.type === "vacancy") {
-      summary[level].vacant += 1;
-      summary.total.vacant += 1;
-    } else {
+    if (filled) {
       summary[level].actual += 1;
       summary.total.actual += 1;
+    } else {
+      summary[level].vacant += 1;
+      summary.total.vacant += 1;
     }
   });
 

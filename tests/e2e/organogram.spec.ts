@@ -50,7 +50,7 @@ test.describe("Organogram", () => {
     await expect(page.getByText("District Managers")).toBeVisible();
     await expect(page.getByText("Regional Managers")).toBeVisible();
     await expect(page.getByText("National Managers")).toBeVisible();
-    await expect(page.getByText("Total Structure")).toBeVisible();
+    await expect(page.getByText("All Sales Seats")).toBeVisible();
   });
 
   test("stat cards show actual/total values", async ({ page }) => {

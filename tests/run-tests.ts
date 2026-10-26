@@ -1846,6 +1846,7 @@ import { runMarketingWorkQueuePageTests } from "./marketing-work-queue-page.test
 import { runMarketingConfigGrantsTests } from "./marketing-config-grants.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
+import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
@@ -6615,6 +6616,11 @@ await runTest(
 await runTest(
   "organogram dual-seat visibility (a person on two au seats renders two boxes, never a silent drop)",
   runOrganogramDualSeatVisibilityTests,
+);
+
+await runTest(
+  "organogram NSM chart (a seat in handover draws both people with their own HR ids, and every count is one count of seats)",
+  runOrganogramNsmChartFixesTests,
 );
 
 await runTest(
