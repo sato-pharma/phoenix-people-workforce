@@ -271,8 +271,8 @@ export type ValidatedPlaceReading = {
   photoAccuracyMeters: number | null;
   /**
    * The Capture-location pin as the rep read it at the door. Kept apart from `lat`/`lon`, which hold
-   * whichever reading the validation SETTLED on — the photograph's whenever its accuracy figure was the
-   * sharper one (`pickPlacePoint`).
+   * whichever reading the validation SETTLED on — the photograph's whenever it is within the place's
+   * line (`pickPlacePoint`, owner, 2026-10-26). It still opens the visit door (`validatedPin`).
    */
   pinLat: number | null;
   pinLon: number | null;
@@ -295,7 +295,11 @@ export type ValidatedPlaceReading = {
  * wider than 250 m, and the 104 seated in a polyclinic carry none and anchor on the building's point.
  *
  * Since 2026-10-21 this is ONE of the two readings a visit is measured against, never the only one — see
- * `validatedPlaceReadings` for why.
+ * `validatedPlaceReadings` for why. 🔴 Owner, 2026-10-26, asked directly: the photo is the customer's
+ * saved point and every flag, report and board measures from it, but a rep standing at the validated
+ * pin can still save the visit (it shows as far from the photo to the managers). Measured that day: 7
+ * rep visits since 20 October stood within 300 m of the pin and further from the photo, five of them
+ * 1-15 m from the pin — the door would have refused reps standing at the clinic.
  */
 export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: number; lon: number } | null {
   if (isUsableFix(place.photoLat, place.photoLon) && withinAccuracy(place.photoAccuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
@@ -310,7 +314,8 @@ export function validatedPlaceAnchor(place: ValidatedPlaceReading): { lat: numbe
  * place's own validated pin").
  *
  * 🔴 NOT `lat`/`lon`. Those hold the reading the validation SETTLED on, which is the photograph's
- * whenever its accuracy figure was the sharper one or a tie — and then the anchor and the point were one
+ * whenever it is within the place's line (since 2026-10-26; before that, when its accuracy figure was the
+ * sharper one or a tie) — and then the anchor and the point were one
  * reading counted once, and the pin the owner named was never measured at all. Measured on production
  * 2026-10-22: 9 active places carry a photograph 300 m or more from their pin with the point settled on
  * the photograph, and on three of them every later visit stood at the PIN — Linda Iskandar 56 m from it
@@ -578,8 +583,9 @@ export type PlaceDraft = CapturedFix & {
  * region are resolved from, and which one every later visit is measured against.
  *
  * Which reading is chosen never rescues a rough PIN: `parsePlaceDraft` refuses a place whose pin is
- * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and the SHARPER reading fixes the place
- * (`pickPlacePoint`; owner, 2026-10-11, replacing the 2026-10-03 both-readings rule).
+ * wider than `PLACE_MAX_ACCURACY_METERS` before it gets here, and the PHOTO'S reading fixes the place
+ * whenever it is within that line (`pickPlacePoint`; owner, 2026-10-26, replacing the 2026-10-11
+ * sharper-reading rule).
  */
 export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | null; source: "photo" | "pin" };
 
@@ -587,21 +593,26 @@ export type PlacePoint = { lat: number; lon: number; accuracyMeters: number | nu
 export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
 
 /**
- * Which of a place's two readings fixes it: THE SHARPER ONE, the photo's on a tie (owner, 2026-10-11,
- * "perfect fix" after a rep read a wrong address on a place she validated).
+ * Which of a place's two readings fixes it: 🔴 THE LIVE PHOTO'S OWN LOCATION, whenever it is a reading
+ * at all (owner, 2026-10-26: "The source of trust that you compare from is the live validation photo.
+ * The location on the live validation photo" — "this is the saved location of this customer in the
+ * system that we later on compare with it", and every visit or entry after it is judged by how far it
+ * is from the photo).
  *
- * The photo's reading stays the fixed point whenever it is at least as sharp as the pin, as ruled on
- * 2026-09-29 ("the photo + the location of photo is the more trustable"), and when the photo's accuracy
- * is unknown. But a place is fixed FOR GOOD and its address, brick and area are resolved from this one
- * point, so a photo reading with a wide radius must never beat a pin that is plainly tighter: iPhone
- * Safari hands the camera an approximate position (up to the 250 m line, or 2,000 m) while the same
- * phone's Capture-location button reads 11-30 m, and the address of a point 200 m off is the wrong
- * street. Pure, so the capture screen shows the address of the SAME point the server will save.
+ * This REPLACES the 2026-10-11 "sharper one wins" rule. Under it a pin that claimed a tighter radius
+ * than the photo became the customer's point, so 760 of 3,422 active places (measured 2026-10-26) held
+ * the pin although a photo existed, 41 of them 50 m or more from their own photo and one 10,070 m away
+ * — and the same customer validated by two reps could hold two different points. A claimed accuracy is
+ * the phone's own guess about itself; the photo is the proof of where the rep stood.
+ *
+ * The pin is used only when there is no photo reading, or the photo's reading is rougher than the
+ * place's own line (`PLACE_MAX_ACCURACY_METERS`) — iPhone Safari hands the camera an approximate
+ * position (650-2,000 m) on some phones, and a point a kilometre off is no reading. A photo with an
+ * unknown accuracy is taken, as every door in this module takes one. Pure, so the capture screen shows
+ * the address of the SAME point the server will save.
  */
 export function pickPlacePoint(photo: PlaceReading | null, pin: PlaceReading): PlacePoint {
-  const pinIsSharper =
-    photo !== null && photo.accuracyMeters !== null && pin.accuracyMeters !== null && pin.accuracyMeters < photo.accuracyMeters;
-  if (photo !== null && !pinIsSharper) {
+  if (photo !== null && withinAccuracy(photo.accuracyMeters, PLACE_MAX_ACCURACY_METERS)) {
     return { lat: photo.lat, lon: photo.lon, accuracyMeters: photo.accuracyMeters, source: "photo" };
   }
   return { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters, source: "pin" };

@@ -253,8 +253,9 @@ export function PlaceEditor({
     onChange((current) => ({ ...current, pin }));
   }
 
-  // The capture screen shows the address of the point the SERVER will fix the place on — the sharper
-  // of the photo's reading and the pin (`pickPlacePoint`, the same function the save uses) — never the
+  // The capture screen shows the address of the point the SERVER will fix the place on — the live
+  // photo's own reading whenever it is within the place's line, else the pin (`pickPlacePoint`, the same
+  // function the save uses; owner, 2026-10-26) — never the
   // camera's running reading, which on iPhone Safari can be the approximate one and name the wrong
   // street (a rep read "23 Ibrahim Al Lakani" for a clinic 650 m away, 2026-10-11). An edit shows the
   // saved row's.
