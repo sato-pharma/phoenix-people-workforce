@@ -7037,6 +7037,7 @@ async function decorateDirectOrderPage(requests: DirectOrderRequest[]): Promise<
     const basket = summarizeDirectOrderBasket(request, itemsByRequest.get(request.id));
     return {
       id: request.id,
+      requesterHrId: request.requesterHrId,
       requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
       productName: basket.productName,
       qty: basket.qty,

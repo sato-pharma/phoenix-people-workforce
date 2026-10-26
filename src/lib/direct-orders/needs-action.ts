@@ -35,6 +35,12 @@ import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
  */
 export type DirectOrderQueueRow = {
   id: string;
+  /**
+   * Who raised it, as stored (either case). Lets a row say "Needs Your Correction" only to that
+   * person — compare with `isRaisedByViewer`, never with `===`. Optional because a hand-built test
+   * row need not supply it; absent reads as "not the viewer's".
+   */
+  requesterHrId?: string;
   requesterName: string;
   /** Every product joined with " + " on a basket; line 1's name on a one-product order. */
   productName: string;

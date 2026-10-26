@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/direct-orders-workspace";
 import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
+import { parseRequestedOrdersScope } from "@/lib/direct-orders/orders-scope";
 import { resolveDirectOrderStatusGroup } from "@/lib/direct-orders/operational-query";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
@@ -54,10 +55,10 @@ export default async function PortalDirectOrdersWorkspacePage({
     basePath: BASE_PATH,
     view: requestedTab,
     ordersPage: Number(page) || 1,
-    // Filters go INTO the query, not onto a fetched array. "mine" is the default, so it is absent
-    // from the URL rather than spelled out — the shortest URL is the common case.
+    // Filters go INTO the query, not onto a fetched array. An absent ?scope= is NOT "mine": it means
+    // the URL left the choice open, and the loader picks the default for this viewer.
     ordersFilters: {
-      scopeFilter: scope === "all" ? "all" : "mine",
+      scopeFilter: parseRequestedOrdersScope(scope),
       status: status ?? null,
       // The filter chips' vocabulary, resolved server-side so an unknown value in a hand-edited URL
       // falls back to "all" rather than reaching the query.
@@ -89,6 +90,10 @@ export default async function PortalDirectOrdersWorkspacePage({
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
         ordersPage={workspace.orders}
+        ordersScope={workspace.ordersScope}
+        recentOrders={workspace.recentOrders}
+        recentOrdersScope={workspace.recentOrdersScope}
+        viewerHrId={access.hrId ?? null}
         adminTools={[]}
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/employee-portals/direct-orders/report`}

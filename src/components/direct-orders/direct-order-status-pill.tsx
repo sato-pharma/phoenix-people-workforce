@@ -74,9 +74,21 @@ type Props = {
    * rare row that needs it — and shrinking the label's type is the one fix the rule forbids.
    */
   wrap?: boolean;
+  /**
+   * True only when the person reading raised this order. A `returned` order says "Needs Your
+   * Correction" to its raiser and "Returned for correction" to everyone else — optional and
+   * defaulting to the neutral wording, because the personal one is a claim about the reader.
+   */
+  viewerIsRequester?: boolean;
 };
 
-export function DirectOrderStatusPill({ status, salesMonth, variant = "solid", wrap = false }: Props) {
+export function DirectOrderStatusPill({
+  status,
+  salesMonth,
+  variant = "solid",
+  wrap = false,
+  viewerIsRequester = false,
+}: Props) {
   const key = String(status) as DirectOrderStatus;
   const awaitingFinance = showsAwaitingFinanceMonth(key, salesMonth);
 
@@ -103,7 +115,7 @@ export function DirectOrderStatusPill({ status, salesMonth, variant = "solid", w
   // injects nothing; only the Finance booking does), it is the most important
   // sentence in the module, and tests/direct-orders-finance-month-badge.test.ts
   // asserts the wording lives in the file that renders it.
-  const presentation = describeDirectOrderStatus(key, salesMonth);
+  const presentation = describeDirectOrderStatus(key, salesMonth, { isRequester: viewerIsRequester });
   const label = presentation.label;
   const title = awaitingFinance
     ? "Approved — awaiting Finance month. The sales are NOT in any month's numbers yet: they inject only when the Finance Manager books this order into a month."
