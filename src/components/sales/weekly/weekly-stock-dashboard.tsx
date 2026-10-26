@@ -22,6 +22,7 @@ import {
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
+import { weeklyAreaLabel, weeklyDistributorLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import {
   WEEKLY_STOCK_COVER_LOW_WEEKS,
   WEEKLY_STOCK_COVER_OVER_WEEKS,
@@ -146,13 +147,22 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
   const { view, options, scope } = payload;
   const vis = scope.visibility;
 
-  const areaOptions = useMemo(() => view.availableAreas.map((area) => ({ code: area.code, label: area.name })), [view.availableAreas]);
+  const areaOptions = useMemo(
+    () => view.availableAreas.map((area) => ({ code: area.code, label: weeklyAreaLabel(area.name) })),
+    [view.availableAreas],
+  );
   const depotOptions = useMemo(
     () => view.availableBranches.map((branch) => ({ code: branch.code, label: branch.name })),
     [view.availableBranches],
   );
-  const distributorOptions = useMemo(() => options.distributors.map((d) => ({ code: d.code, label: d.name })), [options.distributors]);
-  const regionOptions = useMemo(() => options.regions.map((r) => ({ code: r.code, label: r.name })), [options.regions]);
+  const distributorOptions = useMemo(
+    () => options.distributors.map((d) => ({ code: d.code, label: weeklyDistributorLabel(d.name, d.code) })),
+    [options.distributors],
+  );
+  const regionOptions = useMemo(
+    () => options.regions.map((r) => ({ code: r.code, label: weeklyRegionLabel(r.name) })),
+    [options.regions],
+  );
   const productOptions = useMemo(() => options.products.map((p) => ({ code: p.code, label: p.name })), [options.products]);
   const lineOptions = useMemo(() => options.lines.map((line) => ({ code: line, label: line })), [options.lines]);
 
@@ -367,7 +377,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-phx-md font-semibold text-amber-900">
             {"Old stock files: "}
-            {staleDistributors.map((row) => `${row.name} (${formatDate(row.asOfWeekStart)})`).join(", ")}
+            {staleDistributors.map((row) => `${weeklyDistributorLabel(row.name, row.code)} (${formatDate(row.asOfWeekStart)})`).join(", ")}
             {". Their stock is shown as last reported, not as today's."}
           </p>
         </div>
@@ -724,7 +734,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.branchName}</p>
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                    {cell.areaName} · {cell.regionName} · {cell.distributorName}
+                    {cellPlace(cell)}
                   </p>
                 </td>
                 <td className="px-3 py-2.5">
@@ -755,7 +765,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
                   <p className="break-words text-sm font-black text-slate-900">{cell.productName}</p>
                   <p className="break-words text-phx-xs font-bold text-slate-700">{cell.branchName}</p>
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                    {cell.areaName} · {cell.regionName} · {cell.distributorName}
+                    {cellPlace(cell)}
                   </p>
                 </div>
                 <StatusBadge status={cell.status} />
@@ -860,9 +870,28 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
   );
 }
 
+/** "Area · Region · Distributor" under a depot's name, in the screen's labels (display only). */
+function cellPlace(cell: WeeklyStockCell): string {
+  return [
+    cell.areaName ? weeklyAreaLabel(cell.areaName) : "",
+    cell.regionName ? weeklyRegionLabel(cell.regionName) : "",
+    weeklyDistributorLabel(cell.distributorName, cell.distributorCode),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** A group row's name for the screen: distributors, areas and regions are relabelled, a branch is as filed. */
+function groupName(nameLabel: string, row: WeeklyStockGroupRow | WeeklyStockDistributorRow): string {
+  if (nameLabel === "Distributor") return weeklyDistributorLabel(row.name, row.code);
+  if (nameLabel === "Area") return weeklyAreaLabel(row.name);
+  if (nameLabel === "Region") return weeklyRegionLabel(row.name);
+  return row.name;
+}
+
 function groupSubline(row: WeeklyStockGroupRow | WeeklyStockDistributorRow): string {
   if ("asOfWeekStart" in row) return `Stock file ${formatDate(row.asOfWeekStart)}`;
-  return row.parentName;
+  return row.parentName ? weeklyRegionLabel(row.parentName) : "";
 }
 
 /** One product's own units at each group row, by the row's code (weeklyStockProductUnitsByGroup). */
@@ -909,7 +938,7 @@ function GroupTable({
             {rows.map((row) => (
               <tr key={row.code} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
-                  <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
+                  <DrillName name={groupName(nameLabel, row)} onClick={onDrill ? () => onDrill(row.code) : undefined} />
                   {groupSubline(row) ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{groupSubline(row)}</p> : null}
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     <StatusBadge status={row.status} />
@@ -947,7 +976,7 @@ function GroupTable({
             <div className="min-w-0 flex-1 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
+                  <DrillName name={groupName(nameLabel, row)} onClick={onDrill ? () => onDrill(row.code) : undefined} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
                     {[groupSubline(row), `${row.productCount} products`, `${row.lowCount} low`, `${row.overCount} over`]
                       .filter(Boolean)

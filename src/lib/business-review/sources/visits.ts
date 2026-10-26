@@ -55,6 +55,7 @@ import {
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { CAMPAIGN_TYPE, REGULAR_TYPE, classifyVisit } from "@/lib/crm/visit-types";
+import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 
 import { hrKey } from "./attribution";
 import type { ReviewWindow } from "../period";
@@ -376,7 +377,7 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         manager = {
           period,
           managerHrId,
-          managerName: rawManagerName ?? null,
+          managerName: rawManagerName ? tidyAllCapitalsName(rawManagerName) : null,
           rides: 0,
           ridesByRep: new Map<string, number>(),
           customers: new Set<number>(),
@@ -387,7 +388,7 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         };
         managers.set(managerKey, manager);
       }
-      if (!manager.managerName && rawManagerName) manager.managerName = rawManagerName;
+      if (!manager.managerName && rawManagerName) manager.managerName = tidyAllCapitalsName(rawManagerName);
       manager.rides += 1;
       addBucketToSplit(manager.rideSplit, countBucket, 1, fromPhoenix);
       if (agentHrId) manager.ridesByRep.set(agentHrId, (manager.ridesByRep.get(agentHrId) ?? 0) + 1);
