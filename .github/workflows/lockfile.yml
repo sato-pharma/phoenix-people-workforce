@@ -9,12 +9,12 @@ name: Lockfile
 # in it. This used to run on the self-hosted CI box through `scripts/remote-check.mjs lockfile`; it is this
 # workflow now, and that command dispatches it, downloads what it made and writes it into the checkout:
 #
-#   node scripts/remote-check.mjs lockfile        # run in the background; commit the two files it wrote
+#   node scripts/remote-check.mjs lockfile        # run in the background; commit the files it wrote
 #
 # It resolves the PUSHED commit, so the manifests must be committed and pushed first (the command refuses
 # otherwise). It runs on a dispatch only: no pull request, push or schedule can start it, so it adds nothing
 # to a PR's checks and cannot hold a production deploy. It needs no secret — `contents: read` is the whole
-# of its permissions, and the artifact it uploads is two public-in-the-repo files.
+# of its permissions, and the artifact it uploads is four public-in-the-repo files.
 #
 # 🔴 NOT `--frozen-lockfile`. CI sets CI=true, which makes pnpm freeze the lockfile by default — the one
 # mode guaranteed to fail here, because the whole point is that the lockfile does not yet match the
@@ -23,6 +23,12 @@ name: Lockfile
 # 🔴 BOTH FILES COME BACK. pnpm writes `minimumReleaseAgeExclude` into pnpm-workspace.yaml when it adopts a
 # version younger than its release-age quarantine, and a `--frozen-lockfile` install needs those entries;
 # returning only the lockfile would lose them silently.
+#
+# 🔴 AND THE RUNTIME IMAGE'S OWN PINS COME BACK WITH THEM (26 Oct 2026). The Dockerfile installs puppeteer-core
+# and sharp with `npm ci` from infra/runtime-extras, whose versions must equal what pnpm-lock.yaml resolves
+# (tests/offer-pdf-runtime.test.ts, tests/dockerfile-reproducible.test.ts). A lockfile that moved either one
+# without them turned 3 jobs red on 2 branches, 19-25 Oct — the weekly refresh among them — so the last step
+# here runs `node scripts/sync-runtime-extras.mjs` in both modes, and both of its files are uploaded.
 
 on:
   workflow_dispatch:
@@ -83,6 +89,11 @@ jobs:
         if: inputs.mode == 'refresh'
         run: pnpm update --depth Infinity --no-save
 
+      # npm, not pnpm, and `--package-lock-only` inside the script: it rewrites the two files and installs nothing.
+      # Unchanged files come back byte-identical, and the downloader skips an identical file.
+      - name: Bring the runtime image's pins in step with the lockfile
+        run: node scripts/sync-runtime-extras.mjs
+
       - name: Upload the regenerated files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -90,5 +101,7 @@ jobs:
           path: |
             pnpm-lock.yaml
             pnpm-workspace.yaml
+            infra/runtime-extras/package.json
+            infra/runtime-extras/package-lock.json
           if-no-files-found: error
           retention-days: 1

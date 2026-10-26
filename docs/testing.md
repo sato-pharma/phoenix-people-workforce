@@ -239,7 +239,8 @@ The other six stay with the PR's own CI:
 - `every script that PARSES arguments refuses the one it has never heard of` (6 PRs) spawns every
   argument-parsing script and ran past five minutes on the laptop.
 - `HR function governance` (5), `sidebar labels never clip` (3), `Phoenix CRM edges` (3) and the
-  `malformed uuid id guards` (2) reach `@/lib/supabase/server`, so they are not offline.
+  `malformed uuid id guards` (2) reach `@/lib/supabase/server`, so they are not offline. (The
+  sidebar test's missing-width half became a gate on 26 Oct — below.)
 - The `crm integrity board` signboard case (3) is a feature test, not a repo-wide one.
 
 **Two more joined on 26 Oct 2026, by splitting two of the tests left out.** All 187 failed jobs of
@@ -265,6 +266,36 @@ spawn every gated script, and the manager-plan rules that import `src/lib/phoeni
 | --- | --- |
 | `the unknown-flag source ratchets` (`tests/unknown-flag-gates.test.ts`) | 10, on 8 branches |
 | `the CRM manager-plan source scans` (`tests/phoenix-crm-manager-plan-source.test.ts`) | 9, on 6 branches |
+
+**Three more joined the same day: the reds that were a forgotten step.** The 4 sidebar jobs and the
+3 offer-PDF jobs above were not bugs. Each was one step a branch skipped:
+
+- **The sidebar (4 jobs on 4 branches, every one the missing-width message).** A label was added
+  without re-running the measure script. No label was ever too wide. The missing-width check needs
+  only the nav sections and the snapshot. It could not run offline for one reason:
+  `system-navigation.ts` read one list, `adminShellEmployeeRoles`, as a value from `permissions.ts`,
+  which pulls the Supabase client in. That list now lives in `src/lib/auth/admin-shell-roles.ts`,
+  which has no runtime imports, and `permissions.ts` re-exports it. The check runs alone as
+  `tests/sidebar-label-snapshot.test.ts`, and its failure names the worktree command as well as
+  `pnpm run ui:measure-sidebar-labels`. The no-clip half still needs the permission matrix, so it
+  stays in `tests/sidebar-label-width.test.ts`.
+- **The offer-PDF runtime (3 jobs on 2 branches).** puppeteer-core moved in `pnpm-lock.yaml`, but
+  the production image's own pin in `infra/runtime-extras/` did not. This happened in the weekly
+  dependency refresh of 25 Oct, and twice in Dependabot's 25.13.0 bump. Neither could run
+  `node scripts/sync-runtime-extras.mjs`.
+  - The gate catches it before a push.
+  - `lockfile.yml` now runs that script in both modes and returns its two files. So do
+    `remote-check.mjs lockfile` and the weekly refresh.
+  - Dependabot ignores puppeteer-core and sharp: it can never run the script, so every PR it
+    opens for either is red by construction.
+  - `dockerfile-reproducible` pins the same two versions from file text. It joined beside the
+    offer-PDF gate.
+
+| Gate | Red CI jobs, 18-25 Oct |
+| --- | --- |
+| `sidebar label snapshot has a measured width for every label in its own shell` | 4, on 4 branches |
+| `offer PDF runtime (the image's puppeteer pin matches package.json …` | 3, on 2 branches |
+| `the production image is built from pinned inputs` | 0. The suite stopped at the offer-PDF gate first |
 
 🔴 **AND THE SUITE NO LONGER STOPS AT ITS FIRST RED.** `runTest` records a failure — `FAIL <name>`
 and its error, where it happens — sets `process.exitCode = 1` and carries on, and the end of the run

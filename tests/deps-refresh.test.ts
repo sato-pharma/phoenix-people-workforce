@@ -91,6 +91,17 @@ export function runDepsRefreshTests() {
   assert.match(refreshStep![1], /--no-save/, "--no-save: without it every range in package.json is rewritten, exact pins included");
   assert.doesNotMatch(refreshStep![1], /--latest|-L\b/, "never --latest: it crosses the declared ranges, majors included");
 
+  // The runtime image's pins follow the lockfile in BOTH modes (26 Oct 2026: the 25 Oct refresh moved puppeteer-core
+  // to 25.16.0 and left the image on 25.15.0, red on tests/offer-pdf-runtime.test.ts). No `if:`, after both steps.
+  const syncStep = /- name: Bring the runtime image's pins in step with the lockfile\n\s+run: (node scripts\/sync-runtime-extras\.mjs[^\n]*)\n/.exec(workflowCode);
+  assert.ok(syncStep, "lockfile.yml must run sync-runtime-extras with no `if:`, so a moved puppeteer-core or sharp brings the image's pin with it in either mode");
+  assert.equal(syncStep![1].trim(), "node scripts/sync-runtime-extras.mjs", "the sync WRITES the two files; --check would only report the drift");
+  assert.ok(syncStep!.index > workflowCode.indexOf("- name: Refresh every dependency"), "the sync runs AFTER pnpm has moved the lockfile");
+  const uploaded = workflowCode.slice(workflowCode.indexOf("- name: Upload the regenerated files"));
+  for (const file of ["infra/runtime-extras/package.json", "infra/runtime-extras/package-lock.json"]) {
+    assert.ok(uploaded.includes(`\n            ${file}\n`), `lockfile.yml uploads ${file}, or the sync's work never leaves the runner`);
+  }
+
   // ---- refresh.mjs ---------------------------------------------------------------------------------
   const refresh = stripComments(read("scripts/deps-refresh/refresh.mjs"));
   assert.equal(BRANCH_PREFIX, "codex/weekly-deps-refresh-", "the branch prefix the one-open-PR guard matches on");
@@ -102,6 +113,15 @@ export function runDepsRefreshTests() {
   assert.match(refresh, /if \(dryRun\)[\s\S]{0,300}return;[\s\S]*"pr", "create"/, "a dry run returns before the PR is created");
   assert.match(refresh, /if \(!keepBranch\)[\s\S]{0,120}"--delete", branch/, "every run that opens no PR deletes the branch it pushed");
   assert.match(refresh, /"pr", "create", "--base", "main"/, "the PR targets main");
+  const extrasPair = '"infra/runtime-extras/package.json", "infra/runtime-extras/package-lock.json"';
+  assert.ok(
+    refresh.includes(`const FILES = ["pnpm-lock.yaml", "pnpm-workspace.yaml", ${extrasPair}];`),
+    "the refresh copies the runtime image's two pin files back as well, or its PR is red on the puppeteer pin",
+  );
+  assert.ok(
+    stripComments(read("scripts/remote-check.mjs")).includes(`["pnpm-lock.yaml", "pnpm-workspace.yaml", ${extrasPair}]`),
+    "remote-check.mjs lockfile copies the runtime image's two pin files back as well",
+  );
   assert.doesNotMatch(refresh, /"pr", "merge"|--auto\b/, "the refresh never merges anything — every merge is the owner's own word");
 
   // ---- the launcher --------------------------------------------------------------------------------

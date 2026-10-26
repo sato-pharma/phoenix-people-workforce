@@ -440,7 +440,9 @@ if (LOCKFILE_MODE) {
     execFileSync("gh", ["run", "download", String(run.databaseId), "--name", "lockfile", "--dir", scratch], { stdio: "pipe" });
     const root = git("rev-parse", "--show-toplevel");
     const changed = [];
-    for (const file of ["pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+    // The runtime image's two pin files come back too — lockfile.yml runs sync-runtime-extras after pnpm, because a
+    // lockfile that moves puppeteer-core or sharp without them is red on tests/offer-pdf-runtime.test.ts.
+    for (const file of ["pnpm-lock.yaml", "pnpm-workspace.yaml", "infra/runtime-extras/package.json", "infra/runtime-extras/package-lock.json"]) {
       const produced = path.join(scratch, file);
       if (!existsSync(produced)) continue;
       const target = path.join(root, file);
@@ -451,7 +453,7 @@ if (LOCKFILE_MODE) {
     if (changed.length === 0) {
       console.log("remote-check: lockfile — NOCHANGE: the committed lockfile already matches the manifests.");
     } else {
-      console.log("remote-check: lockfile — wrote " + changed.join(" and ") + " into " + root + ". Review the diff, then commit them:");
+      console.log("remote-check: lockfile — wrote " + changed.join(", ") + " into " + root + ". Review the diff, then commit them:");
       console.log("      git add " + changed.join(" ") + " && git commit -m \"chore(deps): regenerate the lockfile\"");
     }
   } catch (error) {

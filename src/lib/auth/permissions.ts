@@ -8,6 +8,8 @@ import { hrBundleGrants, isSalaryBlindRole } from "@/lib/auth/hr-functions";
 // Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
 // TYPES back from this file, so there is no runtime cycle between the two.
 import { isModuleLockedForAccess } from "@/lib/auth/module-locks";
+// The admin-shell role list, read by the sidebar without this module. It imports only a TYPE back.
+import { adminShellEmployeeRoles } from "@/lib/auth/admin-shell-roles";
 // The one portal-role list, shared with the landing path. It imports only a TYPE back from here.
 import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 
@@ -538,20 +540,9 @@ const allActions: PermissionAction[] = ["read", "create", "update", "delete", "a
 // Governance: approval authority is reserved for Super Admin / HR Manager.
 // The HR bundles operate recruitment and personnel workflows but must not inherit the retired
 // broad HR/payroll/leave/outstation authority — see HR_ROLE_BOUNDARIES in hr-functions.ts.
-export const adminShellEmployeeRoles = [
-  "SFE Manager",
-  "Finance Manager",
-  "Financial Advisor",
-  // Owner decision 2026-08-28: the HR seats live on the ADMIN shell, not the employee portal. The
-  // portal needs a second copy of every admin tool, and two of those copies shipped unreachable for
-  // the seat this replaces.
-  "HR Operations",
-  // Talent Acquisition, 2026-10-08: the owner chose the admin shell on the access blueprint, the
-  // same side as both other HR seats.
-  "HR Resourcing",
-  // HR Operations Specialist, 2026-10-20: the same HR shell as the other seats.
-  "HR Administration",
-] as const satisfies readonly PhoenixRole[];
+// The list itself lives in admin-shell-roles.ts, so the sidebar's definition can read it without
+// pulling this module's database client in; re-exported here so every importer is unchanged.
+export { adminShellEmployeeRoles };
 const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
 
 export function isAdminShellEmployeeRole(role: PhoenixRole): boolean {

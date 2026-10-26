@@ -14,6 +14,8 @@
  *
  * Run after adding or renaming any sidebar label:
  *   pnpm run ui:measure-sidebar-labels
+ * From a worktree, where pnpm is refused, run the same line through node (MEASURE_SIDEBAR_LABELS_WORKTREE_COMMAND
+ * in src/config/sidebar-metrics.ts). `node scripts/check-contracts.mjs` says before the push when it is due.
  */
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -22,6 +24,7 @@ import {
   BOTTOM_BAR_LABEL_FONT_CSS,
   labelFontCss,
   SIDEBAR_LABEL_SNAPSHOT_PATH,
+  sidebarLabelsOf,
   type SidebarShell,
 } from "@/config/sidebar-metrics";
 import {
@@ -38,16 +41,9 @@ import {
 
 // Canonical label AND every `labelByRole` override — the sidebar test resolves per-role labels
 // through getSections before measuring, so an override that never appears here would always read
-// as missing (getSections would hand back a label this script never probed).
-function labelsOf(sections: readonly NavigationSection[]): string[] {
-  return [
-    ...new Set(
-      sections.flatMap((section) =>
-        section.items.flatMap((navItem) => [navItem.label, ...Object.values(navItem.labelByRole ?? {})]),
-      ),
-    ),
-  ].sort();
-}
+// as missing (getSections would hand back a label this script never probed). The rule is
+// `sidebarLabelsOf`, shared with tests/sidebar-label-snapshot.test.ts, the pre-push half of that test.
+const labelsOf = (sections: readonly NavigationSection[]): string[] => sidebarLabelsOf(sections);
 
 // The /hr namespace renders in the SAME rail component at the same type scale (usesAdminChrome
 // is true for it), so its labels are measured as "admin" rather than in a shell of their own — one

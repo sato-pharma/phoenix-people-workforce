@@ -290,3 +290,31 @@ export function labelFontCss(shell: SidebarShell): string {
 }
 
 export const SIDEBAR_LABEL_SNAPSHOT_PATH = "tests/fixtures/sidebar-label-widths.json";
+
+/** The command that re-measures every sidebar label and rewrites the snapshot, from the primary checkout. */
+export const MEASURE_SIDEBAR_LABELS_COMMAND = "pnpm run ui:measure-sidebar-labels";
+/** The same run from a worktree, where pnpm is refused (bash-guard C6): the script line, through node. */
+export const MEASURE_SIDEBAR_LABELS_WORKTREE_COMMAND =
+  "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/measure-sidebar-labels.ts";
+
+/**
+ * Every label a sidebar can print for these sections: each item's own label AND every `labelByRole`
+ * override, because `getSections` hands a role its override in place of the label.
+ *
+ * The ONE rule for which labels exist. scripts/measure-sidebar-labels.ts measures exactly these, and
+ * tests/sidebar-label-snapshot.test.ts refuses a snapshot missing any of them — so the gate can never
+ * demand a label the script does not measure, or let through one it does.
+ */
+export function sidebarLabelsOf(
+  sections: readonly { items: readonly { label: string; labelByRole?: Partial<Record<string, string>> }[] }[],
+): string[] {
+  return [
+    ...new Set(
+      sections.flatMap((section) =>
+        section.items.flatMap((navItem) => [navItem.label, ...Object.values(navItem.labelByRole ?? {})]),
+      ),
+    ),
+  ]
+    .filter((label): label is string => typeof label === "string")
+    .sort();
+}

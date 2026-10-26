@@ -82,6 +82,7 @@ import { runSidebarLabelFontSyncTests } from "./sidebar-label-font-sync.test.ts"
 import { runNavHubPromotionTests } from "./nav-hub-promotion.test.ts";
 import { runSidebarDomainsTests } from "./sidebar-domains.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
+import { runSidebarLabelSnapshotTests } from "./sidebar-label-snapshot.test.ts";
 import { runSidebarRowsReadUniquelyTests } from "./sidebar-rows-read-uniquely.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import {
@@ -3043,6 +3044,7 @@ await runTest(
 await runTest("automated payroll pages render full width", runAutomatedPayrollPageWidthTests);
 await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
+await runTest("sidebar label snapshot has a measured width for every label in its own shell", runSidebarLabelSnapshotTests);
 await runTest("sidebar domain grouping loses no nav row for any role", runSidebarDomainsTests);
 await runTest(
   "no rail row opens a page of modules, and promoting the hubs neither widened nor narrowed any role's rail (the owner's 2026-09-05 rule, re-measured against the seeds every run rather than trusted from the one hand-count taken when it shipped)",
@@ -5514,9 +5516,10 @@ await runTest(
     + "renderers — print keeps raw HTML, email drops it and stays table-only for Outlook)",
   runOfferLetterPayAndRenderTests,
 );
+// One string literal, not a concatenation: offer-pdf-runtime is a check-contracts gate, and
+// tests/check-contracts.test.ts pairs a gate with its registration by parsing a single literal.
 await runTest(
-  "offer PDF runtime (the image's puppeteer pin matches package.json, and Chromium is found on "
-    + "disk rather than assumed at the pre-Alpine-3.19 path)",
+  "offer PDF runtime (the image's puppeteer pin matches package.json, and Chromium is found on disk rather than assumed at the pre-Alpine-3.19 path)",
   runOfferPdfRuntimeTests,
 );
 await runTest(

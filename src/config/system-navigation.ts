@@ -109,12 +109,14 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import {
-  adminShellEmployeeRoles,
-  type NavigationMode,
-  type PermissionAction,
-  type PermissionResource,
-  type PhoenixRole,
+// 🔴 TYPES ONLY from permissions.ts, never a value: it pulls a database client in, and this file must
+// load without one so the sidebar-label snapshot gate can run in `check-contracts` (26 Oct 2026).
+import { adminShellEmployeeRoles } from "@/lib/auth/admin-shell-roles";
+import type {
+  NavigationMode,
+  PermissionAction,
+  PermissionResource,
+  PhoenixRole,
 } from "@/lib/auth/permissions";
 
 export type NavigationPermission = {
