@@ -28,6 +28,8 @@ import {
   getVacationApprovalsForResponder,
 } from "@/lib/approvals-hub/service";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
+import { todayInCairo } from "@/lib/date-only";
+import { noticeIsDue } from "@/lib/notifications/due-today";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
@@ -450,6 +452,9 @@ export async function listInAppNotificationsForViewer(
       "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type,test_login_id";
 
     const allowedCategories = Array.from(PERSONAL_BELL_CATEGORIES);
+    // Fenced in SQL as well as after it: the 110 future probation reminders would otherwise use up
+    // the read limit before the notices that are due today are reached (see noticeIsDue).
+    const today = todayInCairo();
 
     // The two reads are independent, so they run together: the bell is polled by every open page and each
     // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
@@ -459,6 +464,7 @@ export async function listInAppNotificationsForViewer(
         .select(selectColumns)
         .eq("employee_hr_id", employeeHrId.toUpperCase())
         .in("category", allowedCategories)
+        .lte("scheduled_for", today)
         .order("created_at", { ascending: false })
         .limit(readLimit),
       supabase
@@ -466,6 +472,7 @@ export async function listInAppNotificationsForViewer(
         .select(selectColumns)
         .overlaps("recipients", [employeeHrId])
         .in("category", allowedCategories)
+        .lte("scheduled_for", today)
         .order("created_at", { ascending: false })
         .limit(readLimit),
       // The Talent Acquisition seat gets a new-CV notice every twenty minutes, so the two reads above
@@ -477,6 +484,7 @@ export async function listInAppNotificationsForViewer(
             .select(selectColumns)
             .eq("employee_hr_id", employeeHrId.toUpperCase())
             .in("category", allowedCategories)
+            .lte("scheduled_for", today)
             .or(`event_type.is.null,event_type.neq.${TALENT_ACQUISITION_FLOODING_EVENT_TYPE}`)
             .order("created_at", { ascending: false })
             .limit(readLimit)
@@ -511,6 +519,8 @@ export async function listInAppNotificationsForViewer(
       // "leave") that may carry mis-assigned recipients. Defense-in-depth on top
       // of the SQL .in("category", ...) filter. See src/lib/notifications/recipients.ts.
       .filter((row) => isPersonalBellCategory(row.category))
+      // A reminder written ahead of time is not on the bell until its day (noticeIsDue).
+      .filter((row) => noticeIsDue(row, today))
       // The Talent Acquisition seat's centre holds three notices; the older recruitment alerts
       // already written for her are dropped here (seat-notice-filter.ts).
       .filter((row) => !noticeHiddenFromSeat(access.role, row.event_type))

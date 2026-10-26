@@ -27,7 +27,7 @@ import {
   loadVacancyPredecessors,
   loadVacancySeatPlaces,
 } from "@/lib/employees/vacancy-display";
-import { daysBetweenDateOnly } from "@/lib/date-only";
+import { daysBetweenDateOnly, todayInCairo } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
   employeeMatchesPortalSalesScope,
@@ -1009,6 +1009,9 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
       // array literal, whose own escaping this repo has not measured against production, so it is
       // deliberately left exactly as it was.
       .or(`${quotedOrClause("employee_hr_id", "eq", canonicalHrId)},recipients.cs.{${canonicalHrId}}`)
+      // Newest DUE first: ordered by scheduled_for with no fence, the five slots went to probation
+      // reminders written months ahead, before any notice that was due (noticeIsDue).
+      .lte("scheduled_for", todayInCairo())
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
