@@ -36,10 +36,16 @@ export type OffPlanAllowance = {
   exemptCustomerIds?: string[];
   /** The exception's own names, for the one sentence that tells him — "no daily or weekly limit at <venue>". */
   exemptLabels?: string[];
+  /**
+   * A dated exception for the whole of the rep's out-of-plan visits (owner, 2026-10-26: Aya Mamdouh, a new hire,
+   * "no cap only during the first month then automatic return normal") — every customer is open, and `until`
+   * is the last day it covers. Absent means none, and on the day after `until` it is absent by itself.
+   */
+  exemptAll?: { label: string; until: string };
 };
 
-/** The customers a seat's named exceptions cover, and what they are called. */
-export type OffPlanExemptions = { customerIds: string[]; labels: string[] };
+/** The customers a seat's named exceptions cover, and what they are called — plus a dated whole-rep window. */
+export type OffPlanExemptions = { customerIds: string[]; labels: string[]; all?: { label: string; until: string } };
 
 /** The two numbers, as the settings carry them. */
 export type OffPlanCaps = { offPlanDailyCap: number; offPlanWeeklyCap: number };
@@ -78,6 +84,7 @@ export function offPlanAllowance(input: {
     ...(input.exemptions && input.exemptions.customerIds.length > 0
       ? { exemptCustomerIds: input.exemptions.customerIds, exemptLabels: input.exemptions.labels }
       : {}),
+    ...(input.exemptions?.all ? { exemptAll: input.exemptions.all } : {}),
   };
 }
 
@@ -109,6 +116,7 @@ export function offPlanStandingKey(seatId: string, day: string): string {
 
 /** Why this doctor cannot be taken out of plan now: the day is full, or the week is and he is not in it. */
 export function offPlanBlock(allowance: OffPlanAllowance, customerId: string): "day" | "week" | null {
+  if (allowance.exemptAll) return null;
   if (allowance.exemptCustomerIds?.includes(customerId)) return null;
   if (allowance.dayDoctors.includes(customerId)) return null;
   if (allowance.day.used >= allowance.day.cap) return "day";
@@ -151,15 +159,30 @@ export function offPlanAllowanceSentence(allowance: OffPlanAllowance, voice: "re
  * The one line that tells the rep, and the card that shows it, about a named exception — nothing when he
  * has none. An allowance he is given, never a check on him (golden rule #1).
  */
-export function offPlanExemptionSentence(allowance: OffPlanAllowance): string | null {
+export function offPlanExemptionSentence(allowance: OffPlanAllowance, voice: "rep" | "manager" = "rep"): string | null {
+  if (allowance.exemptAll) {
+    const whose = voice === "rep" ? "your" : "the rep's";
+    return `Until ${offPlanDayLabel(allowance.exemptAll.until)} there is no daily or weekly limit on ${whose} unplanned visits. From the day after, the usual limit applies.`;
+  }
+  if (voice !== "rep") return null;
   const labels = allowance.exemptLabels ?? [];
   if (labels.length === 0) return null;
   return `At ${labels.join(" and ")} there is no daily or weekly limit on unplanned visits. They do not use up your numbers above.`;
 }
 
-/** What a manager reads on an off-plan visit that fell under a named exception. */
+/** "2026-11-23" → "23 November", read from the ISO day itself so no timezone can move it. */
+export function offPlanDayLabel(isoDay: string): string {
+  const [year, month, day] = isoDay.split("-").map(Number);
+  if (!year || !month || !day) return isoDay;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+/**
+ * What a manager reads on an off-plan visit that fell under a named exception — a hospital of one rep
+ * (2026-10-17) or a new hire's first month (2026-10-26). One sentence fits both.
+ */
 export const OFF_PLAN_EXEMPT_CARD_TEXT =
-  "Hospital exception: the owner lifted the daily and weekly out-of-plan limit for this rep at this hospital. Decide it as usual.";
+  "Named exception: the owner lifted the daily and weekly out-of-plan limit for this visit. Decide it as usual.";
 
 /** What a manager reads beside a rep's off-plan day: "Out of plan that day 2 of 2 · that week 5 of 8". */
 export function offPlanStandingLine(standing: OffPlanStanding): string {

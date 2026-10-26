@@ -79,5 +79,53 @@ export function runPhoenixCrmOffplanExemptionTests(): void {
   const card = readFileSync("src/components/phoenix-crm/unplanned-visit-card.tsx", "utf8");
   assert.ok(card.includes("visit.offPlanExempt") && card.includes("OFF_PLAN_EXEMPT_CARD_TEXT"), "the managers' card says so");
   const allowance = readFileSync("src/components/phoenix-crm/offplan-allowance.tsx", "utf8");
-  assert.ok(allowance.includes('voice === "rep" ? offPlanExemptionSentence(allowance) : null'), "the rep's allowance card tells him");
+  assert.ok(allowance.includes("offPlanExemptionSentence(allowance, voice)"), "the rep's allowance card tells him");
+  assert.equal(offPlanExemptionSentence(excepted, "manager"), null, "a venue exception is told to the rep only, as before");
+
+  runNewHireWindowTests(caps, full);
+}
+
+const NEW_HIRE_MIGRATION = "supabase/migrations/20261026230001_phoenix_crm_new_hire_offplan_month.sql";
+
+/**
+ * Owner, 2026-10-26: "Aya Mamdouh is a new hire — make her able to submit unplanned visits during her first
+ * hiring month with no cap, only during the first month, then automatic return normal." A dated row over all of
+ * one rep's out-of-plan visits; the day after it ends, the door and the picker are back to 2 and 8 by themselves.
+ */
+function runNewHireWindowTests(caps: { offPlanDailyCap: number; offPlanWeeklyCap: number }, full: Array<{ customerId: string; visitDate: string }>): void {
+  const inWindow = offPlanAllowance({
+    rows: full,
+    day: "2026-10-18",
+    caps,
+    exemptions: { customerIds: [], labels: [], all: { label: "New hire — first month", until: "2026-11-23" } },
+  });
+  assert.equal(offPlanBlock(inWindow, "anyone"), null, "🔴 inside the window no customer is blocked by the day or the week");
+  const told = offPlanExemptionSentence(inWindow);
+  assert.equal(told, "Until 23 November there is no daily or weekly limit on your unplanned visits. From the day after, the usual limit applies.");
+  assert.ok(offPlanExemptionSentence(inWindow, "manager")?.includes("the rep's unplanned visits"), "a manager entering for her reads it about the rep");
+  assert.ok(!/check|flag|violation|monitor|\b(account|accounts|doctor|doctors)\b/i.test(told ?? ""), "golden rule #1 and the banned screen words");
+  // No window (the loader answers none once the day is past valid_until): the ordinary limit, unchanged.
+  const after = offPlanAllowance({ rows: full, day: "2026-10-18", caps, exemptions: { customerIds: [], labels: [] } });
+  assert.equal(after.exemptAll, undefined, "no window, no window field");
+  assert.equal(offPlanBlock(after, "anyone"), "day", "🔴 the day after the window the usual limit is back");
+
+  const migration = readFileSync(NEW_HIRE_MIGRATION, "utf8");
+  assert.ok(migration.includes("p_day between e.valid_from and e.valid_until"), "the window is both days inclusive and nothing else");
+  assert.ok(migration.includes("and e.rep_hr_id = p_rep") && migration.includes("where e.seat_id = p_seat"), "🔴 bound to her seat AND her — no other rep is reached");
+  assert.ok(
+    migration.includes("or public.phoenix_crm_offplan_rep_exempt(new.seat_id, new.rep_hr_id, new.visit_date) then\n    new.offplan_exempt := true;\n    return new;"),
+    "the door stamps and returns before it counts, so her month never uses up a later week",
+  );
+  assert.ok(migration.indexOf("if new.capture_source = 'admin' then") < migration.indexOf("phoenix_crm_offplan_rep_exempt(new.seat_id"), "the admin entry skip still comes first");
+  assert.ok(migration.includes("valid_from is not null\n      and valid_until is not null"),"🔴 a whole-rep row can never be open-ended");
+  assert.ok(migration.includes("'SEAT-PED-REP-GZ4'") && migration.includes("'PD-0029'"), "the row names Aya Mamdouh's seat and her");
+  assert.ok(migration.includes("date '2026-10-24'") && migration.includes("date '2026-11-23'"), "her hire date to the day before the month comes round");
+  assert.ok(!migration.includes("update public.phoenix_crm_settings"), "🔴 the settings (2 a day, 8 a week) are never raised");
+  assert.ok(!migration.includes("function public.phoenix_crm_shared_place_day_cap"), "the venue's own daily number is not lifted for her");
+  assert.ok(migration.includes("revoke execute on function public.phoenix_crm_offplan_rep_exempt(text, text, date) from public, anon, authenticated"), "closed to the browser roles");
+
+  const cap = readFileSync("src/lib/phoenix-crm/server/offplan-cap.ts", "utf8");
+  assert.ok(cap.includes('.lte("valid_from", day)') && cap.includes('.gte("valid_until", day)') && cap.includes('.eq("rep_hr_id", repHrId)'), "the picker reads the window with the door's own test");
+  const visits = readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8");
+  assert.ok(visits.includes("loadOffPlanExemptions(seat.seatId, enteredAs === \"rep\" ? viewer.hrId : (seat.occupantHrId ?? null), today)"), "the form reads the seat's rep's window for the visit day");
 }
