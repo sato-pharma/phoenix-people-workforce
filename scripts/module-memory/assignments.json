@@ -255,6 +255,7 @@
   "analytics-open-to-all-scoped-plan": "sales-closing",
   "analytics-schema-postgrest-not-exposed-2026-07-18": "database",
   "another-session-can-remove-a-worktree-under-you": "git-worktrees",
+  "another-session-may-have-already-shipped-your-fix": "git-worktrees",
   "another-sessions-rollup-can-close-your-open-pr-as-superseded": "engineering",
   "answers-scale-to-the-task-simple-question-simple-answer": "sessions",
   "anti-infective-canonical-line-name": "org",
