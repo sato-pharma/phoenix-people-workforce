@@ -16,9 +16,10 @@
  * Four things are worth being explicit about, because each is a way this could go wrong:
  *
  *   1. **National Sales Manager and nothing else.** This is deliberately narrower than
- *      `evidence-waiver.ts`, which waives PHOTOS for three roles (Product Manager, Group Product
- *      Manager, National Sales Manager). The owner named one role here, twice, and a hold is a
- *      much bigger thing to remove than a photograph. The two rules are kept in separate modules
+ *      `evidence-waiver.ts`, which waives PHOTOS for four roles (Product Manager, Group Product
+ *      Manager, National Sales Manager, Training Manager). The owner named one role here, twice,
+ *      and a hold is a much bigger thing to remove than a photograph.
+ *      The two rules are kept in separate modules
  *      on purpose: widening the photo waiver must not silently widen this, and vice versa.
  *
  *   2. **It removes the HOLD, not the CHECK.** Every automated check still runs and every flag it
