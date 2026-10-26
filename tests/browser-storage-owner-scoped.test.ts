@@ -158,9 +158,15 @@ export function runBrowserStorageOwnerScopedTests() {
     assert.match(workspace, /ownerHrId: owner,/, "every queued visit says whose it is");
     assert.match(
       workspace,
-      /expiredCount: unsendableOwners\.filter\(\(owner\) => owner === "" \|\| owner === viewer\)\.length/,
+      /tooOld: unsendableOwners\.filter\(\(owner\) => owner !== "" && owner === viewer\)\.length/,
       "a rep is told only about their own lost visits, not another rep's",
     );
+    assert.match(
+      workspace,
+      /noOwner: unsendableOwners\.filter\(\(owner\) => owner === ""\)\.length/,
+      "an entry with no owner is counted apart, so the banner never calls it too old",
+    );
+    assert.match(workspace, /describeUnsendableQueue\(unsendable\)/, "the banner's words come from the tested helper");
   }
 
   // ── 6. The two unsaved-typing drafts ──────────────────────────────────────────────────────────────────
