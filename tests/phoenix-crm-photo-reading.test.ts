@@ -192,6 +192,10 @@ export function runPhoenixCrmPhotoReadingTests() {
   // The ordinary cause names the phone's first reading, and the line reads as sentences.
   const usually = story.story.find((line) => line.startsWith("Usually:")) ?? "";
   assert.ok(usually.includes("before the satellites lock"), `🔴 the ordinary cause is the one that happened here: ${usually}`);
+  // He read the old line and asked "how come ??" — it named the cause and never said why a phone
+  // 66 km out still claims 13 m. The plain line says the phone cannot tell, in those words.
+  assert.ok(usually.includes("The phone cannot tell, so it still shows a small accuracy figure"), `the panel says why the accuracy figure misleads: ${usually}`);
+  assert.ok(!/cached|;/.test(usually), `plain words: no "cached", no semicolon: ${usually}`);
   const twoCauses = caseStory({ ...hisCase, flags: ["photo_pin_disagrees", "photo_pin_gap_long"], reasons: ["far apart", "a long gap"] });
   const twoUsually = twoCauses.story.find((line) => line.startsWith("Usually:")) ?? "";
   assert.ok(!/\.\.|\. and |does this or so does/.test(twoUsually), `two causes read as two sentences, never "these.." or "these. and": ${twoUsually}`);
