@@ -1,3 +1,4 @@
+import { countLateOrEarlyDays, noRecordWorkingDays } from "@/lib/attendance/attendance-day-display";
 import { getFingerprintAttendanceReport, type FingerprintPolicyDetailRow } from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -10,6 +11,8 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { getNationalHolidayDateSet } from "@/lib/vacation/national-holidays";
 
 export type EmployeeAttendanceSummary = {
   /**
@@ -27,6 +30,13 @@ export type EmployeeAttendanceSummary = {
   deductionDays: number;
   exceptionDays: number;
   lateDays: number;
+  /**
+   * Days carrying late or early-leave MINUTES, whatever their status — what the portal's
+   * "Late / early" card shows. lateDays counts the "Late" status only, and a day both late and
+   * short is labelled "Short day", so it stayed out of lateDays while its row showed the minutes.
+   * Display only; optional so the other summaries built by hand need not invent it.
+   */
+  lateOrEarlyDays?: number;
   shortDays: number;
   totalRows: number;
 };
@@ -34,6 +44,12 @@ export type EmployeeAttendanceSummary = {
 export type EmployeeAttendanceData = {
   dateFrom: string;
   dateTo: string;
+  /**
+   * Working days before today with no fingerprint row at all, oldest first — shown as "No record"
+   * rows on Attendance Analytics and counted nowhere (attendance-day-display.ts). Only filled when
+   * the caller asks for it (includeNoRecordDays).
+   */
+  noRecordDates?: string[];
   pendingDisputes: number;
   rows: Array<{
     date: string;
@@ -112,6 +128,7 @@ export async function getEmployeeAttendanceData(
   hrId: string,
   dateFrom: string,
   dateTo: string,
+  options: { includeNoRecordDays?: boolean } = {},
 ): Promise<EmployeeAttendanceData> {
   const [reportData, disputesData, confirmedDates] = await Promise.all([
     getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: hrId }),
@@ -168,14 +185,43 @@ export async function getEmployeeAttendanceData(
     };
   });
 
+  summary.lateOrEarlyDays = countLateOrEarlyDays(rows);
+
+  const noRecordDates = options.includeNoRecordDays
+    ? await loadNoRecordDates({ dateFrom, dateTo, hrId, policyDetails: reportData.policyDetails ?? [], rows })
+    : undefined;
+
   return {
     dateFrom,
     dateTo,
+    ...(noRecordDates ? { noRecordDates } : {}),
     pendingDisputes: disputesData.length,
     policyDetails: reportData.policyDetails ?? [],
     rows,
     summary,
   };
+}
+
+async function loadNoRecordDates(input: {
+  dateFrom: string;
+  dateTo: string;
+  hrId: string;
+  policyDetails: FingerprintPolicyDetailRow[];
+  rows: Array<{ rawDate: string }>;
+}): Promise<string[]> {
+  const policy = input.policyDetails.find((row) => hrIdsMatch(row.employeeHrId, input.hrId)) ?? input.policyDetails[0];
+  // A holiday the calendar cannot answer for is simply not left out — the row still reads
+  // "No record", never "Absent", so the worst case is a neutral row on a day off.
+  const holidayDates = await getNationalHolidayDateSet(input.dateFrom, input.dateTo).catch(() => new Set<string>());
+  return noRecordWorkingDays({
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+    holidayDates,
+    jobTitle: policy?.jobTitle ?? null,
+    recordedDates: input.rows.map((row) => row.rawDate),
+    todayIso: currentCairoDateOnlyIso(),
+    workingWeekdays: policy?.workingWeekdays ?? null,
+  });
 }
 
 // ─── Manager view: who may see whose fingerprint report ─────────────────────

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
+import { employeeHolidayList } from "@/lib/vacation/employee-holiday-list";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -23,7 +24,10 @@ export async function GET(request: Request) {
     const year = numberParam(url.searchParams.get("year")) || now.getFullYear();
     const month = numberParam(url.searchParams.get("month")) || now.getMonth() + 1;
     const result = await getConfirmedNationalHolidays({ month, year });
-    return NextResponse.json({ success: true, ...result });
+    // This list is read only by the Vacation Request form's National Holidays tab — every employee
+    // sees it. The confirming administrator's notes are dropped and a day off confirmed twice is one
+    // row (employee-holiday-list.ts); no leave rule reads this response.
+    return NextResponse.json({ success: true, ...result, holidays: employeeHolidayList(result.holidays) });
   } catch (error) {
     const message = clientSafeErrorMessage(error, "Unable to load Egyptian national holidays.");
     if (isForbiddenError(error) || message.toLowerCase().includes("forbidden")) {

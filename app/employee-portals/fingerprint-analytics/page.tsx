@@ -32,7 +32,7 @@ export default async function FingerprintAnalyticsPage() {
   let initialData = null;
   let initialError: string | null = null;
   try {
-    initialData = await getEmployeeAttendanceData(hrId, dateFrom, dateTo);
+    initialData = await getEmployeeAttendanceData(hrId, dateFrom, dateTo, { includeNoRecordDays: true });
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Attendance data failed to load.";
   }

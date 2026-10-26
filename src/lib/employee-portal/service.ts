@@ -2699,13 +2699,16 @@ async function listOutstationExpensesForPortal(hrIds?: Array<string | null | und
   );
 }
 
+// "1 year 1 month", "2 years", "5 months" — words with their plurals, never "1 Yrs 1 Mos".
+// Display only: the day count itself is computed elsewhere and nothing reads this string back.
 function serviceDurationText(days: number) {
-  if (!Number.isFinite(days) || days <= 0) return "0 Months";
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  if (!Number.isFinite(days) || days <= 0) return plural(0, "month");
   const years = Math.floor(days / 365);
   const months = Math.floor((days % 365) / 30);
-  if (years > 0 && months > 0) return `${years} Yrs ${months} Mos`;
-  if (years > 0) return `${years} Yrs`;
-  return `${months} Mos`;
+  if (years > 0 && months > 0) return `${plural(years, "year")} ${plural(months, "month")}`;
+  if (years > 0) return plural(years, "year");
+  return plural(months, "month");
 }
 
 function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employmentStatus">) {

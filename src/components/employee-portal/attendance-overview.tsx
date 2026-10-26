@@ -136,7 +136,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
-        <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateDays} />
+        <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
         <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.absentDays + summary.shortDays} />
         <PortalMetricCard accent="sky" icon={ShieldCheck} label="Exceptions" note="Approved by HR" value={summary.exceptionDays} />
       </div>

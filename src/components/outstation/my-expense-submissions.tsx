@@ -25,6 +25,13 @@ import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { tidyOutstationAddress } from "@/lib/outstation/description-format";
+import { claimsLabel, isPassedValidation, summarizeMyClaims } from "@/lib/outstation/my-claims-summary";
+
+/** A stored address with its leading plus code ("2C2Q+R4 …") and trailing "Egypt" removed; the raw text when nothing readable is left. */
+function readableAddress(value: string | null | undefined): string {
+  return tidyOutstationAddress(value) ?? (value ?? "");
+}
 
 /**
  * The submitter's own outstation submissions.
@@ -126,7 +133,8 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
   const arrivalDone = submission.hasArrivalPhoto;
   const departureDone = submission.hasDeparturePhoto;
   const workloadDone = gateBlocker !== "workload" && submission.isPayrollEligible;
-  const decided = decision?.hrApproved === true || decision?.approvedAmount !== null;
+  // The Validated card above the rows counts with the same test, so the two always agree.
+  const decided = isPassedValidation(submission);
   const rejected = submission.status.toLowerCase().includes("reject");
   const paid = Boolean(decision?.paidAt);
 
@@ -365,25 +373,11 @@ export function MyExpenseSubmissions({
     [loadPhotos, openId, photos],
   );
 
-  const totals = useMemo(() => {
-    let claimed = 0;
-    let approved = 0;
-    let approvedCount = 0;
-    let awaiting = 0;
-    for (const submission of submissions) {
-      claimed += submission.claimedTotalAmount;
-      const amount = submission.decision?.approvedAmount;
-      // Counted, not just summed. With nothing decided the sum is 0, and "EGP 0" reads as "HR
-      // approved nothing" rather than "HR has not looked at this yet" — on a screen about his own
-      // pay, those two must never render the same.
-      if (amount !== null && amount !== undefined) {
-        approved += amount;
-        approvedCount += 1;
-      }
-      if (!submission.isPayrollEligible) awaiting += 1;
-    }
-    return { approved, approvedCount, awaiting, claimed };
-  }, [submissions]);
+  // Counted, not just summed. With nothing validated the sum is 0, and "EGP 0" reads as "HR
+  // approved nothing" rather than "HR has not looked at this yet" — on a screen about his own pay,
+  // those two must never render the same. A claim counts here exactly when its row reads "Passed
+  // validation" (isPassedValidation), at what payroll will pay for it.
+  const totals = useMemo(() => summarizeMyClaims(submissions), [submissions]);
 
   if (submissions.length === 0) {
     return (
@@ -403,17 +397,17 @@ export function MyExpenseSubmissions({
         <div className="border border-slate-200 bg-white p-4">
           <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">You claimed</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{money(totals.claimed)}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{submissions.length} submissions</p>
+          <p className="mt-0.5 text-xs text-slate-500">{claimsLabel(submissions.length)}</p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Validated</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Passed validation</p>
           <p className="mt-1 text-2xl font-black text-emerald-700">
-            {totals.approvedCount > 0 ? money(totals.approved) : "—"}
+            {totals.validatedCount > 0 ? money(totals.validatedAmount) : "—"}
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {totals.approvedCount > 0
-              ? `${totals.approvedCount} of ${submissions.length} decided`
-              : "Nothing decided yet"}
+            {totals.validatedCount > 0
+              ? `${totals.validatedCount} of ${claimsLabel(submissions.length)}`
+              : "None validated yet"}
           </p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
@@ -467,7 +461,7 @@ export function MyExpenseSubmissions({
                     ) : null}
                   </div>
 
-                  <p className="mt-2 text-sm font-black text-slate-900">{submission.destination}</p>
+                  <p className="mt-2 text-sm font-black text-slate-900">{readableAddress(submission.destination)}</p>
                   <p className="mt-0.5 text-xs font-semibold text-slate-500">
                     {formatPhoenixLongDate(submission.tripStartDate)}
                     {submission.tripStartDate !== submission.tripEndDate
@@ -605,8 +599,8 @@ export function MyExpenseSubmissions({
                   <section>
                     <SectionTitle>Trip</SectionTitle>
                     <div className="mt-3 grid gap-4 sm:grid-cols-3">
-                      <Fact icon={<MapPin className="h-3 w-3" />} label="From" value={submission.origin} />
-                      <Fact icon={<MapPin className="h-3 w-3" />} label="To" value={submission.destination} />
+                      <Fact icon={<MapPin className="h-3 w-3" />} label="From" value={readableAddress(submission.origin)} />
+                      <Fact icon={<MapPin className="h-3 w-3" />} label="To" value={readableAddress(submission.destination)} />
                       <Fact
                         icon={<CalendarDays className="h-3 w-3" />}
                         label="Trip type"
@@ -703,7 +697,7 @@ export function MyExpenseSubmissions({
                             <li className="break-words" key={stop.stopNumber}>
                               <span className="font-bold text-slate-900">Stop {stop.stopNumber}</span>
                               {stop.governorate ? ` · ${stop.governorate}` : ""}
-                              {stop.locationLabel ? ` · ${stop.locationLabel}` : ""}
+                              {stop.locationLabel ? ` · ${readableAddress(stop.locationLabel)}` : ""}
                               {` · ${formatPhoenixLongDate(stop.capturedAt)}`}
                             </li>
                           ))}

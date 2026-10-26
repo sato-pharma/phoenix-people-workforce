@@ -12,6 +12,7 @@ import {
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
+import { listSupportRequestsForViewer, type SupportRequestRow } from "@/lib/support-requests/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,16 @@ export default async function EmployeePortalContactHRSupportPage() {
     redirect("/overview");
   }
   await assertPermission(access, "support_requests", "create");
+
+  // The rep's own requests load with the page, so Open, Resolved and Sent are numbers on first
+  // paint. A failed read is null (never an empty list) and the page tries once more in the browser.
+  const requestsRead: Promise<SupportRequestRow[] | null> = listSupportRequestsForViewer(access, 25).catch((error) => {
+    logPortalFailure(
+      { route: "/employee-portals/contact-hr-support", module: "contact-hr-support-requests", role: access.role, hrId: access.hrId },
+      error,
+    );
+    return null;
+  });
 
   let data = null;
   try {
@@ -59,7 +70,7 @@ export default async function EmployeePortalContactHRSupportPage() {
       errorBoundaryTitle="Request Support unavailable"
       title="Request Support"
     >
-      <ContactHRSupportPage data={data} />
+      <ContactHRSupportPage data={data} initialRequests={await requestsRead} />
     </EmployeePortalPageShell>
   );
 }

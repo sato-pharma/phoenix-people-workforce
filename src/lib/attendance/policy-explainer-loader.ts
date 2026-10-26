@@ -13,12 +13,15 @@ import {
   type AttendancePolicyExplainer,
   type PolicyExplainerRuleRow,
 } from "@/lib/attendance/policy-explainer";
+import { resolveEmployeeDisplayName, tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
 
 type EmployeeRow = {
+  full_name: string | null;
   hr_id: string;
   job_title: string | null;
+  nickname: string | null;
   target_hr_id?: string;
 };
 
@@ -49,7 +52,7 @@ export async function loadAttendancePolicyExplainer(
     // returns nothing — which would read as "this person has no policy".
     const { data: employeeData, error: employeeError } = await supabase
       .from("employees")
-      .select("hr_id,job_title")
+      .select("hr_id,full_name,nickname,job_title")
       .ilike("hr_id", normalized)
       .maybeSingle();
     if (employeeError) throw employeeError;
@@ -83,7 +86,12 @@ export async function loadAttendancePolicyExplainer(
       today,
     );
 
+    const fullName = employee.full_name?.trim();
     return buildAttendancePolicyExplainer({
+      // The portal's own display name (nickname, then full name), never the policy's stored label.
+      employeeDisplayName: fullName
+        ? tidyAllCapitalsName(resolveEmployeeDisplayName(fullName, employee.nickname, employee.hr_id))
+        : null,
       policy,
       referenceDate: today,
       rules: (ruleResult.data ?? []) as PolicyExplainerRuleRow[],

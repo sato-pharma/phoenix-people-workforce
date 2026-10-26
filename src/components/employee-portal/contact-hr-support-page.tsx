@@ -53,7 +53,19 @@ const hrRequestSubcategories = [
   "Leave dispute",
 ] as const;
 
-export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }) {
+export function ContactHRSupportPage({
+  data,
+  initialRequests = null,
+}: {
+  data: EmployeePortalShellData;
+  /**
+   * The rep's own requests, read on the server with the page. When present the counters print
+   * real numbers on first paint — Open, Resolved and Sent read "—" for as long as the browser
+   * was still fetching them, which on a slow phone was the whole first look. Null = the server
+   * read failed, and the browser tries once more on mount.
+   */
+  initialRequests?: SupportRequestRow[] | null;
+}) {
   const employeeName = data.employee.fullName || data.employee.hrId || "your profile";
   const draftKey = ownerScopedStorageKey(CONTACT_HR_DRAFT_KEY_BASE, data.employee.hrId);
   const [category, setCategory] = useState("");
@@ -65,8 +77,8 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [alertNotDelivered, setAlertNotDelivered] = useState(false);
-  const [recentRequests, setRecentRequests] = useState<SupportRequestRow[]>([]);
-  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [recentRequests, setRecentRequests] = useState<SupportRequestRow[]>(() => initialRequests ?? []);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(initialRequests === null);
   // A FAILED READ IS NOT AN EMPTY HISTORY. Without this, a rep with twelve open tickets and a
   // down API was shown "No recent requests — your support history will appear here after your
   // first request": a confident, specific and false statement about his own record. AGENTS.md §1
@@ -84,6 +96,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
   /* -------- Load recent requests on mount -------- */
   useEffect(() => {
+    if (initialRequests !== null) return;
     let cancelled = false;
     const load = async () => {
       try {
@@ -115,6 +128,8 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     return () => {
       cancelled = true;
     };
+    // Mount only: the server's list is the page's starting state, never re-read when it changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* -------- Restore draft from localStorage on first mount -------- */

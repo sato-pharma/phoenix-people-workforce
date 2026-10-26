@@ -20,7 +20,6 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { BottomNavCustomizer } from "@/components/employee-portal/bottom-nav-customizer";
 import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
-import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { BiometricDevicesCard } from "@/components/auth/biometric-devices-card";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
@@ -203,9 +202,8 @@ export default async function EmployeePortalProfilePage() {
           hasUploadedPhoto={Boolean(uploadedPhoto)}
           initials={photoInitials}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <ScopeBadge scope={access.scope} />
-        </div>
+        {/* No access-scope chip here: "My line" describes what a manager may SEE across the
+            system, not anything about the person on this page, and read as a profile fact. */}
 
         {/* Who you are first — identity, contract and placement — then the settings below them.
             The settings cards used to come first, full width, so at 1440 the password form ran
@@ -315,7 +313,7 @@ export default async function EmployeePortalProfilePage() {
           </Card>
 
           {/* ONE way to reach HR, and it goes somewhere. This used to be two identical
-              "Contact HR to update this information" chips (here and beside the scope badge) that
+              "Contact HR to update this information" chips (here and beside the old scope chip) that
               looked like buttons and did nothing. */}
           <Card className="rounded border border-orange-100 bg-orange-50/40 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-6 lg:col-span-2">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

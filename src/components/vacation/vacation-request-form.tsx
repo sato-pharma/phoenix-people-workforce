@@ -46,7 +46,7 @@ import type {
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES } from "@/lib/vacation/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { stableEnGbFormatter, utcDate } from "@/lib/format/cairo-datetime";
 import {
   phxButtonAccentClassName,
   phxLabelTextClassName,
@@ -355,14 +355,10 @@ function monthLabel(month: number, year: number) {
 
 // DATE-ONLY (a national-holiday date, a `date` column), which `new Date` parses as UTC midnight. UTC
 // here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not
-// an instant — do not "fix" this one to Cairo.
+// an instant — do not "fix" this one to Cairo. Built from digits by utcDate ("08 Oct 2026"), the
+// platform's one date-only format, never by asking the browser.
 function formatHolidayDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "UTC",
-    year: "numeric",
-  }).format(new Date(`${value}T00:00:00Z`));
+  return utcDate(value.slice(0, 10));
 }
 
 function stepMonth(month: number, year: number, delta: number) {

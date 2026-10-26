@@ -1067,6 +1067,7 @@ import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-porta
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
+import { runPortalLeaveAttendancePolishTests } from "./portal-leave-attendance-polish.test.ts";
 import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-salary.test.ts";
 import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
 import { runDeductionEnumLabelTests } from "./deduction-enum-labels.test.ts";
@@ -4917,6 +4918,10 @@ await runTest("employee portal nav permission matches page gate (B6)", runEmploy
 await runTest("company calendar", runCompanyCalendarTests);
 await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
+await runTest(
+  "portal leave and attendance polish (the claims card counts what the rows show, one 8 Oct holiday row with no owner notes, the SLA card is HR-only, the late/early card counts late minutes whatever the status, and no-punch working days read No record)",
+  runPortalLeaveAttendancePolishTests,
+);
 await runTest("employee portal payslip salary", runEmployeePortalPayslipSalaryTests);
 await runTest("admin payslip image export", runAdminPayslipImageExportTests);
 await runTest("deduction export enum labels", runDeductionEnumLabelTests);

@@ -90,6 +90,8 @@ export type FingerprintPolicyDetailRow = {
   scheduledStart: string;
   targetType: string;
   workingDays: string;
+  /** The policy's raw working weekdays (null = the standard weekend rule) — workingDays is its printed form. */
+  workingWeekdays?: unknown;
 };
 
 export type FingerprintReportData = {
@@ -649,6 +651,7 @@ export async function getFingerprintAttendanceReport(input: {
         scheduledStart: displayPolicyTime(policy?.scheduled_start),
         targetType: policy?.target_type ?? "",
         workingDays: formatAttendanceWorkingWeekdays(policy?.working_weekdays),
+        workingWeekdays: policy?.working_weekdays ?? null,
       };
     })
     .filter((row) => employeePolicyMatches(row, filters))
