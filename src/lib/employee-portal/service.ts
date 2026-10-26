@@ -22,6 +22,11 @@ import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import {
+  describeVacancyReason,
+  loadVacancyPredecessors,
+  loadVacancySeatPlaces,
+} from "@/lib/employees/vacancy-display";
 import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
@@ -4712,7 +4717,6 @@ export type NsmTeamExpensesData = {
 
 type PortalVacancyDbRow = {
   area_id: number | null;
-  area_name?: string | null;
   areas?: { name: string | null } | null;
   created_at: string;
   department_id?: number | null;
@@ -4726,6 +4730,10 @@ type PortalVacancyDbRow = {
   position_id: number | null;
   positions?: { title: string | null } | null;
   region_name: string | null;
+  /** The person this seat is being refilled after. The ONLY source of the reason a reader sees. */
+  replacement_for_hr_id?: string | null;
+  /** The organogram seat. Carries the area for a row whose own `area_id` is null. */
+  seat_id?: string | null;
   status: string;
   vacancy_code: string;
 };
@@ -4755,7 +4763,19 @@ export type EmployeePortalVacancyRow = {
   pendingOffer?: SeatOfferOut | null;
   positionId: number | null;
   positionTitle: string | null;
+  /**
+   * WHY the seat is open, in plain English, built from the predecessor's own `employees` row —
+   * "Replacing Bahaa Gamal, who resigned. Last working day 9 Aug 2026."
+   *
+   * This is what a manager reads. `note` beside it is the ENGINE JOURNAL and is rendered only to
+   * the Super Admin / HR seats that hold `vacancies:create` (owner, 2026-10-26). Null when the
+   * vacancy records no predecessor — four of the seventeen open Pedia rows — in which case
+   * nothing at all is shown rather than the note.
+   */
+  reason: string | null;
   regionName: string | null;
+  /** The organogram seat this vacancy sits on, when it has one. */
+  seatId: string | null;
   status: string;
   vacancyCode: string;
 };
@@ -4945,7 +4965,12 @@ export async function getEmployeePortalVacancies(
           // department_id joins the ids already selected here so an open seat can open Add Employee
           // pre-filled from this page too (src/lib/employees/vacancy-hire-link.ts) — the form needs
           // the IDS, and this row used to drop every one of them on the way out.
-          "id,vacancy_code,job_title,status,created_at,note,manager_hr_id,manager_name,region_name,line_id,area_id,department_id,position_id,lines(name),areas(name),positions(title)",
+          // `replacement_for_hr_id` and `seat_id` joined 2026-10-26: the first is the ONLY source
+          // of the plain-English reason a manager now reads instead of the engine journal in
+          // `note`, and the second carries the area for a row whose own `area_id` is null (one of
+          // these seventeen, which rendered "Unknown Area"). Both live in
+          // src/lib/employees/vacancy-display.ts.
+          "id,vacancy_code,job_title,status,created_at,note,manager_hr_id,manager_name,region_name,line_id,area_id,department_id,position_id,seat_id,replacement_for_hr_id,lines(name),areas(name),positions(title)",
         )
         .eq("status", "open")
         .order("created_at", { ascending: false });
@@ -4996,33 +5021,67 @@ export async function getEmployeePortalVacancies(
     // Employee pre-filled from an accepted offer, the same one-press hire the organogram gives.
     // Keyed by the vacancy's own id (offerSeatKeyForVacancy), which is this row's `id`. Returns an
     // empty map on any failure, so an offers read that fails never stops the vacancies page.
-    const offerOutBySeat = await loadOfferOutBySeat();
-
-    const vacancies = uniqueRows.map((row) => ({
-      areaId: row.area_id,
-      areaName: row.areas?.name ?? row.area_name ?? null,
-      createdAt: row.created_at,
-      departmentId: row.department_id ?? null,
-      id: row.id,
-      isDistrictManagerVacancy: isDistrictManagerVacancyTitle(
-        row.job_title,
-        row.positions?.title,
+    // Three bounded look-ups, in parallel, all three sized by THESE rows rather than by the
+    // company: the letters already out against these seats, the predecessors whose departure is
+    // the reason each seat is open, and the organogram place of every seat on the list. The
+    // predecessors cannot come from `getEmployeeDirectory()`: every one of them has left, and the
+    // directory holds active staff only.
+    //
+    // 🔴 A VACANCY'S AREA COMES FROM THE AU ORGANOGRAM (owner, 2026-10-26). `au.v_org_tree` is the
+    // seat model, so the seat says where the vacancy sits and the row's stored `area_id` is only
+    // the fallback — not the other way round. A seat moved to another area in the organogram
+    // therefore moves on this page at once, instead of showing the area the row was opened with.
+    // Measured on production the day the rule was given: of the 40 open vacancies, 37 sit on a
+    // seat that names an area, every one of those 37 codes resolves to a numeric area id, and NOT
+    // ONE of them resolves to a different id than the row already stored — so making the
+    // organogram primary moved no existing row and filled the two that showed nothing
+    // (VAC-PD0019-DWF → Sharkia 1, VAC-B176-SPK → Behira 1).
+    const seatIdsOnTheList = uniqueRows.map((row) => row.seat_id ?? null);
+    const [offerOutBySeat, predecessors, seatPlaces] = await Promise.all([
+      loadOfferOutBySeat(),
+      loadVacancyPredecessors(uniqueRows.map((row) => row.replacement_for_hr_id ?? null)).catch(
+        () => null,
       ),
-      jobTitle: row.job_title,
-      lineId: row.line_id,
-      lineName: row.lines?.name ?? null,
-      managerHrId: row.manager_hr_id,
-      managerName: row.manager_name,
-      note: row.note,
-      // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
-      // vacancies carry a key in the map, so a non-open row would read null here.
-      pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
-      positionId: row.position_id,
-      positionTitle: row.positions?.title ?? null,
-      regionName: row.region_name,
-      status: row.status,
-      vacancyCode: row.vacancy_code,
-    }));
+      seatIdsOnTheList.some(Boolean)
+        ? loadVacancySeatPlaces(seatIdsOnTheList).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    const vacancies = uniqueRows.map((row) => {
+      const seatPlace = seatPlaces?.get(row.seat_id ?? null) ?? null;
+      // The organogram answers FIRST, and only where it actually names an area. A District Manager
+      // seat owns a region and no area at all (SEAT-AIF-DM-AB, the one seated row of the 40 whose
+      // `area_code` is null), so for those the row's own area is still what is shown.
+      const seatNamesTheArea = seatPlace?.areaName !== null && seatPlace?.areaName !== undefined;
+
+      return {
+        areaId: (seatNamesTheArea ? seatPlace?.areaId : null) ?? row.area_id ?? null,
+        areaName: (seatNamesTheArea ? seatPlace?.areaName : null) ?? row.areas?.name ?? null,
+        createdAt: row.created_at,
+        departmentId: row.department_id ?? null,
+        id: row.id,
+        isDistrictManagerVacancy: isDistrictManagerVacancyTitle(
+          row.job_title,
+          row.positions?.title,
+        ),
+        jobTitle: row.job_title,
+        lineId: row.line_id,
+        lineName: row.lines?.name ?? null,
+        managerHrId: row.manager_hr_id,
+        managerName: row.manager_name,
+        note: row.note,
+        // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
+        // vacancies carry a key in the map, so a non-open row would read null here.
+        pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
+        positionId: row.position_id,
+        positionTitle: row.positions?.title ?? null,
+        reason: describeVacancyReason(predecessors?.get(row.replacement_for_hr_id ?? null) ?? null),
+        regionName: row.region_name ?? seatPlace?.regionName ?? null,
+        seatId: row.seat_id ?? null,
+        status: row.status,
+        vacancyCode: row.vacancy_code,
+      };
+    });
 
     return {
       // All line-scoped roles (NSM + Product/Group Product Manager) use the line view + line
