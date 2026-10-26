@@ -41,7 +41,7 @@ import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import { logError } from "@/lib/observability/log";
-import { creditRepRowsByTenure, loadSeatTenure, type SeatTenure } from "@/lib/sales/seat-tenure-credit";
+import { creditDmRowsByTenure, creditRepRowsByTenure, loadSeatTenure, type SeatTenure } from "@/lib/sales/seat-tenure-credit";
 import {
   loadSalesSeatTree,
   regionalManagerAbove,
@@ -361,6 +361,16 @@ export function repBoardRows(rows: AchievementRow[], tenure: SeatTenure | null):
 }
 
 /**
+ * The rows a DISTRICT MANAGER board ranks — the DSMs list and the Regional Manager rows summed from
+ * it: each month under the manager who held the district seat then (owner, 26 Oct 2026, the rep rule
+ * one level up). Headline totals keep the rows as loaded, so a month no manager held is "not
+ * attributed", never out of the total. Pure.
+ */
+export function dmBoardRows(rows: AchievementRow[], tenure: SeatTenure | null): AchievementRow[] {
+  return tenure ? creditDmRowsByTenure(rows, tenure) : rows;
+}
+
+/**
  * Regional Manager roll-up rows (owner, 2026-10-20: the DSMs view had no Regional Manager row).
  *
  * Each row is the SUM of the district-manager rows beneath him and nothing else: every row with a
@@ -429,17 +439,19 @@ export async function buildNsmDsmPerformanceFromSos(
   requested: string | string[] | null | undefined,
 ): Promise<NsmDsmPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames, seats] = await Promise.all([
+  const [employeeNames, productNames, seats, tenure] = await Promise.all([
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
+    loadRepTenure({ creditRepsByTenure: true }),
   ]);
 
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
+  const board = dmBoardRows(used, tenure);
   const nsmHrId = ctx.hrId ? String(ctx.hrId) : null;
   const nsmName = nsmHrId ? employeeNames.get(nsmHrId) ?? null : null;
 
-  const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsmHrId, nsmName));
+  const dsms = membersFromRows(board, "dm", employeeNames, productNames, dmManagerResolver(nsmHrId, nsmName));
   const totals = headlineTotals(used);
   // Reconciled against the DSM rows only — the Regional Manager rows below are sums OF those rows.
   const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, dsms);
@@ -447,7 +459,7 @@ export async function buildNsmDsmPerformanceFromSos(
   return {
     dsms,
     regionalManagers: regionalManagerMembersFromRows(
-      used,
+      board,
       seats,
       employeeNames,
       productNames,
@@ -585,18 +597,21 @@ export async function buildCompanyDsmPerformanceFromSos(
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyDsmPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
-  const [employeeNames, productNames, seats] = await Promise.all([
+  const [employeeNames, productNames, seats, tenure] = await Promise.all([
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
+    loadRepTenure({ creditRepsByTenure: true }),
   ]);
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
+  const board = dmBoardRows(used, tenure);
 
   const lines: CompanyDsmPerformanceLine[] = [];
   for (const [lineCode, meta] of lineMetaByCode) {
     const lineRows = used.filter((row) => row.lineCode === lineCode);
+    const lineBoard = board.filter((row) => row.lineCode === lineCode);
     const dsms = membersFromRows(
-      lineRows,
+      lineBoard,
       "dm",
       employeeNames,
       productNames,
@@ -611,7 +626,7 @@ export async function buildCompanyDsmPerformanceFromSos(
       nsmName: meta.nsmName,
       performance: {
         dsms,
-        regionalManagers: regionalManagerMembersFromRows(lineRows, seats, employeeNames, productNames, {
+        regionalManagers: regionalManagerMembersFromRows(lineBoard, seats, employeeNames, productNames, {
           hrId: meta.nsmHrId,
           name: meta.nsmName,
         }),
@@ -676,7 +691,7 @@ export async function buildRmRegionalPerformanceFromSos(
   ]);
   const used = selectRows(relevant, activePeriods, requested, publishedKeys);
 
-  const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name))
+  const dsms = membersFromRows(dmBoardRows(used, tenure), "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name))
     .filter((dsm) => isInRegion(dsm.hrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 
