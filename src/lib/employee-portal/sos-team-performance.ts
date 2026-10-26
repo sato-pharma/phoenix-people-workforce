@@ -381,6 +381,10 @@ export function dmBoardRows(rows: AchievementRow[], tenure: SeatTenure | null): 
  * reconciliation slice it already is on the page — so his row never reads more than the districts
  * listed under him.
  *
+ * A seated district with no occupied RSM above it is not dropped: it is totalled with the others of
+ * its region into one "<region> — no regional manager" row (`isRegionWithoutManager`), so the rows
+ * together foot to every seated district and each district is still counted once.
+ *
  * Built apart from `dsms`, never inside it: a Regional Manager added to that list would be counted
  * as one more DSM and his districts twice. `excludeHrId` drops the viewer's own row (an RM looking at
  * his own region would only see himself). `nsm` is who each Regional Manager reports to. Pure.
@@ -395,15 +399,48 @@ export function regionalManagerMembersFromRows(
 ): DsmTeamMemberData[] {
   const exclude = String(excludeHrId ?? "").trim().toUpperCase();
   const underRegionalManagers: AchievementRow[] = [];
+  // A seated district with NO occupied RSM above it is totalled under its region instead, so the
+  // roll-up rows foot to the seated-district total (owner, 2026-10-26: EGP 3.07M sat in regions with
+  // no Regional Manager and appeared nowhere). Skipped for a Regional Manager reading his own region
+  // (`exclude`): his bound holds only his districts, and a region row there would be noise.
+  const regionLabels = new Map<string, string>();
   for (const row of rows) {
     if (!row.dmHrId) continue;
     const rsm = regionalManagerAbove(row.dmSeatId, seats);
-    if (!rsm) continue;
-    if (exclude && rsm.hrId.trim().toUpperCase() === exclude) continue;
-    // Re-keyed, never re-priced: the row's own values go under the RSM's occupant.
-    underRegionalManagers.push({ ...row, dmHrId: rsm.hrId });
+    if (rsm) {
+      if (exclude && rsm.hrId.trim().toUpperCase() === exclude) continue;
+      // Re-keyed, never re-priced: the row's own values go under the RSM's occupant.
+      underRegionalManagers.push({ ...row, dmHrId: rsm.hrId });
+      continue;
+    }
+    if (exclude) continue;
+    const region = regionWithoutManagerOf(row.dmSeatId, seats);
+    if (!region) continue;
+    const key = `${REGION_WITHOUT_MANAGER_KEY_PREFIX}${region.toLowerCase()}`;
+    regionLabels.set(key, `${region} — no regional manager`);
+    underRegionalManagers.push({ ...row, dmHrId: key });
   }
-  return membersFromRows(underRegionalManagers, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name));
+  const names = regionLabels.size > 0 ? new Map([...employeeNames, ...regionLabels]) : employeeNames;
+  return membersFromRows(underRegionalManagers, "dm", names, productNames, dmManagerResolver(nsm.hrId, nsm.name)).map(
+    (member) => (regionLabels.has(member.hrId) ? { ...member, isRegionWithoutManager: true } : member),
+  );
+}
+
+/** Synthetic key of a region row — never an employee's HR id. */
+const REGION_WITHOUT_MANAGER_KEY_PREFIX = "region-without-manager:";
+
+/**
+ * The region a seated district belongs to when no Regional Manager sits above it: the district's own
+ * name with a trailing number dropped, so "Upper Egypt 1" and "Upper Egypt 2" are one region. null
+ * for anything that is not a named district seat (the "Others" bucket, an unknown seat, an empty tree).
+ */
+export function regionWithoutManagerOf(dmSeatId: string | null | undefined, seats: SalesSeatTree): string | null {
+  if (!dmSeatId) return null;
+  const seat = seats.get(dmSeatId);
+  if (!seat || seat.isOtherPseudoDm || (seat.tier !== "DM" && seat.tier !== "ACTING_DM")) return null;
+  const district = (seat.regionName ?? "").trim();
+  const region = district.replace(/\s*\(?\d+\)?\s*$/, "").trim();
+  return region || district || null;
 }
 
 /** A DM's manager is the line's NSM (fixed per line). */

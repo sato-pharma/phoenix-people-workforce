@@ -24,7 +24,9 @@ export const TeamSalesVsTargetChart = dynamic<TeamSalesVsTargetChartProps>(() =>
   import("./team-members-breakdown.client").then((mod) => mod.TeamSalesVsTargetChart),
 );
 
-export const TeamLeaderboardTable = dynamic<MembersOnlyProps>(() =>
+type TeamLeaderboardTableProps = MembersOnlyProps & { showProductCount?: boolean };
+
+export const TeamLeaderboardTable = dynamic<TeamLeaderboardTableProps>(() =>
   import("./team-members-breakdown.client").then((mod) => mod.TeamLeaderboardTable),
 );
 

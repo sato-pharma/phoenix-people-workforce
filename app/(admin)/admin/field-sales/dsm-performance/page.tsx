@@ -317,7 +317,7 @@ export default async function CompanyDsmPerformancePage({
                   <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
                     Regional Managers — {line.lineName}
                   </p>
-                  <TeamLeaderboardTable members={line.performance.regionalManagers} />
+                  <TeamLeaderboardTable members={line.performance.regionalManagers} showProductCount={false} />
                 </div>
               )}
               <details className="group">

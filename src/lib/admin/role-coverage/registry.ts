@@ -266,7 +266,8 @@ export const ROLE_COVERAGE_MODULES: readonly RoleCoverageModule[] = [
       if (!data) throw new Error("The company DSMs Performance view returned nothing.");
       return data.lines.flatMap((line) => [
         ...line.performance.dsms.map((dsm) => dsm.hrId),
-        ...line.performance.regionalManagers.map((manager) => manager.hrId),
+        // A "no regional manager" region row is a total, not a person.
+        ...line.performance.regionalManagers.filter((manager) => !manager.isRegionWithoutManager).map((manager) => manager.hrId),
       ]);
     },
   },
