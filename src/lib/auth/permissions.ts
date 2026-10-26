@@ -178,6 +178,10 @@ export type PermissionResource =
   | "payslips"
   | "deductions"
   | "double_visit_analytics"
+  // Rep Achievement by Product (owner, 2026-10-26): every rep's published achievement %, product by
+  // product, month, quarter and semester. READ and EXPORT only, the Training Manager and the Super
+  // Admin only — capped in `hardBoundaryAllowedActions`.
+  | "rep_product_achievement"
   // Field Absence Calendar (owner, 2026-10-18): the names of field people the system did not see at
   // all on a working day. READ ONLY, and four roles only — capped in `hardBoundaryAllowedActions`,
   // because the page names people, and a rep or a district manager must never hold it.
@@ -331,6 +335,7 @@ export const permissionResources: PermissionResource[] = [
   "payroll",
   "deductions",
   "double_visit_analytics",
+  "rep_product_achievement",
   "field_absence",
   "weekly_plans",
   "expenses",
@@ -753,6 +758,9 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       return role === "Super Admin" ? allActions : [];
     case "synthetic_journeys":
       return role === "Super Admin" ? ["read"] : [];
+    case "rep_product_achievement":
+      // A read over the published closing: nothing to write. The Training Manager and the Super Admin.
+      return role === "Super Admin" || role === "Training Manager" ? ["read", "export"] : [];
     case "field_absence":
       // The owner's four, 2026-10-18 ("admin and national sales managers and SFE and CEO"), and READ
       // alone: the calendar is a view over records other modules own, so there is nothing to write.
@@ -1067,6 +1075,7 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: allActions,
     deductions: allActions,
     double_visit_analytics: allActions,
+    rep_product_achievement: ["read", "export"],
     weekly_plans: allActions,
     probation: allActions,
     resignations: allActions,
@@ -1708,6 +1717,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // canSeeEmployee(), not from employee-master admin access.
     expenses: ["read", "export"],
     double_visit_analytics: ["read", "export"],
+    // Owner, 2026-10-26: every rep's achievement % per product, filtered by line, and the Excel file.
+    rep_product_achievement: ["read", "export"],
     outstation: ["read", "create"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read", "create", "update"],

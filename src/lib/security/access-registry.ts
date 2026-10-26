@@ -2470,6 +2470,9 @@ export const accessRegistry = [
   // Weekly Sales gate is the whole check.
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/product-units", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employee-portals/double-visit-report/export", permission: { resource: "double_visit_analytics", action: "export" }, guard: "domain-helper" }),
+  // Rep Achievement by Product, the Training Manager's Excel file: filters only in the query, the rows are
+  // the published closing's, and the matrix gate (read + export, capped to her and the Super Admin) is the check.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employee-portals/rep-achievement/export", permission: { resource: "rep_product_achievement", action: "export" } }),
   // Team Calendar rep-day visits drill-down. Role-checked in the handler (National Sales
   // Manager only) plus a per-line scope guard (isHrIdInNsmTeamScope) rather than a matrix
   // resource, so it registers as a domain-helper guard with no matrix permission.
