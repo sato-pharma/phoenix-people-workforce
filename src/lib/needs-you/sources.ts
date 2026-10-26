@@ -687,10 +687,12 @@ const contractRenewals: NeedsYouAdapter = {
  * counted exactly the people the destination table cannot contain — the CEO clicked 22 and landed
  * on a list holding none of them.
  *
- * There is deliberately no "overdue" COUNT: no surface in the product lists a probationer past the
- * 90-day window, so such a number would be another dead link. The `note` below says how many are
- * past the date without offering it as its own row; a real overdue count needs an overdue view on
- * /probation first.
+ * There is deliberately no "overdue" COUNT here. Since 2026-10-26 the employee portal's probation
+ * tracker has an "Overdue decision" zone (`getProbationTrackerRows`), but it lists only probations
+ * that still have an OPEN case, while `past` below counts every outstanding workflow past its date,
+ * so the two figures differ and this row would not describe the page it opens. The `note` below says
+ * how many are past the date without offering it as its own row; an overdue count here needs the
+ * two lists reconciled first.
  *
  * 🔴 THE TWO FILTERS ARE NOT DECORATION, and this adapter shipped without them. A
  * probationer whose employment has already ENDED still carries an unresolved workflow row, so

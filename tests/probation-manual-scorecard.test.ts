@@ -113,7 +113,7 @@ export function runProbationManualScorecardTests() {
   assert.match(page, /<ProbationFeedbackTasksPanel tasks=\{feedbackTasks\} \/>\s*\n\s*<ProbationScorecardLauncher/, "both panels render outside the hasTracker branch");
   assert.match(page, /!hasTracker && feedbackTasks\.length === 0 && scorableProbationers\.length === 0 && !showAnalytics/, "the empty state accounts for pending work with no tracker rows");
   // Owner rule: human-readable names and roles, never raw codes.
-  assert.match(page, /EVALUATOR_ROLE_LABEL/, "the evaluator role is shown as a title, not a slug");
+  assert.match(page, /evaluatorRoleLabel\(p\.evaluatorRole\)/, "the evaluator role is shown as a title, not a slug");
   assert.match(page, /resolveFeedbackTaskNames\(/, "task names that the tracker did not cover are resolved from the directory");
 
   // ── Launcher UI: matches the sibling inbox's design identity ─────────────────────────────────

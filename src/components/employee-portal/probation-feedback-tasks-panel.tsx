@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { formatDateValue } from "@/lib/i18n/format";
+import { evaluatorRoleLabel } from "@/lib/probation/intelligence/evaluator-role-label";
 import type { FeedbackSlaState } from "@/lib/probation/intelligence/feedback-sla";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -51,7 +53,12 @@ const SLA_LABEL: Record<FeedbackSlaState, string> = {
 const SLA_ORDER: Record<FeedbackSlaState, number> = { overdue: 0, escalated: 1, due: 2, pending: 3 };
 
 function timing(t: FeedbackTaskView): string {
-  if (t.slaState === "overdue") return `${Math.round(t.hoursOverdue)}h overdue`;
+  if (t.slaState === "overdue") {
+    const hours = Math.round(t.hoursOverdue);
+    if (hours < 24) return `${hours}h overdue`;
+    const days = Math.round(hours / 24);
+    return `${days} day${days === 1 ? "" : "s"} overdue`;
+  }
   if (t.hoursUntilDue <= 0) return "due now";
   const h = Math.round(t.hoursUntilDue);
   return h >= 24 ? `${Math.round(h / 24)}d left` : `${h}h left`;
@@ -176,9 +183,9 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
                           {/* visit_count 0 = a scorecard opened by hand (manual-dv-day.ts), not a
                               captured field day that found nothing. */}
                           {t.visitCount === 0
-                            ? `Scorecard opened ${t.dvDate}`
-                            : `Double-Visit ${t.dvDate} · ${t.visitCount} visit${t.visitCount === 1 ? "" : "s"}`}
-                          {t.evaluatorRole ? ` · as ${t.evaluatorRole}` : ""}
+                            ? `Scorecard opened ${formatDateValue(t.dvDate)}`
+                            : `Double-Visit ${formatDateValue(t.dvDate)} · ${t.visitCount} visit${t.visitCount === 1 ? "" : "s"}`}
+                          {t.evaluatorRole ? ` · as ${evaluatorRoleLabel(t.evaluatorRole)}` : ""}
                         </div>
                       </div>
                       <Link

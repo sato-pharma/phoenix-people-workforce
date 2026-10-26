@@ -92,6 +92,7 @@ export function runLifecycleRiskSourceTests() {
     {
       critical: 1,
       openWorkflows: 2,
+      overdue: 0,
       safe: 0,
       total: 2,
       warning: 1,
