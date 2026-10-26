@@ -20,7 +20,7 @@ import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
-import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview, type RecognizeOptions } from "@/lib/sales/recognize";
 import { decodeFileRow } from "@/lib/sales/sales-upload-files";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -341,8 +341,8 @@ export type CodedPart = { buffer: ExcelJS.Buffer; distributorCode: string; distr
  * once: a month can be a hundred thousand rows, and holding every part's workbook in memory together
  * is how a 16 GB machine runs out of it.
  */
-export async function buildCodedFileParts(distributorCode: string, files: readonly File[]): Promise<{ fileNames: string[]; parts: Array<CodedPart & { fileNames: string[] }> }> {
-  const recognized = await recognizeWorkbookFiles(distributorCode, files);
+export async function buildCodedFileParts(distributorCode: string, files: readonly File[], options?: RecognizeOptions): Promise<{ fileNames: string[]; parts: Array<CodedPart & { fileNames: string[] }> }> {
+  const recognized = await recognizeWorkbookFiles(distributorCode, files, options);
   if (recognized.status !== "ok") throw new SalesWorkflowError("normalizer_unreadable", recognitionErrorMessage(recognized), 422);
   const parts: Array<CodedPart & { fileNames: string[] }> = [];
   for (const part of recognized.parts) {

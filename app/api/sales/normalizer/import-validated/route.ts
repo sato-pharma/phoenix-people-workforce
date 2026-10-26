@@ -6,7 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { describeRefusedRow, isRefusedRow } from "@/lib/sales/normalizer/row-messages";
-import { formFiles, partLabel } from "@/lib/sales/normalizer/multi-file";
+import { formFiles, formUndatedPeriod, partLabel } from "@/lib/sales/normalizer/multi-file";
 import { buildCodedFileParts, learnFromImportHistory } from "@/lib/sales/normalizer/service";
 import { combinedFileName, labelRowText } from "@/lib/sales/sales-upload-files";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     // a batch is one distributor and one month everywhere else in the system. Each part carries the
     // RESOLVED distributor — the template posts a sentinel and names its distributors inside.
     // Several sheets of one distributor come back as one part per month, every sheet's rows in it.
-    const { fileNames, parts } = await buildCodedFileParts(distributorCode, files);
+    const { fileNames, parts } = await buildCodedFileParts(distributorCode, files, { undatedPeriod: formUndatedPeriod(form) });
     const manyDistributors = new Set(parts.map((part) => part.distributorCode)).size > 1;
     /** "Ibnsina: " (or "Ibnsina 2026-07: ") in front of a message, only when there is more than one part. */
     const whose = (part: (typeof parts)[number]) => { const label = partLabel(part, parts); return label ? `${label}: ` : ""; };

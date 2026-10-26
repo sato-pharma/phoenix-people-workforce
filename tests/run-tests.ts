@@ -824,6 +824,7 @@ import { runSosNumberCellsAutoFixTests } from "./sos-number-cells-auto-fix.test.
 import { runSalesUploadRedatedRowsTests } from "./sales-upload-redated-rows.test.ts";
 import { runSalesUploadMultiFileTests } from "./sales-upload-multi-file.test.ts";
 import { runNormalizerMultiFileTests } from "./normalizer-multi-file.test.ts";
+import { runNormalizerEgdOldLayoutsTests } from "./normalizer-egd-old-layouts.test.ts";
 import { runSosEuropeanDecimalMisreadTests } from "./sos-european-decimal-misread.test.ts";
 import { runProductSourceRowNumberCommaTests, runSosMonthlyImportCommaMisreadTests } from "./sos-monthly-import-comma-misread.test.ts";
 import { runSalesUploadVerificationTests } from "./sales-upload-verification.test.ts";
@@ -4644,6 +4645,10 @@ await runTest(
 await runTest(
   "several raw sheets of one distributor on the Source Normalizer: one month is one part and one batch, months stay apart, every row named by its file",
   runNormalizerMultiFileTests,
+);
+await runTest(
+  "EGD's 2024 sheets on the Source Normalizer: the January–February names read as the same fields, and a summary with no date goes in only under a month picked on screen, never over a row's own date",
+  runNormalizerEgdOldLayoutsTests,
 );
 await runTest(
   "sales upload reads a European \"1.234,56\" as 1234.56 and lists it, never as 1.23456; a text \"1.234\" or \"12,5\" it would have to guess at is refused and named",

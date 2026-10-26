@@ -117,20 +117,31 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
   {
+    // EGD's sheet has worn THREE layouts, and all three are read (owner, 2026-10-26, choosing "teach
+    // the old layouts" for the 2024 history). The FIRST name in each list is today's export and the
+    // one a refusal names; the rest are the older ones:
+    //   • today (May 2024 on):  QTY_INVOICE · INVOICE_DATE · TOTAL_VALUE_INVOICE · MRKZ_N
+    //   • Jan–Feb 2024:         "net qty" · DATE_TRANS · VALUE · DISTRICT_NAME
+    //   • the cut-down summary EGD sent for some 2024 months: "Sales" for the units, and NO date, no
+    //     value and no item code. It carries no month of its own, so the Source Normalizer takes it
+    //     only with the month picked on screen (recognize.ts, undatedPeriod); value is recomputed
+    //     from the Phoenix price either way, so a missing value column loses nothing.
+    // Measured on his 13 EGD workbooks: no sheet carries two of these names for one field, so an
+    // older name can never shadow today's.
     distributorCode: "EG",
     distributorName: "EGD",
     productCodeColumns: ["ITEM_CODE"],
     productNameColumns: ["ITEM_NAME"],
     productColumns: ["ITEM_CODE", "ITEM_NAME"],
-    qtyColumns: ["QTY_INVOICE"],
-    valueColumns: ["TOTAL_VALUE_INVOICE"],
+    qtyColumns: ["QTY_INVOICE", "net qty", "Sales"],
+    valueColumns: ["TOTAL_VALUE_INVOICE", "VALUE"],
     valueSource: "recompute",
-    dateColumns: ["INVOICE_DATE"],
+    dateColumns: ["INVOICE_DATE", "DATE_TRANS"],
     dateFormat: "day-first",
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
-    territoryColumns: ["MRKZ_N"],
+    territoryColumns: ["MRKZ_N", "DISTRICT_NAME"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEM_CODE", "QTY_INVOICE", "INVOICE_DATE"],
   },
