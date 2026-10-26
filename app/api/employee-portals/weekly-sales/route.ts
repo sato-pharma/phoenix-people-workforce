@@ -9,6 +9,7 @@ import {
   type PortalWeeklyFilters,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { toWeeklyCycleMonth } from "@/lib/sales/periods";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const filters: PortalWeeklyFilters = {
-      cycleMonths: splitList(searchParams.get("months")),
+      cycleMonths: splitList(searchParams.get("months")).map(toWeeklyCycleMonth),
       cycleMonthMode: parseMode(searchParams.get("monthsMode")),
       weekNumbers: parseIntList(searchParams.get("weeks")),
       weekNumberMode: parseMode(searchParams.get("weeksMode")),

@@ -15,6 +15,7 @@ import {
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
+import { latestNonFuturePeriod } from "@/lib/sales/periods";
 import { loadBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import {
   WEEKLY_DISTRIBUTORS,
@@ -968,6 +969,14 @@ export async function loadWeeklyDashboard(filters: {
   /** Cycle-month filter (YYYY-MM-DD first-of-month values) + mode. Empty = all months. */
   cycleMonths?: string[] | null;
   cycleMonthMode?: WeeklyFilterMode | null;
+  /**
+   * THE FUTURE-MONTH RULE for a screen's first paint: when no month was asked for, open on the newest
+   * uploaded month that has STARTED (Cairo) instead of "All months", and report it in
+   * `appliedFilters.cycleMonths` so the screen can show what it is on. Clearing the month on the
+   * screen still asks for all months, because the API route never sets this. Ignored when a month was
+   * named, and when every uploaded month is still in the future.
+   */
+  defaultToLatestStartedMonth?: boolean;
   /** Week-of-month filter (1–4) + mode. Empty = all weeks. */
   weekNumbers?: number[] | null;
   weekNumberMode?: WeeklyFilterMode | null;
@@ -1098,7 +1107,17 @@ export async function loadWeeklyDashboard(filters: {
   // scope (GOLDEN RULE, see tracked-lines.ts). Include-mode only: "everything except CNS" is not a
   // request for Head Office, and must not quietly pull 78% of the table back in.
   const lineNamedExplicitly = line.has && line.mode === "include";
-  const cycleMonthFilter = resolveMultiFilter(filters?.cycleMonths, null, filters?.cycleMonthMode, normalizeText);
+  const askedForCycleMonths = (filters?.cycleMonths ?? []).some((value) => normalizeText(value));
+  const defaultedCycleMonth =
+    filters?.defaultToLatestStartedMonth && !askedForCycleMonths
+      ? latestNonFuturePeriod(batches.map((batch) => normalizeText(String(batch.cycle_month ?? ""))).filter(Boolean))
+      : null;
+  const cycleMonthFilter = resolveMultiFilter(
+    defaultedCycleMonth ? [defaultedCycleMonth] : filters?.cycleMonths,
+    null,
+    defaultedCycleMonth ? "include" : filters?.cycleMonthMode,
+    normalizeText,
+  );
   // Uploads are matched by exact id, so no include/exclude mode and no normalisation — a uuid is a uuid.
   const batchIdFilter = new Set((filters?.batchIds ?? []).map((value) => normalizeText(value)).filter(Boolean));
   const weekNumberFilter = resolveMultiFilter(

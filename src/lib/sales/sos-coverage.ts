@@ -42,6 +42,7 @@
 // before the declared first month withdraws it entirely.
 
 import { canonicalDistributorKey, DIRECT_CHANNEL_CODE, DIRECT_CHANNEL_LABEL } from "@/lib/sales/direct-channel";
+import { isFuturePeriod } from "@/lib/sales/periods";
 
 /** One validated batch, as read from source_of_sales_import_batches. */
 export type SosCoverageBatch = {
@@ -264,9 +265,16 @@ function round2(value: number): number {
  * A distributor is only expected in a period once it has appeared at least once anywhere in the
  * examined window; a distributor that was onboarded in March is not reported "missing" from January.
  * That keeps the report actionable rather than noisy.
+ *
+ * THE FUTURE-MONTH RULE: a month after `today` (Cairo) is not part of the examined window. A Direct
+ * order collecting next month legitimately books a Direct-only batch into it, and counting that
+ * month made every other distributor "missing" from it — the banner named a month that had not
+ * started and the company-wide estimate (average × missing months) was inflated by it.
  */
-export function buildSosCoverageReport(batches: SosCoverageBatch[]): SosCoverageReport {
-  const valid = batches.filter((b) => PERIOD_RE.test(b.period ?? "") && (b.distributorCode ?? "").trim() !== "");
+export function buildSosCoverageReport(batches: SosCoverageBatch[], today?: string): SosCoverageReport {
+  const valid = batches.filter(
+    (b) => PERIOD_RE.test(b.period ?? "") && !isFuturePeriod(b.period, today) && (b.distributorCode ?? "").trim() !== "",
+  );
 
   const loadedPeriods = [...new Set(valid.map((b) => b.period))].sort();
   if (loadedPeriods.length === 0) {

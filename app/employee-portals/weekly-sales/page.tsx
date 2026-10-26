@@ -11,6 +11,7 @@ import { PortalWeeklyRepView } from "@/components/sales/weekly/portal-weekly-rep
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { toWeeklyCycleMonth } from "@/lib/sales/periods";
 import {
   getPortalWeeklyDashboard,
   isPortalWeeklyRole,
@@ -47,8 +48,12 @@ function parseFilters(params: { [key: string]: string | string[] | undefined }):
     return raw?.trim() === "exclude" ? "exclude" : "include";
   };
   return {
-    cycleMonths: list(params.months),
+    // A deep link may spell the month "2026-10"; the weekly tables key it "2026-10-01".
+    cycleMonths: list(params.months).map(toWeeklyCycleMonth),
     cycleMonthMode: mode(params.monthsMode),
+    // First paint opens on the newest month that has started, not on "All months" (the API route never
+    // sets this, so clearing the month on the screen still means all of them).
+    defaultToLatestStartedMonth: true,
     weekNumbers: intList(params.weeks),
     weekNumberMode: mode(params.weeksMode),
     distributorCodes: list(params.distributors),

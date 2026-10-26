@@ -9,6 +9,7 @@
 import ExcelJS from "exceljs";
 
 import { addPhoenixTableSheet } from "@/lib/export/table-workbook";
+import { latestNonFuturePeriod } from "@/lib/sales/periods";
 import type { PortalWeeklyScopeView } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 import {
@@ -37,6 +38,11 @@ function formatCycleMonth(code: string | null): string {
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
+/** The newest uploaded month that has STARTED — never one ahead of today (the future-month rule). */
+function latestUploadedMonth(data: WeeklyDashboard): string | null {
+  return latestNonFuturePeriod(data.availableMonths.map((month) => month.code));
+}
+
 export function buildPortalWeeklyWorkbook(
   data: WeeklyDashboard,
   scope: PortalWeeklyScopeView,
@@ -47,8 +53,8 @@ export function buildPortalWeeklyWorkbook(
   const currentMonth =
     data.appliedFilters.cycleMonths.length === 1
       ? formatCycleMonth(data.appliedFilters.cycleMonths[0])
-      : data.availableMonths[0]
-        ? formatCycleMonth(data.availableMonths[0].code)
+      : latestUploadedMonth(data)
+        ? formatCycleMonth(latestUploadedMonth(data) as string)
         : "All Months";
 
   const subtitle = `${scope.scopeSummary} · ${currentMonth}`;
@@ -165,6 +171,6 @@ export function buildPortalWeeklyExportFilename(data: WeeklyDashboard): string {
   const month =
     data.appliedFilters.cycleMonths.length === 1
       ? data.appliedFilters.cycleMonths[0]?.slice(0, 7) // "2026-06"
-      : (data.availableMonths[0]?.code?.slice(0, 7) ?? "export");
+      : (latestUploadedMonth(data)?.slice(0, 7) ?? "export");
   return `phoenix-weekly-sales-${month}-export.xlsx`;
 }

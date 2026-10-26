@@ -292,7 +292,7 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
         <>
           {/* KPI strip */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-            <StatTile accent="#F97316" icon={Coins} label="Total Value" value={formatEgp(summary.totalValue)} delta={valueDelta} />
+            <StatTile accent="#F97316" icon={Coins} label="Total Value" value={formatEgp(summary.totalValue)} delta={valueDelta} deltaLabel={valueDelta != null ? `vs ${formatPeriod(comparison?.previousPeriod ?? null)}` : undefined} />
             <StatTile accent="#0EA5E9" icon={Boxes} label="Units Sold" value={formatNumber(summary.totalUnits)} sub="net of bonus" />
             <StatTile accent="#8B5CF6" icon={Gauge} label="Avg / Unit" value={formatEgpFull(summary.avgPricePerUnit)} />
             <StatTile accent="#22C55E" icon={Truck} label="Distributors" value={formatNumber(summary.distributorCount)} sub={`${formatNumber(summary.productCount)} products`} />
@@ -401,7 +401,7 @@ function formatStamp(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString("en-US", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
 }
 
 function ScopeBar({
@@ -427,7 +427,11 @@ function ScopeBar({
       <div className="min-w-0">
         <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Your scope</p>
         <p className="break-words text-sm font-black text-slate-900">{scopeSummary}</p>
-        {stamp ? <p className="text-phx-2xs font-semibold text-slate-500">Data as of {stamp}</p> : null}
+        {stamp ? (
+          <p className="text-phx-2xs font-semibold text-slate-500">
+            Latest {formatPeriod(period)} upload: {stamp}
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -516,6 +520,7 @@ function StatTile({
   value,
   sub,
   delta,
+  deltaLabel,
 }: {
   accent: string;
   icon: typeof Coins;
@@ -523,6 +528,8 @@ function StatTile({
   value: string;
   sub?: string;
   delta?: number | null;
+  /** What the arrow compares against ("vs Sep 2026"), so a bare percentage is never left to be guessed. */
+  deltaLabel?: string;
 }) {
   return (
     <div className={`relative transition-colors hover:border-orange-300 ${SURFACE_CLASS}`}>
@@ -537,6 +544,7 @@ function StatTile({
         <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
         <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
         {sub ? <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{sub}</p> : null}
+        {delta != null && deltaLabel ? <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{deltaLabel}</p> : null}
       </div>
     </div>
   );

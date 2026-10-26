@@ -1,4 +1,6 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
+import { loadAchievementRange } from "@/lib/sales/vs-target";
 
 import { fetchTerritoryAreaPharmacies } from "./pharmacies";
 import { resolveTerritoryRootScope } from "./root-scope";
@@ -9,7 +11,14 @@ import {
   resolveAuLineCode,
   territoryAsOfDate,
 } from "./skeleton";
-import type { TerritoryAreaPayload, TerritoryRootScope, TerritorySkeleton } from "./types";
+import { sumTerritoryClosingTotals } from "./totals";
+import type {
+  TerritoryAreaPayload,
+  TerritoryClosingTotals,
+  TerritoryRootScope,
+  TerritorySkeleton,
+} from "./types";
+import { TERRITORY_DEFAULT_WINDOW_MONTHS, territoryWindow, type TerritoryWindow } from "./window";
 
 export { isTerritoryLinePickerRole, TERRITORY_LINE_PICKER_ROLES } from "./root-scope";
 export { TERRITORY_PICKER_LINES } from "./skeleton";
@@ -38,29 +47,44 @@ export function isTerritoryDrilldownRole(role: PhoenixRole): boolean {
   return TERRITORY_DRILLDOWN_ROLE_SET.has(role);
 }
 
-/** The current month (UTC), matching the trailing window the area route builds. The skeleton's
- *  area list is resolved as of this month's end, so a forward-dated territory move is not shown
- *  before it takes effect (finding 5). */
-function currentWindowPeriod(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+/** The drilled line's window — ending at its newest published closing, never the open month or a
+ *  month a forward-dated order created (see territory/window.ts). */
+async function resolveTerritoryWindow(officialLine: string, months: number): Promise<TerritoryWindow> {
+  return territoryWindow(await listPublishedPeriodsForLine(officialLine), months);
 }
 
-/** The window a per-area fetch was asked for ends at its newest period (lastNPeriods pushes
- *  oldest-first); with no periods, fall back to the current month. */
-function windowEndPeriod(periods: string[]): string {
-  return periods.length > 0 ? periods[periods.length - 1] : currentWindowPeriod();
+/** Server-side stage timing for the drilldown's first paint, one line per render, so production
+ *  logs name the slow stage (root scope, published window, skeleton) instead of a guess. */
+function logTerritoryTiming(stage: string, startedAt: number, stages: Record<string, number>) {
+  console.info(
+    `[territory-drilldown] ${stage} ${JSON.stringify({ totalMs: Math.round(performance.now() - startedAt), ...stages })}`,
+  );
 }
 
 export async function getTerritorySkeleton(
   ctx: AccessContext,
   selectedLine?: string | null,
 ): Promise<TerritorySkeleton> {
+  const startedAt = performance.now();
   const rootScope = await resolveTerritoryRootScope(ctx, selectedLine);
+  const rootScopeMs = Math.round(performance.now() - startedAt);
   if (rootScope.level === "denied") {
     return deniedSkeleton(ctx.role, rootScope.diagnostic);
   }
-  return buildTerritorySkeleton(ctx.role, rootScope, territoryAsOfDate(currentWindowPeriod()));
+  const windowStartedAt = performance.now();
+  const drillWindow = await resolveTerritoryWindow(rootScope.officialLine, TERRITORY_DEFAULT_WINDOW_MONTHS);
+  const windowMs = Math.round(performance.now() - windowStartedAt);
+  const skeletonStartedAt = performance.now();
+  const windowEnd = drillWindow.periods[drillWindow.periods.length - 1];
+  const skeleton = await buildTerritorySkeleton(ctx.role, rootScope, territoryAsOfDate(windowEnd));
+  logTerritoryTiming("skeleton", startedAt, {
+    rootScopeMs,
+    windowMs,
+    skeletonMs: Math.round(performance.now() - skeletonStartedAt),
+    areas: skeleton.areas.length,
+    bricks: skeleton.bricks.length,
+  });
+  return { ...skeleton, window: drillWindow };
 }
 
 /**
@@ -100,19 +124,58 @@ async function isAreaInRootScope(
 export async function getTerritoryAreaPharmacies(
   ctx: AccessContext,
   areaCode: string,
-  periods: string[],
+  months: number,
   selectedLine?: string | null,
-): Promise<TerritoryAreaPayload> {
+): Promise<TerritoryAreaPayload & { periods: string[] }> {
   const rootScope = await resolveTerritoryRootScope(ctx, selectedLine);
   if (rootScope.level === "denied") {
     throw new TerritoryAccessError(rootScope.diagnostic.message);
   }
 
-  const asOf = territoryAsOfDate(windowEndPeriod(periods));
+  // The SAME window the page labelled: resolved from the drilled line's published closings here,
+  // never from the request, so a client cannot widen it into the open month.
+  const { periods } = await resolveTerritoryWindow(rootScope.officialLine, months);
+  const asOf = territoryAsOfDate(periods[periods.length - 1]);
   const normalizedAreaCode = areaCode.trim().toUpperCase();
   if (!normalizedAreaCode || !(await isAreaInRootScope(normalizedAreaCode, rootScope, asOf))) {
     throw new TerritoryAccessError(`Area "${areaCode}" is outside your territory.`);
   }
 
-  return fetchTerritoryAreaPharmacies(normalizedAreaCode, periods, rootScope.officialLine);
+  return { periods, ...(await fetchTerritoryAreaPharmacies(normalizedAreaCode, periods, rootScope.officialLine)) };
+}
+
+/**
+ * Region and area totals at a glance, from the closing engine over the window's published months
+ * (see territory/totals.ts). Re-derives the caller's scope and skeleton on this request, so the
+ * totals cover exactly the areas the caller's own tree shows — never a sibling line's or region's.
+ */
+export async function getTerritoryClosingTotals(
+  ctx: AccessContext,
+  selectedLine?: string | null,
+): Promise<TerritoryClosingTotals> {
+  const startedAt = performance.now();
+  const rootScope = await resolveTerritoryRootScope(ctx, selectedLine);
+  if (rootScope.level === "denied") {
+    throw new TerritoryAccessError(rootScope.diagnostic.message);
+  }
+  const auLineCode = resolveAuLineCode(rootScope.officialLine);
+  const drillWindow = await resolveTerritoryWindow(rootScope.officialLine, TERRITORY_DEFAULT_WINDOW_MONTHS);
+  const periods = drillWindow.publishedPeriods;
+  if (!auLineCode || periods.length === 0) {
+    return { periods, areaValues: {}, regionValues: {}, regionOtherValues: {}, outsideRegionsValue: null };
+  }
+  const [skeleton, rows] = await Promise.all([
+    buildTerritorySkeleton(ctx.role, rootScope, territoryAsOfDate(drillWindow.periods[drillWindow.periods.length - 1])),
+    loadAchievementRange(periods[0], periods[periods.length - 1]),
+  ]);
+  const totals = sumTerritoryClosingTotals({
+    rows,
+    auLineCode,
+    areas: skeleton.areas,
+    periods,
+    includeOtherAreas: rootScope.level !== "area",
+    nationwide: rootScope.level === "nationwide",
+  });
+  logTerritoryTiming("closing-totals", startedAt, { months: periods.length, areas: skeleton.areas.length });
+  return totals;
 }

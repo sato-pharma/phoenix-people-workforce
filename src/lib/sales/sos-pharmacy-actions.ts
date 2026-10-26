@@ -254,7 +254,20 @@ function areaNameOf(row: PharmacyActionRow): string {
 export function buildPharmacyActions(input: {
   periods: readonly PeriodRows[];
   brickUniverse?: readonly BrickUniverseEntry[];
+  /**
+   * The area master's names by area code. A closing row whose own area name is empty used to show the
+   * bare code (D12, GZ1, UE2) in the area picker and on its list row; the master's name stands in.
+   */
+  areaNames?: ReadonlyMap<string, string>;
 }): PharmacyActionsResult {
+  const masterAreaName = (areaCode: string): string => text(input.areaNames?.get(upper(areaCode)));
+  // A name is real only when it is not the code written again; an empty or code-only name falls back
+  // to the master, and to the code itself only when the master has nothing either.
+  const areaLabel = (areaCode: string, name: string): string => {
+    const own = text(name);
+    if (own && upper(own) !== upper(areaCode)) return own;
+    return masterAreaName(areaCode) || own || areaCode;
+  };
   const ordered = [...input.periods]
     .filter((entry) => /^\d{4}-\d{2}$/.test(text(entry.period)))
     .sort((left, right) => right.period.localeCompare(left.period))
@@ -348,7 +361,7 @@ export function buildPharmacyActions(input: {
       name: aggregate.name,
       address: aggregate.address,
       areaCode: aggregate.areaCode,
-      areaName: aggregate.areaName,
+      areaName: areaLabel(aggregate.areaCode, aggregate.areaName),
       brickName: aggregate.brickName,
       isDirect: aggregate.isDirect,
       latestValue: round2(latestValue),
@@ -436,14 +449,14 @@ export function buildPharmacyActions(input: {
       seenBricks.add(id);
       return !bricksWithSales.has(id);
     })
-    .map((brick) => ({ ...brick, areaCode: upper(brick.areaCode) }))
+    .map((brick) => ({ ...brick, areaCode: upper(brick.areaCode), areaName: areaLabel(brick.areaCode, brick.areaName) }))
     .sort((left, right) => left.areaName.localeCompare(right.areaName) || left.brickName.localeCompare(right.brickName));
 
   const areas = new Map<string, string>();
   for (const item of [...stopped, ...dropping, ...newPharmacies, ...top, ...crossSell]) {
-    if (item.areaCode) areas.set(item.areaCode, item.areaName || item.areaCode);
+    if (item.areaCode) areas.set(item.areaCode, areaLabel(item.areaCode, item.areaName));
   }
-  for (const brick of untappedBricks) if (brick.areaCode) areas.set(brick.areaCode, brick.areaName || brick.areaCode);
+  for (const brick of untappedBricks) if (brick.areaCode) areas.set(brick.areaCode, areaLabel(brick.areaCode, brick.areaName));
 
   const sum = (list: PharmacyActionItem[], pick: (item: PharmacyActionItem) => number) =>
     round2(list.reduce((total, item) => total + pick(item), 0));

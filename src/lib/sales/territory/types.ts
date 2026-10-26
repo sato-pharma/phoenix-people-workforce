@@ -1,5 +1,7 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
+import type { TerritoryWindow } from "./window";
+
 export type TerritoryRootLevel = "area" | "region" | "nationwide";
 
 export type TerritoryDiagnosticCode =
@@ -66,6 +68,9 @@ export type TerritorySkeleton = {
    *  scope is bounded by region/nationwide instead — every area under it is fetchable). */
   rootAreaCodes: string[] | null;
   diagnostic: TerritoryDiagnostic | null;
+  /** The months the figures cover and on what basis (published closing or live) — attached by
+   *  getTerritorySkeleton, so the page labels the same window the per-area fetch reads. */
+  window?: TerritoryWindow;
 };
 
 export type TerritoryProductBreakdown = {
@@ -171,4 +176,21 @@ export type TerritoryAreaPayload = {
   reconciled: boolean;
   totalUnits: number;
   totalValue: number;
+};
+
+/** One area's (or region's) figure from the closing engine, over the window's published months. */
+export type TerritoryClosingTotals = {
+  /** The months summed — the published closings inside the window, oldest first. */
+  periods: string[];
+  /** area code (UPPER-cased, as the skeleton keys it) → sales value, EGP. */
+  areaValues: Record<string, number>;
+  /** region code (UPPER-cased) → sales value, EGP — that region's areas in the tree PLUS its areas
+   *  without a target ("Other" areas, which the tree has no lane for), so it equals the closing's
+   *  region figure. Other areas are added only for a region or nationwide viewer. */
+  regionValues: Record<string, number>;
+  /** region code → the part of regionValues that sits in Other areas (0 when none). */
+  regionOtherValues: Record<string, number>;
+  /** Nationwide viewers only: Other areas in no region the tree draws (the "Others" region), so the
+   *  overall figure equals the line's published closing. null for a scoped viewer. */
+  outsideRegionsValue: number | null;
 };

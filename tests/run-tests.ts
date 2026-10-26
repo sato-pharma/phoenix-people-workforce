@@ -2217,6 +2217,7 @@ import {
 } from "./territory-units-closing-basis.test.ts";
 import { runTerritoryUnitBarsValueTests } from "./territory-unit-bars-value.test.ts";
 import { runTerritoryAsofAndLinePickerTests } from "./territory-asof-and-line-picker.test.ts";
+import { runFutureMonthRuleTests } from "./future-month-rule.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
@@ -8416,6 +8417,10 @@ await runTest(
 await runTest(
   "Territory Drilldown resolves areas as of the window end (forward-dated moves not shown early); Super Admin / CEO drill any line nationwide via the picker",
   runTerritoryAsofAndLinePickerTests,
+);
+await runTest(
+  "The future-month rule: a month after today (Cairo) is never the current or comparison month on Source of Sales, Weekly Sales or the Sales Drilldown; the drilldown window ends at the latest published closing and its region and area totals come from the closing engine",
+  runFutureMonthRuleTests,
 );
 
 await runTest(

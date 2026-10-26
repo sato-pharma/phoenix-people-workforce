@@ -18,6 +18,7 @@ import {
   isTerritoryLinePickerRole,
   TERRITORY_PICKER_LINES,
 } from "@/lib/sales/territory/service";
+import { territoryWindowNote } from "@/lib/sales/territory/window";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ async function TerritoryDrilldownContent({
     <div className="space-y-4">
       {showLinePicker ? (
         <TerritoryLinePicker activeLine={skeleton.officialLine} lines={TERRITORY_PICKER_LINES} />
+      ) : null}
+      {skeleton.window ? (
+        <p className="text-phx-xs font-semibold text-slate-600">{territoryWindowNote(skeleton.window)}</p>
       ) : null}
       <TerritoryTreeExplorer skeleton={skeleton} />
     </div>
