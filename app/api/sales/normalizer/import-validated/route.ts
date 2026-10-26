@@ -6,7 +6,9 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { describeRefusedRow, isRefusedRow } from "@/lib/sales/normalizer/row-messages";
-import { buildCodedParts, learnFromImportHistory } from "@/lib/sales/normalizer/service";
+import { formFiles, partLabel } from "@/lib/sales/normalizer/multi-file";
+import { buildCodedFileParts, learnFromImportHistory } from "@/lib/sales/normalizer/service";
+import { combinedFileName, labelRowText } from "@/lib/sales/sales-upload-files";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -24,19 +26,23 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const form = await request.formData();
-    const file = form.get("file");
+    // One raw sheet, or several of the same distributor chosen together (multi-file.ts).
+    const files = formFiles(form);
     const distributorCode = String(form.get("distributorCode") ?? "");
-    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
+    if (files.length === 0) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
     // One part per distributor in the file. A distributor's own export is always a single part; a
     // Phoenix template is one part per distributor named in it, each filed as its own batch, because
     // a batch is one distributor and one month everywhere else in the system. Each part carries the
     // RESOLVED distributor — the template posts a sentinel and names its distributors inside.
-    const parts = await buildCodedParts(distributorCode, file);
-    const many = parts.length > 1;
-    /** "Ibnsina: " in front of a message, but only when the file holds more than one distributor. */
-    const whose = (name: string) => (many ? `${name}: ` : "");
+    // Several sheets of one distributor come back as one part per month, every sheet's rows in it.
+    const { fileNames, parts } = await buildCodedFileParts(distributorCode, files);
+    const manyDistributors = new Set(parts.map((part) => part.distributorCode)).size > 1;
+    /** "Ibnsina: " (or "Ibnsina 2026-07: ") in front of a message, only when there is more than one part. */
+    const whose = (part: (typeof parts)[number]) => { const label = partLabel(part, parts); return label ? `${label}: ` : ""; };
+    /** A row as its own sheet numbers it — "Branch-2.xlsx row 14" when several sheets were chosen. */
+    const named = (text: string) => labelRowText(text, fileNames);
 
     if (parts.every((part) => part.result.coded.length === 0)) {
       return NextResponse.json({ success: false, error: "Nothing to import — no rows could be coded. Map the exceptions first." }, { status: 400 });
@@ -57,10 +63,10 @@ export async function POST(request: Request) {
         const item = exc.rawProductName || exc.rawProduct || "?";
         const area = exc.rawTerritory || exc.rawCustomerCode || "?";
         // A bad cell or a blank customer is said as it is; it used to read "product and territory not mapped".
-        if (isRefusedRow(exc)) return `${whose(part.distributorName)}${describeRefusedRow(exc)}`;
-        if (exc.reason === "product") return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: product "${item}" not mapped`;
-        if (exc.reason === "brick") return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: territory "${area}" not mapped`;
-        return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: product "${item}" and territory "${area}" not mapped`;
+        if (isRefusedRow(exc)) return `${whose(part)}${named(describeRefusedRow(exc))}`;
+        if (exc.reason === "product") return `${whose(part)}${named(`Row ${exc.rawRowNumber}`)}: product "${item}" not mapped`;
+        if (exc.reason === "brick") return `${whose(part)}${named(`Row ${exc.rawRowNumber}`)}: territory "${area}" not mapped`;
+        return `${whose(part)}${named(`Row ${exc.rawRowNumber}`)}: product "${item}" and territory "${area}" not mapped`;
       }));
       const more = failedRows > rowLines.length ? ` — and ${failedRows - rowLines.length} more.` : "";
       return NextResponse.json({
@@ -77,15 +83,16 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const batches: Array<{ batchId: string; distributorName: string; importableRows: number; period: string | null; warningRows: number }> = [];
+    const batches: Array<{ batchId: string; distributorName: string; importableRows: number; label: string; period: string | null; warningRows: number }> = [];
     for (const part of parts) {
       if (part.result.coded.length === 0) continue;
       const persisted = await createSourceOfSalesUploadFromBuffer({
         buffer: part.buffer as ArrayBuffer,
         distributorCode: part.distributorCode,
-        // Named per distributor when the file carries several, so the batch record says which slice
-        // of the upload it is instead of showing the same file name three times.
-        fileName: many ? `${file.name} (${part.distributorName})` : file.name,
+        // Every sheet the batch was read from, in the order they were chosen — and named per
+        // distributor when the upload carries several, so the batch record says which slice of the
+        // upload it is instead of showing the same file name three times.
+        fileName: manyDistributors ? `${combinedFileName(part.fileNames)} (${part.distributorName})` : combinedFileName(part.fileNames),
         persistOnlyIfValidated: true,
         uploadedBy: access.loginId ?? access.hrId ?? "admin",
       });
@@ -94,11 +101,11 @@ export async function POST(request: Request) {
         // Say plainly what already landed: the parts before this one are real batches on Source of
         // Sales, and calling the whole upload a failure would send him hunting for rows that are there.
         const landed = batches.length > 0
-          ? ` ${batches.map((b) => b.distributorName).join(", ")} imported before it and ${batches.length === 1 ? "is" : "are"} on Source of Sales already.`
+          ? ` ${batches.map((b) => b.label).join(", ")} imported before it and ${batches.length === 1 ? "is" : "are"} on Source of Sales already.`
           : "";
         return NextResponse.json({
           success: false,
-          error: `${whose(part.distributorName)}the coded sheet did not pass validation, so nothing was imported for it. Fix the blocking rows (e.g. map the missing bricks) and try again.${landed}`,
+          error: `${whose(part)}the coded sheet did not pass validation, so nothing was imported for it. Fix the blocking rows (e.g. map the missing bricks) and try again.${landed}`,
           data: { batches, blockingReasons: persisted.blockingReasons, failedRows: persisted.failedRows, status: persisted.status, warningRows: persisted.warningRows },
         }, { status: 400 });
       }
@@ -118,6 +125,7 @@ export async function POST(request: Request) {
         batchId: persisted.batchId,
         distributorName: part.distributorName,
         importableRows: persisted.importableRows,
+        label: partLabel(part, parts) || part.distributorName,
         period: persisted.period,
         warningRows: persisted.warningRows,
       });

@@ -83,6 +83,8 @@ export type NormalizePreview = {
   blankCustomerSkipped: number;
   blankCustomerErrors: number;
   darkCount: number;
+  // The sheets this preview was read from, when several were chosen together on the Source Normalizer.
+  fileNames?: string[];
 };
 
 /**

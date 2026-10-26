@@ -17,9 +17,11 @@ import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
 import { PHOENIX_TEMPLATE_CODE, PHOENIX_TEMPLATE_NAME } from "@/lib/sales/normalizer/phoenix-template-code";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
+import { recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview } from "@/lib/sales/recognize";
+import { decodeFileRow } from "@/lib/sales/sales-upload-files";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
@@ -244,7 +246,11 @@ export const CODED_HEADERS = [
 // Takes only what it writes, so the Source Normalizer can hand it the rows of SEVERAL distributors
 // at once for one downloadable coded sheet. Every coded row carries its own "Distrub ID", so a
 // mixed sheet is as readable as a single-distributor one — the IMPORT still runs per distributor.
-export function buildCodedWorkbook(result: Pick<NormalizeResult, "coded" | "exceptions">): Promise<ExcelJS.Buffer> {
+//
+// `fileNames` is every sheet the rows were read from, when several were chosen together: their row
+// numbers are shifted per file (sales-upload-files.ts), so the "Needs mapping" tab then names the file
+// beside each row's own number instead of printing the shifted one.
+export function buildCodedWorkbook(result: Pick<NormalizeResult, "coded" | "exceptions">, fileNames: readonly string[] = []): Promise<ExcelJS.Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
   const sheet = workbook.addWorksheet("Coded");
@@ -290,8 +296,16 @@ export function buildCodedWorkbook(result: Pick<NormalizeResult, "coded" | "exce
   // Second sheet: the unmapped rows the user still needs to map once.
   if (result.exceptions.length > 0) {
     const ex = workbook.addWorksheet("Needs mapping");
-    ex.addRow(["Row", "Reason", "Raw product", "Raw territory", "Raw customer"]).font = { bold: true };
-    result.exceptions.forEach((e) => ex.addRow([e.rawRowNumber, e.reason, e.rawProduct, e.rawTerritory, e.rawCustomerCode]));
+    if (fileNames.length > 1) {
+      ex.addRow(["File", "Row", "Reason", "Raw product", "Raw territory", "Raw customer"]).font = { bold: true };
+      result.exceptions.forEach((e) => {
+        const { fileIndex, rawRowNumber } = decodeFileRow(e.rawRowNumber);
+        ex.addRow([fileNames[fileIndex] ?? `File ${fileIndex + 1}`, rawRowNumber, e.reason, e.rawProduct, e.rawTerritory, e.rawCustomerCode]);
+      });
+    } else {
+      ex.addRow(["Row", "Reason", "Raw product", "Raw territory", "Raw customer"]).font = { bold: true };
+      result.exceptions.forEach((e) => ex.addRow([e.rawRowNumber, e.reason, e.rawProduct, e.rawTerritory, e.rawCustomerCode]));
+    }
   }
   for (let c = 1; c <= CODED_HEADERS.length; c += 1) sheet.getColumn(c).width = 16;
   return workbook.xlsx.writeBuffer();
@@ -319,27 +333,29 @@ export async function buildCodedBuffer(distributorCode: string, file: File): Pro
 export type CodedPart = { buffer: ExcelJS.Buffer; distributorCode: string; distributorName: string; period: string | null; result: NormalizeResult };
 
 /**
- * The same thing, one entry per distributor in the file — what the Source Normalizer uses.
+ * The same thing, one entry per distributor and month — what the Source Normalizer uses.
  *
- * A distributor's own export always yields exactly one; only a Phoenix template can yield several,
- * and each one is a batch of its own. Built one after another rather than all at once: a month can
- * be a hundred thousand rows, and holding every distributor's workbook in memory together is how a
- * 16 GB machine runs out of it.
+ * A distributor's own export yields exactly one; a Phoenix template can yield several, and so can
+ * several sheets of one distributor chosen together when they span months (multi-file.ts) — each is a
+ * batch of its own, carrying the sheets it was read from. Built one after another rather than all at
+ * once: a month can be a hundred thousand rows, and holding every part's workbook in memory together
+ * is how a 16 GB machine runs out of it.
  */
-export async function buildCodedParts(distributorCode: string, file: File): Promise<CodedPart[]> {
-  const recognized = await recognizeWorkbookParts(distributorCode, file);
+export async function buildCodedFileParts(distributorCode: string, files: readonly File[]): Promise<{ fileNames: string[]; parts: Array<CodedPart & { fileNames: string[] }> }> {
+  const recognized = await recognizeWorkbookFiles(distributorCode, files);
   if (recognized.status !== "ok") throw new SalesWorkflowError("normalizer_unreadable", recognitionErrorMessage(recognized), 422);
-  const parts: CodedPart[] = [];
+  const parts: Array<CodedPart & { fileNames: string[] }> = [];
   for (const part of recognized.parts) {
     parts.push({
-      buffer: await buildCodedWorkbook(part.result),
+      buffer: await buildCodedWorkbook(part.result, recognized.fileNames),
       distributorCode: part.distributorCode,
       distributorName: part.distributorName,
+      fileNames: part.fileNames,
       period: part.period,
       result: part.result,
     });
   }
-  return parts;
+  return { fileNames: recognized.fileNames, parts };
 }
 
 // ── Direct import of coded rows (bypasses templates — rows are already coded + validated) ──

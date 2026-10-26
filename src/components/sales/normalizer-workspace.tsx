@@ -25,6 +25,7 @@ import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/l
 import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import type { PreviewIgnoredRow } from "@/lib/sales/recognize";
+import { MAX_UPLOAD_FILES } from "@/lib/sales/sales-upload-files";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -61,6 +62,8 @@ type Preview = {
   summary: { totalRows: number; productResolved: number; brickResolved: number; fullyCoded: number; ignored: number };
   // Every row the analyzer dropped, uncut (the Ignored rows tab). Absent on a preview built before this field.
   ignoredRows?: PreviewIgnoredRow[];
+  // The sheets this part was read from, when several sheets of one distributor were chosen together.
+  fileNames?: string[];
 };
 
 type UnknownKind = "p" | "t" | "c";
@@ -288,13 +291,29 @@ function isBrickPick(key: string) {
   return key.startsWith("t:") || key.startsWith("c:");
 }
 
+/** The heading over the part tabs: distributors of one template, or months of several sheets. */
+function partsHeading(parts: readonly Preview[], fileCount: number): string {
+  const distributors = new Set(parts.map((p) => p.distributorCode)).size;
+  if (fileCount < 2) return `${parts.length} distributors in this file`;
+  if (distributors === 1) return `${parts.length} months in these ${fileCount} sheets`;
+  return `${parts.length} batches in these ${fileCount} sheets — one per distributor and month`;
+}
+
+/** A part's tab: its distributor, and its month when the same distributor has more than one part. */
+function partTabLabel(part: Preview, parts: readonly Preview[]): string {
+  const same = parts.filter((p) => p.distributorCode === part.distributorCode).length;
+  return same > 1 ? `${part.distributorName} · ${part.period ?? "no month"}` : part.distributorName;
+}
+
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
   // The template is offered FIRST in the picker (the owner asked for it beside the distributors), but
   // the default selection stays a real distributor — the per-distributor path is still the daily one.
   const [distributorCode, setDistributorCode] = useState(
     distributors.find((d) => !isPhoenixTemplateCode(d.code))?.code ?? distributors[0]?.code ?? "",
   );
-  const [file, setFile] = useState<File | null>(null);
+  // One raw sheet, or several of the same distributor chosen together (up to MAX_UPLOAD_FILES): sheets
+  // of the same month are analyzed, mapped and imported as ONE part, so the month is one batch.
+  const [files, setFiles] = useState<File[]>([]);
   // A filled Phoenix template may name SEVERAL distributors, so one Analyze answers with one preview
   // per distributor. `preview` is the one on screen, and everything below reads it exactly as it did
   // when a file was always a single distributor.
@@ -389,7 +408,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     // column is learned under one distributor). The rest act on the whole file and ignore it.
     if (preview?.distributorCode) f.set("partDistributorCode", preview.distributorCode);
     if (extra) f.set("file", extra);
-    else if (file) f.set("file", file);
+    else for (const chosen of files) f.append("file", chosen);
     return f;
   }
 
@@ -423,7 +442,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   async function analyze(keepNotice = false, options: { quietFailure?: boolean } = {}): Promise<Preview | null> {
-    if (!file) {
+    if (files.length === 0) {
       if (!options.quietFailure) setError("Choose a raw distributor file first.");
       return null;
     }
@@ -771,7 +790,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Mine history failed."); return; }
       setNotice(`Mined ${json.data.scannedRows.toLocaleString()} import rows — saved ${json.data.saved} new mapping(s) (${json.data.skipped} already known). Re-analyzing…`);
-      if (file) await analyze(true);
+      if (files.length > 0) await analyze(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Mine history failed."); }
     finally { setBusy(null); }
   }
@@ -900,10 +919,31 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>
-              <input accept=".xlsx,.xls" className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); resetParts(); }} type="file" />
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Raw file(s)</span>
+              <input
+                accept=".xlsx,.xls"
+                className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                disabled={busy !== null}
+                multiple
+                onChange={(e) => {
+                  const chosen = Array.from(e.target.files ?? []);
+                  resetParts();
+                  if (chosen.length > MAX_UPLOAD_FILES) {
+                    setFiles([]);
+                    e.target.value = "";
+                    setError(`Choose at most ${MAX_UPLOAD_FILES} files at a time (${chosen.length} were chosen).`);
+                    return;
+                  }
+                  setError(null);
+                  setFiles(chosen);
+                }}
+                type="file"
+              />
+              {files.length > 1 ? (
+                <span className="text-phx-xs text-slate-500">{files.length} sheets chosen — sheets of the same month are analyzed and imported as one batch.</span>
+              ) : null}
             </label>
-            <Button className="gap-2" disabled={busy !== null || !file} onClick={() => void analyze()}>
+            <Button className="gap-2" disabled={busy !== null || files.length === 0} onClick={() => void analyze()}>
               {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
             </Button>
           </div>
@@ -974,16 +1014,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               <div className="flex flex-wrap items-center gap-2">
                 {parts.length > 1 ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{parts.length} distributors in this file</span>
+                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{partsHeading(parts, files.length)}</span>
                     {parts.map((part, i) => (
                       <button
                         className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold transition ${i === activePart ? "border-orange-600 bg-orange-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
                         disabled={busy !== null}
-                        key={part.distributorCode}
+                        key={`${part.distributorCode}|${part.period ?? ""}`}
                         onClick={() => switchPart(i)}
                         type="button"
                       >
-                        {part.distributorName}
+                        {partTabLabel(part, parts)}
                         <span className={i === activePart ? "text-orange-100" : "text-slate-400"}>{part.summary.totalRows.toLocaleString()}</span>
                       </button>
                     ))}
@@ -1018,7 +1058,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     </button>
                   </div>
                   <div className="flex items-center gap-2 text-phx-xs text-slate-400">
-                    <span>Download → upload on Source of Sales (it now passes validation), or import straight here.{parts.length > 1 ? ` Both cover all ${parts.length} distributors in this file.` : ""}</span>
+                    <span>Download → upload on Source of Sales (it now passes validation), or import straight here.{parts.length > 1 ? ` Both cover all ${parts.length} ${files.length > 1 ? "batches of these sheets" : "distributors in this file"}.` : ""}</span>
                     <button className="underline transition hover:text-orange-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
                   </div>
                   {advanced ? (

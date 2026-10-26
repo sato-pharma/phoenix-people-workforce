@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildUnmappedWorkbook, distinctUnknowns } from "@/lib/sales/normalizer/mapping";
-import { recognitionErrorMessage, recognizeWorkbookParts } from "@/lib/sales/normalizer/service";
+import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { formFiles, recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
+import { recognitionErrorMessage } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -20,12 +22,13 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "export");
 
     const form = await request.formData();
-    const file = form.get("file");
+    // One raw sheet, or several of the same distributor chosen together (multi-file.ts).
+    const files = formFiles(form);
     const distributorCode = String(form.get("distributorCode") ?? "");
-    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
+    if (files.length === 0) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await recognizeWorkbookParts(distributorCode, file);
+    const normalized = await recognizeWorkbookFiles(distributorCode, files);
     if (normalized.status !== "ok") {
       return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
@@ -33,9 +36,12 @@ export async function POST(request: Request) {
     // learned under ONE distributor, and that same code is a different customer under another. So
     // this answers for the distributor the screen is showing — the only file that can hold more
     // than one is a Phoenix template, and every other upload has exactly one part to pick from.
+    // Several sheets of that distributor can make one part per month: the list covers them all, since
+    // a code mapped once is mapped for every month.
     const wanted = String(form.get("partDistributorCode") ?? "");
     const part = normalized.parts.find((p) => p.distributorCode === wanted) ?? normalized.parts[0];
-    const buffer = await buildUnmappedWorkbook(distinctUnknowns(part.result.exceptions, normalized.products));
+    const exceptions = normalized.parts.filter((p) => p.distributorCode === part.distributorCode).flatMap((p) => p.result.exceptions);
+    const buffer = await buildUnmappedWorkbook(distinctUnknowns(exceptions, normalized.products));
     return new Response(new Uint8Array(buffer as ArrayBuffer), {
       headers: {
         "Cache-Control": "no-store",
@@ -45,6 +51,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    // A refusal written for the user (too many files, the same sheet twice). clientSafeErrorMessage
+    // would hide it behind a generic failure.
+    if (error instanceof SalesWorkflowError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
+    }
     return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to build unmapped list.") }, { status: 500 });
   }
 }
