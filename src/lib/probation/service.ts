@@ -11,6 +11,7 @@ import {
   systemAccessContext,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { cache } from "react";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
@@ -632,7 +633,19 @@ function assertWorkflowActionAllowed(
   }
 }
 
-export async function getProbationRows(access: AccessContext): Promise<ProbationRow[]> {
+// 🔴 ONE READ PER REQUEST. The admin home asks for this list twice in the same instant: the
+// lifecycle-risk tiles (`getPlatformMetrics` → `getLifecycleRiskMetrics`) and the Needs You
+// probation row (`probation-decisions` in `src/lib/needs-you/sources.ts`), both under one
+// `getCeoCommandCenterData`. Two copies of the directory join and both probation reads, started
+// together on a loaded minute, queued past the board's eight-second budget and the row went amber
+// (26 Oct 2026, 00:32 Cairo: two timeouts 34 ms apart while every query stayed under 132 ms in
+// pg_stat_statements). `cache()` makes the second caller wait on the first's promise. It is keyed
+// on the `access` object, so a different viewer never shares a list, and it is a no-op outside a
+// React request — the write routes read once, after their write, and the reminder sweep runs bare.
+// No caller may sort or edit these rows in place: they are shared.
+export const getProbationRows = cache(loadProbationRows);
+
+async function loadProbationRows(access: AccessContext): Promise<ProbationRow[]> {
   const [{ employees }, viewerAllowedLines] = await Promise.all([
     getEmployeeDirectory(),
     resolveViewerAllowedLines(access),

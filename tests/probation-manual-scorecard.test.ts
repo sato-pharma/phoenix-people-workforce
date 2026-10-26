@@ -85,12 +85,12 @@ export function runProbationManualScorecardTests() {
   // Scoring is the ONLY thing widened: the tracker and its exports keep the unwidened read rule.
   assert.match(
     probationService,
-    /function getProbationRows[\s\S]*?canReadProbationEmployee\(/,
+    /function loadProbationRows[\s\S]*?canReadProbationEmployee\(/,
     "the tracker still filters on the read rule, not the scoring rule",
   );
   assert.doesNotMatch(
     probationService,
-    /function getProbationRows[\s\S]*?canScoreProbationEmployee\(/,
+    /function loadProbationRows[\s\S]*?canScoreProbationEmployee\(/,
     "the widened rule must not leak into the tracker or its exports",
   );
 
