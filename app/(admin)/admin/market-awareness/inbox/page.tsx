@@ -55,8 +55,9 @@ export default async function AdminMarketAwarenessInboxPage() {
           <p className={pageHeaderKickerClassName}>Approvals</p>
           <h1 className={pageHeaderTitleClassName}>Awareness Approvals</h1>
           <p className={pageHeaderDescriptionClassName}>
-            Awareness activities waiting on your decision — approve, return for changes, or reject. Only the
-            decisions that are actually yours appear here.
+            Every awareness activity you are allowed to see. Approve, return for changes, hold or reject
+            appear only where the decision is yours; History lists every activity you can see that has been
+            answered.
           </p>
         </div>
       </div>

@@ -38,7 +38,7 @@ export default async function EmployeePortalMarketAwarenessInboxPage() {
   return (
     <EmployeePortalPageShell
       badge="Approvals"
-      description="Awareness activities waiting on your decision — approve, return for changes, or reject. Only the decisions that are actually yours appear here."
+      description="Every awareness activity you are allowed to see. Approve, return for changes, hold or reject appear only where the decision is yours; History lists every activity you can see that has been answered."
       title="Awareness Approvals"
     >
       <MarketAwarenessInbox isCeoStepHolder={isCeoStepHolder} />

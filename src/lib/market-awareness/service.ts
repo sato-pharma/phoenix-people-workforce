@@ -18,7 +18,12 @@ import type { MarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge"
 import { summarizeMarketAwarenessDecisionBadge } from "@/lib/market-awareness/badge";
 import { findLineById, loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
 import type { MarketAwarenessLine } from "@/lib/market-awareness/lines";
-import { findArea, loadRegionManagers } from "@/lib/market-awareness/geography";
+import {
+  areaIn,
+  findArea,
+  loadRegionManagers,
+  loadRegionsForLine,
+} from "@/lib/market-awareness/geography";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
 import {
   notifyActivityApproved,
@@ -114,12 +119,18 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
 
   // Chunked at 50. A PostgREST `.in()` carrying several hundred ids returns ZERO rows and no error,
   // and a silent empty result here would render every name blank rather than raise.
-  for (let index = 0; index < wanted.length; index += 50) {
-    const chunk = wanted.slice(index, index + 50);
-    const { data, error } = await supabase
-      .from("employees")
-      .select("hr_id, full_name, manager_hr_id, job_title, line_id")
-      .in("hr_id", chunk);
+  // The chunks are independent, so they run together rather than one round trip after another.
+  const chunks: string[][] = [];
+  for (let index = 0; index < wanted.length; index += 50) chunks.push(wanted.slice(index, index + 50));
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from("employees")
+        .select("hr_id, full_name, manager_hr_id, job_title, line_id")
+        .in("hr_id", chunk),
+    ),
+  );
+  for (const { data, error } of results) {
     if (error) throw toQueryError(error);
     for (const row of (data as EmployeeRow[] | null) ?? []) {
       // HR ids are mixed case on this database, so the map is keyed canonically. A plain equality
@@ -302,7 +313,20 @@ async function hydrate(
       peopleWanted.push(slot.decided_by_hr_id as string | null);
     }
   }
-  const people = await loadEmployees(peopleWanted);
+  // Areas are loaded ONCE per distinct primary line (there are three), alongside the people — not
+  // once per activity row, which was a serial `phx_market_awareness_areas` round trip each.
+  const lineCodesWanted = [
+    ...new Set(
+      rows
+        .map((row) => findLineById(lines, toNumber(row.primary_line_id))?.lineCode ?? "")
+        .filter(Boolean),
+    ),
+  ];
+  const [people, regionLists] = await Promise.all([
+    loadEmployees(peopleWanted),
+    Promise.all(lineCodesWanted.map((code) => loadRegionsForLine(code))),
+  ]);
+  const regionsByLine = new Map(lineCodesWanted.map((code, index) => [code, regionLists[index]]));
   const nameOf = (hrId: unknown) => {
     const key = hrId ? canonicalHrIdKey(String(hrId)) : null;
     return key ? people.get(key)?.full_name ?? null : null;
@@ -323,7 +347,7 @@ async function hydrate(
     // The seat holders. TODAY's holder is what the screen shows (owner answer 33), with the
     // approval-time holder carried alongside so a replacement can be named rather than hidden.
     const area = primaryLine.lineCode
-      ? await findArea(primaryLine.lineCode, String(row.area_code ?? ""))
+      ? areaIn(regionsByLine.get(primaryLine.lineCode) ?? [], String(row.area_code ?? ""))
       : null;
 
     const originalRepHrId = (row.rep_hr_id_at_approval as string | null) ?? null;
@@ -522,6 +546,9 @@ const HISTORY_STATUSES: MarketAwarenessStatus[] = [
   "closed",
 ];
 
+/** How many answered activities the History tab loads — the newest ones. */
+const INBOX_HISTORY_LIMIT = 200;
+
 /**
  * The `own`-visibility narrowing, written once.
  *
@@ -572,18 +599,22 @@ export async function listInbox(
     // Newest first in history — what was answered most recently is what someone is looking for.
     // Oldest first while open, because the longest wait is the one that needs a decision.
     .order(scope === "history" ? "updated_at" : "submitted_at", { ascending: scope !== "history" })
-    // Explicit bound: an unbounded select stops at 1000 with no marker.
-    .limit(500);
+    // Explicit bound: an unbounded select stops at 1000 with no marker. History only grows (every
+    // answered activity stays in it), so it is held to the latest 200 — each row costs a hydrate.
+    .limit(scope === "history" ? INBOX_HISTORY_LIMIT : 500);
 
   const ownFilter = ownActivityFilter(visibility);
   if (ownFilter) query = query.or(ownFilter);
 
-  const { data, error } = await query;
-  if (error) throw toQueryError(error);
+  // The three reads depend on nothing but the caller, so they run together, not one after another.
+  const [selected, lines, actorLineId] = await Promise.all([
+    query,
+    loadMarketAwarenessLines(),
+    loadActorLineIdIfNeeded(access),
+  ]);
+  if (selected.error) throw toQueryError(selected.error);
 
-  const lines = await loadMarketAwarenessLines();
-  const activities = await hydrate((data as ActivityRow[] | null) ?? [], lines);
-  const actorLineId = await loadActorLineIdIfNeeded(access);
+  const activities = await hydrate((selected.data as ActivityRow[] | null) ?? [], lines);
 
   return activities.map((activity) => {
     const step = currentStep(activity.status);
