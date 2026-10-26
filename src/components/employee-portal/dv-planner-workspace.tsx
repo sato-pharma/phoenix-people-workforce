@@ -19,7 +19,11 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkPlannedDate } from "@/lib/double-visit-analytics/date-check";
 import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-visit-analytics/roster-summary";
 import { entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
-import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
+import type {
+  DoubleVisitReportRow,
+  DoubleVisitRosterEntry,
+  DoubleVisitStartingSoonEntry,
+} from "@/lib/double-visit-analytics/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -66,6 +70,13 @@ function formatDate(value: string | null) {
     month: "short",
     year: "numeric",
   }).format(new Date(`${value}T12:00:00Z`));
+}
+
+// The directory stores some names in capitals ("SAHAR EL GALLAD"). A name written wholly in capitals
+// is shown in normal case; a name that already carries lower-case letters is left exactly as typed.
+function displayPersonName(value: string) {
+  if (!/[A-Z]/.test(value) || /[a-z]/.test(value)) return value;
+  return value.toLowerCase().replace(/(^|[\s\-'’(])(\p{L})/gu, (_, lead: string, letter: string) => lead + letter.toUpperCase());
 }
 
 function isoDaysAgo(days: number) {
@@ -281,9 +292,9 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "confirmed") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold uppercase text-emerald-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold text-emerald-700">
         <CheckCircle2 className="h-3 w-3" />
-        Confirmed{result.visitorNames.length > 0 ? ` · with ${result.visitorNames.join(", ")}` : ""}
+        Confirmed{result.visitorNames.length > 0 ? ` · with ${result.visitorNames.map(displayPersonName).join(", ")}` : ""}
       </span>
     );
   }
@@ -339,9 +350,9 @@ function RosterRow({
         onClick={() => canExpand && setExpanded((value) => !value)}
       >
         <div className="min-w-0">
-          <p className="break-words text-sm font-bold leading-snug text-slate-950">{entry.name}</p>
+          <p className="break-words text-sm font-bold leading-snug text-slate-950">{displayPersonName(entry.name)}</p>
           <p className="mt-0.5 break-words text-xs leading-snug text-slate-500">
-            {entry.hrId} · {[entry.areaName, entry.lineName].filter(Boolean).join(" · ") || "Scope member"} · Hired{" "}
+            {[entry.areaName, entry.lineName].filter(Boolean).join(" · ") || "Scope member"} · Hired{" "}
             {formatDate(entry.hireDate)}
           </p>
         </div>
@@ -362,14 +373,14 @@ function RosterRow({
 
         <div>
           {entry.visited ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold uppercase text-emerald-700">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold text-emerald-700">
               <CheckCircle2 className="h-3 w-3" />
               {entry.visitCount} DV{entry.visitCount === 1 ? "" : "s"} / {dayCount} day{dayCount === 1 ? "" : "s"} · last {formatDate(entry.lastVisitDate)}
             </span>
           ) : entry.lastVisitDateEver ? (
             // Not visited in the selected window, but HAS an older DV — the "getting stale" signal.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold uppercase ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold ${
                 entry.cadenceBand === "critical"
                   ? "border-rose-200 bg-rose-50 text-rose-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -379,12 +390,16 @@ function RosterRow({
               Last DV {entry.daysSinceLastVisit}d ago · {formatDate(entry.lastVisitDateEver)}
             </span>
           ) : (
-            // No DV at all within the cadence lookback — truly never visited.
+            // No DV at all within the cadence lookback — truly never visited. The tone follows the
+            // cadence band, which for a never-visited rep runs from the hire date (30/60): a rep who
+            // started two days ago is not overdue, so the badge stays neutral until day 31.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold uppercase ${
-                entry.flagged
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold ${
+                entry.cadenceBand === "critical"
                   ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700"
+                  : entry.cadenceBand === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-slate-200 bg-slate-50 text-slate-600"
               }`}
             >
               <AlertTriangle className="h-3 w-3" />
@@ -450,10 +465,10 @@ const FILTER_OPTIONS: { key: FilterKey; label: string; predicate: (entry: Double
 function sortRoster(entries: DoubleVisitRosterEntry[], mode: SortMode): DoubleVisitRosterEntry[] {
   const copy = [...entries];
   if (mode === "overdue") {
-    // Most days-since-last-visit first; never-visited (null) is the most overdue → sorts first.
-    return copy.sort(
-      (a, b) => (b.daysSinceLastVisit ?? Number.POSITIVE_INFINITY) - (a.daysSinceLastVisit ?? Number.POSITIVE_INFINITY) || a.name.localeCompare(b.name),
-    );
+    // Most days since the last visit first. A never-visited rep is measured from their hire date —
+    // the same clock the overdue band uses — so a rep who started this week sorts with the fresh ones.
+    const overdueDays = (entry: DoubleVisitRosterEntry) => entry.daysSinceLastVisit ?? entry.daysSinceHire ?? Number.POSITIVE_INFINITY;
+    return copy.sort((a, b) => overdueDays(b) - overdueDays(a) || a.name.localeCompare(b.name));
   }
   if (mode === "lastVisit") {
     return copy.sort((a, b) => (b.lastVisitDateEver ?? "").localeCompare(a.lastVisitDateEver ?? "") || a.name.localeCompare(b.name));
@@ -496,7 +511,7 @@ function GroupCoverage({ summary, tone }: { summary: DvCoverageSummary; tone: "d
   const track = tone === "dark" ? "bg-white/20" : "bg-slate-200";
   return (
     <span className="flex shrink-0 items-center gap-2 text-phx-2xs font-bold uppercase tracking-wider">
-      <span className={`hidden h-1.5 w-16 overflow-hidden rounded sm:flex ${track}`}>
+      <span className={`hidden h-1.5 w-16 overflow-hidden sm:flex ${track}`}>
         <span className="bg-emerald-500" style={{ width: `${summary.coveragePct}%` }} />
       </span>
       <span className={tone === "dark" ? "text-white" : "text-slate-800"}>{summary.coveragePct}%</span>
@@ -513,12 +528,15 @@ export function DvPlannerWorkspace({
   dateTo,
   roster,
   rows,
+  startingSoon = [],
   viewerHrId,
 }: {
   dateFrom: string;
   dateTo: string;
   roster: DoubleVisitRosterEntry[];
   rows: DoubleVisitReportRow[];
+  /** Reps whose hire date is after today: named here, counted nowhere (not in the scorecard). */
+  startingSoon?: DoubleVisitStartingSoonEntry[];
   viewerHrId: string;
 }) {
   const [search, setSearch] = useState("");
@@ -601,7 +619,7 @@ export function DvPlannerWorkspace({
               <span className="text-2xl font-black tabular-nums text-slate-950">{overall.coveragePct}%</span>
               <span className="text-phx-2xs font-bold uppercase tracking-wider text-slate-400">Coverage</span>
             </div>
-            <div className="flex h-8 w-40 overflow-hidden rounded bg-slate-200">
+            <div className="flex h-8 w-40 overflow-hidden bg-slate-200">
               <span className="bg-emerald-500" style={{ width: `${overall.coveragePct}%` }} />
             </div>
           </div>
@@ -623,6 +641,19 @@ export function DvPlannerWorkspace({
           </span>
         </div>
       </div>
+
+      {startingSoon.length > 0 ? (
+        // Not counted in any figure above: a rep joins the roster on their hire date.
+        <div className={`border border-slate-200 bg-white px-5 py-3 text-xs leading-5 text-slate-600 ${adminSoftDepthClassName}`}>
+          <span className="font-bold text-slate-900">Starting soon · not counted yet: </span>
+          {startingSoon
+            .map(
+              (entry) =>
+                `${displayPersonName(entry.name)}${entry.areaName ? ` (${entry.areaName})` : ""}, starts ${formatDate(entry.hireDate)}`,
+            )
+            .join(" · ")}
+        </div>
+      ) : null}
 
       <section className="overflow-hidden border border-slate-200 bg-[#f8fbff] shadow-[0_18px_45px_rgba(30,64,175,0.08)]">
         <div className="space-y-3 border-b border-slate-200 bg-white px-5 py-4">
@@ -740,7 +771,7 @@ export function DvPlannerWorkspace({
                               ) : (
                                 <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                               )}
-                              <span className="text-phx-xs font-bold text-slate-600">DM: {managerGroup.managerName}</span>
+                              <span className="text-phx-xs font-bold text-slate-600">DM: {displayPersonName(managerGroup.managerName)}</span>
                             </span>
                             <GroupCoverage summary={dmSummary} tone="light" />
                           </button>
@@ -780,7 +811,7 @@ export function DvPlannerWorkspace({
       </section>
 
       <p className="text-xs leading-5 text-slate-500">
-        Read-only CRM check · Click a visited rep to see their double-visit history · Cadence looks back 180 days, overdue at 30/60.
+        Read-only CRM check · Click a visited rep to see their double-visit history · Cadence looks back 180 days: overdue after 30 days with no double visit, critical after 60 — for a rep never visited, counted from the hire date · Reps count from their hire date.
       </p>
     </div>
   );

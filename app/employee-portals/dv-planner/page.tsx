@@ -62,6 +62,7 @@ export default async function DvPlannerPage({
           dateTo={dateTo}
           roster={data.roster}
           rows={data.rows}
+          startingSoon={data.startingSoon}
           viewerHrId={normalizeHrId(access.hrId) ?? access.loginId ?? "local"}
         />
       )}

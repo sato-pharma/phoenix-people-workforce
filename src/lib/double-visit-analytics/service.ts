@@ -92,6 +92,7 @@ import type {
   DoubleVisitRosterEntry,
   DoubleVisitScopeFocus,
   DoubleVisitSourceType,
+  DoubleVisitStartingSoonEntry,
   DoubleVisitTrendPoint,
   DoubleVisitVisitedEmployeeStatus,
 } from "@/lib/double-visit-analytics/types";
@@ -1858,6 +1859,18 @@ function cadenceBandFromDays(days: number | null): DoubleVisitCadenceBand {
 }
 
 /**
+ * THE ONE "HAS STARTED" TEST (owner, 2026-10-26): a rep counts on the DV Planner roster, the Double
+ * Visit Report's Never Visited list and sheet, the probation watchlist and every header count only
+ * once their hire date is on or before today in Cairo. A future hire is not yet anyone's double
+ * visit to owe — counting them dragged coverage down and filled the never-visited list with people
+ * who had not started. A missing hire date counts as started (the old behaviour; nothing to wait for).
+ */
+export function repHasStarted(hireDate: string | null | undefined, today: string): boolean {
+  if (!hireDate) return true;
+  return hireDate.slice(0, 10) <= today;
+}
+
+/**
  * The viewer's app role -> the probation evaluator TIER whose DV requirement the watchlist reports.
  * A role that is absent here (Regional Manager, Super Admin, CEO) owes no probation double visit of
  * its own, and its rows render "N/A" rather than a status it cannot act on.
@@ -2090,13 +2103,18 @@ export async function buildDvPlannerProbationEntries(params: {
   access: AccessContext;
   employees: EmployeeDirectoryRow[];
   scopedRows: Pick<DoubleVisitDbRow, "visited_employee_hr_id" | "visit_count">[];
+  /** Cairo today; a probationer whose hire date is after it has not started (repHasStarted). */
+  today?: string;
 }): Promise<DoubleVisitFocusProbationEntry[]> {
   const { access, employees, scopedRows } = params;
+  const today = params.today ?? todayIso();
   const [probationRowsAll, probationDvProgress] = await Promise.all([
     getProbationRows(access).catch(() => []),
     loadProbationDvProgress(),
   ]);
-  const probationRowsRaw = probationRowsAll.filter((row) => isMedicalRepProbationRow(row, employees));
+  const probationRowsRaw = probationRowsAll.filter(
+    (row) => isMedicalRepProbationRow(row, employees) && repHasStarted(row.hire_date, today),
+  );
   const dvTier = PROBATION_DV_TIER_BY_ROLE[access.role ?? ""];
   const probationDvCountByKey = new Map<string, number>();
   for (const row of scopedRows) {
@@ -2127,6 +2145,10 @@ export async function buildDvPlannerProbationEntries(params: {
  *   `lastVisitDateEver` / `daysSinceLastVisit` / `cadenceBand`. When empty (non-cadence callers) it
  *   falls back to the in-window last date, so `cadenceBand` is never garbage.
  * - `daysSinceHire` is measured from `dateTo` (report-frame recency); cadence from `today`.
+ * - A rep who has not started (repHasStarted: hire date after `today`) is left out entirely, so the
+ *   roster, the coverage % and every header count leave them out too.
+ * - A rep with no double visit in the lookback is overdue only once the days since HIRE (from
+ *   `today`) pass the same 30/60 band — a rep hired two days ago is not late for anything.
  */
 export function buildDvPlannerRosterEntries(params: {
   activeMedicalReps: EmployeeDirectoryRow[];
@@ -2158,6 +2180,7 @@ export function buildDvPlannerRosterEntries(params: {
   );
 
   return activeMedicalReps
+    .filter((employee) => repHasStarted(employee.hireDate, today))
     .map((employee) => {
       const key = canonicalHrIdKey(employee.hrId);
       const stats = key ? statsByKey.get(key) : undefined;
@@ -2168,7 +2191,9 @@ export function buildDvPlannerRosterEntries(params: {
       // stays sensible for callers that didn't opt into the wider cadence scan.
       const lastVisitDateEver = (key ? cadenceLastVisitByKey.get(key) : undefined) ?? stats?.lastDate ?? null;
       const daysSinceLastVisit = lastVisitDateEver ? daysBetween(lastVisitDateEver, today) : null;
-      const cadenceBand = cadenceBandFromDays(daysSinceLastVisit);
+      // Never visited in the lookback: the clock runs from the hire date instead, on the same 30/60
+      // band. No hire date on record keeps the old reading (critical).
+      const cadenceBand = cadenceBandFromDays(daysSinceLastVisit ?? daysBetween(employee.hireDate, today));
       return {
         areaName: employee.areaName,
         cadenceBand,
@@ -2229,6 +2254,7 @@ export async function getDoubleVisitReportData(input: {
       roster: [],
       rows: [],
       schemaReady: false,
+      startingSoon: [],
     };
   }
 
@@ -2348,8 +2374,9 @@ export async function getDoubleVisitReportData(input: {
   const visitedKeysInRange = new Set(
     rows.map((row) => (row.visitedHrId ? canonicalHrIdKey(row.visitedHrId) : null)).filter((key): key is string => Boolean(key)),
   );
-  const neverVisited: DoubleVisitFocusRosterEntry[] = scopedEmployees
-    .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
+  const activeMedicalRepsInScope = scopedEmployees.filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee));
+  const neverVisited: DoubleVisitFocusRosterEntry[] = activeMedicalRepsInScope
+    .filter((employee) => repHasStarted(employee.hireDate, today))
     .filter((employee) => {
       const key = canonicalHrIdKey(employee.hrId);
       return key ? !visitedKeysInRange.has(key) : true;
@@ -2368,14 +2395,19 @@ export async function getDoubleVisitReportData(input: {
     })
     .sort((a, b) => (b.daysSinceHire ?? -1) - (a.daysSinceHire ?? -1));
 
-  const probation = await buildDvPlannerProbationEntries({ access: input.access, employees, scopedRows });
+  const probation = await buildDvPlannerProbationEntries({ access: input.access, employees, scopedRows, today });
+  // Reps hired for a date after today: named in a note on the planner, counted nowhere.
+  const startingSoon: DoubleVisitStartingSoonEntry[] = activeMedicalRepsInScope
+    .filter((employee) => !repHasStarted(employee.hireDate, today))
+    .map((employee) => ({ areaName: employee.areaName, hireDate: employee.hireDate ?? "", name: employee.displayName }))
+    .sort((a, b) => a.hireDate.localeCompare(b.hireDate) || a.name.localeCompare(b.name));
 
   // DV Planner roster: every active Medical Rep in scope, one row each. Built by the shared,
   // exported buildDvPlannerRosterEntries so the weekly digest (Wave 2) computes an identical roster
   // for any manager scope. Cadence lastVisit comes from the wide lookback (cadenceLastVisitByKey);
   // in-window count/visited come from `rows`.
   const roster = buildDvPlannerRosterEntries({
-    activeMedicalReps: scopedEmployees.filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee)),
+    activeMedicalReps: activeMedicalRepsInScope,
     inWindowRows: rows,
     cadenceLastVisitByKey,
     probation,
@@ -2408,6 +2440,7 @@ export async function getDoubleVisitReportData(input: {
     roster,
     rows,
     schemaReady: true,
+    startingSoon,
   };
 }
 
