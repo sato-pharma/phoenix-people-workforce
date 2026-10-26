@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { FieldWorkforceRouteMap, type RouteCheckin } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Card } from "@/components/ui/card";
 import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { legDistanceLabel, loggingWindowNote, stopLogNote } from "@/lib/field-activity/format";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 
 type Subject = {
@@ -42,6 +43,9 @@ type Stop = {
   lat: number;
   legMetres: number | null;
   logLagMinutes: number | null;
+  /** A Phoenix CRM visit: its check-in is its log, so no lag is measured. Optional for a report built before it. */
+  phoenixVisit?: boolean;
+  formOpenSeconds?: number | null;
   lon: number;
   savedAt: string | null;
   savedOn: string | null;
@@ -181,7 +185,7 @@ function longDate(dateIso: string, weekday: string): string {
 }
 
 function money(value: number): string {
-  return value.toLocaleString("en-GB", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  return "EGP " + value.toLocaleString("en-GB", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 }
 
 function duration(minutes: number | null): string {
@@ -272,13 +276,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
             value={
               <>
                 {clock12(day.firstLog)} to {clock12(day.lastLog)}
-                <span className="block text-phx-2xs font-semibold text-slate-500">
-                  {day.logsLandedNextDay
-                    ? `the NEXT day — average ${((day.averageLogLagMinutes ?? 0) / 60).toFixed(1)} hours after the door`
-                    : day.averageLogLagMinutes != null
-                      ? `average ${day.averageLogLagMinutes} min after the door`
-                      : ""}
-                </span>
+                <span className="block text-phx-2xs font-semibold text-slate-500">{loggingWindowNote(day)}</span>
               </>
             }
           />
@@ -343,11 +341,11 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
                     <td className="px-3 py-2">
                       {clock12(stop.savedAt)}
                       <span className="block text-phx-2xs text-slate-500">
-                        {stop.logLagMinutes == null ? "" : `${stop.logLagMinutes} min later`}
+                        {stopLogNote(stop)}
                         {stop.savedOn ? ` (${stop.savedOn})` : ""}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right">{stop.legMetres == null ? "—" : `${stop.legMetres} m`}</td>
+                    <td className="px-3 py-2 text-right">{stop.legMetres == null ? "—" : legDistanceLabel(stop.legMetres)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -363,7 +361,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
                 </p>
                 <p className="text-phx-2xs font-semibold text-slate-600">
                   Checked in {clock12(stop.checkedAt)} · logged {clock12(stop.savedAt)}
-                  {stop.logLagMinutes == null ? "" : ` (${stop.logLagMinutes} min later)`}
+                  {stopLogNote(stop) ? ` (${stopLogNote(stop)})` : ""}
                 </p>
                 <p className="text-phx-2xs text-slate-600">
                   {[stop.speciality, stop.grade ? `Grade ${stop.grade}` : "", stop.ampm].filter(Boolean).join(" · ")}

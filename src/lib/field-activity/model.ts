@@ -56,6 +56,7 @@ import {
   mergeVisitCountSplits,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { cairoWallClock } from "@/lib/format/cairo-zone";
 
@@ -175,8 +176,19 @@ export type FieldActivityStop = {
   savedAt: string | null;
   /** Calendar day the log landed on, when it was not the visit's own day. */
   savedOn: string | null;
-  /** Minutes from door to log, crossing midnight where the rep batched the day the next morning. */
+  /**
+   * Minutes from door to log, crossing midnight where the rep batched the day the next morning.
+   *
+   * 🔴 NULL ON A PHOENIX CRM VISIT — NOT MEASURED, NEVER ZERO. A Phoenix visit is its own check-in, so
+   * its "door" and its "log" are one timestamp and the subtraction is always 0. Printed, that read as
+   * "logged 0 min later" on every stop and "average 0 min after the door" on every day — a figure
+   * nobody measured (live audit, 2026-10-26, the Pedia National Sales Manager's 54 visits).
+   */
   logLagMinutes: number | null;
+  /** A Phoenix CRM visit (`source = 'phoenix'`): its check-in and its log are the same moment. */
+  phoenixVisit: boolean;
+  /** How long the Phoenix visit form was open, in seconds — null on an iReports360 stop or when unrecorded. */
+  formOpenSeconds: number | null;
   lat: number;
   lon: number;
   address: string | null;
@@ -581,6 +593,8 @@ export function buildFieldActivityReport(input: {
       if (checkin && checkin.lat != null && checkin.lon != null) {
         const checkedClock = wallClock(checkin.checkedAt);
         if (checkedClock) {
+          const phoenixVisit = isPhoenixNativeVisitRow({ source: visit.source ?? null });
+          const formOpen = Number(visit.form_open_seconds);
           stops.push({
             index: 0,
             contactCrmId: visit.contactCrmId,
@@ -591,7 +605,13 @@ export function buildFieldActivityReport(input: {
             checkedAt: checkedClock,
             savedAt: savedClock,
             savedOn: savedDay && savedDay !== dateIso ? savedDay : null,
-            logLagMinutes: logLag(dateIso, checkedClock, savedClock, savedDay),
+            // The lag is a measurement of iReports360 only — the vendor app saves a call after the door.
+            logLagMinutes: phoenixVisit ? null : logLag(dateIso, checkedClock, savedClock, savedDay),
+            phoenixVisit,
+            formOpenSeconds:
+              phoenixVisit && visit.form_open_seconds != null && Number.isFinite(formOpen) && formOpen > 0
+                ? Math.round(formOpen)
+                : null,
             lat: checkin.lat,
             lon: checkin.lon,
             address: checkin.address,
@@ -627,6 +647,7 @@ export function buildFieldActivityReport(input: {
     const logs = [...stops.map((s) => s.savedAt), ...unlocated.map((u) => u.savedAt)]
       .filter((value): value is string => Boolean(value))
       .sort();
+    // A Phoenix stop's lag is null (not measured), so it is left out of the average rather than pulling it to 0.
     const lags = stops.map((s) => s.logLagMinutes).filter((value): value is number => value != null);
     const countedTotal = counts.am + counts.pm + counts.pharmacies;
 
