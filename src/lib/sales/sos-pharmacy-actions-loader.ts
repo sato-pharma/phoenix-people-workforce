@@ -205,10 +205,16 @@ export async function loadPortalPharmacyActions(input: {
       brickId: brick.brickId,
       brickName: brick.brickName || brick.brickId,
       areaCode: brick.areaCode,
-      areaName: brick.areaName || brick.areaCode,
+      areaName: brick.areaName || "",
     }));
 
-  const actions = buildPharmacyActions({ periods: periodRows, brickUniverse });
+  const areaNames = new Map<string, string>();
+  for (const area of references.areas ?? []) {
+    const code = String(area.areaCode ?? "").trim().toUpperCase();
+    const name = String(area.areaName ?? "").trim();
+    if (code && name && name.toUpperCase() !== code) areaNames.set(code, name);
+  }
+  const actions = buildPharmacyActions({ periods: periodRows, brickUniverse, areaNames });
   return remember(cacheKey, {
     line,
     availableLines: choice.availableLines,

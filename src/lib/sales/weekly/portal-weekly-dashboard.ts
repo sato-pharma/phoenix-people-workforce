@@ -19,6 +19,7 @@ import {
   resolveWeeklyAccessScope,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
+import { latestNonFuturePeriod } from "@/lib/sales/periods";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { resolveWeeklyOwnAreaKeys, weeklyScopeOwnAreaKeys } from "@/lib/sales/weekly/own-area-scope";
 import { mayLiftWeeklyGeography, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
@@ -339,10 +340,17 @@ async function computeWeeklyComparison(
   // The current month's own-area share, so last month is measured over the same areas.
   ownAreaShare: Promise<WeeklyOwnAreaShare> | null,
 ): Promise<PortalWeeklyComparison | null> {
+  // The month the screen is ON: the one asked for, or the one the first-paint default opened on
+  // (appliedFilters carries it), else the latest that has started.
+  const appliedMonths = currentData.appliedFilters.cycleMonths;
   const currentCycleMonth =
     filters.cycleMonths && filters.cycleMonths.length === 1
       ? filters.cycleMonths[0]
-      : (currentData.availableMonths[0]?.code ?? null);
+      : filters.defaultToLatestStartedMonth && appliedMonths.length === 1
+        ? appliedMonths[0]
+        : // THE FUTURE-MONTH RULE: "all months" compares the latest month that has started, never an
+        // uploaded month ahead of today (a Direct order collecting next month books one).
+        (latestNonFuturePeriod(currentData.availableMonths.map((month) => month.code)) ?? null);
 
   if (!currentCycleMonth) return null;
   const previousCycleMonth = shiftCycleMonthBack(currentCycleMonth);
@@ -404,6 +412,8 @@ async function computeWeeklyComparison(
 export type PortalWeeklyFilters = {
   cycleMonths?: string[];
   cycleMonthMode?: WeeklyFilterMode;
+  /** First paint only: open on the newest month that has started when none was named (see loadWeeklyDashboard). */
+  defaultToLatestStartedMonth?: boolean;
   weekNumbers?: number[];
   weekNumberMode?: WeeklyFilterMode;
   distributorCodes?: string[];
@@ -458,6 +468,7 @@ export async function getPortalWeeklyDashboard(
     loadWeeklyDashboard({
       cycleMonths: filters.cycleMonths,
       cycleMonthMode: filters.cycleMonthMode,
+      defaultToLatestStartedMonth: filters.defaultToLatestStartedMonth,
       weekNumbers: filters.weekNumbers,
       weekNumberMode: filters.weekNumberMode,
       distributorCodes: filters.distributorCodes,

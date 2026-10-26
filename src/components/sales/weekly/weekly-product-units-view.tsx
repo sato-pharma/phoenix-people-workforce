@@ -31,6 +31,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import { MatrixScroller } from "@/components/ui/matrix-scroller";
 import { performanceReviewRegionStyle } from "@/lib/sales/closing-performance-review-regions";
+import { isFuturePeriod } from "@/lib/sales/periods";
 // THE SHAPE MODULE, NEVER THE BUILDER. `portal-weekly-product-units.ts` reaches the weekly service,
 // which reaches the employee directory, which reaches `node:crypto` — webpack refuses a Node builtin
 // in a client bundle and the dev server then 500s every request. Importing a single `const` from it
@@ -171,7 +172,8 @@ export function WeeklyProductUnitsView({
   // The window is picked from what the dashboard already knows exists, so the request names real
   // months and the server's own calendar read is never needed.
   const monthWindow = useMemo(() => {
-    const months = [...new Set(availableMonths.filter(Boolean))].sort();
+    // A month that has not started is never a column (the future-month rule) — the server refuses it too.
+    const months = [...new Set(availableMonths.filter((month) => Boolean(month) && !isFuturePeriod(month)))].sort();
     return months.slice(-Math.min(monthsBack, WEEKLY_PRODUCT_UNITS_MAX_MONTHS));
   }, [availableMonths, monthsBack]);
 

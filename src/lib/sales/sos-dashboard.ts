@@ -49,7 +49,7 @@ import {
   rowMatchesRegionFilter,
   widenRegionsToGeography,
 } from "@/lib/sales/sos-region-basis";
-import { shiftPeriod } from "@/lib/sales/periods";
+import { isFuturePeriod, latestNonFuturePeriod, shiftPeriod } from "@/lib/sales/periods";
 import {
   buildSosCoverageReport,
   describeSosCoverageGaps,
@@ -842,7 +842,10 @@ export async function getSosDashboard(
   const selectedPeriods = [...new Set(requestedPeriods.length > 0 ? requestedPeriods : legacySingle)]
     .sort((left, right) => right.localeCompare(left))
     .slice(0, MAX_SELECTED_PERIODS);
-  if (selectedPeriods.length === 0 && availablePeriods[0]) selectedPeriods.push(availablePeriods[0]);
+  // The default is the latest month that has STARTED, never the newest uploaded one: a Direct order
+  // collecting next month books into a future period, and defaulting there showed a near-empty page.
+  const defaultPeriod = latestNonFuturePeriod(availablePeriods) ?? availablePeriods[0];
+  if (selectedPeriods.length === 0 && defaultPeriod) selectedPeriods.push(defaultPeriod);
   const selectedPeriodSet = new Set(selectedPeriods);
   const selectedPeriod = selectedPeriods[0] ?? null;
   const isSingleMonth = selectedPeriods.length === 1;
@@ -885,7 +888,8 @@ export async function getSosDashboard(
 
   // Trend window = the most-recent N months, always including every selected period (so a selection
   // reaching outside the recent window still charts its own points).
-  const windowPeriods = [...new Set([...availablePeriods.slice(0, TREND_WINDOW), ...selectedPeriods])].sort();
+  const trendBase = availablePeriods.filter((p) => !isFuturePeriod(p));
+  const windowPeriods = [...new Set([...trendBase.slice(0, TREND_WINDOW), ...selectedPeriods])].sort();
 
   // Detail leaf rows for the SELECTED period only — drives every breakdown table below. The 6-month
   // trend is fetched separately as lightweight per-period totals (phx_exec_sos_trend) instead of

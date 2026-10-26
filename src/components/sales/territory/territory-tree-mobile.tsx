@@ -15,6 +15,7 @@ import type {
 } from "@/lib/sales/territory/types";
 
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
+import { TerritoryClosingTotal } from "./territory-closing-total";
 import type { UseTerritoryTreeResult } from "./use-territory-tree";
 
 /** "12 pharmacies" / "1 pharmacy" — a pharmacy count is spelled out, never abbreviated (AGENTS.md §4). */
@@ -231,10 +232,16 @@ function AreaSection({
               {pharmacyCount(state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0))}
               {" · "}
               {formatEgp(state.payload.totalValue)}
-              {state.payload.reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+              {state.payload.reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
             </>
           )}
         </p>
+        <TerritoryClosingTotal
+          className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
+          code={area.areaCode}
+          kind="area"
+          tree={tree}
+        />
       </div>
       <AreaBlocksList blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
     </div>
@@ -284,10 +291,16 @@ function AreaDetails({
             <>
               {" · "}
               {formatEgp(state.payload.totalValue)}
-              {state.payload.reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+              {state.payload.reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
             </>
           ) : null}
         </span>
+        <TerritoryClosingTotal
+          className="text-phx-2xs font-black tabular-nums text-white"
+          code={area.areaCode}
+          kind="area"
+          tree={tree}
+        />
       </summary>
       <div className="space-y-2 border-t border-slate-100 px-2.5 pt-2.5">
         {state.status === "idle" || state.status === "loading" ? (
@@ -326,6 +339,12 @@ function RegionSection({
         <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {areas.length} area{areas.length === 1 ? "" : "s"} — tap any to load its sales
         </p>
+        <TerritoryClosingTotal
+          className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
+          code={region.regionCode}
+          kind="region"
+          tree={tree}
+        />
       </div>
       {areas.length === 0 ? (
         <p className="text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
@@ -372,6 +391,12 @@ function RegionDetails({
         <span className="text-phx-2xs font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
+        <TerritoryClosingTotal
+          className="text-phx-2xs font-black tabular-nums text-slate-900"
+          code={region.regionCode}
+          kind="region"
+          tree={tree}
+        />
       </summary>
       <div className="space-y-2 border-t border-slate-100 px-2.5 pt-2.5">
         {areas.length === 0 ? (
@@ -415,6 +440,7 @@ function RegionsSection({
         <p className="mt-1 text-phx-xs font-semibold text-slate-600">
           {regions.length} regions — tap any to see its areas
         </p>
+        <TerritoryClosingTotal className="mt-1 block text-phx-xs font-bold tabular-nums text-slate-900" kind="all" tree={tree} />
       </div>
       <div className="space-y-2">
         {regions.map((region) => (

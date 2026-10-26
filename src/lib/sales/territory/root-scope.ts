@@ -1,10 +1,10 @@
 import { type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import {
+  loadSalesNameMastersOncePerRender,
   MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
   resolveMedicalRepSosAreaCodes,
 } from "@/lib/sales/medical-rep-area-scope";
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveOfficialLineValue } from "@/lib/sales/official-lines";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 
@@ -60,11 +60,16 @@ async function resolveMedicalRepAreaScope(ctx: AccessContext, officialLine: stri
   return { level: "area", sosAreaCodes, officialLine };
 }
 
+// The access scope the caller already resolved, passed down rather than read a second time.
+type SalesAccessScope = Awaited<ReturnType<typeof resolveSalesAccessScope>>;
+
+// The name masters are read through loadSalesNameMastersOncePerRender, the per-render cache the
+// skeleton reads too — a cold uncached read here and another in the skeleton was the same ~6 tables
+// twice on every first paint of the page (2026-10-26, "first paint takes >35 s").
 async function resolveDistrictManagerRegionScope(
-  ctx: AccessContext,
+  salesScope: SalesAccessScope,
   officialLine: string,
 ): Promise<TerritoryRootScope> {
-  const salesScope = await resolveSalesAccessScope(ctx);
 
   // A DM's real geography is his organogram seat's areas, which can legitimately sit outside
   // his region label (CNS "Kafr El-Sheikh 1" / D16 belongs to the Alex-BHR DM while its rows
@@ -74,7 +79,7 @@ async function resolveDistrictManagerRegionScope(
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean);
   if (seatAreaCodes.length > 0) {
-    const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+    const references = await loadSalesNameMastersOncePerRender();
     const knownAreaCodes = new Set((references.areas ?? []).map((area) => area.areaCode.toUpperCase()));
     const confirmedAreaCodes = seatAreaCodes.filter((code) => knownAreaCodes.has(code));
     if (confirmedAreaCodes.length > 0) {
@@ -87,7 +92,7 @@ async function resolveDistrictManagerRegionScope(
     : null;
   if (!regionName) return denied("region_unresolved", REGION_UNRESOLVED_MESSAGE);
 
-  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const references = await loadSalesNameMastersOncePerRender();
   const regionCode = references.regions.find(
     (region) => canonicalizeRegionName(region.regionName) === regionName,
   )?.regionCode;
@@ -96,9 +101,12 @@ async function resolveDistrictManagerRegionScope(
   return { level: "region", regionCodes: [regionCode.toUpperCase()], officialLine };
 }
 
-async function resolveRegionalManagerScope(ctx: AccessContext, officialLine: string): Promise<TerritoryRootScope> {
-  const salesScope = await resolveSalesAccessScope(ctx);
-  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+async function resolveRegionalManagerScope(
+  ctx: AccessContext,
+  salesScope: SalesAccessScope,
+  officialLine: string,
+): Promise<TerritoryRootScope> {
+  const references = await loadSalesNameMastersOncePerRender();
   const regionCodes = await resolveRegionalManagerRegionCodes(ctx, salesScope, references);
   if (regionCodes.size === 0) return denied("region_unresolved", REGION_UNRESOLVED_MESSAGE);
   return { level: "region", regionCodes: [...regionCodes].map((code) => code.toUpperCase()), officialLine };
@@ -132,9 +140,9 @@ export async function resolveTerritoryRootScope(
     case "Medical Rep":
       return resolveMedicalRepAreaScope(ctx, officialLine);
     case "District Manager":
-      return resolveDistrictManagerRegionScope(ctx, officialLine);
+      return resolveDistrictManagerRegionScope(salesScope, officialLine);
     case "Regional Manager":
-      return resolveRegionalManagerScope(ctx, officialLine);
+      return resolveRegionalManagerScope(ctx, salesScope, officialLine);
     case "National Sales Manager":
       return { level: "nationwide", officialLine };
     default:

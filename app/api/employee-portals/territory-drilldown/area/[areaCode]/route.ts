@@ -2,32 +2,13 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { shiftPeriod } from "@/lib/sales/periods";
 import { getTerritoryAreaPharmacies } from "@/lib/sales/territory/service";
+import { TERRITORY_DEFAULT_WINDOW_MONTHS, TERRITORY_MAX_WINDOW_MONTHS } from "@/lib/sales/territory/window";
 
 import { isTerritoryDrilldownRole, jsonError } from "../../_lib/route-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEFAULT_MONTHS_BACK = 6;
-const MAX_MONTHS_BACK = 12;
-
-function currentPeriod(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Every period in the trailing window, oldest first, so a pharmacy's monthly presence can be
- *  computed even for months it had zero sales (not just the months it has a row for). */
-function lastNPeriods(n: number): string[] {
-  const periods: string[] = [];
-  for (let monthsBack = n - 1; monthsBack >= 0; monthsBack--) {
-    const period = shiftPeriod(currentPeriod(), monthsBack);
-    if (period) periods.push(period);
-  }
-  return periods;
-}
 
 // The lazy per-area pharmacy fetch — fired only when a user expands an Area lane, never on
 // initial page load. The server re-derives the caller's territory scope on THIS request too
@@ -47,16 +28,17 @@ export async function GET(request: Request, context: { params: Promise<{ areaCod
     const { areaCode } = await context.params;
     const { searchParams } = new URL(request.url);
     const monthsParam = Number(searchParams.get("months"));
-    const monthsBack = Number.isInteger(monthsParam) && monthsParam > 0 && monthsParam <= MAX_MONTHS_BACK
+    const months = Number.isInteger(monthsParam) && monthsParam > 0 && monthsParam <= TERRITORY_MAX_WINDOW_MONTHS
       ? monthsParam
-      : DEFAULT_MONTHS_BACK;
-    const periods = lastNPeriods(monthsBack);
+      : TERRITORY_DEFAULT_WINDOW_MONTHS;
 
     // Super Admin / CEO drill a line they pick; every other role's line is derived and this is
     // ignored. The client echoes the skeleton's officialLine so the fetch stays on the same line.
     const selectedLine = searchParams.get("line");
-    const payload = await getTerritoryAreaPharmacies(access, decodeURIComponent(areaCode), periods, selectedLine);
-    return NextResponse.json({ success: true, periods, ...payload });
+    // The window ends at the drilled line's newest published closing (resolved by the service), so
+    // the months returned here are the months the page labelled — never the open month.
+    const payload = await getTerritoryAreaPharmacies(access, decodeURIComponent(areaCode), months, selectedLine);
+    return NextResponse.json({ success: true, ...payload });
   } catch (error) {
     return jsonError(error, "Failed to load area pharmacies.");
   }

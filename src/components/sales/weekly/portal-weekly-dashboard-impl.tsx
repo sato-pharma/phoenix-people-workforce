@@ -143,8 +143,10 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   const [loading, setLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // The Month filter starts on the month the server opened on (the newest that has started, or the one a
+  // `?months=` link named), so the chips say what the figures cover. Clearing it still asks for all months.
   const [selection, setSelection] = useState<Record<MultiKey, string[]>>({
-    months: EMPTY_SELECTION,
+    months: initialData.appliedFilters.cycleMonths.length > 0 ? initialData.appliedFilters.cycleMonths : EMPTY_SELECTION,
     weeks: EMPTY_INT_SELECTION,
     regions: EMPTY_SELECTION,
     products: EMPTY_SELECTION,
@@ -152,7 +154,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     distributors: EMPTY_SELECTION,
   });
   const [modes, setModes] = useState<Record<MultiKey, MultiSelectFilterMode>>({
-    months: "include",
+    months: initialData.appliedFilters.cycleMonths.length > 0 ? initialData.appliedFilters.cycleMonthMode : "include",
     weeks: "include",
     regions: "include",
     products: "include",

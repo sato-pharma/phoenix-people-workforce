@@ -33,6 +33,7 @@
 
 import { type AccessContext } from "@/lib/auth/permissions";
 import { regionOrder } from "@/lib/sales/closing-performance-review-regions";
+import { isFuturePeriod } from "@/lib/sales/periods";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { resolveWeeklyOwnAreaKeys } from "@/lib/sales/weekly/own-area-scope";
@@ -85,12 +86,22 @@ function growthOf(series: Array<number | null>): number | null {
 /**
  * Pick the window: the newest `count` uploaded cycle months, oldest first.
  *
- * Driven by what has actually been uploaded rather than by today's date, so a month nobody has sent
- * yet never becomes an empty column, and a gap in the middle of the history keeps its own column
- * (as a column of nulls) rather than being skipped over.
+ * Driven by what has actually been uploaded, so a month nobody has sent yet never becomes an empty
+ * column, and a gap in the middle of the history keeps its own column (as a column of nulls) rather
+ * than being skipped over.
+ *
+ * THE FUTURE-MONTH RULE: a month AFTER today (Cairo) is never a column. A Direct order collecting next
+ * month legitimately uploads a thin cycle month ahead of time; as the window's last column it read
+ * every other product at 0 and put −100% on all of them. `today` is a test seam.
  */
-export function selectWeeklyProductUnitsMonths(available: string[], count: number): string[] {
-  const months = [...new Set(available.map(normalizeMonth).filter((m): m is string => m !== null))].sort();
+export function selectWeeklyProductUnitsMonths(available: string[], count: number, today?: string): string[] {
+  const months = [
+    ...new Set(
+      available
+        .map(normalizeMonth)
+        .filter((m): m is string => m !== null && !isFuturePeriod(m, today)),
+    ),
+  ].sort();
   const window = Math.min(Math.max(1, count), WEEKLY_PRODUCT_UNITS_MAX_MONTHS);
   return months.slice(-window);
 }

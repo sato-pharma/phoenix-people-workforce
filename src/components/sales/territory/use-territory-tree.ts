@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { TerritoryAreaPayload, TerritorySkeleton } from "@/lib/sales/territory/types";
+import type {
+  TerritoryAreaPayload,
+  TerritoryClosingTotals,
+  TerritorySkeleton,
+} from "@/lib/sales/territory/types";
 
 export type AreaFetchState =
   | { status: "idle" }
@@ -15,6 +19,9 @@ export type UseTerritoryTreeResult = {
   periods: string[];
   areaState: (areaCode: string) => AreaFetchState;
   loadArea: (areaCode: string) => void;
+  /** Region and area totals from the closing engine (published months only); null until loaded,
+   *  and stays null if the read fails — a header then shows no figure, never a false zero. */
+  closingTotals: TerritoryClosingTotals | null;
 };
 
 /**
@@ -29,7 +36,10 @@ export type UseTerritoryTreeResult = {
  */
 export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeResult {
   const [states, setStates] = useState<Map<string, AreaFetchState>>(new Map());
-  const [periods, setPeriods] = useState<string[]>([]);
+  const [periods, setPeriods] = useState<string[]>(skeleton.window?.periods ?? []);
+  // Keyed by the line it was read for, so a line switch never shows the previous line's totals.
+  const [totalsRead, setTotalsRead] = useState<{ line: string; totals: TerritoryClosingTotals } | null>(null);
+  const closingTotals = totalsRead && totalsRead.line === skeleton.officialLine ? totalsRead.totals : null;
   const cacheRef = useRef<Map<string, TerritoryAreaPayload>>(new Map());
   const inFlightRef = useRef<Set<string>>(new Set());
 
@@ -96,10 +106,29 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
       });
   }, [skeleton.officialLine]);
 
+  // Totals at a glance load after first paint, once per drilled line — the page never waits on them.
+  useEffect(() => {
+    if (!skeleton.officialLine) return;
+    const line = skeleton.officialLine;
+    const controller = new AbortController();
+    fetch(`/api/employee-portals/territory-drilldown/totals?line=${encodeURIComponent(skeleton.officialLine)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok || !(response.headers.get("content-type") ?? "").includes("application/json")) return;
+        const json = (await response.json()) as { success?: boolean; totals?: TerritoryClosingTotals };
+        if (json.success && json.totals && !controller.signal.aborted) setTotalsRead({ line, totals: json.totals });
+      })
+      .catch(() => {
+        // A failed read leaves the headers without a total; it never shows a zero.
+      });
+    return () => controller.abort();
+  }, [skeleton.officialLine]);
+
   const areaState = useCallback(
     (areaCode: string): AreaFetchState => states.get(areaCode.trim().toUpperCase()) ?? { status: "idle" },
     [states],
   );
 
-  return { skeleton, periods, areaState, loadArea };
+  return { skeleton, periods, areaState, loadArea, closingTotals };
 }

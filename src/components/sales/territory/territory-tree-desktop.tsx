@@ -15,6 +15,7 @@ import type {
 } from "@/lib/sales/territory/types";
 
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
+import { TerritoryClosingTotal } from "./territory-closing-total";
 import type { UseTerritoryTreeResult } from "./use-territory-tree";
 
 /** "12 pharmacies" / "1 pharmacy" — a pharmacy count is spelled out, never abbreviated (AGENTS.md §4). */
@@ -277,10 +278,16 @@ function AreaRoot({
               {pharmacyTotal !== null ? ` · ${pharmacyCount(pharmacyTotal)}` : ""}
               {" · "}
               {formatEgp(totalValue)}
-              {reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+              {reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
             </>
           ) : null}
         </p>
+        <TerritoryClosingTotal
+          className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
+          code={area.areaCode}
+          kind="area"
+          tree={tree}
+        />
       </div>
       <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
       <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
@@ -349,10 +356,16 @@ function AreaLane({
             <>
               {" · "}
               {formatEgp(state.payload.totalValue)}
-              {state.payload.reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+              {state.payload.reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
             </>
           ) : null}
         </span>
+        <TerritoryClosingTotal
+          className="pl-[22px] text-phx-2xs font-black tabular-nums text-white"
+          code={area.areaCode}
+          kind="area"
+          tree={tree}
+        />
       </button>
       {open ? (
         <div className="px-3 py-3">
@@ -400,6 +413,12 @@ function RegionRoot({
         <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {areas.length} area{areas.length === 1 ? "" : "s"} — expand any to load its sales
         </p>
+        <TerritoryClosingTotal
+          className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
+          code={region.regionCode}
+          kind="region"
+          tree={tree}
+        />
       </div>
       <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
       <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
@@ -464,6 +483,12 @@ function RegionLane({
         <span className="pl-6 text-phx-2xs font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
+        <TerritoryClosingTotal
+          className="pl-6 text-phx-2xs font-black tabular-nums text-slate-900"
+          code={region.regionCode}
+          kind="region"
+          tree={tree}
+        />
       </button>
       {open ? (
         areas.length === 0 ? (
@@ -517,6 +542,7 @@ function RegionsRoot({
         <p className="mt-1 text-sm font-bold leading-snug">
           {regions.length} regions — expand any to see its areas
         </p>
+        <TerritoryClosingTotal className="mt-1 block text-phx-xs font-bold tabular-nums text-slate-900" kind="all" tree={tree} />
       </div>
       <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
       <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">

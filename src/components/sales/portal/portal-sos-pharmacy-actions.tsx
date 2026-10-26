@@ -252,14 +252,30 @@ function ResponsiveTable<T extends { key: string }>({
   );
 }
 
-function ShowMore({ shown, total, onMore }: { shown: number; total: number; onMore: () => void }) {
-  if (shown >= total) return null;
+const count = (value: number): string => value.toLocaleString("en-US");
+
+/**
+ * `total` is the length of the list the server sent, which is capped (ACTION_LIST_LIMIT); `full` is the
+ * uncapped count the tile and the tab chip show. When they differ the list says so in words, so a tile
+ * reading 1,362 beside a list that ends at 200 is never left to be discovered.
+ */
+function ShowMore({ shown, total, full, onMore }: { shown: number; total: number; full: number; onMore: () => void }) {
+  const truncated = full > total;
+  if (shown >= total && !truncated) return null;
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-      <p className="text-phx-2xs font-semibold text-slate-500">{`Showing ${shown} of ${total}`}</p>
-      <button className={`${chipClass(false)} ${TAP_CHIP}`} onClick={onMore} type="button">
-        Show more
-      </button>
+      <p className="text-phx-2xs font-semibold text-slate-500">
+        {shown >= total
+          ? `Showing the first ${count(total)} of ${count(full)} — the list stops here; narrow it by area to see the rest.`
+          : truncated
+            ? `Showing ${count(shown)} of the first ${count(total)} (of ${count(full)} in all)`
+            : `Showing ${count(shown)} of ${count(total)}`}
+      </p>
+      {shown < total ? (
+        <button className={`${chipClass(false)} ${TAP_CHIP}`} onClick={onMore} type="button">
+          Show more
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -513,7 +529,9 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
 
   const renderList = (): ReactNode => {
     if (!actions) return null;
-    const more = (total: number) => <ShowMore onMore={() => setShown((current) => current + PAGE_SIZE)} shown={Math.min(shown, total)} total={total} />;
+    const more = (total: number, full: number) => (
+      <ShowMore full={Math.max(full, total)} onMore={() => setShown((current) => current + PAGE_SIZE)} shown={Math.min(shown, total)} total={total} />
+    );
     if (tab === "crossSell") {
       const list = scope?.crossSell ?? [];
       const columns: Column<CrossSellItem>[] = [
@@ -540,7 +558,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
             items={list.slice(0, shown)}
             lead={pharmacyLead as Column<CrossSellItem>}
           />
-          {more(list.length)}
+          {more(list.length, countOf("crossSell"))}
         </>
       );
     }
@@ -555,7 +573,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
       return (
         <>
           <ResponsiveTable columns={columns} emptyText="Every brick in your areas had a pharmacy buying." items={list.slice(0, shown)} lead={lead} />
-          {more(list.length)}
+          {more(list.length, countOf("untappedBricks"))}
         </>
       );
     }
@@ -584,7 +602,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
     return (
       <>
         <ResponsiveTable columns={columnsByTab[tab]} emptyText={emptyByTab[tab]} items={list.slice(0, shown)} lead={pharmacyLead} />
-        {more(list.length)}
+        {more(list.length, countOf(tab))}
       </>
     );
   };
@@ -654,7 +672,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   label="Stopped buying"
                   onClick={() => selectTab("stopped")}
                   sub={`${formatEgp(stake.stopped)} a month before`}
-                  value={String(countOf("stopped"))}
+                  value={count(countOf("stopped"))}
                 />
                 <Tile
                   accent="#F97316"
@@ -663,7 +681,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   label="Dropping 30%+"
                   onClick={() => selectTab("dropping")}
                   sub={`${formatEgp(stake.dropping)} below average`}
-                  value={String(countOf("dropping"))}
+                  value={count(countOf("dropping"))}
                 />
                 <Tile
                   accent="#22C55E"
@@ -672,7 +690,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   label="New this closing"
                   onClick={() => selectTab("newPharmacies")}
                   sub={`${formatEgp(stake.newPharmacies)} in their first month`}
-                  value={String(countOf("newPharmacies"))}
+                  value={count(countOf("newPharmacies"))}
                 />
                 <Tile
                   accent="#0EA5E9"
@@ -681,7 +699,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   label="Buying pharmacies"
                   onClick={() => selectTab("top")}
                   sub={`${formatEgp(totals?.pharmacies ?? 0)} in the latest closing`}
-                  value={String(countOf("top"))}
+                  value={count(countOf("top"))}
                 />
               </div>
 
@@ -704,7 +722,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                     >
                       {entry.label}
                       {entry.key === "top" ? null : (
-                        <span className={`ml-1 tabular-nums ${selected ? "text-orange-100" : "text-slate-400"}`}>{`· ${countOf(entry.key)}`}</span>
+                        <span className={`ml-1 tabular-nums ${selected ? "text-orange-100" : "text-slate-400"}`}>{`· ${count(countOf(entry.key))}`}</span>
                       )}
                     </button>
                   );

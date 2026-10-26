@@ -2448,6 +2448,7 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/actions", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/area/:areaCode", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/totals", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/sync", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/employee-portals/territory-drilldown/sync", permission: { resource: "sales", action: "read" }, csrfExemptReason: "Authenticated drilldown-role JSON action: re-stamps Source-of-Sales import rows to today's geography and rebuilds the rollups after server-side permission checks; no cross-site form semantics." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/export", permission: { resource: "sales", action: "read" } }),
