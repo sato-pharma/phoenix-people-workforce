@@ -1617,6 +1617,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runCiEslintCacheNodeRuntimeTests } from "./ci-eslint-cache-node-runtime.test.ts";
+import { runCiCacheMainOnlyTests } from "./ci-cache-main-only.test.ts";
 import { runReleaseGateTests } from "./release-gate.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
@@ -5961,6 +5962,10 @@ await runTest(
 await runTest(
   "the ESLint cache is keyed to the exact Node runtime (2026-10-23): ci.yml reads process.version into the key AND the restore prefix, a bad or empty read keys the cache to the run alone and never fails the job, no runtime can restore another runtime's cache, and the lint keeps --cache-strategy content",
   runCiEslintCacheNodeRuntimeTests,
+);
+await runTest(
+  "main-only cache creation (owner, 2026-10-26): no job that runs on a pull request saves a cache — setup-node carries no cache and package-manager-cache false, every actions/cache/save is guarded by the exact main-push condition and its own restore step's primary key, the pnpm store is restored with an exact key (OS, architecture, Node major, pnpm version, format, lockfile) and no restore prefix and saved once by static, unit is cache-mode read, and an unreadable store keys the cache to the run alone",
+  runCiCacheMainOnlyTests,
 );
 await runTest(
   "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",

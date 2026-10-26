@@ -225,10 +225,9 @@ jobs:
           # cheaper to reason about than three, and the extra commit costs no measurable time.
           fetch-depth: 2
 
-      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
-      # setup-node invokes `pnpm store path` during its own execution, and the
-      # pnpm shim only exists once corepack is enabled. corepack then reads the
-      # exact pnpm version from package.json's `packageManager` field.
+      # corepack must be enabled BEFORE setup-node runs: setup-node looks for the package manager named
+      # in package.json's `packageManager` field even with its cache off, and the pnpm shim only exists
+      # once corepack is enabled. corepack then reads the exact pnpm version from that field.
       - name: Enable Corepack (pnpm)
         run: corepack enable
 
@@ -236,11 +235,42 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
-          # pnpm's node_modules is a symlink+hardlink layout that does not
-          # round-trip safely through actions/cache tar archives. Restoring the
-          # store and letting `pnpm install` re-link is the supported fast path.
-          cache: pnpm
+          # No `cache:` and the automatic one OFF: setup-node's cache saves from PR runs too. The pnpm
+          # store (NOT node_modules — pnpm's symlink+hardlink layout does not round-trip through a tar
+          # archive) is restored by the two steps below and saved only by `static` on a push to main.
+          package-manager-cache: false
+
+      # 🔴 THE PNPM STORE IS RESTORED EVERYWHERE AND SAVED BY A PUSH TO MAIN ONLY (owner, 2026-10-26).
+      # setup-node's own `cache: pnpm` saved from every PR run too, into a scope only that PR can read
+      # (refs/pull/N/merge): ~350 MB an entry that nothing else reuses, crowding main's entries out of the
+      # 10 GB repository cache. The key names everything that makes a store valid — OS, architecture, Node
+      # major, the exact pnpm version, a format version and the lockfile — and has NO restore prefix, so a
+      # run restores an exact match or nothing, and a store never accumulates old packages. Anything this
+      # step cannot read keys the cache to this run alone (a miss), never to a guess.
+      # Pinned by tests/ci-cache-main-only.test.ts.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store="$(pnpm store path 2>/dev/null | tail -n 1 || true)"
+          pnpm_version="$(pnpm --version 2>/dev/null || true)"
+          node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+          if [[ "${store}" == /* && "${pnpm_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${node_major}" =~ ^[0-9]+$ ]]; then
+            echo "path=${store}" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-${RUNNER_OS}-${RUNNER_ARCH}-node${node_major}-pnpm${pnpm_version}" >> "$GITHUB_OUTPUT"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not read the pnpm store (store '${store}', pnpm '${pnpm_version}', node '${node_major}'); the pnpm cache is keyed to this run alone"
+            echo "path=${RUNNER_TEMP}/pnpm-store-unverified" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-unverified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.prefix }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -538,7 +568,40 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: pnpm
+          # The pnpm store is restored below and saved only by `static` on a push to main (see `validate`).
+          package-manager-cache: false
+
+      # 🔴 THE PNPM STORE IS RESTORED EVERYWHERE AND SAVED BY A PUSH TO MAIN ONLY (owner, 2026-10-26). This job is the one saver.
+      # setup-node's own `cache: pnpm` saved from every PR run too, into a scope only that PR can read
+      # (refs/pull/N/merge): ~350 MB an entry that nothing else reuses, crowding main's entries out of the
+      # 10 GB repository cache. The key names everything that makes a store valid — OS, architecture, Node
+      # major, the exact pnpm version, a format version and the lockfile — and has NO restore prefix, so a
+      # run restores an exact match or nothing, and a store never accumulates old packages. Anything this
+      # step cannot read keys the cache to this run alone (a miss), never to a guess.
+      # Pinned by tests/ci-cache-main-only.test.ts.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store="$(pnpm store path 2>/dev/null | tail -n 1 || true)"
+          pnpm_version="$(pnpm --version 2>/dev/null || true)"
+          node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+          if [[ "${store}" == /* && "${pnpm_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${node_major}" =~ ^[0-9]+$ ]]; then
+            echo "path=${store}" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-${RUNNER_OS}-${RUNNER_ARCH}-node${node_major}-pnpm${pnpm_version}" >> "$GITHUB_OUTPUT"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not read the pnpm store (store '${store}', pnpm '${pnpm_version}', node '${node_major}'); the pnpm cache is keyed to this run alone"
+            echo "path=${RUNNER_TEMP}/pnpm-store-unverified" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-unverified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.prefix }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # 🔴 THE ESLINT CACHE IS ONLY VALID UNDER THE EXACT NODE RUNTIME THAT WROTE IT (2026-10-23). ESLint
       # stamps every cache entry with a fingerprint of its own version, `process.version` and the config
@@ -566,6 +629,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The ONE pnpm store save (owner, 2026-10-26): a push to main, a verified key, and no exact hit. Only
+      # `static` saves, so three jobs never race to write one key, and `static` is off the critical path.
+      - name: Save the pnpm store
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.verified == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: Check routes
         run: pnpm run check:routes
@@ -677,8 +749,10 @@ jobs:
       # dropping that, so the existing entries keep hitting.
       # The exact Node runtime sits in BOTH the key and the restore prefix (2026-10-23), so a run only
       # ever restores a cache written under its own runtime — see `Read the exact Node runtime` above.
+      # Restored everywhere, saved by a push to main only (owner, 2026-10-26) — `Save ESLint cache` below.
       - name: Restore ESLint cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: eslint-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
           key: eslintcache-hosted-content-${{ steps.node-runtime.outputs.version }}-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
@@ -686,6 +760,13 @@ jobs:
 
       - name: Lint
         run: pnpm run lint
+
+      - name: Save ESLint cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.eslint-cache.outputs.cache-hit != 'true' && !startsWith(steps.node-runtime.outputs.version, 'unverified-')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .eslintcache
+          key: ${{ steps.eslint-cache.outputs.cache-primary-key }}
 
       # TYPECHECK — folded in from the former standalone `typecheck` job (2026-09-27). It shared a
       # byte-identical preamble with `lint` and `test` (checkout, detect, corepack, setup-node,
@@ -757,6 +838,9 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # This job never writes a cache on any event (owner, 2026-10-26): the Actions service itself refuses a
+    # save from it. Pinned by tests/ci-cache-main-only.test.ts.
+    cache-mode: read
     strategy:
       # Every part reports whatever the others did: `checks` judges the whole set, and one red part must
       # not cancel a second red one out of view.
@@ -779,7 +863,40 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: pnpm
+          # The pnpm store is restored below and saved only by `static` on a push to main (see `validate`).
+          package-manager-cache: false
+
+      # 🔴 THE PNPM STORE IS RESTORED EVERYWHERE AND SAVED BY A PUSH TO MAIN ONLY (owner, 2026-10-26). This job only restores.
+      # setup-node's own `cache: pnpm` saved from every PR run too, into a scope only that PR can read
+      # (refs/pull/N/merge): ~350 MB an entry that nothing else reuses, crowding main's entries out of the
+      # 10 GB repository cache. The key names everything that makes a store valid — OS, architecture, Node
+      # major, the exact pnpm version, a format version and the lockfile — and has NO restore prefix, so a
+      # run restores an exact match or nothing, and a store never accumulates old packages. Anything this
+      # step cannot read keys the cache to this run alone (a miss), never to a guess.
+      # Pinned by tests/ci-cache-main-only.test.ts.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store="$(pnpm store path 2>/dev/null | tail -n 1 || true)"
+          pnpm_version="$(pnpm --version 2>/dev/null || true)"
+          node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+          if [[ "${store}" == /* && "${pnpm_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${node_major}" =~ ^[0-9]+$ ]]; then
+            echo "path=${store}" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-${RUNNER_OS}-${RUNNER_ARCH}-node${node_major}-pnpm${pnpm_version}" >> "$GITHUB_OUTPUT"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not read the pnpm store (store '${store}', pnpm '${pnpm_version}', node '${node_major}'); the pnpm cache is keyed to this run alone"
+            echo "path=${RUNNER_TEMP}/pnpm-store-unverified" >> "$GITHUB_OUTPUT"
+            echo "prefix=pnpm-store-v1-unverified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.prefix }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
