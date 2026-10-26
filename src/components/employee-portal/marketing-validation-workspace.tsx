@@ -82,6 +82,8 @@ import {
 } from "@/lib/marketing-requests/validation-report";
 import {
   NOT_ON_CRM_LIST_FLAG,
+  readTypedCrmDoctorName,
+  typedCrmDoctorValue,
   type CrmDoctorAreasPayload,
   type CrmDoctorOption,
 } from "@/lib/marketing-requests/crm-doctor-pick";
@@ -852,11 +854,16 @@ function ReadOnlyCaptureValue({
 function SelectField({
   children,
   disabled,
+  freeTextLabel,
+  freeTextValue,
   onChange,
   value,
 }: {
   children: ReactNode;
   disabled?: boolean;
+  /** Opt-in: a typed text that is not a row becomes a row of its own (see SearchableSelect). */
+  freeTextLabel?: (typed: string) => string;
+  freeTextValue?: (typed: string) => string;
   onChange: (value: string) => void;
   value: string;
 }) {
@@ -866,6 +873,8 @@ function SelectField({
     <SearchableSelect
       className="w-full px-3 text-phx-md"
       disabled={disabled}
+      freeTextLabel={freeTextLabel}
+      freeTextValue={freeTextValue}
       onChange={(event) => onChange(event.target.value)}
       value={value}
       wrapValue
@@ -2475,6 +2484,12 @@ export function MarketingValidationWorkspace() {
       updateCustomer(customer.key, { crmCustomerId: "", name: customer.notOnCrmList ? customer.name : "", notOnCrmList: true });
       return;
     }
+    // A name typed over the list: still flagged for every approver, exactly like "Not on the list".
+    const typedName = readTypedCrmDoctorName(value);
+    if (typedName) {
+      updateCustomer(customer.key, { crmCustomerId: "", name: typedName, notOnCrmList: true });
+      return;
+    }
     const list = crmDoctors[customer.crmAreaSeatId];
     const doctor = Array.isArray(list) ? list.find((entry) => entry.crmCustomerId === value) ?? null : null;
     if (!doctor) {
@@ -3361,11 +3376,17 @@ export function MarketingValidationWorkspace() {
                     </div>
                     {crmAreasAvailable ? (
                       <div className="md:col-span-6">
-                        <Field label="Doctor (from the reps' CRM lists)">
+                        <Field label="Doctor (pick from the reps' CRM lists, or type a name)">
                           <SelectField
                             disabled={!customer.crmAreaSeatId}
+                            freeTextLabel={(typed) => `Use "${typed}" — not on the list`}
+                            freeTextValue={typedCrmDoctorValue}
                             onChange={(value) => chooseCrmDoctor(customer, value)}
-                            value={customer.notOnCrmList ? NOT_ON_CRM_LIST_VALUE : customer.crmCustomerId}
+                            value={
+                              customer.notOnCrmList
+                                ? typedCrmDoctorValue(customer.name) || NOT_ON_CRM_LIST_VALUE
+                                : customer.crmCustomerId
+                            }
                           >
                             <option value="">
                               {!customer.crmAreaSeatId
@@ -3384,6 +3405,9 @@ export function MarketingValidationWorkspace() {
                                   ))
                                 : null;
                             })()}
+                            {customer.notOnCrmList && typedCrmDoctorValue(customer.name) ? (
+                              <option value={typedCrmDoctorValue(customer.name)}>{customer.name.trim()}</option>
+                            ) : null}
                             <option value={NOT_ON_CRM_LIST_VALUE}>Not on the list — type the name</option>
                           </SelectField>
                         </Field>

@@ -126,6 +126,29 @@ export function crmSeatsOfArea(reach: ReadonlyArray<OrgSeat>, chosenSeatId: stri
   return reach.filter((seat) => !seat.isOtherPseudoDm && crmAreaKeyOf(seat) === key);
 }
 
+/**
+ * The doctor field is one type-to-search box: a value from the rep's list OR a name typed over it
+ * (owner, 2026-10-26: "choose customer from rep list or free type outside of his list"). A typed name
+ * travels through the field's string value behind this prefix, so it can never be mistaken for a CRM id.
+ */
+export const TYPED_CRM_DOCTOR_PREFIX = "__typed_doctor__:";
+
+/** The longest customer name the form takes, typed or picked. */
+export const TYPED_CRM_DOCTOR_MAX_LENGTH = 160;
+
+/** The field value for a name typed by hand, or "" when nothing readable was typed. */
+export function typedCrmDoctorValue(name: string): string {
+  const clean = name.replace(/\s+/g, " ").trim().slice(0, TYPED_CRM_DOCTOR_MAX_LENGTH);
+  return clean ? `${TYPED_CRM_DOCTOR_PREFIX}${clean}` : "";
+}
+
+/** The typed name inside a field value, or null when the value is a CRM id, the placeholder or the "not on the list" row. */
+export function readTypedCrmDoctorName(value: string): string | null {
+  if (!value.startsWith(TYPED_CRM_DOCTOR_PREFIX)) return null;
+  const clean = value.slice(TYPED_CRM_DOCTOR_PREFIX.length).replace(/\s+/g, " ").trim();
+  return clean || null;
+}
+
 /** The doctor-pick half of one customer line on the form. */
 export type CrmDoctorPickState = {
   /** False when the viewer has no area with a CRM list at all — then only a typed name is possible. */
