@@ -79,8 +79,10 @@ import {
   COVERAGE_TARGET_FLOOR_PCT,
   EMPTY_KPI_FILTERS,
   KPI_CUSTOM_PERIOD_VALUE,
+  kpiJustStartedOf,
   type KpiFacets,
   type KpiFilterState,
+  type KpiJustStarted,
 } from "@/lib/crm/kpis-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { buildKpiManagerRows, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
@@ -90,7 +92,7 @@ import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { resolveKpiBoardAgents } from "@/lib/crm/kpi-board-agents";
-import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
+import { countCallRateWorkingDays, type CallRateHolidays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import {
   getRepDoctorLists,
@@ -113,6 +115,7 @@ import {
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { loadPhoenixRepKpis } from "@/lib/crm/phoenix-kpi-data";
 import {
+  employedWorkingDays,
   kpiRulesFor,
   phoenixRuleRepKeys,
   type DoctorFrequency,
@@ -204,6 +207,15 @@ export type KpiRepRow = {
    * KPI page and the XLSX export print it beside his name (owner, 2026-10-25). Null when the record
    * has none or the hr id did not resolve. Optional so a fixture can leave it out. */
   hireDate?: string | null;
+  /** `employees.last_working_date`, so a leaver's working days stop on his last day. Optional. */
+  lastWorkingDate?: string | null;
+  /**
+   * Hired inside the window and worked too little of it to be judged (owner, 2026-10-26) — see
+   * `kpiJustStartedOf` in kpis-filters.ts. Her figures still print; no flag, band, floor, overall,
+   * podium, team total or manager average judges her on them. Stamped by `getKpisBoard` once every
+   * rule has scored the row; null or absent for every rep the board judges.
+   */
+  justStarted?: KpiJustStarted | null;
 
   // ── Call rate (the selected period) ───────────────────────────────────────
   /** Sat–Wed days in the period, national holidays already removed. */
@@ -695,7 +707,8 @@ export function buildKpiPodium(rows: readonly KpiRepRow[], rules: KpiRules = "le
     caption: (row: KpiRepRow) => string,
   ): KpiPodiumEntry[] =>
     rows
-      .filter(eligible)
+      // A rep too new to judge is never ranked, top or bottom — see `KpiRepRow.justStarted`.
+      .filter((row) => !row.justStarted && eligible(row))
       .slice()
       .sort((left, right) => score(right) - score(left) || left.repName.localeCompare(right.repName))
       .slice(0, 3)
@@ -792,6 +805,13 @@ export function joinKpiRows(input: {
    * cutover every submitted visit counts, so a missing feed costs a rep nothing and excuses nothing.
    */
   basis?: CallRateBasis;
+  /**
+   * The call-rate window, so each rep is measured over HIS OWN employed days in it — hire date to
+   * last working date (rule 4, which the Phoenix rules already apply) — and never over the team's.
+   * A rep hired on the 24th read "0 of 34 AM asked for" over the team's 17 days (2026-10-26).
+   * Optional so the join stays testable without it; absent, every rep keeps the report's days.
+   */
+  employedWindow?: { dateFrom: string; dateTo: string; holidays?: CallRateHolidays };
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
   const amTarget = input.amTarget ?? AM_CALL_RATE_TARGET;
@@ -962,11 +982,13 @@ export function joinKpiRows(input: {
       row.managersAbove = [...(identity.managersAbove ?? [])];
       row.jobTitle = identity.jobTitle;
       row.hireDate = identity.hireDate ?? null;
+      row.lastWorkingDate = identity.lastWorkingDate ?? null;
       // The directory's display name is the nickname-aware one and is what the owner's
       // human-readable-names rule asks for; the CRM's agent name is the vendor's spelling. Prefer
       // the directory when it has something, but never blank out a name the CRM did supply.
       if (identity.displayName?.trim()) row.repName = identity.displayName.trim();
     }
+    if (input.employedWindow) clipToEmployedDays(row, input.employedWindow);
     row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
     row.pharmacyAttainmentPct = attainmentPct(row, row.pharmacyVerified, pharmacyTarget);
@@ -981,6 +1003,62 @@ export function joinKpiRows(input: {
   const scoped = rows.filter((row) => isAgentInScope(scope, row.agentHrId));
   scoped.sort((left, right) => left.repName.localeCompare(right.repName));
   return scoped;
+}
+
+/**
+ * Rule 4 on the older rules' rows: a rep hired or gone inside the window is measured over the days he
+ * was employed, and every rate is re-divided by them, so "AM asked for" is his days times 2, never the
+ * team's. Only ever SHORTENS — a rep employed throughout keeps the report's own count, so the two
+ * calendars can never disagree about anybody but a joiner or a leaver. The Phoenix restamp later
+ * overwrites all of this with its own employed days, which is the same rule.
+ */
+export function clipToEmployedDays(
+  row: KpiRepRow,
+  window: { dateFrom: string; dateTo: string; holidays?: CallRateHolidays },
+): void {
+  const hire = row.hireDate?.slice(0, 10) || null;
+  const last = row.lastWorkingDate?.slice(0, 10) || null;
+  if (!(hire && hire > window.dateFrom) && !(last && last < window.dateTo)) return;
+  const employed = employedWorkingDays({
+    dateFrom: window.dateFrom,
+    dateTo: window.dateTo,
+    hireDate: hire,
+    lastWorkingDate: last,
+    holidays: window.holidays,
+  });
+  if (employed >= row.workingDays) return;
+  row.workingDays = employed;
+  if (!row.hasCallRate) return;
+  const per = (count: number): number | null => (employed > 0 ? count / employed : null);
+  row.amReportedRate = per(row.amReported);
+  row.pmReportedRate = per(row.pmReported);
+  row.pharmacyReportedRate = per(row.pharmacyReported);
+  // Ruling A1 keeps the proved rates blank for a rep with no GPS feed; that does not change here.
+  if (!row.noGpsFeed) {
+    row.amRate = per(row.amVerified);
+    row.pmRate = per(row.pmVerified);
+    row.pharmacyRate = per(row.pharmacyVerified);
+  }
+}
+
+/**
+ * Stamps {@link KpiRepRow.justStarted} on each row and takes the coverage floor off a rep it marks —
+ * "Below floor · 95%" two working days in is a verdict, and the floor is one. Run once every rule has
+ * scored the row, so the days it reads are her own.
+ */
+export function stampKpiJustStarted(
+  rows: readonly KpiRepRow[],
+  window: { dateFrom: string; workingDaysInWindow: number },
+): void {
+  for (const row of rows) {
+    row.justStarted = kpiJustStartedOf({
+      hireDate: row.hireDate,
+      dateFrom: window.dateFrom,
+      workingDaysIn: row.workingDays,
+      workingDaysInWindow: window.workingDaysInWindow,
+    });
+    if (row.justStarted) row.meetsCoverageFloor = null;
+  }
 }
 
 /** The employee-directory fields the board stamps onto a rep, and nothing else. */
@@ -999,6 +1077,8 @@ export type KpiDirectoryEntry = {
   jobTitle: string | null;
   /** `employees.hire_date`, `YYYY-MM-DD`. Optional so a fixture can leave it out. */
   hireDate?: string | null;
+  /** `employees.last_working_date`, `YYYY-MM-DD`. Optional so a fixture can leave it out. */
+  lastWorkingDate?: string | null;
 };
 
 /**
@@ -1285,6 +1365,7 @@ export async function getKpisBoard(input: {
     managerHrId: employee.managerHrId?.trim() || null,
     jobTitle: employee.jobTitle?.trim() || null,
     hireDate: employee.hireDate?.trim() || null,
+    lastWorkingDate: employee.lastWorkingDate?.trim() || null,
   }));
 
   const allInScope = joinKpiRows({
@@ -1297,6 +1378,7 @@ export async function getKpisBoard(input: {
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
     basis: callRate.basis ?? "verified",
     directory,
+    employedWindow: { dateFrom: callRange.dateFrom, dateTo: callRange.dateTo, holidays: windowHolidays.dates },
   });
 
   // MEDICAL REPS ONLY — owner, 2026-09-03 — for the REP rows. This runs BEFORE the facets and the
@@ -1345,6 +1427,9 @@ export async function getKpisBoard(input: {
       applyPhoenixKpis(row, phoenix.kpisFor(row.agentHrId));
     }
   }
+  // A REP TOO NEW TO JUDGE (owner, 2026-10-26), read off her own days AFTER both rules have scored
+  // her and BEFORE the manager rows, facets, filters, podium and totals, so none of them judges her.
+  stampKpiJustStarted(scopedReps, { dateFrom: callRange.dateFrom, workingDaysInWindow });
 
   // THE MANAGER ROWS (owner, 2026-10-20: "add manager row and every dm kpis is calculated based on
   // his reps averag and nsm based on dsms av and so on"). Built HERE, after the medical-reps rule and
@@ -1552,6 +1637,14 @@ export function sumKpiTeamTotals(reps: readonly KpiRepRow[]) {
   };
   for (const row of reps) {
     accumulator.reps += 1;
+    // A REP TOO NEW TO JUDGE is a head and nothing else: her planned doctors and her two days would
+    // otherwise sit in the team's coverage and call-rate denominators and pull them down for a
+    // calendar she had no part of (owner, 2026-10-26). Her logged calls still count as calls.
+    if (row.justStarted) {
+      accumulator.campaignCalls += row.campaignCalls;
+      accumulator.totalCalls += row.totalCalls;
+      continue;
+    }
     if (!row.noGpsFeed) {
       accumulator.amVerified += row.amVerified;
       accumulator.pmVerified += row.pmVerified;

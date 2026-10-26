@@ -90,6 +90,9 @@ export type KpiFilterableRow = {
   overDoctors: number;
   frequencyPct: number;
   hasMeasurablePlan: boolean;
+  /** Set when the rep was hired inside the window and has worked too little of it to be judged —
+   * see {@link kpiJustStartedOf}. Optional so a row built without a hire date reads as judged. */
+  justStarted?: KpiJustStarted | null;
 };
 
 // ── Bands ─────────────────────────────────────────────────────────────────────────────────────
@@ -135,6 +138,7 @@ export function kpiBandOf(value: number | null): KpiBand {
 
 /** Coverage band for a row, honouring `hasMeasurablePlan`. */
 export function coverageBandOf(row: KpiFilterableRow): KpiBand {
+  if (row.justStarted) return "noplan";
   return kpiBandOf(row.hasMeasurablePlan ? row.coveragePct : null);
 }
 
@@ -150,6 +154,7 @@ export const COVERAGE_TARGET_FLOOR_PCT = 95;
 
 /** Frequency band for a row, honouring `hasMeasurablePlan`. */
 export function frequencyBandOf(row: KpiFilterableRow): KpiBand {
+  if (row.justStarted) return "noplan";
   return kpiBandOf(row.hasMeasurablePlan ? row.frequencyPct : null);
 }
 
@@ -165,12 +170,12 @@ export function frequencyBandOf(row: KpiFilterableRow): KpiBand {
  * the banned average wearing a colour.
  */
 export function amBandOf(row: KpiFilterableRow): KpiBand {
-  if (!row.hasCallRate || row.amAttainmentPct == null) return "noplan";
+  if (row.justStarted || !row.hasCallRate || row.amAttainmentPct == null) return "noplan";
   return kpiBandOf(row.amAttainmentPct);
 }
 
 export function pmBandOf(row: KpiFilterableRow): KpiBand {
-  if (!row.hasCallRate || row.pmAttainmentPct == null) return "noplan";
+  if (row.justStarted || !row.hasCallRate || row.pmAttainmentPct == null) return "noplan";
   return kpiBandOf(row.pmAttainmentPct);
 }
 
@@ -181,6 +186,7 @@ export function pmBandOf(row: KpiFilterableRow): KpiBand {
  * row — no flag asks a question the board cannot answer from what it already fetched.
  */
 export const KPI_FLAGS = [
+  "just-started",
   "never-reached",
   "no-calls",
   "no-gps-feed",
@@ -198,6 +204,7 @@ export const KPI_FLAGS = [
 export type KpiFlag = (typeof KPI_FLAGS)[number];
 
 export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
+  "just-started": "Just started",
   "never-reached": "Never reached a planned doctor",
   "no-calls": "Logged no calls at all",
   "no-gps-feed": "No GPS feed",
@@ -214,6 +221,8 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
 
 /** One line saying what the flag is FOR, shown under the label in the filter panel. */
 export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
+  "just-started":
+    "Hired inside this period and has worked under a third of its working days, so the board shows the figures and judges none of them.",
   "never-reached": "Has planned doctors and visited none of them. The most urgent row on the board.",
   "no-calls": "No CRM row in this window — could be leave, a sync gap, or an idle period.",
   "no-gps-feed":
@@ -258,6 +267,9 @@ export function kpiFlagHint(flag: KpiFlag, rules?: "legacy" | "phoenix"): string
 
 /** Every flag that is true of this row. */
 export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
+  // A rep too new to judge carries ONE flag and none of the verdicts: "never reached", "no calls",
+  // "below the floor" and the rest are true of nearly anybody two working days in, and say nothing.
+  if (row.justStarted) return ["just-started"];
   const flags: KpiFlag[] = [];
   if (row.hasMeasurablePlan && row.visitedDoctors === 0) flags.push("never-reached");
   if (!row.hasCallRate || row.totalCalls === 0) flags.push("no-calls");
@@ -1169,4 +1181,36 @@ export const KPI_CUSTOM_PERIOD_VALUE = "custom";
 export function isTooEarlyToScore(workingDays: number, workingDaysInWindow: number): boolean {
   if (workingDaysInWindow <= 0 || workingDays <= 0) return false;
   return workingDays / workingDaysInWindow < KPI_VERDICT_THRESHOLD;
+}
+
+/** A rep too new to judge, and how far in she is. */
+export type KpiJustStarted = {
+  /** Her own working days in the scored window — hire date onward, holidays removed. */
+  workingDaysIn: number;
+};
+
+/**
+ * A REP HIRED INSIDE THE WINDOW IS NOT JUDGED UNTIL SHE HAS WORKED A THIRD OF IT (owner, 2026-10-26:
+ * a rep two working days in read "Never reached a planned doctor", "Logged no calls at all", "Below
+ * floor" and a 0% overall). The same bar the board already holds the whole team to —
+ * {@link KPI_VERDICT_THRESHOLD} of the window's working days, through {@link isTooEarlyToScore} —
+ * applied to HER days, never a second number.
+ *
+ * Only for a hire date AFTER the window's first day: a rep employed from the start shares the team's
+ * calendar and is the team gate's business. Zero days in is just started too — hired today, or on a
+ * Thursday — where `isTooEarlyToScore` deliberately answers false for the team's "no data at all".
+ */
+export function kpiJustStartedOf(input: {
+  hireDate: string | null | undefined;
+  dateFrom: string;
+  /** Her own working days through the call-rate window's end. */
+  workingDaysIn: number;
+  /** The working days the whole window holds. */
+  workingDaysInWindow: number;
+}): KpiJustStarted | null {
+  const hire = input.hireDate?.slice(0, 10) ?? null;
+  if (!hire || hire <= input.dateFrom || input.workingDaysInWindow <= 0) return null;
+  const days = Math.max(0, input.workingDaysIn);
+  if (days > 0 && !isTooEarlyToScore(days, input.workingDaysInWindow)) return null;
+  return { workingDaysIn: days };
 }
