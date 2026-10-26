@@ -358,9 +358,11 @@ export function runSalesImportUploadPathTests() {
   assertCheckedBeforeStorage({
     label: "resolveUploadedSpreadsheet (sales-upload analyze and commit)",
     text: functionBody(requestModuleText, "resolveUploadedSpreadsheet").body,
-    declarations: ['const path = String(body?.storagePath ?? "").trim();'],
+    // One reference or several (storagePaths[], several sheets of one distributor): each is checked
+    // before it joins what the route deletes, and before any is downloaded.
+    declarations: ["for (const path of requested) {"],
     checks: ["!isOwnSalesImportUploadPath({ caller, storagePath: path })"],
-    steps: ["await downloadSalesUploadFile(path)", "ok: true, storagePath: path"],
+    steps: ["storagePaths.push(path)", "await downloadSalesUploadFile(path)", "storagePath: storagePaths[0], storagePaths"],
   });
   const weekly = functionBody(requestModuleText, "resolveWeeklyUploadRequest").body;
   const psBranchAt = weekly.indexOf('if (distributorCode.toUpperCase() === "PS") {');

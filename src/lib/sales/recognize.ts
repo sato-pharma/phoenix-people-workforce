@@ -57,6 +57,7 @@ export type PreviewIgnoredRow = {
   productName: string; // best human-readable name
   qty: number; // the units the sheet carried on the row
   reason: "ignore_mapped" | "bonus";
+  fileName?: string; // which file the row is in, when several files were uploaded together
 };
 
 export type NormalizePreview = {

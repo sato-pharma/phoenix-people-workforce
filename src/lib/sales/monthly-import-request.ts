@@ -141,35 +141,45 @@ export async function removeSalesUploadObjects(storagePaths: string[]): Promise<
 }
 
 export type ResolvedUploadedSpreadsheet =
-  | { ok: true; file: File; field: (name: string) => string; storagePath: string | null }
-  | { ok: false; code?: string; error: string; status: number };
+  // files: every workbook sent, in the order chosen (Sales Upload takes several sheets of one
+  // distributor at once); file is the first. storagePaths: every bucket reference to delete afterwards.
+  | { ok: true; file: File; files: File[]; field: (name: string) => string; storagePath: string | null; storagePaths: string[] }
+  | { ok: false; code?: string; error: string; status: number; storagePaths: string[] };
 
-// Generic single-file upload resolver for the /sales/upload endpoints (analyze / commit / weekly
-// validate). Like resolveSalesUploadRequest it accepts BOTH transport paths so large workbooks bypass
-// Vercel's ~4.5MB serverless body cap, but it carries no domain-specific fields — the caller reads what
-// it needs via field() (works identically for the JSON body and the multipart form) and applies its own
-// spreadsheet validation. The caller owns the returned storagePath's lifecycle (delete via
-// removeSalesUploadObject once processing is done), so the path is matched to the caller first.
+// Generic upload resolver for the /sales/upload endpoints (analyze / commit / weekly validate). Like
+// resolveSalesUploadRequest it accepts BOTH transport paths so large workbooks bypass Vercel's ~4.5MB
+// serverless body cap, but it carries no domain-specific fields — the caller reads what it needs via
+// field() (works identically for the JSON body and the multipart form) and applies its own spreadsheet
+// validation. One workbook or several: a multipart form may repeat "file", a JSON body may send
+// storagePaths[] instead of storagePath. The caller owns every returned storage path's lifecycle (delete
+// via removeSalesUploadObjects once processing is done, failure included), so a path joins the list
+// only after it has been matched to the caller.
 export async function resolveUploadedSpreadsheet(request: Request, caller: SalesImportUploadCaller): Promise<ResolvedUploadedSpreadsheet> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const path = String(body?.storagePath ?? "").trim();
-    if (!path) return { error: "Uploaded file reference is missing.", ok: false, status: 400 };
-    if (!isOwnSalesImportUploadPath({ caller, storagePath: path })) return { ...SALES_UPLOAD_PATH_REFUSAL, ok: false, status: 400 };
-    const file = await downloadSalesUploadFile(path);
-    if (!file) {
-      return { error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400 };
+    const listed = Array.isArray(body?.storagePaths) ? body.storagePaths : [body?.storagePath];
+    const requested = listed.map((path) => String(path ?? "").trim()).filter(Boolean);
+    const storagePaths: string[] = [];
+    if (requested.length === 0) return { error: "Uploaded file reference is missing.", ok: false, status: 400, storagePaths };
+    for (const path of requested) {
+      if (!isOwnSalesImportUploadPath({ caller, storagePath: path })) return { ...SALES_UPLOAD_PATH_REFUSAL, ok: false, status: 400, storagePaths };
+      storagePaths.push(path);
     }
-    return { field: (name) => String(body?.[name] ?? "").trim(), file, ok: true, storagePath: path };
+    const files: File[] = [];
+    for (const path of storagePaths) {
+      const file = await downloadSalesUploadFile(path);
+      if (!file) return { error: "Uploaded workbook was not found in storage. Please re-upload.", ok: false, status: 400, storagePaths };
+      files.push(file);
+    }
+    return { field: (name) => String(body?.[name] ?? "").trim(), file: files[0], files, ok: true, storagePath: storagePaths[0], storagePaths };
   }
 
   const formData = await request.formData();
-  const formFile = formData.get("file");
-  const file = formFile instanceof File ? formFile : null;
-  if (!file) return { error: "Sales workbook file is required.", ok: false, status: 400 };
-  return { field: (name) => String(formData.get(name) ?? "").trim(), file, ok: true, storagePath: null };
+  const files = formData.getAll("file").filter((entry): entry is File => entry instanceof File);
+  if (files.length === 0) return { error: "Sales workbook file is required.", ok: false, status: 400, storagePaths: [] };
+  return { field: (name) => String(formData.get(name) ?? "").trim(), file: files[0], files, ok: true, storagePath: null, storagePaths: [] };
 }
 
 export type ResolvedWeeklyUpload =
