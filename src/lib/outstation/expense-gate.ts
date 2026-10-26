@@ -112,9 +112,10 @@ export function resolveOutstationGateState(input: {
     };
   }
 
-  // Owner waiver (2026-08-19): the three roles in evidence-waiver.ts owe no photo at all, so
-  // neither photo may block them — and the check has to sit ABOVE both photo tests, because the
-  // arrival test alone would hold the request before the departure test ever ran.
+  // Owner waiver (2026-08-19, widened to the Training Manager 2026-10-26): the roles in
+  // evidence-waiver.ts owe no photo at all, so neither photo may block them — and the check has
+  // to sit ABOVE both photo tests, because the arrival test alone would hold the request before
+  // the departure test ever ran.
   //
   // The WORKLOAD gate is untouched. Only the photographs were waived; a trip still has to show
   // the day's work before it is paid, and quietly folding that into the same exemption would

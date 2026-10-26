@@ -83,14 +83,24 @@ export function runOutstationNsmNoHoldTests() {
     );
   }
 
-  // This rule is NOT the photo waiver. Product Manager and Group Product Manager are waived from
-  // the photographs (evidence-waiver.ts) and are still held by the workload gate; if the two ever
-  // merge, a widening of one silently widens the other.
+  // This rule is NOT the photo waiver. Product Manager, Group Product Manager and Training
+  // Manager are waived from the photographs (evidence-waiver.ts) and are still held by the
+  // workload gate; if the two ever merge, a widening of one silently widens the other.
   assert.equal(isOutstationEvidenceWaivedRole("Product Manager"), true, "the photo waiver is wider");
   assert.equal(
     isOutstationNoHoldRole("Product Manager"),
     false,
-    "the photo waiver covers three roles; the no-hold rule covers one, and the two must not be conflated",
+    "the photo waiver covers four roles; the no-hold rule covers one, and the two must not be conflated",
+  );
+  assert.equal(
+    isOutstationEvidenceWaivedRole("Training Manager"),
+    true,
+    "the Training Manager joined the photo waiver on 2026-10-26",
+  );
+  assert.equal(
+    isOutstationNoHoldRole("Training Manager"),
+    false,
+    "…and that did not put her in this one — she is still held by the workload gate",
   );
 
   // ── An NSM is never blocked, in any state the row can physically be in ──────────

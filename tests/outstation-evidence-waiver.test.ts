@@ -19,6 +19,11 @@ import type { OutstationCarEvidenceMetadata } from "../src/lib/outstation/types.
  * submit outstation requests with NO evidence photo — on a car trip there is none at all, and on
  * a train or bus trip the ticket may be attached as a PDF or a photo but is optional.
  *
+ * The Training Manager joined them on 2026-10-26 ("MAKE SURE THE OUTSTATION EXPENSES REQUESTS
+ * FROM THE TRAINING MANAGER DOESN'T ASK FOR EVIDENCE PHOTO LIKE THE NSM AND GPM"), on the same
+ * terms: both photos and the ticket. She had live bus claims, which is why the ticket half of it
+ * was put to the owner rather than assumed.
+ *
  * The rule is easy to state and has three ways of being wrong, so each gets its own block below:
  *
  *   - waived too widely — every other role losing the photo requirement with it;
@@ -28,12 +33,16 @@ import type { OutstationCarEvidenceMetadata } from "../src/lib/outstation/types.
  *     disagreeing, which is the exact dead-end this wizard already had to be repaired for once.
  */
 
-const WAIVED = ["Product Manager", "Group Product Manager", "National Sales Manager"] as const;
+const WAIVED = [
+  "Product Manager",
+  "Group Product Manager",
+  "National Sales Manager",
+  "Training Manager",
+] as const;
 const NOT_WAIVED = [
   "Medical Rep",
   "District Manager",
   "Regional Manager",
-  "Training Manager",
   "Marketing Manager",
   "Employee",
 ] as const;
@@ -50,11 +59,11 @@ const validMetadata: OutstationCarEvidenceMetadata = {
 };
 
 export function runOutstationEvidenceWaiverTests() {
-  // ── Exactly three roles, and no more ────────────────────────────────────────────
+  // ── Exactly four roles, and no more ─────────────────────────────────────────────
   assert.equal(
     OUTSTATION_EVIDENCE_WAIVED_ROLES.size,
-    3,
-    "the waiver covers the three roles the owner named and nothing else — a fourth arriving silently is how an evidence rule stops meaning anything",
+    4,
+    "the waiver covers the four roles the owner named and nothing else — a fifth arriving silently is how an evidence rule stops meaning anything",
   );
   for (const role of WAIVED) {
     assert.equal(isOutstationEvidenceWaivedRole(role), true, `${role} is waived`);
@@ -64,7 +73,7 @@ export function runOutstationEvidenceWaiverTests() {
     assert.equal(
       isOutstationEvidenceWaivedRole(role),
       false,
-      `${role} still owes both photos — the waiver is an allowlist of three, never a seniority test`,
+      `${role} still owes both photos — the waiver is a named allowlist, never a seniority test`,
     );
     assert.equal(isOutstationTicketWaivedRole(role), false, `${role} still owes the ticket`);
   }
@@ -169,7 +178,7 @@ export function runOutstationEvidenceWaiverTests() {
       transportationType: "train",
     }),
     "Train or bus expenses require an attached ticket before they can be accepted.",
-    "every other role still owes the ticket — this is the rule the waiver carves three names out of, not a rule it deletes",
+    "every other role still owes the ticket — this is the rule the waiver carves four names out of, not a rule it deletes",
   );
 
   // ── The payroll gate waives BOTH photos, not just the submitted one ─────────────
@@ -206,23 +215,29 @@ export function runOutstationEvidenceWaiverTests() {
   // photo waiver. Both readings are accepted above; what must never appear for a waived role is
   // a blocker.
 
-  // The workload gate is untouched FOR THE OTHER TWO WAIVED ROLES. Only the photographs were
+  // The workload gate is untouched FOR EVERY WAIVED ROLE BUT THE NSM. Only the photographs were
   // waived for them, and folding the day's work into the same exemption would release them from
-  // a rule the owner did not mention. Asserted on Group Product Manager deliberately: National
-  // Sales Manager is no longer a valid subject for this check.
-  const waivedNoWorkload = resolveOutstationGateState({
-    employeeRole: "Group Product Manager",
-    evidenceGateStatus: "pending_arrival_photo",
-    hasArrivalPhoto: false,
-    hasDeparturePhoto: false,
-    workloadGateStatus: "pending_workload",
-  });
-  assert.equal(
-    waivedNoWorkload.blocker,
-    "workload",
-    "a waived role still waits for the AM/PM workload — the photos were waived, the trip's work was not",
-  );
-  assert.equal(waivedNoWorkload.isPayrollEligible, false, "and it does not pay until that lands");
+  // a rule the owner did not mention. National Sales Manager is no longer a valid subject for
+  // this check — he carries the stronger no-hold rule — so the other three are asserted here.
+  for (const employeeRole of ["Group Product Manager", "Product Manager", "Training Manager"]) {
+    const waivedNoWorkload = resolveOutstationGateState({
+      employeeRole,
+      evidenceGateStatus: "pending_arrival_photo",
+      hasArrivalPhoto: false,
+      hasDeparturePhoto: false,
+      workloadGateStatus: "pending_workload",
+    });
+    assert.equal(
+      waivedNoWorkload.blocker,
+      "workload",
+      `a waived ${employeeRole} still waits for the AM/PM workload — the photos were waived, the trip's work was not`,
+    );
+    assert.equal(
+      waivedNoWorkload.isPayrollEligible,
+      false,
+      `and a ${employeeRole}'s trip does not pay until that lands`,
+    );
+  }
 
   // Everyone else's gate is exactly what it was.
   for (const employeeRole of NOT_WAIVED) {
