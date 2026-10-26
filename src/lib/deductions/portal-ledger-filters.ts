@@ -40,6 +40,29 @@ export const PORTAL_LEDGER_OUTCOME_EXPLANATION: Record<DeductionsPortalLedgerRow
   disputed: "This one is being contested. Nothing is settled yet.",
 };
 
+/**
+ * What an employee's own row says where the reply box would be, when it offers none. The box is
+ * only on a released line (portal.ts, `canComment`), and the old single sentence promised every
+ * other row a reply "once it is released" — a cleared row never is: nothing was deducted, so
+ * there is nothing to dispute (Pedia NSM page audit, 2026-10-26).
+ */
+export const PORTAL_LEDGER_NO_REPLY_NOTE: Record<DeductionsPortalLedgerRow["outcome"], string> = {
+  on_payslip: "You can reply to HR on this one once it is released with the month's deductions.",
+  cleared: "Nothing was deducted, so there is nothing to dispute.",
+  under_review: "Nothing is deducted while HR decides. If it is approved, you can reply here once it is released.",
+  needs_follow_up: "Nothing is deducted while HR decides. If it is approved, you can reply here once it is released.",
+  disputed: "Nothing is settled yet. HR's answer will show here.",
+};
+
+/**
+ * A note HR left as a placeholder ("-", "--", ".") says nothing, and printed as "HR note: -" it
+ * reads like a missing value. Treated as no note at all.
+ */
+export function meaningfulHrText(value: string | null | undefined): string | null {
+  const text = String(value ?? "").trim();
+  return /^[\s\-–—._/]*$/.test(text) ? null : text;
+}
+
 /** The payroll months present in the rows, newest first. */
 export function portalLedgerMonthKeys(rows: readonly DeductionsPortalLedgerRow[]): string[] {
   return Array.from(new Set(rows.map((row) => row.monthKey))).sort((left, right) => right.localeCompare(left));

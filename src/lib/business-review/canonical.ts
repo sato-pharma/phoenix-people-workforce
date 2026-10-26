@@ -52,6 +52,7 @@
 // layer, never discarded to make a total look tidy.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { countOf } from "@/lib/i18n/format";
 import { isDegraded, markDegraded } from "@/lib/cache/serve-uncached";
 import { formatPharmacyFigure } from "@/lib/crm/visit-count-buckets";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
@@ -1410,7 +1411,7 @@ export function buildCoverage(input: {
       unattributedRows: input.unplaced.marketingRequests,
       unattributedNote:
         input.unplaced.marketingRequests > 0
-          ? `${input.unplaced.marketingRequests} request(s) could not be placed on a district — their requester holds no sales attribution in this window. They are in the company total and in no district's.`
+          ? `${countOf(input.unplaced.marketingRequests, "request")} could not be placed on a district — their requester holds no sales attribution in this window. They are in the company total and in no district's.`
           : null,
     }),
     buildSourceCoverage({

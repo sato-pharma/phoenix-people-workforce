@@ -30,6 +30,7 @@
 // roi-labels.ts for the same reason.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { countOf } from "@/lib/i18n/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCcw, Search, SlidersHorizontal, Target } from "lucide-react";
 
@@ -490,7 +491,7 @@ function MoneyWaterfall({
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[b].cost)}</span>
             <span className="text-phx-xs text-slate-500">
-              {totals[b].count} request(s) · {BUCKET_META[b].help}
+              {countOf(totals[b].count, "request")} · {BUCKET_META[b].help}
             </span>
           </button>
         ))}
@@ -975,7 +976,7 @@ export function MarketingRoiTracker({
   // Records on the workbook itself which view produced it, so an exported file can still be read
   // months later without someone having to guess whether it was the whole set or a slice.
   const exportSubtitle = useMemo(() => {
-    const parts: string[] = [`${rows.length} of ${allRows.length} request(s)`, "one row per target pharmacy"];
+    const parts: string[] = [`${rows.length} of ${countOf(allRows.length, "request")}`, "one row per target pharmacy"];
     for (const facet of FACETS) {
       const chosen = facets[facet.key];
       if (chosen && chosen.length > 0) parts.push(`${facet.label}: ${chosen.join(", ")}`);

@@ -1304,9 +1304,17 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   const limitedColumns = options.collapseDoubleVisits ? (withDuplicateDetectionColumns(options.columns ?? "*") ?? "*") : (options.columns ?? "*");
   let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(limitedColumns);
   query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
-  query = query
-    .order(options.orderBy ?? "visit_date", { ascending: options.ascending ?? false })
-    .limit(options.limit);
+  query = query.order(options.orderBy ?? "visit_date", { ascending: options.ascending ?? false });
+  // Ordered by day alone, the visits inside one day came back in no stated order — and the limit
+  // could cut a different set of them on every read. Same in-day order as the Visits report.
+  if ((options.orderBy ?? "visit_date") === "visit_date") {
+    const ascending = options.ascending ?? false;
+    query = query
+      .order("visit_date_time", { ascending })
+      .order("crm_save_date", { ascending, nullsFirst: false })
+      .order("crm_visit_id", { ascending });
+  }
+  query = query.limit(options.limit);
   const { data, error } = await query;
   if (error) {
     if (isCrmSchemaMissingError(error)) return [];
@@ -1868,6 +1876,11 @@ export async function getVisitsReportData(
   const baseQuery = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
+    // Inside a day, by WHEN the visit happened: crm_visit_id is not chronological (it disagreed with
+    // the visit time on 5,214 of October's 11,439 rows). About half the rows carry a date-only
+    // visit_date_time (00:00), so the save time breaks that tie, and the id only after both.
+    .order("visit_date_time", { ascending: false })
+    .order("crm_save_date", { ascending: false, nullsFirst: false })
     .order("crm_visit_id", { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
@@ -1911,6 +1924,11 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
   const baseQuery = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
+    // Inside a day, by WHEN the visit happened: crm_visit_id is not chronological (it disagreed with
+    // the visit time on 5,214 of October's 11,439 rows). About half the rows carry a date-only
+    // visit_date_time (00:00), so the save time breaks that tie, and the id only after both.
+    .order("visit_date_time", { ascending: false })
+    .order("crm_save_date", { ascending: false, nullsFirst: false })
     .order("crm_visit_id", { ascending: false })
     .range(0, MAX_EXPORT_ROWS - 1);
 

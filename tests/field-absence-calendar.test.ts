@@ -211,7 +211,7 @@ function runDepartedAgentsOwnVisits() {
     ["REP-X 2026-10-11", "REP-X 2026-10-12"],
     "his own visit and his CRM leave day count, once a day; an unclassified code, another agent's row and a row he was only the double on do not come from here",
   );
-  assert.equal(days.find((day) => day.day === "2026-10-11")?.label, "Old CRM: Regular Visit");
+  assert.equal(days.find((day) => day.day === "2026-10-11")?.label, "Regular visit in the old CRM");
   assert.equal(days.some((day) => day.label.includes("own words")), false, "a rep's free-text comment never reaches the page");
   assert.deepEqual(departedAgentCrmDays([row("REP-X", "2026-10-11", 0)], []), [], "nobody departed, nothing credited");
 
@@ -325,7 +325,7 @@ function runSourcesAndGates() {
   }
 
   // A rep's free-text comment never reaches the page; the visit type and Phoenix CRM's count do.
-  assert.equal(crmDayLabel("Regular Visit: the rep's own words here", "CRM visit"), "Old CRM: Regular Visit");
+  assert.equal(crmDayLabel("Regular Visit: the rep's own words here", "CRM visit"), "Regular visit in the old CRM");
   assert.equal(crmDayLabel("Phoenix CRM: 3 visits", "CRM visit"), "Phoenix CRM: 3 visits");
   assert.equal(crmDayLabel("a comment with no visit type", "CRM visit"), "CRM visit");
   assert.equal(crmDayLabel(undefined, "Leave recorded in the CRM"), "Leave recorded in the CRM");

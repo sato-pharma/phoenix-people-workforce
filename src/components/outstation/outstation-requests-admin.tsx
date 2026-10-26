@@ -43,7 +43,7 @@ import { Card } from "@/components/ui/card";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
-import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
+import { countOf, formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
 import { resolveCaptureTimeliness } from "@/lib/outstation/capture-timeliness";
 import { OUTSTATION_CLAIM_CHANGED_CODE } from "@/lib/outstation/claim-revision";
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
@@ -791,7 +791,7 @@ export function OutstationRequestsAdmin({
     [filtered],
   );
 
-  const exportSubtitle = `Outstation expenses${month ? ` · ${formatMonthLabel(month)}` : " · all months"} · ${filtered.length} request(s)`;
+  const exportSubtitle = `Outstation expenses${month ? ` · ${formatMonthLabel(month)}` : " · all months"} · ${countOf(filtered.length, "request")}`;
 
   const selectedRequest =
     filtered.find((request) => request.id === selectedId) ??

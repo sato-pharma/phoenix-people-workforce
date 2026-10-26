@@ -92,6 +92,9 @@ type ExpenseRow = {
   travelCost: number;
   meetingAmount: number;
   allowance: number;
+  // The claim's "other" amount (other_amount) — a taxi, a toll, a transport the form has no field
+  // for. It is part of Total, so a card that leaves it out shows parts that do not add up.
+  other: number;
   total: number;
   km: number;
   transportationType: string;
@@ -500,15 +503,15 @@ function SmartPeriodFilter({
       <div>
         <p className={labelClass}>Period</p>
         <div
-          className={`mt-1.5 inline-flex w-full items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:w-auto ${adminSoftDepthClassName}`}
+          className={`mt-1.5 flex w-full flex-wrap items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:inline-flex sm:w-auto ${adminSoftDepthClassName}`}
           role="group"
         >
           {segmentBtn("7d", "7 days")}
           {segmentBtn("30d", "30 days")}
           {segmentBtn("90d", "90 days")}
           {segmentBtn("ytd", "YTD")}
-          {segmentBtn("thismonth", "This Mo")}
-          {segmentBtn("lastmonth", "Last Mo")}
+          {segmentBtn("thismonth", "This Month")}
+          {segmentBtn("lastmonth", "Last Month")}
           {segmentBtn("custom", "Custom")}
         </div>
       </div>
@@ -798,6 +801,7 @@ export function PersonalExpenseWorkloadDashboard({
       travelCost: Number(expense.travelCost ?? 0),
       meetingAmount: Number(expense.meetingAmount ?? 0),
       allowance: Number(expense.allowance ?? 0),
+      other: Number(expense.other ?? 0),
       total: Number(expense.total ?? 0),
       km: Number(expense.km ?? 0),
       transportationType: canonicalizeTransport(expense.transportationType) ?? "",
@@ -1111,16 +1115,26 @@ export function PersonalExpenseWorkloadDashboard({
     const travel = filteredTrips.reduce((sum, item) => sum + item.travelCost, 0);
     const meeting = filteredTrips.reduce((sum, item) => sum + item.meetingAmount, 0);
     const allowance = filteredTrips.reduce((sum, item) => sum + item.allowance, 0);
-    const total = travel + meeting + allowance;
+    const other = filteredTrips.reduce((sum, item) => sum + item.other, 0);
+    const itemised = travel + meeting + allowance + other;
+    // Whatever of the visible Total no category carries (an older imported row whose parts were
+    // never split out) gets its own named slice, so this card foots to "Visible Expenses".
+    const notItemised = Math.round((totalExpenses - itemised) * 100) / 100;
+    const data = [
+      { name: "Travel Cost", value: travel, color: "#f97316" },
+      { name: "Meeting Amount", value: meeting, color: "#f59e0b" },
+      { name: "Allowance", value: allowance, color: "#94a3b8" },
+      { name: "Other", value: other, color: "#0ea5e9" },
+    ];
+    if (notItemised >= 1) data.push({ name: "Not split by category", value: notItemised, color: "#cbd5e1" });
     return {
-      total,
-      data: [
-        { name: "Travel Cost", value: travel, color: "#f97316" },
-        { name: "Meeting Amount", value: meeting, color: "#f59e0b" },
-        { name: "Allowance", value: allowance, color: "#94a3b8" },
-      ],
+      total: itemised + (notItemised >= 1 ? notItemised : 0),
+      // Parts that come to MORE than the visible Total (a claim whose Total was entered lower than
+      // its parts) are said in words, never hidden.
+      overItemised: notItemised <= -1 ? -notItemised : 0,
+      data,
     };
-  }, [filteredTrips]);
+  }, [filteredTrips, totalExpenses]);
 
   const statusDistribution = useMemo(() => {
     const grouped = new Map<string, number>();
@@ -1517,13 +1531,15 @@ export function PersonalExpenseWorkloadDashboard({
             </div>
             <div className="px-4 py-3">
               <p className={labelClass}>Cost outlier</p>
-              <p className="mt-1 whitespace-nowrap text-sm font-bold text-slate-800">
+              <p className="mt-1 break-words text-sm font-bold text-slate-800">
                 {insights.outlier
-                  ? `${insights.outlier.tripId || "Trip"} → ${insights.outlier.toCity}`
+                  ? `${insights.outlier.ownerName || "Employee"} → ${insights.outlier.toCity || "Unknown"}`
                   : "—"}
               </p>
               <p className="mt-0.5 text-phx-xs text-rose-600">
-                {insights.outlier ? formatMoney(insights.outlier.total) : "No outliers detected"}
+                {insights.outlier
+                  ? `${formatMoney(insights.outlier.total)} · ${formatDate(insights.outlier.date)}`
+                  : "No outliers detected"}
               </p>
             </div>
             <div className="px-4 py-3">
@@ -1687,7 +1703,7 @@ export function PersonalExpenseWorkloadDashboard({
         </ChartCard>
 
         <ChartCard
-          description="Travel cost, meeting amount, and allowance"
+          description="Travel cost, meeting amount, allowance and other — adds up to Visible Expenses"
           title="Expense Breakdown by Category"
         >
           <div className="h-64">
@@ -1735,6 +1751,12 @@ export function PersonalExpenseWorkloadDashboard({
               </span>
             ))}
           </div>
+          {categoryBreakdown.overItemised > 0 && (
+            <p className="mt-2 text-phx-xs text-slate-500">
+              The category amounts come to {formatMoney(categoryBreakdown.overItemised)} more than Visible Expenses
+              ({formatMoney(totalExpenses)}) — some claims carry a Total lower than their parts.
+            </p>
+          )}
         </ChartCard>
       </section>
 
@@ -1845,7 +1867,7 @@ export function PersonalExpenseWorkloadDashboard({
       {/* ---- Charts Row 3: Destinations + Workload ---- */}
       <section className="grid gap-4 print:break-inside-avoid xl:grid-cols-2">
         <ChartCard
-          description="Top 8 destinations by spend (degrading insight color)"
+          description="Top 8 destinations by spend"
           title="Trips by Destination City"
         >
           <div className="h-64">
@@ -2201,7 +2223,6 @@ export function PersonalExpenseWorkloadDashboard({
                           </td>
                           <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
                             <span className="block break-words">{trip.ownerName || "Employee"}</span>
-                            <span className="block break-words font-mono text-phx-2xs font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
                           </td>
                           <td className={`align-top break-words text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
@@ -2270,6 +2291,10 @@ export function PersonalExpenseWorkloadDashboard({
                                         <span className="text-slate-500">Allowance</span>
                                         <span className="font-semibold text-slate-800">{formatMoney(trip.allowance)}</span>
                                       </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">Other</span>
+                                        <span className="font-semibold text-slate-800">{formatMoney(trip.other)}</span>
+                                      </div>
                                     </div>
                                     {trip.total > 0 && (
                                       <div className="mt-2 flex h-1.5 overflow-hidden">
@@ -2281,6 +2306,9 @@ export function PersonalExpenseWorkloadDashboard({
                                         )}
                                         {trip.allowance > 0 && (
                                           <div className="bg-slate-400" style={{ width: `${(trip.allowance / trip.total) * 100}%` }} />
+                                        )}
+                                        {trip.other > 0 && (
+                                          <div className="bg-sky-500" style={{ width: `${(trip.other / trip.total) * 100}%` }} />
                                         )}
                                       </div>
                                     )}
@@ -2404,7 +2432,7 @@ export function PersonalExpenseWorkloadDashboard({
                             {trip.ownerName || "Employee"}
                           </p>
                           <p className="mt-0.5 text-phx-xs text-slate-500">
-                            {trip.hrId ? `${trip.hrId} - ` : ""}{formatDate(trip.date)}
+                            {formatDate(trip.date)}
                             {trip.toDate ? ` → ${formatDate(trip.toDate)}` : ""}
                           </p>
                         </div>
@@ -2452,6 +2480,12 @@ export function PersonalExpenseWorkloadDashboard({
                             {formatMoney(trip.allowance)}
                           </p>
                         </div>
+                        {trip.other > 0 && (
+                          <div>
+                            <p className="text-slate-500">Other</p>
+                            <p className="font-semibold text-slate-800">{formatMoney(trip.other)}</p>
+                          </div>
+                        )}
                         <div>
                           <p className="text-slate-500">Extra tickets</p>
                           <p className="font-semibold text-slate-800">

@@ -6,6 +6,11 @@ function normalizeLocale(locale?: AppLocale | null): AppLocale {
   return locale ?? DEFAULT_LOCALE;
 }
 
+/** "1 request", "3 requests" — a count with its noun agreed, never "request(s)". */
+export function countOf(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function formatCurrencyValue(
   value: number,
   locale?: AppLocale | null,

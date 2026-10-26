@@ -43,7 +43,7 @@ export function runCrmPortalScopeTests() {
     /if \(lineScopedPortalCrmRoleSet\.has\(access\.role\)\) \{\s*const lineScope = await getDoctorCoverageScope\(access\);\s*if \(lineScope\.kind !== "agents"\) return crmScopeNothing\(\);/,
     "a product seat must resolve through getDoctorCoverageScope and fail closed on anything but an agent list",
   );
-  assert.equal(toPortalCrmScopeView({ kind: "hr-ids", hrIds: ["A", "B"], keys: new Set(["a", "b"]), lineNames: [] }, "Product Manager").scopeSummary, "Your line · 2 team member(s)", "a product seat's chip names his line");
+  assert.equal(toPortalCrmScopeView({ kind: "hr-ids", hrIds: ["A", "B"], keys: new Set(["a", "b"]), lineNames: [] }, "Product Manager").scopeSummary, "Your line · 2 team members", "a product seat's chip names his line");
   // The Head-Office "Manager" rung is the specific regression risk (isDistrictManager matches it).
   assert.ok(!isPortalCrmRole("Manager"), "the Head-Office Manager rung must be excluded (no field reps → empty grid)");
 

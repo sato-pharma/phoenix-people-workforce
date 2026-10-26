@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
+import { displayPlaceName } from "@/lib/org/place-name";
 
 /**
  * The region -> area -> brick cascade, and the people attached to an area.
@@ -62,9 +63,10 @@ type AreaRow = {
 function toArea(row: AreaRow): MarketAwarenessArea {
   return {
     regionCode: String(row.region_code ?? "").trim(),
-    regionName: String(row.region_name ?? row.region_code ?? "").trim(),
+    regionName: displayPlaceName(String(row.region_name ?? row.region_code ?? "")),
     areaCode: String(row.area_code ?? "").trim(),
-    areaName: String(row.area_name ?? row.area_code ?? "").trim(),
+    // Shown names only ("Delta (1)" → "Delta 1", "Sohag1" → "Sohag 1"); every match uses the codes.
+    areaName: row.area_name ? displayPlaceName(String(row.area_name)) : String(row.area_code ?? "").trim(),
     areaState: String(row.area_state ?? "").trim(),
     selectable: row.selectable === true,
     unselectableReason: row.unselectable_reason,

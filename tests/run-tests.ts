@@ -2803,6 +2803,7 @@ import { runBusinessReviewPortalTalliesTests } from "./business-review-portal-ta
 import { runPlansHistoryReplacedDraftsAndWeekLabelsTests } from "./plans-history-replaced-drafts-and-week-labels.test.ts";
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
+import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -11302,6 +11303,10 @@ await runTest(
 await runTest(
   "My Candidates tidy-up: a hired candidate is not shown an unanswered Applying-for chip, a position reads as its role and area and never its request code, and the team list hides a manager who has left with no CV and lists CV holders first",
   runMyCandidatesTidyTests,
+);
+await runTest(
+  "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",
+  runOutstationDuplicateTripGuardTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

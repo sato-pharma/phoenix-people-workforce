@@ -43,3 +43,17 @@ export function splitCrmRepName(crmName: string | undefined | null): {
   if (!territory) return { name: raw, territory: null };
   return { name: raw.replace(CRM_TERRITORY, "").trim(), territory };
 }
+
+/**
+ * The words a screen shows for a CRM agent handle when no HR name is at hand. The territory group
+ * is taken off (`"Aisha.Ehab ( Minia 2 / E )"` → `"Aisha.Ehab"`); a handle that is a territory and
+ * nothing else (`"( Alex Center 2 / P )"`, owner's NSM audit 2026-10-26) reads `"Alex Center 2 rep"`
+ * — the line letter after the slash is the CRM's code, not a word anyone reads.
+ */
+export function crmRepDisplayName(crmName: string | undefined | null): string | null {
+  const { name, territory } = splitCrmRepName(crmName);
+  if (name) return name;
+  if (!territory) return null;
+  const place = territory.replace(/\s*\/\s*[^/]*$/, "").trim();
+  return place ? `${place} rep` : null;
+}

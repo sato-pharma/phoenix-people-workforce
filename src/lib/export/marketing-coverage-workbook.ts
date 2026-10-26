@@ -1,3 +1,4 @@
+import { countOf } from "@/lib/i18n/format";
 import ExcelJS from "exceljs";
 
 // The HOUSE helpers for the cover and the tables — SATO-DIS-2026-01 v1.0. `phoenix-xlsx-style`
@@ -258,7 +259,7 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     rows: requestRows,
     title: "Requests — filtered coverage",
     totals,
-    note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}. The actual-sales TOTAL counts a sale claimed by more than one campaign once, so it can be lower than the column added up.`,
+    note: `${countOf(report.rows.length, "request")}. Sales data as of ${kpi.salesDataAsOf ?? "n/a"}. The actual-sales TOTAL counts a sale claimed by more than one campaign once, so it can be lower than the column added up.`,
   });
 
   if (requestRows.length > 0) {

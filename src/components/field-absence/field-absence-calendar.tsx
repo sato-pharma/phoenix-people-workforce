@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { countText, dayLabel, dayLabelLong, monthLabel, plural } from "@/components/phoenix-crm/format";
+import { displayPlaceName } from "@/lib/org/place-name";
 import {
   CrmButton,
   CrmCard,
@@ -77,7 +78,8 @@ function listText(items: readonly string[]): string {
 }
 
 function placeText(entry: Pick<FieldAbsenceEntry, "lineName" | "areaName">): string {
-  return [entry.lineName, entry.areaName].filter(Boolean).join(" · ") || "No line on the seat";
+  const area = entry.areaName ? displayPlaceName(entry.areaName) : null;
+  return [entry.lineName, area].filter(Boolean).join(" · ") || "No line on the seat";
 }
 
 /** The one line under a day's date. */

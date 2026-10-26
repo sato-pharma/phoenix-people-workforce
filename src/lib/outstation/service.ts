@@ -133,6 +133,12 @@ import {
   type AllowanceClaimingRequest,
 } from "@/lib/outstation/allowance-day-guard";
 import {
+  duplicateTripMessage,
+  findDuplicateTrip,
+  type DuplicateTripCandidate,
+  type DuplicateTripExisting,
+} from "@/lib/outstation/duplicate-trip-guard";
+import {
   applyCairoNoAllowance,
   cairoTripEarnsNoAllowance,
 } from "@/lib/outstation/cairo-allowance-rule";
@@ -615,6 +621,49 @@ async function resolveClaimedAllowanceDays(input: {
   }));
 
   return deriveClaimedAllowanceDays(requests, input.excludeRequestId);
+}
+
+/**
+ * Refuses a second claim for a trip the employee already claimed — same day, same destination
+ * (duplicate-trip-guard.ts). Read fresh, like the allowance guard: it must see what the database
+ * holds at the moment of submitting. A failed read refuses nothing — the payroll duplicate hold
+ * is still the later net.
+ */
+async function assertNoDuplicateTrip(input: DuplicateTripCandidate, excludeRequestId?: number) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("id, status, employee_hr_id, expense_type, trip_start_date, to_area, to_city, captured_latitude, captured_longitude")
+    .ilike("employee_hr_id", input.employeeHrId)
+    .gte("trip_start_date", `${input.tripStartDate.slice(0, 10)}T00:00:00Z`)
+    .lte("trip_start_date", `${input.tripStartDate.slice(0, 10)}T23:59:59Z`);
+  if (error || !data) return;
+
+  const existing: DuplicateTripExisting[] = (
+    data as Array<{
+      captured_latitude: number | null;
+      captured_longitude: number | null;
+      employee_hr_id: string;
+      expense_type: string | null;
+      id: number;
+      status: string;
+      to_area: string | null;
+      to_city: string | null;
+      trip_start_date: string;
+    }>
+  ).map((row) => ({
+    capturedLatitude: row.captured_latitude,
+    capturedLongitude: row.captured_longitude,
+    employeeHrId: row.employee_hr_id,
+    expenseType: row.expense_type,
+    id: row.id,
+    status: row.status,
+    toArea: row.to_area,
+    toCity: row.to_city,
+    tripStartDate: row.trip_start_date,
+  }));
+
+  const earlier = findDuplicateTrip(input, existing, excludeRequestId);
+  if (earlier) throw new Error(duplicateTripMessage(earlier));
 }
 
 /**
@@ -2029,6 +2078,20 @@ export async function submitOutstationRequest(
 
   if (!evidenceValidation.isValid) {
     throw new Error(evidenceValidation.message);
+  }
+
+  // One trip is claimed once (owner, 2026-10-26, after OUTSTATION-292/293). Checked before any
+  // photo or ticket is uploaded, so a refused copy leaves nothing behind in storage.
+  if (!nonTravel) {
+    await assertNoDuplicateTrip({
+      capturedLatitude: calculation.capturedLatitude,
+      capturedLongitude: calculation.capturedLongitude,
+      employeeHrId: calculation.employeeHrId,
+      expenseType: calculation.expenseType,
+      toArea: calculation.toArea,
+      toCity: calculation.toCity,
+      tripStartDate: calculation.tripStartDate,
+    });
   }
 
   await assertOutstationExpenseWorkflowTransition({
