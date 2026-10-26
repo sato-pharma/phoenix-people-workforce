@@ -94,6 +94,26 @@ export function agreedMasterAreaCode(
 }
 
 /**
+ * Each area id's code, read fresh. Null when the read failed — unknown, never "no codes". An id with
+ * no `areas` row (or a blank code) is simply absent from the map.
+ */
+export async function areaCodesByIds(
+  supabase: VenueTerritoryClient,
+  areaIds: ReadonlyArray<number>,
+): Promise<Map<number, string> | null> {
+  const codeByAreaId = new Map<number, string>();
+  if (areaIds.length === 0) return codeByAreaId;
+  const areas = await supabase.from("areas").select("id, code").in("id", [...areaIds]);
+  if (areas.error) return null;
+  for (const row of (areas.data ?? []) as Array<{ code?: string | null; id?: number | string | null }>) {
+    const id = Number(row.id);
+    const code = String(row.code ?? "").trim();
+    if (Number.isFinite(id) && code) codeByAreaId.set(id, code);
+  }
+  return codeByAreaId;
+}
+
+/**
  * Is this area one a rep actually sells in?
  *
  * Decided from data, never from a hardcoded list or a shape-of-the-string guess: the selling
@@ -180,16 +200,8 @@ async function strandedCompletedCustomers(
         .filter((value): value is number => value !== null && Number.isFinite(value)),
     ),
   );
-  const codeByAreaId = new Map<number, string>();
-  if (areaIds.length > 0) {
-    const areas = await supabase.from("areas").select("id, code").in("id", areaIds);
-    if (areas.error) return null;
-    for (const row of (areas.data ?? []) as Array<{ code?: string | null; id?: number | string | null }>) {
-      const id = Number(row.id);
-      const code = String(row.code ?? "").trim();
-      if (Number.isFinite(id) && code) codeByAreaId.set(id, code);
-    }
-  }
+  const codeByAreaId = await areaCodesByIds(supabase, areaIds);
+  if (codeByAreaId === null) return null;
 
   const territorial = await sellingTerritoryCodes(supabase, Array.from(codeByAreaId.values()));
   if (territorial === null) return null;
