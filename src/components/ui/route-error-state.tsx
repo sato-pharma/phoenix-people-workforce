@@ -1,10 +1,15 @@
 "use client";
 
 import { AlertTriangle, RotateCcw } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  isSessionVerificationUnavailableDigest,
+  nextSessionCheckRetryDelay,
+  type SessionCheckRetryRun,
+} from "@/lib/auth/session-unavailable-digest";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 
 type RouteErrorStateProps = {
@@ -22,6 +27,9 @@ type RouteErrorStateProps = {
   title: string;
 };
 
+// A failed retry mounts a fresh card (the boundary unmounts it on every reset), so the run lives here.
+let sessionCheckRun: SessionCheckRetryRun | null = null;
+
 function isPortalPath(pathname: string) {
   return (
     pathname === "/employee-portals" ||
@@ -33,21 +41,44 @@ function isPortalPath(pathname: string) {
 }
 
 export function RouteErrorState({
-  description,
+  description: routeDescription,
   error,
-  eyebrow,
+  eyebrow: routeEyebrow,
   reset,
   surface,
-  title,
+  title: routeTitle,
 }: RouteErrorStateProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  // The database could not confirm the sign-in (a restart or an outage). Not a crash: the session
+  // is kept, the server already recorded the cause, and the page comes back by itself once the
+  // database answers — so it is neither reported again nor drawn as an error.
+  const sessionCheckUnavailable = isSessionVerificationUnavailableDigest(error);
 
   useEffect(() => {
-    if (error) {
+    if (error && !sessionCheckUnavailable) {
       reportClientError({ digest: error.digest ?? null, error, route: pathname });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
+
+  useEffect(() => {
+    if (!sessionCheckUnavailable) return;
+    const next = nextSessionCheckRetryDelay(sessionCheckRun, Date.now());
+    sessionCheckRun = next.run;
+    if (next.delayMs === null) return;
+    const timer = window.setTimeout(() => {
+      router.refresh();
+      reset();
+    }, next.delayMs);
+    return () => window.clearTimeout(timer);
+  }, [error, reset, router, sessionCheckUnavailable]);
+
+  const eyebrow = sessionCheckUnavailable ? "Reconnecting" : routeEyebrow;
+  const title = sessionCheckUnavailable ? "We could not confirm your sign-in just now" : routeTitle;
+  const description = sessionCheckUnavailable
+    ? "Phoenix could not reach its database for a moment. You are still signed in and nothing you saved is affected. This page will try again by itself in a few seconds."
+    : routeDescription;
 
   const portal = surface ? surface === "portal" : isPortalPath(pathname ?? "");
 
@@ -83,7 +114,7 @@ export function RouteErrorState({
           <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-rose-600">{eyebrow}</p>
           <h2 className="text-2xl font-black tracking-tight text-slate-950">{title}</h2>
           <p className="text-sm leading-6 text-slate-600">{description}</p>
-          {error?.digest ? (
+          {error?.digest && !sessionCheckUnavailable ? (
             <p className="font-mono text-xs font-semibold text-slate-400">Error digest: {error.digest}</p>
           ) : null}
         </div>

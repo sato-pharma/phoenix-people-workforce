@@ -1041,6 +1041,7 @@ import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runAuthSessionBundleTests } from "./auth-session-bundle.test.ts";
 import { runSessionUnavailableKeepsSessionTests } from "./session-unavailable-keeps-session.test.ts";
+import { runSessionUnavailableCrashScreenTests } from "./session-unavailable-crash-screen.test.ts";
 import { runSessionBundleCacheTests } from "./session-bundle-cache.test.ts";
 import { runDepartedAccessRevocationTests } from "./departed-access-revocation.test.ts";
 import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
@@ -5345,6 +5346,10 @@ await runTest(
 await runTest(
   "a Supabase outage keeps the session (unverifiable != departed, heartbeat answers 503 not 401)",
   runSessionUnavailableKeepsSessionTests,
+);
+await runTest(
+  "a sign-in check the database could not answer shows a retrying state, not a #441 crash card, and is not filed twice",
+  runSessionUnavailableCrashScreenTests,
 );
 await runTest(
   "a recent session copy may stand in for a failed login check, for ten minutes at most (live first, accepted sessions only)",

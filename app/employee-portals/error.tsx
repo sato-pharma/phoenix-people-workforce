@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RouteErrorState } from "@/components/ui/route-error-state";
+import { isSessionVerificationUnavailableDigest } from "@/lib/auth/session-unavailable-digest";
 import { isStaleDeployChunkError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
 // A server-render failure (it carries a `digest`) is almost always a brief database blip — the
@@ -25,6 +26,9 @@ export default function EmployeePortalsError({
       recoverFromStaleDeployOnce();
       return;
     }
+
+    // A sign-in check the database could not answer has its own retry schedule in RouteErrorState.
+    if (isSessionVerificationUnavailableDigest(error)) return;
 
     const digest = error.digest;
     if (!digest || retriedDigests.has(digest)) return;

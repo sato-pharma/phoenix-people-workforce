@@ -15,6 +15,7 @@
 import { systemDeployment } from "@/config/system-settings";
 import { isBrowserNoiseMessage } from "@/lib/error-monitor/browser-noise";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { isRedactedServerRenderError } from "@/lib/error-monitor/redacted-server-render";
 import {
   SENTRY_ENVIRONMENT,
   SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
@@ -98,8 +99,10 @@ export function captureClientErrorInSentry(report: SentryClientReport): void {
     if (isBrowserNoiseMessage(describeThrown(report.error))) return;
     // A production server-render failure reaches the browser as Next's opaque placeholder with a
     // digest only. The server already reported the real error through onRequestError, so a browser
-    // copy is a duplicate with no cause in it (PHOENIX-WORKFORCE-9).
-    if (report.digest && describeThrown(report.error).includes("An error occurred in the Server Components render")) {
+    // copy is a duplicate with no cause in it (PHOENIX-WORKFORCE-9). The production React client
+    // throws it MINIFIED, as "Minified React error #441", so the spelled-out wording alone never
+    // matched what a browser actually sends (every #441 row in the error table, 14 days to 26 Oct 2026).
+    if (report.digest && isRedactedServerRenderError(describeThrown(report.error))) {
       return;
     }
 
