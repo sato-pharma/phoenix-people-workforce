@@ -297,4 +297,30 @@ export function runRailwaySecretPolicyTests() {
     /\$\{entry\.railway\}=<redacted \$\{value\.length\} chars>/,
     "the dry run must print the variable name and the value's LENGTH instead of the value",
   );
+
+  // --- 10. every value the workflow hands the sync step is a name the script READS ----------
+  // The script reads `process.env[<name>]` for each name in an entry's `github:` list, and
+  // nothing else. From 2026-08-08 to 2026-10-27 the workflow exported the dispatch token as
+  // GITHUB_ACTIONS_DISPATCH_TOKEN while the entry read PHOENIX_ACTIONS_DISPATCH_TOKEN, so every
+  // run skipped it as "empty" and the token only ever reached Railway by hand — found when the
+  // repo moved to a new GitHub account and the re-minted token would not sync.
+  const workflowSource = readFileSync(".github/workflows/sync-railway-production-secrets.yml", "utf8");
+  const syncStep = workflowSource.split(/\n\s+- name: /).find((step) => step.startsWith("Sync production secrets to Railway"));
+  assert.ok(syncStep, "the workflow must keep a step named 'Sync production secrets to Railway'");
+  const exported = [...syncStep.matchAll(/^\s+([A-Z][A-Z0-9_]*):\s*\$\{\{/gm)].map((match) => match[1]);
+  assert.ok(exported.length >= 40, `the sync step must still export its values (found ${exported.length})`);
+  // The four the script consumes itself to reach Railway, never through an entry.
+  const RAILWAY_CONTROL = new Set(["RAILWAY_API_TOKEN", "RAILWAY_TOKEN", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_NAME"]);
+  const readByAnEntry = new Set(syncedVariables.flatMap((entry) => entry.github));
+  const unread = exported.filter((name) => !RAILWAY_CONTROL.has(name) && !readByAnEntry.has(name));
+  assert.deepEqual(
+    unread,
+    [],
+    `the workflow exports ${unread.join(", ")} to the sync step but no entry in scripts/sync-railway-production-secrets.mjs reads that name — the value is dropped and the run logs it as empty`,
+  );
+  const dispatchEntry = syncedVariables.find((entry) => entry.railway === "GITHUB_ACTIONS_DISPATCH_TOKEN");
+  assert.ok(
+    dispatchEntry?.github.some((name) => exported.includes(name)),
+    "the synthetic-journeys dispatch token must reach the sync step under a name its entry reads",
+  );
 }
