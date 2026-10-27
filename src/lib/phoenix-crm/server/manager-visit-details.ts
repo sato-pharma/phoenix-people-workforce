@@ -1,5 +1,6 @@
 import { countsAsManagersDoubleVisit } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import {
+  managerOwnVisitWithSeniorLabel,
   managerVisitKind,
   MANAGER_VISIT_KIND_LABELS,
   sortManagerDayVisits,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/phoenix-crm/manager-visit-detail";
 import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerVisitEnteredForHim } from "@/lib/phoenix-crm/missed-records";
-import { countsAsPlannersVisitWithRep, singleVisitHalfOfHour } from "@/lib/phoenix-crm/manager-plan-rules";
+import { countsAsPlannersVisitWithRep, parseManagerSeniorVisit, singleVisitHalfOfHour, type ManagerSeniorVisit } from "@/lib/phoenix-crm/manager-plan-rules";
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -48,7 +49,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 const OWN_COLUMNS =
-  "id, manager_hr_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, created_at, in_vacant_territory, address, area_name, brick_name, entered_by_hr_id";
+  "id, manager_hr_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, created_at, in_vacant_territory, address, area_name, brick_name, entered_by_hr_id, plan_slot_id";
 
 const RIDE_COLUMNS =
   "id, seat_id, visit_date, captured_at, created_at, customer_id, place_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, products, comment, pharmacy_name, is_unplanned, lat, customer_validated";
@@ -162,6 +163,26 @@ async function loadOwnListCustomers(ids: string[]): Promise<Map<string, OwnCusto
   return out;
 }
 
+/**
+ * The With my manager or product manager half-days these visits were logged on, by slot id (owner, 2026-10-27: "she
+ * submitted but it appeared as single visit, it should count with her manager"). Every other kind of half-day is left
+ * out, so a visit on it stays a single visit, alone.
+ */
+async function loadWithSeniorSlots(slotIds: string[]): Promise<Map<string, ManagerSeniorVisit>> {
+  const out = new Map<string, ManagerSeniorVisit>();
+  const rows = await readChunks(slotIds, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () => getSupabaseAdmin().from("phoenix_crm_manager_plan_slots").select("id, kind, senior_visit").in("id", part).eq("kind", "with_senior"),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  for (const row of rows) {
+    const senior = parseManagerSeniorVisit(row.senior_visit);
+    if (senior) out.set(String(row.id), senior);
+  }
+  return out;
+}
+
 export type ManagerVisitDetailInput = {
   managerHrIds: ReadonlyArray<string>;
   start: string;
@@ -171,7 +192,10 @@ export type ManagerVisitDetailInput = {
   territoryNameOf?: (seatId: string) => string | null;
 };
 
-/** The single visits these managers logged alone, one row each, with the customer and the place filled in. */
+/**
+ * The visits these managers logged themselves, one row each, with the customer and the place filled in — alone, or,
+ * on a With my manager or product manager half-day, with that manager named (`kind: "with_senior"`).
+ */
 export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput): Promise<ManagerDayVisit[]> {
   if (input.end < input.start) return [];
   const keys = dedupeIds(input.managerHrIds.map((hrId) => personKey(hrId)));
@@ -197,11 +221,13 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
   if (rows.length === 0) return [];
 
   const customerIds = rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => Boolean(id));
-  const [customers, places, ownList] = await Promise.all([
+  const [customers, places, ownList, withSenior] = await Promise.all([
     loadCustomers(customerIds),
     loadPlaces([], customerIds),
     loadOwnListCustomers(rows.map((row) => textOrNull(row.manager_customer_id)).filter((id): id is string => Boolean(id))),
+    loadWithSeniorSlots(rows.map((row) => textOrNull(row.plan_slot_id)).filter((id): id is string => Boolean(id))),
   ]);
+  const seniorNames = await loadPeopleNames([...withSenior.values()].map((senior) => senior.seniorHrId));
 
   const out: ManagerDayVisit[] = [];
   for (const row of rows) {
@@ -225,6 +251,9 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
     const placeSource: ManagerVisitPlaceSource = typedOnVisit ? "on_the_visit" : address || areaName || brickName ? "saved_place" : "none";
 
     const customerListType = customer?.listType ? parseListType(customer.listType) : null;
+    // Logged on a With my manager half-day: a visit with that manager, who is named beside him. Anything else is alone.
+    const senior = withSenior.get(textOrNull(row.plan_slot_id) ?? "") ?? null;
+    const seniorRole = senior ? (senior.title ?? (senior.role === "product_manager" ? "Product manager" : "Manager")) : null;
     out.push({
       address,
       areaName,
@@ -240,8 +269,8 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       hasPin: row.lat !== null && row.lat !== undefined,
       id: `own:${String(row.id)}`,
       inVacantTerritory: row.in_vacant_territory === true,
-      kind: "single",
-      kindLabel: MANAGER_VISIT_KIND_LABELS.single,
+      kind: senior ? "with_senior" : "single",
+      kindLabel: senior ? managerOwnVisitWithSeniorLabel(senior.role) : MANAGER_VISIT_KIND_LABELS.single,
       listType: customerListType,
       loggedAt,
       loggedHalf,
@@ -254,7 +283,7 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       source: "own",
       speciality: customer?.speciality ?? own?.speciality ?? null,
       territoryName: customer?.seatId && input.territoryNameOf ? input.territoryNameOf(customer.seatId) : null,
-      withPeople: [],
+      withPeople: senior && seniorRole ? [{ hrId: senior.seniorHrId, name: nameOf(seniorNames, senior.seniorHrId, "Manager"), role: seniorRole }] : [],
     });
   }
   return sortManagerDayVisits(out);

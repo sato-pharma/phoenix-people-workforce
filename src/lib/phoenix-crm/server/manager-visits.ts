@@ -51,7 +51,7 @@ import {
   type ManagerAreaChoice,
   type ManagerCustomerView,
 } from "@/lib/phoenix-crm/server/manager-customers";
-import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { assertSingleVisitLogFits, loadSingleVisitAllowance, type SingleVisitAllowance } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
@@ -173,6 +173,11 @@ export type ManagerTodayCustomer = {
   /** The longer account he wrote up afterwards (owner, 2026-10-23), and when he last saved it. */
   detailComment: string | null;
   detailEditedAt: string | null;
+  /**
+   * The manager he goes with, by name, when this customer is on a With my manager or product manager half-day (owner,
+   * 2026-10-27: "it should count with her manager") — the visit he logs here is a visit with that manager. Null otherwise.
+   */
+  withSenior: string | null;
 };
 
 /** A customer of Manager's own list as the Visits tab needs him: with whether his area has a rep today. */
@@ -254,7 +259,13 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   ]);
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && holdsPlannedDoctors(slot.kind)) : [];
-  const slotCustomers = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
+  const seniorOfSlot = new Map(
+    slots.flatMap((slot) => (slot.kind === "with_senior" && slot.seniorVisit ? [[slot.slotId, slot.seniorVisit.seniorHrId] as const] : [])),
+  );
+  const [slotCustomers, seniorNames] = await Promise.all([
+    loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
+    loadPeopleNames([...seniorOfSlot.values()]),
+  ]);
   const halfOfSlot = new Map(slots.map((slot) => [slot.slotId, slot.half]));
   const visitOf = new Map(visits.map((visit) => [visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`, visit]));
   const unplannedVisits = visits.filter((visit) => visit.isUnplanned);
@@ -296,6 +307,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
         visitId: visit?.id ?? null,
         detailComment: visit?.detailComment ?? null,
         detailEditedAt: visit?.detailEditedAt ?? null,
+        withSenior: seniorOfSlot.has(row.slotId) ? nameOf(seniorNames, seniorOfSlot.get(row.slotId), "your manager") : null,
       };
     })
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
@@ -319,6 +331,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       visitId: visit.id,
       detailComment: visit.detailComment,
       detailEditedAt: visit.detailEditedAt,
+      withSenior: null,
     };
   });
   return {

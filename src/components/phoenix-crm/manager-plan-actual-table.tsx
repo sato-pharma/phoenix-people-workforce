@@ -64,6 +64,7 @@ const KIND_STYLES: Record<ManagerDayVisit["kind"], string> = {
   double: "border-sky-200 bg-sky-50 text-sky-700",
   product_manager: "border-teal-200 bg-teal-50 text-teal-700",
   single: "border-slate-300 bg-slate-100 text-slate-700",
+  with_senior: "border-amber-200 bg-amber-50 text-amber-800",
 };
 
 /**
@@ -252,7 +253,7 @@ function MoreAboutVisit({ row }: { row: PlanVsActualRow }) {
             </span>
           ))
         ) : (
-          <span className="font-semibold text-slate-500">{visit.source === "own" || (visit.source === "rep" && visit.kind === "single") ? "Alone." : "No one else named."}</span>
+          <span className="font-semibold text-slate-500">{(visit.source === "own" && visit.kind === "single") || (visit.source === "rep" && visit.kind === "single") ? "Alone." : "No one else named."}</span>
         )}
       </Fact>
       <Fact label="Products">

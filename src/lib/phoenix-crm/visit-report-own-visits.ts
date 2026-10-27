@@ -49,7 +49,10 @@ function blankToNull(value: string | null | undefined): string | null {
 
 /** Every value his own visit carries, keyed by the catalogue's field key. */
 export function managerOwnVisitValues(visit: ManagerDayVisit, managerName: string): Record<string, VisitReportValue> {
-  const type = visit.inVacantTerritory ? `${MANAGER_OWN_VISIT_TYPE} · vacant area` : MANAGER_OWN_VISIT_TYPE;
+  // On a With my manager half-day the row names who went with him (owner, 2026-10-27) — still his own row.
+  const senior = visit.kind === "with_senior" ? visit.withPeople[0]?.name : null;
+  const typed = senior ? `${MANAGER_OWN_VISIT_TYPE} · with ${senior}` : MANAGER_OWN_VISIT_TYPE;
+  const type = visit.inVacantTerritory ? `${typed} · vacant area` : typed;
   return {
     area: blankToNull(visit.areaName),
     brick: blankToNull(visit.brickName),

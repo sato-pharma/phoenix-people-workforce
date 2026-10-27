@@ -29,7 +29,12 @@ import { formatClockMinute } from "@/lib/phoenix-crm/timings";
 
 export type ManagerDayVisitSource = "own" | "ride_along" | "rep";
 
-export type ManagerDayVisitKind = "single" | "double" | "chain" | "product_manager";
+/**
+ * `with_senior` is HIS OWN visit logged on a half-day he planned With my manager or product manager (owner,
+ * 2026-10-27: "she submitted but it appeared as single visit, it should count with her manager"). It is still his own
+ * record (`source: "own"`, his own table), never a rep's — only the kind and the person beside him change.
+ */
+export type ManagerDayVisitKind = "single" | "double" | "chain" | "product_manager" | "with_senior";
 
 /** Where a visit's place came from, so the screen can say how far to trust the address. */
 export type ManagerVisitPlaceSource =
@@ -105,7 +110,13 @@ export const MANAGER_VISIT_KIND_LABELS: Record<ManagerDayVisitKind, string> = {
   double: "Double visit",
   chain: "Chain visit",
   product_manager: "Product manager visit",
+  with_senior: "Visit with a manager",
 };
+
+/** His own visit on a With my manager or product manager half-day, in words: who he went with is in `withPeople`. */
+export function managerOwnVisitWithSeniorLabel(role: "manager" | "product_manager"): string {
+  return role === "product_manager" ? "Visit with a product manager" : MANAGER_VISIT_KIND_LABELS.with_senior;
+}
 
 export function managerVisitKind(value: unknown): ManagerDayVisitKind {
   return value === "double" || value === "chain" || value === "product_manager" ? value : "single";
@@ -207,6 +218,8 @@ export function groupManagerDayVisits(visits: readonly ManagerDayVisit[]): Map<s
 export type ManagerDayFigures = {
   /** Single visits he logged alone — counted in his own report only. */
   ownSingle: number;
+  /** His own visits on a With my manager or product manager half-day — his own report only, never among the alone ones. */
+  ownWithSenior: number;
   /** A rep's own single visits (source `rep`, kind `single`) — his own calls, counted on his own row. */
   singles: number;
   doubles: number;
@@ -224,10 +237,11 @@ export type ManagerDayFigures = {
 };
 
 export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDayFigures {
-  const figures: ManagerDayFigures = { am: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, pharmacies: 0, pm: 0, productManagerVisits: 0, singles: 0 };
+  const figures: ManagerDayFigures = { am: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, ownWithSenior: 0, pharmacies: 0, pm: 0, productManagerVisits: 0, singles: 0 };
   const pharmacyNames = new Set<string>();
   for (const visit of visits) {
-    if (visit.source === "own") figures.ownSingle += 1;
+    if (visit.source === "own" && visit.kind === "with_senior") figures.ownWithSenior += 1;
+    else if (visit.source === "own") figures.ownSingle += 1;
     else if (visit.kind === "double") figures.doubles += 1;
     else if (visit.kind === "chain") figures.chains += 1;
     else if (visit.kind === "product_manager") figures.productManagerVisits += 1;
@@ -259,6 +273,7 @@ export function managerDaySummaryLine(figures: ManagerDayFigures): string {
     if (count > 0) parts.push(`${count} ${count === 1 ? one : many}`);
   };
   add(figures.ownSingle, "own single visit", "own single visits");
+  add(figures.ownWithSenior, "visit with a manager", "visits with a manager");
   add(figures.singles, "single visit", "single visits");
   add(figures.doubles, "double visit", "double visits");
   add(figures.chains, "chain visit", "chain visits");
