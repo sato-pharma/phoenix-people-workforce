@@ -17,6 +17,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { employeeAvatarGround, employeeInitials } from "./avatar";
 import {
   EMPLOYEE_360_ROLE_META,
   EMPLOYEE_360_ROLE_ORDER,
@@ -53,27 +54,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "areaName", label: "Area" },
   { key: "managerName", label: "Manager" },
 ];
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
-  const joined = parts.map((part) => part[0] ?? "").join("");
-  return joined ? joined.toUpperCase() : "—";
-}
-
-const AVATAR_TONES = [
-  "from-orange-500 to-amber-600",
-  "from-sky-600 to-indigo-700",
-  "from-emerald-600 to-teal-700",
-  "from-violet-600 to-purple-700",
-  "from-rose-600 to-pink-700",
-  "from-slate-700 to-slate-900",
-];
-
-function avatarTone(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_TONES[hash % AVATAR_TONES.length];
-}
 
 function uniqueSorted(values: (string | null)[]): string[] {
   return Array.from(new Set(values.filter((v): v is string => Boolean(v && v.trim())))).sort((a, b) =>
@@ -240,9 +220,9 @@ export function EmployeeSearchList({
               type="button"
               onClick={() => switchTab(c)}
               className={cn(
-                "flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition",
+                "flex shrink-0 items-center gap-2 border px-4 py-2 text-sm font-bold transition",
                 active
-                  ? "border-orange-500 bg-orange-500 text-white shadow-[0_6px_16px_rgba(249,115,22,0.28)]"
+                  ? "border-orange-500 bg-orange-500 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
               )}
             >
@@ -250,8 +230,8 @@ export function EmployeeSearchList({
               {EMPLOYEE_360_ROLE_META[c].tab}
               <span
                 className={cn(
-                  "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-phx-2xs font-black",
-                  active ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500",
+                  "border-l pl-2 text-xs font-black tabular-nums",
+                  active ? "border-white/40 text-white" : "border-slate-200 text-slate-400",
                 )}
               >
                 {countByCategory.get(c) ?? 0}
@@ -261,10 +241,10 @@ export function EmployeeSearchList({
         })}
       </div>
 
-      <p className="px-0.5 text-xs text-slate-500">{meta.description}</p>
+      <p className="max-w-3xl px-0.5 text-sm leading-relaxed text-slate-500">{meta.description}</p>
 
       {/* Search + filters */}
-      <div className="rounded-[18px] border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+      <div className="border border-slate-200/80 border-t-2 border-t-slate-900 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -272,7 +252,7 @@ export function EmployeeSearchList({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={`Search ${meta.label.toLowerCase()} by name, HR ID, line, area or manager…`}
+              placeholder={`Search ${meta.label.toLowerCase()} by name, HR ID, line, area or manager`}
               className={cn(phxFieldClassName, "pl-9")}
               aria-label="Search employees"
             />
@@ -281,7 +261,7 @@ export function EmployeeSearchList({
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             className={cn(
-              "flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-bold transition",
+              "flex h-11 shrink-0 items-center justify-center gap-2 border px-4 text-sm font-bold transition",
               showFilters || activeFilterCount > 0
                 ? "border-orange-500 bg-orange-50 text-orange-700"
                 : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
@@ -290,7 +270,7 @@ export function EmployeeSearchList({
             <SlidersHorizontal className="h-4 w-4" />
             Filters
             {activeFilterCount > 0 ? (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-600 text-phx-2xs font-black text-white">
+              <span className="flex h-5 w-5 items-center justify-center bg-orange-600 text-phx-2xs font-black text-white">
                 {activeFilterCount}
               </span>
             ) : null}
@@ -344,14 +324,15 @@ export function EmployeeSearchList({
         ) : null}
       </div>
 
-      <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-        <span>
+      <div className="flex items-baseline justify-between gap-3 text-xs font-semibold text-slate-500">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">Personnel records</span>
+        <span className="tabular-nums">
           {filtered.length} of {inTab.length} {meta.label.toLowerCase()}
         </span>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-[18px] border border-dashed border-slate-300 bg-white p-10 text-center">
+        <div className="border border-dashed border-slate-300 bg-white p-10 text-center">
           <p className="text-sm font-semibold text-slate-500">No matches in {meta.label}.</p>
           {query || activeFilterCount > 0 ? (
             <button type="button" onClick={clearAll} className="mt-2 text-xs font-bold text-orange-600 hover:underline">
@@ -364,23 +345,24 @@ export function EmployeeSearchList({
           {grouped.map((g) => (
             <section key={g.line || "__unassigned"}>
               {/* Line header + horizontal divider between lines. */}
-              <div className="mb-3 flex items-center gap-3">
-                <h3 className="shrink-0 text-sm font-black uppercase tracking-wide text-slate-700">
+              <div className="mb-4 flex items-end justify-between gap-3 border-b-2 border-slate-900 pb-2">
+                <h3 className="min-w-0 break-words text-lg font-black tracking-[-0.015em] text-slate-900 sm:text-xl">
                   {g.line || "Unassigned line"}
                 </h3>
-                <span className="shrink-0 rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black text-phx-ink-soft">
-                  {g.count}
+                <span className="shrink-0 pb-0.5 text-xs font-black tabular-nums text-slate-500">
+                  {g.count} {g.count === 1 ? "person" : "people"}
                 </span>
-                <div className="h-px flex-1 bg-slate-200" />
               </div>
               {g.managers ? (
                 <div className="space-y-4">
                   {g.managers.map((mg) => (
                     <div key={mg.manager || "__none"}>
-                      <div className="mb-2 flex items-center gap-1.5 pl-0.5">
-                        <Users className="h-3.5 w-3.5 text-slate-400" />
-                        <span className="text-xs font-bold text-slate-500">{mg.manager || "No manager"}</span>
-                        <span className="text-phx-2xs font-semibold text-slate-400">· {mg.items.length}</span>
+                      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pl-0.5">
+                        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+                          {mg.manager ? "Reports to" : "No manager on record"}
+                        </span>
+                        {mg.manager ? <span className="break-words text-sm font-bold text-slate-700">{mg.manager}</span> : null}
+                        <span className="text-xs font-semibold tabular-nums text-slate-400">· {mg.items.length}</span>
                       </div>
                       <CardGrid items={mg.items} basePath={basePath} />
                     </div>
@@ -399,9 +381,9 @@ export function EmployeeSearchList({
 
 function CardGrid({ items, basePath }: { items: Employee360ListItem[]; basePath: string }) {
   return (
-    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <ul className="grid grid-cols-1 border-l border-t border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:grid-cols-2 xl:grid-cols-3">
       {items.map((e) => (
-        <li key={e.hrId}>
+        <li key={e.hrId} className="min-w-0 border-b border-r border-slate-200">
           <EmployeeCard e={e} basePath={basePath} />
         </li>
       ))}
@@ -413,53 +395,59 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
   return (
     <Link
       href={`${basePath}/${encodeURIComponent(e.hrId)}`}
-      className="group flex h-full items-start gap-3 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]"
+      className="group flex h-full flex-col border-t-2 border-t-transparent bg-white outline-none transition-colors hover:border-t-orange-600 hover:bg-orange-50/30 focus-visible:border-t-orange-600 focus-visible:bg-orange-50/30"
     >
-      <span
-        aria-hidden
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-black text-white",
-          avatarTone(e.hrId),
-        )}
-      >
-        {initials(e.displayName)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 break-words text-sm font-bold text-slate-900">{e.displayName}</span>
+      <div className="flex min-w-0 items-start gap-3 px-4 pb-3 pt-4">
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-12 w-12 shrink-0 items-center justify-center text-sm font-black text-white",
+            employeeAvatarGround(e.hrId),
+          )}
+        >
+          {employeeInitials(e.displayName)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-700">
+            {[e.lineName, e.areaName || e.regionName].filter(Boolean).join(" · ") || "No line on record"}
+          </span>
+          <span className="mt-0.5 block break-words text-base font-black tracking-[-0.015em] text-slate-900 group-hover:text-orange-700">
+            {e.displayName}
+          </span>
+          <span className="mt-0.5 block break-words text-xs text-slate-500">{e.jobTitle || "No job title on record"}</span>
           {e.employmentStatus && e.employmentStatus !== "active" ? (
-            <span className="shrink-0 rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-warn">
+            <span className="mt-1.5 inline-block border border-amber-400 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-amber-800">
               {e.employmentStatus.replace(/_/g, " ")}
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 break-words text-xs text-slate-500">{e.jobTitle || "—"}</div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-phx-xs text-slate-400">
-          <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
-            {e.hrId.toUpperCase()}
-          </span>
-          {[e.lineName, e.areaName || e.regionName].filter(Boolean).map((v) => (
-            <span key={v}>{v}</span>
-          ))}
-        </div>
-        {e.managerName ? (
-          <div className="mt-1 break-words text-phx-xs text-slate-400">Reports to {e.managerName}</div>
-        ) : null}
       </div>
-      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />
+      <dl className="mt-auto grid grid-cols-[auto_minmax(0,1fr)] border-t border-slate-100 text-phx-xs">
+        <div className="border-r border-slate-100 px-4 py-2">
+          <dt className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">HR ID</dt>
+          <dd className="font-mono font-bold text-slate-600">{e.hrId.toUpperCase()}</dd>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-2">
+          <div className="min-w-0">
+            <dt className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Reports to</dt>
+            <dd className="break-words font-bold text-slate-600">{e.managerName || "No manager on record"}</dd>
+          </div>
+          <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-orange-600" />
+        </div>
+      </dl>
     </Link>
   );
 }
 
 function FilterPill({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <span className="flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-orange-700">
+    <span className="flex items-center gap-1.5 border border-orange-200 bg-orange-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-orange-700">
       {label}
       <button
         type="button"
         onClick={onClear}
         aria-label={`Clear ${label}`}
-        className="flex h-4 w-4 items-center justify-center rounded-full text-orange-500 hover:bg-orange-200 hover:text-orange-800"
+        className="flex h-4 w-4 items-center justify-center text-orange-500 hover:bg-orange-200 hover:text-orange-800"
       >
         <X className="h-3 w-3" />
       </button>

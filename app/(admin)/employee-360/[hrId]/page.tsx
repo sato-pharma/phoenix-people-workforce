@@ -43,12 +43,12 @@ export default async function Employee360DetailPage({
   if (!target) {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+        <Card className="border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center bg-slate-100 text-slate-400">
             <UserX className="h-5 w-5" />
           </span>
           <h1 className="mt-3 text-lg font-black text-slate-900">Employee not found</h1>
-          <p className="mt-1 text-sm text-slate-500">No employee record matches “{hrId}”.</p>
+          <p className="mt-1 text-sm text-slate-500">No employee record matches this link.</p>
           <Link href="/employee-360" className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:underline">
             <ArrowLeft className="h-4 w-4" />
             Back to Employee 360
@@ -71,8 +71,8 @@ export default async function Employee360DetailPage({
   if (!roleCategory) {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+        <Card className="border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center bg-slate-100 text-slate-400">
             <UserX className="h-5 w-5" />
           </span>
           <h1 className="mt-3 text-lg font-black text-slate-900">{target.displayName || target.fullName}</h1>
@@ -168,9 +168,9 @@ export default async function Employee360DetailPage({
       <div>
         {backAndFilter}
         <div className="mx-auto max-w-3xl p-6">
-          <Card className="rounded-[20px] border-red-200 bg-red-50/60 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <Card className="border-red-200 bg-red-50/60 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
             <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-red-100 text-red-600 ring-1 ring-inset ring-red-200">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-red-100 text-red-600 ring-1 ring-inset ring-red-200">
                 <AlertTriangle className="h-4 w-4" />
               </span>
               <div className="min-w-0">
@@ -183,6 +183,9 @@ export default async function Employee360DetailPage({
       </div>
     );
   }
+
+  // A section whose read fails says so on the page; it never silently disappears.
+  const unreadSections: string[] = [];
 
   // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
   // PMs have no reps; Training Managers get their own richer analysis.
@@ -203,6 +206,7 @@ export default async function Employee360DetailPage({
       });
     } catch {
       teamHealth = null;
+      unreadSections.push("Team Development");
     }
   }
 
@@ -224,6 +228,7 @@ export default async function Employee360DetailPage({
       });
     } catch {
       teamLifecycle = null;
+      unreadSections.push("Team Compliance");
     }
   }
 
@@ -239,6 +244,7 @@ export default async function Employee360DetailPage({
       });
     } catch {
       tmAnalytics = null;
+      unreadSections.push("Training-Manager Effectiveness");
     }
   }
 
@@ -249,6 +255,7 @@ export default async function Employee360DetailPage({
       pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
     } catch {
       pmMarketing = null;
+      unreadSections.push("Marketing ROI");
     }
   }
 
@@ -297,6 +304,7 @@ export default async function Employee360DetailPage({
         tmAnalytics={tmAnalytics}
         pmMarketing={pmMarketing}
         crmInsights={crmInsights}
+        unreadSections={unreadSections}
       />
     </div>
   );

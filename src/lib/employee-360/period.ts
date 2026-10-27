@@ -141,6 +141,6 @@ export function resolvePeriod(
   return {
     key,
     current: { from, to, label: `${currentLabelBase} · ${pretty(from, to)}` },
-    previous: { from: prevFrom, to: prevTo, label: `Previous ${length}d · ${pretty(prevFrom, prevTo)}` },
+    previous: { from: prevFrom, to: prevTo, label: `the previous ${length === 1 ? "day" : `${length} days`} · ${pretty(prevFrom, prevTo)}` },
   };
 }

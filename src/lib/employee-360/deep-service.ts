@@ -381,7 +381,7 @@ export function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, cont
         `${compact(totalSales)} of sales across ${monthly.length} month${monthly.length === 1 ? "" : "s"}. ` +
         gradedPart +
         untargetedPart +
-        (top && top.achievementPct != null ? `Led by ${top.product} (${Math.round(top.achievementPct)}%). ` : top ? `Led by ${top.product}. ` : "") +
+        (top && top.achievementPct != null ? `Led by ${top.product} (${Math.round(top.achievementPct)}% of target). ` : top ? `Led by ${top.product}. ` : "") +
         (growthPct != null ? `${growthPct >= 0 ? "+" : ""}${Math.round(growthPct)}% vs the first month.` : "");
 
   return {

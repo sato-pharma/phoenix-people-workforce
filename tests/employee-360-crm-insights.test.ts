@@ -240,7 +240,7 @@ export function runEmployee360CrmInsightsTests() {
   assert.match(view, /crmPlanCompliance: crmInsightState\(crmInsights\?\.planCompliance\)/);
   assert.match(view, /crmFrequency: crmInsightState\(crmInsights\?\.frequency\)/);
   assert.match(view, /showPlanCompliance=\{plan\.showCrmPlanCompliance\}/);
-  for (const page of ["../app/(admin)/employee-360/[hrId]/page.tsx", "../app/employee-portals/employee-360/[hrId]/page.tsx"]) {
+  for (const page of ["../app/(admin)/employee-360/[hrId]/page.tsx", "../app/employee-portals/employee-360/page.tsx", "../app/employee-portals/employee-360/[hrId]/page.tsx"]) {
     const source = stripComments(readFileSync(new URL(page, import.meta.url), "utf8"));
     assert.match(source, /loadEmployee360CrmInsights\(/, `${page} loads the Phoenix CRM sections`);
     assert.match(source, /crmInsights=\{crmInsights\}/, `${page} hands them to the report`);

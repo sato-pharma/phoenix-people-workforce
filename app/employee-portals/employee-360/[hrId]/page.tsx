@@ -76,7 +76,7 @@ export default async function EmployeePortalEmployee360DetailPage({
   if (!target) {
     return (
       <Shell description="Employee 360" title="Employee 360">
-        <EmployeePortalEmptyState message={`No employee record matches "${hrId}".`} title="Employee not found" />
+        <EmployeePortalEmptyState message="No employee record matches this link." title="Employee not found" />
       </Shell>
     );
   }
@@ -173,6 +173,9 @@ export default async function EmployeePortalEmployee360DetailPage({
     );
   }
 
+  // A section whose read fails says so on the page; it never silently disappears.
+  const unreadSections: string[] = [];
+
   // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
   let teamHealth: TeamHealthSummary | null = null;
   if (
@@ -189,6 +192,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       });
     } catch {
       teamHealth = null;
+      unreadSections.push("Team Development");
     }
   }
 
@@ -208,6 +212,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       });
     } catch {
       teamLifecycle = null;
+      unreadSections.push("Team Compliance");
     }
   }
 
@@ -222,6 +227,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       });
     } catch {
       tmAnalytics = null;
+      unreadSections.push("Training-Manager Effectiveness");
     }
   }
 
@@ -232,6 +238,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
     } catch {
       pmMarketing = null;
+      unreadSections.push("Marketing ROI");
     }
   }
 
@@ -278,6 +285,7 @@ export default async function EmployeePortalEmployee360DetailPage({
           category={roleCategory}
           comparison={comparison}
           crmInsights={crmInsights}
+          unreadSections={unreadSections}
           pmMarketing={pmMarketing}
           showExpenses={showExpenses}
           subject={subject}

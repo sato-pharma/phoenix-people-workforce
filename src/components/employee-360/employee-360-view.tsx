@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
   Award,
-  BadgeCheck,
   CalendarClock,
   ClipboardCheck,
   Clock,
@@ -11,17 +10,12 @@ import {
   Info,
   MapPin,
   Megaphone,
-  Sparkles,
   TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
-import {
-  pageHeaderRailClassName,
-  pageHeaderRuleClassName,
-} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { formatPharmacyFigure, pharmacyTileFigure, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { cn } from "@/lib/utils";
@@ -48,6 +42,7 @@ import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/empl
 import { planEmployee360Sections } from "@/lib/employee-360/report-sections";
 import { crmInsightState, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
 import { Employee360CrmInsightsSections } from "./crm-insights-sections";
+import { employeeAvatarGround, employeeInitials } from "./avatar";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
 
@@ -67,39 +62,25 @@ function visitSplitOf(visits: { amVisits: number; pmVisits: number; pharmacyVisi
 
 // ── Premium visual system — shared across every section of this report ──────
 type Tone = "sky" | "orange" | "indigo" | "emerald" | "rose" | "violet" | "amber" | "blue";
-const TONE_ICON_WRAP: Record<Tone, string> = {
-  sky: "bg-sky-50 text-sky-600 ring-sky-100",
-  orange: "bg-orange-50 text-orange-600 ring-orange-100",
-  indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
-  emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
-  rose: "bg-rose-50 text-rose-600 ring-rose-100",
-  violet: "bg-violet-50 text-violet-600 ring-violet-100",
-  amber: "bg-amber-50 text-amber-600 ring-amber-100",
-  blue: "bg-blue-50 text-blue-600 ring-blue-100",
+const TONE_GLYPH: Record<Tone, string> = {
+  sky: "text-sky-700",
+  orange: "text-orange-600",
+  indigo: "text-indigo-700",
+  emerald: "text-emerald-700",
+  rose: "text-rose-700",
+  violet: "text-violet-700",
+  amber: "text-amber-700",
+  blue: "text-blue-700",
 };
 
+// The dossier look (owner, 2026-10-27): every section is a sheet of one personnel record — a 2px ink
+// rule across its head, hairline ledgers for its figures, no grey tiles and no tinted icon squares.
+// The card keeps its depth (app/globals.css RULE 3).
 const PREMIUM_CARD =
-  "rounded-[20px] border-slate-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6";
+  "border-slate-200/80 border-t-2 border-t-slate-900 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6";
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
-  const joined = parts.map((part) => part[0] ?? "").join("");
-  return joined ? joined.toUpperCase() : "—";
-}
-
-const AVATAR_TONES = [
-  "from-orange-500 to-amber-600",
-  "from-sky-600 to-indigo-700",
-  "from-emerald-600 to-teal-700",
-  "from-violet-600 to-purple-700",
-  "from-rose-600 to-pink-700",
-  "from-slate-700 to-slate-900",
-];
-function avatarTone(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_TONES[hash % AVATAR_TONES.length];
-}
+/** One figure grid drawn as a ledger: the grid carries the left and top hairline, each cell the rest. */
+const LEDGER_CELL = "border-b border-r border-slate-200 bg-white";
 
 export type Employee360Subject = {
   hrId: string;
@@ -298,17 +279,16 @@ function KpiTile({
 }) {
   const tone = goodWhenAbove == null ? "text-slate-900" : goodWhenAbove ? "text-emerald-600" : "text-amber-600";
   const tip = explain ?? KPI_EXPLAIN[label];
-  const tileClass =
-    "group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]";
+  const tileClass = `group min-w-0 ${LEDGER_CELL} p-4 transition-colors hover:bg-slate-50`;
   const body = (
     <>
-      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
         <span className="min-w-0 break-words">{label}</span>
         {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
       </span>
-      <span className={cn("mt-1.5 block break-words text-2xl font-black tabular-nums", tone)}>{value}</span>
-      {benchmark ? <span className="mt-1 block text-phx-xs font-bold text-slate-400">vs {benchmark}</span> : null}
-      {hint ? <span className="mt-0.5 block break-words text-phx-xs text-slate-400">{hint}</span> : null}
+      <span className={cn("mt-2 block break-words text-2xl font-black tabular-nums tracking-[-0.02em] sm:text-[1.75rem] sm:leading-8", tone)}>{value}</span>
+      {benchmark ? <span className="mt-1.5 block break-words text-phx-xs font-bold text-slate-500">vs {benchmark}</span> : null}
+      {hint ? <span className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-400">{hint}</span> : null}
     </>
   );
   if (!tip) return <div className={tileClass}>{body}</div>;
@@ -338,15 +318,30 @@ function SectionHeader({
   children: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-start gap-3 border-b border-slate-100 pb-3.5">
-      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset", TONE_ICON_WRAP[tone])}>
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="min-w-0 pt-0.5">
-        <h2 className="text-phx-md font-black uppercase tracking-wider text-slate-900">{children}</h2>
-        {sub ? <p className="mt-1 text-xs leading-5 text-slate-500">{sub}</p> : null}
-      </div>
+    <div className="mb-5 border-b border-slate-200 pb-4">
+      <h3 className="flex items-center gap-2.5 text-lg font-black tracking-[-0.015em] text-slate-900 sm:text-xl">
+        <Icon className={cn("h-[1.1rem] w-[1.1rem] shrink-0", TONE_GLYPH[tone])} aria-hidden />
+        <span className="min-w-0 break-words">{children}</span>
+      </h3>
+      {sub ? <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">{sub}</p> : null}
     </div>
+  );
+}
+
+/** The sections whose read failed this time. An unavailable source says so; it never reads as "nothing". */
+function UnreadSectionsNotice({ names }: { names: readonly string[] }) {
+  return (
+    <Card className={cn(PREMIUM_CARD, "border-amber-200 border-t-amber-600 bg-amber-50/60")}>
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-900">Could not be read just now</p>
+          <p className="mt-1 break-words text-sm text-slate-600">
+            {names.join(" · ")}. Reload the page to try again; every other section below is complete.
+          </p>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -356,9 +351,9 @@ function EmptyState({ children }: { children: ReactNode }) {
 
 function SummaryLine({ text }: { text: string }) {
   return (
-    <div className="mb-4 flex items-start gap-2.5 rounded-[14px] border border-slate-200/70 bg-gradient-to-r from-slate-50 to-white p-3.5 text-sm leading-relaxed text-slate-600">
-      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
-      <span>{text}</span>
+    <div className="mb-5 border-l-[3px] border-orange-600 bg-slate-50 px-4 py-3">
+      <span className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">In brief</span>
+      <p className="mt-1 text-sm leading-relaxed text-slate-700">{text}</p>
     </div>
   );
 }
@@ -383,14 +378,14 @@ function DeltaChip({ label, delta, kind, goodUp = true, judged = true }: { label
   const deltaText =
     rawDelta == null ? "—" : `${rawDelta >= 0 ? "▲ +" : "▼ "}${Math.abs(rawDelta) < 10 && kind !== "int" ? rawDelta.toFixed(1) : Math.round(rawDelta)}${kind === "pct" ? "pp" : ""}`;
   const tip = DELTA_EXPLAIN[label];
-  const chipClass = "group min-w-0 rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5";
+  const chipClass = `group min-w-0 ${LEDGER_CELL} p-3.5`;
   const body = (
     <>
-      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
         <span className="min-w-0 break-words">{label}</span>
         {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
       </span>
-      <span className="mt-0.5 block text-lg font-black tabular-nums text-slate-900">{fmt(delta.cur)}</span>
+      <span className="mt-1.5 block text-xl font-black tabular-nums tracking-[-0.02em] text-slate-900">{fmt(delta.cur)}</span>
       <span className={cn("block break-words text-phx-xs font-bold tabular-nums", tone)}>
         {deltaText} <span className="font-medium text-slate-400">vs {fmt(delta.prev)}</span>
       </span>
@@ -412,13 +407,13 @@ function DeltaChip({ label, delta, kind, goodUp = true, judged = true }: { label
 function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) {
   return (
     <Card className={PREMIUM_CARD}>
-      <div className="mb-3 text-phx-xs font-black uppercase tracking-wide text-slate-400">
-        Period-over-period — this period vs {comparison.previousLabel}
-      </div>
+      <SectionHeader icon={TrendingUp} tone="sky" sub={`This period against ${comparison.previousLabel}. Green is the better direction; the GPS figures are shown without a verdict.`}>
+        Movement since the previous period
+      </SectionHeader>
       {/* Columns follow the CARD's width, not the window's: at 1024 with the sidebar open a
           window-sized lg: split six chips into ~59px each. */}
       <div className="@container">
-      <div className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3 @3xl:grid-cols-6">
+      <div className="grid grid-cols-2 border-l border-t border-slate-200 @lg:grid-cols-3 @3xl:grid-cols-6">
         <DeltaChip label="Productive visits" delta={comparison.productiveVisits} kind="int" />
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
         <DeltaChip label="Customers" delta={comparison.distinctCustomers} kind="int" />
@@ -460,7 +455,7 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
             <div className="flex w-full flex-1 items-end">
               <div
                 className={cn(
-                  "w-full rounded-t",
+                  "w-full",
                   i === OFF_DAY ? "bg-slate-300" : i === HALF_DAY ? "bg-sky-400/45" : "bg-sky-500/80",
                 )}
                 style={{ height: `${(c / max) * 100}%` }}
@@ -485,14 +480,14 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
 const BAR_LIST = "@container space-y-1.5";
 const BAR_ROW = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @md:grid-cols-[10rem_minmax(0,1fr)_7rem]";
 const BAR_LABEL = "min-w-0 break-words text-xs text-slate-500";
-const BAR_TRACK = "col-span-2 h-3 overflow-hidden rounded-full bg-slate-100 @md:col-span-1 @md:col-start-2 @md:row-start-1";
+const BAR_TRACK = "col-span-2 h-3 overflow-hidden bg-slate-100 @md:col-span-1 @md:col-start-2 @md:row-start-1";
 const BAR_FIGURE = "text-right text-xs tabular-nums text-slate-400 @md:col-start-3 @md:row-start-1";
 
 // The bordered name-and-figures lists (products, double visits, reps reached, trips). A name used
 // to `truncate` beside a `shrink-0` figure inside an `overflow-hidden` box, so a long product,
 // manager or customer name was cut with no sign at 375px. Now both sides WRAP: the name takes the
 // room, the figures keep at most a little over half of it, and nothing is clipped.
-const LIST_BOX = "rounded-[14px] border border-slate-200";
+const LIST_BOX = "border border-slate-200";
 const LIST_ROW = "flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70";
 const LIST_NAME = "min-w-0 flex-1 break-words text-slate-800";
 const LIST_SIDE = "min-w-0 max-w-[55%] break-words text-right text-xs text-slate-400";
@@ -517,7 +512,7 @@ function MixRows({ items }: { items: { label: string; count: number; pct: number
           <div className={BAR_LABEL}>{it.label}</div>
           <div className={BAR_FIGURE}>{it.count} · {Math.round(it.pct * 100)}%</div>
           <div className={BAR_TRACK}>
-            <div className="h-full rounded-full bg-indigo-500/70" style={{ width: `${(it.count / max) * 100}%` }} />
+            <div className="h-full bg-indigo-500/70" style={{ width: `${(it.count / max) * 100}%` }} />
           </div>
         </div>
       ))}
@@ -603,6 +598,18 @@ function zoneOf(zone: string | null) {
   return (zone && zoneStyle[zone]) || { label: zone ?? "—", tone: "text-slate-400" };
 }
 
+/** One fact on the masthead's ledger: a kicker and a value. */
+function MastheadFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-b border-r border-slate-200 px-5 py-3 sm:px-6">
+      <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-bold text-slate-900">{value}</dd>
+    </div>
+  );
+}
+
+type ContentsEntry = { id: string; number: string; title: string };
+
 function IdentityHero({
   chrome,
   subject,
@@ -610,6 +617,8 @@ function IdentityHero({
   windowLabel,
   benchmarkLabel,
   roleLabel,
+  sources,
+  contents,
 }: {
   chrome: "admin" | "portal";
   subject: Employee360Subject;
@@ -617,102 +626,161 @@ function IdentityHero({
   windowLabel: string;
   benchmarkLabel: string;
   roleLabel: string;
+  /** The data-source marks (CRM, GPS, sales, coaching) — what this record could and could not read. */
+  sources: ReactNode;
+  /** The report's chapters, numbered, as anchor links. */
+  contents: readonly ContentsEntry[];
 }) {
-  // NO DARK BAND. Flattened 2026-09-03 at the owner's instruction — "remove from all pages this
-  // dump block" — the same removal made the same day on `AdminPageHero` (131 pages), the HR, CEO
-  // and Finance command centers and My Workspace. This was an `AdminHeroFrame`: a full-bleed
-  // black gradient at p-5 / sm:p-6 / lg:p-7, four decorative layers deep.
-  //
-  // NOTHING HERE WAS DELETED, only recoloured, and that is the difference between this page and
-  // the others. Everywhere else the band was restating the name of the page you had just opened,
-  // so it went. Here it says WHOSE record you are reading — the name, HR ID, employment status,
-  // job title, line, area, manager and tenure — and dropping it would leave a review page with no
-  // subject on it. So it is now a compact line on the page's own surface.
-  //
-  // THE COLOURS ALL HAD TO MOVE WITH IT. `AdminHeroFrame` supplied a dark surface, so every value
-  // above was written to be legible on black — `text-white`, `text-slate-300/400`,
-  // `text-phx-paper`, `bg-white/10`, `ring-white/10`. Kept as-is over white they paint white on
-  // white: present in the DOM, invisible on screen, and reading as missing data rather than as a
-  // styling bug. If anything here ever goes blank, that is the first thing to check.
+  // THE MASTHEAD OF A PERSONNEL RECORD (owner, 2026-10-27: "a real heavy premium polish to the design,
+  // style and idea"). Still no dark band — flattened 2026-09-03 on his word across every page header —
+  // but this header says WHOSE record you are reading, so it is the page's own sheet: an orange head
+  // rule, the person, a ledger of the facts HR keeps on them, what the record could read, and its contents.
   return (
-    // POLISHED 2026-09-03 (second pass): the rail and fading rule from the shared tokens, so this
-    // person's header matches every page header around it. The rail sits OUTSIDE the avatar, at
-    // the block's leading edge, which is where it sits on every other header - it marks the start
-    // of the header, not the start of the text.
-    <section className="min-w-0">
-      <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-      <div className="relative flex min-w-0 items-center gap-3 pl-3.5">
-        <span aria-hidden="true" className={pageHeaderRailClassName} />
+    <section className="@container min-w-0 border border-slate-200/80 border-t-[3px] border-t-orange-600 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-200 px-5 py-2.5 sm:px-6">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.2em] text-slate-500">Employee 360 · Personnel record</span>
+        <span className="min-w-0 break-words text-phx-xs font-bold text-slate-700">
+          {windowLabel}
+          <span className="font-medium text-slate-400"> · {benchmarkLabel}</span>
+        </span>
+      </div>
+
+      <div className="flex min-w-0 items-start gap-4 px-5 py-5 sm:gap-5 sm:px-6 sm:py-6">
         <span
           aria-hidden
           className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[13px] font-black text-white ring-1 ring-slate-900/10",
-            avatarTone(subject.hrId),
+            "flex h-14 w-14 shrink-0 items-center justify-center text-xl font-black text-white sm:h-16 sm:w-16",
+            employeeAvatarGround(subject.hrId),
           )}
         >
-          {initials(subject.displayName)}
+          {employeeInitials(subject.displayName)}
         </span>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Literal bracket sizes, not the named text-phx-* scale — cn() runs over this
-                subtree and tailwind-merge silently drops custom NAMED font sizes.
-
-                THE LEVEL IS THE SHELL'S TO DECIDE, THE LOOK IS NOT. Owner, 2026-09-30: "change the
-                employee 360 h1 to an h2". This is the PERSON's name, never the page title, so on a
-                portal page — where `EmployeePortalPageShell` already renders `<h1>Employee 360</h1>`
-                — it is a section heading and a second <h1> is simply wrong for a screen reader, which
-                announces the employee's name as the name of the page.
-
-                🔴 IT COULD NOT BE SWAPPED OUTRIGHT. `app/(admin)/employee-360/[hrId]/page.tsx`
-                renders this view with NO shell, and its own three <h1>s are all in not-found and
-                error branches — so on the admin SUCCESS path this is the page's ONLY <h1>, and an
-                unconditional demotion would have left that page with no top-level heading at all.
-                Gated instead, on the same `chrome` prop `KpisBoardView`, `FieldActivityView` and
-                `TerritoryMapWorkspace` already use.
-
-                The className is identical on both branches, so nothing moves by a pixel — Tailwind's
-                preflight resets heading margins and sizes, and the sizes here are explicit. */}
+          <span className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">{roleLabel}</span>
+          {/* THE LEVEL IS THE SHELL'S TO DECIDE, THE LOOK IS NOT (owner, 2026-09-30: "change the employee
+              360 h1 to an h2"). This is the PERSON's name, never the page title: on a portal page the
+              shell already renders `<h1>Employee 360</h1>`, so here it is an <h2>. The admin page renders
+              this view with NO shell, so there it is the page's only <h1> — gated on `chrome`, never
+              demoted outright. Both branches share one className, so nothing moves by a pixel. */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             {chrome === "admin" ? (
-              <h1 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
+              <h1 className="min-w-0 break-words text-2xl font-black tracking-[-0.03em] text-slate-900 sm:text-[1.75rem] sm:leading-9">
                 {subject.displayName}
               </h1>
             ) : (
-              <h2 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
+              <h2 className="min-w-0 break-words text-2xl font-black tracking-[-0.03em] text-slate-900 sm:text-[1.75rem] sm:leading-9">
                 {subject.displayName}
               </h2>
             )}
-            <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-              {subject.hrId.toUpperCase()}
-            </span>
             {subject.employmentStatus && subject.employmentStatus !== "active" ? (
-              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-700">
+              <span className="border border-amber-400 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-800">
                 {subject.employmentStatus.replace(/_/g, " ")}
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-[13px] leading-5 text-slate-600">
-            {[subject.jobTitle, subject.lineName, subject.areaName || subject.regionName].filter(Boolean).join(" · ") || "—"}
-          </p>
-          <p className="text-[12px] leading-5 text-slate-500">
-            {subject.managerName ? `Reports to ${subject.managerName}` : "No manager on record"}
-            {tenure ? ` · ${tenure}` : ""}
-          </p>
+          <p className="mt-1 break-words text-sm text-slate-600">{subject.jobTitle || "No job title on record"}</p>
         </div>
       </div>
-      <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
-        <span className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
-          {roleLabel}
-        </span>
-        <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
-          {windowLabel}
-        </span>
-        <span className="text-[11px] text-slate-500">{benchmarkLabel}</span>
+
+      {/* The facts as a ledger. The extra right and bottom hairline of the edge cells is clipped. */}
+      <div className="overflow-hidden border-t border-slate-200">
+        <dl className="-mb-px -mr-px grid grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-5">
+          <MastheadFact label="HR ID" value={subject.hrId.toUpperCase()} />
+          <MastheadFact label="Line" value={subject.lineName || "—"} />
+          <MastheadFact label="Area" value={subject.areaName || subject.regionName || "—"} />
+          <MastheadFact label="Reports to" value={subject.managerName || "No manager on record"} />
+          <MastheadFact label="Tenure" value={tenure ? tenure.replace(/ tenure$/, "") : "—"} />
+        </dl>
       </div>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:px-6">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Data sources</span>
+        {sources}
       </div>
-      <div aria-hidden="true" className={pageHeaderRuleClassName} />
+
+      {contents.length > 1 ? (
+        <nav aria-label="Contents of this report" className="border-t border-slate-200 px-5 py-3 sm:px-6">
+          <ol className="flex flex-wrap gap-x-6 gap-y-2">
+            {contents.map((entry) => (
+              <li key={entry.id} className="min-w-0">
+                <a
+                  href={`#${entry.id}`}
+                  className="group inline-flex items-baseline gap-2 text-sm font-bold text-slate-700 outline-none hover:text-orange-700 focus-visible:ring-2 focus-visible:ring-orange-500/40"
+                >
+                  <span className="text-phx-xs font-black tabular-nums text-orange-600">{entry.number}</span>
+                  <span className="break-words underline-offset-4 group-hover:underline">{entry.title}</span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : null}
     </section>
   );
 }
+
+type GlanceFigure = { label: string; value: string; note?: string; good?: boolean | null };
+
+/** Column maps for the strip, written out whole so Tailwind sees every class. */
+const GLANCE_COLUMNS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-2 @xl:grid-cols-3",
+  4: "grid-cols-2 @2xl:grid-cols-4",
+  5: "grid-cols-2 @2xl:grid-cols-3 @4xl:grid-cols-5",
+};
+
+/** The handful of figures a reader wants first, large, each with the line it is read against. */
+function AtAGlance({ figures }: { figures: readonly GlanceFigure[] }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.2em] text-slate-500">At a glance</span>
+        <span className="text-phx-xs text-slate-400">Each figure is explained in its chapter below</span>
+      </div>
+      <div className="@container">
+        <div className={cn("grid border-l border-t border-slate-200", GLANCE_COLUMNS[figures.length] ?? GLANCE_COLUMNS[5])}>
+          {figures.map((figure) => (
+            <div key={figure.label} className={`min-w-0 ${LEDGER_CELL} px-4 py-4 sm:px-5`}>
+              <span className="block break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{figure.label}</span>
+              <span
+                className={cn(
+                  "mt-2 block break-words text-3xl font-black tabular-nums tracking-[-0.03em] sm:text-4xl",
+                  figure.good == null ? "text-slate-900" : figure.good ? "text-emerald-700" : "text-amber-700",
+                )}
+              >
+                {figure.value}
+              </span>
+              {figure.note ? <span className="mt-1.5 block break-words text-phx-xs font-bold text-slate-500">{figure.note}</span> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** One chapter of the record: a big orange numeral, an ink rule, the title and what it holds. */
+function Chapter({ id, number, title, lede, children }: { id: string; number: string; title: string; lede: string; children: ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 scroll-mt-24 space-y-5">
+      <header className="flex items-end gap-4 border-b-2 border-slate-900 pb-3">
+        <span aria-hidden className="text-4xl font-black leading-none tabular-nums tracking-[-0.04em] text-orange-600 sm:text-5xl">
+          {number}
+        </span>
+        <div className="min-w-0 pb-0.5">
+          <h2 id={`${id}-title`} className="break-words text-xl font-black tracking-[-0.02em] text-slate-900 sm:text-2xl">
+            {title}
+          </h2>
+          <p className="mt-0.5 break-words text-sm leading-relaxed text-slate-500">{lede}</p>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+type ChapterKey = "leadership" | "results" | "field" | "development" | "cost";
 
 export function Employee360View({
   chrome = "admin",
@@ -726,6 +794,7 @@ export function Employee360View({
   tmAnalytics = null,
   pmMarketing = null,
   crmInsights = null,
+  unreadSections = [],
   bare = false,
 }: {
   /**
@@ -747,6 +816,8 @@ export function Employee360View({
   pmMarketing?: PmMarketingSummary | null;
   /** Phoenix CRM plan compliance and visit frequency by grade (`crm-insights.ts`). */
   crmInsights?: Employee360CrmInsights | null;
+  /** Sections whose read failed on the server — named on the page, never silently left out. */
+  unreadSections?: readonly string[];
   /**
    * The employee portal's page shell already pads and sizes the content column, so its two call
    * sites render the report BARE: no second padding (32px lost at 375px) and no max-width, which
@@ -782,56 +853,90 @@ export function Employee360View({
   );
   const { isLeader, showCampaign, showCheckin, showReceivedSide } = plan;
 
-  return (
-    <div className={bare ? "space-y-6" : "mx-auto max-w-5xl space-y-6 p-4 sm:p-6"}>
-      {/* Header / identity */}
-      <IdentityHero chrome={chrome} subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} roleLabel={EMPLOYEE_360_ROLE_META[category].label} />
-
-      {/* Trust strip */}
-      <div className="flex flex-wrap gap-2 text-xs">
-        <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this employee" />
-        {showCheckin ? (
-          <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
-        ) : null}
-        {category !== "training-manager" ? (
-          <TrustChip ok={summary.sales.hasData} okText="Sales linked" badText="No validated sales yet" />
-        ) : null}
-        {isLeader ? (
-          <TrustChip
-            ok={Boolean(summary.leadership?.hasData)}
-            okText={`${summary.leadership?.distinctRepsReached ?? 0} reps reached`}
-            badText="No coaching / double-visits delivered"
-          />
-        ) : (
-          <TrustChip ok={summary.coaching.hasData} okText={`${summary.coaching.reportCount} coaching reports`} badText="Never coached" />
-        )}
-      </div>
-
-      {/* Period-over-period — own field-performance trend (reps). */}
-      {plan.showComparison && comparison ? <ComparisonStrip comparison={comparison} /> : null}
-
-      {/* Leaders lead with what they DELIVER. */}
-      {plan.showLeadership && summary.leadership ? (
-        <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} />
+  const sources = (
+    <>
+      <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this employee" />
+      {showCheckin ? (
+        <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
       ) : null}
+      {category !== "training-manager" ? (
+        <TrustChip ok={summary.sales.hasData} okText="Sales linked" badText="No validated sales yet" />
+      ) : null}
+      {isLeader ? (
+        <TrustChip
+          ok={Boolean(summary.leadership?.hasData)}
+          okText={`${summary.leadership?.distinctRepsReached ?? 0} reps reached`}
+          badText="No coaching / double-visits delivered"
+        />
+      ) : (
+        <TrustChip ok={summary.coaching.hasData} okText={`${summary.coaching.reportCount} coaching reports`} badText="Never coached" />
+      )}
+    </>
+  );
 
-      {/* Training Manager god-mode: coverage / neglect / concentration + verdict. */}
-      {tmAnalytics ? <TrainingManagerSection a={tmAnalytics} /> : null}
+  // At a glance: only figures a section below also shows, judged the same way it judges them.
+  const glance: GlanceFigure[] = [];
+  const leadership = plan.showLeadership ? summary.leadership : null;
+  if (isLeader) {
+    if (plan.showTeamSales && summary.sales.hasData) {
+      glance.push({
+        label: summary.sales.isTeamRollup ? "Team achievement" : "Achievement",
+        value: pctPoints(summary.sales.achievementPct),
+        good: summary.sales.achievementPct == null ? null : summary.sales.achievementPct >= 100,
+        note: "of target, published months",
+      });
+    }
+    if (leadership) {
+      glance.push({ label: "Reps reached", value: intFmt.format(leadership.distinctRepsReached), note: "coached or double-visited" });
+      glance.push({
+        label: "Double visits conducted",
+        value: leadership.dvConducted == null ? "—" : intFmt.format(leadership.dvConducted),
+        note: leadership.dvConducted == null ? "Phoenix CRM could not be read just now" : leadership.dvDays != null ? `on ${daysWord(leadership.dvDays)}` : undefined,
+      });
+      glance.push({
+        label: "Coaching delivered",
+        value: intFmt.format(leadership.coachingDelivered),
+        note: leadership.avgScoreGiven != null ? `average score ${Math.round(leadership.avgScoreGiven)}%` : undefined,
+      });
+    }
+  } else {
+    if (plan.showOwnVisits) {
+      glance.push({ label: "Productive visits", value: intFmt.format(summary.productiveVisits), note: `vs ${companyAvg(intFmt.format(b.productiveVisits))}` });
+      glance.push({
+        label: "Visits / active day",
+        value: ratio1(summary.visitsPerActiveDay),
+        good: summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay,
+        note: `vs ${companyAvg(b.visitsPerActiveDay)}`,
+      });
+    }
+    if (plan.showOwnSales && summary.sales.hasData) {
+      glance.push({
+        label: "Achievement",
+        value: pctPoints(summary.sales.achievementPct),
+        good: summary.sales.achievementPct == null ? null : summary.sales.achievementPct >= 100,
+        note: "of target, published months",
+      });
+    }
+    if (showReceivedSide && summary.coaching.hasData) {
+      glance.push({ label: "Coaching score", value: pctPoints(summary.coaching.avgScore), note: `${intFmt.format(summary.coaching.reportCount)} coaching reports` });
+    }
+    if (plan.showOwnVisits) {
+      glance.push({ label: "Utilization", value: pct(summary.utilization), note: `${summary.activeDays} of ${summary.workingDaysInWindow} working days` });
+    }
+  }
 
-      {/* Team / line sales — leaders show it up top (reps see their own further down). */}
-      {plan.showTeamSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
+  const comparisonPart = plan.showComparison && comparison ? <ComparisonStrip comparison={comparison} /> : null;
+  const leadershipPart = plan.showLeadership && summary.leadership ? (
+    <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} />
+  ) : null;
+  const tmPart = tmAnalytics ? <TrainingManagerSection a={tmAnalytics} /> : null;
+  const teamSalesPart = plan.showTeamSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null;
+  const teamHealthPart = teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null;
+  const teamLifecyclePart = teamLifecycle ? <TeamLifecycleSection lifecycle={teamLifecycle} /> : null;
+  const marketingPart = pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null;
 
-      {/* Team development — coaching coverage of a field manager's own reps. */}
-      {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
-
-      {/* Team compliance — weekly plans, field discipline & probation of their reps. */}
-      {teamLifecycle ? <TeamLifecycleSection lifecycle={teamLifecycle} /> : null}
-
-      {/* PM / Group PM — ROI on the marketing requests they submitted. */}
-      {pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null}
-
-      {/* Visits & Coverage — reps: full field performance; leaders: their OWN field presence. */}
-      {plan.showOwnVisits ? (
+  // Visits & Coverage — reps: full field performance; leaders: their OWN field presence.
+  const ownVisitsPart = plan.showOwnVisits ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader
           icon={Footprints}
@@ -845,7 +950,7 @@ export function Employee360View({
           {isLeader ? "Own Field Presence" : "Visits & Coverage"}
         </SectionHeader>
         <SummaryLine text={summary.visitsSummaryText} />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
           <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={companyAvg(intFmt.format(b.productiveVisits))} hint={tenure ? "total — read with tenure" : undefined} />
           <KpiTile label="Visits / active day" value={ratio1(summary.visitsPerActiveDay)} benchmark={companyAvg(b.visitsPerActiveDay)} goodWhenAbove={summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay} />
           <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={companyAvg(b.activeDays)} />
@@ -858,7 +963,7 @@ export function Employee360View({
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-5 grid border-l border-t border-slate-200 sm:grid-cols-3">
           <KpiTile label="Last 30 days" value={intFmt.format(summary.last30)} hint={`previous 30 days: ${intFmt.format(summary.prev30)} · ${MOMENTUM_LABEL[summary.momentumTrend]}`} goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null} />
           <KpiTile label="Avg visits / customer" value={ratio1(summary.avgVisitsPerCustomer)} hint={`${summary.repeatCustomers} repeat · ${summary.oneTimeCustomers} one-time`} />
           <KpiTile
@@ -884,10 +989,9 @@ export function Employee360View({
 
         <MostVisitedCustomers top={summary.topCustomers} />
       </Card>
-      ) : null}
+  ) : null;
 
-      {/* Campaign vs Regular */}
-      {showCampaign ? (
+  const campaignPart = showCampaign ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; campaign falling while regular rises is the best direction. Each month shows the company's SAME-month campaign share beside it.">
           Campaign vs Regular
@@ -915,34 +1019,34 @@ export function Employee360View({
         {summary.monthly.length === 0 ? (
           <EmptyState>No productive visits in this window.</EmptyState>
         ) : (
-          <div className="space-y-2">
+          <div className={cn(BAR_LIST, "space-y-2")}>
             {summary.monthly.map((m) => {
               const total = m.regular + m.campaign;
               return (
-                <div key={m.month} className="flex items-center gap-3">
-                  <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
-                  <div className="flex h-5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div key={m.month} className={BAR_ROW}>
+                  <div className={cn(BAR_LABEL, "font-semibold")}>{monthLabel(m.month)}</div>
+                  <div className={BAR_FIGURE}>
+                    {intFmt.format(total)} · {pct(m.campaignShare)} camp
+                    {m.companyCampaignShare != null ? <span className="text-slate-400"> (co {Math.round(m.companyCampaignShare * 100)}%)</span> : null}
+                  </div>
+                  <div className={cn(BAR_TRACK, "flex")}>
                     <div className="h-full bg-sky-500" style={{ width: `${(m.regular / monthlyMax) * 100}%` }} title={`${m.regular} regular`} />
                     <div className="h-full bg-orange-500" style={{ width: `${(m.campaign / monthlyMax) * 100}%` }} title={`${m.campaign} campaign`} />
-                  </div>
-                  <div className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                    {intFmt.format(total)} · {pct(m.campaignShare)} camp
-                    {m.companyCampaignShare != null ? <span className="text-slate-300"> (co {Math.round(m.companyCampaignShare * 100)}%)</span> : null}
                   </div>
                 </div>
               );
             })}
             <div className="mt-2 flex gap-4 text-xs text-slate-400">
-              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-sky-500" /> Regular</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-orange-500" /> Campaign</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-sky-500" /> Regular</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-orange-500" /> Campaign</span>
             </div>
           </div>
         )}
       </Card>
-      ) : null}
+  ) : null;
 
-      {/* Module B — check-in timing & authenticity */}
-      {showCheckin ? (
+  // Module B — check-in timing & authenticity
+  const checkinPart = showCheckin ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader
           icon={Clock}
@@ -952,14 +1056,14 @@ export function Employee360View({
           Check-in Timing &amp; Authenticity
         </SectionHeader>
         {!summary.hasGpsCheckins ? (
-          <div className="flex items-start gap-2.5 rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="flex items-start gap-2.5 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>No GPS signal ever logged for this employee in the window. Timing and authenticity cannot be assessed — this usually means the mobile app GPS is off, not misconduct.</span>
           </div>
         ) : (
           <>
             <SummaryLine text={summary.checkinSummaryText} />
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
               <KpiTile label="GPS check-ins" value={intFmt.format(summary.checkinCount)} />
               <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={companyAvg(b.checkinToVisitRatio)} hint="GPS corroboration of visits" />
               <KpiTile label="Check-in coverage" value={pct(summary.checkinCoverage)} hint="days with GPS ÷ active days" />
@@ -969,13 +1073,13 @@ export function Employee360View({
               <div className="mb-1.5 text-xs font-bold text-slate-500">Check-in time of day (Cairo) — company peaks 14:00–16:00</div>
               <div className="flex h-24 items-end gap-[2px]">
                 {summary.hourHistogram.map((count, hour) => (
-                  <div key={hour} className="flex-1 rounded-t bg-indigo-500/80" style={{ height: `${(count / hourMax) * 100}%` }} title={`${hour}:00 — ${count} check-ins`} />
+                  <div key={hour} className="flex-1 bg-indigo-500/80" style={{ height: `${(count / hourMax) * 100}%` }} title={`${hour}:00 — ${count} check-ins`} />
                 ))}
               </div>
               <div className="mt-1 flex justify-between text-phx-2xs font-semibold text-slate-400"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
               <KpiTile label="Field window" value={`${fmtHourView(summary.avgFirstHour)}–${fmtHourView(summary.avgLastHour)}`} hint={summary.avgSpanHours != null ? `~${summary.avgSpanHours.toFixed(1)}h/day` : undefined} />
               <KpiTile label="Check-ins / active day" value={ratio1(summary.checkinsPerActiveDay)} hint="per day with GPS" />
               <KpiTile label="Uncorroborated days" value={intFmt.format(summary.uncorroboratedDays)} hint="visit days with no GPS" />
@@ -1002,49 +1106,115 @@ export function Employee360View({
           </>
         )}
       </Card>
-      ) : null}
+  ) : null;
 
-      {/* Sales & Achievement — reps see their own here (leaders saw team sales up top). */}
-      {plan.showOwnSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
-
-      {/* Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise). */}
-      {plan.showBricks && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
-
-      {/* Phoenix CRM — plan compliance and visit frequency by grade, each only with something to say. */}
+  const ownSalesPart = plan.showOwnSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null;
+  // Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise).
+  const bricksPart = plan.showBricks && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null;
+  // Phoenix CRM — plan compliance and visit frequency by grade, each only with something to say.
+  const crmPart =
+    plan.showCrmPlanCompliance || plan.showCrmFrequency ? (
       <Employee360CrmInsightsSections
         insights={crmInsights}
         showPlanCompliance={plan.showCrmPlanCompliance}
         showFrequency={plan.showCrmFrequency}
       />
+    ) : null;
+  // Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM).
+  const expensesPart = plan.showExpenses ? (
+    <ExpensesSection
+      expenses={summary.expenses}
+      activity={{
+        amVisits: summary.amVisits,
+        pmVisits: summary.pmVisits,
+        pharmacyVisits: summary.pharmacyVisits ?? 0,
+        phoenixVisits: summary.phoenixVisits ?? 0,
+        regularVisits: summary.regularVisits,
+        campaignVisits: summary.campaignVisits,
+      }}
+    />
+  ) : null;
+  // Coaching / impact / double-visits RECEIVED — a rep-side view (Medical Reps).
+  const receivedPart = showReceivedSide ? (
+    <>
+      <CoachingSection coaching={summary.coaching} field={summary.fieldBenchmarks} />
+      <ImpactSection impact={summary.impact} />
+      <DoubleVisitSection dv={summary.doubleVisits} />
+    </>
+  ) : null;
 
-      {/* Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM). */}
-      {plan.showExpenses ? (
-        <ExpensesSection
-          expenses={summary.expenses}
-          activity={{
-            amVisits: summary.amVisits,
-            pmVisits: summary.pmVisits,
-            pharmacyVisits: summary.pharmacyVisits ?? 0,
-            phoenixVisits: summary.phoenixVisits ?? 0,
-            regularVisits: summary.regularVisits,
-            campaignVisits: summary.campaignVisits,
-          }}
+  // The record's chapters. Every section belongs to exactly one, and the role decides their order: a
+  // leader's record opens on what they deliver, a rep's on their own field work. A chapter with nothing
+  // to show is left out and the rest are numbered in the order they appear.
+  const CHAPTERS: Record<ChapterKey, { title: string; lede: string; parts: ReactNode[] }> = {
+    leadership: {
+      title: "Leadership",
+      lede: "What this manager delivers to the team: coaching, double visits, the team's development and its compliance.",
+      parts: [leadershipPart, tmPart, teamHealthPart, teamLifecyclePart],
+    },
+    results: {
+      title: "Results",
+      lede: "Sales against target, read from the published Monthly Closing, and what the marketing requests returned.",
+      parts: [teamSalesPart, ownSalesPart, marketingPart],
+    },
+    field: {
+      title: isLeader ? "Own field work" : "Field work",
+      lede: isLeader
+        ? "The visits this manager made personally, and the Phoenix CRM plan and frequency reads."
+        : "Visits, coverage, the GPS record and the Phoenix CRM plan for the period.",
+      parts: [comparisonPart, ownVisitsPart, campaignPart, checkinPart, bricksPart, crmPart],
+    },
+    development: {
+      title: "Development",
+      lede: "The coaching this employee received, what changed after it, and the double visits made with them.",
+      parts: [receivedPart],
+    },
+    cost: {
+      title: "Cost",
+      lede: "Payroll and outstation cost for the period, against the field work it paid for.",
+      parts: [expensesPart],
+    },
+  };
+  const order: ChapterKey[] = isLeader
+    ? ["leadership", "results", "field", "development", "cost"]
+    : ["field", "results", "development", "leadership", "cost"];
+  const chapters = order
+    .map((key) => ({ key, ...CHAPTERS[key], parts: CHAPTERS[key].parts.filter((part) => part != null) }))
+    .filter((chapter) => chapter.parts.length > 0)
+    .map((chapter, index) => ({ ...chapter, id: `e360-${chapter.key}`, number: String(index + 1).padStart(2, "0") }));
+
+  return (
+    <div className={bare ? "space-y-8" : "mx-auto max-w-5xl space-y-8 p-4 sm:p-6"}>
+      <div className="space-y-6">
+        <IdentityHero
+          chrome={chrome}
+          subject={subject}
+          tenure={tenure}
+          windowLabel={summary.window.label}
+          benchmarkLabel={b.windowLabel}
+          roleLabel={EMPLOYEE_360_ROLE_META[category].label}
+          sources={sources}
+          contents={chapters.map(({ id, number, title }) => ({ id, number, title }))}
         />
-      ) : null}
+        {unreadSections.length > 0 ? <UnreadSectionsNotice names={unreadSections} /> : null}
+        {glance.length > 0 ? <AtAGlance figures={glance} /> : null}
+      </div>
 
-      {/* Coaching / impact / double-visits RECEIVED — a rep-side view (Medical Reps). */}
-      {showReceivedSide ? (
-        <>
-          <CoachingSection coaching={summary.coaching} field={summary.fieldBenchmarks} />
-          <ImpactSection impact={summary.impact} />
-          <DoubleVisitSection dv={summary.doubleVisits} />
-        </>
-      ) : null}
+      {chapters.map((chapter) => (
+        <Chapter key={chapter.id} id={chapter.id} number={chapter.number} title={chapter.title} lede={chapter.lede}>
+          {chapter.parts.map((part, index) => (
+            <Fragment key={index}>{part}</Fragment>
+          ))}
+        </Chapter>
+      ))}
 
-      <p className="px-1 text-phx-xs text-slate-400">
-        Employee 360 · {EMPLOYEE_360_ROLE_META[category].label} view — sections are tailored to this role. Sales lag visits ~2 months
-        {salesCoverage ? ` (${salesCoverage})` : ""}; coaching is a single-rater signal — light pillars are coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
-      </p>
+      <footer className="border-t border-slate-300 pt-4">
+        <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Notes on this report</span>
+        <p className="mt-1.5 max-w-3xl text-phx-xs leading-relaxed text-slate-500">
+          {EMPLOYEE_360_ROLE_META[category].label} view — sections are tailored to this role. Sales lag visits ~2 months
+          {salesCoverage ? ` (${salesCoverage})` : ""}; coaching is a single-rater signal — light pillars are coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
+        </p>
+      </footer>
     </div>
   );
 }
@@ -1097,7 +1267,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
       ) : (
         <>
           <SummaryLine text={leadership.summaryText} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-3 xl:grid-cols-5">
             <KpiTile
               label="Coaching delivered"
               value={intFmt.format(leadership.coachingDelivered)}
@@ -1164,7 +1334,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
                   ].filter(Boolean);
                   return (
                     <div key={r.hrId} className={LIST_ROW}>
-                      <span className={LIST_NAME}>{r.name ?? r.hrId}</span>
+                      <span className={LIST_NAME}>{r.name ?? NAME_NOT_ON_RECORD}</span>
                       <span className={cn(LIST_SIDE, "tabular-nums")}>{parts.join(" · ")}</span>
                     </div>
                   );
@@ -1239,7 +1409,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
       ) : (
         <>
           <SummaryLine text={sales.summaryText} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label={sales.isTeamRollup ? "Team sales" : "Total sales"} value={compactFmt.format(sales.totalSales)} hint={sales.isTeamRollup ? `${sales.teamRepCount} reps` : sales.latestMonth ? `through ${monthLabel(sales.latestMonth)}` : undefined} />
             <KpiTile
               label={sales.isTeamRollup ? "Team target" : "Total target"}
@@ -1260,7 +1430,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
             />
             <KpiTile label="Months covered" value={intFmt.format(sales.monthsCount)} hint={untargeted ? `${sales.targetedMonthsCount} with a target` : undefined} />
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile
               label="Months hit target"
               value={sales.targetedMonthsCount > 0 ? `${sales.monthsHitTarget}/${sales.targetedMonthsCount}` : "—"}
@@ -1287,19 +1457,19 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
             </div>
           ) : null}
           {sales.monthly.length > 0 ? (
-            <div className="mt-5 space-y-1.5">
+            <div className={cn(BAR_LIST, "mt-5")}>
               <div className="text-xs font-bold text-slate-500">Monthly achievement (bar = achievement %, capped at 150%)</div>
               {sales.monthly.slice(-12).map((m: SalesMonthPoint) => {
                 if (!m.hasTarget) {
                   // The month's sales are real and shown; there is no target to grade them against.
                   return (
-                    <div key={m.month} className="flex items-center gap-3">
-                      <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
-                      <div className="flex min-h-4 flex-1 items-center border border-dashed border-slate-300 bg-white px-2 text-phx-2xs font-semibold text-slate-500">
-                        No target set · sales only
-                      </div>
-                      <div className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-600">
+                    <div key={m.month} className={BAR_ROW}>
+                      <div className={cn(BAR_LABEL, "font-semibold")}>{monthLabel(m.month)}</div>
+                      <div className={cn(BAR_FIGURE, "text-slate-600")}>
                         {compactFmt.format(m.sales)} <span className="text-slate-400">sales</span>
+                      </div>
+                      <div className="col-span-2 flex min-h-4 items-center border border-dashed border-slate-300 bg-white px-2 text-phx-2xs font-semibold text-slate-500 @md:col-span-1 @md:col-start-2 @md:row-start-1">
+                        No target set · sales only
                       </div>
                     </div>
                   );
@@ -1308,13 +1478,13 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
                 const width = Math.min(150, achv) / 1.5; // % of bar
                 const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";
                 return (
-                  <div key={m.month} className="flex items-center gap-3">
-                    <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
-                    <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div className={cn("h-full rounded-full", tone)} style={{ width: `${width}%` }} />
-                    </div>
-                    <div className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                  <div key={m.month} className={BAR_ROW}>
+                    <div className={cn(BAR_LABEL, "font-semibold")}>{monthLabel(m.month)}</div>
+                    <div className={BAR_FIGURE}>
                       {pctPoints(m.achievementPct)} · {compactFmt.format(m.sales)}/{compactFmt.format(m.target)}
+                    </div>
+                    <div className={BAR_TRACK}>
+                      <div className={cn("h-full", tone)} style={{ width: `${width}%` }} />
                     </div>
                   </div>
                 );
@@ -1329,7 +1499,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
                 {sales.topProducts.map((p) => (
                   <div key={p.product} className={LIST_ROW}>
                     <span className={LIST_NAME}>{p.product}</span>
-                    <span className="min-w-0 max-w-[55%] break-words text-right tabular-nums text-slate-400">{compactFmt.format(p.sales)} · {pctPoints(p.achievementPct)}</span>
+                    <span className="min-w-0 max-w-[55%] break-words text-right tabular-nums text-slate-400">{compactFmt.format(p.sales)}{p.achievementPct != null ? ` · ${pctPoints(p.achievementPct)} of target` : ""}</span>
                   </div>
                 ))}
               </div>
@@ -1346,7 +1516,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
                     <div key={f.family} className={BAR_ROW}>
                       <div className={BAR_LABEL}>{f.family}</div>
                       <div className={BAR_FIGURE}>{pctPoints(f.achievementPct)} · {compactFmt.format(f.sales)}</div>
-                      <div className={BAR_TRACK}><div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
+                      <div className={BAR_TRACK}><div className={cn("h-full", tone)} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
                     </div>
                   );
                 })}
@@ -1454,7 +1624,7 @@ function BrickCoverageSection({ panel }: { panel: Employee360BrickPanel }) {
       </SectionHeader>
       <SummaryLine text={brickSummaryText(coverage)} />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
         <KpiTile
           label="Area bricks"
           value={intFmt.format(totals.areaBricks)}
@@ -1482,7 +1652,7 @@ function BrickCoverageSection({ panel }: { panel: Employee360BrickPanel }) {
           explain="Bricks of the area holding listed doctors where no sales were booked in the months shown."
         />
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
         <KpiTile
           label="Brick sales"
           value={compactFmt.format(totals.brickSales)}
@@ -1635,7 +1805,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
         </EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile
               label="Latest score"
               value={pctPoints(coaching.latest?.finalScorePercent ?? null)}
@@ -1658,7 +1828,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
                 {coaching.reports.map((r, i) => {
                   const z = zoneOf(r.zone);
                   return (
-                    <div key={`${r.date}-${i}`} className="rounded-[12px] border border-slate-200 px-3 py-2 text-center">
+                    <div key={`${r.date}-${i}`} className="border border-slate-200 px-3 py-2 text-center">
                       <div className={cn("text-lg font-black tabular-nums", z.tone)}>{pctPoints(r.finalScorePercent)}</div>
                       <div className="text-phx-2xs text-slate-400">{dayLabel(r.date)}</div>
                       <div className={cn("text-phx-2xs font-bold", z.tone)}>{z.label}</div>
@@ -1684,7 +1854,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
                       </div>
                       <div className={BAR_FIGURE}>{Math.round(c.avgPercent)}% · {c.avgScore.toFixed(1)}/5</div>
                       <div className={BAR_TRACK}>
-                        <div className={cn("h-full rounded-full", tone)} style={{ width: `${c.avgPercent}%` }} />
+                        <div className={cn("h-full", tone)} style={{ width: `${c.avgPercent}%` }} />
                       </div>
                     </div>
                   );
@@ -1705,7 +1875,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
 function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
   if (set.eventCount === 0) {
     return (
-      <div className="rounded-[14px] border border-slate-200 p-3.5">
+    <div className="border border-slate-200 p-3.5">
         <div className="text-sm font-bold text-slate-800">{title}</div>
         <EmptyState>No such events for this employee in the window.</EmptyState>
       </div>
@@ -1736,7 +1906,7 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
     },
   ];
   return (
-    <div className="rounded-[14px] border border-slate-200 p-3.5">
+    <div className="border border-slate-200 p-3.5">
       <div className="flex items-baseline justify-between">
         <div className="text-sm font-bold text-slate-800">{title}</div>
         <div className="text-phx-xs text-slate-400">{set.eventCount} event{set.eventCount === 1 ? "" : "s"} · ±{set.windowDays}d windows</div>
@@ -1769,7 +1939,7 @@ function ImpactSection({ impact }: { impact: Employee360Profile["impact"] }) {
   const anything = impact.coaching.eventCount > 0 || impact.trainingDv.eventCount > 0;
   return (
     <Card className={PREMIUM_CARD}>
-      <SectionHeader icon={Sparkles} tone="amber" sub={`Field activity in the ${impact.windowDays} days BEFORE vs AFTER each intervention. Directional — read with sample sizes.`}>
+      <SectionHeader icon={TrendingUp} tone="amber" sub={`Field activity in the ${impact.windowDays} days BEFORE vs AFTER each intervention. Directional — read with sample sizes.`}>
         Before / After Impact
       </SectionHeader>
       {!anything ? (
@@ -1822,7 +1992,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
       ) : (
         <>
           {/* One column on a phone: three across left ~54px tiles at 375px, labels spilling out. */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 border-l border-t border-slate-200 sm:grid-cols-3">
             <KpiTile label="Double-visits received" value={intFmt.format(dv.totalReceived)} hint={`on ${daysWord(dv.daysReceived)}`} />
             <KpiTile label="With Training Manager" value={intFmt.format(dv.tmCount)} hint="TM field coaching" />
             <KpiTile label="Distinct visitors" value={intFmt.format(dv.distinctVisitors)} />
@@ -1833,7 +2003,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
               <div className="mb-1.5 text-xs font-bold text-slate-500">Who accompanied this rep</div>
               <div className="flex flex-wrap gap-2">
                 {dv.byVisitor.map((v) => (
-                  <span key={v.hrId} className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", v.isTrainingManager ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
+                  <span key={v.hrId} className={cn("border px-2.5 py-1 text-xs font-semibold", v.isTrainingManager ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
                     {v.name ?? NAME_NOT_ON_RECORD} · {v.count}{v.isTrainingManager ? " · TM" : ""}
                   </span>
                 ))}
@@ -1850,7 +2020,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
                     <span className={LIST_DATE}>{dayLabel(e.date)}</span>
                     <span className="min-w-0 break-words text-slate-800">
                       {namesInWords([e.doubleName ?? NAME_NOT_ON_RECORD, ...(e.double2Name ? [e.double2Name] : []), ...e.otherNames.map((n) => n ?? NAME_NOT_ON_RECORD)])}
-                      {e.isTrainingManager ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
+                      {e.isTrainingManager ? <span className="ml-1.5 inline-block bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
                     </span>
                   </div>
                   <span className={LIST_SIDE}>
@@ -1894,7 +2064,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
         <EmptyState>No active Medical Reps to assess coverage against.</EmptyState>
       ) : (
         <>
-          <div className={cn("mb-4 rounded-[14px] border p-4", v.bg)}>
+          <div className={cn("mb-4 border p-4", v.bg)}>
             <div className="text-phx-xs font-black uppercase tracking-wide text-slate-400">Efficiency verdict</div>
             <div className={cn("text-xl font-black", v.tone)}>
               {v.label} · {a.efficiencyScore}/100
@@ -1902,13 +2072,13 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
             <p className="mt-1 text-xs text-slate-600">{a.rationale}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Field-force pool" value={intFmt.format(a.poolSize)} hint="active Medical Reps" />
             <KpiTile label="Reps coached" value={intFmt.format(a.coachedByTm)} hint={`${Math.round(a.coverageRate * 100)}% coverage`} goodWhenAbove={a.coverageRate >= 0.5} />
             <KpiTile label="Never coached" value={intFmt.format(a.neglectedByTm)} goodWhenAbove={a.neglectedByTm === 0} />
             <KpiTile label="Sessions delivered" value={intFmt.format(a.sessionsDelivered)} />
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Avg score given" value={a.avgScoreGiven == null ? "—" : `${Math.round(a.avgScoreGiven)}%`} />
             <KpiTile label="Top-5 focus share" value={a.topFocusShare == null ? "—" : `${Math.round(a.topFocusShare * 100)}%`} goodWhenAbove={a.topFocusShare == null ? null : !(a.topFocusShare > 0.5)} hint="lower = effort spread wider" />
             <KpiTile label="Over-focused reps" value={intFmt.format(a.overFocusedCount)} hint="coached 3+ times" />
@@ -1953,7 +2123,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
               {a.neglectedReps.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {a.neglectedReps.map((r) => (
-                    <span key={r.hrId} className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn" title={r.line ?? undefined}>
+                    <span key={r.hrId} className="border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn" title={r.line ?? undefined}>
                       {r.name}
                     </span>
                   ))}
@@ -1962,7 +2132,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
                   ) : null}
                 </div>
               ) : (
-                <div className="text-xs font-semibold text-emerald-600">Every active rep was coached at least once. 🎯</div>
+                <div className="text-xs font-semibold text-emerald-600">Every active rep was coached at least once.</div>
               )}
             </div>
           </div>
@@ -1986,7 +2156,7 @@ function MarketingRoiSection({ m }: { m: PmMarketingSummary }) {
         <EmptyState>This Product Manager has not submitted any marketing requests.</EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Requests" value={intFmt.format(m.requestCount)} />
             <KpiTile label="Est. spend" value={compactFmt.format(m.totalEstimatedCost)} />
             <KpiTile label="Expected ROI" value={compactFmt.format(m.totalExpectedRoi)} hint="forecast return" />
@@ -2011,8 +2181,8 @@ function MarketingRoiSection({ m }: { m: PmMarketingSummary }) {
                 {m.topRequests.map((r) => (
                   <div key={r.code} className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 break-words text-slate-600">
-                      {r.code}
-                      {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
+                      {r.typeName ? `${r.typeName} · ` : ""}{r.customerName}
+                      <span className="text-slate-400"> · {r.code}{r.line ? ` · ${r.line}` : ""}</span>
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-400">
                       {compactFmt.format(r.estimatedCost)} spend · {compactFmt.format(r.actual)} realized
@@ -2043,24 +2213,24 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
         <EmptyState>No Medical Reps roll up to this manager, so there is no team development coverage to show.</EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Reps on team" value={intFmt.format(teamHealth.repCount)} />
             <KpiTile label="Coached" value={intFmt.format(teamHealth.coachedCount)} hint={`${Math.round(cov * 100)}% coverage`} goodWhenAbove={cov >= 0.6} />
             <KpiTile label="Never coached" value={intFmt.format(teamHealth.neverCoachedCount)} goodWhenAbove={teamHealth.neverCoachedCount === 0} />
             <KpiTile label="Avg coaching score" value={teamHealth.avgScore == null ? "—" : `${Math.round(teamHealth.avgScore)}%`} />
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Double-visited" value={intFmt.format(teamHealth.dvCoveredCount)} hint={`${Math.round(teamHealth.dvCoverageRate * 100)}% of reps`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
             <KpiTile label="DV coverage" value={`${Math.round(teamHealth.dvCoverageRate * 100)}%`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
             <KpiTile label="Fully neglected" value={intFmt.format(teamHealth.fullyNeglectedCount)} goodWhenAbove={teamHealth.fullyNeglectedCount === 0} hint="no coaching AND no double-visit" />
             <KpiTile label="Team reach" value={`${Math.round(((teamHealth.repCount - teamHealth.fullyNeglectedCount) / Math.max(1, teamHealth.repCount)) * 100)}%`} hint="touched at least once" goodWhenAbove={teamHealth.fullyNeglectedCount === 0} />
           </div>
           {teamHealth.fullyNeglected.length > 0 ? (
-            <div className="mt-4 rounded-[14px] border border-rose-200 bg-rose-50/60 p-3">
+            <div className="mt-4 border border-rose-200 bg-rose-50/60 p-3">
               <div className="mb-1.5 text-xs font-black text-rose-700">Fully neglected — neither coached nor double-visited ({teamHealth.fullyNeglected.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {teamHealth.fullyNeglected.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-phx-danger-line bg-white px-2 py-0.5 text-xs text-phx-danger">{r.name}</span>
+                  <span key={r.hrId} className="border border-phx-danger-line bg-white px-2 py-0.5 text-xs text-phx-danger">{r.name}</span>
                 ))}
               </div>
             </div>
@@ -2070,7 +2240,7 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
               <div className="mb-1.5 text-xs font-bold text-amber-600">Never coached this period ({teamHealth.neglected.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {teamHealth.neglected.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn">{r.name}</span>
+                  <span key={r.hrId} className="border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn">{r.name}</span>
                 ))}
               </div>
             </div>
@@ -2117,7 +2287,7 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
         <EmptyState>No Medical Rep, district manager or regional manager rolls up to this manager, so there is no team compliance to show.</EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             {/* A failed plan read is "—" with the reason, never a zero nobody measured. */}
             <KpiTile
               label="Plans submitted"
@@ -2145,14 +2315,14 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
             <KpiTile label="In probation" value={intFmt.format(lifecycle.probationCount)} hint="within first 90 days" />
           </div>
           {lifecycle.probationReps.length > 0 ? (
-            <div className="mt-4 rounded-[14px] border border-blue-200 bg-blue-50/50 p-3">
+            <div className="mt-4 border border-blue-200 bg-blue-50/50 p-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-black text-blue-700">
                 <CalendarClock className="h-3.5 w-3.5" />
                 On probation — soonest to finish first ({lifecycle.probationReps.length})
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {lifecycle.probationReps.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-phx-info-line bg-white px-2 py-0.5 text-xs text-phx-info">
+                  <span key={r.hrId} className="border border-phx-info-line bg-white px-2 py-0.5 text-xs text-phx-info">
                     {r.name} · <span className="tabular-nums text-blue-500">{r.daysRemaining}d left</span>
                   </span>
                 ))}
@@ -2256,13 +2426,13 @@ function ExpensesSection({
           {payroll.hasData ? <SummaryLine text={payroll.summaryText} /> : null}
           {payroll.hasData ? (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
                 <KpiTile label="Total cost" value={compactFmt.format(payroll.totalCost)} hint={`${payroll.approvedCount}/${payroll.tripCount} approved`} />
                 <KpiTile label="Trips" value={intFmt.format(payroll.tripCount)} />
                 <KpiTile label="Cost / trip" value={payroll.costPerTrip == null ? "—" : compactFmt.format(payroll.costPerTrip)} />
                 <KpiTile label="Total km" value={intFmt.format(Math.round(payroll.totalKm))} hint={payroll.costPerKm != null ? `${payroll.costPerKm.toFixed(1)}/km` : undefined} />
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
                 <KpiTile label="Cost / visit" value={payroll.costPerVisit == null ? "—" : compactFmt.format(payroll.costPerVisit)} hint="per productive visit" />
                 <KpiTile label="Cost / trip-visit" value={payroll.costPerTripVisit == null ? "—" : compactFmt.format(payroll.costPerTripVisit)} hint="visits logged on trips" />
                 <KpiTile
@@ -2279,7 +2449,7 @@ function ExpensesSection({
                   <div className="mb-1.5 text-xs font-bold text-slate-500">By expense type</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.byType.map((b) => (
-                      <span key={b.type} className="rounded-full border border-phx-line bg-phx-paper px-2.5 py-1 text-xs text-phx-ink-soft">
+                      <span key={b.type} className="border border-phx-line bg-phx-paper px-2.5 py-1 text-xs text-phx-ink-soft">
                         {b.type}: {intFmt.format(b.trips)} · {compactFmt.format(b.cost)}
                       </span>
                     ))}
@@ -2311,7 +2481,7 @@ function ExpensesSection({
                       <div key={c.key} className={BAR_ROW}>
                         <div className={BAR_LABEL}>{c.label}</div>
                         <div className={BAR_FIGURE}>{compactFmt.format(c.amount)} · {Math.round(c.pct * 100)}%</div>
-                        <div className={BAR_TRACK}><div className="h-full rounded-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
+                        <div className={BAR_TRACK}><div className="h-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
                       </div>
                     ))}
                   </div>
@@ -2323,7 +2493,7 @@ function ExpensesSection({
                       <div key={d.name} className={BAR_ROW}>
                         <div className={BAR_LABEL}>{d.name}</div>
                         <div className={BAR_FIGURE}>{compactFmt.format(d.cost)} · {d.trips}t</div>
-                        <div className={BAR_TRACK}><div className="h-full rounded-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
+                        <div className={BAR_TRACK}><div className="h-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
                       </div>
                     ))}
                   </div>
@@ -2331,7 +2501,7 @@ function ExpensesSection({
               </div>
 
               {payroll.unresolvedTrips.length > 0 ? (
-                <div className="mt-5 rounded-[14px] border border-amber-200 bg-amber-50/50">
+                <div className="mt-5 border border-amber-200 bg-amber-50/50">
                   <div className="border-b border-amber-200/70 px-3 py-2">
                     <div className="text-xs font-bold text-amber-700">
                       Unresolved trips ({payroll.unresolvedTrips.length})
@@ -2361,7 +2531,7 @@ function ExpensesSection({
                   <div className="mb-1.5 text-xs font-bold text-slate-500">Transport</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.transportMix.map((t) => (
-                      <span key={t.name} className="rounded-full border border-phx-line px-2 py-0.5 text-xs text-phx-ink-soft">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
+                      <span key={t.name} className="border border-phx-line px-2 py-0.5 text-xs text-phx-ink-soft">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
                     ))}
                   </div>
                 </div>
@@ -2390,7 +2560,7 @@ function ExpensesSection({
                   Campaign visit mix (from the visits system, this period). */}
               <div className="mt-5">
                 <div className="mb-1.5 text-xs font-bold text-slate-500">Field activity (visits this period)</div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-3 lg:grid-cols-5">
                   <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} />
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
                   <KpiTile label="Pharmacy visits" value={pharmacyTile.value} hint={pharmacyTile.note ?? undefined} />
@@ -2413,9 +2583,9 @@ function ExpensesSection({
           ) : null}
 
           {outstation.hasData ? (
-            <div className="mt-5 rounded-[14px] border border-slate-200 p-3.5">
+            <div className="mt-5 border border-slate-200 p-3.5">
               <div className="mb-2 text-sm font-bold text-slate-800">Outstation requests submitted in Phoenix</div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-3">
                 <KpiTile label="Trips" value={intFmt.format(outstation.tripCount)} />
                 <KpiTile label="Claimed" value={compactFmt.format(outstation.claimedTotal)} hint={`expected ${compactFmt.format(outstation.expectedTotal)}`} />
                 <KpiTile label="Flagged" value={intFmt.format(outstation.flaggedCount)} goodWhenAbove={!(outstation.flaggedCount > 0)} hint="eligibility or territory issue" />
@@ -2428,16 +2598,11 @@ function ExpensesSection({
   );
 }
 
+/** One data source on the masthead: a flat square marker — green when it was read, amber when it was not. */
 function TrustChip({ ok, okText, badText }: { ok: boolean; okText: string; badText: string }) {
-  const Icon = ok ? BadgeCheck : AlertTriangle;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold shadow-sm",
-        ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
+    <span className={cn("inline-flex items-center gap-2 text-xs font-bold", ok ? "text-slate-700" : "text-amber-800")}>
+      <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0", ok ? "bg-emerald-600" : "bg-amber-500")} />
       {ok ? okText : badText}
     </span>
   );

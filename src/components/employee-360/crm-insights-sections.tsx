@@ -41,15 +41,16 @@ function percent(value: number | null): string {
 
 function Shell({ icon: Icon, title, sub, children }: { icon: LucideIcon; title: string; sub?: string; children: ReactNode }) {
   return (
-    <section className="border border-slate-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6">
-      <div className="mb-4 flex items-start gap-3 border-b border-slate-100 pb-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-indigo-50 text-indigo-600 ring-1 ring-inset ring-indigo-100">
-          <Icon className="h-4 w-4" aria-hidden />
-        </span>
-        <div className="min-w-0 pt-0.5">
-          <h2 className="text-phx-md font-black uppercase tracking-wider text-slate-900">{title}</h2>
-          {sub ? <p className="mt-1 text-xs leading-5 text-slate-500">{sub}</p> : null}
-        </div>
+    // The same sheet as every other section of the record (employee-360-view.tsx PREMIUM_CARD): an ink
+    // rule across its head, a flat glyph beside an h3 — these sit inside a numbered chapter whose title
+    // is the h2.
+    <section className="border border-slate-200/80 border-t-2 border-t-slate-900 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6">
+      <div className="mb-5 border-b border-slate-200 pb-4">
+        <h3 className="flex items-center gap-2.5 text-lg font-black tracking-[-0.015em] text-slate-900 sm:text-xl">
+          <Icon className="h-[1.1rem] w-[1.1rem] shrink-0 text-indigo-700" aria-hidden />
+          <span className="min-w-0 break-words">{title}</span>
+        </h3>
+        {sub ? <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-500">{sub}</p> : null}
       </div>
       {children}
     </section>
@@ -62,9 +63,9 @@ function Unread() {
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-slate-200/80 bg-slate-50/60 p-3.5">
-      <span className="block break-words text-phx-2xs font-black uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="mt-1.5 block break-words text-2xl font-black tabular-nums text-slate-900">{value}</span>
+    <div className="min-w-0 border-b border-r border-slate-200 bg-white px-4 py-3.5">
+      <span className="block break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className="mt-1.5 block break-words text-2xl font-black tabular-nums tracking-[-0.02em] text-slate-900 sm:text-[1.75rem]">{value}</span>
     </div>
   );
 }
@@ -151,7 +152,7 @@ function ManagerPlanBody({ value }: { value: CrmManagerPlanCompliance }) {
   const week = (start: string, end: string) => `${day(start)} to ${day(end)}`;
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
         <Tile label="Weeks sent" value={intFmt.format(value.totals.weeks)} />
         <Tile label="Customers due" value={intFmt.format(value.totals.closed)} />
         <Tile label="Done" value={intFmt.format(value.totals.done)} />
@@ -234,7 +235,7 @@ function FrequencyBody({ value }: { value: CrmFrequency }) {
   const target = (n: number | null) => (n === null ? "No target set" : intFmt.format(n));
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-5">
         <Tile label="Customers" value={intFmt.format(value.totals.customers)} />
         <Tile label="Under the grade" value={intFmt.format(value.totals.under)} />
         <Tile label="On the grade" value={intFmt.format(value.totals.onTarget)} />

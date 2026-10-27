@@ -24,6 +24,7 @@ import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
 import { getPmMarketingRoi, type PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
+import { loadEmployee360CrmInsights, unreadCrmInsights, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
@@ -288,6 +289,9 @@ export default async function EmployeePortalEmployee360Page({
     );
   }
 
+  // A section whose read fails says so on the page; it never silently disappears.
+  const unreadSections: string[] = [];
+
   // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
   let teamHealth: TeamHealthSummary | null = null;
   if (
@@ -304,6 +308,7 @@ export default async function EmployeePortalEmployee360Page({
       });
     } catch {
       teamHealth = null;
+      unreadSections.push("Team Development");
     }
   }
 
@@ -323,6 +328,7 @@ export default async function EmployeePortalEmployee360Page({
       });
     } catch {
       teamLifecycle = null;
+      unreadSections.push("Team Compliance");
     }
   }
 
@@ -337,6 +343,7 @@ export default async function EmployeePortalEmployee360Page({
       });
     } catch {
       tmAnalytics = null;
+      unreadSections.push("Training-Manager Effectiveness");
     }
   }
 
@@ -347,7 +354,23 @@ export default async function EmployeePortalEmployee360Page({
       pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
     } catch {
       pmMarketing = null;
+      unreadSections.push("Marketing ROI");
     }
+  }
+
+  // Phoenix CRM: plan compliance and visit frequency by grade. The person reading their own report
+  // gets the same two sections a manager sees when they open it from the list.
+  let crmInsights: Employee360CrmInsights | null = null;
+  try {
+    crmInsights = await loadEmployee360CrmInsights({
+      viewerAccess: access,
+      subjectHrId: target.hrId,
+      category: roleCategory,
+      from: period.current.from,
+      to: period.current.to,
+    });
+  } catch {
+    crmInsights = unreadCrmInsights(roleCategory);
   }
 
   const comparison: Employee360Comparison | null = previous
@@ -382,6 +405,8 @@ export default async function EmployeePortalEmployee360Page({
           chrome="portal"
           category={roleCategory}
           comparison={comparison}
+          crmInsights={crmInsights}
+          unreadSections={unreadSections}
           pmMarketing={pmMarketing}
           showExpenses={showExpenses}
           subject={subject}
