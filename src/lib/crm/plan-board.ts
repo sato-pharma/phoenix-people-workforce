@@ -31,6 +31,7 @@ import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm
 import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { dayScanSlices, readCompanyWindow } from "@/lib/crm/reads";
+import { planEntryKeysetAfter } from "@/lib/crm/plan-entry-keyset";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
@@ -239,8 +240,9 @@ const SUMMARY_COLUMNS =
   "agent_crm_id, agent_hr_id, contact_crm_id, crm_plan_id, plan_date, plan_month, plan_status, plan_year, synced_at";
 
 /**
- * The same columns plus the mirror's primary key, for the day-sliced company read below. The key is
- * the keyset cursor — it is NOT read by `summarisePlans`, which groups on `crm_plan_id`.
+ * The same columns plus the entry id, for every paged read below. With the day and the hr id it is the
+ * keyset cursor (`plan-entry-keyset.ts`; the id alone is not unique in the view) — it is NOT read by
+ * `summarisePlans`, which groups on `crm_plan_id`.
  */
 const SCAN_COLUMNS = `${SUMMARY_COLUMNS}, crm_plan_entry_id`;
 
@@ -307,8 +309,8 @@ async function fetchPlanRows(input: {
   // `summarisePlans` is order-independent by construction: it mins/maxes the dates, counts entries,
   // sets the contacts and takes the status of the latest `synced_at`.
   //
-  // A window that NAMES agents keeps the single scan: `agent_hr_id IN (…)` already makes it narrow.
-  // So does the `month` window — a monthly plan has no `plan_date` at all to slice on.
+  // A window that NAMES agents is not sliced: `agent_hr_id IN (…)` already makes it narrow. Nor is the
+  // `month` window — a monthly plan has no `plan_date` at all to slice on. Both walk a keyset below.
   const days =
     input.window.kind === "dates" && chunks.length === 1 && chunks[0] === null
       ? dayScanSlices(input.window.start, input.window.end)
@@ -334,23 +336,26 @@ async function fetchPlanRows(input: {
       },
       scanDay: async (day) => {
         const scanned: ScannedPlanRow[] = [];
-        let cursor: number | string | null = null;
+        let cursor: ScannedPlanRow | null = null;
         for (;;) {
           let query = supabase
             .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
             .select(SCAN_COLUMNS)
             .eq("plan_kind", input.kind)
             .eq("plan_date", day);
-          if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
-          const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PAGE_SIZE);
+          if (cursor !== null) query = query.or(planEntryKeysetAfter(cursor, { byDate: false }));
+          const { data, error } = await query
+            .order("crm_plan_entry_id", { ascending: true })
+            .order("agent_hr_id", { ascending: true, nullsFirst: false })
+            .limit(PAGE_SIZE);
           if (error) {
             if (isPlanSchemaMissing(error)) return null;
             throw new Error(error.message);
           }
           const page = (data ?? []) as unknown as ScannedPlanRow[];
           scanned.push(...page);
-          const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
-          if (page.length < PAGE_SIZE || last === null) return scanned;
+          const last = page[page.length - 1] ?? null;
+          if (page.length < PAGE_SIZE || last?.crm_plan_entry_id == null) return scanned;
           cursor = last;
         }
       },
@@ -361,32 +366,48 @@ async function fetchPlanRows(input: {
     return scanned ?? [];
   }
 
+  // Every other read walks a keyset, never an OFFSET page (Stage 2a, 28 Oct 2026): each page starts
+  // where the last ended instead of re-building and re-sorting the whole window, and a cursor on the
+  // whole key cannot step over or repeat a row whose entry id another rep shares. A date window walks
+  // (day, entry id, hr id), its `plan_date >= <last day>` landing on the view's grouped day; the month
+  // window has no day, and walks (entry id, hr id). Each chunk is handed back in ascending entry id,
+  // as the OFFSET scan handed it over.
+  const byEntryId = (left: ScannedPlanRow, right: ScannedPlanRow) =>
+    Number(left.crm_plan_entry_id) - Number(right.crm_plan_entry_id);
   const rows: RawPlanRow[] = [];
   for (const chunk of chunks) {
-    let offset = 0;
+    const chunkRows: ScannedPlanRow[] = [];
+    let cursor: ScannedPlanRow | null = null;
     for (;;) {
       // The unified view: vendor plans before the CRM cutover date, plans filed in Phoenix from it
       // (negative crm_plan_id, so they never meet a vendor id). Verification itself stays on the
       // vendor table below — it writes back into iReports360.
-      let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(SUMMARY_COLUMNS).eq("plan_kind", input.kind);
+      let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(SCAN_COLUMNS).eq("plan_kind", input.kind);
       if (input.window.kind === "dates") {
-        query = query.gte("plan_date", input.window.start).lte("plan_date", input.window.end);
+        query = query.gte("plan_date", cursor?.plan_date ?? input.window.start).lte("plan_date", input.window.end);
+        if (cursor !== null) query = query.or(planEntryKeysetAfter(cursor, { byDate: true }));
+        query = query.order("plan_date", { ascending: true });
       } else {
         query = query.eq("plan_month", input.window.month).eq("plan_year", input.window.year);
+        if (cursor !== null) query = query.or(planEntryKeysetAfter(cursor, { byDate: false }));
       }
       if (chunk) query = query.in("agent_hr_id", [...chunk]);
       const { data, error } = await query
         .order("crm_plan_entry_id", { ascending: true })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .order("agent_hr_id", { ascending: true, nullsFirst: false })
+        .limit(PAGE_SIZE);
       if (error) {
         if (isPlanSchemaMissing(error)) return [];
         throw new Error(error.message);
       }
-      const page = (data ?? []) as unknown as RawPlanRow[];
-      rows.push(...page);
-      if (page.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+      const page = (data ?? []) as unknown as ScannedPlanRow[];
+      chunkRows.push(...page);
+      const last = page[page.length - 1] ?? null;
+      if (page.length < PAGE_SIZE || last?.crm_plan_entry_id == null) break;
+      if (input.window.kind === "dates" && !last.plan_date) break;
+      cursor = last;
     }
+    rows.push(...chunkRows.sort(byEntryId));
   }
   return rows;
 }

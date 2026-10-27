@@ -77,6 +77,7 @@ import {
   type DoctorCoverageNorms,
 } from "@/lib/crm/doctor-coverage-config";
 import { dayScanSlices, expandHrIdFilterValues, getEffectiveExcludedAgentCrmIds, queryVisits, readCompanyWindow } from "@/lib/crm/reads";
+import { planEntryKeyOf, planEntryKeysetAfter } from "@/lib/crm/plan-entry-keyset";
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -406,7 +407,7 @@ const PLAN_HR_ID_CHUNK = 10;
 const PLAN_SCAN_COLUMNS =
   "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_plan_entry_id, crm_region_name, plan_date, plan_status, speciality, synced_at";
 
-/** A plan row as a scan reads it — with the entry id it pages and deduplicates on. */
+/** A plan row as a scan reads it — with the entry id its keyset cursor carries (`plan-entry-keyset.ts`). */
 type ScannedPlanRow = PlanRow & { crm_plan_entry_id?: number | string | null };
 
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
@@ -459,26 +460,30 @@ export async function scanPlanEntries(
   // 2026-10-01: September held 25,862 plan rows, each page cost 62 ms in the database whatever its
   // offset, and the 26 pages ran one after another on EVERY rep landing (the KPI tile reads this
   // board company-wide), where one day's slice costs 22 ms and the unordered probe 8 ms.
-  // The days are disjoint and cover the window, and `crm_plan_entry_id` is the mirror's primary key,
-  // so re-sorting their union by it hands back exactly the rows, in exactly the order, of the single
-  // scan. A window that names agents keeps the single scan: its index already makes it narrow.
+  // The days are disjoint and cover the window, so their union is exactly the rows of the single scan,
+  // re-sorted into ascending entry id. That id is NOT unique in the view (`plan-entry-keyset.ts`), so a
+  // day pages on (entry id, hr id), never on the id alone. A window that names agents is not sliced; it
+  // walks the whole (day, entry id, hr id) keyset below.
   const days = agentChunks.length === 1 && agentChunks[0] === null ? dayScanSlices(from, to) : null;
   if (days) {
     const scanDay = async (day: string): Promise<ScannedPlanRow[] | null> => {
       const scanned: ScannedPlanRow[] = [];
-      let cursor: number | string | null = null;
+      let cursor: ScannedPlanRow | null = null;
       for (;;) {
         let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(PLAN_SCAN_COLUMNS).eq("plan_date", day);
-        if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
-        const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PLAN_PAGE_SIZE);
+        if (cursor !== null) query = query.or(planEntryKeysetAfter(cursor, { byDate: false }));
+        const { data, error } = await query
+          .order("crm_plan_entry_id", { ascending: true })
+          .order("agent_hr_id", { ascending: true, nullsFirst: false })
+          .limit(PLAN_PAGE_SIZE);
         if (error) {
           if (isPlanSchemaMissing(error)) return null;
           throw new Error(error.message);
         }
         const page = (data ?? []) as unknown as ScannedPlanRow[];
         scanned.push(...page);
-        const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
-        if (page.length < PLAN_PAGE_SIZE || last === null) return scanned;
+        const last = page[page.length - 1] ?? null;
+        if (page.length < PLAN_PAGE_SIZE || last?.crm_plan_entry_id == null) return scanned;
         cursor = last;
       }
     };
@@ -505,44 +510,62 @@ export async function scanPlanEntries(
     return windowRows ?? [];
   }
 
+  // 🔴 A WINDOW THAT NAMES AGENTS WALKS A KEYSET, NEVER AN OFFSET (Stage 2a, 28 Oct 2026). These two
+  // shapes — ten hr ids, or fifty CRM ids, over a month — were the two heaviest statements in Phoenix:
+  // 4,218 calls touching 312 GB of pages between them since the 25 Oct boot. An OFFSET page re-built the
+  // whole window and sorted it to hand back a thousand rows, then the next page did it again; ordered by
+  // the entry id ALONE it could also hand a tied row back twice and its twin never. Each page now starts
+  // where the last one ended, and its `plan_date >= <last day>` lands on the view's grouped day, so the
+  // days already read are never grouped again.
+  //
+  // Each chunk comes back in ascending entry id, as it did under the OFFSET scan; ties keep the
+  // keyset's (day, hr id) order. Callers that need one order across chunks re-sort (`inPlanEntryOrder`).
   const rows: PlanRow[] = [];
-  // Only a union of two passes can return one entry twice; its id makes that exact.
-  const seenEntryIds = new Set<number | string>();
+  // Only a union of two passes can return one entry twice. The whole key makes that exact: the entry id
+  // alone would also drop the second rep's row that shares it.
+  const seenEntries = new Set<string>();
   const dedupe = agentChunks.length > 1;
   for (const chunk of agentChunks) {
-    let offset = 0;
+    const chunkRows: ScannedPlanRow[] = [];
+    let cursor: ScannedPlanRow | null = null;
     for (;;) {
       let query = supabase
         .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
         .select(PLAN_SCAN_COLUMNS)
-        .gte("plan_date", from)
+        .gte("plan_date", cursor?.plan_date ?? from)
         .lte("plan_date", to);
       if (chunk) query = query.in(chunk.column, [...chunk.values]);
+      if (cursor !== null) query = query.or(planEntryKeysetAfter(cursor, { byDate: true }));
       const { data, error } = await query
+        .order("plan_date", { ascending: true })
         .order("crm_plan_entry_id", { ascending: true })
-        .range(offset, offset + PLAN_PAGE_SIZE - 1);
+        .order("agent_hr_id", { ascending: true, nullsFirst: false })
+        .limit(PLAN_PAGE_SIZE);
       if (error) {
         if (isPlanSchemaMissing(error)) return [];
         throw new Error(error.message);
       }
       const page = (data ?? []) as unknown as ScannedPlanRow[];
       for (const row of page) {
-        const entryId = row.crm_plan_entry_id;
-        if (dedupe && entryId != null) {
-          if (seenEntryIds.has(entryId)) continue;
-          seenEntryIds.add(entryId);
+        if (dedupe) {
+          const key = planEntryKeyOf(row);
+          if (seenEntries.has(key)) continue;
+          seenEntries.add(key);
         }
-        rows.push(row);
+        chunkRows.push(row);
       }
-      if (page.length < PLAN_PAGE_SIZE) break;
-      offset += PLAN_PAGE_SIZE;
+      const last = page[page.length - 1] ?? null;
+      if (page.length < PLAN_PAGE_SIZE || last?.crm_plan_entry_id == null || !last.plan_date) break;
+      cursor = last;
     }
+    rows.push(...inPlanEntryOrder(chunkRows));
   }
   return rows;
 }
 
-/** Plan rows in ascending entry id — the order a company-wide `scanPlanEntries` returns. The entry
- * id is the mirror's primary key, so the order is total. Pure, exported for its test. */
+/** Plan rows in ascending entry id — the order a company-wide `scanPlanEntries` returns. The entry id
+ * is not unique in the view (`plan-entry-keyset.ts`); the sort is stable, so tied rows keep the order
+ * they arrived in. Pure, exported for its test. */
 export function inPlanEntryOrder(rows: readonly PlanRow[]): PlanRow[] {
   const entryId = (row: PlanRow) => Number((row as ScannedPlanRow).crm_plan_entry_id);
   return [...rows].sort((left, right) => entryId(left) - entryId(right));

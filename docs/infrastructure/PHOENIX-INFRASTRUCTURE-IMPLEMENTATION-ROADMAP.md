@@ -2,8 +2,8 @@
 
 > **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
 
-Three stages, in order, for the [recommended architecture](PHOENIX-RECOMMENDED-ARCHITECTURE.md). **Nothing here has been
-started.** Each stage begins only on the owner's word. The compute change in Stage 1 is his own click on the Supabase screen;
+Three stages, in order, for the [recommended architecture](PHOENIX-RECOMMENDED-ARCHITECTURE.md). **Only Stage 2a has
+started ([2a so far](#stage-2--take-load-off-the-database-no-new-spend-one-pull-request-each)).** Each stage begins only on the owner's word. The compute change in Stage 1 is his own click on the Supabase screen;
 it is never made from chat or by a script. Every code or database change in Stage 2 goes through its own pull request.
 
 Prices are the official list prices read on 28 Oct 2026 ([options document](PHOENIX-EXTERNAL-COMPUTE-OPTIONS.md)). Supabase
@@ -64,6 +64,20 @@ with its own owner approval. None moves employee data to a new provider.
 | 2c | Finish the touch-trail retention already in progress (30 days, archived nightly to a private bucket). After a month of index counters and a code search, decide on the 233 MB index nobody has read since the boot. | Caps the biggest table at about a month of rows. | Table size flat week on week. |
 | 2d | **The app's data cache survives a deploy.** Move the Next.js cache from the container's disk to a small Redis service inside the same Railway project and region, on Railway's private network. | There were 116 merges in two days, and 27 go-lives on 27 Oct; each go-live emptied the cache and re-ran the heavy reads. | Calls to `phx_sales_vs_target_range` and similar cached reads per working day down at least 50 %. |
 | 2e | Fewer API requests: the sign-in bundle, now read about 250,000 times in 55 hours (about 15 % of all API requests), kept briefly per session; the 30-second pulse's eleven reads folded into one; one batched read where a page now makes several. | Each request costs far more than its SQL; SQL work is about 13 % of the busy CPU, and the rest is shared by the API layer and Supabase's other services (split not measured). | Weekday API requests down at least 20 % from 650,000–740,000, with a role change or a disabled account still taking effect within the cache's lifetime. |
+
+**2a so far, 28 Oct 2026:**
+
+- **The plan view: done.** Migration `20261028013400` puts the rep inside the plan-day group, so a filter on a rep reaches
+  it, and reads the customer table once per call. The two plan screens now page by keyset instead of OFFSET.
+- **Measured on production, pages per call:**
+  - Ten hr ids over October: 17,954 → 5,371 (−70 %).
+  - Fifty CRM ids over October: 35,120 → 8,119 (−77 %).
+  - Both were the two heaviest plan shapes.
+- **The same rows:** 10,065 Phoenix rows before and after, none different under `except all`, and the same md5. The
+  acceptance line is met for the plan view.
+- **The contact-assignment read was already done** before the audit, by PR 6473 on 26 Oct. Its row in the audit counts calls
+  from the eight hours between the boot and that fix.
+- **Left for 2a:** the visit view and the check-in view.
 
 **Data protection, 2d:** the cache already holds the same data today, on Railway's disk. A Redis service in the same Railway
 project keeps it with the same provider, in the same region, on a private network with no public address. It is reached
