@@ -53,20 +53,47 @@ const UNPLANNED_COLUMNS =
   "manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, " +
   "customer:phoenix_crm_customers!customer_id(name, list_type, speciality), " +
   "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment, captured_at, " +
-  "manager_hr_id, senior_hr_id, product_manager_hr_id)";
+  "manager_hr_id, senior_hr_id, product_manager_hr_id, companions:phoenix_crm_visit_companions(hr_id, position))";
 
 /** Who the rep recorded as being with him, in the order the card reads them. A null column drops out. */
 const COMPANION_ROLES = [
   { column: "manager_hr_id", label: "Manager" },
-  { column: "senior_hr_id", label: "Senior" },
+  // The next manager up — a Regional or National Sales Manager; there is no "senior" title (owner, 2026-10-27).
+  { column: "senior_hr_id", label: "Manager above" },
   // The Training Manager rides in this column too (owner, 2026-10-24).
   { column: "product_manager_hr_id", label: "Product or training manager" },
 ] as const;
 
-/** The companion hr ids on one row, read off the joined visit. */
-function companionHrIds(row: Row): Array<string | null> {
+/** The label of everyone past the three fixed places (owner, 2026-10-27: "Everything is applicable"). */
+const MORE_COMPANION_LABEL = "Also on the visit";
+
+/**
+ * The companion hr ids on one row, read off the joined visit: the three fixed places in their order, then
+ * everyone else the visit lists (`phoenix_crm_visit_companions`, 2026-10-27) that is not already one of
+ * them. Each entry carries the label the card reads it under.
+ */
+function companionEntries(row: Row): Array<{ hrId: string; label: string }> {
   const visit = record(Array.isArray(row.visit) ? row.visit[0] : row.visit);
-  return COMPANION_ROLES.map((role) => textOrNull(visit[role.column]));
+  const out: Array<{ hrId: string; label: string }> = [];
+  const seen = new Set<string>();
+  const add = (value: unknown, label: string) => {
+    const hrId = textOrNull(value);
+    const key = personKey(hrId);
+    if (!hrId || key === null || seen.has(key)) return;
+    seen.add(key);
+    out.push({ hrId, label });
+  };
+  for (const role of COMPANION_ROLES) add(visit[role.column], role.label);
+  const listed = (Array.isArray(visit.companions) ? visit.companions : [])
+    .map((entry) => record(entry))
+    .sort((left, right) => Number(left.position ?? 0) - Number(right.position ?? 0));
+  for (const entry of listed) add(entry.hr_id, MORE_COMPANION_LABEL);
+  return out;
+}
+
+/** The companion hr ids on one row. */
+function companionHrIds(row: Row): string[] {
+  return companionEntries(row).map((entry) => entry.hrId);
 }
 
 export type UnplannedVisitView = {
@@ -195,10 +222,7 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
   // Who was with him, named. `personKey` is what compares two hr ids anywhere in this module — the
   // raw strings differ in case and padding between the columns that store them.
   const companionIds = companionHrIds(row);
-  const companions = COMPANION_ROLES.flatMap((role, index) => {
-    const hrId = companionIds[index];
-    return hrId ? [{ role: role.label, name: nameOf(names, hrId) }] : [];
-  });
+  const companions = companionEntries(row).map((entry) => ({ role: entry.label, name: nameOf(names, entry.hrId) }));
   const companionKeys = new Set(companionIds.map((hrId) => personKey(hrId)).filter((key): key is string => key !== null));
   const wasOnTheVisit = (value: unknown): boolean => {
     const key = personKey(textOrNull(value));
@@ -273,7 +297,7 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
       // was on the visit he is deciding.
       "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, " +
         "customer:phoenix_crm_customers!customer_id(name), " +
-        "visit:phoenix_crm_visits!visit_id(manager_hr_id, senior_hr_id, product_manager_hr_id)",
+        "visit:phoenix_crm_visits!visit_id(manager_hr_id, senior_hr_id, product_manager_hr_id, companions:phoenix_crm_visit_companions(hr_id, position))",
     )
     .eq("visit_id", visitId)
     .maybeSingle();

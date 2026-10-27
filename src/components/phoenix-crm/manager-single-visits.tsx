@@ -169,6 +169,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
               <CrmBlock>
                 <LogForm
                   areas={view.areas}
+                  companionOffers={view.companionOffers}
                   logging={logging}
                   onCancel={() => setLogging(null)}
                   onLogged={(next) => {
@@ -215,6 +216,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     }
                   >
                     {customer.place ? <VisitPlace place={customer.place} /> : null}
+                    <VisitCompanions companions={customer.companions} />
                     {customer.logged ? (
                       <VisitWriteUp
                         customer={customer}
@@ -264,6 +266,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     }
                   >
                     {customer.place ? <VisitPlace place={customer.place} /> : null}
+                    <VisitCompanions companions={customer.companions} />
                     <VisitWriteUp
                       customer={customer}
                       key={`${customer.visitId}|${customer.detailEditedAt ?? ""}`}
@@ -662,8 +665,22 @@ function AreaList({ areaSeatId, onPick, test }: { areaSeatId: string; onPick: (l
   );
 }
 
+/**
+ * Who went with him on a logged visit, each by name and title (owner, 2026-10-27: "Everything is
+ * applicable"). Nothing when he went alone.
+ */
+function VisitCompanions({ companions }: { companions: ManagerTodayCustomer["companions"] }) {
+  if (companions.length === 0) return null;
+  return (
+    <p className="min-w-0 break-words text-xs font-semibold text-slate-600" dir="auto">
+      With {companions.map((companion) => (companion.title ? `${companion.name} · ${companion.title}` : companion.name)).join(", ")}
+    </p>
+  );
+}
+
 function LogForm({
   areas,
+  companionOffers,
   logging,
   onCancel,
   onLogged,
@@ -671,6 +688,7 @@ function LogForm({
   test,
 }: {
   areas: ManagerTodayView["areas"];
+  companionOffers: ManagerTodayView["companionOffers"];
   logging: Logging;
   onCancel: () => void;
   onLogged: (view: ManagerTodayView) => void;
@@ -679,6 +697,8 @@ function LogForm({
 }) {
   const idPrefix = useId();
   const [picked, setPicked] = useState<string[]>([]);
+  /** Who went with him, in the order he ticked them — none when he went alone. */
+  const [companions, setCompanions] = useState<string[]>([]);
   const [comment, setComment] = useState("");
   const [pin, setPin] = useState<CapturedPin | null>(null);
   const [address, setAddress] = useState(logging.address);
@@ -746,6 +766,7 @@ function LogForm({
           customerId: logging.customerId,
           managerCustomerId: logging.managerCustomerId,
           products: picked,
+          companionHrIds: companions,
           comment: comment.trim() || null,
           address: address.trim() || null,
           areaSeatId: areaSeatId || null,
@@ -785,6 +806,26 @@ function LogForm({
                 onChange={(on) => setPicked((current) => (on ? [...current.filter((entry) => entry !== product), product] : current.filter((entry) => entry !== product)))}
               >
                 {product}
+              </CrmCheck>
+            ))}
+          </div>
+        </CrmField>
+      ) : null}
+      {/* 🔴 Who went with him (owner, 2026-10-27: a district manager goes with the National Sales Manager,
+          the Training Manager or the Product Manager). The people above him and his line's product side,
+          each under their own title; any of them, or none when he went alone. */}
+      {companionOffers.length > 0 ? (
+        <CrmField hint={companions.length > 0 ? `${countText(companions.length)} chosen` : "Optional · leave empty when you went alone"} label="Who went with you">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+            {companionOffers.map((offer) => (
+              <CrmCheck
+                checked={companions.includes(offer.hrId)}
+                key={offer.hrId}
+                onChange={(on) => setCompanions((current) => (on ? [...current.filter((entry) => entry !== offer.hrId), offer.hrId] : current.filter((entry) => entry !== offer.hrId)))}
+              >
+                <span className="break-words" dir="auto">
+                  {offer.name} · {offer.title}
+                </span>
               </CrmCheck>
             ))}
           </div>

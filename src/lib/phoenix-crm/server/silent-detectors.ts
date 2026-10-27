@@ -69,6 +69,7 @@ import {
   type PhoenixCrmIntegrityFlag,
 } from "@/lib/phoenix-crm/location-integrity";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { loadVisitCompanionIds } from "@/lib/phoenix-crm/server/visit-companions";
 import {
   fileCustomerCadenceFlag,
   filePlaceCaptureTrust,
@@ -216,6 +217,12 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
   result.visits = visits.length;
   if (visits.length === 0) return whole;
 
+  // Everyone a visit lists past its three fixed places (owner, 2026-10-27), read once for the whole window. A
+  // visit with a list always keeps its first manager or product person in a fixed place, so only those are asked.
+  const companionsOf = await loadVisitCompanionIds(
+    visits.filter((visit) => visit.manager_hr_id || visit.product_manager_hr_id).map((visit) => String(visit.id)),
+  );
+
   // Everybody whose roster matters: the rep who saved each visit AND whoever is named beside him.
   const people = new Set<string>();
   for (const visit of visits) {
@@ -223,6 +230,7 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
       const hrId = visit[key] ? String(visit[key]).toUpperCase() : "";
       if (hrId) people.add(hrId);
     }
+    for (const hrId of companionsOf.get(String(visit.id)) ?? []) people.add(hrId.toUpperCase());
   }
 
   const [leaveDays, activityRead] = await Promise.all([
@@ -293,9 +301,12 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
     // above AND the row's `manager_hr_id`, so leaving him in this list would answer "was somebody
     // else with him who should not have been?" with his own leave day — the same fact the roster
     // judge already reads as his, filed twice under two different explanations.
-    const companions = ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"]
-      .map((key) => (visit[key] ? String(visit[key]).toUpperCase() : ""))
-      .filter((hrId) => hrId !== "" && hrId !== repHrId);
+    const companions = [
+      ...new Set([
+        ...["manager_hr_id", "senior_hr_id", "product_manager_hr_id"].map((key) => (visit[key] ? String(visit[key]).toUpperCase() : "")),
+        ...(companionsOf.get(String(visit.id)) ?? []).map((hrId) => hrId.toUpperCase()),
+      ]),
+    ].filter((hrId) => hrId !== "" && hrId !== repHrId);
     const offDutyCompanions = companions.filter((hrId) => offDuty(hrId, visitDate));
 
     const flags = judgeRosterDay({

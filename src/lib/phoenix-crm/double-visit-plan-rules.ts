@@ -198,15 +198,19 @@ function textOf(value: unknown): string | null {
 /**
  * Whether a visit counts as this manager's double visit — the manager report's rule
  * (`phoenix_crm_report_manager_visits`): the manager of a double or chain visit, or the senior of a
- * chain visit. His own single visit on the seat (no rep on it) is not a double visit.
+ * chain visit — or, since 2026-10-27, anyone else a chain visit lists (`companionHrIds`: a third manager
+ * up the line). His own single visit on the seat (no rep on it) is not a double visit.
  */
 export function countsAsManagersDoubleVisit(
-  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown },
+  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; companionHrIds?: unknown },
   managerHrId: string | null | undefined,
 ): boolean {
   const manager = personKey(managerHrId);
   if (!manager) return false;
   if (personKey(textOf(visit.seniorHrId)) === manager) return true;
+  if (visit.kind === "chain" && Array.isArray(visit.companionHrIds) && visit.companionHrIds.some((value) => personKey(textOf(value)) === manager)) {
+    return true;
+  }
   return personKey(textOf(visit.managerHrId)) === manager && (visit.kind === "double" || visit.kind === "chain");
 }
 

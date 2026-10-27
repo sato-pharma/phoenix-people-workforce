@@ -12,7 +12,7 @@
  *     (an acting district manager also holds a rep seat under their own acting seat, and never reviews
  *     their own territory), and the CEO is never a reviewer (the CEO is not a district).
  *   - A visit's people come from the same chain: a double visit is the rep with a manager of the
- *     territory, a chain visit adds a manager above that one.
+ *     territory, a chain visit adds anyone else of that chain or of the line's product side.
  */
 
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -256,13 +256,45 @@ export function territoriesUnderManager(
   return new Set(territoriesBelow(index, held).map((seat) => seat.seatId));
 }
 
+/** The most people one visit carries besides the rep — `phoenix_crm_set_visit_companions` refuses more. */
+export const MOST_ON_A_VISIT = 12;
+
+/** One person on a visit besides the rep: the management line, or the product side (product, group product, training). */
+export type ParticipantCompanion = { hrId: string; side: "manager" | "product" };
+
 export type VisitParticipants = {
   repHrId: string | null;
   managerHrId: string | null;
   seniorHrId: string | null;
-  /** The line's product manager who came along: on a `product_manager` visit, or as the second person of a `chain`. On no other kind. */
+  /** The first product-side person who came along: on a `product_manager` visit, or on a `chain`. On no other kind. */
   productManagerHrId: string | null;
+  /**
+   * EVERYONE besides the rep (owner, 2026-10-27: "Everything is applicable") — the fixed places above
+   * and everyone past them, managers nearest first, then the product side. What the save writes to
+   * `phoenix_crm_visit_companions`. Empty on a single visit and on a manager's own visit.
+   */
+  companions: ParticipantCompanion[];
 };
+
+export const COMPANIONS_UNREADABLE = "Choose who was on the visit. Reload the page.";
+export const CHAIN_NEEDS_TWO = "A chain visit has the manager and at least one more person. Choose who else was on the visit.";
+export const DOUBLE_HAS_ONE = "A double visit has one person with the rep. Choose Chain visit for more.";
+export const CHOOSE_PRODUCT_SIDE = "Choose the product manager who was on the visit from your line's product managers.";
+export const CHOOSE_SENIOR_ABOVE = "Choose the manager who was on the visit: a manager above the one you chose.";
+
+/** The companions as the form sent them, each person once; null when one cannot be read. */
+function readCompanions(raw: ReadonlyArray<{ hrId: string; side: string }> | undefined): ParticipantCompanion[] | null {
+  const out: ParticipantCompanion[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw ?? []) {
+    const key = personKey(entry?.hrId ?? null);
+    if (!key || (entry.side !== "manager" && entry.side !== "product")) return null;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ hrId: key, side: entry.side });
+  }
+  return out.length > MOST_ON_A_VISIT ? null : out;
+}
 
 export type ParticipantResult = { ok: true; value: VisitParticipants } | { ok: false; error: string };
 
@@ -291,6 +323,11 @@ export function resolveVisitParticipants(input: {
    * list therefore refuses the kind rather than letting any hr id through.
    */
   productManagers?: ReadonlyArray<{ hrId: string }>;
+  /**
+   * Everyone else who came (visit-company.ts `companyToStorage`), each with their side. The fixed places
+   * above may be in it or not; every person is checked here exactly as the fixed places are.
+   */
+  companions?: ReadonlyArray<{ hrId: string; side: string }>;
 }): ParticipantResult {
   const territory = input.index.seats.get(input.territorySeatId);
   if (!territory) return { ok: false, error: "This territory is no longer in the organogram. Reload the page." };
@@ -302,18 +339,30 @@ export function resolveVisitParticipants(input: {
     return key ? chain.find((entry) => entry.hrId === key) ?? null : null;
   };
 
+  const extras = readCompanions(input.companions);
+  if (!extras) return { ok: false, error: COMPANIONS_UNREADABLE };
+  const extraProduct = extras.filter((entry) => entry.side === "product").map((entry) => entry.hrId);
+  const extraManagers = extras.filter((entry) => entry.side === "manager").map((entry) => entry.hrId);
+  /** One of the line's product side — a product manager holds no seat, so only the caller's own list can say. */
+  const productOffered = (key: string | null) => key !== null && (input.productManagers ?? []).some((entry) => personKey(entry.hrId) === key);
+  /** The product side who came: the fixed place first, then the rest, each once. */
+  const productSide = [...new Set([personKey(input.productManagerHrId ?? null), ...extraProduct].filter((key): key is string => key !== null))];
+
   let rep: string | null;
   let manager: ChainMember | null;
   if (input.enteredAs === "rep") {
     rep = actor;
-    if (input.kind === "single") return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: null } };
+    if (input.kind === "single") return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: null, companions: [] } };
     if (input.kind === "product_manager") {
+      // The product side alone, however many came (2026-10-27) — a manager among them makes it a chain.
       const picked = personKey(input.productManagerHrId ?? null);
-      const offered = (input.productManagers ?? []).some((entry) => personKey(entry.hrId) === picked);
-      if (!picked || !offered || picked === rep) {
-        return { ok: false, error: "Choose the product manager who was on the visit from your line's product managers." };
+      if (!picked || extraManagers.length > 0 || productSide.some((key) => !productOffered(key) || key === rep)) {
+        return { ok: false, error: CHOOSE_PRODUCT_SIDE };
       }
-      return { ok: true, value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: picked } };
+      return {
+        ok: true,
+        value: { repHrId: rep, managerHrId: null, seniorHrId: null, productManagerHrId: picked, companions: productSide.map((hrId) => ({ hrId, side: "product" as const })) },
+      };
     }
     manager = member(input.managerHrId);
     if (!manager || manager.hrId === rep) {
@@ -322,7 +371,7 @@ export function resolveVisitParticipants(input: {
   } else {
     manager = chain.find((entry) => entry.hrId === actor) ?? null;
     if (!manager) return { ok: false, error: "You are not a manager of this territory." };
-    if (input.kind === "single") return { ok: true, value: { repHrId: null, managerHrId: actor, seniorHrId: null, productManagerHrId: null } };
+    if (input.kind === "single") return { ok: true, value: { repHrId: null, managerHrId: actor, seniorHrId: null, productManagerHrId: null, companions: [] } };
     // A visit with a product manager is the REP's — he is the one the product manager went out with,
     // and a manager entering it would record a visit nobody present entered.
     if (input.kind === "product_manager") {
@@ -334,28 +383,47 @@ export function resolveVisitParticipants(input: {
     }
   }
 
-  if (input.kind === "double") return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: null } };
+  const nearest = manager;
+  if (input.kind === "double") {
+    // A stale product-manager pick in his fixed place is dropped, as it always was; a second person in
+    // the list is a form that meant Chain, and is refused rather than trimmed.
+    if (extraProduct.length > 0 || extraManagers.some((key) => key !== nearest.hrId)) return { ok: false, error: DOUBLE_HAS_ONE };
+    return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: null, companions: [{ hrId: manager.hrId, side: "manager" }] } };
+  }
 
-  // A chain is TWO people (owner, 2026-10-06): the manager above and either a senior manager above HIM
-  // or one of the line's product managers — never both, and never a product manager entered by a
-  // manager (that visit is the rep's). A product manager holds no seat, so, exactly as on a
+  // A chain is the rep, a manager and AT LEAST one more (owner, 2026-10-27: "Everything is applicable")
+  // — the managers above him, the line's product side, or both; never a product-side person entered by
+  // a manager (that visit is the rep's). A product-side person holds no seat, so, exactly as on a
   // `product_manager` visit, only the caller's own list of the line's can say he is one of them.
-  const pickedProductManager = personKey(input.productManagerHrId ?? null);
-  if (pickedProductManager !== null) {
+  if (productSide.length > 0) {
     if (input.enteredAs !== "rep") return { ok: false, error: "A visit with a product manager is entered by the territory's rep." };
-    if (personKey(input.seniorHrId) !== null) return { ok: false, error: "A chain visit has two people: a manager and one more. Choose a senior manager or a product manager, not both." };
-    const offered = (input.productManagers ?? []).some((entry) => personKey(entry.hrId) === pickedProductManager);
-    if (!offered || pickedProductManager === rep) {
-      return { ok: false, error: "Choose the product manager who was on the visit from your line's product managers." };
-    }
-    return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: null, productManagerHrId: pickedProductManager } };
+    if (productSide.some((key) => !productOffered(key) || key === rep)) return { ok: false, error: CHOOSE_PRODUCT_SIDE };
   }
-
-  const senior = member(input.seniorHrId);
-  if (!senior || senior.position <= manager.position || senior.hrId === rep) {
-    return { ok: false, error: "Choose the senior manager who was on the visit: a manager above the one you chose." };
+  // Every other manager who came is one of the territory's chain, never the rep and never twice.
+  const others: ChainMember[] = [];
+  for (const key of extraManagers) {
+    if (key === nearest.hrId) continue;
+    const found = member(key);
+    if (!found || found.hrId === rep) return { ok: false, error: "Choose the manager who was on the visit from your territory's managers." };
+    others.push(found);
   }
-  return { ok: true, value: { repHrId: rep, managerHrId: manager.hrId, seniorHrId: senior.hrId, productManagerHrId: null } };
+  // The senior place: the one sent, or else the nearest other manager who came. It sits ABOVE the manager.
+  const sentSenior = personKey(input.seniorHrId);
+  const senior = sentSenior !== null ? member(sentSenior) : ([...others].sort((left, right) => left.position - right.position)[0] ?? null);
+  if (sentSenior !== null || senior !== null) {
+    if (!senior || senior.position <= nearest.position || senior.hrId === rep) return { ok: false, error: CHOOSE_SENIOR_ABOVE };
+  }
+  const managers = [nearest, ...(senior ? [senior] : []), ...others.filter((entry) => entry.hrId !== senior?.hrId).sort((left, right) => left.position - right.position)];
+  const companions: ParticipantCompanion[] = [
+    ...managers.map((entry) => ({ hrId: entry.hrId, side: "manager" as const })),
+    ...productSide.map((hrId) => ({ hrId, side: "product" as const })),
+  ];
+  if (companions.length < 2) return { ok: false, error: senior === null && sentSenior === null && productSide.length === 0 ? CHOOSE_SENIOR_ABOVE : CHAIN_NEEDS_TWO };
+  if (companions.length > MOST_ON_A_VISIT) return { ok: false, error: COMPANIONS_UNREADABLE };
+  return {
+    ok: true,
+    value: { repHrId: rep, managerHrId: nearest.hrId, seniorHrId: senior?.hrId ?? null, productManagerHrId: productSide[0] ?? null, companions },
+  };
 }
 
 /** "Alex East · Anti Infective" — how a territory is named on screen (never its seat code). */

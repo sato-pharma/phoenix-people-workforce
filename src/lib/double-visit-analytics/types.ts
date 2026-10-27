@@ -103,6 +103,9 @@ export type DoubleVisitLogEntry = {
    * figure reads it through `visitLogPerDoubleVisitor`, which credits him exactly as the first. */
   doubleVisitor2HrId?: string | null;
   doubleVisitor2Name?: string | null;
+  /** Everyone past slot 2 on a Phoenix visit (owner, 2026-10-27: "Everything is applicable"), each credited
+   * through `visitLogPerDoubleVisitor` exactly as the first. Absent when nobody stands past slot 2. */
+  doubleVisitorMore?: Array<{ hrId: string; name: string | null }>;
   /** A Phoenix CRM double visit — see the note at the top. */
   fromPhoenix?: boolean;
   period: DoubleVisitPeriod;

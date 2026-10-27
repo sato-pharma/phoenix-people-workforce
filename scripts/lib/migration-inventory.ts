@@ -1896,6 +1896,24 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // prosecdef true; both read 21565d063301074025b3b321fe13d610 (the old body) just before. No table, grant or
   // row changes. Pinned by tests/phoenix-crm-manager-plan.test.ts.
   "20261027140000_phoenix_crm_manager_plan_with_senior_doctors.sql",
+
+  // A VISIT CARRIES ANY MIX OF COMPANIONS — applied 27 Oct 2026 on STAGING then PRODUCTION (about 19:40 Cairo)
+  // through scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing
+  // route of AGENTS.md §8, chosen over the MCP because the file is 75 KB. The route writes no ledger row on
+  // either project, hence this entry.
+  //
+  // Read live on BOTH projects after the apply and identical on each: md5(pg_proc.prosrc) of
+  // phoenix_crm_save_visit d7312d2b84a1bc488066e73acd974e39, phoenix_crm_admin_edit_visit
+  // 508d3bc707d2e512f9e4547d64c2a30d, phoenix_crm_admin_enter_visit c7e22eef4dd9d207cc14625e0e573121,
+  // phoenix_crm_set_visit_companions 14bccd0bea28b098b3a7397fd1c63c0f, phoenix_crm_visit_companion_ids
+  // 87f8defdc5291cf081bc7a7ab5d3ec87 — each md5-equal to its dollar-quoted body in this file (LF); all five
+  // prosecdef true, EXECUTE held by postgres and service_role only. Production also: the reviewer trigger
+  // function 0524b2ac1f760a247156d4632f75f24c (equal to the file), phoenix_crm_visit_companions
+  // relrowsecurity true with grants to postgres and service_role only and 0 rows, the participants check
+  // without the senior-XOR-product-manager arm, crm_visits_unified carrying companion_hr_ids (151,086 rows,
+  // a PostgREST read answering 200). No backfill, no row changed. Pinned by
+  // tests/phoenix-crm-visit-any-companions.test.ts.
+  "20261027185332_phoenix_crm_visit_any_companions.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

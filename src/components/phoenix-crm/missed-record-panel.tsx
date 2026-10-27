@@ -22,11 +22,13 @@ import {
   crmInputClassName,
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
+import { CompanyPicker } from "@/components/phoenix-crm/visit-company-picker";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { MISSED_RECORD_MARK, MISSED_VISIT_KIND_LABELS, type MissedVisitKind } from "@/lib/phoenix-crm/missed-records";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/view-types";
+import { COMPANY_MOST, companyToStorage } from "@/lib/phoenix-crm/visit-company";
 import { cn } from "@/lib/utils";
 
 /**
@@ -178,10 +180,10 @@ function MissedVisitForm({
   const idRef = useRef<string | null>(null);
   const [customer, setCustomer] = useState<MissedRecordCustomer | null>(null);
   const [planned, setPlanned] = useState<"planned" | "unplanned" | null>(null);
-  // Single, double or chain — his choice (owner, 2026-10-24); the people are the territory's own chain.
+  // Single, double or chain — his choice (owner, 2026-10-24); the people are the rep's own picker's list,
+  // any mix of them on a chain (owner, 2026-10-27: "Everything is applicable").
   const [kind, setKind] = useState<MissedVisitKind>("single");
-  const [managerHrId, setManagerHrId] = useState<string | null>(form.chain[0]?.hrId ?? null);
-  const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
   const [time, setTime] = useState("");
   const [products, setProducts] = useState<string[]>([]);
   const [comment, setComment] = useState("");
@@ -189,10 +191,8 @@ function MissedVisitForm({
   const busy = action.busy !== null;
 
   const reasonLength = reason.trim().replace(/\s+/g, " ").length;
-  const chosenManager = form.chain.find((member) => member.hrId === managerHrId) ?? null;
-  // A chain's senior manager stands ABOVE the one chosen — the same rule the server checks.
-  const seniors = chosenManager ? form.chain.filter((member) => member.position > chosenManager.position) : [];
-  const peopleReady = kind === "single" || (chosenManager !== null && (kind === "double" || seniors.some((member) => member.hrId === seniorHrId)));
+  // The same arithmetic the server runs — the right number ticked, each one from the list.
+  const peopleReady = companyToStorage({ choice: kind, picked, offers: form.chain }).ok;
   // 🔴 Products and comment are OPTIONAL on his entry, and only on his (owner, 2026-10-24).
   const ready =
     customer !== null &&
@@ -225,8 +225,7 @@ function MissedVisitForm({
       visitTime: time,
       planned: planned === "planned",
       kind,
-      managerHrId: kind === "single" ? null : managerHrId,
-      seniorHrId: kind === "chain" ? seniorHrId : null,
+      picked: kind === "single" ? [] : picked,
       products,
       comment,
       reason: planned === "unplanned" ? reason : null,
@@ -291,43 +290,20 @@ function MissedVisitForm({
               label="Single, double or chain"
               onChange={(next) => {
                 setKind(next);
-                setSeniorHrId(null);
+                setPicked((current) => current.slice(0, COMPANY_MOST[next]));
               }}
               options={[
                 { label: MISSED_VISIT_KIND_LABELS.single, note: "The rep alone", value: "single" },
-                { disabled: form.chain.length === 0, label: MISSED_VISIT_KIND_LABELS.double, note: "With a manager", value: "double" },
-                { disabled: form.chain.length < 2, label: MISSED_VISIT_KIND_LABELS.chain, note: "With a manager and a senior manager", value: "chain" },
+                { disabled: form.chain.length === 0, label: MISSED_VISIT_KIND_LABELS.double, note: "With one person from the list", value: "double" },
+                { disabled: form.chain.length < 2, label: MISSED_VISIT_KIND_LABELS.chain, note: "With two or more people from the list", value: "chain" },
               ]}
               value={kind}
             />
           </CrmField>
 
           {kind !== "single" ? (
-            <CrmField label="The manager on the visit">
-              <CrmChoice<string>
-                columns={2}
-                label="The manager on the visit"
-                onChange={(next) => {
-                  setManagerHrId(next);
-                  setSeniorHrId(null);
-                }}
-                options={form.chain
-                  .filter((member) => kind === "double" || form.chain.some((other) => other.position > member.position))
-                  .map((member) => ({ label: member.name, note: member.title, value: member.hrId }))}
-                value={managerHrId}
-              />
-            </CrmField>
-          ) : null}
-
-          {kind === "chain" && chosenManager ? (
-            <CrmField label="The senior manager on the visit">
-              <CrmChoice<string>
-                columns={2}
-                label="The senior manager on the visit"
-                onChange={(next) => setSeniorHrId(next)}
-                options={seniors.map((member) => ({ label: member.name, note: member.title, value: member.hrId }))}
-                value={seniorHrId}
-              />
+            <CrmField label="Who was on the visit">
+              <CompanyPicker choice={kind} disabled={busy} onChange={setPicked} people={form.chain} picked={picked} />
             </CrmField>
           ) : null}
 

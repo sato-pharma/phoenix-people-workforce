@@ -1129,7 +1129,7 @@ function runRowShapeTests(code: string): void {
 
   const vendorItems = itemsOf(vendorBranch, "from (\n");
   const phoenixItems = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
-  assert.equal(vendorItems.length, 63, "the 30 columns, the four appended in #5477, and the 29 of the Phoenix field set");
+  assert.equal(vendorItems.length, 64, "the 30 columns, the four appended in #5477, the 29 of the Phoenix field set, and companion_hr_ids (2026-10-27)");
   assert.equal(phoenixItems.length, vendorItems.length, "both branches carry the same columns, item for item");
   const names = vendorItems.map(outputName);
   const phoenix = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
@@ -1185,6 +1185,7 @@ function runRowShapeTests(code: string): void {
       "offline_seconds",
       "device_skew_minutes",
       "phoenix_synced_at",
+      "companion_hr_ids",
     ],
     "the appended columns, in the order they were added",
   );
@@ -1391,8 +1392,9 @@ function runRowShapeTests(code: string): void {
       "(v.visit_type = 0 and not ck.has_checkin) as regular_no_checkin",
       // 20261021140001: the second manager and the Phoenix visit detail, APPENDED after the two flags. Frozen
       // at 32 columns until then, which left CRM Master's Regular · No Check-in tabs asking for 32 it lacked.
-      // `phoenix_customer_validated` (names[30]) stays out: nothing reads it from this view.
-      ...names.slice(31).map((name) => `v.${name}`),
+      // `phoenix_customer_validated` (names[30]) stays out: nothing reads it from this view. Nor does
+      // `companion_hr_ids` (2026-10-27, the door's last column): the flag tabs name no companions.
+      ...names.slice(31, -1).map((name) => `v.${name}`),
     ],
     "the flag view keeps its first 32 columns in place and APPENDS the second manager and the Phoenix visit detail",
   );

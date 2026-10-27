@@ -1014,11 +1014,24 @@ const LATER_MIGRATIONS = [
   // The Master List's decisions (owner, 2026-10-26): one new table, locked by the same four statements, and no
   // function — it replaces nothing and moves no rep's place, so it appends at the end.
   "supabase/migrations/20261026165500_phoenix_crm_master_decisions.sql",
+  // A visit carries any mix of companions (owner, 2026-10-27): one new table locked by the same four statements,
+  // two brand-new helpers, and the newest save_visit, admin edit and admin entry — it is the latest to replace
+  // them, so it appends at the end.
+  "supabase/migrations/20261027185332_phoenix_crm_visit_any_companions.sql",
 ];
 
-/** A migration without its comments (the rollback lives in comments and drops everything). */
+/**
+ * A migration without its comments (the rollback lives in comments and drops everything) — and without the
+ * shared visits door. crm_visits_unified is not Phoenix CRM's: it is the read every system shares, held to its
+ * own rules by the door's tests, and its vendor branch READS the pilot's cutover date to end where Phoenix
+ * begins. 20261027185332 restates it to add one column beside its Phoenix CRM functions; a view writes
+ * nothing, so taking it out hides no write from the rules below.
+ */
 function migrationSql(path = MIGRATION): string {
-  return readFileSync(path, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+  return readFileSync(path, "utf8")
+    .replace(/\r\n/g, "\n")
+    .replace(/--.*$/gm, "")
+    .replace(/\bcreate or replace view public\.crm_visits_unified\b[^;]*;/, "");
 }
 
 /** The functions a migration creates or replaces, each held to the same header and grants. */

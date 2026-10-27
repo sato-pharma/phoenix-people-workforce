@@ -29,7 +29,7 @@
 
 import { cleanText, VISIT_COMMENT_MAX, VISIT_COMMENT_REQUIRED, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { COMPANY_PICKS, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
+import { COMPANY_MOST, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 
 /** What the Super Admin sends to change who was on the visit. Null on the wire when he left it alone. */
 export type VisitEditWho = { choice: VisitCompanyChoice; picked: string[] };
@@ -62,7 +62,7 @@ export function parseVisitEdit(raw: unknown): VisitEditParse {
       .filter((hrId): hrId is string => Boolean(hrId));
     // More than the choice takes is a refusal, never a quiet trim: two ticks under "Double visit" is a
     // form that lost track of itself, and guessing which one he meant would file the wrong person.
-    if (picked.length > COMPANY_PICKS[entry.choice]) return { ok: false, error: "Choose who was on the visit." };
+    if (picked.length > COMPANY_MOST[entry.choice]) return { ok: false, error: "Choose who was on the visit." };
     who = { choice: entry.choice, picked };
   }
 

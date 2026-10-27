@@ -23,6 +23,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
+import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
 import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -422,6 +423,10 @@ async function describeProductManagers(viewer: PhoenixCrmViewer, productManagers
  *    (`countsAsPlannersVisitWithRep`, the rule his own plan report judges by, owner 2026-10-17), and his row is
  *    keyed `product-manager:<hr id>` (owner, 2026-10-20). His own single visits come through the same door as
  *    a seat manager's — one list of people, one read.
+ *
+ * 🔴 ANY MIX OF COMPANIONS (owner, 2026-10-27): a manager past the visit's three fixed places is on
+ *    `phoenix_crm_visit_companions` alone, so his visits are found there too, and every row's companions
+ *    are read once (`loadVisitCompanionIds`) and handed to the same two rules.
  */
 async function loadManagerDays(
   managers: readonly ChainMember[],
@@ -465,7 +470,7 @@ async function loadManagerDays(
   // Every (part, slot) read is independent, so they run side by side (performance brief, 2026-10-23) — the
   // tab used to wait on three passes over the view one after another. The rows are still folded in the
   // same order as before, so the `seen` de-dupe keeps exactly the same visit.
-  const reads: Array<{ column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id"; asked: string[] }> = [];
+  const reads: Array<{ column: "id" | "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id"; asked: string[] }> = [];
   for (const part of chunk(hrIds, 100)) {
     for (const column of ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const) {
       // The product-manager slot is asked of the product managers only, and not at all when none is drawn.
@@ -473,6 +478,8 @@ async function loadManagerDays(
       if (asked.length > 0) reads.push({ column, asked });
     }
   }
+  // A companion past the fixed places is found by visit id — the view carries the visit's own id.
+  for (const part of chunk(await loadVisitIdsWithCompanions(hrIds), 150)) reads.push({ column: "id", asked: part });
   const results = await Promise.all(
     reads.map(({ column, asked }) =>
       fetchAllRowsKeyset<Row>(
@@ -488,13 +495,15 @@ async function loadManagerDays(
       ),
     ),
   );
+  const companionsOf = await loadVisitCompanionIds(results.flat().map((row) => String(row.id)));
   {
     for (const rows of results) {
       for (const row of rows) {
         const day = cleanDay(row.visit_date);
         if (!day || !territorySeatIds.has(String(row.seat_id ?? ""))) continue;
-        const visit = { kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
-        const named = [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id].map((value) => personKey(String(value ?? "")));
+        const companionHrIds = companionsOf.get(String(row.id)) ?? [];
+        const visit = { companionHrIds, kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
+        const named = [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id, ...companionHrIds].map((value) => personKey(String(value ?? "")));
         for (const hrId of new Set(named)) {
           const seatId = hrId ? seatOf.get(hrId) : undefined;
           if (!hrId || !seatId) continue;

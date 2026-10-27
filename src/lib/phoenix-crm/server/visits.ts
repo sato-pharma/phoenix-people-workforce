@@ -207,6 +207,12 @@ export type VisitRow = {
    * it is read from the same list that offered him.
    */
   productManagerTitle: string | null;
+  /**
+   * Everyone else on the visit, past the four places above, each by name and title (owner, 2026-10-27:
+   * "Everything is applicable" — a Training Manager beside a product manager, a third manager up the
+   * line). Read from `phoenix_crm_visit_companions`; empty on a visit that carries no one more.
+   */
+  moreCompanions: Array<{ name: string; title: string | null }>;
   enteredByName: string;
   /**
    * Entered FOR the rep by the Super Admin, who was not on the visit — a visit the rep missed logging
@@ -316,6 +322,8 @@ const VISIT_COLUMNS =
   // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
   // the embedded `unplanned` row, and a reader of the raw table has to ask for both by name.
   "customer:phoenix_crm_customers!customer_id(name, status, validated_at), " +
+  // Everyone on the visit, in its order (2026-10-27) — the card names those past the fixed places.
+  "companions:phoenix_crm_visit_companions(hr_id, position), " +
   // `manager_decided_at` is read for the REP's own sentence, not for a manager's screen: `sfe_pending`
   // is reached either by a manager approving it or by his step never having been available, and only
   // this column tells the two apart. Without it the rep is told "your manager approved it" about a
@@ -374,7 +382,19 @@ function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
     textOrNull(row.senior_hr_id),
     textOrNull(row.product_manager_hr_id),
     textOrNull(row.entered_by_hr_id),
+    ...listedCompanions(row),
   ]);
+}
+
+/** The hr ids a visit's companions list holds, in its order; none on a visit saved before 2026-10-27. */
+function listedCompanions(row: Row): string[] {
+  return (Array.isArray(row.companions) ? row.companions : [])
+    .map((entry) => record(entry))
+    .sort((left, right) => Number(left.position ?? 0) - Number(right.position ?? 0))
+    .flatMap((entry) => {
+      const hrId = textOrNull(entry.hr_id);
+      return hrId ? [hrId] : [];
+    });
 }
 
 /**
@@ -443,6 +463,12 @@ function mapVisitRow(
     seniorTitle: title(row.senior_hr_id),
     // His app role, because the organogram holds no seat for him to take a title from.
     productManagerTitle: appRole(row.product_manager_hr_id),
+    moreCompanions: (() => {
+      const placed = new Set([row.rep_hr_id, row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id].map((value) => personKey(textOrNull(value))).filter(Boolean));
+      return listedCompanions(row)
+        .filter((hrId) => !placed.has(personKey(hrId)))
+        .map((hrId) => ({ name: nameOf(names, hrId), title: title(hrId) ?? appRole(hrId) }));
+    })(),
     enteredByName: nameOf(names, textOrNull(row.entered_by_hr_id)),
     enteredByAdmin,
     products: Array.isArray(row.products) ? row.products.map(String) : [],
@@ -1332,8 +1358,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     productManagerHrId: visit.productManagerHrId,
     // Read here rather than trusted from the form: a product manager holds no seat, so the organogram
     // cannot check him, and this list is the only thing that can say he is one of HIS line's. Needed
-    // whenever one is named — on a `product_manager` visit, or as the second person of a chain.
-    productManagers: visit.productManagerHrId ? await loadLineProductManagers(seat) : [],
+    // whenever anyone from the product side is named — in the fixed place or among the companions.
+    productManagers:
+      visit.productManagerHrId || visit.companions.some((entry) => entry.side === "product") ? await loadLineProductManagers(seat) : [],
+    companions: visit.companions,
   });
   if (!participants.ok) throw validationError(participants.error);
 
@@ -1491,6 +1519,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     participants.value.managerHrId,
     participants.value.seniorHrId,
     participants.value.productManagerHrId,
+    ...participants.value.companions.map((person) => person.hrId),
   ]);
   // 🔴 THE VISIT RECORDING (owner, 2026-10-16): a rep the Super Admin switched on records the
   // conversation before the visit can be logged. Claimed HERE, before the save writes anything, under
@@ -1515,6 +1544,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       manager_hr_id: participants.value.managerHrId,
       senior_hr_id: participants.value.seniorHrId,
       product_manager_hr_id: participants.value.productManagerHrId,
+      // Everyone who came (2026-10-27), checked above; the database writes phoenix_crm_visit_companions.
+      companions: participants.value.companions.map((entry) => ({ hr_id: entry.hrId, side: entry.side })),
       products: visit.products,
       pharmacy_name: visit.pharmacyName,
       linked_pharmacies: pharmacyLinks.map(({ name, link }) => ({

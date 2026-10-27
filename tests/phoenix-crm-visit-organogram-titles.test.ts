@@ -168,8 +168,8 @@ export function runPhoenixCrmVisitOrganogramTitlesTests() {
     `${TAB}: the manager reads his organogram title, falling back to the slot`,
   );
   assert.ok(
-    /role: visit\.seniorTitle \?\? "Senior manager"/.test(tab),
-    `${TAB}: the senior manager reads his organogram title, falling back to the slot`,
+    /role: visit\.seniorTitle \?\? "Manager above"/.test(tab),
+    `${TAB}: the manager above reads his organogram title, falling back to "Manager above" — there is no "senior manager" title (owner, 2026-10-27)`,
   );
   assert.ok(
     !/role: "Rep"/.test(tab) && !/role: "Manager"/.test(tab) && !/role: "Senior manager"/.test(tab),

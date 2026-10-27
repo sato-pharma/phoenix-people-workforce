@@ -108,7 +108,8 @@ export type DoubleVisitAuditVisitRow = {
   period: string;
   visitType: string;
   /** On a chain visit, the OTHER coach — the second one on the first coach's tab, the first on the
-   * second's. Empty on a vendor row and on a plain double visit. Each coach's tab counts the visit once. */
+   * second's, then everyone past the two slots. Empty on a vendor row and on a plain double visit. Each
+   * coach's tab counts the visit once. */
   partner2: string;
   /** The Phoenix field set, already shaped to this reader's tier, one value per column. Null on a
    * vendor row — there is nothing behind it to print. */
@@ -333,7 +334,7 @@ export async function loadDoubleVisitAuditData(input: {
     ...(includeResignedAgents ? { includeResignedAgents: true } : {}),
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, ampm, " +
+      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, companion_hr_ids, ampm, " +
       "visit_type, visit_type_description, speciality, contact_crm_id, " +
       PHOENIX_VISIT_DETAIL_COLUMNS,
   });
@@ -555,7 +556,15 @@ function buildCoach(input: {
         visitType: text(row.visit_type_description) || String(row.visit_type ?? ""),
         // The OTHER coach on a chain visit, from this coach's own view of the row — never himself.
         // A coach the reader's scope took off the row is not named either (filterRowsForAccess).
-        partner2: nullableText(row.double_visitor2_name ?? null) ?? "",
+        // Then everyone past the two slots (2026-10-27, "Everything is applicable"), the coach excluded.
+        partner2: [
+          nullableText(row.double_visitor2_name ?? null),
+          ...(row.double_visitor_more ?? [])
+            .filter((more) => canonicalHrIdKey(more.hr_id) !== canonicalHrIdKey(row.double_visitor_hr_id))
+            .map((more) => nullableText(more.name) ?? nullableText(more.hr_id)),
+        ]
+          .filter((name): name is string => Boolean(name))
+          .join("; "),
         phoenixColumns: mirrorById.get(row.id)?.phoenixColumns ?? null,
       };
     });

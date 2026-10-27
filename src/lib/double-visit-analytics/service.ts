@@ -16,7 +16,7 @@ import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
 import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { getDoubleVisitRows, visitPartnerHrIds } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
@@ -156,6 +156,12 @@ export type DoubleVisitDbRow = {
   // which gives slot 2 the same view of the row slot 1 has, so he is counted exactly as slot 1 is.
   double_visitor2_hr_id?: string | null;
   double_visitor2_name?: string | null;
+  // EVERYONE ELSE on a Phoenix rep visit, past the two slots (owner, 2026-10-27, "Everything is
+  // applicable"): a visit can carry the district and regional managers, a product manager, a group
+  // product manager and a training manager at once, and the slots hold the first two. Read from the
+  // door's `companion_hr_ids`; absent on a vendor row and whenever nobody stands past slot 2. Who is
+  // NAMED and CREDITED on the visit — never its kind, which stays decided by the slots.
+  double_visitor_more?: Array<{ hr_id: string; name: string | null }>;
   // The Phoenix field set, raw and unshaped. Sight is decided by the reader (phoenix-visit-detail.ts),
   // and this row reaches readers at three different tiers plus the scoring engine, which prints nothing.
   phoenix_detail?: PhoenixVisitDetailRow;
@@ -523,6 +529,9 @@ export type MirrorVisitRow = PhoenixVisitDetailRow & {
   double2_crm_id?: number | null;
   double2_hr_id?: string | null;
   double2_name?: string | null;
+  /** Everyone on a Phoenix rep visit besides the rep, the two slots included (2026-10-27). Null on a
+   * vendor row. */
+  companion_hr_ids?: string[] | null;
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
@@ -586,7 +595,7 @@ async function paginateLiveMirrorVisits(
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, ampm, " +
+      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, companion_hr_ids, ampm, " +
       "visit_type, visit_type_description, speciality, " +
       // THE PHOENIX FIELD SET, raw. This loader has no reader — `getDoubleVisitReportData` holds the
       // access context and shapes it to that reader's tier there. Selecting it here and deciding sight
@@ -644,6 +653,14 @@ function dbRowFromMirrorVisit(
   const doubleEmployee = doubleKey ? employeeByHrKey.get(doubleKey) ?? null : null;
   const double2Key = canonicalHrIdKey(visit.double2_hr_id ?? null);
   const double2Employee = double2Key ? employeeByHrKey.get(double2Key) ?? null : null;
+  // Past the two slots: every other companion the door lists, named from the directory.
+  const slotKeys = new Set([doubleKey, double2Key].filter((key): key is string => Boolean(key)));
+  const moreVisitors = visitPartnerHrIds({ companion_hr_ids: visit.companion_hr_ids })
+    .filter((hrId) => !slotKeys.has(canonicalHrIdKey(hrId) ?? ""))
+    .map((hrId) => {
+      const employee = employeeByHrKey.get(canonicalHrIdKey(hrId) ?? "") ?? null;
+      return { hr_id: employee?.hrId ?? hrId, name: employee?.displayName ?? null };
+    });
   const label = extractNameAreaLine(
     (resolution ? resolution.mrName : visit.agent_name) ?? visit.contact_name ?? visit.customer_name,
   );
@@ -676,6 +693,7 @@ function dbRowFromMirrorVisit(
     double_visitor_name: doubleEmployee?.displayName ?? visit.double_name ?? null,
     double_visitor2_hr_id: visit.double2_hr_id ?? (visit.double2_crm_id ? `CRM:${visit.double2_crm_id}` : null),
     double_visitor2_name: double2Employee?.displayName ?? visit.double2_name ?? null,
+    ...(moreVisitors.length > 0 ? { double_visitor_more: moreVisitors } : {}),
     phoenix_detail: pickPhoenixVisitDetailRow(visit as unknown as Record<string, unknown>),
     id: visit.id,
     line_name: preferRawLabel ? (label.lineName ?? visitedEmployee?.lineName ?? null) : (visitedEmployee?.lineName ?? label.lineName),
@@ -1809,6 +1827,9 @@ export async function getDoubleVisitDashboardData(input: {
             doubleVisitor2HrId: nullableText(row.double_visitor2_hr_id ?? null),
             doubleVisitor2Name: isLeaverVisitor(row.double_visitor2_hr_id) ? null : nullableText(row.double_visitor2_name ?? null),
           }
+        : {}),
+      ...(row.double_visitor_more?.length
+        ? { doubleVisitorMore: row.double_visitor_more.map((more) => ({ hrId: more.hr_id, name: isLeaverVisitor(more.hr_id) ? null : nullableText(more.name) })) }
         : {}),
       period: row.period,
       visitCount: asNumber(row.visit_count),

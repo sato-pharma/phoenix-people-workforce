@@ -72,6 +72,9 @@ export type FieldActivityVisitRow = PhoenixVisitDetailRow & {
    * that carries somebody here carries somebody there too — the two slots never hold one person. */
   double2HrId: string | null;
   double2Name: string | null;
+  /** Everyone on a Phoenix visit besides the rep (the door's `companion_hr_ids`, owner 2026-10-27:
+   * "Everything is applicable") — the two slots above hold only the first two. Absent on a vendor row. */
+  companions?: Array<{ hrId: string; name: string | null }>;
   contactCrmId: number | null;
   contactName: string | null;
   speciality: string | null;
@@ -423,7 +426,8 @@ function subjectIsOn(visit: FieldActivityVisitRow, subjectHrId: string): boolean
   return (
     sameHrId(visit.agentHrId, subjectHrId) ||
     sameHrId(visit.doubleHrId, subjectHrId) ||
-    sameHrId(visit.double2HrId, subjectHrId)
+    sameHrId(visit.double2HrId, subjectHrId) ||
+    (visit.companions ?? []).some((companion) => sameHrId(companion.hrId, subjectHrId))
   );
 }
 
@@ -567,6 +571,7 @@ export function buildFieldActivityReport(input: {
         { hrId: visit.agentHrId, name: visit.agentName },
         { hrId: visit.doubleHrId, name: visit.doubleName },
         { hrId: visit.double2HrId, name: visit.double2Name },
+        ...(visit.companions ?? []),
       ]) {
         if (!person.name) continue;
         if (sameHrId(person.hrId, subjectHrId)) continue;

@@ -20,7 +20,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { queryVisits } from "@/lib/crm/reads";
+import { queryVisits, visitPartnerHrIds } from "@/lib/crm/reads";
 import { logError } from "@/lib/observability/log";
 
 /** person HR ID -> date (YYYY-MM-DD) -> the HR IDs they were recorded out with that date. */
@@ -37,6 +37,10 @@ type PairRow = {
    * own trip rollup, and so was the rep he was actually standing beside. */
   double2_crm_id: number | null;
   double2_hr_id: string | null;
+  /** EVERYONE on a Phoenix rep visit besides the rep (2026-10-27, "Everything is applicable"): the two
+   * slots above hold only the first two, so a third or fourth companion — a product manager beside a
+   * district and a regional manager, a training manager — is named only here. Null on vendor rows. */
+  companion_hr_ids?: string[] | null;
   visit_date: string | null;
 };
 
@@ -160,16 +164,27 @@ export async function getTripVisitPartnersByDate(input: {
       // becomes `doubleOnly` — a resolved `double_hr_id` or a real `double_crm_id` — because a native
       // double visit with a partner who has no CRM id carries a NULL `double_crm_id`, which
       // `requireDoubleCrmId` would drop. The `0` sentinel rows it also drops were discarded below anyway.
+      //
+      // A frontier person WITH a CRM id is asked by hr id too (2026-10-27): on a native visit with three
+      // or more companions, the third and later stand in neither slot, only in `companion_hr_ids`, which
+      // the hr half of the participant filter is the one to search.
+      const crmFrontierHrIds = toQuery
+        .map((crmId) => maps.hrByCrm.get(crmId))
+        .filter((hrId): hrId is string => Boolean(hrId));
       const rows = await queryVisits<PairRow>({
-        columns: "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id, double2_crm_id, double2_hr_id, visit_date",
+        columns:
+          "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id, double2_crm_id, double2_hr_id, companion_hr_ids, visit_date",
         dateFrom: start,
         dateTo: end,
         includeResignedAgents: true,
         participantCrmIds: toQuery,
         // The directory's own spelling of each hr id, not the canonical key: the door expands casing
         // variants from it, and a legacy alias spelling is only reachable from the raw value.
-        ...(toQueryHr.length > 0
-          ? { participantHrIds: toQueryHr.map((hrKey) => maps.hrByKey.get(hrKey) ?? hrKey), doubleOnly: true }
+        ...(toQueryHr.length > 0 || crmFrontierHrIds.length > 0
+          ? {
+              participantHrIds: toQueryHr.map((hrKey) => maps.hrByKey.get(hrKey) ?? hrKey).concat(crmFrontierHrIds),
+              doubleOnly: true,
+            }
           : { requireDoubleCrmId: true }),
       });
 
@@ -183,11 +198,27 @@ export async function getTripVisitPartnersByDate(input: {
         // product manager beside him, and on a chain the senior above that manager. A chain is three
         // people standing together, so EVERY PAIR among them is a real pairing — not only each of
         // them with the rep.
+        //
+        // Every companion past the two slots is named by hr id alone; one who has a CRM id is resolved
+        // through it, as the walk knows him. The array repeats the slots, so each person is listed once —
+        // by his directory hr id, which is the same whichever column named him.
+        const companions = visitPartnerHrIds({ companion_hr_ids: row.companion_hr_ids }).map((hrId) => {
+          const crmId = crmByHr.get(canonicalHrIdKey(hrId) ?? "");
+          return personOnVisit(crmId ?? null, hrId, maps);
+        });
+        const seen = new Set<string>();
         const onVisit = [
           personOnVisit(row.agent_crm_id, row.agent_hr_id, maps),
           personOnVisit(row.double_crm_id, row.double_hr_id, maps),
           personOnVisit(row.double2_crm_id, row.double2_hr_id, maps),
-        ].filter((person): person is NonNullable<typeof person> => person != null);
+          ...companions,
+        ].filter((person): person is NonNullable<typeof person> => {
+          if (person == null) return false;
+          const who = canonicalHrIdKey(person.hrId) ?? person.key;
+          if (seen.has(who)) return false;
+          seen.add(who);
+          return true;
+        });
         // One partner at least: a solo visit pairs nobody. The same test the single-partner read made.
         if (onVisit.length < 2) continue;
 

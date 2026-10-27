@@ -2128,6 +2128,7 @@ import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.
 import { runPhoenixCrmDoubleVisitRequestsTests } from "./phoenix-crm-double-visit-requests.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
+import { runPhoenixCrmVisitAnyCompanionsTests } from "./phoenix-crm-visit-any-companions.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
 import { runPhoenixCrmDmRecordsHisDayTests } from "./phoenix-crm-dm-records-his-day.test.ts";
 import { runPhoenixCrmSeatHandoverOccupantsTests } from "./phoenix-crm-seat-handover-occupants.test.ts";
@@ -7630,8 +7631,13 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM Double visit takes ONE person and Chain visit takes TWO, and the Super Admin corrects a visit a rep submitted (owner, 2026-10-06 — the rep faces one list of his managers and his line's product managers; a manager under Double files as a double, a product manager under Double is STILL the product_manager kind because double_visits counts kind = 'double' and district managers are judged on it, a chain is the visit's manager plus a senior manager OR one product manager, never two and never both, and the table and the writer both say so; the correction touches who/products/comment only and never the evidence, the Super Admin's alone, keeps a copy before it overwrites, leaves a manager's own visit's people alone, and tells the rep nothing)",
+  "Phoenix CRM Double visit takes ONE person and Chain visit takes TWO, and the Super Admin corrects a visit a rep submitted (owner, 2026-10-06 — the rep faces one list of his managers and his line's product managers; a manager under Double files as a double, a product manager under Double is STILL the product_manager kind because double_visits counts kind = 'double' and district managers are judged on it, a chain is the visit's manager plus at least one more — the manager above, the product side, or both (owner, 2026-10-27) — and the table and the writer both say so; the correction touches who/products/comment only and never the evidence, the Super Admin's alone, keeps a copy before it overwrites, leaves a manager's own visit's people alone, and tells the rep nothing)",
   runPhoenixCrmVisitCompanyTests,
+);
+
+await runTest(
+  "Phoenix CRM a visit carries ANY mix of the people offered to it, and every one is credited (owner, 2026-10-27: \"Everything is applicable\" — a rep goes out with his District Sales Manager, the Regional Sales Manager, the Product Manager, the Group Product Manager and the Training Manager, several at once. The picker keeps all of them, managers nearest first; the server checks each against the territory's chain or the line's product side; the companions table and the door's companion_hr_ids carry everyone past the two slots, and the partner finder, double-visit analytics, the visit log, the plan rules and the field-activity day each credit the third and fourth person; no Phoenix CRM screen says \"senior manager\", a title the company does not have)",
+  runPhoenixCrmVisitAnyCompanionsTests,
 );
 
 await runTest(

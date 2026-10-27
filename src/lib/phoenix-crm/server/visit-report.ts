@@ -9,8 +9,8 @@
  * 🔴 A MANAGER IS A TARGET TOO (owner, 2026-10-20: "when filter by manager u find no manager"). The picker offers
  * every manager the viewer reads (`managersInScope`, never upward) who stands above one of his territories, and
  * the lines' product managers where he is given them (`loadScopeProductManagers`). A manager's report holds every
- * visit a rep logged naming him — as the double or chain visit's manager or senior, or as the product manager —
- * on the territories the viewer reads, PLUS the single visits he logged alone, as rows under his own name (owner,
+ * visit a rep logged naming him — as the double or chain visit's manager or senior, or as the product manager, or
+ * anywhere in its list of companions (`phoenix_crm_visit_companions`, owner 2026-10-27) — on the territories the viewer reads, PLUS the single visits he logged alone, as rows under his own name (owner,
  * 2026-10-20, multiple choice: "Show, keep out of reps"). Those come through `manager-plan-readers.ts`, the one
  * door out of his own visits' table, are marked `ownVisit`, sit on no rep's row and in no dashboard figure, and
  * are never asked for a location or a photo.
@@ -281,6 +281,8 @@ const MANAGER_VISIT_COLUMNS = ["manager_hr_id", "senior_hr_id", "product_manager
  * Every visit a rep logged naming this manager between two dates, on the territories this viewer reads — read by
  * the PERSON, never by a seat, because a regional, national or product manager rides on territories no single seat
  * holds. Each column is read in full and the answers are joined by id, so a chain visit naming him twice is one row.
+ * A visit listing him past its three fixed places (owner, 2026-10-27) is found through `phoenix_crm_visit_companions`
+ * — stored upper-cased — and read by its id.
  */
 async function readManagerVisitRange(
   hrId: string,
@@ -307,13 +309,49 @@ async function readManagerVisitRange(
       ),
     ),
   );
+  const listed = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_visit_companions")
+        .select("id, visit_id")
+        .in("hr_id", dedupeIds(keys.map((key) => key.toUpperCase())))
+        .not("visit_id", "is", null),
+    { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+  );
+  const asCompanion = await selectByIds<Row>(
+    "phoenix_crm_visits",
+    VISIT_COLUMNS,
+    "id",
+    listed.map((row) => idOf(row.visit_id)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (query: any) => tuneByIds(includeTest)(query.gte("visit_date", window.from).lte("visit_date", window.to)),
+  );
   const byId = new Map<string, Row>();
-  for (const rows of answers) {
+  for (const rows of [...answers, asCompanion]) {
     for (const row of rows) {
       if (readable.has(String(row.seat_id))) byId.set(String(row.id), row);
     }
   }
   return [...byId.values()];
+}
+
+/**
+ * Everyone on each rep visit besides the rep, with the side each went as (`phoenix_crm_visit_companions`, owner
+ * 2026-10-27), in the order the visit lists them. `loadVisitCompanionIds` answers the ids alone; this report names
+ * the manager side and the product side in two columns, so it reads the side too. A visit with no rows is absent.
+ */
+async function loadVisitCompanionSides(visitIds: readonly string[]): Promise<Map<string, Array<{ hrId: string; side: string }>>> {
+  const rows = await selectByIds<Row>("phoenix_crm_visit_companions", "id, visit_id, hr_id, side, position", "visit_id", visitIds);
+  const out = new Map<string, Array<{ hrId: string; side: string; position: number }>>();
+  for (const row of rows) {
+    const visitId = idOf(row.visit_id);
+    const hrId = idOf(row.hr_id);
+    if (!visitId || !hrId) continue;
+    const list = out.get(visitId) ?? [];
+    list.push({ hrId, position: Number(row.position ?? 0), side: String(row.side ?? "") });
+    out.set(visitId, list);
+  }
+  return new Map([...out].map(([visitId, list]) => [visitId, list.sort((left, right) => left.position - right.position).map(({ hrId, side }) => ({ hrId, side }))]));
 }
 
 function tuneByIds(includeTest: boolean) {
@@ -358,13 +396,15 @@ function whoseVisit(visit: Row): string | null {
 
 /**
  * Everyone on the visit, by name — the person it is credited to first, then the rep, the manager, the senior manager
- * and the product manager, each once (owner, 2026-10-20: "when filter by manager u find no manager"). "Who visited"
- * offers and matches any of them; `repName` still says whose visit it is.
+ * and the product manager, then anyone else its list of companions holds (owner, 2026-10-27), each once (owner,
+ * 2026-10-20: "when filter by manager u find no manager"). "Who visited" offers and matches any of them; `repName`
+ * still says whose visit it is.
  */
 function visitParticipantNames(visit: Row, creditedHrId: string | null, names: PeopleNames): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const hrId of [creditedHrId, visit.rep_hr_id, visit.manager_hr_id, visit.senior_hr_id, visit.product_manager_hr_id]) {
+  const companions = Array.isArray(visit.companion_hr_ids) ? visit.companion_hr_ids : [];
+  for (const hrId of [creditedHrId, visit.rep_hr_id, visit.manager_hr_id, visit.senior_hr_id, visit.product_manager_hr_id, ...companions]) {
     const key = personKey(textOrNull(hrId));
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -453,6 +493,15 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       { column: "visit_date", from: readFrom, to: period.to },
       includeTest,
     );
+  }
+  // Everyone on each visit past its three fixed places (owner, 2026-10-27), read once and carried on the row under
+  // the door's own name, so the values and the names read it like any other column. Null on a visit saved before.
+  // The product side rides beside it, so a Training Manager prints as a product person, never as a manager.
+  const companionsOf = await loadVisitCompanionSides(everyVisit.map((visit) => String(visit.id)));
+  for (const visit of everyVisit) {
+    const companions = companionsOf.get(String(visit.id));
+    visit.companion_hr_ids = companions ? companions.map((companion) => companion.hrId) : null;
+    visit.companion_product_hr_ids = companions ? companions.filter((companion) => companion.side === "product").map((companion) => companion.hrId) : null;
   }
   const seatIds = target.seats.map((seat) => seat.seatId);
   const seatById = new Map(target.seats.map((seat) => [seat.seatId, seat]));
@@ -688,6 +737,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     ...target.seats.map((seat) => seat.occupantHrId),
     ...[...chainBySeat.values()].flatMap((chain) => chain.map((member) => member.hrId)),
     ...visits.flatMap((visit) => [visit.rep_hr_id, visit.manager_hr_id, visit.senior_hr_id, visit.entered_by_hr_id, visit.product_manager_hr_id]),
+    ...visits.flatMap((visit) => (Array.isArray(visit.companion_hr_ids) ? visit.companion_hr_ids : [])),
     ...customers.map((customer) => customer.validated_by_hr_id),
     ...unplannedRows.flatMap((row) => [row.manager_decided_by_hr_id, row.sfe_decided_by_hr_id, row.admin_decided_by_hr_id]),
     ...reviews.map((review) => review.decided_by_hr_id),

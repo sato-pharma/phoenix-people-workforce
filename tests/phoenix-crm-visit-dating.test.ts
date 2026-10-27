@@ -61,6 +61,15 @@ function lastDefinerOf(name: string): string {
   return files[files.length - 1];
 }
 
+/** One function's own text out of a migration — from its header to the first `$$;` that closes its body. */
+function functionBodyOf(sql: string, name: string): string {
+  const start = sql.indexOf(`create or replace function public.${name}(`);
+  assert.ok(start >= 0, `${name} is defined in this migration`);
+  const end = sql.indexOf("\n$$;", start);
+  assert.ok(end > start, `${name}'s body closes with $$;`);
+  return sql.slice(start, end);
+}
+
 /**
  * 🔴 The live `phoenix_crm_save_visit`, found by SORT ORDER rather than by a path written here.
  *
@@ -212,7 +221,8 @@ export function runPhoenixCrmVisitDatingTests(): void {
   // ── 4. 🔴 NO SLOT DATES A VISIT ONTO AN EARLIER VISIT DAY THAN ITS ARRIVAL ──────────────────────
   {
     // The clamp, byte for byte, in the function the database actually runs.
-    const live = sqlOf(SAVE_VISIT_DEFINER);
+    // save_visit ALONE: its definer may define other functions too (20261027185332 also replaces the admin entry).
+    const live = functionBodyOf(sqlOf(SAVE_VISIT_DEFINER), "phoenix_crm_save_visit");
     assert.ok(live.includes(CLAMP), `🔴 the clamp is missing from the live phoenix_crm_save_visit (${SAVE_VISIT_DEFINER})`);
 
     // And in the right place: AFTER the three branches that date the visit, BEFORE the offline block
@@ -297,7 +307,12 @@ export function runPhoenixCrmVisitDatingTests(): void {
     // The Super Admin's own entry is a DIFFERENT function and is untouched: entering a visit a rep
     // missed logging, on a day he chooses, is exactly what it is for.
     assert.equal(live.includes("phoenix_crm_admin_enter_visit"), false, "the clamp is in save_visit alone");
-    assert.notEqual(lastDefinerOf("phoenix_crm_admin_enter_visit"), SAVE_VISIT_DEFINER.split("/").pop(), "and the admin entry keeps its own definer");
+    const adminEntry = `supabase/migrations/${lastDefinerOf("phoenix_crm_admin_enter_visit")}`;
+    assert.equal(
+      functionBodyOf(sqlOf(adminEntry), "phoenix_crm_admin_enter_visit").includes(CLAMP),
+      false,
+      "and the admin entry, read from its own last definer, never carries the clamp",
+    );
   }
 
   console.log("phoenix-crm visit dating: OK");

@@ -273,6 +273,7 @@ function runDoorEmulationGuards() {
   const hr = buildParticipantOrFilter({ participantHrIds: ["B-301"] });
   assert.ok(hr?.includes("agent_hr_id.in.(") && hr.includes("double_hr_id.in.("), `hr participants match agent or partner: ${hr}`);
   assert.ok(hr?.includes('"B-301"') && hr.includes('"b-301"'), "every casing of the hr id");
+  assert.ok(/companion_hr_ids.ov.{[^}]*"B-301"/.test(hr ?? ""), `and any companion past the two slots, by overlap: ${hr}`);
   const crm = buildParticipantOrFilter({ participantCrmIds: [9001] });
   assert.ok(crm?.includes("agent_crm_id.in.(9001)") && crm.includes("double_crm_id.in.(9001)"), `crm participants match agent or partner: ${crm}`);
 }

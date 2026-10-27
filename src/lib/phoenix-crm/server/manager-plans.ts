@@ -487,7 +487,7 @@ function slotSummary(input: {
  * Never the planner himself; the Training Manager is offered nobody. A regional, national or product manager's
  * list is narrowed to the district he picks (`seniorOffersForScope`).
  */
-async function managerSeniorOffers(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<ManagerSeniorOffer[]> {
+export async function managerSeniorOffers(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<ManagerSeniorOffer[]> {
   if (writer.kind === "tm") return [];
   const self = personKey(writer.hrId);
   const seen = new Set<string>(self ? [self] : []);

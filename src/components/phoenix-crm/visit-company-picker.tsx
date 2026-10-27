@@ -2,14 +2,7 @@
 
 import { Check } from "lucide-react";
 
-import {
-  canPick,
-  companyHint,
-  ONE_PRODUCT_MANAGER_ON_A_CHAIN,
-  togglePick,
-  type CompanyOffer,
-  type VisitCompanyChoice,
-} from "@/lib/phoenix-crm/visit-company";
+import { canPick, companyHint, togglePick, type CompanyOffer, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import { companionGroupTitle } from "@/lib/phoenix-crm/visit-ask-rules";
 import { cn } from "@/lib/utils";
 
@@ -18,12 +11,13 @@ import { cn } from "@/lib/utils";
  *
  * Owner, 2026-10-06: under Double visit the rep's district manager, the product manager and the national
  * sales manager appear (and the regional manager where his line has one) and he chooses ONE; under Chain
- * visit the same list appears and he chooses TWO. The rule is `visit-company.ts`; this is only the
+ * visit the same list appears and he chooses TWO OR MORE, in any mix (2026-10-27: "Everything is
+ * applicable"). The rule is `visit-company.ts`; this is only the
  * list, shared by the rep's visit form and the Super Admin's correction so the two can never offer
  * different people.
  *
- * Managers first, nearest to the territory first, then the line's product managers — a separate heading,
- * because a product manager sits on no rung of the chain. Every person is a full-width button that wraps
+ * Managers first, nearest to the territory first, each by their organogram title, then the line's
+ * product side by their own job titles — a separate heading, because they sit on no rung of the chain. Every person is a full-width button that wraps
  * (`min-w-0 break-words`), never a column that scrolls sideways.
  */
 
@@ -44,11 +38,10 @@ export function CompanyPicker({
 }) {
   const managers = people.filter((person) => person.role === "manager");
   const productManagers = people.filter((person) => person.role === "product_manager");
-  const productManagerChosen = productManagers.some((person) => picked.includes(person.hrId));
 
   function row(person: CompanyPerson) {
     const chosen = picked.includes(person.hrId);
-    const open = canPick(choice, picked, person, people);
+    const open = canPick(choice, picked, person);
     return (
       <button
         aria-pressed={chosen}
@@ -85,7 +78,6 @@ export function CompanyPicker({
         <div className="grid min-w-0 gap-1.5">
           <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
           {productManagers.map(row)}
-          {choice === "chain" && productManagerChosen ? <p className="text-xs font-semibold text-slate-500">{ONE_PRODUCT_MANAGER_ON_A_CHAIN}</p> : null}
         </div>
       ) : null}
     </div>

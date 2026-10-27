@@ -15,32 +15,56 @@
 // No person can be counted twice for one visit: slot 1 is `coalesce(manager, product_manager, senior)`,
 // so slot 2 is never filled while slot 1 is empty, and the two slots always hold two different people.
 // A vendor row has no slot 2 and passes through unchanged, so the old CRM's history reads as it did.
+//
+// 🔴 Since 2026-10-27 (owner: "Everything is applicable") a Phoenix visit may carry more than two people
+// besides the rep — the district and regional managers, a product manager and the Training Manager at
+// once. Everyone past slot 2 rides in `double_visitor_more`, and each of them gets his OWN view of the row
+// the same way: himself in slot 1, the first of the others in slot 2, the rest in `more`.
 
 export type DoubleVisitorSlots = {
   double_visitor_hr_id: string | null;
   double_visitor_name: string | null;
   double_visitor2_hr_id?: string | null;
   double_visitor2_name?: string | null;
+  double_visitor_more?: Array<{ hr_id: string; name: string | null }>;
 };
+
+type Visitor = { hr_id: string | null; name: string | null };
+
+/** Everyone on the row besides the rep, in slot order: slot 1, slot 2, then the rest. */
+function visitorsOf(row: DoubleVisitorSlots): Visitor[] {
+  const out: Visitor[] = [{ hr_id: row.double_visitor_hr_id, name: row.double_visitor_name }];
+  if (row.double_visitor2_hr_id || row.double_visitor2_name) out.push({ hr_id: row.double_visitor2_hr_id ?? null, name: row.double_visitor2_name ?? null });
+  for (const more of row.double_visitor_more ?? []) out.push({ hr_id: more.hr_id, name: more.name });
+  return out;
+}
+
+/** The row with these people in its slots, in this order; `more` dropped when nobody stands past slot 2. */
+function withVisitors<T extends DoubleVisitorSlots>(row: T, visitors: readonly Visitor[]): T {
+  const rest = { ...row };
+  delete rest.double_visitor_more;
+  const more = visitors.slice(2).map((visitor) => ({ hr_id: visitor.hr_id ?? "", name: visitor.name }));
+  return {
+    ...(rest as T),
+    double_visitor_hr_id: visitors[0]?.hr_id ?? null,
+    double_visitor_name: visitors[0]?.name ?? null,
+    double_visitor2_hr_id: visitors[1]?.hr_id ?? null,
+    double_visitor2_name: visitors[1]?.name ?? null,
+    ...(more.length > 0 ? { double_visitor_more: more } : {}),
+  };
+}
 
 /** True when the row is a chain visit carrying a second manager in slot 2. */
 export function hasSecondDoubleVisitor(row: DoubleVisitorSlots): boolean {
   return Boolean(row.double_visitor2_hr_id || row.double_visitor2_name);
 }
 
-/** The row as each manager on it sees it: slot 1's own view first, then slot 2's (the slots swapped). */
+/** The row as each manager on it sees it: slot 1's own view first (the row itself), then each other
+ * person's — himself in slot 1, the first of the others in slot 2 (for two people: the slots swapped). */
 export function doubleVisitorViews<T extends DoubleVisitorSlots>(row: T): T[] {
-  if (!hasSecondDoubleVisitor(row)) return [row];
-  return [
-    row,
-    {
-      ...row,
-      double_visitor_hr_id: row.double_visitor2_hr_id ?? null,
-      double_visitor_name: row.double_visitor2_name ?? null,
-      double_visitor2_hr_id: row.double_visitor_hr_id,
-      double_visitor2_name: row.double_visitor_name,
-    },
-  ];
+  if (!hasSecondDoubleVisitor(row) && !(row.double_visitor_more?.length)) return [row];
+  const visitors = visitorsOf(row);
+  return visitors.map((visitor, index) => (index === 0 ? row : withVisitors(row, [visitor, ...visitors.filter((_, other) => other !== index)])));
 }
 
 /** Every manager-side reader iterates THIS: one entry per (visit, manager). Never a rep-side count. */
@@ -57,11 +81,11 @@ export function keepDoubleVisitors<T extends DoubleVisitorSlots>(
   row: T,
   keep: (hrId: string | null) => boolean,
 ): T | null {
-  const views = doubleVisitorViews(row);
-  const kept = views.filter((view) => keep(view.double_visitor_hr_id));
-  if (kept.length === views.length) return row;
+  const visitors = visitorsOf(row);
+  const kept = visitors.filter((visitor) => keep(visitor.hr_id));
+  if (kept.length === visitors.length) return row;
   if (kept.length === 0) return null;
-  return { ...kept[0], double_visitor2_hr_id: null, double_visitor2_name: null };
+  return withVisitors(row, kept);
 }
 
 /** The camel-case visit-log and report-row shape of the same two slots. */
@@ -70,23 +94,32 @@ export type DoubleVisitorEntrySlots = {
   doubleVisitorName: string | null;
   doubleVisitor2HrId?: string | null;
   doubleVisitor2Name?: string | null;
+  /** Everyone past slot 2 (2026-10-27) — each credited exactly as slot 1. */
+  doubleVisitorMore?: Array<{ hrId: string; name: string | null }>;
 };
 
 /** The visit log, one entry per (visit, manager) — the log-entry twin of perDoubleVisitorRows. Client-safe,
  * so a screen that totals managers from the log credits a chain visit's second manager as the server does. */
 export function visitLogPerDoubleVisitor<T extends DoubleVisitorEntrySlots>(entries: readonly T[]): T[] {
-  return entries.flatMap((entry) =>
-    entry.doubleVisitor2HrId || entry.doubleVisitor2Name
-      ? [
-          entry,
-          {
-            ...entry,
-            doubleVisitorHrId: entry.doubleVisitor2HrId ?? null,
-            doubleVisitorName: entry.doubleVisitor2Name ?? null,
-            doubleVisitor2HrId: entry.doubleVisitorHrId,
-            doubleVisitor2Name: entry.doubleVisitorName,
-          },
-        ]
-      : [entry],
-  );
+  return entries.flatMap((entry) => {
+    const visitors: Array<{ hrId: string | null; name: string | null }> = [{ hrId: entry.doubleVisitorHrId, name: entry.doubleVisitorName }];
+    if (entry.doubleVisitor2HrId || entry.doubleVisitor2Name) visitors.push({ hrId: entry.doubleVisitor2HrId ?? null, name: entry.doubleVisitor2Name ?? null });
+    for (const more of entry.doubleVisitorMore ?? []) visitors.push(more);
+    if (visitors.length === 1) return [entry];
+    return visitors.map((visitor, index) => {
+      if (index === 0) return entry;
+      const others = visitors.filter((_, other) => other !== index);
+      const rest = { ...entry };
+      delete rest.doubleVisitorMore;
+      const more = others.slice(1).map((other) => ({ hrId: other.hrId ?? "", name: other.name }));
+      return {
+        ...(rest as T),
+        doubleVisitorHrId: visitor.hrId,
+        doubleVisitorName: visitor.name,
+        doubleVisitor2HrId: others[0]?.hrId ?? null,
+        doubleVisitor2Name: others[0]?.name ?? null,
+        ...(more.length > 0 ? { doubleVisitorMore: more } : {}),
+      };
+    });
+  });
 }
