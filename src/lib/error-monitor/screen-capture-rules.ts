@@ -49,6 +49,7 @@ export const SCREEN_CAPTURE_SKIP_LIST: ReadonlyArray<{ match: "prefix" | "exact"
   { match: "prefix", path: "/api/activity", why: "Page-view tracking, sent from every page" },
   { match: "exact", path: "/api/admin/activity/live", why: "Activity Control's live poll" },
   { match: "exact", path: "/api/notifications/in-app", why: "The notification bell's poll" },
+  { match: "exact", path: "/api/notifications/push/register", why: "The push-subscription sync every page sends on load; a test account is refused it, and 8 of its 9 pictures in two days were this call nobody pressed" },
   { match: "prefix", path: "/api/navigation", why: "Sidebar layout, read by every page" },
   { match: "prefix", path: "/api/employee-portals/navigation", why: "Portal sidebar layout, read by every page" },
   { match: "exact", path: "/api/approvals/badge-counts", why: "Sidebar badge counts, polled by every page" },

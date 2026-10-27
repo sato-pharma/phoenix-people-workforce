@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Script from "next/script";
 
 import { useCspNonce } from "@/components/security/csp-nonce-provider";
-import { detectDeviceType, onesignalAppId, withOneSignal } from "@/lib/notifications/onesignal-client";
+import { detectDeviceType, onesignalAppId, shouldReportPushSubscription, withOneSignal } from "@/lib/notifications/onesignal-client";
 
 function reportSubscriptionState(optedIn: boolean, subscriptionId: string | null) {
   if (!subscriptionId) return;
@@ -57,15 +57,21 @@ export function OneSignalProvider() {
         return;
       }
 
+      // A session with no push identity (a test account, View as Seat) never registers this browser:
+      // the server refuses a test account's register, and it was refused on every page it opened.
+      let reportsSubscription = true;
       try {
         const response = await fetch("/api/notifications/push/context", { cache: "no-store" });
         const payload = await response.json().catch(() => null);
+        reportsSubscription = shouldReportPushSubscription(response.ok, payload);
         const hrId = typeof payload?.data?.hrId === "string" ? payload.data.hrId : null;
         if (hrId) await OneSignal.login(hrId);
       } catch {
         // Best-effort — a failed login() just means this browser stays un-targeted
         // until the next mount (e.g. next page load) succeeds.
       }
+
+      if (!reportsSubscription) return;
 
       try {
         OneSignal.User.PushSubscription.addEventListener("change", (event) => {

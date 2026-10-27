@@ -79,6 +79,10 @@ function rulesTests() {
     "/api/auth/login",
     "/api/activity/track",
     "/api/notifications/in-app",
+    // Sent by every page on load (onesignal-provider.tsx), never pressed. A test account is refused
+    // it by design, and was photographed for it on every page it opened (8 of 9 TEST-DF pictures,
+    // 27–28 Oct 2026).
+    "/api/notifications/push/register",
     "/api/approvals/badge-counts",
     "/api/approvals-hub/pending-count",
     "/api/direct-orders/needs-action-count",
