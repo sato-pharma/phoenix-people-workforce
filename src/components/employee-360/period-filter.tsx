@@ -7,9 +7,9 @@ import { phxFieldClassName } from "@/components/ui/form-tokens";
 // A 40px tap target on a phone (the field force's device), back to the compact chip from md up.
 function chip(active: boolean): string {
   return cn(
-    "inline-flex min-h-10 items-center justify-center rounded-full border px-3 py-1.5 text-xs font-bold transition md:min-h-0",
+    "inline-flex min-h-10 items-center justify-center border px-3 py-1.5 text-xs font-bold transition md:min-h-0",
     active
-      ? "border-orange-500 bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.3)]"
+      ? "border-orange-500 bg-orange-500 text-white"
       : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50",
   );
 }
@@ -33,7 +33,12 @@ export function PeriodFilter({
 }) {
   const base = basePath ?? `/employee-360/${encodeURIComponent(hrId)}`;
   return (
-    <div className="flex flex-col gap-3 rounded-[16px] border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    // The period is the record's dateline: a labelled bar on the same sheet as the report below it.
+    <div className="border border-slate-200/80 border-t-2 border-t-slate-900 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+      <div className="border-b border-slate-200 px-3.5 py-2">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.2em] text-slate-500">Reporting period</span>
+      </div>
+      <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap gap-1.5">
         {PERIOD_PRESETS.map((p) => (
           <Link key={p.key} href={`${base}?preset=${p.key}`} className={chip(activeKey === p.key)}>
@@ -69,6 +74,7 @@ export function PeriodFilter({
           Apply
         </button>
       </form>
+      </div>
     </div>
   );
 }

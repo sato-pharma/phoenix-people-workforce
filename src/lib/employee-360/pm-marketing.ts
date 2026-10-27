@@ -4,8 +4,8 @@
 // investments they request. This surfaces, for the PM being viewed, the ROI on
 // the marketing requests THEY submitted: spend, expected vs actual return, and
 // how many are on-track. Reuses the marketing ROI report + KPI-band builder,
-// scoped to this requester. Best-effort: any failure returns an empty summary so
-// the 360 page never breaks.
+// scoped to this requester. A failed read throws: the page catches it and says the
+// section could not be read, rather than drawing an empty one that reads as "no requests".
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
@@ -14,6 +14,9 @@ import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 
 export type PmMarketingRequest = {
   code: string;
+  /** What the request is for, as the ROI tracker names it: its type and its customer. */
+  typeName: string | null;
+  customerName: string;
   line: string | null;
   estimatedCost: number;
   actual: number;
@@ -54,36 +57,34 @@ export async function getPmMarketingRoi(
   access: AccessContext,
   nowIso: string,
 ): Promise<PmMarketingSummary> {
-  try {
-    const report = await getMarketingRoiReport(access, emptyRoiFilterState(), nowIso);
-    const rows = report.rows.filter((r) => hrIdsMatch(r.requesterHrId, hrId));
-    if (rows.length === 0) return EMPTY;
-    // The report's ledger, so a sale two of this PM's campaigns both claim is counted once.
-    const kpi = buildKpiBand(rows, report.kpi.salesDataAsOf, 0, report.attributionLines);
-    const topRequests: PmMarketingRequest[] = [...rows]
-      .sort((a, b) => b.estimatedCost - a.estimatedCost)
-      .slice(0, 6)
-      .map((r) => ({
-        code: r.requestCode,
-        line: r.line,
-        estimatedCost: r.estimatedCost,
-        actual: r.actualSalesValue,
-        status: String(r.resultStatus),
-      }));
-    return {
-      hasData: true,
-      requestCount: kpi.requestCount,
-      totalEstimatedCost: kpi.totalEstimatedCost,
-      totalExpectedRoi: kpi.totalExpectedRoi,
-      totalActualValue: kpi.totalActualValue,
-      coverageRatio: kpi.coverageRatio,
-      onTrack: kpi.onTrackCount,
-      behind: kpi.behindCount,
-      awaiting: kpi.awaitingDataCount,
-      noData: kpi.noDataCount,
-      topRequests,
-    };
-  } catch {
-    return EMPTY;
-  }
+  const report = await getMarketingRoiReport(access, emptyRoiFilterState(), nowIso);
+  const rows = report.rows.filter((r) => hrIdsMatch(r.requesterHrId, hrId));
+  if (rows.length === 0) return EMPTY;
+  // The report's ledger, so a sale two of this PM's campaigns both claim is counted once.
+  const kpi = buildKpiBand(rows, report.kpi.salesDataAsOf, 0, report.attributionLines);
+  const topRequests: PmMarketingRequest[] = [...rows]
+    .sort((a, b) => b.estimatedCost - a.estimatedCost)
+    .slice(0, 6)
+    .map((r) => ({
+      code: r.requestCode,
+      typeName: r.requestTypeName,
+      customerName: r.customerName,
+      line: r.line,
+      estimatedCost: r.estimatedCost,
+      actual: r.actualSalesValue,
+      status: String(r.resultStatus),
+    }));
+  return {
+    hasData: true,
+    requestCount: kpi.requestCount,
+    totalEstimatedCost: kpi.totalEstimatedCost,
+    totalExpectedRoi: kpi.totalExpectedRoi,
+    totalActualValue: kpi.totalActualValue,
+    coverageRatio: kpi.coverageRatio,
+    onTrack: kpi.onTrackCount,
+    behind: kpi.behindCount,
+    awaiting: kpi.awaitingDataCount,
+    noData: kpi.noDataCount,
+    topRequests,
+  };
 }
