@@ -32,6 +32,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *   7. The sidebar row and every companion declaration CI looks for.
  *   8. A test account reads the real world beside its own and draws each customer ONCE: a pinned test copy
  *      stands in for its real twin, a placeless one gives way to it, and visits and today's plan follow.
+ *   9. The landing card is a real Google map (owner, 2026-10-28), loaded only once the card is on screen, with
+ *      the drawn picture kept under it for no key or a failed load, and no count printed on a sampled pin.
  */
 
 const read = (path: string) => readFileSync(path, "utf8");
@@ -211,6 +213,29 @@ export function runPhoenixCrmMyMapTests(): void {
   // The canvas takes the key as a prop, like the territory map, and never reads it from the bundle itself.
   assert.doesNotMatch(stripComments(read("src/components/phoenix-crm/my-map/my-map-canvas.tsx")), /process\.env/, "the canvas reads no environment value");
 
+  // ── 9. The landing card's map ──────────────────────────────────────────────────────────────────────
+  assert.ok(
+    read("src/components/employee-portal/dashboards/my-map-snapshot-card.tsx").includes(
+      "<MyMapSnapshotView browserKey={getBrowserKey()} frame={frame} snapshot={snapshot} />",
+    ),
+    "the card's loader hands it the browser key, read on the server",
+  );
+  assert.match(
+    stripComments(read("src/components/phoenix-crm/my-map/my-map-snapshot-card.tsx")),
+    /<MyMapCardMap browserKey=\{browserKey\} points=\{snapshot\.points\}>\s*<Picture snapshot=\{snapshot\} \/>\s*<\/MyMapCardMap>/,
+    "the card draws a real map, with the drawn picture under it",
+  );
+  const cardMap = stripComments(read("src/components/phoenix-crm/my-map/my-map-card-map.tsx"));
+  assert.ok(!cardMap.includes("process.env"), "the card's map reads no environment value");
+  assert.ok(cardMap.includes("new IntersectionObserver("), "the card waits until it is on screen");
+  const gate = cardMap.indexOf("if (!browserKey || !inView || !element || points.length === 0) return;");
+  const load = cardMap.indexOf("await loadGoogleMaps(browserKey)");
+  assert.ok(gate > 0 && load > gate, "no map is loaded, and so none is billed, before the card is in view");
+  assert.equal(cardMap.split("loadGoogleMaps(").length - 1, 1, "the map is loaded in one place only");
+  assert.ok(cardMap.includes('gestureHandling: "none"'), "the card's map is a picture: no drag, no zoom");
+  assert.doesNotMatch(cardMap, /\blabel:/, "no count is printed on a sampled pin");
+  assert.ok(cardMap.includes("{browserKey && !failed ? ("), "with no key, or a failed load, the drawn picture stays");
+
   // The four landing pages carry the card, each under its own Suspense.
   for (const file of [
     "src/components/employee-portal/dashboards/dsm-command-center.tsx",
@@ -228,6 +253,7 @@ export function runPhoenixCrmMyMapTests(): void {
     "src/components/phoenix-crm/my-map/my-map-list.tsx",
     "src/components/phoenix-crm/my-map/my-map-pin-card.tsx",
     "src/components/phoenix-crm/my-map/my-map-snapshot-card.tsx",
+    "src/components/phoenix-crm/my-map/my-map-card-map.tsx",
     "src/components/employee-portal/dashboards/my-map-snapshot-card.tsx",
   ]) {
     const source = stripComments(read(file));
