@@ -840,9 +840,17 @@ function participantFilterMatchesNobody(filter: CrmVisitFilter): boolean {
  * dropped every one of them from Double Visit Analytics. It is limited to `source = phoenix` because
  * a vendor row can carry a stray resolved hr id beside a null or 0 partner, which is not a double
  * visit (employee-360 audit finding A; the same rule as {@link isCrmDoubleVisitRow}).
+ *
+ * Each half names its own source, so the database can test a Phoenix row on its own visit columns
+ * before it joins anything (infrastructure audit, 2026-10-28). On a Phoenix row the crm id comes from
+ * the partner the hr id names, so it is never set when the hr id is null: the hr half already holds
+ * every Phoenix row the crm half could add (0 of 7,067 rows differ). With the crm half left open to
+ * Phoenix rows, Postgres could only test it after joining the partner, and it looked up the customer
+ * of every visit first: 9,807 pages for one 7-day run (19 to 25 Oct) against 3,360 with the source
+ * guard, same 512 rows; August to October, 6,062 rows either way.
  */
 export const REAL_DOUBLE_PARTNER_OR_FILTER =
-  "and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)";
+  "and(source.eq.phoenix,double_hr_id.not.is.null),and(source.neq.phoenix,double_crm_id.not.is.null,double_crm_id.neq.0)";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape; the
    real type is too deep to thread through a helper (see visits-report/service.ts precedent). */

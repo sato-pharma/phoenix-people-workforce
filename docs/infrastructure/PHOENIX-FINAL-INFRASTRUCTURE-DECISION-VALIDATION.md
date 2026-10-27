@@ -243,6 +243,20 @@ vCPU-month: about $1–3.
    - The combined CRM views read only the sources and columns each screen needs, and the import-row search is narrowed.
    - Each read shape first needs the owner's approval for one `EXPLAIN (ANALYZE, BUFFERS)`, run outside working hours.
    - Every role must get exactly the same rows back, shown by a role sweep.
+   - **Measured at 01:55 Cairo on 28 Oct, with the owner's approval: the Double Visit Analytics read.** It is the
+     heaviest read shape on the database: 12,527 calls and about 42.9 million pages since the statistics reset,
+     3,424 pages a call on average. One 7-day run (19 to 25 Oct) touched 9,807 pages.
+     - **Where the pages went:** 7,512 of them (77 %) looked up the customer of 2,504 Phoenix visits, and 2,149 of
+       those visits were then dropped because they were not double visits.
+     - **Why:** the double-visit test let a Phoenix row qualify by its partner's CRM id. That id comes from a join, so
+       Postgres could test it only after all the joins, customer included.
+     - **The fix, code only and no migration:** the CRM-id half now names `source.neq.phoenix`. On a Phoenix row,
+       the CRM id comes from the partner the HR id names, so the HR-id half already covers every one of them.
+     - **Measured after:** the same run touched 3,360 pages (−66 %), execution fell from 62 ms to 38 ms, and the
+       same 512 rows came back. August to October, both tests return the same 6,062 rows. Across all 7,067 Phoenix
+       rows, none changes.
+     - The cut on an average call is NOT MEASURED. It depends on how many Phoenix visits in a run are not double
+       visits.
 5. **Watch 10 working days against §11, then stay on Small or move to Medium.**
 
 **Not recommended:**

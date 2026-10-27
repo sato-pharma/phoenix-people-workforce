@@ -361,9 +361,16 @@ export function runCrmDoubleVisitWithDepartedPartnerTests() {
 
   assert.equal(
     REAL_DOUBLE_PARTNER_OR_FILTER,
-    "and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)",
+    "and(source.eq.phoenix,double_hr_id.not.is.null),and(source.neq.phoenix,double_crm_id.not.is.null,double_crm_id.neq.0)",
     "the rescue keeps only rows naming a REAL partner: the crm-id half, or a resolved partner hr id on a Phoenix native row — a vendor row's stray double_hr_id beside a 0 partner is not a double visit",
   );
+  for (const half of REAL_DOUBLE_PARTNER_OR_FILTER.match(/and\([^)]*\)/g) ?? []) {
+    assert.match(
+      half,
+      /^and\(source\.(eq|neq)\.phoenix,/,
+      `each half of the real-partner test names its source (${half}): an open crm-id half makes Postgres join the partner, and look up the customer, of every Phoenix visit before it can test it — 9,807 pages for one Double Visit Analytics week against 3,360 (infrastructure audit, 2026-10-28)`,
+    );
+  }
 
   // The `doubleOnly` filter and the rescue must use ONE definition, or a row that counts as a
   // double visit in Double Visit Analytics could be a row the rescue throws away.
