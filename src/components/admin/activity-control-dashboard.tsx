@@ -876,10 +876,19 @@ export function ActivityControlDashboard({
         .catch(() => {});
     }
     poll();
-    liveIntervalRef.current = setInterval(poll, 30_000);
+    // A hidden tab asks nothing: every tick is a sign-in check plus the live read, for a feed no one is
+    // looking at. Coming back to the tab refreshes it at once, so what shows is never older than before.
+    liveIntervalRef.current = setInterval(() => {
+      if (document.visibilityState === "visible") poll();
+    }, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 

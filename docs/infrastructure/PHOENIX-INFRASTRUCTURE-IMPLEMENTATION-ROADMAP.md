@@ -1,5 +1,7 @@
 # Phoenix — infrastructure implementation roadmap
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 Three stages, in order, for the [recommended architecture](PHOENIX-RECOMMENDED-ARCHITECTURE.md). **Nothing here has been
 started.** Each stage begins only on the owner's word. The compute change in Stage 1 is his own click on the Supabase screen;
 it is never made from chat or by a script. Every code or database change in Stage 2 goes through its own pull request.
@@ -11,7 +13,7 @@ bills compute by the hour, so a stage that is rolled back costs only the hours i
 
 The brief orders the work free first, low-cost second, and a Supabase upgrade last, bought only if the earlier stages cannot
 meet the measured need. **The measurements already answer that for one resource, memory.** No code change can shrink the
-640 MB of shared buffers or the platform services that share the 2 GB machine, and the machine swapped about 7 GB in the
+512 MB of shared buffers or the platform services that share the 2 GB machine, and the machine swapped about 7 GB in the
 55 hours after the 25 Oct fixes. So the single memory step is brought forward:
 
 | Brief's stage | Here | Spend |
@@ -60,8 +62,8 @@ with its own owner approval. None moves employee data to a new provider.
 | 2a | The three CRM "unified" views and the contact-assignment reads walk far fewer pages: narrower view bodies, a covering index only where a measured plan needs it. | These are a third of the database's time and touch well over 2 TB of in-memory pages in 55 hours. | Pages touched per call down at least 50 % on the top two shapes, the same rows returned. |
 | 2b | The import-row search stops reading the whole table from disk: a search column or a narrower filter, decided after an approved `EXPLAIN`. | The one load that reads from disk: 11.2 GB in 55 hours. | Disk reads for that statement down at least 90 %. |
 | 2c | Finish the touch-trail retention already in progress (30 days, archived nightly to a private bucket). After a month of index counters and a code search, decide on the 233 MB index nobody has read since the boot. | Caps the biggest table at about a month of rows. | Table size flat week on week. |
-| 2d | **The app's data cache survives a deploy.** Move the Next.js cache from the container's disk to a small Redis service inside the same Railway project and region, on Railway's private network. | There were 116 deploys in two days; each one emptied the cache and re-ran the heavy reads. | Calls to `phx_sales_vs_target_range` and similar cached reads per working day down at least 50 %. |
-| 2e | Fewer API requests: the sign-in bundle, now read about 250,000 times in 55 hours (about 15 % of all API requests), kept briefly per session; the 30-second pulse's eleven reads folded into one; one batched read where a page now makes several. | The API layer's per-request cost is most of the server's CPU. | Weekday API requests down at least 20 % from 650,000–740,000, with a role change or a disabled account still taking effect within the cache's lifetime. |
+| 2d | **The app's data cache survives a deploy.** Move the Next.js cache from the container's disk to a small Redis service inside the same Railway project and region, on Railway's private network. | There were 116 merges in two days, and 27 go-lives on 27 Oct; each go-live emptied the cache and re-ran the heavy reads. | Calls to `phx_sales_vs_target_range` and similar cached reads per working day down at least 50 %. |
+| 2e | Fewer API requests: the sign-in bundle, now read about 250,000 times in 55 hours (about 15 % of all API requests), kept briefly per session; the 30-second pulse's eleven reads folded into one; one batched read where a page now makes several. | Each request costs far more than its SQL; SQL work is about 13 % of the busy CPU, and the rest is shared by the API layer and Supabase's other services (split not measured). | Weekday API requests down at least 20 % from 650,000–740,000, with a role change or a disabled account still taking effect within the cache's lifetime. |
 
 **Data protection, 2d:** the cache already holds the same data today, on Railway's disk. A Redis service in the same Railway
 project keeps it with the same provider, in the same region, on a private network with no public address. It is reached

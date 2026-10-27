@@ -1,5 +1,7 @@
 # Phoenix — Supabase PostgreSQL performance audit
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 Read from production (`ozucdzovmcqvepbozvqf`) between **27 Oct 2026 23:55 and 28 Oct 00:25 Cairo**. Every figure covers the
 time since the database last started, on **25 Oct at 16:14 Cairo**: 55.7 hours, including two full working days (26 and 27 Oct).
 
@@ -17,7 +19,7 @@ fixes that went live that night, and [the 26 Oct cache audit](../production-audi
 | Compute size | **Small**: 2 shared cores, 2 GB of RAM (1.93 GiB visible to the operating system) |
 | Disk | gp3, 12 GB provisioned, 5.79 GB used, 3,000 IOPS provisioned |
 | Database size | 4,309 MB, of which `public` is 3,952 MB and the backup schemas about 150 MB |
-| `shared_buffers` | 640 MB |
+| `shared_buffers` | 512 MB |
 | `work_mem` | 32 MB |
 | `max_connections` | 200 |
 | Parallel workers per query | 2 |
@@ -43,21 +45,23 @@ on the same host: the API layer, the connection pooler, auth and logging.
 The 27 Oct read (`the-afternoon-stalls-are-the-2gb-box-swapping-under-daytime-load` in memory) measured about 530 MB swapped
 out in the first 7 quiet hours after the boot. By the next evening it was 6.6 GB. **The swapping follows the working day.**
 
-The restart log (`public.database_restarts`) began on 12 Oct. It has recorded **11 restarts**, every one in working hours:
+The restart log (`public.database_restarts`) began on 12 Oct and lists 11 entries, every one in working hours. **Postgres's own log
+confirms 9 of them as crash restarts between 11 and 25 Oct** (10 counting 10 Oct 11:05); the 20 Oct 14:11, 22 Oct 11:30 and
+22 Oct 12:33 entries have no crash-recovery line, so what the table caught there is not known:
 
 > 12 Oct 19:04 · 14 Oct 11:34 · 17 Oct 12:30 · 18 Oct 11:54 · 19 Oct 13:51 · 20 Oct 14:11 · 22 Oct 11:30, 11:51, 12:33,
 > 14:25 · 25 Oct 16:14
 
 There has been **none since 25 Oct 16:14**. That covers two working days, after the load fixes that went live on 25 Oct at
 23:54 Cairo. A ~15-second stall still happened on 27 Oct at 20:22. **The code fixes moved the box back from the edge. They
-did not give it room.** Postgres alone has 640 MB of shared buffers and the platform services' fixed memory on top; no code
+did not give it room.** Postgres alone has 512 MB of shared buffers and the platform services' fixed memory on top; no code
 change can shrink the services' share.
 
 ## Finding 2 — the CPU is busy but not saturated
 
 | Measure since boot | Value |
 | --- | --- |
-| Average busy, both cores | **21.7 %** |
+| Average busy, both cores | **about 20 %** (14.6 % at night) |
 | User time | 20.2 % |
 | Waiting for disk (iowait) | 0.48 % |
 | Taken by the hypervisor (steal) | 0.55 %, 2,218 s in total |
@@ -186,10 +190,10 @@ number in the [roadmap](PHOENIX-INFRASTRUCTURE-IMPLEMENTATION-ROADMAP.md). Ranke
 
 | # | Query / function | Calls | Average | Total | Root cause | Proposed fix | Expected improvement (forecast) | Risk |
 | ---: | --- | ---: | ---: | ---: | --- | --- | --- | --- |
-| 1 | `crm_contact_assignments`, one read shape | 2,371 | 222 ms | 527 s | Walks about 30,000 in-memory pages, roughly 230 MB, per call | A narrower filter, and an index only where an approved plan shows it is used | Page walks down by half or more on this shape | Medium: CRM visibility rules must return the same rows |
+| 1 | `crm_contact_assignments`, one read shape | 2,371 | 222 ms | 527 s | Walks about 30,000 in-memory pages, roughly 230 MB, per call. **Every call came before the roster cache went live on 26 Oct 00:09; none since, so it is no longer a target** | A narrower filter, and an index only where an approved plan shows it is used | Page walks down by half or more on this shape | Medium: CRM visibility rules must return the same rows |
 | 2 | `crm_visits_unified` | 12,527 | 39 ms | 487 s | A view over five visit sources with 11 joins, evaluated on every read; 43 million pages walked | Read only the columns and sources the screen needs | Page walks down by half on the top shape | Medium: same as 1 |
 | 3 | `crm_plan_entries_unified`, two shapes | 4,209 | 186–214 ms | 832 s | A view over two plan sources with 5 joins; 41 million pages walked | As 2 | As 2 | Medium |
-| 4 | `phx_sales_vs_target_range` and its cache token | 3,027 | 307 ms and 54 ms | 488 s | Cached for an hour, but the cache lives on the container's disk and **every deploy empties it**: 116 deploys in two days | A data cache that survives a deploy, in the same Railway project | Calls down by half or more on deploy-heavy days | Low: the numbers already come from the closing engine; only the cache's home changes |
+| 4 | `phx_sales_vs_target_range` and its cache token | 3,027 | 307 ms and 54 ms | 488 s | Cached for an hour, but the cache lives on the container's disk and **every go-live empties it**: 116 merges in two days, 27 go-lives on 27 Oct | A data cache that survives a deploy, in the same Railway project | Calls down by half or more on deploy-heavy days | Low: the numbers already come from the closing engine; only the cache's home changes |
 | 5 | `phx_auth_session_bundle` | 249,985 | 0.4 ms | 104 s | Cheap in SQL, but about **15 % of all API requests**, and each request pays the API layer's own cost on the database server | Keep the bundle in the server's memory for a short time per signed-in session | API requests down by up to a tenth | **Medium: sign-in and access.** A role change or a disabled account must still take effect within the cache's lifetime; needs its own review |
 | 6 | `source_of_sales_import_rows` search, two shapes | 6,554 | 50–98 ms | 447 s | `ilike '%…%'` cannot use an ordinary index, so the table is read; **1.1 million pages from disk** | A search column or a narrower filter, chosen after an approved `EXPLAIN` | Disk reads for these shapes down by 90 % | Low |
 | 7 | `crm_contact_master_refresh()` | 431 | 1,141 ms | 492 s | Rebuilds the whole contact list; 406,000 pages from disk | Already skips an unchanged tick (27 Oct). Next: refresh only the contacts that changed | Calls or pages down by half | Medium: the contact list feeds every CRM screen |
@@ -205,7 +209,7 @@ Together rows 1–3 and 7–9 are **about a third of all statement time**. Rows 
 | Lever | Verdict | Why |
 | --- | --- | --- |
 | More RAM on the database host | **Needed** | Proven by the swap and fault counters (Finding 1). |
-| More or dedicated CPU | **Not needed now** | 21.7 % average, no sign of throttling (Finding 2). |
+| More or dedicated CPU | **Not needed now** | About 20 % average, no sign of throttling (Finding 2). |
 | More disk IOPS or throughput | **Not needed** | 1.4 % utilised (Finding 3). |
 | A bigger connection pool | **Not needed** | 19.6 s of waiting in 55.7 hours (Finding 6). |
 | Fewer page walks in the CRM views | **Worth doing at any size** | A third of the database's time (Finding 4). |
