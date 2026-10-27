@@ -1557,6 +1557,7 @@ import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.te
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runDirectOrderSearchShortProbeFastPathTests } from "./direct-order-search-short-probe-fast-path.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
+import { runCrmBrickCentroidsInForceTests } from "./crm-brick-centroids-in-force.test.ts";
 import { runOrgTreeCacheInvalidationTests } from "./org-tree-cache-invalidation.test.ts";
 import { runVacationRowsCacheExpiresAtOnceTests } from "./vacation-rows-cache-expires-at-once.test.ts";
 import { runSosReferenceReadLoadTests } from "./sos-reference-read-load.test.ts";
@@ -6044,6 +6045,7 @@ await runTest(
   runDirectOrderSearchShortProbeFastPathTests,
 );
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [], concurrent callers share ONE lookup)", runCrmBrickCentroidsCacheTests);
+await runTest("CRM brick centroids are bricks in force only (a moved or dated-out husk is never check-in geography; a pinless successor takes its predecessor's pin, success first, through a chain; its own pin wins; an orphan pin is dropped)", runCrmBrickCentroidsInForceTests);
 await runTest("org tree cache invalidation (a hire, seat transfer, resignation or decline busts the shared sos-reference tag instead of only self-healing after its 300s TTL; seat-transfer's own RPC call now invalidates too)", runOrgTreeCacheInvalidationTests);
 await runTest("vacation rows cache expires at once (a save is visible on the refresh that follows it, not one load later)", runVacationRowsCacheExpiresAtOnceTests);
 await runTest("SoS reference read load (a burst of concurrent centroid lookups runs ONE load and every caller gets that value, the slot clears on settle and on failure, the Master Map exact count asks for a one-row page)", runSosReferenceReadLoadTests);

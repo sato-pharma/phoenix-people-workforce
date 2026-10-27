@@ -88,8 +88,8 @@ export function runCrmBrickCentroidsCacheTests() {
   {
     assert.match(
       cachedRegion,
-      /\.select\("source_key, latitude, longitude"\)/,
-      "the centroid read must select exactly source_key, latitude, longitude — the same three columns the join consumes",
+      /\.select\("source_key, latitude, longitude, geocode_status, geocode_provider"\)/,
+      "the centroid read must select exactly the pin's key, coordinates and geocode status/provider — the status lets a pinless successor inherit a `success` pin first",
     );
     assert.match(
       cachedRegion,
@@ -101,10 +101,18 @@ export function runCrmBrickCentroidsCacheTests() {
       /\.not\("latitude", "is", null\)[\s\S]*\.not\("longitude", "is", null\)/,
       "both null-coordinate filters must survive — a null lat/lon must never reach the distance maths",
     );
+    // 2026-10-27: `active` alone kept every MOVED brick — a move never switches a brick off, it dates
+    // it out with effective_to and names its successor — so the husks stayed check-in geography.
     assert.match(
       cachedRegion,
-      /if\s*\(!brick\s*\|\|\s*!\(brick\.active\s*\?\?\s*true\)\)\s*continue;/,
-      "only bricks that still exist AND are active may become centroids — a retired brick must never be a check-in's geography",
+      /\.from\("source_of_sales_bricks"\)\s*\.select\("brick_id, brick_name, area_code, region_code"\)\s*\.eq\("active", true\)\s*\.is\("superseded_by_brick_id", null\)\s*\.or\(brickInForceFilter\(today\)\)/,
+      "only bricks IN FORCE today may become centroids — active, not superseded, not dated out — a retired or moved brick must never be a check-in's geography",
+    );
+    assert.match(cachedRegion, /const today = todayInCairo\(\);/, "\"today\" is Cairo's day, never the server's UTC date");
+    assert.match(
+      cachedRegion,
+      /\.select\("brick_id, superseded_by_brick_id"\)\s*\.or\(brickHistoryFilter\(today\)\)/,
+      "the history rows are read with the territory module's own filter, so a pinless successor can take its predecessor's pin",
     );
   }
 
