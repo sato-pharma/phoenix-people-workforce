@@ -9,7 +9,9 @@
 // Scope per role (owner-confirmed 2026-07-18; Talent Acquisition narrowed to
 // Medical Reps only 2026-07-26; Marketing Manager added to line scope 2026-08-09):
 //   CEO · SFE Manager · Super Admin (+ system)  → whole company
-//   Training Manager · HR Advisory · HR Operations → all Medical Reps + self only
+//   Training Manager · HR Operations · HR Resourcing → all Medical Reps + self only
+//     (HR Advisory, the HR Business Partner seat, is retired since 2026-10-08; Talent
+//     Acquisition is now HR Resourcing)
 //   Regional Manager                            → their full multi-level hierarchy + self
 //   National Sales Manager · Product Manager · Group Product Manager · Marketing Manager → their line + self
 //     (the three Marketing-department roles see their line's field force BELOW them across
@@ -99,7 +101,7 @@ export function isEmployee360Subject(
  * browse-all-visible-subjects list instead of an out-of-scope card when they
  * open their own profile — see the employee-portal Employee 360 page. This
  * covers both whole-company viewers (CEO / SFE Manager / Super Admin) and
- * Medical-Rep-only viewers (Talent Acquisition); which subjects actually show
+ * Medical-Rep-only viewers (Training Manager, HR Operations, HR Resourcing); which subjects actually show
  * up in that list is still decided by `canViewEmployee360Subject`.
  */
 export function isCompany360Viewer(context: Pick<AccessContext, "role" | "scope">): boolean {
@@ -232,8 +234,8 @@ export function canViewEmployee360Subject(
 
   const role = context.role;
 
-  // Training Manager oversees the coachable pool; Talent Acquisition's Employee 360
-  // access is narrowed to the same pool (owner-requested 2026-07-26). Both see every
+  // Training Manager oversees the coachable pool; HR Resourcing (formerly Talent Acquisition)
+  // and HR Operations are narrowed to the same pool (owner-requested 2026-07-26). They see every
   // Medical Rep company-wide (+ self above) and nobody else.
   if (MEDICAL_REP_ONLY_360_ROLES.has(role)) {
     return resolveEmployee360RoleCategory(subject.jobTitle ?? subject.positionTitle) === "medical-rep";

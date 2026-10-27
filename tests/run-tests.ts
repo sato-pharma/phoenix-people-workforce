@@ -751,6 +751,8 @@ import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.
 import { runEmployee360UntargetedMonthsTests } from "./employee-360-untargeted-months.test.ts";
 import { runEmployee360CampaignMixTests } from "./employee-360-campaign-mix.test.ts";
 import { runEmployee360LiveFieldBenchmarksTests } from "./employee-360-live-field-benchmarks.test.ts";
+import { runEmployee360CrmInsightsTests } from "./employee-360-crm-insights.test.ts";
+import { runEmployee360CatchUpTests } from "./employee-360-catch-up.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runSalesReferenceCrosswalkCallersTests } from "./sales-reference-crosswalk-callers.test.ts";
@@ -4452,11 +4454,13 @@ await runTest(
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)", runEmployee360AccessTests);
 await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
-await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios + figures start at the hire month", runEmployee360CustomerKeyTests);
+await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios", runEmployee360CustomerKeyTests);
 await runTest("employee 360 bricks: the area's bricks sold or not, against the rep's CURRENT list; months follow the period from the hire month", runEmployee360BrickCoverageTests);
 await runTest("employee 360: a month with no target shows its sales and stays out of achievement; most-visited customers split into AM doctors, PM doctors and pharmacies", runEmployee360UntargetedMonthsTests);
 await runTest("employee 360: 100% regular is the best case — no healthy band, a campaign majority is the only flag, and campaign falling while regular rises reads as the best direction", runEmployee360CampaignMixTests);
 await runTest("employee 360: the company figures (reps with linked sales, company achievement, reps ever coached) are computed live and dated — no written-down figure renders", runEmployee360LiveFieldBenchmarksTests);
+await runTest("employee 360: Phoenix CRM plan compliance and visit frequency by grade come from the CRM's own reports, drawn only with data, a failed read says \"Could not be read\" (never 0), grade rows A to C then no grade, AM before PM", runEmployee360CrmInsightsTests);
+await runTest("employee 360 catch-up: an expense counts what it pays and a rejected trip is left out, no variance or fraud signal, an own visit with a senior is never single, conducted double visits by kind without counting a Phoenix visit twice, own visits join field presence, the Training Manager by job function, doubles received by kind, a failed plan read is \"—\" never 0, no fourth AM/PM bucket, working days Saturday to Wednesday less holidays", runEmployee360CatchUpTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);
@@ -8350,7 +8354,7 @@ await runTest(
   runCanonicalDashboardRowsTests,
 );
 await runTest(
-  "employee-360 canonical sales (un-uploaded month dropped, unattributed rows dropped, areas summed per product, scoping matches the REP not the DM, confidential products masked by CODE)",
+  "employee-360 canonical sales (published months only and an unpublished month named not a zero, a vacant rep seat counts in its District Manager's total, a Regional Manager leaves out a district with no manager, a retired district seat stays with its managers, an unread seat map withholds the team total, seat tenure splits a mid-month joiner, areas summed per product, a rep is scoped by REP not DM, confidential products masked by CODE)",
   runEmployee360CanonicalSalesTests,
 );
 await runTest(

@@ -13,20 +13,20 @@
 //    explicitly — NEVER defaulted to campaign.
 //  - agent_hr_id casing is inconsistent in the CRM feed; the CRM read door matches it
 //    case-insensitively, so callers pass the raw hr id.
-//  - Field-force work week (owner-confirmed, matches the CRM data): Sat–Wed are
-//    full working days, Thursday is AM-only (half day), Friday is off. Saturday
-//    IS a working day. Only Friday is excluded from working-days (utilization);
-//    the day-of-week charts dim Friday and lighten Thursday.
+//  - Working days for utilization are the CALL RATE's working days (isCallRateWorkingDay,
+//    owner 2026-09-05): Saturday to Wednesday, less the confirmed national holidays.
+//    Thursday and Friday are not working days, so a Thursday visit is still a visit but
+//    never stretches the denominator. The day-of-week charts dim Friday and lighten Thursday.
 
-import { normalizeSession } from "@/lib/crm/call-rate";
+import { isCallRateWorkingDay, normalizeSession, type CallRateHolidays } from "@/lib/crm/call-rate";
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
-import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
+import { addVisitToSplit, emptyVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 import {
@@ -237,6 +237,12 @@ export type VisitSummary = {
   visitsPerActiveDay: number | null;
   distinctCustomers: number;
   doublesReceived: number;
+  /**
+   * The doubles received, one figure per kind of companion: a manager, a chain (a manager and his own
+   * manager together), or a product or training manager. A Phoenix CRM row says its kind; an iReports360
+   * row carries none, so it is read as a visit with a manager. The three add up to `doublesReceived`.
+   */
+  doublesReceivedByKind: DoublesReceivedByKind;
   singleVisits: number;
   // THE AM · PM · PHARMACIES GOLDEN RULE (src/lib/crm/visit-count-buckets.ts): three figures
   // apart — a pharmacy visit is counted in pharmacyVisits only, never in pmVisits or amVisits.
@@ -250,7 +256,6 @@ export type VisitSummary = {
    * cached before it existed reads as none.
    */
   phoenixVisits?: number;
-  unknownAmpm: number;
   monthly: MonthlyVisitPoint[];
   // deep analytics
   activityMix: LabeledCount[];
@@ -263,8 +268,15 @@ export type VisitSummary = {
   oneTimeCustomers: number;
   topCustomers: TopCustomersByLane;
   visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
+  /** Saturday to Wednesday less the confirmed national holidays — the call rate's own working days. */
   workingDaysInWindow: number;
+  /** Active days that fall on a working day, over `workingDaysInWindow`. */
   utilization: number | null;
+  /**
+   * False when the holiday calendar could not be read in full, so a holiday may still sit in the
+   * working days. The page says so beside the figure. Absent on a summary built without a calendar.
+   */
+  holidaysComplete?: boolean;
   visitsSummaryText: string;
 };
 
@@ -414,18 +426,35 @@ function addDays(date: string, delta: number): string {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
-export function countWorkingDays(from: string, to: string): number {
+/**
+ * The working days in the window, by the call rate's own rule (isCallRateWorkingDay): Saturday to
+ * Wednesday, less the national holidays passed in. Thursday and Friday never count. Saturday DOES
+ * (owner-confirmed; ~16k Saturday visits in production).
+ */
+export function countWorkingDays(from: string, to: string, holidays?: CallRateHolidays): number {
   let count = 0;
   let cursor = from;
   for (let i = 0; i < 400 && cursor <= to; i += 1) {
-    const dow = dowOf(cursor);
-    // Field-force work week: only Friday is off. Sat–Wed are full days and
-    // Thursday is a working half-day (AM only) — all of them count. Saturday is
-    // a WORKING day (owner-confirmed; ~16k Sat visits in production).
-    if (dow !== 5) count += 1;
+    if (isCallRateWorkingDay(cursor, holidays)) count += 1;
     cursor = addDays(cursor, 1);
   }
   return count;
+}
+
+export type DoubleReceivedKind = "double" | "chain" | "product_manager";
+export type DoublesReceivedByKind = { withManager: number; chain: number; withProductManager: number };
+
+/**
+ * Which kind of double visit a rep received. A Phoenix CRM row carries its own kind (`visit_kind`): with a
+ * manager, a chain, or with a product or training manager. An iReports360 row carries no kind and only one
+ * companion, so it is a visit with a manager. Pure.
+ */
+export function doubleReceivedKind(row: Pick<VisitRow, "visit_kind" | "source" | "double2_hr_id" | "double2_name">): DoubleReceivedKind {
+  const kind = String(row.visit_kind ?? "").trim().toLowerCase();
+  if (kind === "chain" || kind === "product_manager" || kind === "double") return kind;
+  // A row naming a second companion is a chain whatever door it came through.
+  if (String(row.double2_hr_id ?? row.double2_name ?? "").trim()) return "chain";
+  return "double";
 }
 function describeVs(value: number | null, benchmark: number): string {
   if (value == null || benchmark <= 0) return "—";
@@ -444,18 +473,18 @@ export function summarizeVisits(
   visits: VisitRow[],
   window: Employee360Window,
   listsByContact?: ReadonlyMap<number, ReadonlySet<CrmListType>>,
+  /** The confirmed national holidays in the window; they leave the working days. `complete: false` is shown. */
+  holidays?: { dates: CallRateHolidays; complete: boolean },
 ): VisitSummary {
   let regularVisits = 0;
   let campaignVisits = 0;
   let trainingVisits = 0;
   let adminVisits = 0;
   let doublesReceived = 0;
+  const doublesReceivedByKind: DoublesReceivedByKind = { withManager: 0, chain: 0, withProductManager: 0 };
   let productiveDoubles = 0;
-  let amVisits = 0;
-  let pmVisits = 0;
-  let pharmacyVisits = 0;
-  let phoenixVisits = 0;
-  let unknownAmpm = 0;
+  // THE AM · PM · PHARMACIES GOLDEN RULE: every counted visit lands in exactly one of the three.
+  const split = emptyVisitCountSplit();
   const activeDaySet = new Set<string>();
   const customerCount = new Map<string, { name: string; count: number; lanes: Record<CustomerLane, number> }>();
   const monthlyMap = new Map<string, { regular: number; campaign: number }>();
@@ -481,7 +510,13 @@ export function summarizeVisits(
     // — the canonical crm/reads predicate. Do NOT count a partner riding along on
     // a Meeting/Vacation/Training row, and key on double_crm_id (raw partner), not
     // the resolved double_hr_id which can be null for a real, unmapped partner.
-    if (isCrmDoubleVisitRow(row)) doublesReceived += 1;
+    if (isCrmDoubleVisitRow(row)) {
+      doublesReceived += 1;
+      const kind = doubleReceivedKind(row);
+      if (kind === "chain") doublesReceivedByKind.chain += 1;
+      else if (kind === "product_manager") doublesReceivedByKind.withProductManager += 1;
+      else doublesReceivedByKind.withManager += 1;
+    }
 
     if (isProductive) {
       if (isCrmDoubleVisitRow(row)) productiveDoubles += 1;
@@ -504,17 +539,11 @@ export function summarizeVisits(
         if (lane) c.lanes[lane] += 1;
         customerCount.set(key, c);
       }
-      // A pharmacy is a pharmacy whatever period the rep tagged; a visit with no period at all stays
-      // "unmarked", as it always has.
-      const period = String(row.ampm ?? "").trim().toUpperCase();
-      const isPharmacy = visitCountBucket(row) === "Pharmacies";
-      if (isPharmacy) pharmacyVisits += 1;
-      else if (period === "AM") amVisits += 1;
-      else if (period === "PM") pmVisits += 1;
-      else unknownAmpm += 1;
-      // A Phoenix CRM visit counted in the three figures: Phoenix logs no pharmacy visit, so the page
-      // says its pharmacy figure was never recorded rather than print a zero (visit-count-buckets.ts).
-      if ((isPharmacy || period === "AM" || period === "PM") && isPhoenixNativeVisitRow(row)) phoenixVisits += 1;
+      // Through the golden rule's one helper: a pharmacy is a pharmacy whatever period the rep tagged,
+      // an AM tag is AM, and anything else (PM, or no period at all) is PM. There is no fourth bucket.
+      // The helper also counts the Phoenix CRM rows, so the page can say a Phoenix rep's pharmacy figure
+      // was never recorded rather than print a zero (visit-count-buckets.ts).
+      addVisitToSplit(split, row);
     }
   }
 
@@ -581,8 +610,12 @@ export function summarizeVisits(
       .slice(0, TOP_CUSTOMERS_PER_LANE);
   }
 
-  const workingDaysInWindow = countWorkingDays(window.from, window.to);
-  const utilization = workingDaysInWindow > 0 ? activeDays / workingDaysInWindow : null;
+  // The call rate's working days. The numerator counts only the active days that are working days, so a
+  // Thursday or holiday visit never pushes utilization past what the denominator allows.
+  const workingDaysInWindow = countWorkingDays(window.from, window.to, holidays?.dates);
+  let workingActiveDays = 0;
+  for (const day of activeDaySet) if (isCallRateWorkingDay(day, holidays?.dates)) workingActiveDays += 1;
+  const utilization = workingDaysInWindow > 0 ? workingActiveDays / workingDaysInWindow : null;
 
   const b = EMPLOYEE_360_BENCHMARKS;
   const campaignTrend = campaignMixTrendOf(monthly);
@@ -609,12 +642,12 @@ export function summarizeVisits(
     visitsPerActiveDay,
     distinctCustomers,
     doublesReceived,
+    doublesReceivedByKind,
     singleVisits: productiveVisits - productiveDoubles,
-    amVisits,
-    pmVisits,
-    pharmacyVisits,
-    phoenixVisits,
-    unknownAmpm,
+    amVisits: split.am,
+    pmVisits: split.pm,
+    pharmacyVisits: split.pharmacies,
+    phoenixVisits: split.phoenix ?? 0,
     monthly,
     activityMix,
     last30,
@@ -628,6 +661,7 @@ export function summarizeVisits(
     visitDayOfWeek: dow,
     workingDaysInWindow,
     utilization,
+    ...(holidays ? { holidaysComplete: holidays.complete } : {}),
     visitsSummaryText: summaryText,
   };
 }
@@ -742,8 +776,12 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
 }
 
 export async function getEmployee360Summary(hrId: string, window: Employee360Window = defaultWindow()): Promise<Employee360Summary> {
-  const [visits, checkins] = await Promise.all([fetchVisitRows(hrId, window), fetchCheckinRows(hrId, window)]);
-  const visitSummary = summarizeVisits(visits, window);
+  const [visits, checkins, holidays] = await Promise.all([
+    fetchVisitRows(hrId, window),
+    fetchCheckinRows(hrId, window),
+    loadCallRateHolidays(window.from, window.to),
+  ]);
+  const visitSummary = summarizeVisits(visits, window, undefined, holidays);
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
   return { hrId, window, benchmarks: EMPLOYEE_360_BENCHMARKS, isMapped: visits.length > 0, ...visitSummary, ...checkinSummary };
 }

@@ -13,6 +13,7 @@ import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
 import { getPmMarketingRoi, type PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
+import { loadEmployee360CrmInsights, unreadCrmInsights, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
@@ -251,6 +252,22 @@ export default async function Employee360DetailPage({
     }
   }
 
+  // Phoenix CRM: plan compliance and visit frequency by grade, read in the subject's own scope.
+  let crmInsights: Employee360CrmInsights | null = null;
+  if (summary) {
+    try {
+      crmInsights = await loadEmployee360CrmInsights({
+        viewerAccess: access,
+        subjectHrId: target.hrId,
+        category: roleCategory,
+        from: period.current.from,
+        to: period.current.to,
+      });
+    } catch {
+      crmInsights = unreadCrmInsights(roleCategory);
+    }
+  }
+
   const comparison: Employee360Comparison | null = previous
     ? {
         previousLabel: period.previous.label,
@@ -279,6 +296,7 @@ export default async function Employee360DetailPage({
         teamLifecycle={teamLifecycle}
         tmAnalytics={tmAnalytics}
         pmMarketing={pmMarketing}
+        crmInsights={crmInsights}
       />
     </div>
   );

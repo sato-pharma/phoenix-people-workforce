@@ -106,9 +106,9 @@ export default async function EmployeePortalEmployee360Page({
   const target = rows.find((row) => hrIdsMatch(row.hrId, access.hrId));
   const roleCategory = target ? resolveEmployee360RoleCategory(target.jobTitle ?? target.positionTitle) : null;
 
-  // A company-wide viewer (Training Manager today — the retired Talent Acquisition seat's
-  // successors, HR Advisory and HR Operations, are admin-shell now and never reach this portal
-  // page) whose own record isn't field-force — or has no directory row at all — gets the same
+  // A company-wide viewer (Training Manager today — HR Operations and HR Resourcing, the seat
+  // that was Talent Acquisition, are admin-shell and never reach this portal page; HR Advisory
+  // is retired) whose own record isn't field-force — or has no directory row at all — gets the same
   // browse-all-field-force list the admin index page offers, instead of a self-view empty state
   // that could never apply to them. Everyone else keeps the self-only states below.
   if ((!target || !roleCategory) && isCompany360Viewer(access)) {
