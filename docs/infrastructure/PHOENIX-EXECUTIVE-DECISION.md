@@ -1,5 +1,7 @@
 # Phoenix — executive decision
 
+> **Replaced on 28 Oct 2026.** The [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md) withdraws the move to Medium recommended below and decides to keep Small and optimise (Decision A), with Medium only if a measured trigger fires. The figures below are corrected; the decision is kept only as a record.
+
 Measured on 28 Oct 2026 from the live systems; nothing was changed, bought or restarted. Supabase stays the one
 authoritative database, with no migration. **This is the recommendation; nothing below has been started.**
 
@@ -15,12 +17,12 @@ The bill goes from **about $90 to about $136–138 a month** (estimate; Railway'
 **1. What slows Phoenix?**
 The database server's memory. It holds 4.3 GB of data on a 2 GB machine, and in the 55 hours after the 25 Oct fixes it
 swapped about 7 GB out to disk, with 2.9 million major page faults. Reads that should come from memory wait on disk, which
-is what the afternoon stalls are: a 15-second one on 27 Oct, and 11 working-hours restarts in the 14 days before 25 Oct.
-A few heavy reads make it worse: the CRM's combined visit, plan and check-in views and the contact-assignment read walk
-far more pages than they return. The app servers are not the cause; they use a fifth of one core at the busiest hour.
+is what the afternoon stalls are: a 15-second one on 27 Oct, and 9 crash restarts between 11 and 25 Oct.
+A few heavy reads make it worse: the CRM's combined visit, plan and check-in views walk far more pages than they return
+(the contact-assignment read stopped on 26 Oct, when the roster cache went live). The app servers are not the cause; they use a fifth of one core at the busiest hour.
 
 **2. Does Supabase need more RAM or more CPU?**
-RAM. The CPU averages 21.7 % of its 2 cores, with 0.55 % steal, so there is no sign it is held back. The disk is 1.4 %
+RAM. The CPU averages about 20 % of its 2 cores (14.6 % at night), with 0.55 % steal, so there is no sign it is held back. The disk is 1.4 %
 utilised and connections have never timed out.
 
 **3. Does external compute help?**
@@ -30,7 +32,7 @@ project, and lighter reads.
 
 **4. What is the cheapest option?**
 The code and database optimisations, at $0, with the cache at about $1–3 a month. They cut the work per page, but they
-cannot add memory: Postgres's 640 MB of shared buffers and the platform services already fill most of the 2 GB, and no
+cannot add memory: Postgres's 512 MB of shared buffers and the platform services already fill most of the 2 GB, and no
 code change shrinks them.
 
 **5. What is the fastest option?**

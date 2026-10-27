@@ -1,5 +1,7 @@
 # Phoenix — infrastructure baseline audit
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 Read live on **28 Oct 2026, 00:00–00:30 Cairo**, from the Railway API, the Supabase Management API, the database's own metrics
 endpoint and the repository. Nothing was changed, restarted or provisioned. No credential or employee record appears here.
 
@@ -48,7 +50,7 @@ Detail and evidence: the [PostgreSQL audit](PHOENIX-SUPABASE-POSTGRES-PERFORMANC
 | Resource | Use | Verdict |
 | --- | --- | --- |
 | **Memory** | 4.3 GB database on a 2 GB machine; **≈ 7.0 GB swapped out**, 2.9 million major page faults | **Short** |
-| CPU | 21.7 % average of 2 cores; no sign of throttling | Adequate for now |
+| CPU | About 20 % average of 2 cores (14.6 % at night); no sign of throttling | Adequate for now |
 | Disk | 1.4 % utilised, 26 IOPS of 3,000 | Idle |
 | Connections | 19.6 s of pool waiting in total, 0 API pool timeouts | Healthy |
 

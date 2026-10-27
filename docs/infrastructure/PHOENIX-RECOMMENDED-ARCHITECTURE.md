@@ -1,5 +1,7 @@
 # Phoenix — recommended architecture
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 Three architectures that keep Supabase as the one authoritative database, with no migration. Prices are official list
 prices read on 28 Oct 2026; the arithmetic is in the [cost and performance document](PHOENIX-MAXIMUM-PERFORMANCE-MINIMUM-COST.md).
 
@@ -16,7 +18,7 @@ Evidence: the [baseline](PHOENIX-INFRASTRUCTURE-BASELINE-AUDIT.md) and the [Post
 | Changes | Stage 2 of the [roadmap](PHOENIX-INFRASTRUCTURE-IMPLEMENTATION-ROADMAP.md): lighter CRM view reads, the import-row search, touch-trail retention, a cache that survives deploys, fewer polling requests |
 | Extra cost | **$0**, or a few dollars a month for the cache service |
 
-**What it buys:** less work per page. **What it cannot buy:** memory. Postgres's 640 MB of shared buffers and the platform
+**What it buys:** less work per page. **What it cannot buy:** memory. Postgres's 512 MB of shared buffers and the platform
 services beside it already fill most of the 2 GB, and no code change shrinks the services' share. The database also keeps
 growing. Since the 25 Oct fixes there has been no restart, but the box still swapped about 6.6 GB in two working days and
 stalled for 15 seconds on 27 Oct. **This is the most likely to fail again in an afternoon.**

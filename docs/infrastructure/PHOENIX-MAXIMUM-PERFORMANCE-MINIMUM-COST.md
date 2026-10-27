@@ -1,5 +1,7 @@
 # Phoenix — maximum performance at minimum cost
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 The ten configurations the brief asked for, priced and compared on the same base. Prices are the official list prices read
 on 28 Oct 2026 ([options document](PHOENIX-EXTERNAL-COMPUTE-OPTIONS.md)); the measurements are in the
 [baseline](PHOENIX-INFRASTRUCTURE-BASELINE-AUDIT.md) and the [PostgreSQL audit](PHOENIX-SUPABASE-POSTGRES-PERFORMANCE-AUDIT.md).
@@ -33,7 +35,7 @@ the [benchmark plan](#the-benchmark-plan) says how each forecast is checked.
 
 | # | Architecture | DB RAM | External RAM | CPU capacity | Total a month | Increment | Expected benefit | Complexity | Risk | Recommendation |
 | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Current, unchanged | 2 GB | Railway pay-per-use (≈ 3 GB in use on average, none short) | Database: 2 shared cores, 21.7 % used. App: 0.12 vCPU used in working hours | ≈ $90 | — | None. The database keeps swapping (≈ 7 GB in 55 hours). | None | **High:** afternoon stalls; 11 working-hours restarts in the 14 days to 25 Oct | No |
+| 1 | Current, unchanged | 2 GB | Railway pay-per-use (≈ 3 GB in use on average, none short) | Database: 2 shared cores, about 20 % used. App: 0.12 vCPU used in working hours | ≈ $90 | — | None. The database keeps swapping (≈ 7 GB in 55 hours). | None | **High:** afternoon stalls; 9 crash restarts between 11 and 25 Oct | No |
 | 2 | Current + database optimisations (roadmap 2a, 2b, 2c, 2e) | 2 GB | as 1 | as 1 | ≈ $90 | $0 | Forecast: the top two CRM read shapes touch at least 50 % fewer pages; at least 20 % fewer API requests a weekday. Adds no memory. | Medium: four pull requests | Low to medium: each must return the same rows, which its acceptance checks | **Yes, in every architecture** |
 | 3 | Current + Redis (inside Railway) | 2 GB | ≈ 0.25 GB cache | as 1 | ≈ $91–93 | +$1–3 (estimate) | The data cache survives deploys, and the web app and worker share one copy. Forecast: cached heavy reads per working day down at least 50 %. | Low to medium: one cache handler, plus a review of keys | Low, while every key carries the caller's access scope | **Yes (roadmap 2d)** |
 | 4 | Current + Hetzner 8 GB (CX33) | 2 GB | 8 GB, 4 shared vCPU | Database unchanged; the new capacity sits idle | ≈ $100 | +€8.99 ≈ +$10.34 (with IPv4) | None for the database. | Medium: a server to deploy, patch and secure | Medium: a new data processor; servers "currently unavailable" on 28 Oct | No |
@@ -70,7 +72,7 @@ was not measured, the cell says so; the [benchmark plan](#the-benchmark-plan) me
 | Median response time | Not measured | Lower on CRM screens | Lower after deploys | Unchanged | Unchanged for pages | Lower where reads hit swapped pages | Unchanged | Lower |
 | P95 response time | Not measured; the slow tail includes swap stalls | Lower | Lower after deploys | Unchanged | Unchanged | **Much lower** | Unchanged for writes and function calls | **Much lower** |
 | P99 response time | Not measured; includes stalls of seconds (≈ 15 s on 27 Oct) | Somewhat lower | Unchanged | Unchanged | Unchanged | **Much lower** if the stalls stop | Unchanged | **Much lower** |
-| Database CPU | 21.7 % of 2 cores | Lower | Lower | Unchanged | Unchanged | Similar; less time spent paging | Primary somewhat lower | Lower |
+| Database CPU | About 20 % of 2 cores | Lower | Lower | Unchanged | Unchanged | Similar; less time spent paging | Primary somewhat lower | Lower |
 | Memory pressure | ≈ 7 GB swapped out and 2.9 M major faults in 55 hours | Somewhat lower | Somewhat lower | Unchanged | Unchanged | **Much lower** | Unchanged on the primary | **Lowest of the affordable rows** |
 | Connections | Healthy: 0 API pool timeouts | Healthy | Healthy | Healthy | Healthy | Healthy; limits 90 → 120 direct, 400 → 600 pooler | Healthy | Healthy |
 | Peak users | Not measured | Higher ceiling | Higher ceiling | Unchanged | Unchanged | Higher ceiling | Slightly higher | Highest of the affordable rows |

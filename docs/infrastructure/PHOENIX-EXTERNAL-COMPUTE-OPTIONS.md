@@ -1,5 +1,7 @@
 # Phoenix — external compute options
 
+> **Corrected on 28 Oct 2026 by the [final validation](PHOENIX-FINAL-INFRASTRUCTURE-DECISION-VALIDATION.md)**, which decides to keep Small and optimise (Decision A). Where this report and the validation differ, the validation is right.
+
 Every option the brief named, A to I, weighed against what was measured: **the Supabase database server is short of
 memory, and the app servers are nearly idle** ([baseline](PHOENIX-INFRASTRUCTURE-BASELINE-AUDIT.md),
 [PostgreSQL audit](PHOENIX-SUPABASE-POSTGRES-PERFORMANCE-AUDIT.md)). Prices are official list prices, read on 28 Oct 2026
@@ -208,7 +210,7 @@ plan is [Stage 2 of the roadmap](PHOENIX-INFRASTRUCTURE-IMPLEMENTATION-ROADMAP.m
 
 - **What it can do:** cut the pages the CRM views and contact-assignment reads walk, stop the import-row search reading its
   table from disk, cap the touch trail, keep the cache across deploys, and fold repeated polling reads into fewer requests.
-- **What it cannot do:** shrink the 640 MB of shared buffers or the platform services that share the 2 GB machine. It
+- **What it cannot do:** shrink the 512 MB of shared buffers or the platform services that share the 2 GB machine. It
   lowers the memory the working day touches; it does not add memory.
 - **Cost:** $0 beyond the cache service. Effort: one pull request per item, each with its own acceptance.
 
