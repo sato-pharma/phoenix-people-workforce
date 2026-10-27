@@ -441,7 +441,14 @@ one's grants outside a migration.
   overlapping `authenticated` SELECT policies into one; writes unchanged). Perf-only, not
   a security gap.
 
-### DEFERRED - `unused_index` (842 accepted as of 2026-10-23; 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+### DEFERRED - `unused_index` (755 accepted as of 2026-10-28; 842 on 2026-10-23, 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+
+**Lowered 842 to 755 on 2026-10-28, on the owner's word.** The daily drift check read 876 (22 Oct),
+842, 794 (23 Oct), 755 (24 Oct), 720 (25 Oct), 751 (26 Oct), 713 (27 Oct) and 699 (27 Oct, 21:00
+UTC): the October modules' indexes are being exercised. He was offered 699, today's reading, and
+chose 755, the highest reading of the five days to 27 Oct, so that normal day-to-day movement stays
+green while most of the drop is locked in — the same reason the 13 Oct reading of 707 was not taken
+as the ceiling. A reading above 755 is now an error that needs a dated decision here.
 
 **Raised 722 to 842 on 2026-10-23.** The nightly reading climbed past 722 from mid-October as the
 October modules shipped, and their indexes read as unused until their screens and crons are exercised.

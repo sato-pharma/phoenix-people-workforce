@@ -94,9 +94,9 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
-  // 842 = the highest daily reading to 2026-10-23 (the drift run that day; 833 an hour later);
-  // raised from 722, which was itself the highest reading 1-9 October.
-  { category: "unused_index", current_count: 842 },
+  // 755, LOWERED from 842 on 2026-10-28 on the owner's word — the highest daily reading of the
+  // five days to 27 Oct (755, 720, 751, 713, 699); 842 had been the highest reading to 2026-10-23.
+  { category: "unused_index", current_count: 755 },
   { category: "stats_age_hours", current_count: -1 },
 ];
 
