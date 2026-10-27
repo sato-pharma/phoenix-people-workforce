@@ -28,7 +28,7 @@ import { visibleLineAreas, type TerritoryScope } from "../src/lib/territory-mana
 //   4. The "Others" holding bucket is never searchable, at any scope.
 //   5. Area codes are compared case-insensitively, so a lower-cased code cannot slip the bound.
 //   6. The search is actually BOUNDED by that set, and fails CLOSED on an empty one.
-//   7. The picker and the search share the one definition — no second copy to drift.
+//   7. The picker, the search and the map's findings share the one definition — no second copy to drift.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Anti Infective's live rows for these areas, read from production on 2026-09-22. */
@@ -109,11 +109,21 @@ export function runTerritorySearchScopeTests() {
     "the nationwide area-name lookup is gone with the nationwide search it existed to serve",
   );
 
-  // 7 · One definition behind the picker and the search.
+  // 7 · One definition behind the picker, the search and the map's findings.
+  // (2026-10-27: loadTerritoryMap became the third caller — its allocation findings compare a brick
+  // with every area of the line the caller may see, and that set must be this one, never a copy.)
   assert.equal(
     service.match(/visibleLineAreas\(/g)?.length,
-    3,
-    "declared once, called twice — by loadTerritoryFilters for the picker and by searchBricks for the search, with no third copy of the narrowing",
+    4,
+    "declared once, called three times — by loadTerritoryFilters for the picker, by searchBricks for the search and by loadTerritoryMap for the findings' comparison, with no copy of the narrowing",
+  );
+  const loader = service.slice(
+    service.indexOf("export async function loadTerritoryMap("),
+    service.indexOf("\n}\n", service.indexOf("export async function loadTerritoryMap(")),
+  );
+  assert.ok(
+    loader.includes("visibleLineAreas(allowed, scope)"),
+    "the map's comparison set is the same definition, passing the scope — a neighbour the picker hides is never read",
   );
   const filters = service.slice(
     service.indexOf("export async function loadTerritoryFilters"),

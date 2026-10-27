@@ -59,6 +59,34 @@ type Props = {
   productionUrl: string;
 };
 
+/** How many findings show before the rest fold behind "Show the other N". */
+const FINDINGS_SHOWN = 5;
+
+/** A finding list that never drops an item: the first few open, every one of the rest one click away. */
+function FindingList({ items }: { items: Array<{ key: string; text: string }> }) {
+  const shown = items.slice(0, FINDINGS_SHOWN);
+  const folded = items.slice(FINDINGS_SHOWN);
+  return (
+    <>
+      <ul className="text-muted-foreground list-disc pl-5">
+        {shown.map((item) => (
+          <li key={item.key}>{item.text}</li>
+        ))}
+      </ul>
+      {folded.length > 0 ? (
+        <details className="text-muted-foreground mt-1">
+          <summary className="cursor-pointer text-xs">Show the other {folded.length}</summary>
+          <ul className="mt-1 list-disc pl-5">
+            {folded.map((item) => (
+              <li key={item.key}>{item.text}</li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
 type MapsNamespace = GoogleMapsApi & {
   Map: new (element: HTMLDivElement, options: Record<string, unknown>) => GoogleMapHandle;
   LatLngBounds: new () => GoogleLatLngBoundsHandle;
@@ -717,30 +745,38 @@ export function TerritoryMapWorkspace({
             <span>Average gap: <strong>{area.meanPairKm ?? "—"} km</strong></span>
           </div>
 
+          {/* Every finding is listed: the first five open, the rest one click away. Cutting the list
+              at five silently dropped the rest, and a dropped brick reads as a clean one. */}
           {area.overlaps.length > 0 ? (
             <div className="text-sm">
-              <p className="font-medium">Closer to another area — likely mis-assigned</p>
-              <ul className="text-muted-foreground list-disc pl-5">
-                {area.overlaps.slice(0, 5).map((overlap) => (
-                  <li key={overlap.brickId}>
-                    {overlap.brickName} — {overlap.kmToOwnCentre} km from {area.areaName}, but{" "}
-                    {overlap.kmToOtherCentre} km from {overlap.nearerAreaName}
-                  </li>
-                ))}
-              </ul>
+              <p className="font-medium">
+                Closer to another area — likely mis-assigned ({area.overlaps.length})
+              </p>
+              <FindingList
+                items={area.overlaps.map((overlap) => ({
+                  key: overlap.brickId,
+                  text: `${overlap.brickName} — ${overlap.kmToOwnCentre} km from ${area.areaName}, but ${overlap.kmToOtherCentre} km from ${overlap.nearerAreaName}`,
+                }))}
+              />
             </div>
           ) : null}
 
           {area.orphans.length > 0 ? (
             <div className="text-sm">
-              <p className="font-medium">Far from the rest of the area</p>
-              <ul className="text-muted-foreground list-disc pl-5">
-                {area.orphans.slice(0, 5).map((orphan) => (
-                  <li key={orphan.brickId}>
-                    {orphan.brickName} — {orphan.kmFromCentre} km from the area centre
-                  </li>
-                ))}
-              </ul>
+              <p className="font-medium">
+                Far from the rest of the area ({area.orphans.length})
+                {area.medianKmFromCentre != null ? (
+                  <span className="text-muted-foreground font-normal">
+                    {" "}— half the area sits within {area.medianKmFromCentre} km of its centre
+                  </span>
+                ) : null}
+              </p>
+              <FindingList
+                items={area.orphans.map((orphan) => ({
+                  key: orphan.brickId,
+                  text: `${orphan.brickName} — ${orphan.kmFromCentre} km from the area centre`,
+                }))}
+              />
             </div>
           ) : null}
 
