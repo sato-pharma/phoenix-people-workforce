@@ -2500,6 +2500,7 @@ import { runAgentsLongHooksCiteDocsTests } from "./agents-long-hooks-cite-docs.t
 import { runModuleMemoryTests } from "./module-memory.test.ts";
 import { runMemoryFoldRetryTests, runMemoryFoldTaskTests } from "./memory-fold-task.test.ts";
 import { runDepsRefreshTests } from "./deps-refresh.test.ts";
+import { runLockfileDowngradeGateTests } from "./lockfile-downgrade-gate.test.ts";
 import { runCloudMirrorRefreshTests } from "./cloud-mirror-refresh.test.ts";
 
 import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-cancel-rule.test.ts";
@@ -9460,6 +9461,10 @@ await runTest(
 await runTest(
   "the weekly dependency refresh re-resolves every package inside its declared range on GitHub (lockfile.yml mode=refresh: pnpm update --depth Infinity --no-save, never the default mode) and opens ONE PR: never a second while one is open, never one that adds a quarantine exception, never a merge; the PR body lists every package that moved from the packages: section alone; its launcher runs origin/main's refresh.mjs from a throwaway worktree on builtins only, takes no flags and logs every failure; and the Sunday 10:00 task runs node directly with wake, catch-up and no overlap",
   runDepsRefreshTests,
+);
+await runTest(
+  "no pull request may move a package BACKWARD in pnpm-lock.yaml: Dependabot hands its seven-day cooldown to pnpm, which re-resolves every entry younger than that to an older version (PRs 6486-6488 and 6580-6582 each rolled back ~40 packages the weekly refresh had just moved, and only the puppeteer pin went red), so lockfile.yml's refresh uses the SAME seven-day window (and the two flags pnpm needs beside --no-save), regenerate mode stays free of any window, and any pull request whose lockfile holds an older version than its base fails with the replacement route named (the weekly refresh branch is exempt, a deliberate rollback is listed in allowed-downgrades.txt)",
+  runLockfileDowngradeGateTests,
 );
 await runTest(
   "the nightly cloud-mirror refresh keeps a cloud session's only memory current without ever handing the owner a second PR: it stages the mirror, assignments.json and the rebuilt module blocks together (the orphan that reds validate and withheld three production deploys on 2026-10-02), proves module memory healthy and scans the staged text for key material before it pushes — bash-guard C12 never sees a push from node — pushes onto the refresh PR already open instead of opening another, commits nothing on a quiet night, and never merges; the mirror it ships is itself scanned note by note; its launcher runs origin/main's own refresh.mjs from a throwaway worktree on builtins only, takes no flags, retries a lost ref lock and logs every failure; and the 04:07 Cairo daily task runs node directly with wake, catch-up and no overlap",

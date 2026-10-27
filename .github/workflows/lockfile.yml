@@ -84,10 +84,29 @@ jobs:
       # 🔴 `--no-save` KEEPS EVERY RANGE IN package.json AS WRITTEN, so a refresh can never widen what a person
       # pinned: the exact pins (next, react) stay put and only caret/tilde ranges and transitive packages move.
       # `--depth Infinity` is what reaches the transitive ones — a plain `pnpm update` touches direct
-      # dependencies only. The release-age quarantine still applies, so nothing younger than it is adopted.
+      # dependencies only.
+      #
+      # 🔴 THE WINDOW IS SEVEN DAYS, THE SAME AS dependabot.yml's `cooldown` (owner, 2026-10-27). Dependabot hands its
+      # cooldown to pnpm as `--config.minimum-release-age`, and pnpm then re-resolves EVERY lockfile entry younger than
+      # that to an older version — so on the Monday after a Sunday refresh that had adopted versions 1-6 days old
+      # (pnpm's own default is one day), Dependabot's lockfile rolled back about 40 packages: puppeteer-core 25.16.0 ->
+      # 25.14.0, imapflow 2.9.1 -> 2.5.8, nodemailer, openai, supabase, lucide-react (6486-6488 on 26 Oct, 6580-6582 on
+      # 27 Oct). Only the puppeteer pin's tests went red; the rest would have landed silently. The refresh now adopts
+      # nothing younger than Dependabot will accept. 10080 = 7 x 1440 minutes, kebab-case (the spelling Dependabot itself
+      # uses). tests/lockfile-downgrade-gate.test.ts holds this number to the cooldown. Account: docs/dependency-refresh.md.
+      #
+      # 🔴 AND `--config.trust-lockfile=true`, OR THE RUN DIES BEFORE IT RESOLVES ANYTHING (rehearsed 27 Oct 2026, run
+      # 40536015873): pnpm 11 first re-applies the window to every entry of the lockfile it LOADS — main's own, which
+      # holds 90 entries 3-6 days old — and stops with ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION. `trustLockfile` (pnpm 11.3)
+      # skips only that pass over the loaded file; the resolver still applies the 7 days to everything it picks, and the
+      # PR's own `pnpm install --frozen-lockfile` re-checks the whole result under the repository's policy.
+      #
+      # 🔴 AND `--config.minimum-release-age-strict=false` (run 40536363067): setting the age explicitly turns pnpm's
+      # strict mode on, and strict mode refuses `--no-save` outright (ERR_PNPM_STRICT_MIN_RELEASE_AGE_REQUIRES_SAVE).
+      # Non-strict is what the run had before this flag — a range with no version old enough falls back to the newest.
       - name: Refresh every dependency inside its declared range
         if: inputs.mode == 'refresh'
-        run: pnpm update --depth Infinity --no-save
+        run: pnpm update --depth Infinity --no-save --config.minimum-release-age=10080 --config.minimum-release-age-strict=false --config.trust-lockfile=true
 
       # npm, not pnpm, and `--package-lock-only` inside the script: it rewrites the two files and installs nothing.
       # Unchanged files come back byte-identical, and the downloader skips an identical file.
