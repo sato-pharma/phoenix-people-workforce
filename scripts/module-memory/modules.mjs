@@ -1293,7 +1293,7 @@ export const MODULES = [
   {
     id: "engineering-deploys",
     title: "Engineering — Railway deploys and what is actually serving",
-    scope: "The Railway deploy and its CI gate, the build itself and where its base image comes from, what revision is live and how to prove it, deployment states, volumes and regions, and the railway CLI's own traps.",
+    scope: "The Railway deploy and its CI gate, the build itself and where its base image comes from, what revision is live and how to prove it, deployment states, volumes and regions.",
     globs: [
       "Dockerfile",
       ".railway/**",
@@ -1317,6 +1317,28 @@ export const MODULES = [
       "src/lib/platform/process-role.ts",
     ],
     keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
+    tables: [],
+  },
+  // 🔴 SPLIT 2026-10-27, FOR THE REASON `phoenix-crm-approvals` RECORDS: `engineering-deploys`'s injected
+  // pointer measured 4,154 bytes against the 4,000 margin the moment the two-Railway-keys rule landed (the
+  // CLI scripts had merged `RAILWAY_API_TOKEN || RAILWAY_TOKEN` into one value, so each key swap broke the
+  // other job). The railway CLI's own traps, its two keys, and the source and trigger every service is wired
+  // by are one family, read while running `railway` or editing a Railway script, never while reading a build
+  // log or a revision. `engineering-deploys` KEEPS EVERY GLOB IT HAD, so a Railway script loads the PAIR and
+  // nothing that used to arrive stops arriving.
+  {
+    id: "engineering-railway-cli",
+    title: "Engineering — the railway CLI, its two keys, and each service's source and trigger",
+    scope: "The railway CLI's own traps (variables, ssh, source connect, scale), the project key and the workspace key and which job needs which, and the git source and deployment trigger that wire each service to this repository.",
+    globs: [
+      ".railway/**",
+      "scripts/*railway*",
+      "scripts/lib/railway-cli-credentials.mjs",
+      ".github/workflows/*railway*",
+      ".github/workflows/secret-drift-check.yml",
+      "tests/railway-*.test.ts",
+    ],
+    keywords: ["railway cli", "railway variables", "railway ssh", "railway service", "railway_token", "railway_api_token", "project key", "workspace key", "deployment trigger", "source connect"],
     tables: [],
   },
   // 🔴 SPLIT 2026-10-26, FOR THE REASON `engineering-deploys` ABOVE RECORDS: `engineering`'s injected

@@ -401,4 +401,35 @@ export function runScheduledAlarmsNeverWithholdTests() {
       }
     }
   }
+
+  // 12. EVERY LEG THAT MAY FAIL MUST BE ABLE TO REACH THE ALERT.
+  //
+  //     A `continue-on-error` leg turns a finding into a step outcome and nothing else. If no Notify step
+  //     reads that outcome, the finding is an annotation in a tab nobody opens: the job is green on
+  //     purpose, so nothing else carries it. 🔴 Caught on 2026-10-27: secret-drift-check.yml's Railway
+  //     trigger leg (`deploy_triggers`, added 23 Oct to catch the staging that went nine days without a
+  //     deploy) was missing from its Notify step's `if`, so the one leg built after a silent failure was
+  //     itself silent. Scoped to files that HAVE a Notify step; synthetic-journeys.yml and
+  //     staging-hr-drift-check.yml alert from their own steps.
+  for (const file of [...ALARMS, ...REDS_ON_A_FINDING]) {
+    const lines = workflow(file).split(/\r?\n/);
+    const starts = lines.flatMap((line, index) => (/^      - /.test(line) ? [index] : []));
+    const blocks = starts.map((start, k) => lines.slice(start, starts[k + 1] ?? lines.length).join("\n"));
+    const isNotify = (block: string) => /^      - name: Notify/m.test(block);
+    if (!blocks.some(isNotify)) continue;
+    const notifyIfs = blocks.filter(isNotify).map((block) => block.match(/^        if:.*$/m)?.[0] ?? "").join("\n");
+
+    for (const block of blocks) {
+      if (isNotify(block) || !/^        continue-on-error:\s*true\s*$/m.test(block)) continue;
+      const name = block.split("\n")[0].replace(/^      - (name: )?/, "").slice(0, 80);
+      const id = block.match(/^        id:\s*([A-Za-z0-9_-]+)\s*$/m)?.[1];
+      assert.ok(id, `🔴 ${file}: the leg "${name}" may fail but has no \`id:\`, so no Notify step can read its outcome`);
+      assert.match(
+        notifyIfs,
+        new RegExp(String.raw`steps\.${id}\.outcome\s*==\s*'failure'`),
+        `🔴 ${file}: the leg \`${id}\` ("${name}") is not in any Notify step's \`if\`, so its finding reaches nobody. ` +
+          "The job is green on a finding by design, so the alert is the only thing that carries it.",
+      );
+    }
+  }
 }

@@ -276,7 +276,9 @@ was merely superseded and production already carries it. `verify-shipped.mjs` pr
 
 🔴 **AND WHAT DOES *NOT* HOLD THE GATE, measured the same night so nobody chases it:** the four
 third-party app suites — `sentry`, `claude`, `vercel`, `railway-app` — are `queued` on *every* commit
-and never report. `1825e0b45` and `b91bd8c0c` both reached deployment `success` with all four sitting
+and never report. 🔴 **Since the account move on 2026-10-27 there are THREE — `sentry`, `claude` and
+`railway-app`** (read live on `618a1ebda` and `1cb333435`): the Vercel app was never installed on
+`it-gawish-hr`, so its suite no longer appears. The classifiers still leave `vercel` out, harmlessly. `1825e0b45` and `b91bd8c0c` both reached deployment `success` with all four sitting
 at `queued`. So "still queued = no deploy" is misleading: an Actions suite still **running** holds the
 deploy (that is the gate working), a **failed or cancelled** one withholds it, and a third-party suite
 that never reports does neither.

@@ -1,5 +1,50 @@
 # CI on a self-hosted runner — RETIRED 2026-10-19, kept as history
 
+## What CI costs now, and the guards that hold it (2026-10-27)
+
+🔴 **Read this first. It is the current state; the box sections further down are history.**
+
+**Why the bill doubled and CI felt slow.** These are minutes measured from every job, 10–27 Oct; the dollars
+come only from GitHub's own billing amounts (the rule below, "The invoice is the only authority").
+- **The 19 Oct split doubled the minutes.** The CI split of 19 Oct 18:13 took each run from 4 billed jobs to 8.
+  - The median billed minutes per run went from 9 to 16.
+  - The number of runs stayed about the same, ~137 a day.
+  - So the daily minutes went from **1,189 to 2,397**.
+  - Nothing pinned the job count or the cost per run, so nothing failed.
+- **Where the 21,575 minutes of 19–27 Oct went:**
+  - PR CI took 53%; push CI on `main` took 39%.
+  - 146 of the 412 pushes to `main` re-tested a tree already green on its PR, 3,172 minutes. Tree reuse measures this and never skips; the owner looks again on 9 Nov ("Tree reuse", below).
+  - Rounding each job up to a whole minute added 24%. `checks` runs a median 0.3 min and `release-gate` 0.1 min, and each bills 1.
+- **"Very slow" was GitHub stopping Actions over billing or the spending limit:**
+  - It stopped on 5 Aug, 23 Aug, 27 Sep (120 runs failed to start) and 12 Oct.
+  - Each stop froze CI. Production deploys only once `validate` and `checks` pass (the release gate), so each stop also held every deploy, silently.
+  - The cache was also over its cap (10.47 of 10 GB), which slowed every job. It was fixed 26 Oct; the old pull-request caches expire about 2 Nov.
+- **The budget on the new account** (`it-gawish-hr`, read back 27 Oct) is $300 a month, with "Stop usage when budget limit is reached" ON and alerts at 75, 90 and 100%. Whether to change it is the owner's, on github.com/settings/billing/budgets, never a session's.
+
+**The guards, each failing loud rather than silent:**
+
+| Guard | Where | What makes it fire |
+| --- | --- | --- |
+| The job ledger, `CI_JOBS_BY_EVENT` | `tests/ci-runner-switch.test.ts` | A job, a matrix leg or a trigger added to `ci.yml` without the ledger and a dated billed-minutes note. Today: PR runs `validate`, `static`, `unit (1)`, `unit (2)`, `checks` (13.86 billed min/run); a push to `main` adds `release-gate` and `mobile` (19.36); a dispatch is 6 jobs, with `full-e2e` only when asked. |
+| The scheduled-run ceiling, `SCHEDULED_RUNS_CEILING` | `tests/github-workflow-validity.test.ts` | Seven scheduled workflows start 55 runs a day, and 6 dispatched ones make 61. A new cron or a faster one fails until the count and a dated note are updated. |
+| The daily cost alarm, step `actions_cost` | `scripts/check-actions-cost.mjs`, in `secret-drift-check.yml` | It reads the billing usage API's own amounts, projects the month against `vars.ACTIONS_MONTHLY_BUDGET`, and pings Telegram with the day the budget would be reached. Exit 2, "cannot tell", is never a pass. |
+| The token-expiry alarm, step `token_expiry` | `scripts/check-token-expiry.mjs`, same workflow | It warns 21 days before `PHOENIX_ACTIONS_DISPATCH_TOKEN`, `GHCR_PULL_TOKEN` or `ACTIONS_BILLING_READ_TOKEN` expires, and reports a dead one at once. It prints names and dates only. |
+| No alarm is swallowed | `tests/scheduled-alarms-never-withhold.test.ts`, clause 12 | A `continue-on-error` step that the Notify step's `if:` does not name. |
+| The Railway keys are tried apart | `scripts/lib/railway-cli-credentials.mjs`, `tests/railway-cli-credentials.test.ts` | A CLI step that merges `RAILWAY_API_TOKEN \|\| RAILWAY_TOKEN` into one value again. |
+| Railway watches this owner | `scripts/check-railway-deploy-triggers.mjs` | A source or a deploy trigger on any owner but `GITHUB_OWNER`, in `RAILWAY_PROJECT_ID` or any of `vars.RAILWAY_PROJECT_IDS`. |
+
+**The Railway key fix (27 Oct).**
+- **The fault:** the two CLI scripts, `validate-railway-production-secrets.mjs` and `sync-railway-production-secrets.mjs`, merged `RAILWAY_API_TOKEN || RAILWAY_TOKEN` into ONE value.
+- **What it broke:** a workspace key and a project key kept breaking each other.
+  - 21–23 Oct: the workspace key failed the CLI check.
+  - 23 Oct: a production-only project key fixed the check and broke the fallback rehearsal.
+  - 27 Oct, 14:27 Cairo: the workspace key came back, which fixed the rehearsal and broke the check again.
+- **The fix:** each secret is now tried under its own name. `RAILWAY_TOKEN`'s value is tried as a project key and `RAILWAY_API_TOKEN`'s as a workspace key, and each attempt prints its first error line.
+- **If the project key in `RAILWAY_TOKEN` is dead,** the first run says so by name. A new production project key goes into `RAILWAY_TOKEN`, and the workspace key stays for the rehearsal.
+
+**Not decided here, the owner's:** the budget amount; GitHub Enterprise and the move into the `Phoenix-Sato-Pharma`
+organization (only after he buys the paid plan); turning tree reuse into a skip.
+
 > 🔴 **THE CI BOX IS RETIRED AND EVERYTHING BELOW ABOUT IT IS HISTORY.** Owner, 2026-10-19: *"make all ci actions to be on github and be able to make checks on one or more or ten or even 100 at the same time … as fast as you can safely without skipping any check"* and *"retire the hetzner box and do not use it … it is the source of slowness"*.
 >
 > **What runs now.** Every job in `ci.yml`, `security-scan.yml` and `lockfile.yml` runs on GitHub-hosted `ubuntu-latest`, written as a literal; `tests/ci-runner-switch.test.ts` fails a workflow that names anything else. No `CI_RUNNER_LABEL`, no `CI_SELF_HOSTED`, no runner registration, and `scripts/setup-self-hosted-runner.sh` is deleted.

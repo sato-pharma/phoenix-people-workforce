@@ -150,6 +150,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
 | `engineering-tests` — Engineering — tests, and what makes a result evidence | `tests/support/**` and 2 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 15 more |
+| `engineering-railway-cli` — Engineering — the railway CLI, its two keys, and each service's source and trigger | `.railway/**` and 5 more |
 | `engineering-field-day` — Engineering — the field day papers (scripts/field-day) | `scripts/field-day/**` and 2 more |
 | `git-worktrees` — Git, worktrees and the shared primary checkout | `scripts/{new-session,sync-worktree-env,repo-doctor}*` and 1 more |
 | `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 5 more |
