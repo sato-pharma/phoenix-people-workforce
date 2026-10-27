@@ -28,6 +28,15 @@ together.
   world.
 - **Reports** read real AND test entries for a test account (its own work beside the real team's),
   except the exceptions and adoption boards, which read test entries only.
+- **My map** reads real AND test entries for a test account too, and draws each customer ONCE
+  (`mergeTestWorld`, `src/lib/phoenix-crm/my-map-rules.ts`). Its twin is the same territory, list and
+  `normalizeContactName` fold. A test copy with a place of its own stands in for its real twin; a copy
+  with no place gives way to it; visits and today's plan follow the copy shown. Why: on 2026-10-27 the
+  test world held 1,031 active customers, 1,029 with no place at all and 995 of those copies of real
+  ones, so the district manager test account read alone drew 0 pins (13 test customers against 267 real on
+  that team). Read both ways it draws 267 customers on 269 pins. An empty My map card names the
+  validated customers with no pin (`withoutPin`, per list), and says "No validated customer" only when
+  there is none.
 - A test account stops working the day the person it mirrors leaves: the lifecycle gate reads the
   mirror's employment, at sign-in and on every request.
 - **What is read per LOGIN rather than per person is copied or not shared.** The three sales-scope

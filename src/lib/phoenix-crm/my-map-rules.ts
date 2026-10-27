@@ -20,8 +20,15 @@
  *
  * 🔴 AM, PM AND PHARMACIES ARE THREE FIGURES, NEVER ONE SUM. Every count here is kept per list, and coverage is
  * measured against each list's own grade numbers.
+ *
+ * 🔴 A TEST ACCOUNT'S MAP IS THE REAL TEAM'S, WITH ITS OWN TEST CUSTOMERS IN THEIR PLACE (owner's report,
+ * 2026-10-27: the DM test account's card read "No validated customer"). Its test world is a stale copy of the
+ * real lists with no places — 13 test customers against 267 real on that team, none pinned — so it reads both
+ * worlds, the way every report does for a test account (`docs/test-accounts.md`), and `mergeTestWorld` keeps each
+ * customer ONCE: a pinned test customer stands in for its real twin, a placeless copy gives way to it.
  */
 
+import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { coverageTier, gradeTarget, type CoverageTier } from "@/lib/phoenix-crm/coverage";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
@@ -100,6 +107,8 @@ export type MyMapView = {
   plannedWithoutPin: number;
   /** Active places of active customers with no usable point — counted, never silently left out. */
   unplaced: number;
+  /** Validated customers on these territories with no pin at all, by list — so an empty map never reads as nobody. */
+  withoutPin: PerList;
 };
 
 /** The whole allow-list of a pin and of a customer. Nothing outside these reaches the browser. */
@@ -144,8 +153,76 @@ export function mapLayerOf(listType: PhoenixCrmListType, session: unknown): MyMa
 
 export type MyMapSeatFact = { seatId: string; name: string; people: string; line: string | null };
 export type MyMapPlaceFact = { id: string; seatId: string; customerId: string; lat: unknown; lon: unknown; session: unknown; label: unknown; brick: unknown };
-export type MyMapCustomerFact = { id: string; listType: unknown; name: unknown; speciality: unknown; grade: unknown; validatedOn: string | null };
+export type MyMapCustomerFact = {
+  id: string;
+  /** The territory he is listed on. */
+  seatId: string;
+  listType: unknown;
+  name: unknown;
+  speciality: unknown;
+  grade: unknown;
+  validatedOn: string | null;
+};
 export type MyMapVisitFact = { customerId: string; visitDate: string };
+
+/** One world's facts: the real one, or a test account's own. */
+export type MyMapWorldFacts = { places: MyMapPlaceFact[]; customers: MyMapCustomerFact[]; visits: MyMapVisitFact[] };
+
+/**
+ * The same customer in the other world: his territory, his list and his name folded the way the database's own
+ * duplicate guard folds it (`phoenix_crm_fold_name`'s twin). A name that folds to nothing has no twin.
+ */
+function twinKey(customer: MyMapCustomerFact): string | null {
+  const name = normalizeContactName(typeof customer.name === "string" ? customer.name : null);
+  return name.length > 0 ? `${customer.seatId}|${readListType(customer.listType)}|${name}` : null;
+}
+
+/**
+ * A test account's map: the real team's customers beside its own test ones, each customer ONCE.
+ *
+ * - A test customer with a place of his own stands in for his real twin — the test pin is the one drawn.
+ * - A test customer with no place gives way to his real twin, whose pins are drawn.
+ * - A test customer with no twin is drawn as he is.
+ *
+ * `alias` maps the id that gave way to the id kept, so a visit, or a stop in today's plan, on either copy lands
+ * on the one customer shown.
+ */
+export function mergeTestWorld(real: MyMapWorldFacts, test: MyMapWorldFacts): MyMapWorldFacts & { alias: Map<string, string> } {
+  const placed = new Set(test.places.map((place) => place.customerId));
+  const realByKey = new Map<string, MyMapCustomerFact>();
+  for (const customer of real.customers) {
+    const key = twinKey(customer);
+    if (key !== null && !realByKey.has(key)) realByKey.set(key, customer);
+  }
+  const alias = new Map<string, string>();
+  const dropped = new Set<string>();
+  const claimed = new Set<string>();
+  for (const customer of test.customers) {
+    const key = twinKey(customer);
+    const twin = key === null ? undefined : realByKey.get(key);
+    if (!twin || claimed.has(twin.id)) continue;
+    claimed.add(twin.id);
+    if (placed.has(customer.id)) {
+      alias.set(twin.id, customer.id);
+      dropped.add(twin.id);
+    } else {
+      alias.set(customer.id, twin.id);
+      dropped.add(customer.id);
+    }
+  }
+  const kept = (customerId: string) => !dropped.has(customerId);
+  return {
+    places: [...real.places, ...test.places].filter((place) => kept(place.customerId)),
+    customers: [...real.customers, ...test.customers].filter((customer) => kept(customer.id)),
+    visits: [...real.visits, ...test.visits].map((visit) => ({ customerId: alias.get(visit.customerId) ?? visit.customerId, visitDate: visit.visitDate })),
+    alias,
+  };
+}
+
+/** Today's planned customers, each as the copy the map shows. */
+export function aliasPlanned(planned: ReadonlySet<string> | null, alias: ReadonlyMap<string, string>): Set<string> | null {
+  return planned ? new Set([...planned].map((customerId) => alias.get(customerId) ?? customerId)) : null;
+}
 
 function roundDegrees(value: number): number {
   return Math.round(value * 1e6) / 1e6;
@@ -167,7 +244,7 @@ export function buildMyMapPins(input: {
   /** The first Cairo day that counts as this week's: validated on it or after is new. */
   newSince: string;
   gradeTargets: PhoenixCrmSettings["gradeTargets"];
-}): Pick<MyMapView, "pins" | "customers" | "territories" | "unplaced" | "plannedWithoutPin"> {
+}): Pick<MyMapView, "pins" | "customers" | "territories" | "unplaced" | "plannedWithoutPin" | "withoutPin"> {
   const seatIndex = new Map(input.seats.map((seat, index) => [seat.seatId, index]));
   const facts = new Map(input.customers.map((customer) => [customer.id, customer]));
 
@@ -242,12 +319,17 @@ export function buildMyMapPins(input: {
   let plannedWithoutPin = 0;
   for (const customerId of input.planned ?? []) if (!customerIndex.has(customerId)) plannedWithoutPin += 1;
 
+  // A validated customer of these territories whose every place is retired, or has no usable point.
+  const withoutPin = perList();
+  for (const fact of facts.values()) if (!customerIndex.has(fact.id) && seatIndex.has(fact.seatId)) withoutPin[readListType(fact.listType)] += 1;
+
   return {
     pins,
     customers,
     territories: input.seats.map((seat) => ({ name: seat.name, people: seat.people, line: seat.line })),
     unplaced,
     plannedWithoutPin,
+    withoutPin,
   };
 }
 
@@ -320,4 +402,5 @@ export type MyMapSnapshot = {
   points: Array<{ lat: number; lon: number; layer: MyMapLayer }>;
   bricks: Array<{ name: string; lat: number; lon: number }>;
   unplaced: number;
+  withoutPin: PerList;
 };

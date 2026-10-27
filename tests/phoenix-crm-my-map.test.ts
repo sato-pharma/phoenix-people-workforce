@@ -3,9 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { groupPins, MY_MAP_GROUP_BELOW_ZOOM, evenSample, brickLabels } from "../src/lib/phoenix-crm/my-map-geometry.ts";
 import {
+  aliasPlanned,
   buildMyMapPins,
   countMyMap,
   mapLayerOf,
+  mergeTestWorld,
   myMapPerListText,
   MY_MAP_CUSTOMER_KEYS,
   MY_MAP_PIN_KEYS,
@@ -26,8 +28,10 @@ import { stripComments } from "./support/comment-strip.ts";
  *      never pins; a place with no usable point is COUNTED, never silently dropped.
  *   4. AM, PM and pharmacies are three figures side by side, never one total.
  *   5. Grouping at a country's zoom loses no pin and counts none twice.
- *   6. The loader reads active places of active customers in the reader's own world.
+ *   6. The loader reads active places of active customers in the reader's own world — a test account's in both (8).
  *   7. The sidebar row and every companion declaration CI looks for.
+ *   8. A test account reads the real world beside its own and draws each customer ONCE: a pinned test copy
+ *      stands in for its real twin, a placeless one gives way to it, and visits and today's plan follow.
  */
 
 const read = (path: string) => readFileSync(path, "utf8");
@@ -47,7 +51,7 @@ function place(id: string, overrides: Partial<MyMapPlaceFact> = {}): MyMapPlaceF
 }
 
 function customer(id: string, overrides: Partial<MyMapCustomerFact> = {}): MyMapCustomerFact {
-  return { id, listType: "AM", name: `Customer ${id}`, speciality: "Paediatrics", grade: "A", validatedOn: "2026-10-20", ...overrides };
+  return { id, seatId: "seat-1", listType: "AM", name: `Customer ${id}`, speciality: "Paediatrics", grade: "A", validatedOn: "2026-10-20", ...overrides };
 }
 
 function build(places: MyMapPlaceFact[], customers: MyMapCustomerFact[], visits: Array<{ customerId: string; visitDate: string }> = []) {
@@ -112,6 +116,7 @@ export function runPhoenixCrmMyMapTests(): void {
   );
   assert.equal(mixed.unplaced, 2, "the two places with no usable point are counted, never silently dropped");
   assert.equal(mixed.customers.length, 1, "a customer with no pin is not in the list either");
+  assert.deepEqual(mixed.withoutPin, { AM: 0, PM: 1, Pharmacy: 0 }, "but he is counted, on his own list, so an empty map never reads as nobody");
 
   // ── 4. The three lists side by side, never one total ───────────────────────────────────────────────
   assert.equal(myMapPerListText({ AM: 2, PM: 3, Pharmacy: 1 }), "2 AM · 3 PM · 1 pharmacy");
@@ -174,6 +179,13 @@ export function runPhoenixCrmMyMapTests(): void {
   for (const columns of selected) {
     assert.doesNotMatch(columns, new RegExp(`accuracy|pin_lat|pin_lon|photo|distance|moved|${CASE_WORD}|pharmacy_pin`), `the loader never reads a measurement column: ${columns}`);
   }
+  assert.match(loader, /if \(!isTest\) return \{ \.\.\.\(await readWorldFacts\(seatIds, false, visitDay\)\)/, "a real viewer reads the real world only");
+  assert.match(
+    loader,
+    /\[readWorldFacts\(seatIds, false, visitDay\), readWorldFacts\(seatIds, true, visitDay\)\]\);\s*return mergeTestWorld\(real, test\);/,
+    "a test account reads both worlds and keeps each customer once",
+  );
+  assert.equal(loader.match(/aliasPlanned\(/g)?.length, 2, "the page and the landing card both mark today's plan on the copy shown");
 
   // ── 7. The sidebar row and its companions ──────────────────────────────────────────────────────────
   assert.match(read("src/lib/phoenix-crm/server/sidebar-entries.ts"), /myMap: canReadMyMap\(viewer\)/, "the row asks the page's own gate");
@@ -222,4 +234,52 @@ export function runPhoenixCrmMyMapTests(): void {
     const strings = [...source.matchAll(/(?:"([^"\n]{3,})"|>([^<>{}\n]{3,})<)/g)].map((match) => match[1] ?? match[2] ?? "");
     for (const text of strings) assert.doesNotMatch(text, /\b(accounts?|doctors?)\b/i, `${file}: "${text}" uses a banned word — say customer`);
   }
+
+  // ── 8. A test account: the real world beside its own, each customer ONCE ──────────────────────────────
+  // The shape production holds (2026-10-27): the test world is a copy of the real lists with no places.
+  const realWorld = {
+    places: [place("p-r-am", { customerId: "r-am" }), place("p-r-pm", { customerId: "r-pm", session: "PM" }), place("p-r-solo", { customerId: "r-solo" })],
+    customers: [customer("r-am", { name: "د/أحمد سمير" }), customer("r-pm", { listType: "PM", name: "Mona Adel" }), customer("r-solo", { name: "Real Only" })],
+    visits: [
+      { customerId: "r-am", visitDate: "2026-10-05" },
+      { customerId: "r-pm", visitDate: "2026-10-06" },
+    ],
+  };
+  const testWorld = {
+    // "t-am" is a placeless copy of "r-am"; "t-pm" was validated in the test world with a place of its own;
+    // "t-new" has no real twin; "t-elsewhere" shares a name with "r-solo" on ANOTHER territory, so is not his twin.
+    places: [place("p-t-pm", { customerId: "t-pm", session: "PM", lat: 30.1 }), place("p-t-new", { customerId: "t-new" })],
+    customers: [
+      customer("t-am", { name: "أحمد سمير" }),
+      customer("t-pm", { listType: "PM", name: "mona  adel" }),
+      customer("t-new", { name: "Test Only" }),
+      customer("t-elsewhere", { seatId: "seat-2", name: "Real Only" }),
+    ],
+    visits: [{ customerId: "t-am", visitDate: "2026-10-07" }],
+  };
+  const merged = mergeTestWorld(realWorld, testWorld);
+  const both = buildMyMapPins({
+    seats: SEATS,
+    ...merged,
+    planned: aliasPlanned(new Set(["t-am", "t-pm"]), merged.alias),
+    newSince: "2026-10-21",
+    gradeTargets: GRADE_TARGETS,
+  });
+  assert.deepEqual(
+    both.pins.map((pin) => pin.id).sort(),
+    ["p-r-am", "p-r-solo", "p-t-new", "p-t-pm"],
+    "the real team's pins are drawn, a pinned test copy replaces its twin's pin, and nobody is drawn twice",
+  );
+  const names = both.customers.map((entry) => entry.name);
+  assert.equal(new Set(names).size, names.length, "each customer is in the list once");
+  assert.equal(names.length, 4, "the real customers, the replaced twin and the test-only one");
+  const ahmed = both.customers.find((entry) => entry.name === "د/أحمد سمير");
+  const mona = both.customers.find((entry) => entry.name === "mona  adel");
+  assert.ok(ahmed && mona, "the placeless copy gave way to the real customer; the pinned copy stood in for his twin");
+  assert.equal(ahmed.visits, 2, "a visit on either copy counts on the one customer shown");
+  assert.equal(mona.visits, 1, "the real twin's visit follows the copy that replaced him");
+  assert.ok(ahmed.plannedToday && mona.plannedToday, "today's plan marks the copy shown, whichever world it was planned in");
+  assert.equal(both.plannedWithoutPin, 0, "so no planned stop is wrongly called unvalidated");
+  assert.deepEqual(both.withoutPin, { AM: 1, PM: 0, Pharmacy: 0 }, "a validated test customer with no place is counted, never silently missing");
+  assert.equal(build(realWorld.places, realWorld.customers, realWorld.visits).pins.length, 3, "a real viewer's map is the real world alone");
 }
