@@ -34,6 +34,7 @@ import { ApiError, forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   heldManagerSeats,
+  isManagerTier,
   isTerritoryReviewer,
   managerChain,
   ownTerritories,
@@ -1141,4 +1142,19 @@ export function readsTeamVisitReport(viewer: PhoenixCrmViewer): boolean {
  */
 export function canReadVisitReport(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin || viewer.isSfeManager || readsTeamVisitReport(viewer);
+}
+
+/**
+ * Who opens My map (owner, 2026-10-27): a rep on his own territory, a district, regional or national sales manager
+ * across what he reads, and the Super Admin, the CEO and the SFE Manager across the company.
+ *
+ * 🔴 ITS OWN PREDICATE, NOT THE VISIT REPORT'S, which leaves the regional and national managers out. The map holds
+ * the customers' own chosen points and nothing about where a phone was, so it needs no location sight; a manager's
+ * reach is `scopeTerritories`, applied where the seats are chosen (`server/my-map.ts`). The per-line "Others" seat
+ * is not a team and opens nothing.
+ */
+export function canReadMyMap(viewer: PhoenixCrmViewer): boolean {
+  if (viewer.basis === "all") return true;
+  if (viewer.ownTerritories.length > 0) return true;
+  return viewer.managerSeats.some((seat) => isManagerTier(seat.tier) && !seat.isOtherPseudoDm) && viewer.scopeTerritories.length > 0;
 }

@@ -2133,6 +2133,7 @@ import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.t
 import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-edit.test.ts";
 import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.test.ts";
 import { runPhoenixCrmDoubleVisitRequestsTests } from "./phoenix-crm-double-visit-requests.test.ts";
+import { runPhoenixCrmMyMapTests } from "./phoenix-crm-my-map.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmVisitAnyCompanionsTests } from "./phoenix-crm-visit-any-companions.test.ts";
@@ -7645,6 +7646,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the rep's request for a double visit, asked by the last question of his visit (owner, 2026-10-16 — \"never cancel his request\"). There is no cancel anywhere — no route, no database function, no notice step, no button; the days are one to three distinct field days within four weeks and an edit re-asks whoever has not answered; the people are only those the rep was offered, any number, and a person asked accepts one day or declines on his own; each step tells the right people under a key of its own and asks for no email; the Super Admin, the CEO, the SFE Manager and every manager in his scope read the report, a product manager reads what is addressed to him and a rep reads his own on the customer's page; the question is the last block of the form, starts on No, sends nothing on No and moves no step number; and the sidebar row is declared in the layout, the bottom bar, the catalog and the route's skeleton",
   runPhoenixCrmDoubleVisitRequestsTests,
+);
+
+await runTest(
+  "PHOENIX CRM: My map (owner, 2026-10-27 — \"put a pin on the map for every validated customer … give a color for the AM pins and for the PM pins\"). A pin carries the allow-list and nothing else, so no reading, accuracy or distance reaches the browser at any depth; a place is drawn in its session's layer and a pharmacy stays a pharmacy; a pending customer, the other world's and a seat the reader does not hold are never pins, and a place with no usable point is counted, never dropped; AM, PM and pharmacies are three figures side by side, never one total, and a customer with two places is one customer; grouping at a country's zoom loses no pin and counts none twice; the loader reads active places of active customers in the reader's own world and no measurement column; and the sidebar row, its companion declarations, both pages' gate and the four landing cards are declared",
+  runPhoenixCrmMyMapTests,
 );
 
 await runTest(

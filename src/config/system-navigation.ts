@@ -58,6 +58,7 @@ import {
   Medal,
   Mic,
   MousePointerClick,
+  Map as MapIcon,
   MapPinCheck,
   MapPinOff,
   MapPinned,
@@ -2173,6 +2174,10 @@ const employeePortalNavigationSectionSeeds = [
       // report's own gate (`doubleVisitReportAudience` — a manager's seat, or a product manager a rep can
       // ask) is the boundary, and a roles list would hide it from somebody the page admits.
       { href: "/employee-portals/double-visit-requests", icon: UsersRound, label: "Double visit requests", permissions: [{ resource: "phoenix_crm", action: "read" }] },
+      // My map — a pin for every validated customer place on the territories he reads (owner, 2026-10-27).
+      // NO `roles:` list: `canReadMyMap` (a seat of his own, a manager's scope, or the company roles) is the
+      // boundary inside the page, and a roles list would hide it from an acting district manager.
+      { href: "/employee-portals/my-map", icon: MapIcon, label: "My map", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },
@@ -4666,6 +4671,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
+    // My map across the whole company (owner, 2026-10-27: the CEO and the SFE Manager too). A pin for every
+    // validated customer place, AM, PM and pharmacies in their own colours, with directions from each pin.
+    // Every other reader opens his own territories at /employee-portals/my-map. `canReadMyMap` is the
+    // enforcing gate inside the page; this card only draws the link.
+    href: "/admin/phoenix-crm/my-map",
+    icon: MapIcon,
+    label: "My Map",
+    description: "A pin for every validated customer place across the company, AM, PM and pharmacies in their own colours, filtered by manager, rep and line, with directions from any pin.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
+  },
+  {
     // Captures Phoenix CRM turned away on their LOCATION, and whether the rep got through afterwards
     // (owner, 2026-10-03: "build the refused readings view for the SFE").
     //
@@ -5336,6 +5353,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/visit-report",
           // What the reps ask their managers for, and the answers: a board, not data quality.
           "/admin/phoenix-crm/double-visit-requests",
+          // Where the validated customers are: a board, not data quality.
+          "/admin/phoenix-crm/my-map",
         ],
       },
       {

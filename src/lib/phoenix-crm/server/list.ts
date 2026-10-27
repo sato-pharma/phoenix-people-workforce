@@ -188,6 +188,7 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { createRecentOnce } from "@/lib/phoenix-crm/server/recent-once";
+import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 
 /** Decided requests stay on the rep's screen this long, so the answer is seen. */
 const DECIDED_REQUESTS_DAYS = 45;
@@ -2431,6 +2432,8 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       dropReason: null,
     });
   }
+  // A new pin on My map: its landing cards read again rather than waiting out their minute.
+  invalidateMyMapSnapshotCache("phoenix-crm-validate-customer");
   return validated;
 }
 

@@ -83,6 +83,14 @@ export const VACATION_REPORT_ROWS_CACHE_TAG = "vacation-report-rows";
  */
 export const CRM_DAILY_FORECAST_CACHE_TAG = "phoenix-crm-daily-forecast";
 
+/**
+ * My map's landing snapshot (src/lib/phoenix-crm/server/my-map.ts): the counts and the sampled pins on the
+ * rep's, the district manager's, the regional and the national manager's landing card. A bare string here for
+ * the same reason as the tags above. Busted by invalidateMyMapSnapshotCache when a customer is validated or a
+ * held place is decided, the two paths that add or retire a pin; the 60-second TTL is the backstop.
+ */
+export const MY_MAP_SNAPSHOT_CACHE_TAG = "phoenix-crm-my-map-snapshot";
+
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
@@ -181,6 +189,18 @@ export function invalidateCrmDailyForecastCache(reason: string) {
     revalidateTag(CRM_DAILY_FORECAST_CACHE_TAG, { expire: 0 });
   } catch (error) {
     console.warn("CRM daily forecast cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/** A pin was added or retired: every My map landing card reads again on its next render. */
+export function invalidateMyMapSnapshotCache(reason: string) {
+  try {
+    revalidateTag(MY_MAP_SNAPSHOT_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("My map snapshot cache tag revalidation failed.", {
       error: error instanceof Error ? error.message : String(error),
       reason,
     });

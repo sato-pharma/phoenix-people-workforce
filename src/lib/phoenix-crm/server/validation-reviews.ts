@@ -54,6 +54,7 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationPhotoKind,
 } from "@/lib/phoenix-crm/validation-feedback";
+import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -711,6 +712,8 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
   if (decision === "reject") await tellRepValidateAgain(viewer, result);
+  // A rejected place leaves My map; its landing cards read again rather than waiting out their minute.
+  invalidateMyMapSnapshotCache("phoenix-crm-decide-validation-review");
   return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
 }
 

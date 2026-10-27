@@ -60,6 +60,7 @@ export async function GET(request: Request) {
       phoenixCrm.forecast,
       phoenixCrm.placeChecks,
       phoenixCrm.doubleVisitRequests,
+      phoenixCrm.myMap,
     );
 
     const activeLocks = await locksPromise;

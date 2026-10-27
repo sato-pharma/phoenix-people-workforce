@@ -93,6 +93,7 @@ import {
   Megaphone,
   LifeBuoy,
   Plus,
+  Map as MapIcon,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -374,6 +375,7 @@ function buildEmployeePortalSections({
   showPhoenixCrmTab = false,
   showTeamPlaceChecksTab = false,
   showDoubleVisitRequestsTab = false,
+  showMyMapTab = false,
   showDailyForecastTab = false,
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
@@ -484,6 +486,10 @@ function buildEmployeePortalSections({
         // district manager's: `doubleVisitReportAudience` through `phoenixCrmSidebarEntries`, never a role
         // list here; the page gates again. No `highlight` — the Phoenix CRM row is the band's one standout.
         ...(showDoubleVisitRequestsTab ? [{ href: "/employee-portals/double-visit-requests", label: "Double visit requests", icon: UsersRound }] : []),
+        // My map — a pin for every validated customer place on the territories he reads, AM, PM and pharmacies
+        // in their own colours (owner, 2026-10-27). `canReadMyMap` through `phoenixCrmSidebarEntries`; the page
+        // gates again. `MapIcon`, never `Map`: this file builds `new Map` lookups. No `highlight`.
+        ...(showMyMapTab ? [{ href: "/employee-portals/my-map", label: "My map", icon: MapIcon }] : []),
       ],
     },
     {

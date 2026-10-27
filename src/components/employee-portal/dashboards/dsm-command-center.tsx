@@ -34,6 +34,7 @@ import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
+import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -138,6 +139,12 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
+
+      {access ? (
+        <Suspense fallback={<MmSectionSkeleton title="My map" />}>
+          <MyMapSnapshotCard access={access} />
+        </Suspense>
+      ) : null}
 
       <Suspense fallback={<MmSectionSkeleton title="My Reps" />}>
         <AwaitRoleExtras extras={extras}>
