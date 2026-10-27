@@ -71,6 +71,7 @@ import {
   vacantVisitPlaceError,
   visitPlaceText,
   managerPlanWithYou,
+  holdsPlannedDoctors,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import {
   MANAGER_VISIT_DETAIL_FIXED_OTHER,
@@ -616,7 +617,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(onHalf, /if \(!onHalf\.has\(id\) && !kept\.has\(id\)\) \{\s*throw conflictError\(/, "anything else is refused");
 
   // Re-saving a single-visit half-day hands the visits he already logged on it to the new slot.
-  assert.match(saveSlot, /const savedSlotId = textOrNull\(saved\.slot_id\);\s*if \(draft\.kind === "single_visit" && savedSlotId\) \{\s*await relinkPlannedVisits\(/, "the re-saved half-day keeps its visits");
+  assert.match(saveSlot, /const savedSlotId = textOrNull\(saved\.slot_id\);\s*if \(holdsPlannedDoctors\(draft\.kind\) && savedSlotId\) \{\s*await relinkPlannedVisits\(/, "the re-saved half-day keeps its visits");
   const relink = functionBody(plans, "async function relinkPlannedVisits(");
   assert.match(relink, /\.eq\("is_unplanned", false\)/, "only planned visits move");
   assert.match(relink, /\.is\("plan_slot_id", null\)/, "only the ones the delete left without a slot");
@@ -1819,7 +1820,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(filedBody, /filedAsOwnSingleVisit: true,/, "and the answer says where the visit went");
 
   const slotLookup = functionBody(visitsServer, "export async function plannedSingleVisitSlotFor(");
-  assert.match(slotLookup, /slot\.date === day && slot\.kind === "single_visit"/, "only TODAY's single-visit half-days are looked at");
+  assert.match(slotLookup, /slot\.date === day && holdsPlannedDoctors\(slot\.kind\)/, "only TODAY's half-days that hold planned doctors are looked at");
   assert.match(
     slotLookup,
     /held\.find\(\(row\) => !row\.gone && row\.customerId === customerId\)\?\.slotId \?\? null/,
@@ -2013,7 +2014,34 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   }
   assert.equal(withSenior({ areaSeatIds: ["T-1"] }).ok, false, "with nobody picked it is refused");
   assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: [] }).ok, false, "with no area ticked it is refused");
-  assert.equal(withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], customers: [{ customerId: "00000000-0000-4000-8000-000000000001" }] }).ok, false, "and no customer");
+  // The doctors are optional (owner, 2026-10-27: "he is not required to choose. He may choose or he may press the next").
+  const seniorWithDoctor = withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], customers: [{ customerId: "00000000-0000-4000-8000-000000000001" }] });
+  assert.equal(seniorWithDoctor.ok, true, "since 2026-10-27 a with-senior half-day may name doctors of the areas' lists");
+  if (seniorWithDoctor.ok) assert.equal(seniorWithDoctor.value.customers.length, 1, "and keeps them");
+  assert.equal(
+    withSenior({ seniorHrId: "B-60", areaSeatIds: ["T-1"], customers: [{ managerCustomerId: "00000000-0000-4000-8000-000000000002" }] }).ok,
+    false,
+    "but never one of his own list — that stays a single visit's",
+  );
+  assert.equal(holdsPlannedDoctors("with_senior"), true, "its doctors are planned visits");
+  assert.equal(holdsPlannedDoctors("single_visit"), true, "as a single visit's are");
+  assert.equal(holdsPlannedDoctors("with_rep"), false, "a rep's day holds none of the manager's own");
+  const visitsSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-visits.ts", import.meta.url), "utf8"));
+  assert.doesNotMatch(visitsSource, /kind === "single_visit"/, "My single visits reads every half-day that holds planned doctors, not single visits only");
+  assert.ok((visitsSource.match(/holdsPlannedDoctors\(/g) ?? []).length >= 3, "today's list, the slot a visit answers and the asked slot all use it");
+  const plansSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
+  assert.match(plansSource, /"Choose customers of the areas you ticked only\."/, "the save keeps the doctors inside the ticked areas");
+  const seniorCapSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-single-visit-cap.ts", import.meta.url), "utf8"));
+  assert.match(seniorCapSource, /with_senior/, "a visit logged on a with-senior half-day never counts against the single-visit cap");
+  const seniorDoctorsMigration = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261027140000_phoenix_crm_manager_plan_with_senior_doctors.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  const seniorBranch = seniorDoctorsMigration.slice(seniorDoctorsMigration.indexOf("elsif v_kind = 'with_senior' then"));
+  assert.doesNotMatch(
+    seniorBranch.slice(0, seniorBranch.indexOf("\n  else\n")),
+    /jsonb_array_length\(v_customers\) > 0/,
+    "and the database no longer refuses its doctors",
+  );
 
   const rideChain = { kind: "chain", managerHrId: "B-1", seniorHrId: "B-60", productManagerHrId: null };
   assert.equal(countsAsDmsVisitWithSenior(rideChain, "B-1", "B-60"), true, "a chain visit naming him and the regional manager he picked answers it");
