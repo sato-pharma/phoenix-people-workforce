@@ -91,6 +91,7 @@ async function loadLeaveDays(
   statuses: readonly string[],
   hrIds: Iterable<string | null | undefined>,
   range: { from: string; to: string },
+  accept: (row: Record<string, unknown>) => boolean = () => true,
 ): Promise<ApprovedLeaveDay[]> {
   const wanted = [...new Set([...hrIds].map((hrId) => String(hrId ?? "").trim()).filter(Boolean))];
   if (wanted.length === 0 || !cleanDay(range.from) || !cleanDay(range.to)) return [];
@@ -101,7 +102,7 @@ async function loadLeaveDays(
       .from(vacationRequestsTable)
       // Named columns, every one checked against the live table (2026-10-02): PostgREST answers a
       // missing column by failing the WHOLE read, not by nulling that field.
-      .select("employee_hr_id, start_date, end_date, vacation_type, day_part")
+      .select("employee_hr_id, start_date, end_date, vacation_type, day_part, status, manager_decision")
       .in("status", [...statuses])
       // Overlapping the window, not contained by it: a vacation that began last month and ends in
       // this one covers days here, and `start_date >= from` would miss every one of them.
@@ -109,7 +110,7 @@ async function loadLeaveDays(
       .gte("end_date", range.from)
       .in("employee_hr_id", wanted.slice(at, at + CHUNK));
     if (error) throw new Error(`leave: ${error.message}`);
-    out.push(...spreadApprovedLeave((data ?? []) as Array<Record<string, unknown>>, range));
+    out.push(...spreadApprovedLeave(((data ?? []) as Array<Record<string, unknown>>).filter(accept), range));
   }
   return out;
 }
@@ -119,6 +120,28 @@ export async function loadApprovedLeaveDays(
   range: { from: string; to: string },
 ): Promise<ApprovedLeaveDay[]> {
   return loadLeaveDays(["approved"], hrIds, range);
+}
+
+/**
+ * Leave the MANAGER has approved, whether or not HR has recorded it yet — the planning module's own
+ * line (`loadManagerApprovedVacations` in weekly-planning/service.ts: the manager's yes is the
+ * planning decision, independent of the later HR step). For the Planning Calendar (owner, 2026-10-27:
+ * an employee's leave must show on every calendar), so a day the plan form would lock as Vacation is
+ * the same day the calendar draws as leave. A request still waiting on HR counts only once its
+ * manager said yes; nothing that pays or deducts may read this.
+ */
+export const PLANNING_LEAVE_STATUSES = ["approved", "pending_hr"] as const;
+
+export async function loadPlanningLeaveDays(
+  hrIds: Iterable<string | null | undefined>,
+  range: { from: string; to: string },
+): Promise<ApprovedLeaveDay[]> {
+  return loadLeaveDays(PLANNING_LEAVE_STATUSES, hrIds, range, isPlanningLeave);
+}
+
+export function isPlanningLeave(row: Record<string, unknown>): boolean {
+  if (row.status === "approved") return true;
+  return row.status === "pending_hr" && row.manager_decision === "approved";
 }
 
 /**

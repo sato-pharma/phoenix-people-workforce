@@ -4,6 +4,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { loadManagerPlanHalfDays, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeVacationType, vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -199,7 +200,8 @@ async function loadLeaveItems(access: AccessContext, start: string, end: string)
       (row) => ({
         id: `leave-${row.id}`,
         source: "leave" as const,
-        title: `My leave${row.vacation_type ? ` (${row.vacation_type})` : ""}`,
+        // The leave's name ("Annual Vacation"), never its stored key ("annual").
+        title: `My leave (${vacationTypeLabel(normalizeVacationType(row.vacation_type))})`,
         startDate: row.start_date,
         endDate: row.end_date ?? row.start_date,
         category: "other" as const,
