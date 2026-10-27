@@ -235,6 +235,8 @@ export type CrmFrequency = {
   inProgress: boolean;
   /** The territories read. */
   territories: number;
+  /** Every territory of the team; above `territories` when only the most visited were read. */
+  teamTerritories: number;
   rows: CrmGradeFrequencyRow[];
   totals: { customers: number; under: number; onTarget: number; over: number; noTarget: number };
   /** Visits to customers not yet validated, counted in nothing — said beside the table. */
@@ -244,6 +246,19 @@ export type CrmFrequency = {
 
 /** Territories read for one manager's team frequency (one Frequency report call each). */
 export const CRM_FREQUENCY_MAX_TERRITORIES = 15;
+
+/**
+ * PURE. A wider team's most visited territories, most visits first; a tie keeps the team's own order and a
+ * territory with no visit comes last. Owner, 2026-10-27: "show the most frequent 15" — the section names
+ * how many of the team it read, so the part never reads as the whole.
+ */
+export function busiestTerritories<T extends { seatId: string }>(seats: readonly T[], visits: ReadonlyMap<string, number>, max: number): T[] {
+  return seats
+    .map((seat, index) => ({ seat, index, visits: visits.get(seat.seatId) ?? 0 }))
+    .sort((a, b) => b.visits - a.visits || a.index - b.index)
+    .slice(0, max)
+    .map((entry) => entry.seat);
+}
 
 const GRADE_ORDER: readonly (PhoenixCrmGrade | null)[] = ["A", "B", "C", null];
 const LIST_ORDER: readonly PhoenixCrmDoctorListType[] = ["AM", "PM"];
@@ -281,6 +296,8 @@ export function shapeFrequency(input: {
   month: string;
   inProgress: boolean;
   reports: readonly { rows: readonly CustomerFrequencyRow[]; awaitingValidation: number; leaveUnread: boolean }[];
+  /** Every territory of the team, when only its most visited were read; the reports' count otherwise. */
+  teamTerritories?: number;
 }): CrmInsight<CrmFrequency> {
   const all = input.reports.flatMap((report) => report.rows);
   if (all.length === 0) return { state: "empty" };
@@ -290,6 +307,7 @@ export function shapeFrequency(input: {
       month: input.month,
       inProgress: input.inProgress,
       territories: input.reports.length,
+      teamTerritories: Math.max(input.teamTerritories ?? 0, input.reports.length),
       rows: gradeFrequencyRows(all),
       totals: customerFrequencyTotals(all),
       awaitingValidation: input.reports.reduce((sum, report) => sum + report.awaitingValidation, 0),
@@ -416,19 +434,32 @@ export async function loadEmployee360CrmInsights(input: {
     ? settle(async () => {
         const viewer = await viewerOfSubject();
         if (!viewer) return { state: "empty" };
-        const seats = input.category === "medical-rep" ? viewer.ownTerritories : viewer.scopeTerritories;
-        if (seats.length === 0) return { state: "empty" };
-        // A team wider than the cap would be a partial answer that reads as a whole one: not drawn.
-        if (seats.length > CRM_FREQUENCY_MAX_TERRITORIES) return { state: "empty" };
-        const { loadCustomerFrequencyReport } = await import("@/lib/phoenix-crm/server/reports");
+        const team = input.category === "medical-rep" ? viewer.ownTerritories : viewer.scopeTerritories;
+        if (team.length === 0) return { state: "empty" };
+        const { countValidatedVisitsBySeat, loadCustomerFrequencyReport } = await import("@/lib/phoenix-crm/server/reports");
         // The Frequency report reads one calendar month: the month the period ends in (today's, at most).
         const lastDay = input.to > viewer.cairoToday ? viewer.cairoToday : input.to;
         const month = lastDay.slice(0, 7);
+        // A team wider than the cap reads its most visited territories, and says how many of the team that is —
+        // one light count first, so the database still carries at most the cap's Frequency reports.
+        const seats =
+          team.length > CRM_FREQUENCY_MAX_TERRITORIES
+            ? busiestTerritories(
+                team,
+                await countValidatedVisitsBySeat(
+                  viewer,
+                  team.map((seat) => seat.seatId),
+                  month,
+                ),
+                CRM_FREQUENCY_MAX_TERRITORIES,
+              )
+            : team;
         const reports = await Promise.all(seats.map((seat) => loadCustomerFrequencyReport(viewer, { seatId: seat.seatId, month })));
         return shapeFrequency({
           month,
           inProgress: reports[0]?.month.inProgress ?? false,
           reports: reports.map((report) => ({ rows: report.rows, awaitingValidation: report.awaitingValidation, leaveUnread: report.leaveUnread })),
+          teamTerritories: team.length,
         });
       })
     : Promise.resolve(null);

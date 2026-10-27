@@ -1228,6 +1228,44 @@ export type CustomerFrequencyReportView = {
   leaveUnread: boolean;
 };
 
+/**
+ * How many validated visits each territory logged in the month — the count the Frequency report scores, read
+ * as one light `seat_id` column for many territories at once. Employee 360 uses it to pick a wide team's most
+ * visited territories before it reads their Frequency reports one by one (owner, 2026-10-27: "show the most
+ * frequent 15"). Same table, test filter and month bounds as `visitDaysByCustomer`.
+ */
+export async function countValidatedVisitsBySeat(
+  viewer: PhoenixCrmViewer,
+  seatIds: readonly string[],
+  rawMonth: string,
+): Promise<Map<string, number>> {
+  const monthResult = resolveReportMonth({ month: rawMonth, cairoToday: viewer.cairoToday });
+  if (!monthResult.ok) throw validationError(monthResult.error);
+  const month = monthResult.value;
+  const counts = new Map<string, number>();
+  if (seatIds.length === 0) return counts;
+  // Groups of territories, as every many-territory read here walks them (`readSeatGroups`).
+  const rows = await readSeatGroups([...seatIds], 200, (batch) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select("id, seat_id")
+          .in("seat_id", batch)
+          .eq("is_test", reportIncludesTest(viewer, undefined))
+          .eq("customer_validated", true)
+          .gte("visit_date", month.monthStart)
+          .lte("visit_date", month.monthEnd),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  for (const row of rows) {
+    const seatId = textOrNull(row.seat_id);
+    if (seatId) counts.set(seatId, (counts.get(seatId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export async function loadCustomerFrequencyReport(
   viewer: PhoenixCrmViewer,
   raw: ReportFilterInput,

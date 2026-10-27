@@ -317,7 +317,12 @@ export function CrmFrequencySection({ insight }: { insight: CrmInsight<CrmFreque
     );
   }
   const value = insight.value;
-  const scope = value.territories > 1 ? ` across ${intFmt.format(value.territories)} territories of the team` : "";
+  const scope =
+    value.teamTerritories > value.territories
+      ? ` across the ${intFmt.format(value.territories)} most visited of the team's ${intFmt.format(value.teamTerritories)} territories`
+      : value.territories > 1
+        ? ` across ${intFmt.format(value.territories)} territories of the team`
+        : "";
   const sub = `Doctors on the list in ${monthLabel(value.month)}${value.inProgress ? " (month in progress)" : ""}${scope}, against the visits a month their grade asks for. Over the number is a deviation too, never a bonus.`;
   return (
     <Shell icon={Repeat} title="Visit frequency by grade" sub={sub}>
