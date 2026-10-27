@@ -78,12 +78,17 @@ export async function runEmployee360CampaignMixTests() {
     "improving",
     "months with no productive visit are skipped at both ends",
   );
+  // A fragment of a month is not an end of the trend: Ragaa Mosaad's one-visit October read "Campaign rising" (55% → 100%).
+  const ragaa = campaignMixTrendOf([point("2026-01", 45, 55), point("2026-09", 94, 6), point("2026-10", 0, 1)]);
+  assert.equal(ragaa?.direction, "improving", "the trend ends at September, never at a one-visit October");
+  assert.equal(ragaa?.toMonth, "2026-09");
+  assert.equal(campaignMixTrendOf([point("2026-08", 3, 2), point("2026-09", 2, 7)]), null, "two fragments make no trend");
 
   // ── the summary line says it in words ──
   const allRegular = summarizeVisits(
     [
-      ...Array.from({ length: 6 }, (_, i) => visit({ visit_date: `2026-08-0${i + 1}`, contact_crm_id: i + 1 })),
-      ...Array.from({ length: 6 }, (_, i) => visit({ visit_date: `2026-09-0${i + 1}`, contact_crm_id: i + 1 })),
+      ...Array.from({ length: 10 }, (_, i) => visit({ visit_date: `2026-08-${String(i + 1).padStart(2, "0")}`, contact_crm_id: i + 1 })),
+      ...Array.from({ length: 10 }, (_, i) => visit({ visit_date: `2026-09-${String(i + 1).padStart(2, "0")}`, contact_crm_id: i + 1 })),
     ],
     WINDOW,
   );

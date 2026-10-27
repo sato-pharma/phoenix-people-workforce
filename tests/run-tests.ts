@@ -754,6 +754,8 @@ import { runEmployee360CampaignMixTests } from "./employee-360-campaign-mix.test
 import { runEmployee360LiveFieldBenchmarksTests } from "./employee-360-live-field-benchmarks.test.ts";
 import { runEmployee360CrmInsightsTests } from "./employee-360-crm-insights.test.ts";
 import { runEmployee360CatchUpTests } from "./employee-360-catch-up.test.ts";
+import { runEmployee360DvSplitTests } from "./employee-360-dv-split.test.ts";
+import { runEmployee360NumberAuditTests } from "./employee-360-number-audit.test.ts";
 import { runEmployee360PolishTests } from "./employee-360-polish.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
@@ -4469,6 +4471,8 @@ await runTest("employee 360: 100% regular is the best case — no healthy band, 
 await runTest("employee 360: the company figures (reps with linked sales, company achievement, reps ever coached) are computed live and dated — no written-down figure renders", runEmployee360LiveFieldBenchmarksTests);
 await runTest("employee 360: Phoenix CRM plan compliance and visit frequency by grade come from the CRM's own reports, drawn only with data, a failed read says \"Could not be read\" (never 0), grade rows A to C then no grade, AM before PM", runEmployee360CrmInsightsTests);
 await runTest("employee 360 catch-up: an expense counts what it pays and a rejected trip is left out, no variance or fraud signal, an own visit with a senior is never single, conducted double visits by kind without counting a Phoenix visit twice, own visits join field presence, the Training Manager by job function, doubles received by kind, a failed plan read is \"—\" never 0, no fourth AM/PM bucket, working days Saturday to Wednesday less holidays", runEmployee360CatchUpTests);
+await runTest("employee 360 double-visits conducted add up: a campaign double visit counts in its half, AM + PM + Pharmacies + awaiting validation is the headline, and the reps list prints the visits matched to no employee on a line of their own", runEmployee360DvSplitTests);
+await runTest("employee 360 number audit: a Training Manager's sessions include a leaver's, before/after impact uses only whole observed spans and no data is never zero, a double visit with an unmatched partner is counted and every visitor accounted for, expenses say where the record stops, unpublished family months are named", runEmployee360NumberAuditTests);
 await runTest("employee 360 polish: a section whose read fails is named on the page, the rep's own report carries the Phoenix CRM sections, marketing requests read by type and customer, one flat avatar, square corners, no glow or hover lift, cards keep their depth, admin loading states, a not-found line that echoes no id", runEmployee360PolishTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);

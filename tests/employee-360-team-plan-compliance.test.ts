@@ -85,7 +85,7 @@ export function runEmployee360TeamPlanComplianceTests() {
   // show it." A Regional or National Sales Manager's Team Compliance kept Medical Reps only, so the
   // district managers under him — their probation, weekly plans and no-activity flags — were absent.
   const person = (hrId: string, jobTitle: string) =>
-    ({ hrId, jobTitle, positionTitle: jobTitle, displayName: hrId, fullName: hrId }) as EmployeeDirectoryRow;
+    ({ hrId, jobTitle, positionTitle: jobTitle, displayName: hrId, fullName: hrId, employmentStatus: "active" }) as EmployeeDirectoryRow;
   const nsm = person("N-1", "National Sales Manager");
   const rsm = person("R-1", "Regional Manager");
   const dsm = person("D-1", "District Manager");
@@ -115,6 +115,18 @@ export function runEmployee360TeamPlanComplianceTests() {
     ![...members.reps, ...members.managers].some((e) => e.hrId === "P-1"),
     "only the field chain's managers join — a Product Manager is not a district or regional manager",
   );
+  // Only the people working today are on the team: Dina Hamdy's page read "Plans 3 / 10" over a team of four.
+  const resigned = { ...person("M-2", "Medical Representative"), employmentStatus: "resigned" } as EmployeeDirectoryRow;
+  const onLeave = { ...person("M-3", "Medical Representative"), employmentStatus: "on_leave" } as EmployeeDirectoryRow;
+  assert.deepEqual(
+    selectTeamLifecycleMembers({ subjectHrId: "D-1", teamHrIds: ["M-1", "M-2", "M-3"], employees: [rep, resigned, onLeave] }).reps.map((e) => e.hrId),
+    ["M-1", "M-3"],
+    "a rep who has left is not on the team; a rep on leave still is",
+  );
+  const lifecycleCode = stripComments(readFileSync("src/lib/employee-360/team-lifecycle.ts", "utf8"));
+  assert.match(lifecycleCode, /probationDaysRemaining\(/, "probation is counted by the tracker's Cairo-calendar helper");
+  assert.doesNotMatch(lifecycleCode, /"crm"/, "a CRM-data deduction is not a no-activity flag");
+  assert.match(lifecycleCode, /if \(error\) throw error;\s*for \(const row of data/, "a failed flag read is \"—\", never zero");
   const forRegional = selectTeamLifecycleMembers({
     subjectHrId: "r-1",
     teamHrIds: ["R-1", "D-1", "M-1"],

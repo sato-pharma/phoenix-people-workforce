@@ -16,7 +16,9 @@ import { buildTrainingManagerCoachingComparison } from "@/lib/coaching/analytics
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { todayInCairo } from "@/lib/date-only";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamHealthRep = {
@@ -32,6 +34,8 @@ export type TeamHealthRep = {
 
 export type TeamHealthSummary = {
   hasData: boolean;
+  /** The coaching read failed: the section says so, never "every rep never coached" (2026-10-27). */
+  unavailable?: boolean;
   repCount: number;
   // Coaching
   coachedCount: number;
@@ -88,7 +92,11 @@ export async function getEmployee360TeamHealth(input: {
   });
   if (teamReps.length === 0) return EMPTY;
 
-  const repHrIds = teamReps.map((e) => e.hrId.toUpperCase());
+  // Every stored spelling of each id: production keeps hr_id mixed-case, and an upper-cased filter matched nobody.
+  const repHrIds = Array.from(new Set(teamReps.flatMap((e) => hrIdLookupKeys(e.hrId))));
+  // Today in Cairo: a report dated ahead is not coaching delivered yet, as on the rep's own section.
+  const today = todayInCairo();
+  const lastDay = input.window.to < today ? input.window.to : today;
   let reports: CoachingReportSummaryRow[] = [];
   try {
     // PostgREST folds every .in() value into the request URL; an unbatched array of a few
@@ -98,12 +106,13 @@ export async function getEmployee360TeamHealth(input: {
     const rawReports: unknown[] = [];
     for (let i = 0; i < repHrIds.length; i += 100) {
       const batch = repHrIds.slice(i, i + 100);
-      const { data } = await getSupabaseAdmin()
+      const { data, error } = await getSupabaseAdmin()
         .from("coaching_reports_summary")
         .select("medical_rep_hr_id, coaching_date, final_score_percent, coach_name, coach_hr_id, status")
         .in("medical_rep_hr_id", batch)
         .gte("coaching_date", input.window.from)
-        .lte("coaching_date", input.window.to);
+        .lte("coaching_date", lastDay);
+      if (error) throw new Error(error.message);
       rawReports.push(...(data ?? []));
     }
     // buildTrainingManagerCoachingComparison only reads these six fields.
@@ -118,8 +127,13 @@ export async function getEmployee360TeamHealth(input: {
           status: String((r as Record<string, unknown>).status ?? ""),
         }) as unknown as CoachingReportSummaryRow,
     );
-  } catch {
-    reports = [];
+  } catch (error) {
+    // A failed read is never "every rep never coached".
+    logError("Employee 360 team health coaching read failed", {
+      error,
+      labels: { event: "employee_360_team_health_failed" },
+    });
+    return { ...EMPTY, unavailable: true, repCount: teamReps.length };
   }
 
   const dvKeys = new Set(

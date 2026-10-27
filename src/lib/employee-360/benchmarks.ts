@@ -12,7 +12,8 @@
 // comparison; totals are context only and must be shown with a tenure note.
 
 export const EMPLOYEE_360_BENCHMARKS = {
-  windowLabel: "Company avg · 2026 YTD",
+  // The window the figures below were measured over — NOT the period on screen; every tile that prints one names it.
+  windowLabel: "Company avg · 1 Jan to mid-Jul 2026",
   productiveVisits: 685,
   regularVisits: 489,
   campaignVisits: 196,

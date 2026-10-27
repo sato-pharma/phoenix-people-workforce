@@ -24,10 +24,12 @@
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { resolveEmployee360RoleCategory, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 import { countTeamPlanCompliance, type RepWeekPlanRow } from "@/lib/employee-360/team-plan-compliance";
-import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isActiveLifecycleStatus, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadManagerPlansInRange } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { probationDaysRemaining } from "@/lib/probation/date";
+import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
 import { ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -47,9 +49,9 @@ export type TeamLifecycleSummary = {
   planUnavailableReason: string | null;
   // Field discipline — confirmed no-activity deduction flags in the window's months.
   disciplineHasData: boolean;
-  disciplineFlaggedReps: number; // distinct team members with any live field-workforce flag
+  disciplineFlaggedReps: number; // distinct team members with a live no-activity flag
   disciplineNoActivityDays: number; // total confirmed no-activity days across the team
-  // Probation (hire_date + 90 > today)
+  // Probation — the tracker's own rule: a Medical Rep still inside hire + 90 days, counted on the Cairo calendar
   probationCount: number;
   probationReps: TeamProbationRep[];
 };
@@ -60,6 +62,8 @@ const TEAM_MANAGER_CATEGORIES = new Set<Employee360RoleCategory>(["district-mana
 /**
  * Split the subject's subtree into the Medical Reps and the district/regional managers beneath him.
  * The subject himself is never his own team member, and a person listed twice is counted once.
+ * Only the people working today are on the team (2026-10-27): Dina Hamdy's page read "Plans 3 / 10" because six
+ * people who had left still named her as their manager; her team is four, so the true figure is 3 / 4.
  * Pure, so the membership rule is pinned without a database.
  */
 export function selectTeamLifecycleMembers(input: {
@@ -77,6 +81,7 @@ export function selectTeamLifecycleMembers(input: {
   for (const e of input.employees) {
     const key = canonicalHrIdKey(e.hrId);
     if (key == null || !teamKeys.has(key) || key === subjectKey || seen.has(key)) continue;
+    if (!isActiveLifecycleStatus(e.employmentStatus)) continue;
     const category = resolveEmployee360RoleCategory(e.jobTitle ?? e.positionTitle);
     if (category === "medical-rep") reps.push(e);
     else if (category && TEAM_MANAGER_CATEGORIES.has(category)) managers.push(e);
@@ -100,8 +105,6 @@ const EMPTY: TeamLifecycleSummary = {
   probationCount: 0,
   probationReps: [],
 };
-
-const PROBATION_DAYS = 90;
 
 /** The "YYYY-MM" month keys spanned by the window (capped at 24). */
 function monthKeysIn(from: string, to: string): string[] {
@@ -147,16 +150,14 @@ export async function getEmployee360TeamLifecycle(input: {
     fetchFieldDiscipline([...compactToKey.keys()], months, compactToKey),
   ]);
 
-  // Probation — canonical rule: hire_date + 90 days > today.
+  // Probation — the tracker's rule (probation/service.ts): Medical Reps only (owner, 2026-07-17), days left counted
+  // on the Cairo calendar by the canonical helper. A hand-rolled UTC count here read 5 for Dina where the tracker reads 2.
   const today = input.now ? new Date(input.now) : new Date();
   const probationReps: TeamProbationRep[] = [];
-  for (const e of teamPeople) {
-    if (!e.hireDate) continue;
-    const end = new Date(`${String(e.hireDate).slice(0, 10)}T00:00:00Z`);
-    if (Number.isNaN(end.getTime())) continue;
-    end.setUTCDate(end.getUTCDate() + PROBATION_DAYS);
-    const daysRemaining = Math.ceil((end.getTime() - today.getTime()) / 86_400_000);
-    if (daysRemaining > 0) {
+  for (const e of teamReps) {
+    if (!isMedicalRepresentativeTitle(e.positionTitle ?? e.jobTitle)) continue;
+    const daysRemaining = probationDaysRemaining(e.hireDate, today);
+    if (daysRemaining != null && daysRemaining > 0) {
       probationReps.push({ hrId: e.hrId, name: e.displayName || e.fullName || e.hrId, daysRemaining });
     }
   }
@@ -323,29 +324,29 @@ async function fetchFieldDiscipline(
     const flagged = new Set<string>();
     for (let i = 0; i < compactKeys.length; i += 100) {
       const batch = compactKeys.slice(i, i + 100);
-      // Unified Deductions module. Legacy governance filed field-workforce discipline
-      // under source_module = "FIELD_WORKFORCE"; here it splits into two categories —
-      // `no_records_activity` (the old deduction_type = "no_activity") and `crm`. Both
-      // count toward a flagged rep; only `no_records_activity` counts as no-activity days.
-      const { data } = await getSupabaseAdmin()
+      // Unified Deductions module: a confirmed no-activity day is category `no_records_activity` (legacy
+      // deduction_type = "no_activity"). The `crm` category is a CRM-data deduction, not an absence — counting it
+      // here put three people on Dina's "No-activity flags" tile who had no no-activity day at all (2026-10-27).
+      const { data, error } = await getSupabaseAdmin()
         .from("deductions_candidates")
-        .select("employee_hr_id_compact, category, dates")
-        .in("category", ["no_records_activity", "crm"])
+        .select("employee_hr_id_compact, dates")
+        .eq("category", "no_records_activity")
         .is("superseded_at", null)
         .in("employee_hr_id_compact", batch)
         .in("month_key", monthKeys);
+      // A failed read is "—", never a zero that says nobody was flagged.
+      if (error) throw error;
       for (const row of data ?? []) {
         const r = row as Record<string, unknown>;
         const key = compactToKey.get(String(r.employee_hr_id_compact ?? ""));
         if (!key) continue;
         flagged.add(key);
-        if (String(r.category ?? "") === "no_records_activity") {
-          noActivityDays += Array.isArray(r.dates) ? Math.max(1, r.dates.length) : 1;
-        }
+        noActivityDays += Array.isArray(r.dates) ? Math.max(1, r.dates.length) : 1;
       }
     }
     return { hasData: true, flaggedReps: flagged.size, noActivityDays };
-  } catch {
+  } catch (error) {
+    console.error("[employee-360] the team's no-activity flags could not be read", error);
     return { hasData: false, flaggedReps: 0, noActivityDays: 0 };
   }
 }

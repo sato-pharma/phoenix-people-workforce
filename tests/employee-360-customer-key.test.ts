@@ -74,17 +74,39 @@ export async function runEmployee360CustomerKeyTests() {
     { month: "2026-08", sales: 40_000 },
     { month: "2026-09", sales: 20_000 },
   ];
-  const own = windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: false, productiveVisits: 30, distinctCustomers: 12 });
+  // 30 productive visits over 12 customers, all inside the window.
+  const visitsIn = (count: number, customers: number, date = "2026-09-01") =>
+    Array.from({ length: count }, (_, i) => ({ date, customerKey: `id:${i % customers}` }));
+  const own = windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: false, visits: visitsIn(30, 12) });
   assert.equal(own.windowSalesValue, 60_000, "August + September only — the window runs 23 Aug to 21 Sep");
   assert.equal(own.salesPerVisit, 2_000, "60,000 over 30 visits, never the 1,010,000 since January");
   assert.equal(own.salesPerCustomer, 5_000);
+  assert.deepEqual(own.salesMonths, { from: "2026-08", to: "2026-09" });
 
-  const team = windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: true, productiveVisits: 30, distinctCustomers: 12 });
+  const team = windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: true, visits: visitsIn(30, 12) });
   assert.equal(team.salesPerVisit, null, "a team roll-up's sales over the manager's own visits describe nobody");
   assert.equal(team.salesPerCustomer, null);
   assert.equal(team.windowSalesValue, 60_000, "the expense ratio still gets the window's sales");
 
-  const quiet = windowSalesEfficiency({ monthly, window: { from: "2026-10-01", to: "2026-10-31" }, isTeamRollup: false, productiveVisits: 10, distinctCustomers: 4 });
+  const quiet = windowSalesEfficiency({ monthly, window: { from: "2026-10-01", to: "2026-10-31" }, isTeamRollup: false, visits: visitsIn(10, 4, "2026-10-05") });
   assert.equal(quiet.salesPerVisit, null, "no sales in the window is no ratio, not zero");
-  assert.equal(windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: false, productiveVisits: 0, distinctCustomers: 0 }).salesPerVisit, null);
+  assert.equal(windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: false, visits: [] }).salesPerVisit, null);
+
+  // ── The visits are cut to the months the sales cover (2026-10-27) ──
+  // A year-to-date window: sales are published July to September only, so January to June's visits and
+  // October's are not divided into them. 150 visits Jan–Jun and 20 in October would have tripled the divisor.
+  const ytd = { from: "2026-01-01", to: "2026-10-27" };
+  const published = [
+    { month: "2026-07", sales: 30_000 },
+    { month: "2026-08", sales: 30_000 },
+    { month: "2026-09", sales: 30_000 },
+  ];
+  const ytdVisits = [
+    ...visitsIn(150, 40, "2026-03-10"),
+    ...visitsIn(45, 9, "2026-08-10"),
+    ...visitsIn(20, 5, "2026-10-12"),
+  ];
+  const matched = windowSalesEfficiency({ monthly: published, window: ytd, isTeamRollup: false, visits: ytdVisits });
+  assert.equal(matched.salesPerVisit, 2_000, "90,000 over the 45 visits of July to September, never over 215");
+  assert.equal(matched.salesPerCustomer, 10_000, "over the 9 customers of those months, never the 40 of March");
 }

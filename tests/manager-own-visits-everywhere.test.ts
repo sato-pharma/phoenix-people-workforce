@@ -10,7 +10,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * different color, and separate then the total visits … same for district managers, and same in everywhere."*
  *
  * Pins the Employee 360 half and the readers that carry his own visits out of their table:
- *   1. a conducted double visit is bucketed AM · PM · Pharmacies by the golden rule's one helper, a campaign in none;
+ *   1. a conducted double visit is bucketed AM · PM · Pharmacies by the golden rule's one helper, a campaign in its half;
  *   2. the leadership section reads his own visits and ride-alongs through the one door out of their tables
  *      (`loadManagerVisitDetails`, read once by the profile), and a failed read is "—", never a zero;
  *   3. the portal Team Calendar hangs them on his day cells through the same door.
@@ -22,7 +22,7 @@ export function runManagerOwnVisitsEverywhereTests(): void {
   assert.equal(conductedVisitBucket({ ...row, ampm: "PM" }), "PM");
   assert.equal(conductedVisitBucket({ ...row, ampm: "Pharmacy" }), "Pharmacies", "a pharmacy he joined is a pharmacy, never a half");
   assert.equal(conductedVisitBucket({ ...row, speciality: "Pharmacy" }), "Pharmacies");
-  assert.equal(conductedVisitBucket({ ...row, visit_type: -8 }), null, "a campaign double visit is in no figure");
+  assert.equal(conductedVisitBucket({ ...row, visit_type: -8 }), "AM", "a campaign double visit counts in its half, as on the rep's page");
 
   // ── 2. Employee 360 reads his own visits through the one door, and never invents a zero ────────────────────────
   const service = stripComments(readFileSync("src/lib/employee-360/deep-service.ts", "utf8"));

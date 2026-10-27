@@ -92,6 +92,8 @@ export type Employee360Subject = {
   managerName: string | null;
   employmentStatus: string | null;
   hireDate: string | null;
+  /** The last working day of someone who has left; null while they work here. Optional for older callers. */
+  leftOn?: string | null;
 };
 
 const intFmt = new Intl.NumberFormat("en-US");
@@ -115,6 +117,12 @@ const monthOnlyFmt = new Intl.DateTimeFormat("en-US", { month: "short", timeZone
 const dayLabelFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /** "2026-08" → "Aug 2026". */
+/** "2026-10" → "2026-09"; "2026-01" → "2025-12". */
+function previousMonthKey(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+
 function monthLabel(period: string): string {
   const [year, month] = period.split("-").map(Number);
   if (!year || !month) return period;
@@ -146,8 +154,15 @@ function dayLabel(value: string): string {
 function companyAvg(value: string | number): string {
   return `${value} company avg`;
 }
+/**
+ * A FIXED company average from benchmarks.ts — measured once over 1 January to mid-July 2026, never over the period
+ * on screen — so it names its own window. Unlabelled, a one-month total read as short of a six-month average.
+ */
+function fixedCompanyAvg(value: string | number): string {
+  return `${value} company avg, Jan to mid-Jul 2026`;
+}
 
-const MOMENTUM_LABEL: Record<Employee360Profile["momentumTrend"], string> = {
+const MOMENTUM_LABEL: Record<NonNullable<Employee360Profile["momentumTrend"]>, string> = {
   up: "rising",
   down: "falling",
   flat: "steady",
@@ -161,11 +176,14 @@ function salesCoverageText(field: FieldBenchmarks): string | null {
   return `${intFmt.format(field.repsWithSales)} of ${intFmt.format(field.fieldReps)} reps have linked sales${field.salesThroughLabel ? ` through ${field.salesThroughLabel}` : ""}`;
 }
 
-function tenureLabel(hireDate: string | null): string | null {
+function tenureLabel(hireDate: string | null, leftOn?: string | null): string | null {
   if (!hireDate) return null;
   const start = new Date(hireDate);
   if (Number.isNaN(start.getTime())) return null;
-  const months = Math.max(0, Math.round((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)));
+  // Someone who has left served until their last day — the count stops there.
+  const end = leftOn ? new Date(leftOn) : null;
+  const endMs = end && !Number.isNaN(end.getTime()) ? end.getTime() : Date.now();
+  const months = Math.max(0, Math.round((endMs - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44)));
   if (months < 12) return `${months} mo tenure`;
   return `${(months / 12).toFixed(1)} yr tenure`;
 }
@@ -190,7 +208,7 @@ const KPI_EXPLAIN: Record<string, string> = {
   "GPS check-ins": "How many times their phone recorded a GPS location while in the field.",
   "Check-in : visit": "How many GPS check-ins there are for each visit — higher means visits are better backed up by location data.",
   "Check-in coverage": "The share of their active visiting days that have at least one GPS check-in. The GPS feed is partial, so this is evidence, never a score.",
-  "Late-night tail": "The share of GPS check-ins that happened very late (10pm–1am); unusually high can be a red flag.",
+  "Late-night tail": "The share of GPS check-ins that happened very late (10pm to 2am); unusually high can be a red flag.",
   "Field window": "The typical time of day their fieldwork starts and ends, based on GPS check-ins.",
   "Check-ins / active day": "On active days, the average number of GPS check-ins per day.",
   "Uncorroborated days": "Days they logged a visit but their phone recorded no GPS location to back it up. The GPS feed is partial and can stop for a working rep, so this is evidence, never a score.",
@@ -428,8 +446,10 @@ function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) 
 
 function fmtHourView(h: number | null): string {
   if (h == null) return "—";
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
+  // Round the whole clock to the minute first, so 09:59.6 reads 10:00 and never "09:60".
+  const total = Math.round(h * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
@@ -827,7 +847,7 @@ export function Employee360View({
 }) {
   const b = summary.benchmarks;
   const salesCoverage = salesCoverageText(summary.fieldBenchmarks);
-  const tenure = tenureLabel(subject.hireDate);
+  const tenure = tenureLabel(subject.hireDate, subject.leftOn);
   const monthlyMax = Math.max(1, ...summary.monthly.map((m) => m.regular + m.campaign));
   const trendCopy = campaignTrendCopy(summary.campaignTrend);
   const hourMax = Math.max(1, ...summary.hourHistogram);
@@ -845,7 +865,8 @@ export function Employee360View({
       doublesReceived: summary.doublesReceived,
       leadershipHasData: Boolean(summary.leadership?.hasData),
       salesHasData: summary.sales.hasData,
-      expensesHaveData: summary.expenses.payroll.hasData || summary.expenses.outstation.hasData,
+      // A failed read stays visible as a section that says so, never a section silently dropped.
+      expensesHaveData: summary.expenses.payroll.hasData || summary.expenses.outstation.hasData || Boolean(summary.expenses.unavailable),
       crmPlanCompliance: crmInsightState(crmInsights?.planCompliance),
       crmFrequency: crmInsightState(crmInsights?.frequency),
     },
@@ -951,25 +972,37 @@ export function Employee360View({
         </SectionHeader>
         <SummaryLine text={summary.visitsSummaryText} />
         <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
-          <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={companyAvg(intFmt.format(b.productiveVisits))} hint={tenure ? "total — read with tenure" : undefined} />
-          <KpiTile label="Visits / active day" value={ratio1(summary.visitsPerActiveDay)} benchmark={companyAvg(b.visitsPerActiveDay)} goodWhenAbove={summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay} />
-          <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={companyAvg(b.activeDays)} />
-          <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={companyAvg(b.distinctCustomers)} />
-          <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={companyAvg(intFmt.format(b.regularVisits))} />
-          <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={companyAvg(intFmt.format(b.campaignVisits))} />
+          <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.productiveVisits))} hint={tenure ? "total — read with tenure" : undefined} />
+          <KpiTile label="Visits / active day" value={ratio1(summary.visitsPerActiveDay)} benchmark={fixedCompanyAvg(b.visitsPerActiveDay)} goodWhenAbove={summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay} />
+          <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={fixedCompanyAvg(b.activeDays)} />
+          <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={fixedCompanyAvg(b.distinctCustomers)} />
+          <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.regularVisits))} />
+          <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.campaignVisits))} />
           {plan.showDoublesReceived ? (
-            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint={`${onDays(summary.doublesReceivedDays, summary.doublesReceived)}${doublesReceivedHint(summary.doublesReceivedByKind)}`} />
+            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={fixedCompanyAvg(b.doublesReceived)} hint={`${onDays(summary.doublesReceivedDays, summary.doublesReceived)}${doublesReceivedHint(summary.doublesReceivedByKind)}`} />
           ) : null}
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
 
         <div className="mt-5 grid border-l border-t border-slate-200 sm:grid-cols-3">
-          <KpiTile label="Last 30 days" value={intFmt.format(summary.last30)} hint={`previous 30 days: ${intFmt.format(summary.prev30)} · ${MOMENTUM_LABEL[summary.momentumTrend]}`} goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null} />
+          {/* Each span is exactly 30 days and counted only when the period holds it — "—" and the reason, never a zero nobody read. */}
+          <KpiTile
+            label="Last 30 days"
+            value={summary.last30 == null ? "—" : intFmt.format(summary.last30)}
+            hint={
+              summary.last30 == null
+                ? "The period is shorter than 30 days"
+                : summary.prev30 == null || summary.momentumTrend == null
+                  ? "The period is shorter than 60 days, so there is no previous 30 days to compare"
+                  : `previous 30 days: ${intFmt.format(summary.prev30)} · ${MOMENTUM_LABEL[summary.momentumTrend]}`
+            }
+            goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null}
+          />
           <KpiTile label="Avg visits / customer" value={ratio1(summary.avgVisitsPerCustomer)} hint={`${summary.repeatCustomers} repeat · ${summary.oneTimeCustomers} one-time`} />
           <KpiTile
             label="Utilization"
             value={pct(summary.utilization)}
-            hint={`${summary.activeDays}/${summary.workingDaysInWindow} working days, Saturday to Wednesday less national holidays${summary.holidaysComplete === false ? " (the holiday calendar could not be read, so holidays may still be counted)" : ""}`}
+            hint={`${summary.workingActiveDays ?? "—"}/${summary.workingDaysInWindow} working days, Saturday to Wednesday less national holidays${summary.holidaysComplete === false ? " (the holiday calendar could not be read, so holidays may still be counted)" : ""}`}
           />
         </div>
 
@@ -979,6 +1012,10 @@ export function Employee360View({
             <div className="mt-3 text-xs text-slate-400">
               Single visits {intFmt.format(summary.singleVisits)}
               {plan.showDoublesReceived ? ` · Double visits ${intFmt.format(summary.doublesReceived)}${summary.doublesReceived > 0 ? ` on ${daysWord(summary.doublesReceivedDays)}` : ""}` : ""}
+            </div>
+            {/* The visit's own half, so it is read whether or not the rep ever sent a GPS signal. */}
+            <div className="mt-1 text-xs text-slate-400">
+              Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {formatPharmacyFigure(visitSplitOf(summary), { formatNumber: (value) => intFmt.format(value), numberFirst: true })}</span>
             </div>
           </div>
           <div>
@@ -1065,9 +1102,9 @@ export function Employee360View({
             <SummaryLine text={summary.checkinSummaryText} />
             <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
               <KpiTile label="GPS check-ins" value={intFmt.format(summary.checkinCount)} />
-              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={companyAvg(b.checkinToVisitRatio)} hint="GPS corroboration of visits" />
+              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={fixedCompanyAvg(b.checkinToVisitRatio)} hint="GPS corroboration of visits" />
               <KpiTile label="Check-in coverage" value={pct(summary.checkinCoverage)} hint="days with GPS ÷ active days" />
-              <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–01:00" />
+              <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–02:00" />
             </div>
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Check-in time of day (Cairo) — company peaks 14:00–16:00</div>
@@ -1100,9 +1137,6 @@ export function Employee360View({
               </div>
             </div>
 
-            <div className="mt-4 text-xs text-slate-400">
-              Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {formatPharmacyFigure(visitSplitOf(summary), { formatNumber: (value) => intFmt.format(value), numberFirst: true })}</span>
-            </div>
           </>
         )}
       </Card>
@@ -1252,6 +1286,11 @@ function splitLine(split: { am: number; pm: number; pharmacies: number }): strin
   return `AM ${intFmt.format(split.am)} · PM ${intFmt.format(split.pm)} · Pharmacies ${intFmt.format(split.pharmacies)}`;
 }
 
+/** " · 7 awaiting validation" — the ride-alongs in the headline but held out of AM · PM · Pharmacies, so the figures add up. */
+function awaitingValidationTail(count: number | null): string {
+  return count ? ` · ${intFmt.format(count)} awaiting validation` : "";
+}
+
 function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivity; isTM: boolean }) {
   return (
     <Card className={PREMIUM_CARD}>
@@ -1279,7 +1318,8 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
               value={leadership.dvConducted == null ? "—" : intFmt.format(leadership.dvConducted)}
               hint={
                 leadership.dvSplit
-                  ? `${onDays(leadership.dvDays, leadership.dvConducted)}${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`
+                  ? `${onDays(leadership.dvDays, leadership.dvConducted)}${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}` +
+                    awaitingValidationTail(leadership.dvAwaitingValidation)
                   : "the Phoenix CRM visits could not be read just now"
               }
             />
@@ -1322,7 +1362,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
             </div>
           ) : null}
 
-          {leadership.byRep.length > 0 ? (
+          {leadership.byRep.length > 0 || leadership.dvUnmatched > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Reps reached (most-touched first)</div>
               <div className={LIST_BOX}>
@@ -1339,6 +1379,15 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
                     </div>
                   );
                 })}
+                {/* Double visits on a CRM account matched to no employee that day — in the headline, so listed too. */}
+                {leadership.dvUnmatched > 0 ? (
+                  <div className={LIST_ROW}>
+                    <span className={LIST_NAME}>Not matched to an employee</span>
+                    <span className={cn(LIST_SIDE, "tabular-nums")}>
+                      {intFmt.format(leadership.dvUnmatched)} double-visit{leadership.dvUnmatched === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1394,7 +1443,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
       <SectionHeader
         icon={TrendingUp}
         tone="emerald"
-        sub={sales.isTeamRollup ? "Team roll-up — the sum of this manager's reps' sales vs target. Sales lag visits ~2 months." : "Actual sell-in vs target. Values are period-stamped — sales lag visits ~2 months."}
+        sub={sales.isTeamRollup ? "Team roll-up — the sales of every area under this manager, vacant areas included, vs target. Published closing months only. Sales lag visits ~2 months." : "Actual sell-in vs target. Values are period-stamped — sales lag visits ~2 months."}
       >
         Sales &amp; Achievement{sales.isTeamRollup ? " (Team)" : ""}
       </SectionHeader>
@@ -1438,8 +1487,8 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
               goodWhenAbove={sales.targetedMonthsCount > 0 ? sales.monthsHitTarget / sales.targetedMonthsCount >= 0.5 : null}
             />
             <KpiTile label="Growth (1st→latest)" value={sales.growthPct == null ? "—" : `${sales.growthPct >= 0 ? "+" : ""}${Math.round(sales.growthPct)}%`} goodWhenAbove={sales.growthPct == null ? null : sales.growthPct >= 0} />
-            <KpiTile label="Sales / visit" value={sales.salesPerVisit == null ? "—" : compactFmt.format(sales.salesPerVisit)} hint="window months, per productive visit" />
-            <KpiTile label="Sales / customer" value={sales.salesPerCustomer == null ? "—" : compactFmt.format(sales.salesPerCustomer)} hint="window months, per doctor reached" />
+            <KpiTile label="Sales / visit" value={sales.salesPerVisit == null ? "—" : compactFmt.format(sales.salesPerVisit)} hint="published months, per visit in them" />
+            <KpiTile label="Sales / customer" value={sales.salesPerCustomer == null ? "—" : compactFmt.format(sales.salesPerCustomer)} hint="published months, per doctor reached" />
           </div>
           {sales.monthly.length > 1 ? (
             <div className="mt-5">
@@ -1877,7 +1926,7 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
     return (
     <div className="border border-slate-200 p-3.5">
         <div className="text-sm font-bold text-slate-800">{title}</div>
-        <EmptyState>No such events for this employee in the window.</EmptyState>
+        <EmptyState>No such event in the window with {set.windowDays} finished days on both sides of it.</EmptyState>
       </div>
     );
   }
@@ -1899,9 +1948,9 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
     },
     {
       label: "Customers reached",
-      before: intFmt.format(set.before.distinctCustomers),
-      after: intFmt.format(set.after.distinctCustomers),
-      delta: set.after.distinctCustomers - set.before.distinctCustomers,
+      before: set.before.distinctCustomers == null ? "—" : intFmt.format(set.before.distinctCustomers),
+      after: set.after.distinctCustomers == null ? "—" : intFmt.format(set.after.distinctCustomers),
+      delta: set.after.distinctCustomers != null && set.before.distinctCustomers != null ? set.after.distinctCustomers - set.before.distinctCustomers : null,
       goodUp: true,
     },
   ];
@@ -2007,6 +2056,11 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
                     {v.name ?? NAME_NOT_ON_RECORD} · {v.count}{v.isTrainingManager ? " · TM" : ""}
                   </span>
                 ))}
+                {dv.otherVisitors.people > 0 ? (
+                  <span className="border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                    {dv.otherVisitors.people} more {dv.otherVisitors.people === 1 ? "visitor" : "visitors"} · {dv.otherVisitors.visits}
+                  </span>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -2060,7 +2114,9 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
       >
         Training-Manager Effectiveness
       </SectionHeader>
-      {!a.hasData ? (
+      {a.unavailable ? (
+        <EmptyState>{a.rationale}</EmptyState>
+      ) : !a.hasData ? (
         <EmptyState>No active Medical Reps to assess coverage against.</EmptyState>
       ) : (
         <>
@@ -2076,7 +2132,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
             <KpiTile label="Field-force pool" value={intFmt.format(a.poolSize)} hint="active Medical Reps" />
             <KpiTile label="Reps coached" value={intFmt.format(a.coachedByTm)} hint={`${Math.round(a.coverageRate * 100)}% coverage`} goodWhenAbove={a.coverageRate >= 0.5} />
             <KpiTile label="Never coached" value={intFmt.format(a.neglectedByTm)} goodWhenAbove={a.neglectedByTm === 0} />
-            <KpiTile label="Sessions delivered" value={intFmt.format(a.sessionsDelivered)} />
+            <KpiTile label="Sessions delivered" value={intFmt.format(a.sessionsDelivered)} hint="every rep coached, leavers included" />
           </div>
           <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
             <KpiTile label="Avg score given" value={a.avgScoreGiven == null ? "—" : `${Math.round(a.avgScoreGiven)}%`} />
@@ -2209,7 +2265,9 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
       >
         Team Development — Coaching &amp; Double-Visits
       </SectionHeader>
-      {!teamHealth.hasData ? (
+      {teamHealth.unavailable ? (
+        <EmptyState>The coaching records could not be read just now, so team development coverage is not shown. Reload the page to try again.</EmptyState>
+      ) : !teamHealth.hasData ? (
         <EmptyState>No Medical Reps roll up to this manager, so there is no team development coverage to show.</EmptyState>
       ) : (
         <>
@@ -2284,7 +2342,7 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
         Team Compliance — Plans, Field Discipline &amp; Probation
       </SectionHeader>
       {!lifecycle.hasData ? (
-        <EmptyState>No Medical Rep, district manager or regional manager rolls up to this manager, so there is no team compliance to show.</EmptyState>
+        <EmptyState>No Medical Rep, district manager or regional manager working today rolls up to this manager, so there is no team compliance to show.</EmptyState>
       ) : (
         <>
           <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
@@ -2297,7 +2355,7 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
                   ? (lifecycle.planUnavailableReason ?? "The weekly plans could not be read just now.")
                   : lifecycle.managerCount > 0
                     ? `${Math.round(cov * 100)}% of ${intFmt.format(lifecycle.repCount)} reps and ${intFmt.format(lifecycle.managerCount)} managers`
-                    : `${Math.round(cov * 100)}% of reps`
+                    : `${Math.round(cov * 100)}% of the team working today`
               }
               goodWhenAbove={cov == null ? null : cov >= 0.6}
             />
@@ -2309,7 +2367,7 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
             <KpiTile
               label="No-activity flags"
               value={lifecycle.disciplineHasData ? intFmt.format(lifecycle.disciplineFlaggedReps) : "—"}
-              hint={lifecycle.disciplineHasData ? `${intFmt.format(lifecycle.disciplineNoActivityDays)} days flagged` : undefined}
+              hint={lifecycle.disciplineHasData ? `${intFmt.format(lifecycle.disciplineNoActivityDays)} days flagged` : "The no-activity flags could not be read just now."}
               goodWhenAbove={lifecycle.disciplineHasData ? lifecycle.disciplineFlaggedReps === 0 : null}
             />
             <KpiTile label="In probation" value={intFmt.format(lifecycle.probationCount)} hint="within first 90 days" />
@@ -2371,8 +2429,10 @@ function MonthCompareTable({ months }: { months: { month: string; cost: number; 
           </tr>
         </thead>
         <tbody>
-          {months.map((m, i) => {
-            const prev = i > 0 ? months[i - 1] : null;
+          {months.map((m) => {
+            // Against the calendar month before, never the previous ROW: a month with no trip has no row, and
+            // comparing October with August was printed as "vs prev" (2026-10-27).
+            const prev = months.find((x) => x.month === previousMonthKey(m.month)) ?? null;
             const delta = prev && prev.cost > 0 ? (m.cost - prev.cost) / prev.cost : null;
             const costPerTrip = m.trips > 0 ? m.cost / m.trips : null;
             const up = delta != null && delta > 0;
@@ -2419,7 +2479,9 @@ function ExpensesSection({
       <SectionHeader icon={Wallet} tone="rose" sub="Outstation trips & reimbursed expenses (payroll import). Most relevant to travelling managers — DM / NSM / TM / PM / GPM.">
         Expenses &amp; Outstation
       </SectionHeader>
-      {!hasAny ? (
+      {expenses.unavailable ? (
+        <EmptyState>The expense records could not be read just now, so this section is not shown. Reload the page to try again.</EmptyState>
+      ) : !hasAny ? (
         <EmptyState>No expense or outstation records for this employee in this period.</EmptyState>
       ) : (
         <>
