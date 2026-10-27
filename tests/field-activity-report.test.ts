@@ -638,6 +638,15 @@ export async function runFieldActivityReportTests() {
       assert.equal(found, null, `${label}: the rendered report must not assume the subject is a man — ${found}`);
     }
 
+    // ── the PDF's money names its currency, as the screen does ───────────────────────────────────
+    {
+      const report = run({ visits: [visit()], checkins: [checkin()], trips: [trip] });
+      const html = buildFieldActivityDocument({ generatedOn: "5 October 2026", maps: [], report });
+      assert.ok(html.includes('<td class="num">EGP 342.26</td>'), "the Claimed column prints EGP beside the day's claim");
+      assert.ok(html.includes("<strong>EGP 342.26</strong></td></tr></tfoot>"), "the Claimed total prints EGP");
+      assert.ok(!/<td class="num">\d[\d,]*\.\d\d<\/td>/.test(html), "no bare amount is left in a money cell");
+    }
+
     // The map caption is assembled in the PDF route, which no unit test can execute, and the day
     // notes are assembled in the model. Both are scanned at the source so a NEW label is caught
     // where it is written rather than only on the one branch a fixture happens to reach.
