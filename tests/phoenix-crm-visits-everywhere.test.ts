@@ -1508,48 +1508,63 @@ function runPlanDoorTests(plans: string): void {
   assert.ok(vendor.includes("where r.hr_key = lower(btrim(pe.agent_hr_id)) and pe.plan_date >= r.counted_from and (r.counted_until is null or pe.plan_date < r.counted_until)"), "the started team's people leave the vendor plan copy for the same days");
   assert.ok(vendor.includes("where nullif(btrim(pe.agent_hr_id), '') is null and r.agent_crm_id = pe.agent_crm_id and pe.plan_date >= r.counted_from"), "by CRM id on a row with no hr id");
 
-  const phoenixItems = itemsOf(phoenixBranch, "from public.phoenix_crm_plans pl");
+  // The select list ends where the grouped plan-day subquery begins (20261028013400).
+  const phoenixItems = itemsOf(phoenixBranch, "from (\n  select\n    x.plan_id,");
   const names = vendorItems.map(outputName);
   assert.equal(phoenixItems.length, names.length);
   const item = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
   const phoenix = flat(phoenixBranch);
-  // 🔴 A RANGE READ NARROWS ONLY WHILE THIS BRANCH'S DAY IS THE SUBQUERY'S GROUP KEY, AND THE PLAN
-  // SCREEN READS A RANGE. A predicate on a grouping column is pushed INTO the subquery above; one on
-  // the items table is not, and Postgres propagates only an EQUALITY across i.plan_date = pd.plan_date,
-  // never a range. Written on i.plan_date (20261024002000) the door answered ONE DAY in 22 ms and a
-  // WEEK in 1,428 ms mean on production — max 17,787 ms, 24 Oct 2026 — because the range grouped all
-  // 14,037 plan items and ran the status function for every one of the ~1,128 plan-days in the company
-  // to answer one rep's week. On pd.plan_date (20261024004000) that week is 38 ms, and the pushdown
-  // survives a generic plan, which is the form PostgREST sends. The two columns are equal by the join
-  // below, so no value changes: 203,190 rows either way, 0 rows differing under "except all".
-  assert.ok(
-    phoenix.includes("join public.phoenix_crm_plan_items i on i.plan_id = pd.plan_id and i.plan_date = pd.plan_date"),
-    "the items join is on the plan AND the day — that is what makes pd.plan_date value-identical to i.plan_date",
-  );
+  // 🔴 A READ NARROWS ONLY ON THE SUBQUERY'S OWN GROUP KEYS — THE DAY AND THE REP. A predicate on a
+  // grouping column is pushed INTO the grouped subquery; one on a table joined after it is not, and
+  // Postgres propagates only an EQUALITY across a join, never a range or an "= any (…)".
+  // The day: written on i.plan_date (20261024002000) the door answered ONE DAY in 22 ms and a WEEK in
+  // 1,428 ms mean on production — max 17,787 ms, 24 Oct 2026 — because the range grouped all 14,037
+  // plan items and ran the status function for every one of the ~1,128 plan-days in the company to
+  // answer one rep's week. On pd.plan_date (20261024004000) that week is 38 ms.
+  // The rep: joined AFTER the group (20261024004000), ten hr ids over October touched 17,954 pages a
+  // call and fifty CRM ids 35,120, grouping every plan-day in the company for the month. Inside the
+  // group (20261028013400) they touch 5,371 and 8,119 on production, 28 Oct 2026 — the same 10,065
+  // Phoenix rows, 0 differing under "except all", the same md5.
   for (const onTheItems of [
-    "i.plan_date,",
+    "i.plan_date",
     "extract(month from i.plan_date)",
     "extract(year from i.plan_date)",
-    "i.plan_date >= r.counted_from",
-    "i.plan_date < r.counted_until",
   ]) {
     assert.ok(
       !phoenix.includes(onTheItems),
       `RED the Phoenix branch takes its day from the group key, never from the items: "${onTheItems}" stops a plan_date RANGE being pushed into the plan-day subquery, and a rep's week then scans every plan-day in the company (1,428 ms mean, max 17.8 s, production, 24 Oct 2026)`,
     );
   }
+  assert.ok(
+    phoenix.includes("join reps r on r.seat_id = p.seat_id and x.plan_date >= r.counted_from and (r.counted_until is null or x.plan_date < r.counted_until) group by x.plan_id, x.plan_date, r.rep_row, r.agent_crm_id, r.hr_id, p.updated_at having"),
+    "RED the rep is joined INSIDE the plan-day group and his hr id and CRM id are group keys — joined after it, ten hr ids over a month grouped every plan-day in the company (17,954 pages a call, production, 28 Oct 2026)",
+  );
+  assert.equal(phoenix.split("join reps r").length - 1, 1, "RED and the reps are joined once, inside the group — never again after it");
+  // rep_row keeps two equal rows of the roster apart, so two reps on one seat and day stay two rows.
+  assert.ok(
+    flat(view).includes("with reps as materialized ( select t.*, row_number() over () as rep_row from public.phoenix_crm_started_team_reps() t ) select"),
+    "the started team's people are read once for the whole view, each row numbered",
+  );
+  // The items ride through the group as arrays, so the items table is read once; the customers are
+  // hashed once behind OFFSET 0 instead of an index probe per plan item.
+  assert.equal(phoenix.split("public.phoenix_crm_plan_items").length - 1, 1, "the items table is read once");
+  assert.ok(
+    phoenix.includes(") pd cross join lateral unnest(pd.item_ids, pd.customer_ids, pd.list_types, pd.created_ats, pd.updated_ats) as i(id, customer_id, list_type, created_at, updated_at) join ( select c.id, c.reference_contact_crm_id, c.own_contact_crm_id, c.name, c.grade, c.speciality from public.phoenix_crm_customers c offset 0 ) customer on customer.id = i.customer_id;"),
+    "the day's items are unnested after the group, and each is given its customer from one hashed read",
+  );
   const expected: Record<string, string> = {
     crm_plan_entry_id: "-1 - ('x' || substr(md5(i.id::text), 1, 13))::bit(52)::bigint",
     plan_kind: "'weekly'::text",
-    crm_plan_id: "-1 - ('x' || substr(md5(pl.id::text), 1, 8))::bit(30)::integer",
+    crm_plan_id: "-1 - ('x' || substr(md5(pd.plan_id::text), 1, 8))::bit(30)::integer",
     // 🔴 pd.plan_date, NOT i.plan_date — the grouped subquery's OWN key, so a plan_date RANGE is pushed
-    // into it. The narrowing pin below says what reverting this one word costs (24 Oct 2026).
+    // into it. The narrowing pin above says what reverting this one word costs (24 Oct 2026).
     plan_date: "pd.plan_date",
     plan_month: "extract(month from pd.plan_date)::smallint",
     plan_year: "extract(year from pd.plan_date)::smallint",
     plan_frequency: "null::smallint",
-    agent_crm_id: "r.agent_crm_id",
-    agent_hr_id: "r.hr_id",
+    // 🔴 pd.*, NOT r.* — the rep is a group key, so a filter on him reaches the group (28 Oct 2026).
+    agent_crm_id: "pd.agent_crm_id",
+    agent_hr_id: "pd.hr_id",
     // The SAME expression as the visit door, to the character — see the cross-door pin below.
     contact_crm_id: "coalesce(customer.reference_contact_crm_id, customer.own_contact_crm_id)",
     contact_name: "customer.name",
@@ -1562,7 +1577,7 @@ function runPlanDoorTests(plans: string): void {
     // Read from the once-per-plan-day subquery below, not called per item (23 Oct 2026).
     plan_status: "(case when pd.status_now = 'approved' then 1 else 0 end)::smallint",
     raw_payload: "null::jsonb",
-    synced_at: "greatest(pl.updated_at, i.updated_at)",
+    synced_at: "greatest(pd.plan_updated_at, i.updated_at)",
     created_at: "i.created_at",
     updated_at: "i.updated_at",
     source: "'phoenix'::text",
@@ -1570,24 +1585,20 @@ function runPlanDoorTests(plans: string): void {
   for (const [column, expression] of Object.entries(expected)) {
     assert.equal(item.get(column), expression, `a Phoenix plan day's ${column} is ${expression}`);
   }
-  assert.ok(phoenix.includes("join reps r on r.seat_id = pl.seat_id and pd.plan_date >= r.counted_from and (r.counted_until is null or pd.plan_date < r.counted_until)"), "carried for the rep who sat on that territory that day, within the start");
-  // The started-team set is read ONCE per read, into a materialised CTE both branches share.
-  assert.ok(
-    flat(view).includes("with reps as materialized ( select * from public.phoenix_crm_started_team_reps() ) select"),
-    "the started team's people are read once for the whole view",
-  );
   assert.equal(flat(view).split("phoenix_crm_started_team_reps()").length - 1, 1, "and the function is named exactly once in it");
-  // The plan day's status is asked of the plan's event log once per (plan, day), not once per item: a day
-  // carries about a dozen items. It takes the day through min() so the planner keeps it on the group.
+  // The plan day's status is asked of the plan's event log once per (plan, day, rep), not once per item:
+  // a day carries about a dozen items. It takes the day through min() so the planner keeps it on the
+  // group. Real plans only, carried for the rep who sat on that territory that day, within the start —
+  // and a day only when its week was sent as of that day (the HAVING).
   assert.ok(
-    phoenix.includes("join ( select x.plan_id, x.plan_date, public.phoenix_crm_plan_day_status( x.plan_id, min(x.plan_date), least(now(), (min(x.plan_date) + 1)::timestamp at time zone 'Africa/Cairo') ) as status_that_day, public.phoenix_crm_plan_day_status(x.plan_id, min(x.plan_date), now()) as status_now from public.phoenix_crm_plan_items x group by x.plan_id, x.plan_date ) pd on pd.plan_id = pl.id join public.phoenix_crm_plan_items i on i.plan_id = pd.plan_id and i.plan_date = pd.plan_date"),
-    "the status is read once per plan-day: as of the end of that day, and as of now",
+    phoenix.includes("from ( select x.plan_id, x.plan_date, r.agent_crm_id, r.hr_id, p.updated_at as plan_updated_at, public.phoenix_crm_plan_day_status(x.plan_id, min(x.plan_date), now()) as status_now, array_agg(x.id) as item_ids, array_agg(x.customer_id) as customer_ids, array_agg(x.list_type) as list_types, array_agg(x.created_at) as created_ats, array_agg(x.updated_at) as updated_ats from public.phoenix_crm_plan_items x join public.phoenix_crm_plans p on p.id = x.plan_id and not p.is_test join reps r on"),
+    "the status is read once per plan-day as of now, for real plans only",
+  );
+  assert.ok(
+    phoenix.includes("having public.phoenix_crm_plan_day_status( x.plan_id, min(x.plan_date), least(now(), (min(x.plan_date) + 1)::timestamp at time zone 'Africa/Cairo') ) is not null ) pd"),
+    "and a day is served only when its week was sent as of the end of that day",
   );
   assert.equal(phoenix.split("phoenix_crm_plan_day_status(").length - 1, 2, "and the function is named exactly twice in the branch, both inside that subquery");
-  assert.ok(
-    phoenix.endsWith("where not pl.is_test and pd.status_that_day is not null;"),
-    "real plans only, and a day only when its week was sent as of that day",
-  );
   assert.equal(servedAsOf("2026-10-05", "2026-10-09T10:00"), "2026-10-06T00:00", "a past day is judged at the end of its own day");
   assert.equal(servedAsOf("2026-10-08", "2026-10-04T12:30"), "2026-10-04T12:30", "a day to come is judged now");
   assert.equal(planDayAsOf(events, [], "2026-10-05", servedAsOf("2026-10-05", "2026-10-09T10:00")), "approved", "Monday was planned as of Monday");
@@ -2171,7 +2182,7 @@ function runPortalKeepsNoneOfTheFieldSetTests(): void {
 function runContactIdAcrossDoorsTests(): void {
   const expressions = [
     { door: "crm_visits_unified", sql: VISITS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
-    { door: "crm_plan_entries_unified", sql: PLANS_DOOR, from: "from public.phoenix_crm_plans pl" },
+    { door: "crm_plan_entries_unified", sql: PLANS_DOOR, from: "from (\n  select\n    x.plan_id," },
     { door: "crm_checkins_unified", sql: CHECKINS_DOOR, from: "from public.phoenix_crm_countable_visits p" },
   ].map(({ door, sql, from }) => {
     const branches = viewSql(sql, door).split("\nunion all\n");

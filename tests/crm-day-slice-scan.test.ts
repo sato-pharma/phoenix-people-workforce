@@ -394,8 +394,8 @@ function runPlanScanWiringGuards() {
   assert.match(plan, /\.eq\("plan_date", day\);/, "each plan request is narrowed to its day");
   assert.match(
     plan,
-    /if \(cursor !== null\) query = query\.gt\("crm_plan_entry_id", cursor\);/,
-    "a day pages by keyset on the mirror's primary key, never by OFFSET",
+    /if \(cursor !== null\) query = query\.or\(planEntryKeysetAfter\(cursor, \{ byDate: false \}\)\);/,
+    "a day pages by keyset on (entry id, hr id), never by OFFSET — the entry id alone is not unique in the view",
   );
   assert.match(
     plan,
@@ -444,8 +444,8 @@ function runPlanBoardWiringGuards() {
   assert.match(fetch, /\.eq\("plan_date", day\);/, "each plan-board request is narrowed to its day");
   assert.match(
     fetch,
-    /if \(cursor !== null\) query = query\.gt\("crm_plan_entry_id", cursor\);/,
-    "a day pages by keyset on the mirror's primary key, never by OFFSET — the whole point of the change",
+    /if \(cursor !== null\) query = query\.or\(planEntryKeysetAfter\(cursor, \{ byDate: false \}\)\);/,
+    "a day pages by keyset on (entry id, hr id), never by OFFSET — the whole point of the change",
   );
   assert.match(
     fetch,

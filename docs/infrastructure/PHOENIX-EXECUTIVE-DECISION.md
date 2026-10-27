@@ -18,8 +18,9 @@ The bill goes from **about $90 to about $136–138 a month** (estimate; Railway'
 The database server's memory. It holds 4.3 GB of data on a 2 GB machine, and in the 55 hours after the 25 Oct fixes it
 swapped about 7 GB out to disk, with 2.9 million major page faults. Reads that should come from memory wait on disk, which
 is what the afternoon stalls are: a 15-second one on 27 Oct, and 9 crash restarts between 11 and 25 Oct.
-A few heavy reads make it worse: the CRM's combined visit, plan and check-in views walk far more pages than they return
-(the contact-assignment read stopped on 26 Oct, when the roster cache went live). The app servers are not the cause; they use a fifth of one core at the busiest hour.
+A few heavy reads make it worse: the CRM's combined visit, plan and check-in views walked far more pages than they return
+(the contact-assignment read stopped on 26 Oct, when the roster cache went live). On 28 Oct the plan view's two heaviest
+reads came down by 70 % and 77 %; the visit and check-in views are next. The app servers are not the cause; they use a fifth of one core at the busiest hour.
 
 **2. Does Supabase need more RAM or more CPU?**
 RAM. The CPU averages about 20 % of its 2 cores (14.6 % at night), with 0.55 % steal, so there is no sign it is held back. The disk is 1.4 %

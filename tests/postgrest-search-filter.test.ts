@@ -975,6 +975,12 @@ export function runPostgrestSearchFilterTests() {
         "this arrow's parameter IS a quoted value — the only site where the producer is on a " +
         "different line of the same expression",
     },
+    "src/lib/crm/plan-entry-keyset.ts": {
+      "idClauses.push(`and(crm_plan_entry_id.eq.${id},or(agent_hr_id.gt.${quotePostgrestValue(hr)},agent_hr_id.is.null))`);":
+        "`id` passed the INTEGER guard (/^-?\\d+$/) two lines above or the function threw — digits only",
+      "return [`plan_date.gt.${date}`, ...idClauses.map((clause) => `and(plan_date.eq.${date},${clause})`)].join(\",\");":
+        "`date` passed the ISO_DATE guard (/^\\d{4}-\\d{2}-\\d{2}$/) the line above or the function threw",
+    },
   };
   // `src/lib/crm/plan-board.ts` is deliberately NOT in that list: its two matched arms are
   // `plan_month.eq.${Number(...)}` and `plan_year.eq.${Number(...)}`, which the numeric rule below
@@ -1043,7 +1049,7 @@ export function runPostgrestSearchFilterTests() {
   // exempt line loses its exemption, and the useful message in that case is the line itself rather
   // than this count. The count then catches the opposite drift — an exemption kept for code that no
   // longer needs it.
-  assert.equal(splicesExempt, 8, "the written-down exemptions must all still be reached, and no more of them");
+  assert.equal(splicesExempt, 10, "the written-down exemptions must all still be reached, and no more of them");
 
   // ── MR-B04 · the second sweep · every `in.(${…})` list in the tree ──────────────────────────
   //
