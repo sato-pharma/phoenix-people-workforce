@@ -1564,6 +1564,7 @@ import { runOrgTreeCacheInvalidationTests } from "./org-tree-cache-invalidation.
 import { runVacationRowsCacheExpiresAtOnceTests } from "./vacation-rows-cache-expires-at-once.test.ts";
 import { runSosReferenceReadLoadTests } from "./sos-reference-read-load.test.ts";
 import { runBrickCentroidCoverageTests } from "./brick-centroid-coverage.test.ts";
+import { runBrickCentroidFieldGpsKeepsBetterPinsTests } from "./brick-centroid-field-gps-keeps-better-pins.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
 import { runDirectOrdersExtraAreaGrantTests } from "./direct-orders-extra-area-grants.test.ts";
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
@@ -6055,6 +6056,7 @@ await runTest("org tree cache invalidation (a hire, seat transfer, resignation o
 await runTest("vacation rows cache expires at once (a save is visible on the refresh that follows it, not one load later)", runVacationRowsCacheExpiresAtOnceTests);
 await runTest("SoS reference read load (a burst of concurrent centroid lookups runs ONE load and every caller gets that value, the slot clears on settle and on failure, the Master Map exact count asks for a one-row page)", runSosReferenceReadLoadTests);
 await runTest("brick centroid coverage (numerator and denominator count the SAME population — an orphan centroid whose brick is retired can never make Geo readiness report more located bricks than exist, which is what kept the Build geo index button hidden)", runBrickCentroidCoverageTests);
+await runTest("brick centroid field GPS keeps better pins (Build geo index never replaces a person’s pin, a named-district or named-place geocode with reps’ phone GPS — only a pin pinConfidence ranks no higher than field GPS, or one that failed its gate)", runBrickCentroidFieldGpsKeepsBetterPinsTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
 await runTest("direct orders extra area grants (B-76 gets Alex-BHR, nobody else gets anything, the grant widens the seat bound instead of replacing it, and only the Direct Orders service may read it)", runDirectOrdersExtraAreaGrantTests);
 await runTest("direct orders share-link controls (export-gated not read-gated, passcode in the body never the URL, expiry mandatory and capped, scope frozen at creation, nothing cached or indexed)", runDirectOrdersShareLinkControlsTests);

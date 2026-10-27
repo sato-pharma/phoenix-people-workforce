@@ -6,15 +6,17 @@ import {
   LOCATIONIQ_CONFIDENCE_THRESHOLD,
   scoreForwardConfidence,
 } from "@/lib/geocoding/locationiq";
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { loadSalesReferenceData, type SalesBrickReference } from "@/lib/sales/monthly-distributor-import";
 import { resolveGovernorateRegion, type BrickCentroid } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { MANUAL_PIN_PROVIDER, pinConfidence } from "@/lib/territory-management/service";
 
 // Brick centroid acquisition + lookup. A centroid is the approximate coordinate of a brick
 // territory, cached forever in `geo_locations` (source_type='brick_centroid', source_key=brick_id).
-// Two providers, best first:
+// Two providers:
 //   field_gps — median of real GPS captures from marketing_pharmacies linked to the brick via
-//               the pharmacy-code ↔ customer-map join (free, ground truth)
+//               the pharmacy-code ↔ customer-map join (free, but NOT ground truth: rep GPS can be
+//               spoofed, so it only replaces a pin pinConfidence ranks no higher than itself)
 //   google    — one-time geocode of "<brick_name>, <area_name>, Egypt"
 //
 // SANITY GATE: a google-geocoded centroid is stored with geocode_status='success' ONLY when its
@@ -265,10 +267,10 @@ export async function getBrickCentroidCoverage(): Promise<BrickCentroidCoverage>
 export async function loadBrickCentroids(): Promise<Map<string, BrickCentroid>> {
   const result = new Map<string, BrickCentroid>();
   try {
-    const rows = await pageAll<{ source_key: string | null; latitude: number | null; longitude: number | null; city: string | null; area: string | null; geocode_status: string | null }>(async (from, to) => {
+    const rows = await pageAll<{ source_key: string | null; latitude: number | null; longitude: number | null; city: string | null; area: string | null; geocode_provider: string | null; geocode_status: string | null }>(async (from, to) => {
       const { data, error } = await getSupabaseAdmin()
         .from("geo_locations")
-        .select("source_key, latitude, longitude, city, area, geocode_status")
+        .select("source_key, latitude, longitude, city, area, geocode_provider, geocode_status")
         .eq("source_type", SOURCE_TYPE)
         // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
         .order("id", { ascending: true })
@@ -284,6 +286,7 @@ export async function loadBrickCentroids(): Promise<Map<string, BrickCentroid>> 
         lat: Number(row.latitude),
         lng: Number(row.longitude),
         markaz: row.area ?? null,
+        provider: row.geocode_provider ?? null,
         status: String(row.geocode_status ?? ""),
       });
     }
@@ -312,6 +315,54 @@ function coordinateKey(lat: number, lng: number): string {
   return `${lat},${lng}`;
 }
 
+const FIELD_GPS_PROVIDER = "field_gps";
+
+/**
+ * Rep GPS is never ground truth — check-ins can be spoofed (owner rule) — so field GPS may only
+ * replace a pin the territory map's own ranking (pinConfidence) trusts no more than field GPS. A
+ * person's pin ('manual', or a 'manual:<hr id>' form) and a named-district or named-place geocode
+ * outrank it and are kept; a block centre, check-in GPS, an older field GPS pin, and any geocode
+ * that failed its gate (region_mismatch, shared_fallback — they locate nothing) are replaced.
+ */
+export function fieldGpsMayReplacePin(existing: BrickCentroid | undefined): boolean {
+  if (!existing) return true;
+  // A person's pin is never overwritten, whatever its status.
+  if (String(existing.provider ?? "").startsWith(MANUAL_PIN_PROVIDER)) return false;
+  if (existing.status !== "success") return true;
+  return pinConfidence(existing.provider ?? null, existing.status).percent <= pinConfidence(FIELD_GPS_PROVIDER, "success").percent;
+}
+
+/** Pass 1's plan: the field-GPS rows to write, and the bricks whose better pin is kept instead. */
+export function planFieldGpsUpserts(
+  bricks: Pick<SalesBrickReference, "brickId" | "brickName">[],
+  fieldGps: Map<string, { lat: number; lng: number }>,
+  existing: Map<string, BrickCentroid>,
+): { kept: string[]; upserts: Record<string, unknown>[] } {
+  const kept: string[] = [];
+  const upserts: Record<string, unknown>[] = [];
+  for (const brick of bricks) {
+    const gps = fieldGps.get(brick.brickId);
+    if (!gps) continue;
+    if (!fieldGpsMayReplacePin(existing.get(brick.brickId))) {
+      kept.push(brick.brickId);
+      continue;
+    }
+    upserts.push({
+      address_text: null,
+      area: null,
+      city: null,
+      geocode_provider: FIELD_GPS_PROVIDER,
+      geocode_status: "success",
+      label: brick.brickName || brick.brickId,
+      latitude: gps.lat,
+      longitude: gps.lng,
+      source_key: brick.brickId,
+      source_type: SOURCE_TYPE,
+    });
+  }
+  return { kept, upserts };
+}
+
 export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> {
   const supabase = getSupabaseAdmin();
   const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
@@ -332,26 +383,11 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
   const claimedCoordinates = new Set<string>();
   for (const [, centroid] of existing) claimedCoordinates.add(coordinateKey(centroid.lat, centroid.lng));
 
-  // Pass 1 — field-GPS enrichment (free). Overrides google centroids, never overrides field_gps.
+  // Pass 1 — field-GPS enrichment (free). Replaces only a pin no better than field GPS
+  // (fieldGpsMayReplacePin); a person's pin or a named geocode is kept and counted in skippedExisting.
   const fieldGps = await collectFieldGpsCentroids();
-  const gpsUpserts: Record<string, unknown>[] = [];
-  for (const brick of bricks) {
-    const gps = fieldGps.get(brick.brickId);
-    if (!gps) continue;
-    gpsUpserts.push({
-      address_text: null,
-      area: null,
-      city: null,
-      geocode_provider: "field_gps",
-      geocode_status: "success",
-      label: brick.brickName || brick.brickId,
-      latitude: gps.lat,
-      longitude: gps.lng,
-      source_key: brick.brickId,
-      source_type: SOURCE_TYPE,
-    });
-    summary.fieldGps += 1;
-  }
+  const { kept, upserts: gpsUpserts } = planFieldGpsUpserts(bricks, fieldGps, existing);
+  summary.fieldGps = gpsUpserts.length;
   if (gpsUpserts.length > 0) {
     try {
       await supabase.from("geo_locations").upsert(gpsUpserts, { onConflict: "source_type,source_key" });
@@ -360,13 +396,16 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
 
   // Pass 2 — geocode (LocationIQ first, region-gated; Google as fallback) for bricks still
   // without any cached centroid.
+  const pending = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId));
+  // Every brick whose cached pin this build leaves as it was: the better pins Pass 1 refused to
+  // replace, plus the pinned bricks field GPS never reached. fieldGps + skippedExisting + pending
+  // covers every brick once.
+  summary.skippedExisting = kept.length + bricks.filter((b) => existing.has(b.brickId) && !fieldGps.has(b.brickId)).length;
   if (!hasLocationIqKey() && !hasGoogleServerKey()) {
-    summary.remaining = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId)).length;
+    summary.remaining = pending.length;
     return summary;
   }
-  const pending = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId));
   const toGeocode = pending.slice(0, MAX_GEOCODES_PER_BUILD);
-  summary.skippedExisting = bricks.length - pending.length;
 
   for (let index = 0; index < toGeocode.length; index += GEOCODE_CONCURRENCY) {
     const batch = toGeocode.slice(index, index + GEOCODE_CONCURRENCY);
