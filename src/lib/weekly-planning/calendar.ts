@@ -60,6 +60,12 @@ export type PlanningCalendarPlanItem = {
    * null on every other plan item.
    */
   withHrId?: string | null;
+  /**
+   * The person's approved leave on this day, drawn from Vacations rather than from any plan (owner,
+   * 2026-10-27: "in all her calendars it should syncronize everywhere"). `withApprovedLeave` builds it.
+   * Absent on every plan row.
+   */
+  onLeave?: boolean;
   // Rendered UI label ("Employee - Region - Area"), shown as agenda-list text
   // and a hover tooltip in planning-calendar.tsx — built from
   // employeeDisplayName (nickname-aware), not the raw employeeName.
@@ -125,9 +131,13 @@ export type PlanningCalendarWorkspace = {
   loadedItemCount: number;
   month: number;
   schemaReady: boolean;
+  /** True when Vacations could not be read, so the screen says leave is missing rather than drawing nobody away. */
+  leaveUnavailable?: boolean;
   summary: {
     conflictCount: number;
     holidayCount: number;
+    /** Person-days of approved leave drawn this month. */
+    leaveCount?: number;
     planCount: number;
     submittedOwnerCount: number;
   };
@@ -551,6 +561,40 @@ const planStatusLabels: Record<string, string> = {
 export function planStatusLabel(status: EmployeePlanStatus | string | null | undefined): string {
   const key = cleanText(status);
   return planStatusLabels[key] ?? key;
+}
+
+/** "Approved leave" for a leave day, the plan's own status for everything else — screen and export alike. */
+export const PLANNING_LEAVE_STATUS_LABEL = "Approved leave";
+
+export function planningItemStatusLabel(item: { onLeave?: boolean; status: EmployeePlanStatus | string | null | undefined }): string {
+  return item.onLeave ? PLANNING_LEAVE_STATUS_LABEL : planStatusLabel(item.status);
+}
+
+/**
+ * Approved leave wins over the plan for the same person and day (owner, 2026-10-27, Rasha Sabry: her
+ * plan said Office on Tuesday 20 October, she then took that day off, and no calendar showed it). A
+ * plan sent before the leave was filed is never rewritten, so the calendar does the overlay:
+ *   - a FULL day of leave hides every plan row of that person on that day — they are not there;
+ *   - HALF a day hides nothing (the other half is still worked, `planDayGapText`), only the plan's
+ *     own "Vacation" row, which the leave row now stands for;
+ *   - the leave rows are added once each.
+ * `hrKey` is the caller's HR id normaliser, so "A-8" and "a-8" are one person.
+ */
+export function withApprovedLeave<T extends PlanningCalendarPlanItem>(
+  planItems: T[],
+  leaveItems: T[],
+  hrKey: (hrId: string) => string = normalizedPlanningCalendarKey,
+): T[] {
+  const dayKey = (item: T) => `${hrKey(item.employeeHrId)}|${item.startDate}`;
+  const fullDays = new Set(leaveItems.filter((item) => item.time === "Full day").map(dayKey));
+  const anyLeave = new Set(leaveItems.map(dayKey));
+  const kept = planItems.filter((item) => {
+    if (item.onLeave) return true;
+    const key = dayKey(item);
+    if (fullDays.has(key)) return false;
+    return !(anyLeave.has(key) && item.activityType === "Vacation");
+  });
+  return [...kept, ...leaveItems];
 }
 
 export function planKindLabel(kind: EmployeePlanKind | string | null | undefined): string {
