@@ -1,0 +1,12 @@
+# Package versions a pull request is ALLOWED to move backward in pnpm-lock.yaml.
+#
+# tests/lockfile-downgrade-gate.test.ts fails any pull request whose pnpm-lock.yaml holds an older version than its
+# base did (Dependabot's lockfile does this to ~40 packages at a time; docs/dependency-refresh.md). A rollback you
+# MEANT — a bad release being backed out — goes here, one line per package, exactly as the failure prints it:
+#
+#   name from -> to
+#
+# Example (not active):  left-pad 1.3.0 -> 1.2.0
+#
+# Blank lines and `#` comments are ignored. An entry only matters in the pull request that makes the rollback;
+# delete it in the next one.
