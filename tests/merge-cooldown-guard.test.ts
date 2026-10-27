@@ -30,9 +30,11 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
+
+import { GITHUB_OWNER, REPO } from "../scripts/required-check-names.mjs";
 
 const guardPath = resolve(".claude/hooks/bash-guard.mjs");
 
@@ -118,6 +120,23 @@ function ghShim(
     /* Windows has no execute bit; the .cmd below is what runs there */
   }
   writeFileSync(join(binDir, "gh.cmd"), body.cmd, "utf8");
+  return binDir;
+}
+
+/**
+ * A `gh` from two hand-written bodies, sh and cmd — for the `--repo` cases, whose questions the
+ * fixed-answer shim above cannot tell apart.
+ */
+function scriptedGh(dir: string, sh: string, cmd: string): string {
+  const binDir = mkdtempSync(join(dir, "bin-"));
+  const shPath = join(binDir, "gh");
+  writeFileSync(shPath, sh, "utf8");
+  try {
+    chmodSync(shPath, 0o755);
+  } catch {
+    /* Windows has no execute bit; the .cmd below is what runs there */
+  }
+  writeFileSync(join(binDir, "gh.cmd"), cmd, "utf8");
   return binDir;
 }
 
@@ -595,6 +614,156 @@ export function runMergeCooldownGuardTests(): void {
         "allow",
         "a merge of the CURRENT branch carries no PR number — allow rather than guess at one",
       );
+    }
+
+    // ---- another repository's PR: `--repo` / `-R` ----------------------------
+    //
+    // 🔴 C10 and C13 are Phoenix's own CI-cost rules. Until 2026-10-27 both took the bare number and
+    // asked `gh pr view <N>` from this folder, so `gh pr merge 49 --repo <owner>/phoenix-next` was
+    // judged as PHOENIX's #49 — its size, its checks, its roll-ups — and refused on facts about a
+    // different PR. ghShim(dir, 2) answers every size question with 2 files, so each command below
+    // is refused unless the clause stepped aside without asking gh anything.
+
+    const otherRepo = `${GITHUB_OWNER}/phoenix-next`;
+    for (const [label, command, tool] of [
+      ["--repo", `gh pr merge 49 --repo ${otherRepo} --squash`, "Bash"],
+      ["-R", `gh pr merge 49 -R ${otherRepo} --squash`, "Bash"],
+      ["--repo=", `gh pr merge 49 --squash --repo=${otherRepo}`, "Bash"],
+      ["-R glued to its value", `gh pr merge 49 --squash -R${otherRepo}`, "Bash"],
+      ["HOST/OWNER/REPO", `gh pr merge 49 --squash --repo github.com/${otherRepo}`, "Bash"],
+      ["another account's repository", "gh pr merge 49 --squash --repo octo-org/octo-repo", "Bash"],
+      ["PowerShell", `gh pr merge 49 --repo ${otherRepo} --squash`, "PowerShell"],
+    ] as const) {
+      const gh = ghShim(dir, 2);
+      assert.deepEqual(
+        runGuard(dir, command, { ghDir: gh, tool }),
+        { decision: "allow", reason: "" },
+        `a merge naming another repository with ${label} must not be judged as Phoenix's PR of the ` +
+          `same number: ${command}`,
+      );
+    }
+
+    {
+      // The control: the very shim above refuses the same merge when no repository is named.
+      const gh = ghShim(dir, 2);
+      assert.equal(
+        runGuard(dir, "gh pr merge 49 --squash", { ghDir: gh }).decision,
+        "deny",
+        "with no --repo the merge is Phoenix's and the size refusal must still fire",
+      );
+    }
+
+    for (const [label, command] of [
+      ["--repo", `gh pr merge 4790 --squash --repo ${REPO}`],
+      ["-R in another case", `gh pr merge 4790 --squash -R ${REPO.toUpperCase()}`],
+      ["--repo= as a URL", `gh pr merge 4790 --squash --repo=https://github.com/${REPO}.git`],
+      // `-r` is `--rebase`, not `-R`: a rebase merge names no repository and is judged like any other.
+      ["-r, which is --rebase", "gh pr merge 4790 -r"],
+    ] as const) {
+      const gh = ghShim(dir, 2);
+      assert.equal(
+        runGuard(dir, command, { ghDir: gh }).decision,
+        "deny",
+        `Phoenix named explicitly (${label}) is still Phoenix's PR and must still be judged: ${command}`,
+      );
+    }
+
+    {
+      // When Phoenix is named, the hook's own `gh` calls name it too — so the answer is Phoenix's PR
+      // even from a session sitting in another repository's folder. This gh answers the size question
+      // ONLY when it carries `--repo <Phoenix>`, in the constant's spelling rather than the typed one.
+      const gh = scriptedGh(
+        dir,
+        `#!/bin/sh\ncase "$*" in\n  *"pr view"*changedFiles*"--repo ${REPO}"*) echo 2 ;;\n  *) exit 1 ;;\nesac\n`,
+        `@echo off\r\n` +
+          `echo %* | findstr /C:"--repo ${REPO}" >nul\r\nif errorlevel 1 exit /b 1\r\n` +
+          `echo %* | findstr /C:"changedFiles" >nul\r\nif errorlevel 1 exit /b 1\r\n` +
+          `echo 2\r\n`,
+      );
+      assert.equal(
+        runGuard(dir, `gh pr merge 4790 --squash -R ${REPO.toUpperCase()}`, { ghDir: gh }).decision,
+        "deny",
+        "naming Phoenix must pass `--repo <Phoenix>` on to the hook's own gh calls",
+      );
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "allow",
+        "the control: with no --repo typed, this gh cannot answer and the clause fails open — so the " +
+          "refusal above came from the flag being passed on",
+      );
+    }
+
+    {
+      // C13: a PR listed in an open roll-up's body is refused — but only Phoenix's. The list comes from
+      // a file because cmd's `echo` cannot carry JSON's quotes and an em dash through untouched.
+      const rollups = join(dir, "rollups.json");
+      writeFileSync(
+        rollups,
+        JSON.stringify([
+          {
+            number: 51,
+            headRefName: "codex/rollup-20261027-0900",
+            headRefOid: "a".repeat(40),
+            body: "One approval in place of several.\n\n- #50 — fix(x): a thing (4 files)\n",
+          },
+        ]),
+        "utf8",
+      );
+      const gh = scriptedGh(
+        dir,
+        `#!/bin/sh\ncase "$*" in\n  *"pr list"*) cat '${rollups}' ;;\n  *"pr view"*changedFiles*) echo 40 ;;\n  *) exit 1 ;;\nesac\n`,
+        `@echo off\r\n` +
+          `echo %* | findstr /C:"pr list" >nul\r\nif not errorlevel 1 (type "${rollups}"\r\n  exit /b 0\r\n)\r\n` +
+          `echo %* | findstr /C:"changedFiles" >nul\r\nif not errorlevel 1 (echo 40\r\n  exit /b 0\r\n)\r\n` +
+          `exit /b 1\r\n`,
+      );
+      const member = runGuard(dir, "gh pr merge 50 --squash", { ghDir: gh });
+      assert.equal(member.decision, "deny", "Phoenix's #50 is a member of roll-up #51 and must be refused");
+      assert.match(member.reason, /roll-up #51/, "the refusal must be C13's, naming the roll-up");
+      assert.equal(
+        runGuard(dir, `gh pr merge 50 --squash --repo ${REPO}`, { ghDir: gh }).decision,
+        "deny",
+        "Phoenix named explicitly keeps the roll-up check",
+      );
+      assert.deepEqual(
+        runGuard(dir, `gh pr merge 50 --squash --repo ${otherRepo}`, { ghDir: gh }),
+        { decision: "allow", reason: "" },
+        "another repository's #50 is not Phoenix's roll-up member — C13 must step aside with C10",
+      );
+    }
+
+    {
+      // 🔴 `--auto` stays refused for EVERY repository. The refusal is settings.json's deny, never this
+      // hook, so two things must hold: the deny's glob still matches the `--repo` spellings, and the
+      // hook says NOTHING about them — an explicit allow from a hook is the one thing that could
+      // pre-empt a permission rule.
+      const autoCommands = [
+        `gh pr merge 49 --repo ${otherRepo} --auto --squash`,
+        `gh pr merge 49 -R ${otherRepo} --squash --auto`,
+        `gh pr merge 49 --auto --repo=${otherRepo}`,
+        `gh pr merge 4790 --squash --auto --repo ${REPO}`,
+      ];
+      const deny: string[] =
+        JSON.parse(readFileSync(resolve(".claude/settings.json"), "utf8"))?.permissions?.deny ?? [];
+      for (const tool of ["Bash", "PowerShell"]) {
+        const rule = deny.find((r) => r.startsWith(`${tool}(gh pr merge`) && r.includes("--auto"));
+        assert.ok(rule, `settings.json must keep its ${tool} deny on \`gh pr merge --auto\``);
+        const glob = rule.slice(tool.length + 1, -1);
+        const pattern = new RegExp(
+          "^" + glob.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$",
+        );
+        for (const command of autoCommands) {
+          assert.match(command, pattern, `${rule} must still refuse: ${command}`);
+        }
+      }
+      const gh = ghShim(dir, 40);
+      for (const command of autoCommands) {
+        assert.deepEqual(
+          runGuard(dir, command, { ghDir: gh }),
+          { decision: "allow", reason: "" },
+          `the hook must emit no decision on ${command} — settings.json's deny is what refuses it`,
+        );
+      }
     }
 
     // ---- the allow half: everything that merely MENTIONS a merge ------------

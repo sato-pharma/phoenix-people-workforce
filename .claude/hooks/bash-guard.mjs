@@ -80,6 +80,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
+import { REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
 
 function deny(reason) {
   process.stdout.write(
@@ -2044,6 +2045,31 @@ try {
     /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*gh(?:\.exe)?\s+pr\s+merge(?:\s|$)/i;
   const MERGE_HELP = /(?:^|\s)(?:--help|-h)(?:\s|$)/;
 
+  /**
+   * The repository a `gh pr merge` names with `--repo`/`-R` — `owner/name`, lower-cased — or null
+   * when it names none, or names one in a shape gh itself refuses (then it is judged as before).
+   * `HOST/OWNER/REPO` and a URL reduce to their last two parts; the last flag wins, as in gh.
+   * `-R` is case-sensitive on purpose: `-r` is `--rebase`.
+   */
+  const mergeRepoFlag = (segment) => {
+    const words = shellWords(segment);
+    let value = null;
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      if (word === '--repo' || word === '-R') value = words[++i] ?? null;
+      else if (word.startsWith('--repo=')) value = word.slice('--repo='.length);
+      else if (/^-R./.test(word)) value = word.slice(2).replace(/^=/, '');
+    }
+    if (!value) return null;
+    const parts = value
+      .replace(/^[a-z]+:\/\//i, '')
+      .replace(/\.git$/i, '')
+      .split('/')
+      .filter(Boolean);
+    if (parts.length < 2 || parts.length > 3) return null;
+    return parts.slice(-2).join('/').toLowerCase();
+  };
+
   const mergeText = withoutHeredocBodies(cmd);
   if (
     GH_PR_MERGE.test(mergeText) &&
@@ -2059,7 +2085,20 @@ try {
       // number at all) is allowed rather than guessed at.
       const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
       const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1];
-      if (prNumber) {
+      // 🔴 C10 AND C13 ARE PHOENIX'S OWN CI-COST RULES, SO THEY JUDGE PHOENIX'S PRs AND NO OTHER.
+      // Until 2026-10-27 both took the bare number and asked `gh pr view <N>` from the session's
+      // folder — this repository — so `gh pr merge 50 --repo it-gawish-hr/phoenix-next` was judged
+      // as PHOENIX's PR #50: its size, its checks, its roll-ups. Seen that day merging phoenix-next
+      // 49, sato-anti-infective-app 6 and FTP-Portal 157. A `--repo`/`-R` naming any other
+      // repository now steps both clauses aside; naming Phoenix itself keeps them judging, and their
+      // own `gh` calls then carry `--repo` too, so the answer is Phoenix's PR even from a session
+      // sitting in another repository's folder. The constant, never the typed value, is what is
+      // passed on: on Windows `shell: true` hands gh its arguments unescaped.
+      // `--auto` is not this clause's business — settings.json's deny refuses it for every repo.
+      const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
+      const otherRepo = namedRepo !== null && namedRepo !== PHOENIX_REPO.toLowerCase();
+      const repoArgs = namedRepo === null ? [] : ['--repo', PHOENIX_REPO];
+      if (prNumber && !otherRepo) {
         // C13 — merging a PR that is a MEMBER of an open roll-up is what destroys the roll-up. It
         // runs BEFORE C10's size check because it is the more fundamental refusal: a member is the
         // wrong thing to merge at any size, and C10 would wave through a six-file member.
@@ -2089,7 +2128,7 @@ try {
         try {
           const ghJson = execFileSync(
             'gh',
-            ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,headRefOid,body'],
+            ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,headRefOid,body', ...repoArgs],
             {
               cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
               encoding: 'utf8',
@@ -2153,7 +2192,7 @@ try {
         try {
           const out = execFileSync(
             'gh',
-            ['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles'],
+            ['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles', ...repoArgs],
             {
               cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
               encoding: 'utf8',
@@ -2179,7 +2218,7 @@ try {
         // machine. That failure is indistinguishable from "cannot read", so the exemption would have
         // refused every green PR while looking like it worked. The raw JSON needs no quoting.
         const readMergeState = () => {
-          const out = execFileSync('gh', ['pr', 'view', prNumber, '--json', 'state,mergeStateStatus'], {
+          const out = execFileSync('gh', ['pr', 'view', prNumber, '--json', 'state,mergeStateStatus', ...repoArgs], {
             cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],
@@ -2213,13 +2252,14 @@ try {
               }),
             ).trim();
           try {
-            const repo = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+            const repo =
+              repoArgs.length > 0 ? PHOENIX_REPO : gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
             if (!repo) return null;
             const contexts = JSON.parse(
               gh(['api', `repos/${repo}/branches/main/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
             );
             if (!Array.isArray(contexts) || contexts.length === 0) return null;
-            const sha = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid']);
+            const sha = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid', ...repoArgs]);
             if (!sha) return null;
             const runs = JSON.parse(
               gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]',
