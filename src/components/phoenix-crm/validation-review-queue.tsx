@@ -6,7 +6,7 @@
  * Owner, 2026-10-03: "held for review and only system admin can approve or reject". Each row is one
  * place the rep captured at the door: his photo, where his phone put him, and every listing Google
  * returned for the customer's name — the same evidence the system judged on. Approve validates the
- * customer in the rep's own name; Reject retires the place and sends him back to To validate. Either
+ * PLACE in the rep's own name — it never adds the customer to his list, which is a separate request; Reject retires the place and sends him back to To validate. Either
  * way the rep reads it as the system's answer: nothing he receives names who decided.
  *
  * Desktop draws the module's own `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
@@ -25,7 +25,13 @@ import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import {
+  PLACE_APPROVAL_IS_NOT_A_LIST_ADD,
+  PLACE_APPROVED_NOT_A_LIST_ADD,
+  VALIDATION_NOTE_LABEL,
+  VALIDATION_REASON_REQUIRED,
+  type ValidationRefusalReason,
+} from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = {
@@ -319,6 +325,7 @@ function Settled({ row }: { row: ValidationReviewRow }) {
   return (
     <div className="min-w-0 space-y-1">
       <CrmPill tone={row.status === "approved" ? "good" : "warn"}>{row.status === "approved" ? "Validated" : "Sent back"}</CrmPill>
+      {row.status === "approved" ? <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p> : null}
       {row.decidedAtText ? <p className="break-words text-xs text-slate-500">{row.decidedAtText}</p> : null}
       {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
     </div>
@@ -340,6 +347,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     return (
       <div className="space-y-1">
         <CrmPill tone={row.status === "approved" ? "good" : "warn"}>{row.status === "approved" ? "Approved" : "Rejected"}</CrmPill>
+        {row.status === "approved" ? <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p> : null}
         <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
         {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
@@ -398,6 +406,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         </CrmButton>
       </div>
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

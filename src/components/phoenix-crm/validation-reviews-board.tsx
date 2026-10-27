@@ -657,7 +657,7 @@ export function ValidationReviewsBoard({
                 description={
                   team
                     ? "The places the system could not settle by itself: Google has no listing it is sure is the customer, its pin is far from where the rep stood, or the signboard names somebody else — or nobody. Each one's evidence is below, and the rep knows only that the system is checking."
-                    : "Approve validates the customer in the rep's name and their visits start counting. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
+                    : "Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. It does not add anybody to the list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
                 }
               >
                 {filteredPending.length === 0 ? (

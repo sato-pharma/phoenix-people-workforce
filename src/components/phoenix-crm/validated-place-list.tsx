@@ -48,7 +48,7 @@ import {
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -368,6 +368,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
       <CrmButton disabled={saving} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : "Approve this validation"}
       </CrmButton>
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

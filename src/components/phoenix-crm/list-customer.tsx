@@ -333,7 +333,7 @@ export function CustomerScreen({
           <CrmNote className="mt-3" title="Outside your list" tone="info">
             {proposedAdd
               ? twoStepText(view, "add them to your list")
-              : "Validated at the door and not on your list. Ask to add the customer to your list, or drop the customer to the Archive."}{" "}
+              : "Validated at the door, but not on your list yet — validating a place never adds the customer to your list. Ask to add the customer to your list, or drop the customer to the Archive."}{" "}
             The visits saved here count once the customer is on your list, in the month they happened.
           </CrmNote>
         ) : null}
