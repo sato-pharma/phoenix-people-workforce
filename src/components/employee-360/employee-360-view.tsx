@@ -502,6 +502,12 @@ const LIST_DATE = "w-20 shrink-0 pt-px text-xs text-slate-400";
 /** Shown where a person's name is missing — never their raw HR ID in its place. */
 const NAME_NOT_ON_RECORD = "Name not on record";
 
+/** "A", "A and B", "A, B and C" — everyone on a visit, however many went (2026-10-27). */
+function namesInWords(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 function MixRows({ items }: { items: { label: string; count: number; pct: number }[] }) {
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
@@ -1843,8 +1849,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
                   <div className={LIST_DATED}>
                     <span className={LIST_DATE}>{dayLabel(e.date)}</span>
                     <span className="min-w-0 break-words text-slate-800">
-                      {e.doubleName ?? NAME_NOT_ON_RECORD}
-                      {e.double2Name ? ` and ${e.double2Name}` : ""}
+                      {namesInWords([e.doubleName ?? NAME_NOT_ON_RECORD, ...(e.double2Name ? [e.double2Name] : []), ...e.otherNames.map((n) => n ?? NAME_NOT_ON_RECORD)])}
                       {e.isTrainingManager ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
                     </span>
                   </div>

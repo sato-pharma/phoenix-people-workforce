@@ -62,6 +62,8 @@ export type VisitRow = PhoenixVisitDetailRow & {
   /** Slot 2 — a chain visit's second manager. Absent on a vendor row, which has one partner column. */
   double2_hr_id?: string | null;
   double2_name?: string | null;
+  /** Everyone on a Phoenix rep visit, the slots included (2026-10-27); null on a vendor row. Read through `visitPartnerHrIds`. */
+  companion_hr_ids?: string[] | null;
   visit_type: number | null;
   visit_type_description: string | null;
   visit_date: string | null;
@@ -333,7 +335,7 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     // `undefined` and print a blank, which is indistinguishable from a visit that recorded nothing.
     columns:
       "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name," +
-      "double_crm_id,double_hr_id,double_name,double2_hr_id,double2_name,comment,source,speciality," +
+      "double_crm_id,double_hr_id,double_name,double2_hr_id,double2_name,companion_hr_ids,comment,source,speciality," +
       PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", ""),
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
