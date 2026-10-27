@@ -20,7 +20,7 @@ import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited, v
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
-import { REGULAR_TYPE } from "@/lib/crm/visit-types";
+import { isFieldWorkVisit, REGULAR_TYPE } from "@/lib/crm/visit-types";
 import { managerDayFigures, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
@@ -37,10 +37,12 @@ import {
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { todayInCairo } from "@/lib/date-only";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
+import { completedReportStatuses } from "@/lib/coaching/analytics";
 import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
   buildEmployee360TeamSales,
@@ -48,6 +50,7 @@ import {
   loadEmployee360SalesWindow,
   maskRestrictedEmployee360Rows,
   selectEmployee360RowsForFamilies,
+  unpublishedEmployee360FamilyPeriods,
 } from "@/lib/employee-360/sales-canonical";
 import {
   CAMPAIGN_TYPE,
@@ -241,12 +244,17 @@ export async function getEmployeeSalesByFamilies(
   if (fams.length === 0) return aggregateSalesRows([], false, 0);
   // Same single canonical load as the team path — memoized per request, so a profile that
   // resolves a PM does not pay for it twice.
-  const all = await loadCanonicalEmployee360SalesRows();
+  const [all, window] = await Promise.all([loadCanonicalEmployee360SalesRows(), loadEmployee360SalesWindow()]);
   let rows = maskRestrictedEmployee360Rows(selectEmployee360RowsForFamilies(all, fams), viewerRole);
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }
-  return aggregateSalesRows(rows, false, 0);
+  // Published months only, like the team path — and the months still waiting on a closing are
+  // NAMED, never silently missing.
+  return withUnpublishedMonths(
+    aggregateSalesRows(rows, false, 0),
+    unpublishedEmployee360FamilyPeriods(window, fams, viewerRole),
+  );
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -462,19 +470,38 @@ function humanizeCategory(value: string | null): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-async function getEmployeeCoaching(hrId: string, nameByHrId: Map<string, string>): Promise<CoachingSummary> {
+/**
+ * A rep's coaching over the profile's window, completed reports only — the coaching module's own
+ * rule (`completedReportStatuses`), so this count equals his coach's "Coaching delivered" for the
+ * same dates. Until 2026-10-27 it read all time, drafts included, and stopped at 500 rows before
+ * sorting, so a long history lost its newest reports.
+ */
+async function getEmployeeCoaching(
+  hrId: string,
+  nameByHrId: Map<string, string>,
+  window: Pick<Employee360Window, "from" | "to">,
+): Promise<CoachingSummary> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("coaching_reports")
-    .select("id,coaching_date,final_score_percent,performance_zone,actual_score,max_score,coach_hr_id,area_of_development,strength_points")
-    .in("medical_rep_hr_id", hrIdLookupKeys(hrId))
-    .limit(500);
-  if (error) throw new Error(`Employee 360 coaching: ${error.message}`);
-  const allRows = (data ?? []) as CoachingReportRow[];
+  let allRows: CoachingReportRow[];
+  try {
+    allRows = await fetchAllRows<CoachingReportRow>(
+      () =>
+        supabase
+          .from("coaching_reports")
+          .select("id,coaching_date,final_score_percent,performance_zone,actual_score,max_score,coach_hr_id,area_of_development,strength_points")
+          .in("medical_rep_hr_id", hrIdLookupKeys(hrId))
+          .in("status", [...completedReportStatuses])
+          .gte("coaching_date", window.from),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(`Employee 360 coaching: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const rows = allRows.filter((r) => r.coaching_date && r.coaching_date <= today);
-  const futureDatedExcluded = allRows.length - rows.length;
+  const today = todayInCairo();
+  const last = window.to < today ? window.to : today;
+  const rows = allRows.filter((r) => r.coaching_date && r.coaching_date <= last);
+  const futureDatedExcluded = allRows.filter((r) => r.coaching_date && r.coaching_date > today).length;
   rows.sort((a, b) => String(a.coaching_date).localeCompare(String(b.coaching_date)));
 
   if (rows.length === 0) {
@@ -603,6 +630,8 @@ export type DoubleVisitHistory = {
   tmCount: number;
   distinctVisitors: number;
   byVisitor: DoubleVisitor[];
+  /** The visitors past the top ten, so the chips account for every visitor (2026-10-27). */
+  otherVisitors: { people: number; visits: number };
   events: DoubleVisitEvent[];
 };
 
@@ -634,10 +663,12 @@ export function buildDoubleVisitHistory(
   for (const v of visits) {
     // Only real double visits: a genuine partner (double_crm_id) on a fieldwork
     // type {0,-8}. A partner riding along on a Meeting/Vacation/Training row is
-    // NOT a double visit (matches the canonical crm/reads predicate). We still
-    // require a resolved double_hr_id here because this history names the partner.
-    if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
-    const key = String(v.double_hr_id).trim().toLowerCase();
+    // NOT a double visit (matches the canonical crm/reads predicate). A partner with no
+    // resolved double_hr_id still counts (2026-10-27: 32 such visits this year were missing here
+    // while the visits section's "doubles received" counted them) — keyed by his CRM id instead.
+    if (!isCrmDoubleVisitRow(v) || !v.visit_date) continue;
+    const resolvedHrId = String(v.double_hr_id ?? "").trim();
+    const key = resolvedHrId ? resolvedHrId.toLowerCase() : `crm:${v.double_crm_id ?? "unknown"}`;
     const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null; // gitleaks:allow — a map key, not a credential
     // Everyone on the visit: the two slots and every companion past them (2026-10-27), each once.
     const partnerKeys = visitPartnerHrIds(v).map((id) => id.toLowerCase());
@@ -649,7 +680,7 @@ export function buildDoubleVisitHistory(
     const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
     events.push({
       date: v.visit_date,
-      doubleHrId: v.double_hr_id,
+      doubleHrId: resolvedHrId,
       doubleName: name,
       double2Name: v.double2_name?.trim() || null,
       otherNames: otherKeys.map((k) => nameByHrId.get(k) ?? null),
@@ -680,12 +711,14 @@ export function buildDoubleVisitHistory(
     tmCount: events.filter((e) => e.isTrainingManager).length,
     distinctVisitors: visitorList.length,
     byVisitor: visitorList.slice(0, 10),
+    otherVisitors: { people: Math.max(0, visitorList.length - 10), visits: visitorList.slice(10).reduce((n, v) => n + v.count, 0) },
     events: events.slice(0, 40),
   };
 }
 
 // ── Before/after impact ──────────────────────────────────────────────────────
-export type ImpactMetrics = { visitsPerActiveDay: number | null; campaignShare: number | null; distinctCustomers: number; sampleDays: number; sampleVisits: number };
+/** `distinctCustomers` is null when no span held a visit — "no data", never a measured zero. */
+export type ImpactMetrics = { visitsPerActiveDay: number | null; campaignShare: number | null; distinctCustomers: number | null; sampleDays: number; sampleVisits: number };
 export type ImpactSet = { eventCount: number; windowDays: number; before: ImpactMetrics; after: ImpactMetrics };
 export type InterventionImpact = { windowDays: number; coaching: ImpactSet; trainingDv: ImpactSet };
 
@@ -705,10 +738,14 @@ function metricsInRange(rows: ProductiveRow[], start: string, end: string): Impa
   return {
     visitsPerActiveDay: days.size > 0 ? inRange.length / days.size : null,
     campaignShare: inRange.length > 0 ? campaign / inRange.length : null,
-    distinctCustomers: customers.size,
+    distinctCustomers: days.size > 0 ? customers.size : null,
     sampleDays: days.size,
     sampleVisits: inRange.length,
   };
+}
+
+function roundOrNull(value: number | null): number | null {
+  return value == null ? null : Math.round(value);
 }
 
 function meanNullable(values: (number | null)[]): number | null {
@@ -716,8 +753,21 @@ function meanNullable(values: (number | null)[]): number | null {
   return nums.length ? nums.reduce((s, v) => s + v, 0) / nums.length : null;
 }
 
-function poolImpact(rows: ProductiveRow[], eventDates: string[], windowDays: number): ImpactSet {
-  const dates = Array.from(new Set(eventDates)).sort();
+/**
+ * Before/after each event. PURE. `observed` is the stretch the visit rows cover: an event counts only
+ * when both of its spans sit wholly inside it (2026-10-27 — an event in the window's first month had a
+ * "before" the read never fetched, and one in the last month an "after" still to come, and both were
+ * averaged in as zero customers).
+ */
+export function poolImpact(
+  rows: ProductiveRow[],
+  eventDates: string[],
+  windowDays: number,
+  observed: { from: string; to: string },
+): ImpactSet {
+  const dates = Array.from(new Set(eventDates))
+    .filter((d) => addDays(d, -windowDays) >= observed.from && addDays(d, windowDays) <= observed.to)
+    .sort();
   const beforeList: ImpactMetrics[] = [];
   const afterList: ImpactMetrics[] = [];
   for (const d of dates) {
@@ -727,7 +777,7 @@ function poolImpact(rows: ProductiveRow[], eventDates: string[], windowDays: num
   const fold = (list: ImpactMetrics[]): ImpactMetrics => ({
     visitsPerActiveDay: meanNullable(list.map((m) => m.visitsPerActiveDay)),
     campaignShare: meanNullable(list.map((m) => m.campaignShare)),
-    distinctCustomers: Math.round(meanNullable(list.map((m) => m.distinctCustomers)) ?? 0),
+    distinctCustomers: roundOrNull(meanNullable(list.map((m) => m.distinctCustomers))),
     sampleDays: list.reduce((s, m) => s + m.sampleDays, 0),
     sampleVisits: list.reduce((s, m) => s + m.sampleVisits, 0),
   });
@@ -785,7 +835,8 @@ export type OutstationSummary = {
   expectedTotal: number;
   flaggedCount: number;
 };
-export type EmployeeExpenses = { payroll: ExpenseSummary; outstation: OutstationSummary };
+/** `unavailable`: the expense read failed — the section says so, and the rest of the profile still renders. */
+export type EmployeeExpenses = { payroll: ExpenseSummary; outstation: OutstationSummary; unavailable?: boolean };
 
 export type PayrollExpenseRow = {
   expense_date: string | null;
@@ -875,6 +926,26 @@ function emptyEmployeeExpenses(): EmployeeExpenses {
 }
 
 async function getEmployeeExpenses(hrId: string, window: Employee360Window): Promise<EmployeeExpenses> {
+  try {
+    return await readEmployeeExpenses(hrId, window);
+  } catch (error) {
+    // A failed expense read used to throw through the whole profile and blank every section (2026-10-27).
+    logError("Employee 360 expenses read failed", { error, labels: { event: "employee_360_expenses_failed" } });
+    return { ...emptyEmployeeExpenses(), unavailable: true };
+  }
+}
+
+/**
+ * PURE. The note a total needs when the claims stop before the period ends — the payroll import lags, and a
+ * total that silently stops at August reads as the whole period (2026-10-27). Null when nothing is missing.
+ */
+export function expenseRecordedUntilNote(monthly: readonly { month: string }[], windowTo: string): string | null {
+  const last = monthly.length ? monthly[monthly.length - 1].month : null;
+  if (!last || last >= windowTo.slice(0, 7)) return null;
+  return `No claim is recorded after ${monthLabel(last)}, so the totals cover the period up to then.`;
+}
+
+async function readEmployeeExpenses(hrId: string, window: Employee360Window): Promise<EmployeeExpenses> {
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
 
@@ -899,7 +970,12 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const rows = (payrollRes.data ?? []) as PayrollExpenseRow[];
   const outRows = (outstationRes.data ?? []) as OutstationRow[];
 
-  return { payroll: summarizePayrollExpenseRows(rows), outstation: summarizeOutstationRequests(outRows) };
+  const payroll = summarizePayrollExpenseRows(rows);
+  const recordedUntil = payroll.hasData ? expenseRecordedUntilNote(payroll.monthly, window.to) : null;
+  return {
+    payroll: recordedUntil ? { ...payroll, summaryText: `${payroll.summaryText} ${recordedUntil}` } : payroll,
+    outstation: summarizeOutstationRequests(outRows),
+  };
 }
 
 /**
@@ -1188,8 +1264,13 @@ export type LeadershipActivity = {
   dvDays: number | null;
   /** The same visits, one figure per kind. Null when the Phoenix CRM read failed. */
   dvByKind: ConductedByKind | null;
-  /** The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23) — a campaign or admin row is in none. */
+  /**
+   * The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23), campaign ones in their half as on the rep's
+   * own page. With `dvAwaitingValidation` it adds up to `dvConducted`, so the tile's figures never disagree.
+   */
   dvSplit: VisitCountSplit | null;
+  /** Phoenix CRM ride-alongs whose customer is not validated yet: in the headline, held out of the split — the calendar's rule. */
+  dvAwaitingValidation: number | null;
   /**
    * His OWN visits logged in Phoenix CRM, which no visits door carries (owner, 2026-10-23: "the manager himself
    * can submit a single visit … any record submitted by himself … must appear"). `visits` is the ones he made ALONE;
@@ -1200,6 +1281,11 @@ export type LeadershipActivity = {
   dvRepsReached: number;
   distinctRepsReached: number;
   byRep: LeaderRepTouch[];
+  /**
+   * Conducted double visits on a CRM account that maps to no employee on that date — in the headline, so the reps list
+   * prints them on a line of their own and its figures add up to it. Never named after whoever holds the account now.
+   */
+  dvUnmatched: number;
   recentCoaching: LeaderCoachingEvent[];
   recentDv: LeaderDvEvent[];
   /** Bounded before/after aggregate across double-visited reps (Training Managers only); null otherwise or when the sample is empty. */
@@ -1253,7 +1339,7 @@ function foldImpactMetricsAcross(list: ImpactMetrics[]): ImpactMetrics {
   return {
     visitsPerActiveDay: meanNullable(list.map((m) => m.visitsPerActiveDay)),
     campaignShare: meanNullable(list.map((m) => m.campaignShare)),
-    distinctCustomers: Math.round(meanNullable(list.map((m) => m.distinctCustomers)) ?? 0),
+    distinctCustomers: roundOrNull(meanNullable(list.map((m) => m.distinctCustomers))),
     sampleDays: list.reduce((s, m) => s + m.sampleDays, 0),
     sampleVisits: list.reduce((s, m) => s + m.sampleVisits, 0),
   };
@@ -1305,7 +1391,9 @@ async function computeLeaderImpact(
   for (const [key, v] of capped) {
     const rows = rowsByRep.get(key) ?? [];
     if (rows.length === 0) continue;
-    perRep.push(poolImpact(rows, v.dates, IMPACT_WINDOW_DAYS));
+    // The read covers a full span either side of every event, so only an "after" not yet over is cut.
+    const set = poolImpact(rows, v.dates, IMPACT_WINDOW_DAYS, { from: minDate, to: addDays(todayInCairo(), -1) });
+    if (set.eventCount > 0) perRep.push(set);
   }
   if (perRep.length === 0) return { impact: null, repCount: 0, truncated: false };
 
@@ -1322,11 +1410,15 @@ async function computeLeaderImpact(
 }
 
 /**
- * The AM · PM · Pharmacies bucket a conducted double visit counts in, or null for a campaign or admin row. Through
- * `visitCountBucket`, the golden rule's one helper; a pharmacy is a pharmacy whatever its period.
+ * The AM · PM · Pharmacies bucket a conducted double visit counts in, or null for a row that is not field work. Through
+ * `visitCountBucket`, the golden rule's one helper; a pharmacy is a pharmacy whatever its period. A CAMPAIGN double visit
+ * counts in its half, as the rep's own page counts it (`summarizeVisits`): until 2026-10-27 it was in none while the
+ * headline counted it, and Dina Hamdy's tile read 712 over a split of 496 — 209 campaign doubles and 7 ride-alongs
+ * awaiting validation short.
  */
 export function conductedVisitBucket(row: Pick<ConductedDvRow, "ampm" | "comment" | "source" | "speciality" | "visit_type" | "visit_type_description">) {
-  const bucket = visitCountBucket({
+  if (!isFieldWorkVisit(row.visit_type, row.comment, row.visit_type_description)) return null;
+  return visitCountBucket({
     ampm: row.ampm ?? null,
     comment: row.comment,
     source: row.source ?? null,
@@ -1334,8 +1426,6 @@ export function conductedVisitBucket(row: Pick<ConductedDvRow, "ampm" | "comment
     visit_type: row.visit_type,
     visit_type_description: row.visit_type_description,
   });
-  if (bucket === "Pharmacies") return bucket;
-  return classifyVisit(row.visit_type, row.comment, row.visit_type_description).bucket === "regular" ? bucket : null;
 }
 
 /**
@@ -1367,6 +1457,8 @@ export type LeaderPhoenixFigures = {
   /** The day of every ride-along counted in `rides`, so the conducted double visits can say on how many days. */
   rideDates: string[];
   rideSplit: VisitCountSplit;
+  /** The ride-alongs whose customer is not validated yet: in `rides`, never in `rideSplit`. */
+  rideAwaitingValidation: number;
 };
 
 /**
@@ -1384,6 +1476,7 @@ export function leaderVisitFigures(visits: readonly ManagerDayVisit[]): LeaderPh
     ownSingle: { visits: ownFigures.ownSingle, split: splitOf(ownAlone) },
     ownWithSenior: { visits: ownFigures.ownWithSenior, split: splitOf(ownWithSenior) },
     rides: { chains: rideFigures.chains, doubles: rideFigures.doubles, productManagerVisits: rideFigures.productManagerVisits },
+    rideAwaitingValidation: rideFigures.awaitingValidation,
     rideDates: rides.filter((v) => v.kind === "double" || v.kind === "chain" || v.kind === "product_manager").map((v) => v.date),
     rideSplit: splitOf(rides),
   };
@@ -1395,11 +1488,14 @@ export function leaderVisitFigures(visits: readonly ManagerDayVisit[]): LeaderPh
  * so they are left out here and the ride-alongs counted instead (they carry the kind and the product-manager seat).
  * `days` is the distinct days those same visits were made on (owner, 2026-10-27: "how many days").
  * Null Phoenix visits (that read failed) is null — never a figure that left half the work out.
+ *
+ * `split` and `awaitingValidation` count the same visits as `total`: every door row is field work (the read asks for
+ * the double-visit types only) and lands in one bucket, and a ride-along is in the split or awaiting validation.
  */
 export function conductedDoubleVisitFigures(
   doorRows: ReadonlyArray<Pick<ConductedDvRow, "ampm" | "comment" | "crm_visit_id" | "double2_hr_id" | "source" | "speciality" | "visit_date" | "visit_type" | "visit_type_description">>,
   phoenix: LeaderPhoenixFigures | null,
-): { total: number; days: number; byKind: ConductedByKind; split: VisitCountSplit } | null {
+): { total: number; days: number; byKind: ConductedByKind; split: VisitCountSplit; awaitingValidation: number } | null {
   if (!phoenix) return null;
   const byKind: ConductedByKind = { ...phoenix.rides };
   const split = emptyVisitCountSplit();
@@ -1416,11 +1512,24 @@ export function conductedDoubleVisitFigures(
     if (bucket) addBucketToSplit(split, bucket);
   }
   return {
+    awaitingValidation: phoenix.rideAwaitingValidation,
     byKind,
     days: days.size,
     split: { am: split.am, pharmacies: split.pharmacies, pm: split.pm },
     total: byKind.doubles + byKind.chains + byKind.productManagerVisits,
   };
+}
+
+/**
+ * PURE. The conducted double visits the reps list cannot name: an iReports360 row whose account maps to no employee on
+ * that date (no `agent_hr_id`). They are in the headline, so the list prints them as a line of their own and adds up to
+ * it — on 2026-10-27 Dina Hamdy's list summed to 705 under a headline of 712, the 7 being visits of 2 to 5 August on a
+ * Tanta account before its holder's hire date. A Phoenix row is counted through its ride-along, never here.
+ */
+export function unmatchedConductedDoubleVisits(
+  doorRows: ReadonlyArray<Pick<ConductedDvRow, "agent_hr_id" | "crm_visit_id" | "source">>,
+): number {
+  return doorRows.filter((row) => !isPhoenixNativeVisitRow(row) && !String(row.agent_hr_id ?? "").trim()).length;
 }
 
 /**
@@ -1462,13 +1571,15 @@ async function getLeadershipActivity(
 ): Promise<LeadershipActivity> {
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInCairo();
 
   const [coachRes, dvRows] = await Promise.all([
     supabase
       .from("coaching_reports")
       .select("medical_rep_hr_id,coaching_date,final_score_percent,performance_zone")
       .in("coach_hr_id", keys)
+      // Completed reports only — the coaching module's own definition; a draft is not coaching delivered.
+      .in("status", [...completedReportStatuses])
       .gte("coaching_date", window.from)
       .lte("coaching_date", window.to)
       .limit(3000),
@@ -1528,6 +1639,7 @@ async function getLeadershipActivity(
 
   const dvByRepForImpact = new Map<string, { exactIds: Set<string>; dates: string[] }>();
   const recentDv: LeaderDvEvent[] = [];
+  const dvUnmatched = unmatchedConductedDoubleVisits(dvRows);
   for (const r of dvRows) {
     if (!r.visit_date) continue;
     const rawId = String(r.agent_hr_id ?? "").trim();
@@ -1603,10 +1715,13 @@ async function getLeadershipActivity(
     dvDays,
     dvByKind: conducted?.byKind ?? null,
     dvSplit: conducted?.split ?? null,
+    dvAwaitingValidation: conducted?.awaitingValidation ?? null,
+    dvUnmatched,
     ownSingle,
     dvRepsReached,
     distinctRepsReached,
-    byRep: byRepList.slice(0, 30),
+    // Every rep, never the top 30: with the unmatched line the list adds up to the headline (2026-10-27).
+    byRep: byRepList,
     recentCoaching: recentCoaching.slice(0, 12),
     recentDv: recentDv.slice(0, 12),
     impact,
@@ -1626,11 +1741,11 @@ async function getLeadershipActivity(
 export type Employee360FieldBenchmarks = {
   /** Active Medical Reps on the directory today — the denominator of both coverage figures. */
   fieldReps: number;
-  /** Of them, how many hold at least one validated sales row — the same test as a rep's "Sales linked". */
+  /** Of them, how many hold at least one published sales row — the same test as a rep's "Sales linked". */
   repsWithSales: number;
   /** The company's achievement under the closing's rule, the company as the subject; null when no month carries a target. */
   companyAchievementPct: number | null;
-  /** The latest month holding validated sales ("Aug 2026") — what both sales figures run through. */
+  /** The latest published closing month holding sales ("Sep 2026") — what both sales figures run through. */
   salesThroughLabel: string | null;
   /** Of the field reps, how many have ever been coached; null when that read failed, so no figure is shown. */
   repsEverCoached: number | null;
@@ -1673,9 +1788,14 @@ export function summarizeFieldBenchmarks(input: {
 /** Every rep with a coaching report dated today or earlier — the per-rep section's own future-date cut. Null on a failed read. */
 async function loadCoachedRepHrIds(): Promise<string[] | null> {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayInCairo();
     const rows = await fetchAllRows<{ id: string; medical_rep_hr_id: string | null }>(
-      () => getSupabaseAdmin().from("coaching_reports").select("id,medical_rep_hr_id").lte("coaching_date", today),
+      () =>
+        getSupabaseAdmin()
+          .from("coaching_reports")
+          .select("id,medical_rep_hr_id")
+          .in("status", [...completedReportStatuses])
+          .lte("coaching_date", today),
       "id",
     );
     return rows.map((r) => String(r.medical_rep_hr_id ?? "")).filter(Boolean);
@@ -1805,7 +1925,7 @@ export async function getEmployee360Profile(
     // are read by the employee alone — nothing above feeds them — so they load with the rest instead
     // of after it. Still read even where the page hides the coaching section: the impact figures
     // below are built from its dates.
-    getEmployeeCoaching(hrId, nameByHrId),
+    getEmployeeCoaching(hrId, nameByHrId, window),
   ]);
   const [phoenixVisits, holidays] = await Promise.all([phoenixVisitsPromise, holidaysPromise]);
 
@@ -1832,8 +1952,9 @@ export async function getEmployee360Profile(
     monthly: sales.monthly,
     window,
     isTeamRollup: sales.isTeamRollup,
-    productiveVisits: visitSummary.productiveVisits,
-    distinctCustomers: visitSummary.distinctCustomers,
+    visits: fieldVisits
+      .filter((v) => isProductiveVisit(v) && v.visit_date)
+      .map((v) => ({ date: v.visit_date as string, customerKey: customerKeyOf(v) })),
   });
   const windowSalesValue = efficiency.windowSalesValue;
   sales.salesPerVisit = efficiency.salesPerVisit;
@@ -1846,7 +1967,12 @@ export async function getEmployee360Profile(
   const tripVisits = ep.amWorkload + ep.pmWorkload + (ep.pharmacyWorkload ?? 0);
   ep.costPerTripVisit = tripVisits > 0 ? ep.totalCost / tripVisits : null;
   ep.windowSalesValue = windowSalesValue > 0 ? windowSalesValue : null;
-  ep.expenseToSalesPct = windowSalesValue > 0 ? (ep.totalCost / windowSalesValue) * 100 : null;
+  // The cost of the same months the sales cover — never the whole window's cost over three months of sales.
+  const salesMonths = efficiency.salesMonths;
+  const costInSalesMonths = salesMonths
+    ? ep.monthly.filter((m) => m.month >= salesMonths.from && m.month <= salesMonths.to).reduce((s, m) => s + m.cost, 0)
+    : 0;
+  ep.expenseToSalesPct = windowSalesValue > 0 ? (costInSalesMonths / windowSalesValue) * 100 : null;
 
   // productive rows for the impact engine
   const productiveRows: ProductiveRow[] = visits
@@ -1861,10 +1987,13 @@ export async function getEmployee360Profile(
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
   const tmDvDates = trainingManagerVisitDates(visits, tmIds);
 
+  // The visit rows cover the window up to yesterday (today is still being logged): an event's spans must sit in it.
+  const lastWholeDay = addDays(todayInCairo(), -1);
+  const impactObserved = { from: window.from, to: window.to < lastWholeDay ? window.to : lastWholeDay };
   const impact: InterventionImpact = {
     windowDays: IMPACT_WINDOW_DAYS,
-    coaching: poolImpact(productiveRows, coachingDates, IMPACT_WINDOW_DAYS),
-    trainingDv: poolImpact(productiveRows, tmDvDates, IMPACT_WINDOW_DAYS),
+    coaching: poolImpact(productiveRows, coachingDates, IMPACT_WINDOW_DAYS, impactObserved),
+    trainingDv: poolImpact(productiveRows, tmDvDates, IMPACT_WINDOW_DAYS, impactObserved),
   };
 
   return {

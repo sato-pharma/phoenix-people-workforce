@@ -11,6 +11,8 @@
 import { buildTrainingManagerCoachingComparison, completedReportStatuses } from "@/lib/coaching/analytics";
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TmRepRef = { hrId: string; name: string; line: string | null; count: number };
@@ -19,11 +21,13 @@ export type TmVerdict = "efficient" | "adequate" | "needs_improvement";
 
 export type TrainingManagerAnalytics = {
   hasData: boolean;
+  /** The coaching reports could not be read — the screen says so, never a row of zeros. */
+  unavailable?: boolean;
   poolSize: number; // all active Medical Reps
   coachedByTm: number; // reps this TM coached in the window
   neglectedByTm: number; // reps this TM never coached
   coverageRate: number; // coachedByTm / poolSize (0..1)
-  sessionsDelivered: number; // completed coaching reports authored by this TM
+  sessionsDelivered: number; // completed coaching reports authored by this TM — every rep, a leaver included
   avgScoreGiven: number | null; // avg coaching score across their coached reps
   topFocusShare: number | null; // share of sessions spent on the top-5 reps (concentration)
   overFocusedCount: number; // reps coached 3+ times
@@ -54,19 +58,60 @@ export async function getTrainingManagerAnalytics(input: {
 }): Promise<TrainingManagerAnalytics> {
   let reports: CoachingReportSummaryRow[] = [];
   try {
-    const { data } = await getSupabaseAdmin()
+    const { data, error } = await getSupabaseAdmin()
       .from("coaching_reports_summary")
       .select("medical_rep_hr_id, coaching_date, final_score_percent, coach_name, coach_hr_id, status")
       .eq("coach_hr_id", input.tmHrId.toUpperCase())
       .gte("coaching_date", input.window.from)
       .lte("coaching_date", input.window.to);
+    if (error) throw error;
     reports = (data ?? []).map((r) => mapReport(r as Record<string, unknown>));
-  } catch {
-    reports = [];
+  } catch (error) {
+    logError("Employee 360 Training Manager coaching read failed", {
+      error,
+      labels: { event: "employee_360_tm_analytics_failed" },
+    });
+    return unavailableTrainingManagerAnalytics();
   }
+  return summarizeTrainingManagerAnalytics(input.employees, reports);
+}
+
+/** What the section shows when the coaching reports could not be read: no figure, and the reason. */
+function unavailableTrainingManagerAnalytics(): TrainingManagerAnalytics {
+  return {
+    hasData: false,
+    unavailable: true,
+    poolSize: 0,
+    coachedByTm: 0,
+    neglectedByTm: 0,
+    coverageRate: 0,
+    sessionsDelivered: 0,
+    avgScoreGiven: null,
+    topFocusShare: null,
+    overFocusedCount: 0,
+    concentratedReps: [],
+    neglectedReps: [],
+    monthly: [],
+    efficiencyScore: 0,
+    verdict: "needs_improvement",
+    rationale: "The coaching reports could not be read just now, so no figure is shown.",
+  };
+}
+
+/**
+ * The analysis, from the reports this Training Manager authored in the window. PURE.
+ *
+ * Coverage is measured against today's active Medical Reps; the sessions are EVERY completed report
+ * he wrote (2026-10-27: a rep who has since resigned was still coached — the section printed 25 of
+ * the 51 sessions the "Coaching delivered" tile and the monthly chart beside it both count).
+ */
+export function summarizeTrainingManagerAnalytics(
+  employees: EmployeeDirectoryRow[],
+  reports: CoachingReportSummaryRow[],
+): TrainingManagerAnalytics {
 
   // Pool = all active Medical Reps (the builder filters to them internally).
-  const comparison = buildTrainingManagerCoachingComparison({ employees: input.employees, reports });
+  const comparison = buildTrainingManagerCoachingComparison({ employees, reports });
   const poolSize = comparison.totalMedicalReps;
   const coachedByTm = comparison.coachedCount;
   const neglectedByTm = comparison.uncoachedCount;
@@ -75,10 +120,20 @@ export async function getTrainingManagerAnalytics(input: {
   const coachedRows = comparison.rows
     .filter((r) => r.coachingCount > 0)
     .sort((a, b) => b.coachingCount - a.coachingCount);
-  const sessionsDelivered = coachedRows.reduce((s, r) => s + r.coachingCount, 0);
-  const top5 = coachedRows.slice(0, 5).reduce((s, r) => s + r.coachingCount, 0);
+  // Sessions per rep over every completed report, so the total, the concentration and the over-focus
+  // are worked out on the same sessions the monthly chart counts.
+  const sessionsByRep = new Map<string, number>();
+  for (const report of reports) {
+    if (!completedReportStatuses.has(report.status)) continue;
+    const rep = canonicalHrIdKey(report.medicalRepHrId);
+    if (!rep) continue;
+    sessionsByRep.set(rep, (sessionsByRep.get(rep) ?? 0) + 1);
+  }
+  const perRep = [...sessionsByRep.values()].sort((a, b) => b - a);
+  const sessionsDelivered = perRep.reduce((s, n) => s + n, 0);
+  const top5 = perRep.slice(0, 5).reduce((s, n) => s + n, 0);
   const topFocusShare = sessionsDelivered > 0 ? top5 / sessionsDelivered : null;
-  const overFocusedCount = coachedRows.filter((r) => r.coachingCount >= 3).length;
+  const overFocusedCount = perRep.filter((n) => n >= 3).length;
   const scores = coachedRows.map((r) => r.averageScore).filter((s): s is number => s != null);
   const avgScoreGiven = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 

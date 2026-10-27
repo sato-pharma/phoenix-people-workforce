@@ -499,3 +499,22 @@ export function selectEmployee360RowsForFamilies(
   if (wanted.size === 0) return [];
   return rows.filter((row) => wanted.has(lower(row.family)));
 }
+
+/**
+ * The months a Product Manager's brands sold that no published closing holds yet, so their section
+ * names them "Not published yet" like everyone else's (2026-10-27: a Group PM's October sales were
+ * simply missing, with no word on the screen). Confidential products stripped first. PURE.
+ */
+export function unpublishedEmployee360FamilyPeriods(
+  window: Pick<Employee360SalesWindow, "rows" | "publishedKeys" | "productFamilies">,
+  families: readonly string[],
+  viewerRole: PhoenixRole,
+): string[] {
+  const wanted = new Set(families.map(lower).filter(Boolean));
+  if (wanted.size === 0) return [];
+  const scoped = maskRestrictedEmployee360Rows(
+    window.rows.filter((row) => wanted.has(lower(window.productFamilies.get(upper(row.productCode)) ?? null))),
+    viewerRole,
+  );
+  return unpublishedEmployee360Periods(scoped, window.publishedKeys);
+}

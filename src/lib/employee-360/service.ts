@@ -130,8 +130,17 @@ export function campaignMixVerdictOf(campaignVisits: number, productiveVisits: n
   return campaignVisits / productiveVisits >= EMPLOYEE_360_BENCHMARKS.campaignHeavyShare ? "campaign_heavy" : "mostly_regular";
 }
 
+/**
+ * The fewest productive visits a month needs to stand at either end of the trend — under two days' field work is a
+ * fragment, not a month. Ragaa Mosaad's October held ONE campaign visit, so her page printed "Campaign rising, regular
+ * falling (55% → 100%)" in amber while her real path was 55% in January to 6% in September (2026-10-27).
+ */
+export const CAMPAIGN_TREND_MIN_MONTH_VISITS = 10;
+
 export function campaignMixTrendOf(monthly: readonly MonthlyVisitPoint[]): CampaignMixTrend | null {
-  const months = monthly.filter((m) => m.regular + m.campaign > 0 && m.campaignShare != null);
+  const months = monthly.filter(
+    (m) => m.regular + m.campaign >= CAMPAIGN_TREND_MIN_MONTH_VISITS && m.campaignShare != null,
+  );
   if (months.length < 2) return null;
   const first = months[0];
   const last = months[months.length - 1];
@@ -263,10 +272,17 @@ export type VisitSummary = {
   monthly: MonthlyVisitPoint[];
   // deep analytics
   activityMix: LabeledCount[];
-  last30: number;
-  prev30: number;
-  last90: number;
-  momentumTrend: "up" | "down" | "flat";
+  /**
+   * Productive visits in the 30 days ending on the window's last day, the 30 days before them and the 90 days
+   * ending on it — each exactly that many days. Null when the span starts before the window: only the window's
+   * rows are read, so a zero there would be a figure nobody measured (a one-month period printed "previous 30
+   * days: 0 · rising" for a rep whose visits had fallen from 175 to 1).
+   */
+  last30: number | null;
+  prev30: number | null;
+  last90: number | null;
+  /** Null when either 30-day span is not inside the window. */
+  momentumTrend: "up" | "down" | "flat" | null;
   avgVisitsPerCustomer: number | null;
   repeatCustomers: number;
   oneTimeCustomers: number;
@@ -274,6 +290,12 @@ export type VisitSummary = {
   visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
   /** Saturday to Wednesday less the confirmed national holidays — the call rate's own working days. */
   workingDaysInWindow: number;
+  /**
+   * The active days that fall on a working day — utilization's numerator. The hint prints THIS, never `activeDays`
+   * (which keeps Thursdays, Fridays and holidays): Ragaa Mosaad's hint read 183 over a percentage worked on 170.
+   * Optional: a profile cached before it existed reads as unknown.
+   */
+  workingActiveDays?: number;
   /** Active days that fall on a working day, over `workingDaysInWindow`. */
   utilization: number | null;
   /**
@@ -392,30 +414,48 @@ export function customerKeyOf(
 /**
  * Sales efficiency over the visit window.
  *
- * Only the months the window touches count. A person's sales series runs from the history floor
- * (the tile says "through <month>"), so dividing the whole series by the WINDOW's visits put eight
- * months of sales over one month of visits. A team roll-up gets no ratio at all: those sales are
- * the whole team's while the visits are the manager's own, so the figure would describe nobody.
- * `windowSalesValue` is returned for the expense ratio, which is the person's cost against the
- * same months whatever the roll-up.
+ * Only the months the window touches count, and of those only the months that carry published
+ * sales: the visits and customers are cut to the SAME months (2026-10-27 — a year-to-date window
+ * divided July to September's sales by every visit since January, a third of the true figure).
+ * A team roll-up gets no ratio at all: those sales are the whole team's while the visits are the
+ * manager's own, so the figure would describe nobody. `windowSalesValue` and `salesMonths` are
+ * returned for the expense ratio, which sets the person's cost in those same months against them.
  */
 export function windowSalesEfficiency(input: {
   monthly: ReadonlyArray<{ month: string; sales: number }>;
   window: Pick<Employee360Window, "from" | "to">;
   isTeamRollup: boolean;
-  productiveVisits: number;
-  distinctCustomers: number;
-}): { windowSalesValue: number; salesPerVisit: number | null; salesPerCustomer: number | null } {
+  /** The productive visits, each with its customer key (null when it reached no customer). */
+  visits: ReadonlyArray<{ date: string; customerKey: string | null }>;
+}): {
+  windowSalesValue: number;
+  salesMonths: { from: string; to: string } | null;
+  salesPerVisit: number | null;
+  salesPerCustomer: number | null;
+} {
   const fromMonth = input.window.from.slice(0, 7);
   const toMonth = input.window.to.slice(0, 7);
-  const windowSalesValue = input.monthly
-    .filter((m) => m.month >= fromMonth && m.month <= toMonth)
-    .reduce((s, m) => s + m.sales, 0);
-  const own = !input.isTeamRollup && windowSalesValue > 0 ? windowSalesValue : null;
+  const inWindow = input.monthly.filter((m) => m.month >= fromMonth && m.month <= toMonth);
+  const windowSalesValue = inWindow.reduce((s, m) => s + m.sales, 0);
+  const months = inWindow.map((m) => m.month).sort();
+  const salesMonths = months.length > 0 ? { from: months[0], to: months[months.length - 1] } : null;
+  const own = !input.isTeamRollup && windowSalesValue > 0 && salesMonths ? windowSalesValue : null;
+  let visitCount = 0;
+  const customers = new Set<string>();
+  if (own != null && salesMonths) {
+    for (const v of input.visits) {
+      const month = v.date.slice(0, 7);
+      if (v.date < input.window.from || v.date > input.window.to) continue;
+      if (month < salesMonths.from || month > salesMonths.to) continue;
+      visitCount += 1;
+      if (v.customerKey) customers.add(v.customerKey);
+    }
+  }
   return {
     windowSalesValue,
-    salesPerVisit: own != null && input.productiveVisits > 0 ? own / input.productiveVisits : null,
-    salesPerCustomer: own != null && input.distinctCustomers > 0 ? own / input.distinctCustomers : null,
+    salesMonths,
+    salesPerVisit: own != null && visitCount > 0 ? own / visitCount : null,
+    salesPerCustomer: own != null && customers.size > 0 ? own / customers.size : null,
   };
 }
 function customerNameOf(row: VisitRow): string {
@@ -574,12 +614,17 @@ export function summarizeVisits(
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
-  // momentum (relative to window end)
+  // momentum (relative to window end): spans of exactly 30 and 90 days, counted only when the window holds them
   const inRange = (start: string, end: string) => productiveDates.filter((d) => d >= start && d <= end).length;
-  const last30 = inRange(addDays(window.to, -30), window.to);
-  const prev30 = inRange(addDays(window.to, -60), addDays(window.to, -31));
-  const last90 = inRange(addDays(window.to, -90), window.to);
-  const momentumTrend: "up" | "down" | "flat" = last30 > prev30 * 1.1 ? "up" : last30 < prev30 * 0.9 ? "down" : "flat";
+  const spanInWindow = (days: number, endOffset = 0): number | null => {
+    const start = addDays(window.to, endOffset - (days - 1));
+    return start >= window.from.slice(0, 10) ? inRange(start, addDays(window.to, endOffset)) : null;
+  };
+  const last30 = spanInWindow(30);
+  const prev30 = spanInWindow(30, -30);
+  const last90 = spanInWindow(90);
+  const momentumTrend: "up" | "down" | "flat" | null =
+    last30 == null || prev30 == null ? null : last30 > prev30 * 1.1 ? "up" : last30 < prev30 * 0.9 ? "down" : "flat";
 
   const customers = Array.from(customerCount.values());
   const distinctCustomers = customers.length;
@@ -632,7 +677,7 @@ export function summarizeVisits(
         `(${visitsPerActiveDay?.toFixed(1)}/day, ${describeVs(visitsPerActiveDay, b.visitsPerActiveDay)}). ` +
         `Mix is ${Math.round((regularShare ?? 0) * 100)}% regular / ${Math.round((campaignShare ?? 0) * 100)}% campaign — ${CAMPAIGN_MIX_WORDS[campaignMix]}.${describeCampaignTrend(campaignTrend)} ` +
         `Reaches ${distinctCustomers} customers (${avgVisitsPerCustomer?.toFixed(1)} visits each); ${repeatCustomers} seen more than once. ` +
-        `Momentum is ${momentumTrend} (last 30d: ${last30} vs prior 30d: ${prev30}).`;
+        (momentumTrend == null ? "" : `Momentum is ${momentumTrend} (last 30d: ${last30} vs prior 30d: ${prev30}).`);
 
   return {
     productiveVisits,
@@ -667,6 +712,7 @@ export function summarizeVisits(
     topCustomers,
     visitDayOfWeek: dow,
     workingDaysInWindow,
+    workingActiveDays,
     utilization,
     ...(holidays ? { holidaysComplete: holidays.complete } : {}),
     visitsSummaryText: summaryText,
@@ -748,8 +794,10 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
 
   const fmtHour = (h: number | null) => {
     if (h == null) return "—";
-    const hh = Math.floor(h);
-    const mm = Math.round((h - hh) * 60);
+    // Round the whole clock to the minute first, so 09:59.6 reads 10:00 and never "09:60".
+    const total = Math.round(h * 60);
+    const hh = Math.floor(total / 60);
+    const mm = total % 60;
     return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   };
   const coverage = visitSummary.activeDays > 0 ? corroboratedDays.size / visitSummary.activeDays : null;
@@ -759,14 +807,15 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
       : `${checkinCount.toLocaleString()} GPS check-ins across ${distinctCheckinDays} days (${Math.round((coverage ?? 0) * 100)}% of active days corroborated). ` +
         `Typical field window ${fmtHour(avgFirstHour)}–${fmtHour(avgLastHour)} (~${avgSpanHours?.toFixed(1)}h). ` +
         `${uncorroboratedDays} visit day(s) had no GPS. ${locations.size} distinct locations; ` +
-        `${Math.round((lateNight / checkinCount) * 100)}% of check-ins fall after 22:00.`;
+        `${Math.round((lateNight / checkinCount) * 100)}% of check-ins fall between 22:00 and 02:00.`;
 
   return {
     hasGpsCheckins: checkinCount > 0,
     checkinCount,
     distinctCheckinDays,
     checkinToVisitRatio: visitSummary.productiveVisits > 0 ? checkinCount / visitSummary.productiveVisits : null,
-    checkinCoverage: coverage,
+    // No check-in feed is no coverage figure — "—", never a 0% that reads as a rep who never checked in.
+    checkinCoverage: checkinCount > 0 ? coverage : null,
     hourHistogram,
     companyHourShare: COMPANY_CHECKIN_HOUR_SHARE,
     lateNightShare: checkinCount > 0 ? lateNight / checkinCount : null,

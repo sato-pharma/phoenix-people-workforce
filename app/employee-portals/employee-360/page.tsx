@@ -28,7 +28,7 @@ import { loadEmployee360CrmInsights, unreadCrmInsights, type Employee360CrmInsig
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { employeeExitDay, getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isExpenseAnalysisRole } from "@/lib/employees/job-function";
 import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
@@ -228,6 +228,8 @@ export default async function EmployeePortalEmployee360Page({
     managerName: target.managerName,
     employmentStatus: target.employmentStatus,
     hireDate: target.hireDate,
+    // Tenure stops on the day they left, never keeps counting on a closed record.
+    leftOn: isActiveLifecycleStatus(target.employmentStatus) ? null : employeeExitDay(target),
   };
 
   // Expense analysis is a MANAGER view (DM / RM / NSM / TM / PM / GPM) — an explicit
