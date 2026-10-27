@@ -10,6 +10,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { isReadOnlyViewer } from "@/lib/auth/read-only-viewer";
+import { isTestAccount } from "@/lib/auth/test-persona";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { randomUUID } from "node:crypto";
@@ -1255,7 +1256,9 @@ async function validateCapturedLocation(
 ): Promise<ValidatedLocationBundle> {
   const identity = await getEmployeeIdentity(params.access);
   const policy = await getActivePolicyForRole(identity.employeeRole);
-  const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
+  // A geocoded home is stored back on the employee's row — never for a test account or a seat
+  // view, which run this capture and pricing as her but may not write as her (test-persona.ts).
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !isReadOnlyViewer(params.access) });
   const submittedAt = new Date().toISOString();
 
   if (
@@ -2147,6 +2150,15 @@ export async function submitOutstationRequest(
   }
   if (!nonTravel && input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
     throw new Error("The live arrival photo metadata is missing.");
+  }
+
+  // 🔴 A TEST ACCOUNT STOPS HERE (owner, 2026-10-28: "Runs fully, saves nothing"). Every check above
+  // has run exactly as for the person it mirrors; everything below — the photo and ticket uploads,
+  // the claim row, the payroll release, the emails — would happen AS HER, so none of it may run.
+  // src/lib/auth/test-persona.ts lets the submit routes through on this promise alone, and
+  // tests/test-account-expense-dry-run.test.ts pins that this return comes before the first write.
+  if (isTestAccount(access)) {
+    return { ...calculation, dryRun: true as const, id: null };
   }
 
   if (!nonTravel && input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {

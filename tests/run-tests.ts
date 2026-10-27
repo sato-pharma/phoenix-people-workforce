@@ -2603,6 +2603,7 @@ import { runFlexWrapShrinkGuardTests } from "./flex-wrap-shrink-guard.test.ts";
 import { runShareCardTests } from "./share-card.test.ts";
 import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
+import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -10091,6 +10092,11 @@ await runTest(
 await runTest(
   "test-account read-only POSTs: a test persona may render its own milestone card / spotlight sheet (write-free POSTs), and every listed route is verifiably write-free",
   runTestAccountReadonlyPostsTests,
+);
+
+await runTest(
+  "test-account expense dry run (owner 2026-10-28): a test account submits an expense through every check and nothing is saved — the stop comes before the first upload or row, and the capture and pricing write nothing as her",
+  runTestAccountExpenseDryRunTests,
 );
 
 await runTest(
