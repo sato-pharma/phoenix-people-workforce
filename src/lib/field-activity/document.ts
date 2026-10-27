@@ -136,8 +136,9 @@ export function longDate(dateIso: string, weekday: string): string {
   return `${weekday} ${date.getUTCDate()} ${month} ${date.getUTCFullYear()}`;
 }
 
+/** Every amount on the paper names its currency — "EGP 342.26", the same as the screen. */
 function money(value: number): string {
-  return value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "EGP " + value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function duration(minutes: number | null): string {
