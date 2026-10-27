@@ -6661,6 +6661,40 @@ by `actor_hr_id` in SQL; the clock gap taken as the maximum instead of the minim
 falling back to `occurred_at`; the Cairo clock put on a fixed `Etc/GMT-3`, which the WINTER case
 caught and the October one did not; and the unreadable count zeroed on its way to the screen.
 
+## The touch trail keeps 30 days — the rest is archived (owner ruling, 2026-10-27)
+
+He asked why the production database stalls every afternoon. The read that evening: a 4.3 GB database
+on a 2.03 GB box, about 6.6 GB swapped out in the 52 hours since the 25 October boot, every restart
+between 11:30 and 19:05 Cairo — and `phoenix_crm_touch_trail` the biggest table, 985 MB after 24 days
+(95,000 to 181,000 rows on a field day, 181,290 on 22 October), with nothing ever leaving it. Offered
+keep-all, archive or delete, he chose **"Archive after 30 days"**: touches older than 30 days go to
+gzipped files in Supabase Storage and are then deleted from the database, and the touch-trail screen
+shows the last 30 days and says older days are archived.
+
+**How it runs.** `app/api/cron/phoenix-crm-touch-trail-archive`, 04:37 Cairo nightly on cron-job.org,
+calls `runTouchTrailArchive` (`src/lib/phoenix-crm/server/touch-trail-archive.ts`; rules in
+`src/lib/phoenix-crm/touch-trail-archive.ts`). The database keeps today and the 29 days before it, so
+3 October leaves on 2 November. Oldest day first, at most two days a night, 20,000 rows to a file at
+`<yyyy>/<mm>/<day>/ids-<first>-<last>.ndjson.gz` in the private bucket
+`phoenix-crm-touch-trail-archive` (migration `20261027175121`). `?dryRun=1` names the day due and
+writes nothing.
+
+**The four rules, and why.**
+1. **Nothing is deleted that was not first read back from storage.** Production has no point-in-time
+   recovery, so "uploaded" is not enough: the file is downloaded again, its sha256 compared with what
+   was sent, its lines counted and its first and last id compared. Any difference stops the run with
+   the rows still in the table.
+2. **The delete names every id — never a range.** A `visit_day`/`id` range would also take a row a
+   late flush filed on an old day after the read, and that row would be in no file.
+3. **A file names its first and last id**, so a run cut off half-way never overwrites the part already
+   archived. One id may then sit in two files; a reader of the archive takes each id once.
+4. **Golden rule #1 is untouched.** Only the service role reaches the bucket; nothing mints a signed
+   URL for it or serves from it. The Super Admin is still the one reader.
+
+A delete that does not land (the next file starts at or below the last archived id) stops the run
+rather than writing the same file until the budget runs out. Pinned by
+`tests/phoenix-crm-touch-trail-archive.test.ts`.
+
 ## A refused capture keeps its photo — owner ruling, 2026-10-03
 
 His words, in two messages: *"save the photo when a validation is refused"*, then — while the first

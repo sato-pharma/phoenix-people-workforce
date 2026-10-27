@@ -1295,11 +1295,15 @@ function runMigrationTests() {
     // file that could quietly file a recording where the photos are read from.
     // The visit recording (2026-10-16) is a third kind again — the whole conversation, kept for the
     // Super Admin — so it has a bucket of its own and one file that opens it.
+    // The touch trail archive (2026-10-27) holds touches older than 30 days — the Super Admin's alone,
+    // like the trail itself — in a bucket of its own, opened by the one job that writes it.
     const bucketFor = file.endsWith("/voice-notes.ts")
       ? "PHOENIX_CRM_VOICE_BUCKET"
       : file.endsWith("/visit-recordings.ts")
         ? "PHOENIX_CRM_RECORDING_BUCKET"
-        : "PHOENIX_CRM_PHOTO_BUCKET";
+        : file.endsWith("/touch-trail-archive.ts")
+          ? "TOUCH_TRAIL_ARCHIVE_BUCKET"
+          : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }

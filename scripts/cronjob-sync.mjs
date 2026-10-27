@@ -243,6 +243,16 @@ const JOBS = {
     // oldest first, which is why the backlog drains from the old end rather than the new one.
     requestTimeout: 300,
   },
+  "phoenix-crm-touch-trail-archive": {
+    title: "Phoenix — CRM touch trail archive",
+    path: "/api/cron/phoenix-crm-touch-trail-archive",
+    // 04:37 Cairo, every night (owner, 2026-10-27: "Archive after 30 days"). On :37 so it shares a minute
+    // with nothing else in this account and a red execution names one job; after the 03:35 photo sweep.
+    schedule: { hours: [4], minutes: [37], mdays: [-1], months: [-1], wdays: [-1] },
+    // Up to two days a night, about ten files a busy day, each uploaded, read back and checked before
+    // its rows are deleted: past the 30 s platform cut, so the dead-man's switch is the witness.
+    requestTimeout: 300,
+  },
   "phoenix-crm-plan-reminder": {
     title: "Phoenix — CRM plan reminder",
     path: "/api/cron/phoenix-crm-plan-reminder",

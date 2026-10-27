@@ -84,3 +84,7 @@ export const CRM_CONTACT_ASSIGNMENTS_TABLE = "crm_contact_assignments";
 
 /** The SQL function that rebuilds both master tables from the mirrors. */
 export const CRM_CONTACT_MASTER_REFRESH_RPC = "crm_contact_master_refresh";
+
+/** A fingerprint of every input that refresh reads, plus the Cairo date — the housekeeping timer skips a
+ * refresh whose stamp matches its last successful one (src/lib/crm/housekeeping-scheduler.ts). */
+export const CRM_CONTACT_MASTER_INPUTS_STAMP_RPC = "crm_contact_master_inputs_stamp";

@@ -2122,6 +2122,7 @@ import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmTouchTrailTests } from "./phoenix-crm-touch-trail.test.ts";
 import { runPhoenixCrmTouchTrailReaderTests } from "./phoenix-crm-touch-trail-reader.test.ts";
+import { runPhoenixCrmTouchTrailArchiveTests } from "./phoenix-crm-touch-trail-archive.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
@@ -7606,6 +7607,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM touch trail's READER — the Super Admin's own page over the table (owner, 2026-10-04: \"build the touch trail reader for the Super Admin\"; until it existed the table could be read only with hand-written SQL). Pinned: every read is keyset-paged on the bigint id past PostgREST's SILENT 1,000-row ceiling, with no range and no offset walk — which over a table still being written to would both repeat and skip rows — and a cursor that cannot advance stops rather than spinning; the gate is the Super Admin's ALONE and never a test persona, refused inside the service as well as on the page because the trail holds every pair of hands on the module including a manager's and what a rep typed and then DELETED; the reader cannot write at all — no insert, update, upsert, delete or RPC in any of its four files; every column either projection names is checked against the migration that created the table, because a PostgREST select is a STRING and one wrong name fails the WHOLE read with a 42703 the compiler cannot see, and every stored column is reachable by the stream or part of the evidence has no reader; the day is read WHOLE and narrowed in memory, since a rep filter in the query would shrink the people list to the person already chosen; the server's arrival and the device's own stamp are never averaged — only the MINIMUM gap carries information, because the flush wait can only inflate it, and nothing is said inside that grace; a row that will not parse is dropped and COUNTED out loud, as is a day past the ceiling and a session past the stream cap; the order within a page load is ms_since_load because forty events share one arrival; and the clock is Cairo to the second by named zone in summer AND winter, with no ellipsis, no overflow-x and no min-width — a fixed table with named widths on desktop and the same rows as cards on a phone",
   runPhoenixCrmTouchTrailReaderTests,
+);
+
+await runTest(
+  "the Phoenix CRM touch trail ARCHIVE (owner, 2026-10-27: \"Archive after 30 days\", after the afternoon database stalls on a 2 GB box where the trail was the biggest table, 985 MB in 24 days). Pinned: the database keeps today and the 29 days before it, so 3 October leaves on 2 November and not a day sooner, and the picker never offers a day the database no longer holds; every file is uploaded, DOWNLOADED again, hashed against what was sent and its rows counted and its first and last id compared BEFORE a single row is deleted, because production has no point-in-time recovery; the delete names every id it removes in short slices and is never narrowed by a range, so a late row filed on an old day is never lost; a delete that did not land stops the run rather than re-archiving the same file until the budget runs out; a dry run writes nothing; the bucket is private, reached only by the service role, and its migration deletes nothing; the route is cron-guarded, signals its start to the dead-man's switch and tells nobody; and an empty archived day says it is archived rather than that nothing was recorded",
+  runPhoenixCrmTouchTrailArchiveTests,
 );
 
 await runTest(
