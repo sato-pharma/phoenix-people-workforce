@@ -253,7 +253,7 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     );
     assert.doesNotMatch(reader, /\.from\(/, "the CRM reads no HR table itself");
     const vacation = source("src/lib/vacation/approved-leave-days.ts");
-    assert.match(vacation, /\.select\("employee_hr_id, start_date, end_date, vacation_type, day_part, status, manager_decision"\)/, "the type and the day part are read with the days (and the status and manager's decision the Planning Calendar's leave line needs)");
+    assert.match(vacation, /\.select\("employee_hr_id, start_date, end_date, vacation_type, day_part"\)/, "the type and the day part are read with the days");
 
     const plans = source("src/lib/phoenix-crm/server/plans.ts");
     assert.equal(

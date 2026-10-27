@@ -4,14 +4,13 @@ import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/e
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import {
   planKindLabel,
-  planningItemStatusLabel,
+  planStatusLabel,
   type PlanningCalendarPlanItem,
 } from "@/lib/weekly-planning/calendar";
 
 // XLSX export for the shared Planning Calendar — a two-sheet workbook built from the
 // same plan items the on-screen calendar shows for a given month:
-//   • "Summary"        — one row per user (plan-entry count, weekly/monthly split, conflict count,
-//                        and the days of approved leave, which are never counted as plan entries).
+//   • "Summary"        — one row per user (plan-entry count, weekly/monthly split, conflict count).
 //   • "Detailed Plans" — one row per plan activity, grouped by user (sorted by employee then date).
 // The row builders are pure and side-effect-free so they can be unit-tested without ExcelJS;
 // buildPlanningCalendarWorkbook is the only part that touches the workbook.
@@ -62,7 +61,6 @@ export const PLANNING_SUMMARY_COLUMNS: ExportColumn[] = [
   { key: "weekly", label: "Weekly", numeric: true },
   { key: "monthly", label: "Monthly", numeric: true },
   { key: "conflicts", label: "Chain Visits", numeric: true },
-  { key: "leaveDays", label: "Leave Days", numeric: true },
 ];
 
 export function buildPlanningCalendarDetailRows(items: PlanningCalendarPlanItem[]): ExportRow[] {
@@ -88,9 +86,8 @@ export function buildPlanningCalendarDetailRows(items: PlanningCalendarPlanItem[
       // loses the name) is shown as "Unnamed", never as the HR id: an id is a code, not a name.
       medicalRep: item.medicalRepDisplayName || item.medicalRepName || (item.medicalRepHrId ? "Unnamed" : "-"),
       time: item.time || "Full day",
-      // A leave day comes from Vacations, not from a plan: it reads "Approved leave" and has no plan kind.
-      status: planningItemStatusLabel(item),
-      planKind: item.onLeave ? "-" : planKindLabel(item.planKind),
+      status: planStatusLabel(item.status),
+      planKind: planKindLabel(item.planKind),
       conflict: item.conflictWarning || "-",
       notes: item.notes || "-",
     }));
@@ -105,7 +102,6 @@ type SummaryAccumulator = {
   weekly: number;
   monthly: number;
   conflicts: number;
-  leaveDays: number;
 };
 
 export function buildPlanningCalendarSummaryRows(items: PlanningCalendarPlanItem[]): ExportRow[] {
@@ -125,18 +121,12 @@ export function buildPlanningCalendarSummaryRows(items: PlanningCalendarPlanItem
         weekly: 0,
         monthly: 0,
         conflicts: 0,
-        leaveDays: 0,
       } satisfies SummaryAccumulator);
-    if (item.onLeave) {
-      // A half day of leave is still a day the person was away; the export counts days, not halves.
-      existing.leaveDays += 1;
-    } else {
-      existing.planEntries += 1;
-      const kind = String(item.planKind).toLowerCase();
-      if (kind === "weekly") existing.weekly += 1;
-      else if (kind === "monthly") existing.monthly += 1;
-      if (item.conflictWarning) existing.conflicts += 1;
-    }
+    existing.planEntries += 1;
+    const kind = String(item.planKind).toLowerCase();
+    if (kind === "weekly") existing.weekly += 1;
+    else if (kind === "monthly") existing.monthly += 1;
+    if (item.conflictWarning) existing.conflicts += 1;
     // Backfill labels a later plan carries but the first one for this owner lacked.
     if (existing.jobTitle === "-" && item.employeeJobTitle) existing.jobTitle = item.employeeJobTitle;
     if (existing.line === "-" && item.lineName) existing.line = item.lineName;

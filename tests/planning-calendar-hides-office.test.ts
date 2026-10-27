@@ -17,12 +17,18 @@ export async function runPlanningCalendarHidesOfficeTests() {
     { day: "Wed", activityType: "Other" },
     { day: "Thu", activityType: "Admin" },
     { day: "Sat", activityType: "National Vacation" },
+    { day: "Sun2", activityType: "Vacation" },
+    { day: "Mon2", activityType: "Excuse" },
   ];
   assert.deepEqual(
     withoutOfficeDays(week).map((item) => item.day),
     ["Tue", "Wed"],
-    "Office, Admin and National Vacation days are dropped and the field days stay",
+    "Office, Admin, National Vacation, Vacation and Excuse days are dropped and the field days stay",
   );
+
+  // Owner, 2026-10-27: "planning calendar is only for field work" - approved leave is never read into it.
+  const loader = readFileSync("src/lib/weekly-planning/calendar-service.ts", "utf8");
+  assert.doesNotMatch(loader, /approved-leave-days|LeaveDays\(/, "the Planning Calendar never reads Vacations");
 
   assert.equal(resolvePlanItemArea("Behira 1", "Alex Center", "Cairo"), "Behira 1", "a stored area wins");
   assert.equal(resolvePlanItemArea("  ", "Alex Center", "Cairo"), "Alex Center", "else the rep it is planned with");
