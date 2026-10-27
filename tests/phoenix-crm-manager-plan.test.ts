@@ -2024,6 +2024,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     "but never one of his own list — that stays a single visit's",
   );
   assert.equal(holdsPlannedDoctors("with_senior"), true, "its doctors are planned visits");
+  const seniorPart = functionBody(source("src/components/phoenix-crm/manager-plan-board.tsx"), "function WithSeniorPart(");
+  assert.match(
+    functionBody(seniorPart, "const toggleArea = "),
+    /if \(on\) \{\s*setPickedArea\(seatId\);/,
+    "the area he ticks is the list he sees (owner, 2026-10-27: \"every area he stands on its list appears\")",
+  );
+  assert.match(seniorPart, /label="Show the list of"/, "and with several ticked he can step back to any one of them");
   assert.equal(holdsPlannedDoctors("single_visit"), true, "as a single visit's are");
   assert.equal(holdsPlannedDoctors("with_rep"), false, "a rep's day holds none of the manager's own");
   const visitsSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-visits.ts", import.meta.url), "utf8"));

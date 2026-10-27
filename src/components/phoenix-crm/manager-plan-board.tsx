@@ -1379,7 +1379,7 @@ function WithSeniorPart({
   const [pickedArea, setPickedArea] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(AREA_PAGE);
-  // The list shown is one ticked area's at a time: the one he picked, or the first he ticked.
+  // The list shown is one ticked area's at a time: the one he last ticked or picked, or the first he ticked.
   const listArea = pickedArea && draft.areaSeatIds.includes(pickedArea) ? pickedArea : (draft.areaSeatIds[0] ?? null);
   const area = useCrmGet<AreaCustomersView>(listArea && canEdit ? crmUrl(AREA, { area: listArea, test }) : null, "area");
   // A regional, national or product manager picks the district first (owner, 2026-10-25).
@@ -1403,7 +1403,13 @@ function WithSeniorPart({
   const ticked = new Set(draft.areaSeatIds);
   const toggleArea = (seatId: string, on: boolean) => {
     const without = draft.areaSeatIds.filter((id) => id !== seatId);
-    // Unticking an area takes off the doctors chosen in it.
+    // The area he ticks is the list he sees (owner, 2026-10-27: "every area he stands on its list appears").
+    if (on) {
+      setPickedArea(seatId);
+      setQuery("");
+      setLimit(AREA_PAGE);
+    }
+    // Unticking an area takes off the customers chosen in it.
     onDraft({
       ...draft,
       areaSeatIds: on ? [...without, seatId] : without,
