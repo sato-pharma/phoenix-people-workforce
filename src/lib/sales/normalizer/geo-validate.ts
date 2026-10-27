@@ -130,6 +130,9 @@ export type BrickCentroid = {
   markaz: string | null;
   // 'success' = passed the region sanity gate; anything else must never drive distance tiers.
   status: string;
+  // How the pin was obtained (geocode_provider). The field-GPS pass reads it so a weaker source
+  // never replaces a better pin.
+  provider?: string | null;
 };
 
 export type GeoSignals = {
