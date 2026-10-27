@@ -73,7 +73,11 @@ export async function loadSingleVisitHalvesUsed(input: { managerHrId: string; we
   return new Set([...planned, ...(await loadLoggedSingleVisitHalves(input))]);
 }
 
-/** The half-days the visits he has LOGGED this week spend — a planned one keeps its half, an unplanned one its Cairo half. */
+/**
+ * The half-days the visits he has LOGGED this week spend — a planned one keeps its half, an unplanned one its Cairo half.
+ * A visit to a doctor he planned on a With my manager or product manager half-day spends none: that half-day is
+ * not a single visit (owner, 2026-10-27, doctors optional on it).
+ */
 export async function loadLoggedSingleVisitHalves(input: { managerHrId: string; weekStart: string; isTest: boolean }): Promise<Set<string>> {
   const used = new Set<string>();
   // Saturday through Friday: a Friday visit belongs to this week (`managerVisitWindow`, shared with the report).
@@ -82,14 +86,24 @@ export async function loadLoggedSingleVisitHalves(input: { managerHrId: string; 
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_manager_visits")
-        .select("id, visit_date, half, created_at")
+        .select("id, visit_date, half, created_at, plan_slot_id")
         .eq("manager_hr_id", input.managerHrId)
         .eq("is_test", input.isTest)
         .gte("visit_date", visitDays.from)
         .lte("visit_date", visitDays.to),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
+  const slotIds = [...new Set(visits.flatMap((visit) => (typeof visit.plan_slot_id === "string" && visit.plan_slot_id ? [visit.plan_slot_id] : [])))];
+  const withSenior = new Set<string>();
+  if (slotIds.length > 0) {
+    const slots = await fetchAllRowsKeyset<Row>(
+      () => getSupabaseAdmin().from("phoenix_crm_manager_plan_slots").select("id, kind").in("id", slotIds),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const slot of slots) if (slot.kind === "with_senior") withSenior.add(String(slot.id));
+  }
   for (const visit of visits) {
+    if (typeof visit.plan_slot_id === "string" && withSenior.has(visit.plan_slot_id)) continue;
     const date = String(visit.visit_date ?? "");
     if (!date) continue;
     const half: ManagerHalf | null =

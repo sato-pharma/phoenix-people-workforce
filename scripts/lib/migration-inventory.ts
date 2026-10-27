@@ -1884,6 +1884,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // public.automated_payroll_held_part1_unpaid present, relrowsecurity true, 4 policies, 2 indexes, anon SELECT
   // false, 0 rows. Purely additive. Pinned by tests/automated-payroll-pay-deferral.test.ts.
   "20261026210000_automated_payroll_part1_withheld_and_pay_deferral.sql",
+
+  // THE MANAGER PLAN'S WITH-SENIOR CUSTOMERS — applied 27 Oct 2026 on STAGING then PRODUCTION through
+  // scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of
+  // AGENTS.md §8, on the owner's word in chat ("apply the 6591 migration with the repo SQL script"): the
+  // Supabase MCP's apply_migration answered {"status":"declined"} three times, the last right after the owner
+  // chose to allow the prompt. The route writes no ledger row on either project, hence this entry.
+  //
+  // The file replaces one function. Read live on BOTH projects after the apply and identical on each:
+  // md5(pg_proc.prosrc) of public.phoenix_crm_save_manager_plan_slot = 321180ab68a49933e9c95016f3a728c4,
+  // prosecdef true; both read 21565d063301074025b3b321fe13d610 (the old body) just before. No table, grant or
+  // row changes. Pinned by tests/phoenix-crm-manager-plan.test.ts.
+  "20261027140000_phoenix_crm_manager_plan_with_senior_doctors.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

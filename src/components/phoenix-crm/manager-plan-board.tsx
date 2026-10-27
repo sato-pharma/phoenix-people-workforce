@@ -104,7 +104,8 @@ const STEPS: ReadonlyArray<CrmStep> = [
 
 // ── One half-day, as he edits it ────────────────────────────────────────────────────────────────
 
-type CustomerRef = { key: string; customerId: string | null; managerCustomerId: string | null; name: string };
+/** `areaSeatId`: With my manager or product manager only — the ticked area the doctor was chosen in. */
+type CustomerRef = { key: string; customerId: string | null; managerCustomerId: string | null; name: string; areaSeatId?: string | null };
 
 type HalfDraft = {
   kind: ManagerSlotKind | null;
@@ -161,7 +162,11 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
     seniorHrId: slot?.seniorHrId ?? null,
     note: slot?.note ?? "",
     customers: (slot?.customers ?? []).map((customer) =>
-      customer.customerId ? repRef(customer.customerId, customer.name) : ownRef(customer.managerCustomerId ?? "", customer.name),
+      customer.customerId
+        ? slot?.kind === "with_senior"
+          ? { ...repRef(customer.customerId, customer.name), areaSeatId: customer.areaSeatId }
+          : repRef(customer.customerId, customer.name)
+        : ownRef(customer.managerCustomerId ?? "", customer.name),
     ),
   };
 }
@@ -226,7 +231,7 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes:
     ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
-      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === "with_senior" || draft.kind === "with_area" || draft.kind === null
+      draft.kind === "admin" || draft.kind === "with_dm" || draft.kind === "with_area" || draft.kind === null
         ? []
         : draft.customers.map((customer) => (customer.customerId ? { customerId: customer.customerId } : { managerCustomerId: customer.managerCustomerId })),
   };
@@ -1001,7 +1006,9 @@ function HalfStep({
         : null}
       {draft.kind === "with_area" ? (districtGate ?? <WithAreaPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
-      {draft.kind === "with_senior" ? (districtGate ?? <WithSeniorPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
+      {draft.kind === "with_senior"
+        ? (districtGate ?? <WithSeniorPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />)
+        : null}
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "single_visit"
         ? (districtGate ?? (
@@ -1347,18 +1354,34 @@ function WithDmPart({
  * product managers, as the server offers them; then the areas of the district, a vacant one by its own name.
  * A regional, national or product manager's With a manager or product manager (owner, 2026-10-25) is the same
  * part, in the district he picked first, with the people the server offers him there.
+ *
+ * 🔴 THE DOCTORS ARE OPTIONAL (owner, 2026-10-27: "all the doctor list of this area appear, but he is not
+ * required to choose. He may choose or he may press the next"): once an area is ticked its rep lists show, and
+ * whatever he ticks there is on "My single visits" that day as planned visits — none is a valid half-day.
  */
 function WithSeniorPart({
   canEdit,
   draft,
+  idPrefix,
   onDraft,
+  slot,
+  test,
   view,
 }: {
   canEdit: boolean;
   draft: HalfDraft;
+  idPrefix: string;
   onDraft: (next: HalfDraft) => void;
+  slot: ManagerBoardSlot | undefined;
+  test: boolean;
   view: ManagerPlanBoardView;
 }) {
+  const [pickedArea, setPickedArea] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(AREA_PAGE);
+  // The list shown is one ticked area's at a time: the one he picked, or the first he ticked.
+  const listArea = pickedArea && draft.areaSeatIds.includes(pickedArea) ? pickedArea : (draft.areaSeatIds[0] ?? null);
+  const area = useCrmGet<AreaCustomersView>(listArea && canEdit ? crmUrl(AREA, { area: listArea, test }) : null, "area");
   // A regional, national or product manager picks the district first (owner, 2026-10-25).
   const ownDistrict = view.writer?.kind === "dm";
   if (!ownDistrict && !draft.scope?.startsWith("dm:")) {
@@ -1380,8 +1403,23 @@ function WithSeniorPart({
   const ticked = new Set(draft.areaSeatIds);
   const toggleArea = (seatId: string, on: boolean) => {
     const without = draft.areaSeatIds.filter((id) => id !== seatId);
-    onDraft({ ...draft, areaSeatIds: on ? [...without, seatId] : without });
+    // Unticking an area takes off the doctors chosen in it.
+    onDraft({
+      ...draft,
+      areaSeatIds: on ? [...without, seatId] : without,
+      customers: on ? draft.customers : draft.customers.filter((customer) => customer.areaSeatId !== seatId),
+    });
   };
+  const chosen = new Set(draft.customers.map((customer) => customer.key));
+  const words = query.trim().toLowerCase();
+  const listVacant = view.areas.some((entry) => entry.seatId === listArea && entry.vacant);
+  const repList = (area.data && area.data.area?.seatId === listArea ? area.data.repList : [])
+    .filter((customer) => !words || customer.name.toLowerCase().includes(words))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const shown = repList.slice(0, limit);
+  const areaChoices: Array<CrmChoiceOption<string>> = view.areas
+    .filter((entry) => draft.areaSeatIds.includes(entry.seatId))
+    .map((entry) => ({ value: entry.seatId, label: entry.areaName, note: entry.vacant ? VACANT_AREA_NOTE : (entry.repName ?? "No rep") }));
   return (
     <div className="grid min-w-0 gap-4">
       <CrmChoice columns={2} label="Who you go with" onChange={(seniorHrId) => onDraft({ ...draft, seniorHrId })} options={options} value={draft.seniorHrId} />
@@ -1396,7 +1434,7 @@ function WithSeniorPart({
                 <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
                   Mark all
                 </CrmButton>
-                <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [] })} size="sm">
+                <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [], customers: [] })} size="sm">
                   Clear
                 </CrmButton>
               </div>
@@ -1416,6 +1454,96 @@ function WithSeniorPart({
           </div>
         </div>
       )}
+      {!canEdit ? (
+        (slot?.customers.length ?? 0) > 0 ? (
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {(slot?.customers ?? []).map((customer) => (
+              <CrmPill key={customer.customerId ?? customer.name} tone="neutral">
+                <span className="break-words normal-case tracking-normal" dir="auto">
+                  {customer.name}
+                </span>
+              </CrmPill>
+            ))}
+          </div>
+        ) : null
+      ) : draft.areaSeatIds.length > 0 ? (
+        <div className="grid min-w-0 gap-4 border border-slate-200 p-3">
+          <div className="grid min-w-0 gap-1">
+            <p className="text-sm font-black text-slate-900">{`Customers (optional) · ${plural(draft.customers.length, "customer", "customers")} chosen`}</p>
+            <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+              Tick the customers you plan to see, or go on without them. The ones you tick are on My single visits that day.
+            </p>
+          </div>
+          {draft.customers.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {draft.customers.map((customer) => (
+                <button
+                  className="inline-flex max-w-full items-center gap-1 border border-orange-200 bg-orange-50 px-2 py-1 text-left text-xs font-bold text-orange-800 hover:bg-orange-100"
+                  key={customer.key}
+                  onClick={() => onDraft(toggle(draft, customer, false))}
+                  type="button"
+                >
+                  <span className="break-words" dir="auto">
+                    {customer.name}
+                  </span>
+                  <span aria-hidden>×</span>
+                  <span className="sr-only">Take off</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {areaChoices.length > 1 ? (
+            <CrmChoice
+              columns={3}
+              label="Show the list of"
+              onChange={(seatId) => {
+                setPickedArea(seatId);
+                setQuery("");
+                setLimit(AREA_PAGE);
+              }}
+              options={areaChoices}
+              value={listArea}
+            />
+          ) : null}
+          {area.error ? <CrmLoadError message={area.error} onRetry={area.reload} /> : null}
+          {!area.data && !area.error ? <CrmLoading label="Loading the area's customers" /> : null}
+          {area.data ? (
+            <>
+              <CrmSearchField id={`${idPrefix}-senior-search`} label="Find a customer" onChange={setQuery} placeholder="Type a name" value={query} />
+              <div className="grid min-w-0 gap-2">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  {listVacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep lists"}
+                </p>
+                {repList.length === 0 ? (
+                  <p className="text-sm font-semibold text-slate-500">
+                    {listVacant && !words ? "The previous rep left no list in this area." : "No customer on these lists matches."}
+                  </p>
+                ) : null}
+                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                  {shown.map((customer) => (
+                    <CustomerCard dimmed={false} grade={customer.grade} highlight={null} key={customer.customerId}>
+                      <CrmCheck
+                        checked={chosen.has(repRef(customer.customerId, customer.name).key)}
+                        onChange={(on) => onDraft(toggle(draft, { ...repRef(customer.customerId, customer.name), areaSeatId: listArea }, on))}
+                      >
+                        <span className="block break-words" dir="auto">
+                          {customer.name}
+                        </span>
+                        <span className="block break-words text-xs font-semibold text-slate-500">
+                          {[customer.listType, customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.vacant ? VACANT_LIST_LABEL : (customer.repName ?? "No rep")]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </CrmCheck>
+                    </CustomerCard>
+                  ))}
+                </div>
+              </div>
+              <CrmShowMore left={repList.length - shown.length} onMore={() => setLimit((value) => value + AREA_PAGE)} page={AREA_PAGE} />
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

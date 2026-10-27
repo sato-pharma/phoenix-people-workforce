@@ -350,8 +350,18 @@ export async function computeManagerReports(
         const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
         const seniorName = seniorHrId ? nameOf(repNames, seniorHrId) : null;
         const keys = withRepDone.get(managerHrId);
+        // The doctors he named on it are optional (owner, 2026-10-27); a visit he logged to one of them answers
+        // the area that doctor is in, and is a planned visit, never an unplanned one.
+        const visitedSeats = new Set<string>();
+        for (const row of customersBySlot.get(slot.slotId) ?? []) {
+          const key = `${slot.date}|${row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`}`;
+          plannedKeys.add(key);
+          if (row.sourceSeatId && visitedBy.get(managerHrId)?.has(key)) visitedSeats.add(row.sourceSeatId);
+        }
         const areaRows = (slot.seniorVisit?.areas ?? []).map((area): ManagerReportCustomer => {
-          const done = Boolean(seniorHrId) && area.seatIds.some((seatId) => keys?.has(`sr|${seatId}|${slot.date}|${seniorHrId}`) ?? false);
+          const done =
+            area.seatIds.some((seatId) => visitedSeats.has(seatId)) ||
+            (Boolean(seniorHrId) && area.seatIds.some((seatId) => keys?.has(`sr|${seatId}|${slot.date}|${seniorHrId}`) ?? false));
           const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
           countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: area.seatId }) });
           return { key: null, name: area.areaName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null };

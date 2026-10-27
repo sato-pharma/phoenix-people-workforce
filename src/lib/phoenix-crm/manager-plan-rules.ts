@@ -280,6 +280,15 @@ export function isManagerSlotKind(value: unknown): value is ManagerSlotKind {
   return value === "with_rep" || value === "admin" || value === "single_visit" || value === "with_dm" || value === "with_senior" || value === "with_area";
 }
 
+/**
+ * The half-days whose named doctors he logs as PLANNED visits on the day: a single visit, and With my manager
+ * or product manager, whose doctors are optional (owner, 2026-10-27: "if he chose the drs when he submitting
+ * the visits he found his today planned drs"). A with-senior visit never spends a single-visit half-day.
+ */
+export function holdsPlannedDoctors(kind: ManagerSlotKind | null): boolean {
+  return kind === "single_visit" || kind === "with_senior";
+}
+
 export function isManagerHalf(value: unknown): value is ManagerHalf {
   return value === "AM" || value === "PM";
 }
@@ -891,10 +900,12 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     const seniorHrId = personKey(textOf(body.seniorHrId));
     if (!seniorHrId) return { ok: false, error: "Choose who you go with: a manager or a product manager of the line." };
     if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one area of the district." };
-    if (customers.length > 0) return { ok: false, error: "With a manager or product manager, you tick areas, not customers." };
+    // The doctors are optional (owner, 2026-10-27: "he is not required to choose. He may choose or he may
+    // press the next") and come from the ticked areas' rep lists — his own list stays a single visit's.
+    if (customers.some((entry) => "managerCustomerId" in entry)) return { ok: false, error: "With a manager or product manager, the customers come from the areas' lists." };
     // A district manager's carries no scope (his own district); everyone else's names the district picked
     // first — `managerSlotScopeError` decides which one this planner owes.
-    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, scopeDmSeatId, scopeLineCode } };
+    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, scopeDmSeatId, scopeLineCode, customers } };
   }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };
   if (customers.length === 0) return { ok: false, error: "Choose at least one customer for the single visit." };

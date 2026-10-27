@@ -55,6 +55,7 @@ import {
   managerDmVisitTitle,
   managerSeniorTitle,
   managerSeniorVisitTitle,
+  holdsPlannedDoctors,
   managerPlanWithYou,
   managerSlotScopeError,
   managerWeekDays,
@@ -318,6 +319,8 @@ export type ManagerBoardSlotCustomer = {
   own: boolean;
   flag: ManagerCustomerFlag | null;
   flagLabel: string | null;
+  /** With my manager or product manager: the ticked area this doctor was planned in; null on every other kind. */
+  areaSeatId: string | null;
 };
 
 export type ManagerBoardSlot = {
@@ -467,7 +470,8 @@ function slotSummary(input: {
   if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"} · ${customers}${scope}`;
   if (input.kind === "with_area") return `Area · ${input.areaName ?? "an area"}${scope}`;
   if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
-  if (input.kind === "with_senior") return managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName);
+  // The doctors are optional on it (owner, 2026-10-27), so a count shows only when he named some.
+  if (input.kind === "with_senior") return `${managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName)}${input.count > 0 ? ` · ${input.count} customer${input.count === 1 ? "" : "s"}` : ""}`;
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
   return `Single visit · ${input.areaName ?? "an area"} · ${customers}${scope}`;
 }
@@ -818,6 +822,10 @@ async function buildBoard(
           own: row.managerCustomerId !== null,
           flag,
           flagLabel: flag ? managerCustomerFlagLabel(flag) : null,
+          areaSeatId:
+            slot.kind === "with_senior" && row.sourceSeatId
+              ? (slot.seniorVisit?.areas.find((area) => area.seatIds.includes(row.sourceSeatId as string))?.seatId ?? null)
+              : null,
         };
       });
       const repName = slot.repHrId ? nameOf(names, slot.repHrId) : slot.repSeatId ? "No rep in this territory" : null;
@@ -1097,6 +1105,13 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       };
     });
     seniorVisit = { senior_hr_id: offer.hrId, role: offer.role, title: offer.title, areas };
+    // The doctors are optional (owner, 2026-10-27) and each one is on a territory of an area he ticked.
+    await assertDistrictCustomers(
+      draft.customers.flatMap((entry) => ("customerId" in entry ? [entry.customerId] : [])),
+      new Set(areas.flatMap((area) => area.seat_ids)),
+      isTest,
+      "Choose customers of the areas you ticked only.",
+    );
   }
   // An area (owner, 2026-10-24): the Training Manager's half-day in one area of her region — every rep territory
   // of that area, in every line, kept with it, so a visit with her on any of them answers the area.
@@ -1154,7 +1169,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   }));
 
   const savedSlotId = textOrNull(saved.slot_id);
-  if (draft.kind === "single_visit" && savedSlotId) {
+  if (holdsPlannedDoctors(draft.kind) && savedSlotId) {
     await relinkPlannedVisits({ managerHrId: viewer.hrId, date: draft.date, half: draft.half, slotId: savedSlotId, isTest });
   }
 

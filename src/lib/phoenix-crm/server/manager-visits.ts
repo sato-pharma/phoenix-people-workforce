@@ -36,7 +36,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { holdsPlannedDoctors, MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerVisitDetailEditable, parseManagerVisitDetail } from "@/lib/phoenix-crm/manager-visit-detail-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
@@ -228,7 +228,7 @@ async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise
   return out;
 }
 
-/** GET: his single visits of the visit day — planned (from today's single-visit half-days) and unplanned. */
+/** GET: his visits of the visit day — planned (from today's single-visit and with-my-manager half-days) and unplanned. */
 export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ManagerTodayView> {
   const writer = assertManagerPlanWriter(viewer);
   const isTest = testModeFor(viewer, raw.test);
@@ -253,7 +253,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     writer.kind === "dm" ? loadSingleVisitAllowance({ managerHrId: viewer.hrId, weekStart, date: day, isTest }) : Promise.resolve(null),
   ]);
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
-  const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && slot.kind === "single_visit") : [];
+  const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && holdsPlannedDoctors(slot.kind)) : [];
   const slotCustomers = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
   const halfOfSlot = new Map(slots.map((slot) => [slot.slotId, slot.half]));
   const visitOf = new Map(visits.map((visit) => [visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`, visit]));
@@ -369,7 +369,7 @@ export async function plannedSingleVisitSlotFor(viewer: PhoenixCrmViewer, custom
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   if (plans.length === 0) return null;
-  const slots = (await loadManagerSlotRows(plans.map((plan) => String(plan.id)))).filter((slot) => slot.date === day && slot.kind === "single_visit");
+  const slots = (await loadManagerSlotRows(plans.map((plan) => String(plan.id)))).filter((slot) => slot.date === day && holdsPlannedDoctors(slot.kind));
   if (slots.length === 0) return null;
   const held = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
   return held.find((row) => !row.gone && row.customerId === customerId)?.slotId ?? null;
@@ -434,7 +434,7 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     vacant = customerSeatId !== null && isVacantTerritory(viewer.org.seats.get(customerSeatId));
   }
 
-  // Planned: a single-visit half-day of TODAY that holds this customer.
+  // Planned: a single-visit or with-my-manager half-day of TODAY that holds this customer.
   let slotId: string | null = null;
   let half: "AM" | "PM" | null = null;
   const askedSlot = textOrNull(body.slotId);
@@ -450,7 +450,7 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
     const slots = plans.length > 0 ? await loadManagerSlotRows([String(plans[0].id)]) : [];
-    const slot = slots.find((entry) => entry.slotId === askedSlot && entry.date === day && entry.kind === "single_visit");
+    const slot = slots.find((entry) => entry.slotId === askedSlot && entry.date === day && holdsPlannedDoctors(entry.kind));
     if (!slot) throw conflictError("This half-day is no longer on today's plan. Reload the page.");
     const held = await loadManagerSlotCustomers([slot.slotId]);
     if (!held.some((entry) => (customerId ? entry.customerId === customerId : entry.managerCustomerId === managerCustomerId))) {
