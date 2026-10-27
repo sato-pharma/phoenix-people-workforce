@@ -9,7 +9,6 @@ import { loadManagerPlanHalfDays, loadManagerVisitAreas, managerHalfDayText, man
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
-import { loadPlanningLeaveDays, type ApprovedLeaveDay } from "@/lib/vacation/approved-leave-days";
 import type { EmployeePlanActivityType, EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import {
   activityDisplayLabel,
@@ -33,7 +32,6 @@ import {
   type PlanningCalendarWorkspace,
   sameLineBookingRangeProblem,
   type SameLinePlanBooking,
-  withApprovedLeave,
 } from "@/lib/weekly-planning/calendar";
 import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
@@ -547,95 +545,6 @@ function managerPlanCalendarItems(
   });
 }
 
-/**
- * The people whose leave the Planning Calendar draws: everyone who may own a plan on it (by title or by
- * the District Manager app role, `isAllowedCalendarOwner`) and anyone else who has a plan in the month.
- * A Head Office employee who never plans is not a calendar row, so their leave is not one either.
- */
-function planningLeaveOwners(
-  directoryRows: Iterable<EmployeeDirectoryRow>,
-  planItems: PlanningCalendarPlanItem[],
-  districtManagerHrIds: ReadonlySet<string>,
-): string[] {
-  const planned = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)));
-  const owners: string[] = [];
-  for (const row of directoryRows) {
-    const key = normalizeHrId(row.hrId);
-    if (!key) continue;
-    if (planned.has(key) || districtManagerHrIds.has(key) || isAllowedCalendarOwnerTitle(row.jobTitle ?? null)) owners.push(row.hrId);
-  }
-  return owners;
-}
-
-/**
- * One calendar row per person and day of approved leave (owner, 2026-10-27). Two half-day requests on
- * one day are that whole day. The row sits in the person's own region and area, reads the leave's
- * name ("Annual Vacation"), and is marked `onLeave` so every screen and the export say "Approved leave".
- */
-export function leaveCalendarItems(
-  leaveDays: ApprovedLeaveDay[],
-  directoryByHrId: Map<string, EmployeeDirectoryRow>,
-): PlanningCalendarPlanItem[] {
-  const byPersonDay = new Map<string, { day: string; employee: EmployeeDirectoryRow; fullDay: boolean; halves: number; labels: string[] }>();
-  for (const leave of leaveDays) {
-    const employee = directoryByHrId.get(normalizeHrId(leave.hrId));
-    // Same rule as the plan rows: someone no longer in the directory is not drawn.
-    if (!employee) continue;
-    const key = `${normalizeHrId(employee.hrId)}|${leave.day}`;
-    const entry = byPersonDay.get(key) ?? { day: leave.day, employee, fullDay: false, halves: 0, labels: [] };
-    if (leave.fullDay) entry.fullDay = true;
-    else entry.halves += 1;
-    if (!entry.labels.includes(leave.typeLabel)) entry.labels.push(leave.typeLabel);
-    byPersonDay.set(key, entry);
-  }
-  return [...byPersonDay.entries()].map(([key, { day, employee, fullDay, halves, labels }]) => {
-    const wholeDay = fullDay || halves >= 2;
-    const label = labels.join(" · ");
-    const activityTitle = wholeDay ? label : `${label} (half day)`;
-    const employeeDisplayName = employee.displayName || employee.fullName;
-    const region = cleanText(employee.regionName) || null;
-    const area = cleanText(employee.areaName) || null;
-    const item: PlanningCalendarPlanItem = {
-      activityTitle,
-      activityType: "Vacation",
-      area,
-      conflictKey: null,
-      conflictWarning: null,
-      employeeHrId: employee.hrId,
-      employeeJobTitle: employee.jobTitle ?? null,
-      employeeName: employee.fullName,
-      employeeDisplayName,
-      endDate: day,
-      id: `leave-${key}`,
-      lineName: employee.lineName ?? null,
-      medicalRepHrId: null,
-      medicalRepName: null,
-      medicalRepDisplayName: null,
-      notes: null,
-      onLeave: true,
-      planId: "",
-      planKind: "weekly",
-      region,
-      source: "plan",
-      startDate: day,
-      status: "final_approved",
-      time: wholeDay ? "Full day" : "Half day",
-      title: planningCalendarTitle(employeeDisplayName, region, area, activityTitle),
-    };
-    return item;
-  });
-}
-
-/** A failed Vacations read leaves the plans on screen and says leave is missing (`leaveUnavailable`). */
-async function readPlanningLeaveDays(hrIds: string[], start: string, end: string): Promise<ApprovedLeaveDay[] | null> {
-  try {
-    return await loadPlanningLeaveDays(hrIds, { from: start, to: end });
-  } catch (error) {
-    console.warn("planning calendar: approved leave unavailable", error instanceof Error ? error.message : error);
-    return null;
-  }
-}
-
 export async function getSharedPlanningCalendarWorkspace(
   access: AccessContext,
   year: number,
@@ -679,14 +588,8 @@ export async function getSharedPlanningCalendarWorkspace(
     // Office days are not drawn, but the person still counts as having submitted a plan.
     // An identical AM and PM for one person on one day is one Full day entry.
     const planItems = mergeFullDayPlanItems(withoutOfficeDays(visiblePlanItems));
-    // Approved leave is drawn on its days for everyone the viewer may see, plan or no plan (owner,
-    // 2026-10-27), and a full day of it replaces that person's plan rows - before the chain-visit
-    // check, so a double visit on a day the manager is away is not reported as one.
-    const leaveDays = await readPlanningLeaveDays(planningLeaveOwners(directoryByHrId.values(), rawPlanItems, districtManagerHrIds), start, end);
-    const leaveItems = leaveCalendarItems(leaveDays ?? [], directoryByHrId).filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
-    const calendarItems = withApprovedLeave(planItems, leaveItems, normalizeHrId);
-    const conflicts = buildPlanningCalendarConflicts(calendarItems);
-    const warnedPlanItems = attachPlanningConflictWarnings(calendarItems, conflicts);
+    const conflicts = buildPlanningCalendarConflicts(planItems);
+    const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(visiblePlanItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));
     return {
       conflicts,
@@ -695,7 +598,6 @@ export async function getSharedPlanningCalendarWorkspace(
       headerLimit: CALENDAR_HEADER_LIMIT,
       items: [...holidays, ...warnedPlanItems].sort((left, right) => `${left.startDate}-${left.title}`.localeCompare(`${right.startDate}-${right.title}`)),
       itemLimit: CALENDAR_ITEM_LIMIT,
-      leaveUnavailable: leaveDays === null,
       loadedHeaderCount,
       loadedItemCount,
       month,
@@ -703,8 +605,7 @@ export async function getSharedPlanningCalendarWorkspace(
       summary: {
         conflictCount: conflicts.length,
         holidayCount: holidays.length,
-        leaveCount: leaveItems.length,
-        planCount: calendarItems.filter((item) => !item.onLeave).length,
+        planCount: planItems.length,
         submittedOwnerCount: submittedOwners.size,
       },
       viewerLineName: viewer?.lineName ?? null,

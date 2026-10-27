@@ -22,7 +22,6 @@ import {
   groupPlanItemsByRegion,
   planningTilePeople,
   planningGroupKey,
-  planningItemStatusLabel,
   type PlanningCalendarConflict,
   type PlanningCalendarItem,
   type PlanningCalendarPlanItem,
@@ -34,6 +33,14 @@ import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens"
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const allValue = "__all__";
+
+const planStatusLabels: Record<string, string> = {
+  ceo_approved: "CEO approved",
+  final_approved: "Final approved",
+  hr_acknowledged: "HR acknowledged",
+  manager_approved: "Manager approved",
+  submitted: "Submitted",
+};
 
 function todayIso() {
   return currentCairoDateOnlyIso();
@@ -141,12 +148,7 @@ function employeeHueFor(map: Map<string, EmployeeHue>, employeeHrId: string) {
   return map.get(employeeHueKey(employeeHrId)) ?? employeeHues[0];
 }
 
-// Approved leave (owner, 2026-10-27) reads as away, in one neutral stone tone for everyone: never a
-// person's own hue, never emerald (national vacations) and never sky (chain visits).
-const LEAVE_CHIP_TONE = "bg-stone-200 text-stone-800";
-
 function planChipTone(item: PlanningCalendarPlanItem, hue: EmployeeHue) {
-  if (item.onLeave) return LEAVE_CHIP_TONE;
   // A chain-visit day keeps the person's own colour; a thin sky ring marks the co-visit without the
   // alarm of a red fill (owner, 2026-10-24: show it as a chain visit, not a warning). conflictWarning
   // keeps its internal name but now carries a neutral "Chain visit" note, never a clash.
@@ -350,7 +352,7 @@ export function PlanningCalendar({
       medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
       notes: item.notes || "-",
       regionLocation: item.region || "-",
-      status: planningItemStatusLabel(item),
+      status: planStatusLabels[item.status] ?? item.status,
       time: item.time || "Full day",
       tone: "plan" as const,
     })),
@@ -417,12 +419,6 @@ export function PlanningCalendar({
         </div>
       ) : null}
       {cappedResultsBanner}
-      {workspace.leaveUnavailable ? (
-        <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          <TriangleAlert className="h-4 w-4 shrink-0" />
-          Approved leave could not be read from Vacations just now, so nobody is shown on leave this month. The plans are complete.
-        </div>
-      ) : null}
 
       {/* ── Header + Metrics ── */}
       <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
@@ -501,12 +497,11 @@ export function PlanningCalendar({
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
           <PlanningMetric label="Plan entries" value={summary.planCount} />
           <PlanningMetric label="Planning owners" value={summary.submittedOwnerCount} />
           <PlanningMetric label="Chain visits" tone={summary.conflictCount > 0 ? "info" : "neutral"} value={summary.conflictCount} />
           <PlanningMetric label="National vacations" value={summary.holidayCount} />
-          <PlanningMetric label="Leave days" value={summary.leaveCount ?? 0} />
         </div>
       </section>
 
@@ -703,10 +698,7 @@ export function PlanningCalendar({
                         <span className="mt-0.5 block space-y-1">
                           {/* Each person once per region; their AM and PM read "AM · PM" (planningTilePeople). */}
                           {planningTilePeople(region.items).map(({ items: personItems, key, slots }) => {
-                            // A half day of leave sits beside the plan for the other half: the chip shows the
-                            // person's leave first, so the tile reads "on leave" before the half they work.
-                            const leaveItem = personItems.find((personItem) => personItem.onLeave);
-                            const item = leaveItem ?? personItems[0];
+                            const item = personItems[0];
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
@@ -715,7 +707,6 @@ export function PlanningCalendar({
                                 title={personItems.map((personItem) => personItem.title).join("\n")}
                               >
                                 {item.employeeDisplayName}
-                                {leaveItem ? <span className="opacity-70"> · On leave</span> : null}
                                 {slots ? <span className="opacity-70"> · {slots}</span> : null}
                               </span>
                             );
@@ -829,7 +820,7 @@ function AgendaDayBlock({
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
                   <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">
-                    {planningItemStatusLabel(item)}
+                    {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>
                 {meta.length > 0 ? (
