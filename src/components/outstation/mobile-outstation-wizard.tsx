@@ -392,6 +392,11 @@ export function MobileOutstationWizard({
   const [isCarEvidenceCameraOpen, setIsCarEvidenceCameraOpen] = useState(false);
   const [calculation, setCalculation] = useState<OutstationCalculationResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // The bar's line is a warning or a refusal unless it is the confirmation set by confirmToHim — a
+  // photo taken or uploaded. Read by text, so any later message (a refusal included) turns it back
+  // into a warning with nothing to reset.
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const messageIsConfirmation = message !== null && message === confirmation;
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCapturingCarEvidence, setIsCapturingCarEvidence] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -1143,6 +1148,11 @@ export function MobileOutstationWizard({
     }
   }
 
+  function confirmToHim(text: string) {
+    setConfirmation(text);
+    setMessage(text);
+  }
+
   async function captureCarEvidence() {
     setMessage(null);
     if (!navigator.geolocation) {
@@ -1208,7 +1218,7 @@ export function MobileOutstationWizard({
         source: "live_camera",
       });
       stopCarEvidenceCamera();
-      setMessage(
+      confirmToHim(
         transportationType === "car"
           ? "Live car photo taken. It goes with this claim."
           : "Arrival photo taken. It goes with this claim.",
@@ -1302,7 +1312,7 @@ export function MobileOutstationWizard({
         requestId: carEvidence?.requestId ?? null,
         source: "upload",
       });
-      setMessage("Arrival photo uploaded. It is marked as uploaded, not captured live.");
+      confirmToHim("Arrival photo uploaded. It is marked as uploaded, not captured live.");
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Unable to upload the arrival photo.",
@@ -1328,11 +1338,6 @@ export function MobileOutstationWizard({
 
     if (!hasCarEvidence && arrivalPhotoOwed) {
       setMessage(arrivalPhotoMissingMessage);
-      return;
-    }
-
-    if (!isOffline && isTicketRequired && ticketFiles.length === 0) {
-      setMessage("Go back to Evidence and attach the ticket — a train or bus claim needs it.");
       return;
     }
 
@@ -1478,6 +1483,9 @@ export function MobileOutstationWizard({
 
   function goNext() {
     if (stepProblem) {
+      // Next refused: the bar shows what is still missing, never the line before it. A train trip
+      // stuck on "Arrival photo taken" while the ticket was what held it read as a dead button.
+      setMessage(null);
       setTried(true);
       return;
     }
@@ -1808,9 +1816,9 @@ export function MobileOutstationWizard({
           : {})}
       />
 
-      {isOffline && isTicketRequired && ticketFiles.length === 0 ? (
+      {isTicketRequired && ticketFiles.length === 0 ? (
         <StepNote tone="warn">
-          No connection: you can submit without the ticket now and attach it afterwards from My claims, below this form.
+          {isOffline ? "No connection: you" : "No ticket yet? You"} can submit without it now — the claim is held for review until you attach the ticket from My claims, below this form.
         </StepNote>
       ) : null}
       {!arrivalPhotoOwed && !(isTicketBased || isNonTravel) ? (
@@ -1966,8 +1974,14 @@ export function MobileOutstationWizard({
         {isTicketBased || isNonTravel ? (
           <ReviewRow
             label={isNonTravel ? "Invoice" : "Ticket"}
-            tone={ticketFiles.length > 0 ? "good" : isTicketRequired && !isOffline ? "bad" : "neutral"}
-            value={ticketFiles.length > 0 ? `${ticketFiles.length} file${ticketFiles.length === 1 ? "" : "s"} attached` : "None attached"}
+            tone={ticketFiles.length > 0 ? "good" : isTicketRequired ? "bad" : "neutral"}
+            value={
+              ticketFiles.length > 0
+                ? `${ticketFiles.length} file${ticketFiles.length === 1 ? "" : "s"} attached`
+                : isTicketRequired
+                  ? "None attached — held for review until you attach it"
+                  : "None attached"
+            }
           />
         ) : null}
         {calculation && !isNonTravel ? (
@@ -2035,10 +2049,17 @@ export function MobileOutstationWizard({
   // "Still needed" once he pressed on without it), and when it needs nothing, the step after it.
   const barProblem = isReviewStep ? reviewHold : stepProblem;
   const barStatus: ReactNode = message ? (
-    <p className="flex min-w-0 items-start gap-2 text-sm font-black text-amber-800">
-      <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-      <span className="min-w-0 break-words">{message}</span>
-    </p>
+    messageIsConfirmation ? (
+      <p className="flex min-w-0 items-start gap-2 text-sm font-black text-emerald-800">
+        <CircleCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+        <span className="min-w-0 break-words">{message}</span>
+      </p>
+    ) : (
+      <p className="flex min-w-0 items-start gap-2 text-sm font-black text-amber-800">
+        <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+        <span className="min-w-0 break-words">{message}</span>
+      </p>
+    )
   ) : barProblem ? (
     <button
       className="flex min-h-11 w-full min-w-0 items-start gap-2 text-left disabled:cursor-default"
@@ -2135,6 +2156,7 @@ export function MobileOutstationWizard({
               a card below a fixed footer where a refusal used to fall off-screen. */}
           <div
             aria-label="Submit expense action bar"
+            data-portal-action-bar=""
             className="sticky bottom-[var(--phx-portal-bottom-nav-reserve,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 print:hidden"
             data-no-print
             role="region"

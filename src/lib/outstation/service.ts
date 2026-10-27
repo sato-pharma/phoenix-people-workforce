@@ -96,6 +96,7 @@ import {
   MISSING_TICKET_WRONG_TRANSPORT_MESSAGE,
   missingTicketAttachedSentence,
   OUTSTATION_ELIGIBLE_LOCATION_REASON,
+  OUTSTATION_NO_TICKET_HOLD_REASON,
   OUTSTATION_OFFLINE_TICKET_HOLD_REASON,
   OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
 } from "@/lib/outstation/missing-ticket";
@@ -2184,15 +2185,10 @@ export async function submitOutstationRequest(
     role: calculation.employeeRole,
     transportationType: calculation.transportationType,
   });
-  // Online: block the submission outright so the employee attaches the ticket now.
-  // Offline: the resilience path genuinely cannot carry files, so the claim is still
-  // accepted into the system but HELD for Super Admin review below — it is never
-  // auto-paid without evidence, which is what this exemption used to allow.
-  if (ticketEvidenceRejection && !calculation.offlineCaptured) {
-    throw new Error(
-      "A ticket attachment is required for train and bus expense requests. Upload the ticket before submitting.",
-    );
-  }
+  // Online or offline, a claim with no ticket is accepted and HELD for Super Admin review below —
+  // never refused (owner, 2026-10-27: the online refusal left a manager's train claim with no way
+  // forward) and never auto-paid without evidence. The employee attaches the ticket afterwards
+  // from My claims (missing-ticket.ts), which replaces the hold sentence.
 
   // Admin-editable policy limits. Both were previously stored and rendered in the
   // policy editor but enforced nowhere, so a kilometre-inaccurate GPS fix or an
@@ -2275,7 +2271,9 @@ export async function submitOutstationRequest(
     "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
   // The hold the employee clears himself by attaching the ticket from Expense Submissions
   // (missing-ticket.ts), which replaces this sentence on the claim.
-  const offlineTicketHoldReason = OUTSTATION_OFFLINE_TICKET_HOLD_REASON;
+  const ticketHoldReason = calculation.offlineCaptured
+    ? OUTSTATION_OFFLINE_TICKET_HOLD_REASON
+    : OUTSTATION_NO_TICKET_HOLD_REASON;
   // Ordered worst-first: the flag most likely to decide the outcome is the one the approver
   // should read first, and this list is joined into the reason the queue renders.
   const detectedHoldReasons = [
@@ -2284,7 +2282,7 @@ export async function submitOutstationRequest(
     campaignRejectionReason,
     campaignHoldReason,
     calculation.governorateReviewRequired ? governorateReviewReason : null,
-    ticketEvidenceRejection ? offlineTicketHoldReason : null,
+    ticketEvidenceRejection ? ticketHoldReason : null,
     gpsAccuracyHoldReason,
     offlineSyncHoldReason,
     noInvoiceHoldReason,

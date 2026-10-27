@@ -264,6 +264,16 @@ export function runPortalBottomNavGodmodeTests() {
   );
   assert.match(
     widgets,
+    /\[body:has\(\[data-portal-action-bar\]\)_&\]:hidden/,
+    "it steps aside on a page with its own sticky action bar — it sat on top of Next on the Submit expense form (2026-10-27)",
+  );
+  assert.match(
+    readFileSync("src/components/outstation/mobile-outstation-wizard.tsx", "utf8"),
+    /data-portal-action-bar=""/,
+    "the Submit expense form's Back / Next / Submit bar is marked, so the button never covers Next",
+  );
+  assert.match(
+    widgets,
     /style=\{\{ bottom: "calc\(var\(--phx-portal-bottom-nav-reserve, 0px\) \+ 12px\)" \}\}/,
     "it rides the bar's own height variable rather than a second magic number — that variable is already 0px from lg, so the button tracks the bar for free",
   );

@@ -122,10 +122,8 @@ export function submitExpenseStepProblem(key: SubmitExpenseStepKey, facts: Submi
           ? "Take the live car photo."
           : "Add the arrival photo — take it live or upload it.";
       }
-      // Offline, the ticket can follow the claim: it is attached afterwards from My claims, under the form.
-      if (!facts.isOffline && facts.isTicketRequired && facts.ticketCount === 0) {
-        return "Attach the ticket — a train or bus claim needs it.";
-      }
+      // The ticket never blocks Next (owner, 2026-10-27): online or offline, a claim without it is
+      // submitted, held for review, and the ticket is attached afterwards from My claims, under the form.
       return null;
     case "amounts":
       return facts.isNonTravel && nonTravelAmountRefusal({ meetingAmount: facts.meetingAmount, otherAmount: facts.otherAmount })

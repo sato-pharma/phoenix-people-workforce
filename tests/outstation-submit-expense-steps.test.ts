@@ -96,9 +96,10 @@ export function runOutstationSubmitExpenseStepsTests() {
     null,
     "a role that owes no photo is never asked for one",
   );
-  assert.match(String(submitExpenseStepProblem("evidence", facts({ ticketCount: 0 }))), /Attach the ticket/);
-  // Offline the ticket follows the claim — it is attached afterwards from My claims, so the form
-  // must not refuse to save a claim the phone cannot send a file with.
+  // The ticket never blocks Next, online or offline (owner, 2026-10-27, after a manager's train claim
+  // could not leave the evidence step): the claim is submitted, held for review, and the ticket is
+  // attached afterwards from My claims.
+  assert.equal(submitExpenseStepProblem("evidence", facts({ ticketCount: 0 })), null, "online, a missing ticket never blocks Next");
   assert.equal(submitExpenseStepProblem("evidence", facts({ isOffline: true, ticketCount: 0 })), null);
   assert.equal(
     submitExpenseStepProblem("evidence", facts({ isTicketRequired: false, ticketCount: 0 })),

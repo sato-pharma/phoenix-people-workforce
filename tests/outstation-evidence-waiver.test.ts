@@ -346,9 +346,12 @@ export function runOutstationEvidenceWaiverTests() {
     wizard.includes("const isTicketRequired = isTicketBased && !isOutstationTicketWaivedRole(employeeRole)"),
     "the ticket must be required by transport AND role, so a waived manager is never blocked on an attachment he was told was optional",
   );
+  // Since 2026-10-27 the ticket blocks neither Next nor Submit for anyone (the claim is held for
+  // review until it is attached from My claims), so the flag now drives only the warning note — and
+  // it must still be that flag, never the bare transport check, or a waived manager is warned too.
   assert.ok(
-    wizard.includes("if (!isOffline && isTicketRequired && ticketFiles.length === 0) {"),
-    "…and the submit guard must read that flag rather than the bare transport check it replaced",
+    wizard.includes("{isTicketRequired && ticketFiles.length === 0 ? ("),
+    "…and the held-for-review note must read that flag rather than the bare transport check",
   );
 
   // The ticket card stays on screen for a waived role — with the photo gone it is the trip's only

@@ -651,7 +651,7 @@ export function LivePhotoCapture({
         // Held on screen while the camera is open: sticky to the bottom, above the portal's bottom
         // navigation on a phone (the app sets --crm-sticky-bottom to its height), so the shutter is
         // always within reach however far down the form the camera was opened.
-        <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 grid gap-2 bg-white py-2 lg:bottom-0">
+        <div data-portal-action-bar="" className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 grid gap-2 bg-white py-2 lg:bottom-0">
           {fix ? (
             <p className="flex min-w-0 items-start gap-2 text-sm font-bold text-emerald-700">
               <LocateFixed aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
