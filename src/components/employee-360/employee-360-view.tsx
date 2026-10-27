@@ -129,6 +129,11 @@ function monthLabel(period: string): string {
   return monthLabelFmt.format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
+/** "Aug 2026", or "Jul 2026 – Aug 2026" for a span. */
+function monthSpanLabel(span: { from: string; to: string }): string {
+  return span.from === span.to ? monthLabel(span.from) : `${monthLabel(span.from)} – ${monthLabel(span.to)}`;
+}
+
 /**
  * Chart axis labels for a run of "YYYY-MM" keys: just "Aug" while every point sits in one year,
  * "Aug 2026" once the run crosses a year, so a label is never ambiguous.
@@ -268,9 +273,9 @@ const KPI_EXPLAIN: Record<string, string> = {
   Trips: "The number of trips claimed.",
   "Cost / trip": "The average money claimed per trip.",
   "Total km": "The total distance claimed across all trips.",
-  "Cost / visit": "Trip cost divided by productive visits — the travel cost behind each customer seen.",
+  "Cost / visit": "Trip cost divided by the productive visits up to the last month a claim is recorded — the travel cost behind each customer seen. When the claims stop early, the visits stop with them.",
   "Cost / trip-visit": "Trip cost divided by the visits actually logged on trip days.",
-  "Expenses vs sales": "Their trip costs as a share of the sales they brought in — lower is more efficient.",
+  "Expenses vs sales": "Their trip costs as a share of the sales of the same months — lower is more efficient. Only the months both the claims and the sales reach are compared.",
   "Approved cost": "The portion of the claimed cost that has been approved.",
   // Activity split
   "AM visits": "How many visits were made in the morning.",
@@ -2495,13 +2500,21 @@ function ExpensesSection({
                 <KpiTile label="Total km" value={intFmt.format(Math.round(payroll.totalKm))} hint={payroll.costPerKm != null ? `${payroll.costPerKm.toFixed(1)}/km` : undefined} />
               </div>
               <div className="mt-3 grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-4">
-                <KpiTile label="Cost / visit" value={payroll.costPerVisit == null ? "—" : compactFmt.format(payroll.costPerVisit)} hint="per productive visit" />
+                <KpiTile
+                  label="Cost / visit"
+                  value={payroll.costPerVisit == null ? "—" : compactFmt.format(payroll.costPerVisit)}
+                  hint={payroll.claimsThrough ? `per productive visit, to ${monthLabel(payroll.claimsThrough)}` : "per productive visit"}
+                />
                 <KpiTile label="Cost / trip-visit" value={payroll.costPerTripVisit == null ? "—" : compactFmt.format(payroll.costPerTripVisit)} hint="visits logged on trips" />
                 <KpiTile
                   label="Expenses vs sales"
                   value={payroll.expenseToSalesPct == null ? "—" : `${payroll.expenseToSalesPct.toFixed(1)}%`}
                   goodWhenAbove={payroll.expenseToSalesPct == null ? null : !(payroll.expenseToSalesPct > 20)}
-                  hint={payroll.windowSalesValue != null ? `of ${compactFmt.format(payroll.windowSalesValue)} sales` : "no sales in period"}
+                  hint={
+                    payroll.windowSalesValue != null && payroll.expenseVsSalesMonths
+                      ? `of ${compactFmt.format(payroll.windowSalesValue)} sales · ${monthSpanLabel(payroll.expenseVsSalesMonths)}`
+                      : "no sales in the months claimed"
+                  }
                 />
                 <KpiTile label="Approved cost" value={compactFmt.format(payroll.approvedCost)} hint={`${payroll.approvedCount} approved`} />
               </div>

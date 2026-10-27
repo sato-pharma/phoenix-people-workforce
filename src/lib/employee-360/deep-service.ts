@@ -803,8 +803,12 @@ export type ExpenseSummary = {
   costPerKm: number | null;
   costPerVisit: number | null; // expense ÷ productive visits (cross-domain, set by orchestrator)
   costPerTripVisit: number | null; // expense ÷ AM+PM visits logged on trips
-  windowSalesValue: number | null; // period-matched sales, for the ratio
-  expenseToSalesPct: number | null; // expense as % of window sales
+  windowSalesValue: number | null; // the sales of `expenseVsSalesMonths`, the ratio's denominator
+  expenseToSalesPct: number | null; // expense as % of the sales of the same months
+  /** The months Expenses vs sales covers: the sales months the claims also reach. Null when none. */
+  expenseVsSalesMonths: { from: string; to: string } | null;
+  /** The last claim month when the claims stop before the period ends — Cost / visit stops there too. */
+  claimsThrough: string | null;
   noDestinationTrips: number; // TRAVEL trips with no recorded destination (meetings excluded — they need none)
   unresolvedTrips: ExpenseTrip[]; // placeless travel trips, quarantined out of the analytics until resolved
   meetingCount: number;
@@ -896,6 +900,8 @@ function emptyEmployeeExpenses(): EmployeeExpenses {
       costPerTripVisit: null,
       windowSalesValue: null,
       expenseToSalesPct: null,
+      expenseVsSalesMonths: null,
+      claimsThrough: null,
       noDestinationTrips: 0,
       unresolvedTrips: [],
       meetingCount: 0,
@@ -943,6 +949,56 @@ export function expenseRecordedUntilNote(monthly: readonly { month: string }[], 
   const last = monthly.length ? monthly[monthly.length - 1].month : null;
   if (!last || last >= windowTo.slice(0, 7)) return null;
   return `No claim is recorded after ${monthLabel(last)}, so the totals cover the period up to then.`;
+}
+
+/**
+ * PURE. Cost / visit and Expenses vs sales over the months the claims reach. The payroll import lags, so the
+ * claims can stop in August while the visits and the sales run on to October — dividing one by the other then
+ * reads far too low (Dina Hamdy, 2026-10-27). Both ratios stop at the last claim month, the same boundary
+ * `expenseRecordedUntilNote` names. `visitMonthly` is the visit summary's own, so the visits are the ones
+ * "Productive visits" counts.
+ */
+export function expenseEfficiencyOf(input: {
+  totalCost: number;
+  expenseMonthly: readonly { month: string; cost: number }[];
+  visitMonthly: readonly { month: string; regular: number; campaign: number }[];
+  salesMonthly: readonly { month: string; sales: number }[];
+  /** The sales months inside the period (`windowSalesEfficiency`); null when there are none. */
+  salesMonths: { from: string; to: string } | null;
+  windowTo: string;
+}): {
+  costPerVisit: number | null;
+  claimsThrough: string | null;
+  expenseToSalesPct: number | null;
+  matchedSalesValue: number | null;
+  matchedMonths: { from: string; to: string } | null;
+} {
+  const last = input.expenseMonthly.reduce<string | null>((max, m) => (max === null || m.month > max ? m.month : max), null);
+  if (!last) return { costPerVisit: null, claimsThrough: null, expenseToSalesPct: null, matchedSalesValue: null, matchedMonths: null };
+  const visits = input.visitMonthly.filter((m) => m.month <= last).reduce((sum, m) => sum + m.regular + m.campaign, 0);
+  const claimsThrough = last < input.windowTo.slice(0, 7) ? last : null;
+  let matchedMonths: { from: string; to: string } | null = null;
+  let matchedSalesValue: number | null = null;
+  let expenseToSalesPct: number | null = null;
+  if (input.salesMonths) {
+    const from = input.salesMonths.from;
+    const to = input.salesMonths.to < last ? input.salesMonths.to : last;
+    const inSpan = (month: string) => month >= from && month <= to;
+    const sales = from <= to ? input.salesMonthly.filter((m) => inSpan(m.month)).reduce((sum, m) => sum + m.sales, 0) : 0;
+    if (sales > 0) {
+      const cost = input.expenseMonthly.filter((m) => inSpan(m.month)).reduce((sum, m) => sum + m.cost, 0);
+      matchedMonths = { from, to };
+      matchedSalesValue = sales;
+      expenseToSalesPct = (cost / sales) * 100;
+    }
+  }
+  return {
+    costPerVisit: visits > 0 ? input.totalCost / visits : null,
+    claimsThrough,
+    expenseToSalesPct,
+    matchedSalesValue,
+    matchedMonths,
+  };
 }
 
 async function readEmployeeExpenses(hrId: string, window: Employee360Window): Promise<EmployeeExpenses> {
@@ -1144,6 +1200,8 @@ export function summarizePayrollExpenseRows(rows: readonly PayrollExpenseRow[]):
     costPerTripVisit: null,
     windowSalesValue: null,
     expenseToSalesPct: null,
+    expenseVsSalesMonths: null,
+    claimsThrough: null,
     noDestinationTrips: noDestinationCount,
     unresolvedTrips: unresolved.sort((a, b) => b.total - a.total),
     meetingCount,
@@ -1754,8 +1812,8 @@ export type Employee360FieldBenchmarks = {
 };
 
 /**
- * PURE. `salesRows` are the company's rows after the hire-month drop and the viewer's product mask —
- * the same rows a rep's own figures are cut from, so the two sit on one basis.
+ * PURE. `salesRows` are the company's published-closing rows after the viewer's product mask — the same
+ * rows a rep's own figures are cut from, so the two sit on one basis.
  */
 export function summarizeFieldBenchmarks(input: {
   fieldRepHrIds: readonly string[];
@@ -1956,23 +2014,27 @@ export async function getEmployee360Profile(
       .filter((v) => isProductiveVisit(v) && v.visit_date)
       .map((v) => ({ date: v.visit_date as string, customerKey: customerKeyOf(v) })),
   });
-  const windowSalesValue = efficiency.windowSalesValue;
   sales.salesPerVisit = efficiency.salesPerVisit;
   sales.salesPerCustomer = efficiency.salesPerCustomer;
 
-  // expense efficiency (cross-domain): cost per visit + expense as % of period-matched sales
+  // expense efficiency (cross-domain): cost per visit + expense as % of sales, both over the months the claims reach
   const ep = expenses.payroll;
-  ep.costPerVisit = visitSummary.productiveVisits > 0 ? ep.totalCost / visitSummary.productiveVisits : null;
+  const spend = expenseEfficiencyOf({
+    totalCost: ep.totalCost,
+    expenseMonthly: ep.monthly,
+    visitMonthly: visitSummary.monthly,
+    salesMonthly: sales.monthly,
+    salesMonths: efficiency.salesMonths,
+    windowTo: window.to,
+  });
+  ep.costPerVisit = spend.costPerVisit;
+  ep.claimsThrough = spend.claimsThrough;
   // A pharmacy visit is field work (owner, 2026-09-21), so it stays in the per-visit cost.
   const tripVisits = ep.amWorkload + ep.pmWorkload + (ep.pharmacyWorkload ?? 0);
   ep.costPerTripVisit = tripVisits > 0 ? ep.totalCost / tripVisits : null;
-  ep.windowSalesValue = windowSalesValue > 0 ? windowSalesValue : null;
-  // The cost of the same months the sales cover — never the whole window's cost over three months of sales.
-  const salesMonths = efficiency.salesMonths;
-  const costInSalesMonths = salesMonths
-    ? ep.monthly.filter((m) => m.month >= salesMonths.from && m.month <= salesMonths.to).reduce((s, m) => s + m.cost, 0)
-    : 0;
-  ep.expenseToSalesPct = windowSalesValue > 0 ? (costInSalesMonths / windowSalesValue) * 100 : null;
+  ep.windowSalesValue = spend.matchedSalesValue;
+  ep.expenseVsSalesMonths = spend.matchedMonths;
+  ep.expenseToSalesPct = spend.expenseToSalesPct;
 
   // productive rows for the impact engine
   const productiveRows: ProductiveRow[] = visits
