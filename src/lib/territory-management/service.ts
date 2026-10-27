@@ -1,4 +1,5 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { todayInCairo } from "@/lib/date-only";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
@@ -421,6 +422,8 @@ export async function loadTerritoryScopeOverview(access: AccessContext): Promise
         .select("area_code")
         .in("area_code", [...allAreaIds])
         .eq("active", true)
+        .is("superseded_by_brick_id", null)
+        .or(brickInForceFilter(todayInCairo()))
         .range(from, to);
       return error ? null : (data as Row[] | null);
     });
@@ -723,6 +726,86 @@ export function sharedCoordinateKeys(pins: Iterable<BrickPin>): Set<string> {
   return shared;
 }
 
+// ── Bricks in force today, and the history the master keeps ────────────────
+// A moved brick is never deleted or switched off: it stays `active` so closed months keep resolving
+// it, and is retired by `effective_to` (its last day, inclusive — the successor starts the day
+// after) plus `superseded_by_brick_id` where the move recorded one. Every brick read in this module
+// used to filter on `active` alone, so each move left its husk drawn in the area it LEFT. Measured
+// on production 2026-10-27: Qena 1 showed 12 bricks against the nine the owner ruled on 13 Oct —
+// مدينة قنا, أبنود and قوص were drawn there at their old pins, while their successors in Qena 2 had
+// no pin of their own and sat in "location unknown"; and فوه (moved to Kafr El-Sheikh 1 on 1 Aug,
+// no successor recorded) was drawn in BOTH Kafr El-Sheikh areas.
+
+/** PostgREST `or` for a brick in force on `today`: no end date, or one not yet passed. */
+export function brickInForceFilter(today: string): string {
+  return `effective_to.is.null,effective_to.gte.${today}`;
+}
+
+/** The complement of a brick in force: switched off, moved or merged away, or dated out. */
+export function brickHistoryFilter(today: string): string {
+  return `active.not.is.true,superseded_by_brick_id.not.is.null,effective_to.lt.${today}`;
+}
+
+export type BrickHistory = { brickId: string; successorId: string };
+
+/**
+ * The pin each brick in force is drawn at.
+ *
+ * A history brick's own pin is dropped: it is not drawn, and it must not count toward the
+ * shared-pin guard either — a husk and its successor on one point is the same place, not a
+ * geocoder giving up. A brick in force with no pin of its own takes the pin of a brick that moved
+ * into it (a `success` one first): the move changed the area, never the ground, and nothing copies
+ * the pin across when a brick is moved. A chain (A moved to B, B later to C) lands on C.
+ */
+export function currentBrickPins(
+  pins: ReadonlyMap<string, BrickPin>,
+  history: Iterable<BrickHistory>,
+): Map<string, BrickPin> {
+  const retired = new Set<string>();
+  const moved = new Map<string, string>();
+  for (const { brickId, successorId } of history) {
+    retired.add(brickId);
+    if (successorId && successorId !== brickId) moved.set(brickId, successorId);
+  }
+
+  const current = new Map<string, BrickPin>();
+  for (const [brickId, pin] of pins) if (!retired.has(brickId)) current.set(brickId, pin);
+
+  const inherited = new Map<string, BrickPin>();
+  for (const [brickId] of moved) {
+    const pin = pins.get(brickId);
+    if (!pin) continue;
+    let successor = brickId;
+    const seen = new Set<string>();
+    while (!seen.has(successor)) {
+      seen.add(successor);
+      const next = moved.get(successor);
+      if (!next) break;
+      successor = next;
+    }
+    if (retired.has(successor) || current.has(successor)) continue;
+    const held = inherited.get(successor);
+    if (!held || (held.status !== "success" && pin.status === "success")) inherited.set(successor, pin);
+  }
+  for (const [brickId, pin] of inherited) current.set(brickId, pin);
+  return current;
+}
+
+/** Every brick the master keeps as history. A failed read answers none, as before this existed. */
+async function loadBrickHistory(today: string): Promise<BrickHistory[]> {
+  const rows = await pageAll<Row>(async (from, to) => {
+    const { data, error } = await getSupabaseAdmin()
+      .from("source_of_sales_bricks")
+      .select("brick_id, superseded_by_brick_id")
+      .or(brickHistoryFilter(today))
+      .range(from, to);
+    return error ? null : (data as Row[] | null);
+  });
+  return rows
+    .map((row) => ({ brickId: str(row.brick_id), successorId: str(row.superseded_by_brick_id) }))
+    .filter((row) => row.brickId);
+}
+
 // ── map data ────────────────────────────────────────────────────────────────
 export async function loadTerritoryMap(params: {
   access?: AccessContext;
@@ -770,12 +853,15 @@ export async function loadTerritoryMap(params: {
     ]),
   );
 
+  const today = todayInCairo();
   const brickRows = await pageAll<Row>(async (from, to) => {
     const { data, error } = await getSupabaseAdmin()
       .from("source_of_sales_bricks")
       .select("brick_id, brick_name, block_code, area_code, active")
       .in("area_code", requested)
       .eq("active", true)
+      .is("superseded_by_brick_id", null)
+      .or(brickInForceFilter(today))
       .range(from, to);
     return error ? null : (data as Row[] | null);
   });
@@ -801,10 +887,12 @@ export async function loadTerritoryMap(params: {
     });
   }
 
-  // Computed over EVERY brick centroid, not just the selected areas' — otherwise the same brick
+  const pins = currentBrickPins(centroids, await loadBrickHistory(today));
+
+  // Computed over EVERY brick in force, not just the selected areas' — otherwise the same brick
   // would be trusted or distrusted depending on which areas happen to be on screen, and a twin
   // sitting in an unselected area would let its partner through.
-  const shared = sharedCoordinateKeys(centroids.values());
+  const shared = sharedCoordinateKeys(pins.values());
 
   const bricks: TerritoryBrick[] = [];
   const unlocated: UnlocatedBrick[] = [];
@@ -818,7 +906,7 @@ export async function loadTerritoryMap(params: {
       brickId,
       brickName: str(row.brick_name) || brickId,
     };
-    const centroid = centroids.get(brickId);
+    const centroid = pins.get(brickId);
     if (!centroid) {
       unlocated.push({ ...base, reason: "missing" });
     } else if (centroid.status !== "success") {
@@ -997,10 +1085,15 @@ export async function searchBricks(params: {
   const lineAreas = visibleLineAreas(await loadLineAreaRows(lineCode), scope);
   if (lineAreas.size === 0) return [];
 
+  // In force only — a moved brick's husk would otherwise answer the search in the area it left.
+  // Two `or` filters are ANDed by PostgREST: (in force) and (name or id matches).
+  const today = todayInCairo();
   const { data, error } = await getSupabaseAdmin()
     .from("source_of_sales_bricks")
     .select("brick_id, brick_name, block_code, area_code")
     .eq("active", true)
+    .is("superseded_by_brick_id", null)
+    .or(brickInForceFilter(today))
     .in("area_code", [...lineAreas.keys()])
     .or(searchFilter)
     .limit(limit);
@@ -1008,22 +1101,27 @@ export async function searchBricks(params: {
 
   const rows = data as Row[];
   const ids = rows.map((row) => str(row.brick_id)).filter(Boolean);
-  const pins = new Map<string, { lat: number; lng: number; provider: string; status: string }>();
+  let pins = new Map<string, BrickPin>();
   if (ids.length > 0) {
+    // A hit with no pin of its own may take its predecessor's, the same as on the map.
+    const hitIds = new Set(ids);
+    const history = (await loadBrickHistory(today)).filter((row) => hitIds.has(row.successorId));
     const { data: pinRows } = await getSupabaseAdmin()
       .from("geo_locations")
       .select("source_key, latitude, longitude, geocode_status, geocode_provider")
       .eq("source_type", "brick_centroid")
-      .in("source_key", ids);
+      .in("source_key", [...ids, ...history.map((row) => row.brickId)]);
+    const own = new Map<string, BrickPin>();
     for (const row of (pinRows ?? []) as Row[]) {
       if (row.latitude == null || row.longitude == null) continue;
-      pins.set(str(row.source_key), {
+      own.set(str(row.source_key), {
         lat: Number(row.latitude),
         lng: Number(row.longitude),
         provider: str(row.geocode_provider),
         status: str(row.geocode_status),
       });
     }
+    pins = currentBrickPins(own, history);
   }
 
   const regionNameByCode = new Map(

@@ -141,9 +141,16 @@ export function runTerritorySharedPinGuardTests() {
     reclassifiedAt > -1 && pushAt > reclassifiedAt,
     "the shared-coordinate check must come BEFORE the pin is pushed — reclassifying afterwards would still have drawn it and still have fed the residence search",
   );
+  // Every brick IN FORCE, country-wide (2026-10-27): a moved brick's husk and its successor share
+  // the ground, so counting the husk's pin would demote the successor that inherited it.
   assert.match(
     loader,
-    /sharedCoordinateKeys\(centroids\.values\(\)\)/,
-    "the guard must read EVERY centroid, not just the selected areas' — otherwise a brick's verdict changes with what is on screen, and a twin in an unselected area lets its partner through",
+    /const pins = currentBrickPins\(centroids, await loadBrickHistory\(today\)\);/,
+    "the guard's pins must be every centroid, narrowed to the bricks in force — never only the selected areas'",
+  );
+  assert.match(
+    loader,
+    /sharedCoordinateKeys\(pins\.values\(\)\)/,
+    "the guard must read EVERY brick in force, not just the selected areas' — otherwise a brick's verdict changes with what is on screen, and a twin in an unselected area lets its partner through",
   );
 }
