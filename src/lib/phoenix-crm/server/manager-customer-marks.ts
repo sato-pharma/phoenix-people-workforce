@@ -40,6 +40,7 @@ import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadManagerCustomers } from "@/lib/phoenix-crm/server/manager-customers";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
+import { loadVisitCompanionIds } from "@/lib/phoenix-crm/server/visit-companions";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -261,6 +262,12 @@ export async function loadManagerCustomerMarks(
     withOwn ? loadManagerCustomers(writer.hrId, isTest) : Promise.resolve([]),
   ]);
 
+  // Everyone a chain or product-manager visit lists past its fixed places (owner, 2026-10-27: "Everything
+  // is applicable") — only those two kinds can carry more than the fixed places, so only they are read.
+  const companionsByVisit = await loadVisitCompanionIds(
+    repVisits.filter((visit) => visit.kind === "chain" || visit.kind === "product_manager").map((visit) => String(visit.id)),
+  );
+
   const occupantBySeat = new Map<string, string>();
   for (const seatId of seatIds) {
     const occupant = personKey(reachById.get(seatId)?.occupantHrId);
@@ -296,7 +303,13 @@ export async function loadManagerCustomerMarks(
     const date = textOrNull(visit.visit_date);
     if (date && (!insight.lastRepVisit || date > insight.lastRepVisit)) insight.lastRepVisit = date;
     const withPlanner = countsAsPlannersVisitWithRep(
-      { kind: visit.kind, managerHrId: visit.manager_hr_id, seniorHrId: visit.senior_hr_id, productManagerHrId: visit.product_manager_hr_id },
+      {
+        kind: visit.kind,
+        managerHrId: visit.manager_hr_id,
+        seniorHrId: visit.senior_hr_id,
+        productManagerHrId: visit.product_manager_hr_id,
+        companionHrIds: companionsByVisit.get(String(visit.id)),
+      },
       writer.hrId,
     );
     if (withPlanner) insight.withYou += 1;

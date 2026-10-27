@@ -678,7 +678,7 @@ export type CrmVisitFilter = {
    * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
   agentHrIdILike?: string;
   /** Restrict to these resolved partner hr ids, in EITHER slot (`double_hr_id IN … OR double2_hr_id
-   * IN …`). Empty array → no rows. Matched case-insensitively (see `agentHrIds`). For "double visits
+   * IN …`) or anywhere in `companion_hr_ids`. Empty array → no rows. Matched case-insensitively (see `agentHrIds`). For "double visits
    * conducted by this manager" reads (e.g. Employee 360 leadership activity) — and slot 2 is in it
    * because a senior manager or a product manager on a chain stands there, and asking slot 1 alone
    * answered zero for them. */
@@ -770,12 +770,43 @@ function usableHrIdFilterValues(ids: readonly string[]): string[] {
  *
  * The hr half is the ONLY way slot 2 can be matched for a product manager or a senior with no CRM
  * account of his own, which is the ordinary case for a head-office manager.
+ *
+ * The `companion_hr_ids` arm (2026-10-27, "Everything is applicable"): a Phoenix visit can carry any
+ * mix of companions, and the third and later ones stand in neither slot — only in that array. It is
+ * an OVERLAP, any id of the list on the visit, never `cs`, which would demand all of them.
  */
 export function buildParticipantHrIdOrFilter(ids: readonly string[]): string | null {
   const values = usableHrIdFilterValues(ids);
   if (values.length === 0) return null;
   const list = quotedInList(values);
-  return `agent_hr_id.in.(${list}),double_hr_id.in.(${list}),double2_hr_id.in.(${list})`;
+  return `agent_hr_id.in.(${list}),double_hr_id.in.(${list}),double2_hr_id.in.(${list}),${companionHrIdsOverlapArm(values)}`;
+}
+
+/**
+ * The `companion_hr_ids` arm of a person-finding `or`: the visit lists ANY of these ids among its
+ * companions. The door stores them upper-cased and trimmed; the casing variants ride along harmlessly.
+ * A PostgREST `{…}` array literal, each element double-quoted by the shared builder.
+ */
+function companionHrIdsOverlapArm(values: readonly string[]): string {
+  return `companion_hr_ids.ov.{${quotedInList(values)}}`;
+}
+
+/**
+ * Everyone beside the agent on a door row, upper-cased, distinct: `companion_hr_ids` (every person on
+ * a Phoenix rep visit, 2026-10-27) unioned with the two slots, which are the whole answer on a vendor
+ * row where the array is null. Who is CREDITED, never what KIND the visit is.
+ */
+export function visitPartnerHrIds(row: {
+  companion_hr_ids?: readonly (string | null)[] | null;
+  double_hr_id?: string | null;
+  double2_hr_id?: string | null;
+}): string[] {
+  const out = new Set<string>();
+  for (const value of [...(row.companion_hr_ids ?? []), row.double_hr_id, row.double2_hr_id]) {
+    const key = String(value ?? "").trim().toUpperCase();
+    if (key) out.add(key);
+  }
+  return [...out];
 }
 
 /**
@@ -848,8 +879,12 @@ export function applyVisitFilter(
   // manager or a product manager on a chain stands in slot 2, and matching slot 1 alone hid him —
   // which is why Rasha Sabry Khalifa and Hany Saad Omar read as zero October visits before 2026-10-07.
   if (filter.doubleHrIds && filter.doubleHrIds.length > 0) {
-    const partnerIds = quotedInList(expandHrIdFilterValues(filter.doubleHrIds));
-    result = result.or(`double_hr_id.in.(${partnerIds}),double2_hr_id.in.(${partnerIds})`);
+    // …and a third or later companion stands in neither slot, only in `companion_hr_ids` (2026-10-27).
+    const partnerValues = expandHrIdFilterValues(filter.doubleHrIds);
+    const partnerIds = quotedInList(partnerValues);
+    result = result.or(
+      `double_hr_id.in.(${partnerIds}),double2_hr_id.in.(${partnerIds}),${companionHrIdsOverlapArm(partnerValues)}`,
+    );
   }
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   // See REAL_DOUBLE_PARTNER_OR_FILTER for why a stray `double_hr_id` on a vendor row is not a partner.

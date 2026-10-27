@@ -197,15 +197,22 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     const bare = parseMissedVisit(visit({ comment: "   ", products: [] }), VISIT_DAY);
     assert.ok(bare.ok && bare.value.comment === null && bare.value.products.length === 0, "the Super Admin may enter a visit with no comment and no products");
     // Single, double or chain is HIS choice: an older screen sends none and gets a single visit.
-    assert.ok(planned.ok && planned.value.kind === "single" && planned.value.managerHrId === null && planned.value.seniorHrId === null);
+    assert.ok(planned.ok && planned.value.kind === "single" && planned.value.picked.length === 0);
+    // A screen opened before 2026-10-27 still sends the manager and the one above him by name.
     const double = parseMissedVisit(visit({ kind: "double", managerHrId: " b-12 " }), VISIT_DAY);
-    assert.ok(double.ok && double.value.kind === "double" && double.value.managerHrId === "B-12" && double.value.seniorHrId === null, "a double names one manager");
-    assert.equal(parseMissedVisit(visit({ kind: "double" }), VISIT_DAY).ok, false, "a double needs its manager");
-    assert.equal(parseMissedVisit(visit({ kind: "chain", managerHrId: "B-12" }), VISIT_DAY).ok, false, "a chain needs its senior manager too");
+    assert.ok(double.ok && double.value.kind === "double", "a double names one person");
+    if (double.ok) assert.deepEqual(double.value.picked, ["B-12"]);
+    assert.equal(parseMissedVisit(visit({ kind: "double" }), VISIT_DAY).ok, false, "a double needs its one person");
+    assert.equal(parseMissedVisit(visit({ kind: "chain", managerHrId: "B-12" }), VISIT_DAY).ok, false, "a chain needs two or more");
     const chain = parseMissedVisit(visit({ kind: "chain", managerHrId: "B-12", seniorHrId: "B-3" }), VISIT_DAY);
-    assert.ok(chain.ok && chain.value.managerHrId === "B-12" && chain.value.seniorHrId === "B-3");
+    assert.ok(chain.ok);
+    if (chain.ok) assert.deepEqual(chain.value.picked, ["B-12", "B-3"]);
+    // 🔴 Any mix (owner, 2026-10-27: "Everything is applicable") — the product side too, on his entry.
+    const wide = parseMissedVisit(visit({ kind: "chain", picked: ["B-12", "B-3", "pm-1", "B-12"] }), VISIT_DAY);
+    assert.ok(wide.ok);
+    if (wide.ok) assert.deepEqual(wide.value.picked, ["B-12", "B-3", "PM-1"], "each person once, in the order ticked");
     const strayPeople = parseMissedVisit(visit({ kind: "single", managerHrId: "B-12", seniorHrId: "B-3" }), VISIT_DAY);
-    assert.ok(strayPeople.ok && strayPeople.value.managerHrId === null && strayPeople.value.seniorHrId === null, "a single visit carries nobody else");
+    assert.ok(strayPeople.ok && strayPeople.value.picked.length === 0, "a single visit carries nobody else");
     assert.equal(parseMissedVisit(visit({ kind: "product_manager" }), VISIT_DAY).ok, false, "a visit with a product manager stays the rep's own");
     assert.equal(
       parseMissedVisit(visit({ products: Array.from({ length: 13 }, (_, index) => `Product ${index}`) }), VISIT_DAY).ok,

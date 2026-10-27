@@ -7,7 +7,7 @@ import { crmPost, crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-c
 import { CompanyPicker } from "@/components/phoenix-crm/visit-company-picker";
 import { CrmButton, CrmCheck, CrmChoice, CrmField, CrmLoadError, CrmLoading, CrmNote, CrmSaveError, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
-import { COMPANY_PICKS, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
+import { COMPANY_MOST, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisitEdit, VisitEditForm } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -100,7 +100,7 @@ function EditForm({
               onChange={(next) => {
                 setChoice(next);
                 // Fewer places than he had ticked: keep the first ones, so changing his mind costs no re-tap.
-                setPicked((current) => current.slice(0, COMPANY_PICKS[next]));
+                setPicked((current) => current.slice(0, COMPANY_MOST[next]));
               }}
               options={[
                 { value: "single", label: "Single visit", note: "On their own" },

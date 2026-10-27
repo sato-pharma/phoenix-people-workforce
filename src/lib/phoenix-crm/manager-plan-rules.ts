@@ -1180,6 +1180,29 @@ export function managerOutcome(input: { kind: ManagerSlotKind; date: string; don
 }
 
 /**
+ * Who a rep's visit carries, as the plan rules read it: the three fixed places, and — since 2026-10-27 —
+ * everyone the visit lists (`phoenix_crm_visit_companions`, or the door's `companion_hr_ids`). A visit
+ * saved before then has no list, and its fixed places are the whole answer.
+ */
+export type PlanVisitPeople = {
+  kind: unknown;
+  managerHrId: unknown;
+  seniorHrId: unknown;
+  productManagerHrId?: unknown;
+  companionHrIds?: unknown;
+};
+
+/** Everyone the visit's list names, as person keys. */
+function visitCompanionKeys(visit: PlanVisitPeople): Set<string> {
+  const keys = new Set<string>();
+  for (const value of Array.isArray(visit.companionHrIds) ? visit.companionHrIds : []) {
+    const key = personKey(textOf(value));
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+/**
  * 🔴 A REP'S VISIT THAT ANSWERS A MANAGER'S "WITH A REP" HALF-DAY. A district, regional or national sales
  * manager: the double or chain visit naming him (`countsAsManagersDoubleVisit`, unchanged). A product
  * manager (owner, 2026-10-17): the rep's visit naming him as its product manager — the slot the visit form
@@ -1188,14 +1211,16 @@ export function managerOutcome(input: { kind: ManagerSlotKind; date: string; don
  * for no other) — as the district manager's rule asks `double` or `chain` of its own slot.
  */
 export function countsAsPlannersVisitWithRep(
-  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  visit: PlanVisitPeople,
   plannerHrId: string | null | undefined,
 ): boolean {
   if (countsAsManagersDoubleVisit(visit, plannerHrId)) return true;
   const planner = personKey(plannerHrId);
-  if (!planner || typeof visit.productManagerHrId !== "string") return false;
+  if (!planner) return false;
   if (visit.kind !== "product_manager" && visit.kind !== "chain") return false;
-  return personKey(visit.productManagerHrId) === planner;
+  // Everyone the visit lists past its fixed places counts the same (owner, 2026-10-27: "Everything is
+  // applicable") — a second product-side person, the Training Manager beside a product manager.
+  return personKey(textOf(visit.productManagerHrId)) === planner || visitCompanionKeys(visit).has(planner);
 }
 
 /**
@@ -1207,7 +1232,7 @@ export function countsAsPlannersVisitWithRep(
  * to the area and its day to the half-day's.
  */
 export function countsAsPlannersVisitWithDm(
-  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  visit: PlanVisitPeople,
   plannerHrId: string | null | undefined,
   dmHrId: string | null | undefined,
 ): boolean {
@@ -1291,7 +1316,7 @@ export function managerSeniorTitle(tier: string): string {
  * a ticked area and its day to the half-day's.
  */
 export function countsAsDmsVisitWithSenior(
-  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  visit: PlanVisitPeople,
   dmHrId: string | null | undefined,
   seniorHrId: string | null | undefined,
 ): boolean {
@@ -1299,7 +1324,11 @@ export function countsAsDmsVisitWithSenior(
   const senior = personKey(seniorHrId);
   if (!dm || !senior || visit.kind !== "chain") return false;
   if (personKey(textOf(visit.managerHrId)) !== dm) return false;
-  return personKey(textOf(visit.seniorHrId)) === senior || personKey(textOf(visit.productManagerHrId)) === senior;
+  return (
+    personKey(textOf(visit.seniorHrId)) === senior ||
+    personKey(textOf(visit.productManagerHrId)) === senior ||
+    visitCompanionKeys(visit).has(senior)
+  );
 }
 
 /**
@@ -1309,14 +1338,18 @@ export function countsAsDmsVisitWithSenior(
  * as manager and product manager (`companyToStorage`). The caller matches the seat to a ticked area and the day.
  */
 export function countsAsPlannersVisitWithPeer(
-  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  visit: PlanVisitPeople,
   plannerHrId: string | null | undefined,
   peerHrId: string | null | undefined,
 ): boolean {
   const planner = personKey(plannerHrId);
   const peer = personKey(peerHrId);
   if (!planner || !peer || planner === peer || visit.kind !== "chain") return false;
-  const named = new Set([visit.managerHrId, visit.seniorHrId, visit.productManagerHrId].map((value) => personKey(textOf(value))).filter(Boolean));
+  const named = visitCompanionKeys(visit);
+  for (const value of [visit.managerHrId, visit.seniorHrId, visit.productManagerHrId]) {
+    const key = personKey(textOf(value));
+    if (key) named.add(key);
+  }
   return named.has(planner) && named.has(peer);
 }
 

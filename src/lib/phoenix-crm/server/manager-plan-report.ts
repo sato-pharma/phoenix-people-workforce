@@ -51,6 +51,7 @@ import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
 import { managerPlace, managerPlanChoices, managerPlanWriterFor, resolveManagerPlanReader } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import {
   loadManagerSlotCustomers,
@@ -144,10 +145,18 @@ async function loadWithRepDone(
   if (managers.length === 0 || seatIds.length === 0) return done;
   const productManagers = dedupeIds(productManagerHrIds);
   const weekEnd = managerVisitWindow(weekStart).to;
-  const readBy = (column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]): Promise<Row[]> => {
+  // Any mix of companions (owner, 2026-10-27): a planner past the visit's three fixed places is on
+  // `phoenix_crm_visit_companions` alone, so the visits naming him there are read by their own id too.
+  const companionVisitIds = await loadVisitIdsWithCompanions([...managers, ...productManagers]);
+  const readBy = (column: "id" | "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]): Promise<Row[]> => {
     // The product manager's own slot is asked of the managers who plan as one, and not at all when none does.
-    const ids = column === "product_manager_hr_id" ? productManagers : managers;
+    const ids = column === "id" ? companionVisitIds : column === "product_manager_hr_id" ? productManagers : managers;
     if (ids.length === 0) return Promise.resolve([]);
+    // A companion's visits are every one he was ever listed on, so they are asked a part at a time.
+    if (column === "id" && ids.length > 150) return Promise.all(chunk(ids, 150).map((ids150) => readIn(column, part, ids150))).then((rows) => rows.flat());
+    return readIn(column, part, ids);
+  };
+  const readIn = (column: "id" | "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[], ids: string[]): Promise<Row[]> => {
     return fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -163,17 +172,21 @@ async function loadWithRepDone(
   };
   for (const part of chunk(dedupeIds(seatIds), 100)) {
     // A product manager is on a visit in its own slot (owner, 2026-10-17), so it is read too.
-    const [asManager, asSenior, asProductManager] = await Promise.all([
+    const [asManager, asSenior, asProductManager, asCompanion] = await Promise.all([
       readBy("manager_hr_id", part),
       readBy("senior_hr_id", part),
       readBy("product_manager_hr_id", part),
+      readBy("id", part),
     ]);
-    for (const row of [...asManager, ...asSenior, ...asProductManager]) {
+    const rows = [...asManager, ...asSenior, ...asProductManager, ...asCompanion];
+    const companionsOf = await loadVisitCompanionIds(rows.map((row) => String(row.id)));
+    for (const row of rows) {
       const seatId = textOrNull(row.seat_id);
       const customerId = textOrNull(row.customer_id);
       const date = textOrNull(row.visit_date)?.slice(0, 10) ?? null;
       if (!seatId || !customerId || !date) continue;
-      const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id, productManagerHrId: row.product_manager_hr_id };
+      const companionHrIds = companionsOf.get(String(row.id)) ?? [];
+      const visit = { companionHrIds, kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id, productManagerHrId: row.product_manager_hr_id };
       for (const manager of managers) {
         if (!countsAsPlannersVisitWithRep(visit, manager)) continue;
         const keys = done.get(manager) ?? new Set<string>();
@@ -185,14 +198,14 @@ async function loadWithRepDone(
         if (visitManager) keys.add(`dm|${seatId}|${date}|${visitManager}`);
         // With my manager or product manager (owner, 2026-10-23): a district manager's area is answered by a chain
         // visit naming him as its manager AND the person he picked (`countsAsDmsVisitWithSenior`).
-        for (const picked of [row.senior_hr_id, row.product_manager_hr_id]) {
+        for (const picked of [row.senior_hr_id, row.product_manager_hr_id, ...companionHrIds]) {
           const pickedKey = personKey(textOrNull(picked));
           if (pickedKey && countsAsDmsVisitWithSenior(visit, manager, pickedKey)) keys.add(`sr|${seatId}|${date}|${pickedKey}`);
         }
         // A regional, national or product manager's With a manager or product manager (owner, 2026-10-25): a chain
         // visit naming him AND the person he picked, whichever column each sits in (`countsAsPlannersVisitWithPeer`).
         if (peerPlanners.has(manager)) {
-          for (const named of [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id]) {
+          for (const named of [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id, ...companionHrIds]) {
             const peerKey = personKey(textOrNull(named));
             if (peerKey && countsAsPlannersVisitWithPeer(visit, manager, peerKey)) keys.add(`sr|${seatId}|${date}|${peerKey}`);
           }

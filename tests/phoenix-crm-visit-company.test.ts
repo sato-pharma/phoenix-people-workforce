@@ -9,7 +9,6 @@ import {
   CHOOSE_TWO_FOR_CHAIN,
   COMPANY_NOT_OFFERED,
   COMPANY_PICKS,
-  ONE_PRODUCT_MANAGER_ON_A_CHAIN,
   canPick,
   companyFromStorage,
   companyHint,
@@ -64,7 +63,10 @@ function stored(choice: "single" | "double" | "chain", picked: string[]) {
 function value(choice: "single" | "double" | "chain", picked: string[]) {
   const result = stored(choice, picked);
   assert.equal(result.ok, true, result.ok ? "" : result.error);
-  return result.ok ? result.value : null;
+  if (!result.ok) return null;
+  // The fixed places only — everyone on the visit (`companions`) is pinned in phoenix-crm-visit-any-companions.
+  const { kind, managerHrId, seniorHrId, productManagerHrId } = result.value;
+  return { kind, managerHrId, seniorHrId, productManagerHrId };
 }
 function refusal(choice: "single" | "double" | "chain", picked: string[]): string {
   const result = stored(choice, picked);
@@ -87,15 +89,16 @@ const DRAFT = {
 export function runPhoenixCrmVisitCompanyTests(): void {
   // ── 1. How many each choice takes ─────────────────────────────────────────────────────────────
   {
-    assert.deepEqual(COMPANY_PICKS, { single: 0, double: 1, chain: 2 }, "single none, double ONE, chain TWO — the owner's words");
+    assert.deepEqual(COMPANY_PICKS, { single: 0, double: 1, chain: 2 }, "single none, double ONE, chain TWO OR MORE — the owner's words");
     assert.equal(companyHint("double", 0), "Choose one.");
-    assert.equal(companyHint("chain", 1), "Choose two — 1 of 2 chosen.");
+    assert.equal(companyHint("chain", 1), "Choose two or more — 1 chosen.");
     assert.equal(companyHint("single", 0), "");
 
     assert.equal(refusal("double", []), CHOOSE_ONE_FOR_DOUBLE, "a double with nobody picked");
     assert.equal(refusal("double", ["B-12", "A-12"]), CHOOSE_ONE_FOR_DOUBLE, "a double never takes two");
     assert.equal(refusal("chain", ["B-12"]), CHOOSE_TWO_FOR_CHAIN, "a chain with one");
-    assert.equal(refusal("chain", ["B-12", "R-1", "A-12"]), CHOOSE_TWO_FOR_CHAIN, "a chain never takes three");
+    // Owner, 2026-10-27: "Everything is applicable" — a chain takes three managers, and more.
+    assert.deepEqual(value("chain", ["B-12", "R-1", "A-12"]), { kind: "chain", managerHrId: "B-12", seniorHrId: "R-1", productManagerHrId: null }, "a chain takes three");
     assert.equal(refusal("chain", ["B-12", "b-12"]), CHOOSE_TWO_FOR_CHAIN, "the same person twice is one person");
     assert.equal(refusal("single", ["B-12"]), COMPANY_NOT_OFFERED, "a single visit has nobody with the rep");
     assert.equal(refusal("double", ["X-99"]), COMPANY_NOT_OFFERED, "somebody the list never offered");
@@ -127,9 +130,9 @@ export function runPhoenixCrmVisitCompanyTests(): void {
     assert.deepEqual(value("chain", ["B-12", "PM-2"]), withPm);
     assert.deepEqual(value("chain", ["PM-2", "B-12"]), withPm);
 
-    // 🔴 At most one product manager on a chain: the table has one column for him, and a chain is the
-    // management line. Two of them, and a chain of nobody but them, are refused.
-    assert.equal(refusal("chain", ["PM-1", "PM-2"]), ONE_PRODUCT_MANAGER_ON_A_CHAIN);
+    // 🔴 The product side alone, however many came, is the product-manager kind (2026-10-27): nobody from
+    // the management line was there, so it never reaches `double_visits`.
+    assert.deepEqual(value("chain", ["PM-1", "PM-2"]), { kind: "product_manager", managerHrId: null, seniorHrId: null, productManagerHrId: "PM-1" });
   }
 
   // ── 3. A stored visit reads back as the choice and the people to tick ─────────────────────────
@@ -166,16 +169,19 @@ export function runPhoenixCrmVisitCompanyTests(): void {
     assert.deepEqual(togglePick("double", ["B-12"], "A-12"), ["A-12"], "a double has one place, so a new pick REPLACES the old one");
     assert.deepEqual(togglePick("double", ["B-12"], "B-12"), [], "ticking him again takes him off");
     assert.deepEqual(togglePick("chain", ["B-12"], "A-12"), ["B-12", "A-12"]);
-    assert.deepEqual(togglePick("chain", ["B-12", "A-12"], "R-1"), ["B-12", "A-12"], "a full chain takes no third");
+    assert.deepEqual(togglePick("chain", ["B-12", "A-12"], "R-1"), ["B-12", "A-12", "R-1"], "a chain takes a third (2026-10-27)");
+    const full = Array.from({ length: 12 }, (_, index) => `F-${index}`);
+    assert.deepEqual(togglePick("chain", full, "R-1"), full, "a full visit — twelve besides the rep — takes no thirteenth");
     assert.deepEqual(togglePick("chain", ["B-12", "A-12"], "A-12"), ["B-12"]);
     assert.deepEqual(togglePick("single", ["B-12"], "A-12"), [], "a single visit holds nobody");
 
-    assert.equal(canPick("chain", ["B-12", "A-12"], RM, OFFERS), false, "a full chain disables the rest");
-    assert.equal(canPick("chain", ["B-12", "A-12"], NSM, OFFERS), true, "but a ticked person stays tickable so he can be taken off");
-    assert.equal(canPick("chain", ["PM-1"], PM2, OFFERS), false, "a second product manager on a chain is disabled");
-    assert.equal(canPick("chain", ["PM-1"], DM, OFFERS), true);
-    assert.equal(canPick("double", ["PM-1"], PM2, OFFERS), true, "under Double any one of the list may replace the pick");
-    assert.equal(canPick("single", [], DM, OFFERS), false);
+    assert.equal(canPick("chain", full, RM), false, "a full visit disables the rest");
+    assert.equal(canPick("chain", ["B-12", "A-12"], RM), true, "two ticked leaves room for a third");
+    assert.equal(canPick("chain", ["B-12", "A-12"], NSM), true, "and a ticked person stays tickable so he can be taken off");
+    assert.equal(canPick("chain", ["PM-1"], PM2), true, "a second product-side person on a chain (2026-10-27)");
+    assert.equal(canPick("chain", ["PM-1"], DM), true);
+    assert.equal(canPick("double", ["PM-1"], PM2), true, "under Double any one of the list may replace the pick");
+    assert.equal(canPick("single", [], DM), false);
   }
 
   // ── 5. The rep's draft: a chain's second person is a senior manager OR a product manager ─────
@@ -194,7 +200,7 @@ export function runPhoenixCrmVisitCompanyTests(): void {
 
     const neither = parseVisitDraft({ ...DRAFT, kind: "chain", managerHrId: "B-12" });
     assert.equal(neither.ok, false, "a chain with nobody beside the manager is still refused");
-    assert.equal(neither.ok ? "" : neither.error, "Choose the senior manager who was on the visit.");
+    assert.equal(neither.ok ? "" : neither.error, "Choose who else was on the chain visit.");
 
     // A double still drops a stray product manager: it is the district managers' figure.
     const double = parseVisitDraft({ ...DRAFT, kind: "double", managerHrId: "B-12", productManagerHrId: "PM-1" });

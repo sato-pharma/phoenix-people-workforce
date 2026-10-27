@@ -28,6 +28,7 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { loadLineProductManagers } from "@/lib/phoenix-crm/server/visit-asks";
+import { loadVisitCompanionIds } from "@/lib/phoenix-crm/server/visit-companions";
 import type { PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import { companyFromStorage, companyToStorage, type CompanyOffer, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import { parseVisitEdit, visitWhoEditable } from "@/lib/phoenix-crm/visit-edit-rules";
@@ -97,9 +98,10 @@ async function readVisit(seatId: string, visitId: unknown, isTest: boolean): Pro
 /**
  * Who the picker offers for one territory — the SAME two lists the rep's own form offers: the occupied
  * manager seats above the territory (district, regional where the line has one, national), and the
- * product managers of the territory's line.
+ * product side of the territory's line (product, group product, training). Shared with the Super
+ * Admin's missed-visit entry, so the three doors never offer different people.
  */
-async function loadOffers(
+export async function loadVisitCompanyOffers(
   viewer: PhoenixCrmViewer,
   seat: OrgSeat,
 ): Promise<{ people: VisitEditPerson[]; offers: CompanyOffer[]; productManagers: Array<{ hrId: string }> }> {
@@ -140,23 +142,34 @@ export async function loadVisitEditForm(viewer: PhoenixCrmViewer, raw: { seatId:
     seniorHrId: textOrNull(visit.senior_hr_id),
     productManagerHrId: textOrNull(visit.product_manager_hr_id),
   };
-  const [{ people }, families] = await Promise.all([loadOffers(viewer, seat), lineProductsByFamily(seat.lineName)]);
+  const [{ people }, families, companionIds] = await Promise.all([
+    loadVisitCompanyOffers(viewer, seat),
+    lineProductsByFamily(seat.lineName),
+    loadVisitCompanionIds([String(visit.id)]),
+  ]);
+  const companionHrIds = companionIds.get(String(visit.id)) ?? [];
 
   // Everyone on the visit as it stands, by name — including a person the picker no longer offers.
-  const onIds = [textOrNull(visit.rep_hr_id), slots.managerHrId, slots.seniorHrId, slots.productManagerHrId].filter((id): id is string => Boolean(id));
+  const onIds = [
+    ...new Set(
+      [textOrNull(visit.rep_hr_id), slots.managerHrId, slots.seniorHrId, slots.productManagerHrId, ...companionHrIds]
+        .map((id) => personKey(id))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
   const names = await loadPeopleNames(onIds);
   const titleOf = (hrId: string): string | null => {
     const key = personKey(hrId);
     return people.find((person) => personKey(person.hrId) === key)?.title ?? null;
   };
-  const rep = textOrNull(visit.rep_hr_id);
+  const rep = personKey(textOrNull(visit.rep_hr_id));
 
   const editable = visitWhoEditable({
     repHrId: rep,
     enteredByHrId: textOrNull(visit.entered_by_hr_id),
     captureSource: textOrNull(visit.capture_source),
   });
-  const company = companyFromStorage(slots);
+  const company = companyFromStorage({ ...slots, companionHrIds });
   const chosenProducts = Array.isArray(visit.products) ? visit.products.map(String) : [];
   const line = families.map((entry) => entry.family);
 
@@ -198,7 +211,13 @@ export async function saveVisitEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
 
   // Who was on the visit: only when he changed it, and then through the SAME resolver the rep's own save
   // uses, with the rep as the actor, so the territory's chain and the line's list are the whole truth.
-  let slots: { kind: PhoenixCrmVisitKind; managerHrId: string | null; seniorHrId: string | null; productManagerHrId: string | null } | null = null;
+  let slots: {
+    kind: PhoenixCrmVisitKind;
+    managerHrId: string | null;
+    seniorHrId: string | null;
+    productManagerHrId: string | null;
+    companions: Array<{ hrId: string; side: "manager" | "product" }>;
+  } | null = null;
   if (entry.who) {
     const editable = visitWhoEditable({
       repHrId: textOrNull(visit.rep_hr_id),
@@ -207,7 +226,7 @@ export async function saveVisitEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
     });
     if (!editable.editable) throw validationError(editable.reason);
 
-    const { offers, productManagers } = await loadOffers(viewer, seat);
+    const { offers, productManagers } = await loadVisitCompanyOffers(viewer, seat);
     const stored = companyToStorage({ choice: entry.who.choice, picked: entry.who.picked, offers });
     if (!stored.ok) throw validationError(stored.error);
     const checked = resolveVisitParticipants({
@@ -220,6 +239,7 @@ export async function saveVisitEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
       seniorHrId: stored.value.seniorHrId,
       productManagerHrId: stored.value.productManagerHrId,
       productManagers,
+      companions: stored.value.companions,
     });
     if (!checked.ok) throw validationError(checked.error);
     slots = {
@@ -227,6 +247,7 @@ export async function saveVisitEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
       managerHrId: checked.value.managerHrId,
       seniorHrId: checked.value.seniorHrId,
       productManagerHrId: checked.value.productManagerHrId,
+      companions: checked.value.companions,
     };
   }
 
@@ -241,6 +262,8 @@ export async function saveVisitEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
       manager_hr_id: slots?.managerHrId ?? null,
       senior_hr_id: slots?.seniorHrId ?? null,
       product_manager_hr_id: slots?.productManagerHrId ?? null,
+      // Everyone on the visit (2026-10-27); the database rewrites phoenix_crm_visit_companions from it.
+      companions: slots ? slots.companions.map((person) => ({ hr_id: person.hrId, side: person.side })) : null,
       products: entry.products,
       comment: entry.comment,
     },

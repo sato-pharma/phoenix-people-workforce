@@ -136,7 +136,7 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
         productManagers: LINE_PMS,
       }),
     );
-    assert.deepEqual(saved, { repHrId: "B-7", managerHrId: null, seniorHrId: null, productManagerHrId: "PM-1" },
+    assert.deepEqual(saved, { repHrId: "B-7", managerHrId: null, seniorHrId: null, productManagerHrId: "PM-1", companions: [{ hrId: "PM-1", side: "product" }] },
       "the rep and the product manager, and NOTHING in the manager slot — that slot is the district manager");
 
     // Somebody not on the line's list is refused. 🔴 This is the whole check: he holds no seat, so the
@@ -193,19 +193,39 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
       assert.equal(valueOf(result)?.productManagerHrId, null, `a ${kind} visit never carries a product manager`);
     }
 
-    // A chain with a senior manager carries none either — but since 2026-10-06 a chain's second person
-    // may be a product manager INSTEAD of the senior manager (owner: "in the chain visit … he can choose
-    // two"), and sending both is refused, never trimmed to one.
+    // A chain of two managers carries none. Since 2026-10-06 a chain's second person may be a product
+    // manager, and since 2026-10-27 the manager above AND a product manager go together (owner:
+    // "Everything is applicable") — each in his own place, every one of them in `companions`.
     const chain = { ...onRep, actorHrId: "B-7", enteredAs: "rep", kind: "chain", managerHrId: "B-12", productManagers: LINE_PMS } as const;
     assert.equal(valueOf(resolveVisitParticipants({ ...chain, seniorHrId: "A-12", productManagerHrId: null }))?.productManagerHrId, null, "a chain of two managers has none");
     assert.deepEqual(
       valueOf(resolveVisitParticipants({ ...chain, seniorHrId: null, productManagerHrId: "pm-2" })),
-      { repHrId: "B-7", managerHrId: "B-12", seniorHrId: null, productManagerHrId: "PM-2" },
+      {
+        repHrId: "B-7",
+        managerHrId: "B-12",
+        seniorHrId: null,
+        productManagerHrId: "PM-2",
+        companions: [
+          { hrId: "B-12", side: "manager" },
+          { hrId: "PM-2", side: "product" },
+        ],
+      },
       "a chain with a product manager keeps him in his own slot and leaves the senior slot empty",
     );
-    assert.equal(
-      refusalOf(resolveVisitParticipants({ ...chain, seniorHrId: "A-12", productManagerHrId: "PM-2" })),
-      "A chain visit has two people: a manager and one more. Choose a senior manager or a product manager, not both.",
+    assert.deepEqual(
+      valueOf(resolveVisitParticipants({ ...chain, seniorHrId: "A-12", productManagerHrId: "PM-2" })),
+      {
+        repHrId: "B-7",
+        managerHrId: "B-12",
+        seniorHrId: "A-12",
+        productManagerHrId: "PM-2",
+        companions: [
+          { hrId: "B-12", side: "manager" },
+          { hrId: "A-12", side: "manager" },
+          { hrId: "PM-2", side: "product" },
+        ],
+      },
+      "the manager above AND a product manager on one chain, never one trimmed away",
     );
     assert.equal(refusalOf(resolveVisitParticipants({ ...chain, seniorHrId: null, productManagerHrId: "B-12" })), CHOOSE_PM, "a chain's product manager is checked against the line's list too");
     assert.equal(
@@ -282,8 +302,13 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
     const shape = readFileSync(new URL(`supabase/migrations/${lastDefinerOfConstraint("phoenix_crm_visits_participants")}`, ROOT), "utf8");
     // The column exists only for its two kinds — the half that stops a quiet passenger on a double.
     assert.match(shape, /and \(kind in \('product_manager', 'chain'\) or product_manager_hr_id is null\)/);
-    // A chain's second person is a senior manager XOR a product manager, never both and never neither.
-    assert.match(shape, /kind = 'chain' and rep_hr_id is not null and manager_hr_id is not null and \(\(senior_hr_id is not null\) <> \(product_manager_hr_id is not null\)\)/);
+    // A chain carries the manager above, a product-side person, or BOTH — never neither (owner, 2026-10-27:
+    // "Everything is applicable"; before, it was one XOR the other).
+    assert.match(
+      shape.replace(/\s+/g, " "),
+      /kind = 'chain' and rep_hr_id is not null and manager_hr_id is not null and \(senior_hr_id is not null or product_manager_hr_id is not null\)/,
+    );
+    assert.equal(/\(senior_hr_id is not null\) <> \(product_manager_hr_id is not null\)/.test(shape), false, "the one-or-the-other refusal is gone");
 
     // And the writer stores it — read from the migration that defines `phoenix_crm_save_visit` LAST,
     // found by SORT ORDER rather than written here. 🔴 Asserting it against the file above would be
@@ -296,7 +321,8 @@ export function runPhoenixCrmVisitProductManagerTests(): void {
     assert.match(writer, /\(v_kind = 'product_manager' and v_rep is not null and v_manager is null and v_senior is null and v_product_manager is not null\)/);
     // The writer says the same two things the table does (they are duplicated on purpose: a refusal
     // here is a sentence, in the table it is a constraint violation).
-    assert.match(writer, /\(v_kind = 'chain' and v_rep is not null and v_manager is not null and \(\(v_senior is not null\) <> \(v_product_manager is not null\)\)\)/);
+    // The manager above, a product-side person, or both (owner, 2026-10-27: "Everything is applicable").
+    assert.match(writer, /\(v_kind = 'chain' and v_rep is not null and v_manager is not null and \(v_senior is not null or v_product_manager is not null\)\)/);
     assert.match(writer, /\(v_kind not in \('product_manager', 'chain'\) and v_product_manager is not null\)/);
 
     // 🔴 `double_visits` must still count ONE kind. If this ever becomes `kind <> 'single'`, a product

@@ -685,7 +685,7 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parseVisitDraft({ ...visit, customerId: "dr-mona" })), "Choose the customer you visited.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "triple" })), "Choose who was on the visit.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "double" })), "Choose the district manager who was on the visit.");
-  assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "chain", managerHrId: "T-3" })), "Choose the senior manager who was on the visit.");
+  assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "chain", managerHrId: "T-3" })), "Choose who else was on the chain visit.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: [] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: ["", "  "] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: Array.from({ length: 13 }, (_, n) => `Product ${n}`) })), "Choose at most 12 products.");
@@ -1105,7 +1105,8 @@ function runScopeTests() {
     return [value.repHrId, value.managerHrId, value.seniorHrId];
   };
   const CHOOSE_MANAGER = "Choose the manager who was on the visit from your territory's managers.";
-  const CHOOSE_SENIOR = "Choose the senior manager who was on the visit: a manager above the one you chose.";
+  // There is no "senior manager" title (owner, 2026-10-27): the person in that place is the manager above.
+  const CHOOSE_SENIOR = "Choose the manager who was on the visit: a manager above the one you chose.";
   assert.deepEqual(people3(resolveVisitParticipants({ ...onR1, actorHrId: "T-101", enteredAs: "rep", kind: "single" })), ["T-101", null, null]);
   assert.deepEqual(people3(resolveVisitParticipants({ ...onR1, actorHrId: "T-101", enteredAs: "rep", kind: "double", managerHrId: "t-3" })), ["T-101", "T-3", null]);
   assert.deepEqual(

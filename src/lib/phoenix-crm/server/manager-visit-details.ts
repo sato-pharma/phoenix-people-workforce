@@ -15,6 +15,7 @@ import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -291,7 +292,9 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
 
 /**
  * The double and chain visits that name these managers (`countsAsManagersDoubleVisit`), one row per
- * (visit, manager) so a chain visit that names two managers is on both their days.
+ * (visit, manager) so a chain visit that names two managers is on both their days. A manager past the
+ * visit's three fixed places is on `phoenix_crm_visit_companions` alone (owner, 2026-10-27), so his
+ * visits are found there too and every row's companions go to the same rules.
  */
 export async function loadManagerRideAlongDetails(
   input: ManagerVisitDetailInput & {
@@ -327,6 +330,24 @@ export async function loadManagerRideAlongDetails(
       }
     }
   }
+  // The visits they went on as a companion past the fixed places, read by the view's own visit id.
+  for (const part of chunk(await loadVisitIdsWithCompanions(keys), 100)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select(RIDE_COLUMNS)
+          .eq("is_test", isTest)
+          .gte("visit_date", input.start)
+          .lte("visit_date", input.end)
+          .in("id", part),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const row of rows) {
+      if (input.territorySeatIds && !input.territorySeatIds.has(String(row.seat_id ?? ""))) continue;
+      byId.set(String(row.id), row);
+    }
+  }
   if (byId.size === 0) return [];
 
   const rows = [...byId.values()];
@@ -334,8 +355,9 @@ export async function loadManagerRideAlongDetails(
 
   const out: ManagerDayVisit[] = [];
   for (const row of rows) {
-    const visit = { kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
-    const named = [row.manager_hr_id, row.senior_hr_id, ...(input.productManagerSlot ? [row.product_manager_hr_id] : [])];
+    const companionHrIds = facts.companions.get(String(row.id)) ?? [];
+    const visit = { companionHrIds, kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
+    const named = [row.manager_hr_id, row.senior_hr_id, ...(input.productManagerSlot ? [row.product_manager_hr_id] : []), ...companionHrIds];
     for (const hrId of new Set(named.map((value) => personKey(String(value ?? ""))))) {
       if (!hrId || !wanted.has(hrId)) continue;
       // A seat manager rode it by the rule the manager report judges by; a product manager, named in his own slot,
@@ -351,6 +373,8 @@ export async function loadManagerRideAlongDetails(
 }
 
 type CountableVisitFacts = {
+  /** Everyone on each visit besides the rep — `phoenix_crm_visit_companions`, keyed by visit id; absent before 2026-10-27. */
+  companions: Map<string, string[]>;
   customers: Map<string, CustomerFacts>;
   places: { byId: Map<string, PlaceFacts>; byCustomer: Map<string, PlaceFacts> };
   names: PeopleNames;
@@ -360,14 +384,16 @@ type CountableVisitFacts = {
 async function loadCountableVisitFacts(rows: readonly Row[]): Promise<CountableVisitFacts> {
   const customerIds = rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => Boolean(id));
   const placeIds = rows.map((row) => textOrNull(row.place_id)).filter((id): id is string => Boolean(id));
-  const [customers, places, names] = await Promise.all([
+  const [customers, places, companions] = await Promise.all([
     loadCustomers(customerIds),
     loadPlaces(placeIds, customerIds),
-    loadPeopleNames(
-      rows.flatMap((row) => [textOrNull(row.rep_hr_id), textOrNull(row.manager_hr_id), textOrNull(row.senior_hr_id), textOrNull(row.product_manager_hr_id)]),
-    ),
+    loadVisitCompanionIds(rows.map((row) => String(row.id))),
   ]);
-  return { customers, names, places };
+  const names = await loadPeopleNames([
+    ...rows.flatMap((row) => [textOrNull(row.rep_hr_id), textOrNull(row.manager_hr_id), textOrNull(row.senior_hr_id), textOrNull(row.product_manager_hr_id)]),
+    ...[...companions.values()].flat(),
+  ]);
+  return { companions, customers, names, places };
 }
 
 /**
@@ -418,7 +444,7 @@ function countableVisitRecord(
     source,
     speciality: customer?.speciality ?? null,
     territoryName: territoryNameOf ? territoryNameOf(String(row.seat_id ?? "")) : null,
-    withPeople: participantsOf(row, personHrId, facts.names),
+    withPeople: participantsOf(row, personHrId, facts.names, facts.companions.get(String(row.id)) ?? []),
   };
 }
 
@@ -540,8 +566,16 @@ async function loadWaitingOffPlanRows(input: { start: string; end: string; isTes
   return out;
 }
 
-/** Who was on a ride-along beside the manager whose day it is: the rep first, then the others, each with their part. */
-function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Array<{ hrId: string; name: string; role: string }> {
+/**
+ * Who was on a ride-along beside the manager whose day it is: the rep first, then the others, each with their part,
+ * then anyone the visit lists past its fixed places (`phoenix_crm_visit_companions`, owner 2026-10-27).
+ */
+function participantsOf(
+  row: Row,
+  managerHrId: string,
+  names: PeopleNames,
+  companions: readonly string[] = [],
+): Array<{ hrId: string; name: string; role: string }> {
   const out: Array<{ hrId: string; name: string; role: string }> = [];
   const seen = new Set<string>([managerHrId]);
   for (const [column, role] of [
@@ -555,6 +589,12 @@ function participantsOf(row: Row, managerHrId: string, names: PeopleNames): Arra
     if (!hrId || seen.has(hrId)) continue;
     seen.add(hrId);
     out.push({ hrId, name: nameOf(names, hrId), role });
+  }
+  for (const value of companions) {
+    const hrId = personKey(value);
+    if (!hrId || seen.has(hrId)) continue;
+    seen.add(hrId);
+    out.push({ hrId, name: nameOf(names, hrId), role: "Also on the visit" });
   }
   return out;
 }

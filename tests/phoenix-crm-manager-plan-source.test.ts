@@ -64,6 +64,15 @@ export function runPhoenixCrmManagerPlanSourceTests(): void {
   // The Super Admin's delete (owner, 2026-10-23) takes ONE of his visits out by id, with a copy kept. It counts,
   // sums and reports nothing: its only function is that delete, and the table is named in exactly two places.
   const deletesOwnVisitsOnly = new Set(["20261023232001_phoenix_crm_admin_delete_month_and_manager_visit.sql"]);
+  // Who went with him on his own visit (owner, 2026-10-27: "Everything is applicable") is a child row that
+  // POINTS AT the visit and goes with it on delete. The table is named in that one foreign key and nowhere
+  // else, and no function the migration creates reads the link back — his visits still reach no view or KPI.
+  const linksOwnVisitsOnly = new Map<string, RegExp>([
+    [
+      "20261027185332_phoenix_crm_visit_any_companions.sql",
+      /manager_visit_id\s+uuid\s+references\s+public\.phoenix_crm_manager_visits\s*\(id\)\s+on\s+delete\s+cascade/gi,
+    ],
+  ]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
@@ -79,6 +88,15 @@ export function runPhoenixCrmManagerPlanSourceTests(): void {
         .replace(/from public\.phoenix_crm_manager_visits x where x\.id = v_id and x\.is_test = v_is_test for update;/g, "")
         .replace(/delete from public\.phoenix_crm_manager_visits where id = v_id;/g, "");
       assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to lock one row and delete it`);
+      continue;
+    }
+    const link = linksOwnVisitsOnly.get(file);
+    if (link) {
+      const body = stripSqlComments(text);
+      assert.equal(body.replace(link, "").includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only in the companions' foreign key`);
+      for (const fn of body.matchAll(/create\s+or\s+replace\s+function[\s\S]*?\$\$([\s\S]*?)\$\$/gi)) {
+        assert.equal(/manager_visit_id/i.test(fn[1]), false, `${file}: no function reads his own visits' companions back`);
+      }
       continue;
     }
     const change = changesOwnVisitsOnly.get(file);

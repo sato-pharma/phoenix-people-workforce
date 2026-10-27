@@ -50,7 +50,7 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
                 <CrmStat label="Visits with a manager" note="On a With my manager half-day, counted in the manager's own report only" value={figures.ownWithSenior} />
               ) : null}
               <CrmStat label="Double visits" note="With a rep, logged by the rep" value={figures.doubles} />
-              <CrmStat label="Chain visits" note="With a rep and a senior manager" value={figures.chains} />
+              <CrmStat label="Chain visits" note="With a rep and two or more others" value={figures.chains} />
             </CrmStatGrid>
           ) : null}
           {waiting ? (

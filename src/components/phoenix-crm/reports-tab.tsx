@@ -802,7 +802,7 @@ function CoverageSection({
 // ── Double and chain visits per manager ─────────────────────────────────────────────────────────
 
 /**
- * "3 double · 1 chain · 2 chain as senior manager"; null when the manager was on none.
+ * "3 double · 1 chain · 2 chain as manager above"; null when the manager was on none.
  *
  * A product manager's own visits are said as "double", because that is the one word the rep used —
  * he ticked ONE person under "Double visit" and it was him. Only the stored kind and the counted
@@ -812,7 +812,7 @@ function managerKindsText(row: ManagerReportRow): string | null {
   const parts = [
     row.doubleVisits > 0 ? `${countText(row.doubleVisits)} double` : null,
     row.chainVisits > 0 ? `${countText(row.chainVisits)} chain` : null,
-    row.seniorChainVisits > 0 ? `${countText(row.seniorChainVisits)} chain as senior manager` : null,
+    row.seniorChainVisits > 0 ? `${countText(row.seniorChainVisits)} chain as manager above` : null,
     row.productManagerVisits > 0 ? `${countText(row.productManagerVisits)} double` : null,
     row.productManagerChainVisits > 0 ? `${countText(row.productManagerChainVisits)} chain` : null,
   ].filter((part): part is string => part !== null);
@@ -834,7 +834,7 @@ function managerTitleText(row: ManagerReportRow): string {
 function managerEntryLine(entry: ManagerReportEntry): string {
   const kinds =
     entry.roleOnVisit === "senior"
-      ? `${countText(entry.chainVisits)} chain as senior manager`
+      ? `${countText(entry.chainVisits)} chain as manager above`
       : [
           // The product-manager kind is the rep's own "Double visit", so it reads as one here.
           entry.doubleVisits + entry.productManagerVisits > 0 ? `${countText(entry.doubleVisits + entry.productManagerVisits)} double` : null,
@@ -895,7 +895,7 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
           <CrmStat label="Double visits" note={report.own ? "You out with a rep" : "A manager out with a rep"} value={countText(doubleVisits)} />
           <CrmStat
             label="Chain visits"
-            note={report.own ? "You, a rep and their manager" : "A rep, their manager and a senior manager"}
+            note={report.own ? "You, a rep and at least one more" : "A rep and two or more managers or product managers"}
             value={countText(chainVisits)}
           />
           {/*
@@ -918,8 +918,8 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
         columns={["28%", "20%", null, "15%"]}
         explain={
           report.own
-            ? "Every visit a rep recorded with you on it, counted as soon as it is saved. A double visit is the two of you; a chain visit adds the rep's manager."
-            : "A double visit is a manager out with a rep; a chain visit adds a senior manager. Each counts for every manager on it as soon as the rep saves it."
+            ? "Every visit a rep recorded with you on it, counted as soon as it is saved. A double visit is the two of you; a chain visit adds one or more others."
+            : "A double visit is a manager out with a rep; a chain visit adds one or more others: the manager above, a product manager or the Training Manager. Each counts for every person on it as soon as the rep saves it."
         }
         hasData={(row) => row.daysOut > 0}
         headers={[

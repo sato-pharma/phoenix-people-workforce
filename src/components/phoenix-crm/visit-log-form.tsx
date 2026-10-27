@@ -8,8 +8,8 @@
  * does not comes after a line that says so:
  *
  *   - Single / Double / Chain. Under Double and Chain one list shows his managers and his line's product
- *     managers, and he ticks ONE (Double) or TWO (Chain) — owner, 2026-10-06 (visit-company.ts is the
- *     rule, resolveVisitParticipants the server's check);
+ *     side, and he ticks ONE (Double) or TWO OR MORE in any mix (Chain) — owner, 2026-10-06 and
+ *     2026-10-27 (visit-company.ts is the rule, resolveVisitParticipants the server's check);
  *   - the products discussed, filled in from his last visit to this customer;
  *   - the comment, typed or spoken (one control, both halves) — REQUIRED since 2026-09-30, which is
  *     why it sits straight under the products rather than after the optional steps;
@@ -97,7 +97,7 @@ import {
   type VoiceNoteLeaveWarning,
 } from "@/lib/phoenix-crm/unsaved-voice-note";
 import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, type VisitNextStep, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
-import { COMPANY_PICKS, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
+import { COMPANY_MOST, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson } from "@/lib/phoenix-crm/view-types";
 import { isVisitRecordingRefusal } from "@/lib/phoenix-crm/visit-recording-rules";
 import { cn } from "@/lib/utils";
@@ -261,7 +261,7 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
         {
           value: "chain",
           label: "Chain visit",
-          note: !rep ? "This territory has no rep" : seniorOptions.length === 0 ? "No senior manager above you" : `With ${rep} and a senior manager`,
+          note: !rep ? "This territory has no rep" : seniorOptions.length === 0 ? "No manager above you" : `With ${rep} and a manager above you`,
           disabled: !rep || seniorOptions.length === 0,
         },
       ],
@@ -288,10 +288,9 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
       {
         value: "chain",
         label: "Chain visit",
-        // A chain is the management line, so it needs a manager among its two: two product managers alone
-        // are not a chain (`visit-company.ts`).
-        note: people.length > 0 && offers.length > 1 ? "With two people from the list" : "Needs a manager and one more person from the list",
-        disabled: people.length === 0 || offers.length < 2,
+        // Two or more of the list, in any mix (owner, 2026-10-27: "Everything is applicable").
+        note: offers.length > 1 ? "With two or more people from the list" : "Needs two people on the list",
+        disabled: offers.length < 2,
       },
     ],
     offers,
@@ -424,7 +423,7 @@ export function VisitLogForm({
   const [kind, setKind] = useState<PhoenixCrmVisitKind>(form.ownVisitClosed && enteringManagerHasRep(form) ? "double" : "single");
   // A rep's Double (one) and Chain (two): the people ticked from the one list, in the order ticked.
   const [picked, setPicked] = useState<string[]>([]);
-  // A manager entering a chain picks the senior manager above himself — his own box, unchanged.
+  // A manager entering a chain picks the manager above himself — his own box, unchanged.
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>(() => carriedProducts(customer));
   const [pharmacyName, setPharmacyName] = useState("");
@@ -653,18 +652,26 @@ export function VisitLogForm({
       return { ok: false, problem: "Write why you visited this customer off your plan." };
     }
     // A rep's slots come from the one list (visit-company.ts); a manager's from his own two boxes.
-    let slots: { kind: PhoenixCrmVisitKind; managerHrId: string | null; seniorHrId: string | null; productManagerHrId: string | null };
+    let slots: {
+      kind: PhoenixCrmVisitKind;
+      managerHrId: string | null;
+      seniorHrId: string | null;
+      productManagerHrId: string | null;
+      companions: Array<{ hrId: string; side: "manager" | "product" }>;
+    };
     if (company) {
       if (!company.ok) return { ok: false, problem: company.error };
       slots = company.value;
     } else {
       if (kind !== "single" && !who.manager) return { ok: false, problem: "You are not a manager of this territory. Reload the page." };
-      if (kind === "chain" && !who.senior) return { ok: false, problem: "Choose the senior manager who was on the visit." };
+      if (kind === "chain" && !who.senior) return { ok: false, problem: "Choose the manager above you who was on the visit." };
       slots = {
         kind,
         managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
         seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
         productManagerHrId: null,
+        // The server builds the list from his two boxes.
+        companions: [],
       };
     }
     if (products.length === 0) return { ok: false, problem: "Choose the products you discussed." };
@@ -691,6 +698,8 @@ export function VisitLogForm({
         managerHrId: slots.managerHrId,
         seniorHrId: slots.seniorHrId,
         productManagerHrId: slots.productManagerHrId,
+        // Everyone ticked, managers nearest first, then the product side (2026-10-27).
+        companions: slots.companions,
         products,
         // Optional since 2026-09-29: the box stays, a visit is never blocked on it. A pharmacy's own
         // visit has no box — the database names it after the pharmacy itself.
@@ -959,7 +968,7 @@ export function VisitLogForm({
               setProblem(null);
               setKind(next);
               // Fewer places than he had ticked: keep the first ones, so changing his mind costs no re-tap.
-              setPicked((current) => current.slice(0, COMPANY_PICKS[choiceOf(next)]));
+              setPicked((current) => current.slice(0, COMPANY_MOST[choiceOf(next)]));
             }}
             options={who.options.map((option) => ({ ...option, disabled: option.disabled || saving }))}
             value={kind}
@@ -986,11 +995,11 @@ export function VisitLogForm({
             />
           ) : null}
           {form.enteredAs === "manager" && kind === "chain" ? (
-            <CrmField label="The senior manager">
+            <CrmField label="The manager above you">
               {who.seniorOptions.length > 0 ? (
                 <CrmChoice
                   columns={2}
-                  label="The senior manager"
+                  label="The manager above you"
                   onChange={(next) => {
                     setProblem(null);
                     setSeniorHrId(next);
@@ -999,7 +1008,7 @@ export function VisitLogForm({
                   value={who.senior?.hrId ?? null}
                 />
               ) : (
-                <p className="text-sm font-semibold text-slate-500">No senior manager sits above the manager you chose.</p>
+                <p className="text-sm font-semibold text-slate-500">No manager sits above you in this territory.</p>
               )}
             </CrmField>
           ) : null}

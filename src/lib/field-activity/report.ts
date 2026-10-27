@@ -50,7 +50,7 @@ const IN_CHUNK = 80;
 // `source` marks a started team's Phoenix CRM visit, which logs no pharmacy (visit-count-buckets.ts).
 const VISIT_COLUMNS =
   "visit_date, agent_hr_id, agent_name, agent_crm_id, double_hr_id, double_name, double2_hr_id, " +
-  "double2_name, contact_crm_id, contact_name, speciality, crm_contact_grade, ampm, visit_type, " +
+  "double2_name, companion_hr_ids, contact_crm_id, contact_name, speciality, crm_contact_grade, ampm, visit_type, " +
   "visit_type_description, comment, crm_save_date, source, " +
   // THE PHOENIX FIELD SET. Selected unconditionally and shown only at the tier the reader earns: a
   // select is a string, so a list that varied by role would read `undefined` and print a blank the
@@ -99,6 +99,9 @@ function toVisitRow(row: Record<string, unknown>): FieldActivityVisitRow {
     doubleName: (row.double_name as string | null) ?? null,
     double2HrId: (row.double2_hr_id as string | null) ?? null,
     double2Name: (row.double2_name as string | null) ?? null,
+    ...(Array.isArray(row.companion_hr_ids) && row.companion_hr_ids.length > 0
+      ? { companions: (row.companion_hr_ids as unknown[]).map((hrId) => ({ hrId: String(hrId), name: null })) }
+      : {}),
     contactCrmId: (row.contact_crm_id as number | null) ?? null,
     contactName: (row.contact_name as string | null) ?? null,
     speciality: (row.speciality as string | null) ?? null,
@@ -177,6 +180,11 @@ export async function loadFieldActivityReport(input: {
       participantHrIds: [subjectHrId],
     })
   ).map(toVisitRow);
+  // Everyone on a visit past its two slots, named from the directory (the door carries their ids only).
+  const nameByKey = new Map(directory.map((row) => [canonicalHrIdKey(row.hrId), row.fullName]));
+  for (const visit of visits) {
+    if (visit.companions) visit.companions = visit.companions.map((companion) => ({ ...companion, name: nameByKey.get(canonicalHrIdKey(companion.hrId)) ?? null }));
+  }
 
   // The phones that recorded those days, and the days they recorded (rule 2 in model.ts).
   const agentCrmIds = [...new Set(visits.map((v) => v.agentCrmId).filter((id): id is number => id != null))];

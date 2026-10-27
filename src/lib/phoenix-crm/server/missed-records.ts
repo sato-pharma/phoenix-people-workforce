@@ -38,10 +38,12 @@ import { loadDayActivityOn, mapDayActivityRow, type DayActivityRow } from "@/lib
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { ensureReferenceCustomers, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm, withdrawPhoenixCrmVisitNotices } from "@/lib/phoenix-crm/server/notifications";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
-import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { loadVisitCompanyOffers, type VisitEditPerson } from "@/lib/phoenix-crm/server/visit-edit";
 import { plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
+import { companyToStorage } from "@/lib/phoenix-crm/visit-company";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { reviewerWasOnTheVisit, unplannedFirstStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -68,15 +70,16 @@ export type MissedRecordCustomer = {
   pending: boolean;
 };
 
-/** One manager above the territory, nearest first — who may be on a double or chain visit he enters. */
-export type MissedRecordChainManager = { hrId: string; name: string; title: string; position: number };
+/** One person who may be on a double or chain visit he enters — the rep's own picker's list. */
+export type MissedRecordChainManager = VisitEditPerson;
 
 export type MissedRecordForm = {
   territory: TerritorySummary;
   /**
-   * The managers above the territory, nearest first (owner, 2026-10-24: "choose visit single, double or
-   * chain"). A double names one of them; a chain names one and a senior manager above him. Empty when
-   * nobody sits above the territory, and then only a single visit can be entered.
+   * Who may be on the visit (owner, 2026-10-24: "choose visit single, double or chain"; 2026-10-27:
+   * "Everything is applicable"): the managers above the territory, nearest first, then the line's
+   * product side — the same list the rep's own form offers. A double names one; a chain two or more.
+   * Empty when nobody is offered, and then only a single visit can be entered.
    */
   chain: MissedRecordChainManager[];
   isTest: boolean;
@@ -155,14 +158,7 @@ export async function loadMissedRecordForm(
   // stops a visit: it is entered with no products, which is what "optional" means.
   const blockedReason = seat.lineCode ? null : "This territory has no line in the organogram, so visits cannot be saved.";
   const repHrId = seat.occupantHrId ? seat.occupantHrId.toUpperCase() : null;
-  const chain = managerChain(viewer.org, seat.seatId)
-    .filter((member) => member.hrId !== repHrId)
-    .map((member) => ({
-      hrId: member.hrId,
-      name: nameOf(names, member.hrId, "Manager"),
-      title: seatTierTitle(member.seat.tier),
-      position: member.position,
-    }));
+  const chain = (await loadVisitCompanyOffers(viewer, seat)).people.filter((person) => person.hrId.toUpperCase() !== repHrId);
 
   return {
     territory: describeTerritory(viewer.org, seat, names),
@@ -208,16 +204,23 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
     }
   }
 
-  // Who was on it, checked against the territory's chain by the rep's own rule — entered AS the rep, since
-  // the visit is his: a double names a manager above him, a chain that manager and a senior above HIM.
+  // Who was on it: the ticks become the visit's places by the rep's own rule (visit-company.ts), then are
+  // checked against the territory's chain and the line's product side — entered AS the rep, since the
+  // visit is his.
+  const { offers, productManagers } = await loadVisitCompanyOffers(viewer, seat);
+  const stored = companyToStorage({ choice: entry.kind, picked: entry.picked, offers });
+  if (!stored.ok) throw validationError(stored.error);
   const participants = resolveVisitParticipants({
     index: viewer.org,
     territorySeatId: seat.seatId,
     actorHrId: repHrId,
     enteredAs: "rep",
-    kind: entry.kind,
-    managerHrId: entry.managerHrId,
-    seniorHrId: entry.seniorHrId,
+    kind: stored.value.kind,
+    managerHrId: stored.value.managerHrId,
+    seniorHrId: stored.value.seniorHrId,
+    productManagerHrId: stored.value.productManagerHrId,
+    productManagers,
+    companions: stored.value.companions,
   });
   if (!participants.ok) throw validationError(participants.error);
 
@@ -225,7 +228,10 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
   // territory with no manager seat above it begins at SFE, exactly as a rep's own off-plan visit does —
   // and so does one whose deciding manager was ON it (owner, 2026-10-12: "the SFE approves it instead").
   const reviewer = territoryReviewer(viewer.org, seat.seatId);
-  const reviewerOnTheVisit = reviewerWasOnTheVisit(reviewer?.hrId ?? null, [participants.value.managerHrId, participants.value.seniorHrId]);
+  const reviewerOnTheVisit = reviewerWasOnTheVisit(
+    reviewer?.hrId ?? null,
+    participants.value.companions.map((person) => person.hrId),
+  );
   const result = await callPhoenixCrm<Row>("phoenix_crm_admin_enter_visit", {
     p: {
       id: entry.visitId,
@@ -238,9 +244,12 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
       visit_date: entry.visitDate,
       visit_minute: entry.visitMinute,
       planned: entry.planned,
-      kind: entry.kind,
+      kind: stored.value.kind,
       manager_hr_id: participants.value.managerHrId,
       senior_hr_id: participants.value.seniorHrId,
+      product_manager_hr_id: participants.value.productManagerHrId,
+      // Everyone on the visit (2026-10-27); the database writes phoenix_crm_visit_companions from it.
+      companions: participants.value.companions.map((person) => ({ hr_id: person.hrId, side: person.side })),
       products: entry.products,
       comment: entry.comment,
       unplanned_reason: entry.reason,

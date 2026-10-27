@@ -933,6 +933,12 @@ export type VisitDraft = CapturedFix & {
    * server's own list can say (scope.ts `resolveVisitParticipants`).
    */
   productManagerHrId: string | null;
+  /**
+   * EVERYONE who came with the rep, each with their side (owner, 2026-10-27: "Everything is
+   * applicable") — the fixed places above and everyone past them. Empty on a single visit. Whether each
+   * one belongs on this visit is the server's check (scope.ts `resolveVisitParticipants`).
+   */
+  companions: DraftCompanion[];
   products: string[];
   /**
    * The pharmacy the rep took feedback from before the customer; he types it, so it is free text.
@@ -1094,6 +1100,31 @@ export function parseVisitType(value: unknown): VisitDraft["visitType"] {
   return "planned";
 }
 
+/** One person on a visit besides the rep, as the form sent them. */
+export type DraftCompanion = { hrId: string; side: "manager" | "product" };
+
+/** The most companions a draft may carry — the database's own cap (scope.ts `MOST_ON_A_VISIT`). */
+const DRAFT_COMPANIONS_MAX = 12;
+
+/** The companions the form sent, each person once; null when one cannot be read or there are too many. */
+export function parseDraftCompanions(raw: unknown): DraftCompanion[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return null;
+  const out: DraftCompanion[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    const record = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    const hrId = cleanText(record.hrId, 40);
+    const side = record.side;
+    if (!hrId || (side !== "manager" && side !== "product")) return null;
+    const key = hrId.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ hrId, side });
+  }
+  return out.length > DRAFT_COMPANIONS_MAX ? null : out;
+}
+
 export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   if (!isUuid(body.customerId)) return { ok: false, error: "Choose the customer you visited." };
@@ -1104,12 +1135,15 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const managerHrId = cleanText(body.managerHrId, 40);
   const seniorHrId = cleanText(body.seniorHrId, 40);
   const productManagerHrId = cleanText(body.productManagerHrId, 40);
+  const companions = parseDraftCompanions(body.companions);
+  if (!companions) return { ok: false, error: "Choose who was on the visit." };
   if ((kind === "double" || kind === "chain") && !managerHrId) {
     return { ok: false, error: "Choose the district manager who was on the visit." };
   }
-  // The second person of a chain is a senior manager OR a product manager (owner, 2026-10-06) — one of
-  // the two; whether both were sent, and whether the person is one of the line's, is the server's check.
-  if (kind === "chain" && !seniorHrId && !productManagerHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
+  // A chain is the manager and AT LEAST one more (owner, 2026-10-27: "Everything is applicable") — a
+  // manager above him, the line's product side, or both; whether each belongs is the server's check.
+  const someoneElse = companions.some((entry) => entry.hrId.toUpperCase() !== managerHrId?.toUpperCase());
+  if (kind === "chain" && !seniorHrId && !productManagerHrId && !someoneElse) return { ok: false, error: "Choose who else was on the chain visit." };
   if (kind === "product_manager" && !productManagerHrId) {
     return { ok: false, error: "Choose the product manager who was on the visit." };
   }
@@ -1155,11 +1189,12 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       customerId: String(body.customerId).toLowerCase(),
       kind,
       // Each slot is cleared by the kind, so a stale pick on the form can never ride along: a product
-      // manager is on a `product_manager` visit or as the second person of a chain and on no other, and
-      // a manager on no PM visit.
+      // manager is on a `product_manager` visit or on a chain and on no other, and a manager on no PM
+      // visit; a single visit carries nobody.
       managerHrId: kind === "single" || kind === "product_manager" ? null : managerHrId,
       seniorHrId: kind === "chain" ? seniorHrId : null,
       productManagerHrId: kind === "product_manager" || kind === "chain" ? productManagerHrId : null,
+      companions: kind === "single" ? [] : companions,
       products,
       pharmacyName,
       productAvailability,

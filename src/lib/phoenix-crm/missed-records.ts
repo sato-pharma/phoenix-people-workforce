@@ -84,10 +84,12 @@ export type MissedVisitEntry = {
   planned: boolean;
   /** HIS choice (owner, 2026-10-24); who stands in each place is checked against the organogram on the server. */
   kind: MissedVisitKind;
-  /** The manager on a double or chain visit; null on a single. */
-  managerHrId: string | null;
-  /** The senior manager above him on a chain visit; null otherwise. */
-  seniorHrId: string | null;
+  /**
+   * Everyone ticked in the picker (visit-company.ts), in the order ticked — one on a double, two or more
+   * on a chain (owner, 2026-10-27: "Everything is applicable"), nobody on a single. Who each one is, and
+   * the kind the visit is filed under, is settled on the server against the territory's own offers.
+   */
+  picked: string[];
   /** Optional on his entry (owner, 2026-10-24) — possibly empty. */
   products: string[];
   /** Optional on his entry (owner, 2026-10-24); null when he wrote none. */
@@ -127,10 +129,16 @@ export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitPar
   // An older screen sends no kind: that visit was a single one, as every entry was before.
   const kind: MissedVisitKind = body.kind === undefined || body.kind === null ? "single" : (body.kind as MissedVisitKind);
   if (kind !== "single" && kind !== "double" && kind !== "chain") return { ok: false, error: "Choose single, double or chain." };
-  const managerHrId = kind === "single" ? null : hrIdOrNull(body.managerHrId);
-  const seniorHrId = kind === "chain" ? hrIdOrNull(body.seniorHrId) : null;
-  if (kind !== "single" && !managerHrId) return { ok: false, error: "Choose the manager who was on the visit." };
-  if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
+  // A screen opened before 2026-10-27 still sends the manager and the one above him by name.
+  const sent: unknown[] = Array.isArray(body.picked) ? body.picked : [body.managerHrId, body.seniorHrId];
+  const picked: string[] = [];
+  for (const entry of sent) {
+    const hrId = hrIdOrNull(entry);
+    if (hrId && !picked.includes(hrId)) picked.push(hrId);
+  }
+  if (kind === "single") picked.length = 0;
+  if (kind === "double" && picked.length !== 1) return { ok: false, error: "Choose the one person who was on the double visit." };
+  if (kind === "chain" && picked.length < 2) return { ok: false, error: "Choose the two or more people who were on the chain visit." };
 
   const products: string[] = [];
   for (const entry of Array.isArray(body.products) ? body.products : []) {
@@ -162,8 +170,7 @@ export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitPar
       visitMinute: minute.value,
       planned: body.planned,
       kind,
-      managerHrId,
-      seniorHrId,
+      picked,
       products,
       comment,
       reason,

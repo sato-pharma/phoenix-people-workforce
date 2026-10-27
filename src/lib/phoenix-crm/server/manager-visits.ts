@@ -56,9 +56,51 @@ import { assertSingleVisitLogFits, loadSingleVisitAllowance, type SingleVisitAll
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { loadManagerVisitCompanionIds } from "@/lib/phoenix-crm/server/visit-companions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/** At most this many people go with him on one visit — the companions table's `position` runs 0–11. */
+export const MANAGER_VISIT_COMPANIONS_MAX = 12;
+
+/** One person he may say went with him: the people above him and his line's product side (`managerSeniorOffers`). */
+export type ManagerCompanionOffer = { hrId: string; name: string; title: string; side: "manager" | "product" };
+
+/**
+ * 🔴 WHO MAY GO WITH HIM ON HIS OWN VISIT (owner, 2026-10-27: "Everything is applicable" — a district
+ * manager goes with the National Sales Manager, the Training Manager or the Product Manager). The same
+ * people his With a manager or product manager half-day offers, from the organogram and his line's product
+ * side, each under their own title. Lazily: manager-plans.ts reads this module.
+ */
+async function loadCompanionOffers(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter): Promise<ManagerCompanionOffer[]> {
+  const { managerSeniorOffers } = await import("@/lib/phoenix-crm/server/manager-plans");
+  const offers = await managerSeniorOffers(viewer, writer);
+  const names = await loadPeopleNames(offers.map((offer) => offer.hrId));
+  return offers.map((offer) => ({
+    hrId: offer.hrId,
+    name: nameOf(names, offer.hrId, offer.title),
+    title: offer.title,
+    side: offer.role === "product_manager" ? "product" : "manager",
+  }));
+}
+
+/** The people he ticked, read and checked against his offers; an unknown one is refused, never dropped. */
+function companionIdsOf(value: unknown, offers: ReadonlyArray<ManagerCompanionOffer>): ManagerCompanionOffer[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw validationError("Who went with you could not be read. Reload the page.");
+  const byKey = new Map(offers.map((offer) => [offer.hrId, offer]));
+  const out: ManagerCompanionOffer[] = [];
+  for (const entry of value) {
+    const key = personKey(typeof entry === "string" ? entry : null);
+    if (!key) throw validationError("Who went with you could not be read. Reload the page.");
+    const offer = byKey.get(key);
+    if (!offer) throw validationError("Choose who went with you from the list. Reload the page.");
+    if (!out.includes(offer)) out.push(offer);
+  }
+  if (out.length > MANAGER_VISIT_COMPANIONS_MAX) throw validationError(`Choose at most ${MANAGER_VISIT_COMPANIONS_MAX} people.`);
+  return out;
+}
 
 function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
@@ -89,6 +131,8 @@ export type ManagerVisitRow = {
   inVacantTerritory: boolean;
   /** Where the visit says its customer is — address, area and brick — or null (`visitPlaceText`). */
   placeText: string | null;
+  /** Everyone who went with him, in the order he ticked them (owner, 2026-10-27); empty when he went alone. */
+  companionHrIds: string[];
 };
 
 const VISIT_COLUMNS =
@@ -125,6 +169,7 @@ function visitRowOf(raw: unknown): ManagerVisitRow | null {
       brickName: textOrNull(row.brick_name),
       captured: hasPin,
     }),
+    companionHrIds: [],
   };
 }
 
@@ -143,7 +188,10 @@ export async function loadManagerVisits(managerHrIds: ReadonlyArray<string>, win
         .lte("visit_date", window.to),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
-  return rows.map(visitRowOf).filter((row): row is ManagerVisitRow => row !== null);
+  const visits = rows.map(visitRowOf).filter((row): row is ManagerVisitRow => row !== null);
+  const companions = await loadManagerVisitCompanionIds(visits.map((visit) => visit.id));
+  for (const visit of visits) visit.companionHrIds = companions.get(visit.id) ?? [];
+  return visits;
 }
 
 // ── Today, on his Visits tab ────────────────────────────────────────────────────────────────────
@@ -178,6 +226,8 @@ export type ManagerTodayCustomer = {
    * 2026-10-27: "it should count with her manager") — the visit he logs here is a visit with that manager. Null otherwise.
    */
   withSenior: string | null;
+  /** Once logged: everyone who went with him, by name and title (owner, 2026-10-27). Empty when he went alone. */
+  companions: Array<{ name: string; title: string | null }>;
 };
 
 /** A customer of Manager's own list as the Visits tab needs him: with whether his area has a rep today. */
@@ -198,6 +248,8 @@ export type ManagerTodayView = {
   products: string[];
   /** A district manager's single-visit limit for the visit day's week, as the log counts it; null for every other manager. */
   singleVisitLimit: SingleVisitAllowance | null;
+  /** Who he may say went with him — the people above him and his line's product side, each by title. */
+  companionOffers: ManagerCompanionOffer[];
 };
 
 /** His line's product families, or none when the line has none on file. */
@@ -240,7 +292,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const day = viewer.visitDay;
   const weekStart = fieldWeekStart(day);
   const reach = await managerWriterReach(viewer, writer);
-  const [planRows, visits, ownList, products, names, singleVisitLimit] = await Promise.all([
+  const [planRows, visits, ownList, products, names, singleVisitLimit, companionOffers] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -256,7 +308,14 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     writerProductNames(viewer, writer),
     loadPeopleNames(reach.map((seat) => seat.occupantHrId)),
     writer.kind === "dm" ? loadSingleVisitAllowance({ managerHrId: viewer.hrId, weekStart, date: day, isTest }) : Promise.resolve(null),
+    loadCompanionOffers(viewer, writer),
   ]);
+  // Who went with him on each visit of the day, named under the title his offers carry — or, someone no
+  // longer offered (moved seat since), under their name alone.
+  const titleOf = new Map(companionOffers.map((offer) => [offer.hrId, offer.title]));
+  const companionNames = await loadPeopleNames(visits.flatMap((visit) => visit.companionHrIds));
+  const companionsOf = (visit: ManagerVisitRow | undefined): ManagerTodayCustomer["companions"] =>
+    (visit?.companionHrIds ?? []).map((hrId) => ({ name: nameOf(companionNames, hrId, "A colleague"), title: titleOf.get(personKey(hrId) ?? "") ?? null }));
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && holdsPlannedDoctors(slot.kind)) : [];
   const seniorOfSlot = new Map(
@@ -308,6 +367,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
         detailComment: visit?.detailComment ?? null,
         detailEditedAt: visit?.detailEditedAt ?? null,
         withSenior: seniorOfSlot.has(row.slotId) ? nameOf(seniorNames, seniorOfSlot.get(row.slotId), "your manager") : null,
+        companions: companionsOf(visit),
       };
     })
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
@@ -332,6 +392,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       detailComment: visit.detailComment,
       detailEditedAt: visit.detailEditedAt,
       withSenior: null,
+      companions: companionsOf(visit),
     };
   });
   return {
@@ -345,6 +406,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     areas: managerAreaChoices(reach, names),
     products,
     singleVisitLimit,
+    companionOffers,
   };
 }
 
@@ -411,6 +473,8 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     if (products.some((product) => !allowed.has(product))) throw validationError("Choose the products from your line's products. Reload the page.");
   }
   const day = viewer.visitDay;
+  // Who went with him (owner, 2026-10-27): only the people his form offers, each checked here.
+  const companions = body.companionHrIds === undefined || body.companionHrIds === null ? [] : companionIdsOf(body.companionHrIds, await loadCompanionOffers(viewer, writer));
 
   // Whose customer: a rep's of a district he plans in, or one of his own list — in his world.
   let customerLineCode: string | null = null;
@@ -517,7 +581,7 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
   const placeError = vacantVisitPlaceError({ vacant, address, captured: pin.lat !== undefined });
   if (placeError) throw validationError(placeError);
 
-  const { error } = await getSupabaseAdmin()
+  const { data: saved, error } = await getSupabaseAdmin()
     .from("phoenix_crm_manager_visits")
     .insert({
       manager_hr_id: viewer.hrId,
@@ -540,7 +604,9 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       client_ref: clientRef,
       entered_by_hr_id: viewer.hrId,
       is_test: isTest,
-    });
+    })
+    .select("id")
+    .single();
   if (error) {
     if ((error as { code?: unknown }).code === "23505") {
       // The same save sent twice (its client ref) answers as saved; a second visit to the customer today is refused.
@@ -551,6 +617,17 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       if (again.length === 0) throw conflictError("You already logged a visit to this customer today.");
     } else {
       throw error;
+    }
+  } else if (companions.length > 0) {
+    // 🔴 THE VISIT AND WHO WENT ON IT ARE ONE SAVE: a visit stored without its companions would credit him
+    // alone, so a failed list takes the visit back and he is told to log it again.
+    const visitId = String(record(saved).id);
+    const { error: companionError } = await getSupabaseAdmin()
+      .from("phoenix_crm_visit_companions")
+      .insert(companions.map((companion, position) => ({ manager_visit_id: visitId, hr_id: companion.hrId, side: companion.side, position })));
+    if (companionError) {
+      await getSupabaseAdmin().from("phoenix_crm_manager_visits").delete().eq("id", visitId);
+      throw companionError;
     }
   }
   return loadManagerToday(viewer, { test: isTest });

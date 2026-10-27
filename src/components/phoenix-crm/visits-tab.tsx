@@ -124,10 +124,14 @@ function visitPeople(visit: VisitRow): Array<{ name: string; role: string }> {
   const people: Array<{ name: string; role: string }> = [];
   if (visit.repName) people.push({ name: visit.repName, role: visit.repTitle ?? "Rep" });
   if (visit.managerName) people.push({ name: visit.managerName, role: visit.managerTitle ?? "Manager" });
-  if (visit.seniorName) people.push({ name: visit.seniorName, role: visit.seniorTitle ?? "Senior manager" });
+  // There is no "senior manager" title (owner, 2026-10-27): the next manager up is a Regional or National
+  // Sales Manager, and the fallback says only what the visit knows.
+  if (visit.seniorName) people.push({ name: visit.seniorName, role: visit.seniorTitle ?? "Manager above" });
   // A product manager holds no seat in the sales-only tree, so his APP ROLE is his title and the slot
   // word is the fallback — the same shape as the three above, for the one person the tree cannot name.
   if (visit.productManagerName) people.push({ name: visit.productManagerName, role: visit.productManagerTitle ?? "Product manager" });
+  // Everyone else the visit lists (owner, 2026-10-27: "Everything is applicable"), each under their title.
+  for (const companion of visit.moreCompanions ?? []) people.push({ name: companion.name, role: companion.title ?? "Also on the visit" });
   return people;
 }
 

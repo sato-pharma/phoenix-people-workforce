@@ -104,6 +104,21 @@ function joined(parts: ReadonlyArray<string | null>, separator = " · "): string
   return present.length > 0 ? present.join(separator) : null;
 }
 
+/** People, each once by upper-cased id, in the order given — the fixed places first, then the visit's list. */
+function distinctPeople(values: ReadonlyArray<unknown>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = text(value)?.toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+const arrayOf = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
 const LOCATION_FLAG_LABELS: Record<string, string> = {
   ok: "At the place",
   far: "Far from the place",
@@ -245,7 +260,15 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
   const fixAge = num(provenance?.fix_age_seconds);
   const planned = planItem !== null;
 
-  const managers = joined([person(names, visit.manager_hr_id), person(names, visit.senior_hr_id)], " + ");
+  // Everyone the visit lists past its fixed places (owner, 2026-10-27) joins his own side's column, each once:
+  // `companion_product_hr_ids` is the product side of `companion_hr_ids`, carried on the row by the reader.
+  const productCompanions = distinctPeople(arrayOf(visit.companion_product_hr_ids));
+  const managerCompanions = arrayOf(visit.companion_hr_ids).filter((hrId) => !productCompanions.includes(String(text(hrId) ?? "").toUpperCase()));
+  const managers = joined(
+    distinctPeople([visit.manager_hr_id, visit.senior_hr_id, ...managerCompanions]).map((hrId) => person(names, hrId)),
+    " + ",
+  );
+  const productManagers = joined(distinctPeople([visit.product_manager_hr_id, ...productCompanions]).map((hrId) => person(names, hrId)), " + ");
   const recommendation = context.recommendations.length > 0 ? context.recommendations.join(" | ") : null;
 
   return {
@@ -281,7 +304,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     districtManager: person(names, context.districtManagerHrId),
     regionalManager: person(names, context.regionalManagerHrId),
     managerOnVisit: managers,
-    productManagerOnVisit: person(names, visit.product_manager_hr_id),
+    productManagerOnVisit: productManagers,
 
     // ── Customer ──
     customerName: text(customer?.name),
