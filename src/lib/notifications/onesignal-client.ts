@@ -31,6 +31,25 @@ export function onesignalAppId() {
   return process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID?.trim() || null;
 }
 
+/**
+ * Whether this browser mirrors its push subscription into push_subscriptions, read off the answer
+ * /api/notifications/push/context gave. A session the server gave NO push identity (`hrId: null`) has
+ * nothing to register as: a test account (whose HR id is the real person it mirrors), the Super
+ * Admin's View as Seat, and the system-administrator console login. For a test account the register
+ * POST is refused before it runs — and that refusal, on a call the tester never pressed, was sent
+ * from every page it opened (8 of TEST-DF's 9 refusals, 27–28 Oct 2026). So it is not sent at all.
+ *
+ * Only a definite "no identity" stops it. A context read that failed or answered something unreadable
+ * keeps the old behaviour and reports, so a real employee's subscription never goes stale because
+ * one read hiccupped.
+ */
+export function shouldReportPushSubscription(contextOk: boolean, payload: unknown): boolean {
+  if (!contextOk) return true;
+  const data = (payload as { data?: { hrId?: unknown } } | null)?.data;
+  if (!data || typeof data !== "object") return true;
+  return !("hrId" in data && data.hrId === null);
+}
+
 // The official pattern: OneSignal's CDN script defines window.OneSignal asynchronously,
 // so every call site pushes a callback onto OneSignalDeferred instead of touching
 // window.OneSignal directly (which may not exist yet).

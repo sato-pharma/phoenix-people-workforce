@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { shouldReportPushSubscription } from "../src/lib/notifications/onesignal-client.ts";
 import { pushSubscriptionSkipReason } from "../src/lib/notifications/settings.ts";
 
 // Regression guard for the 2026-08-24 push-register 500, observed in production and root-caused
@@ -101,4 +102,32 @@ export async function runPushRegisterHrIdGuardTests() {
     guardAt < supabaseAt,
     "the skip check must run BEFORE getSupabaseAdmin — asking after the write has already been attempted is not a guard",
   );
+
+  // 7. A session the server gave NO push identity never sends the register at all (27–28 Oct 2026:
+  //    a test account's browser POSTed it on every page it opened and was refused 8 times, each
+  //    refusal photographed). /api/notifications/push/context answers hrId null for a test account,
+  //    View as Seat and the console login.
+  assert.equal(
+    shouldReportPushSubscription(true, { data: { appId: "app", hrId: null }, success: true }),
+    false,
+    "a test account (push context hrId null) must not POST /api/notifications/push/register — it is refused on every page",
+  );
+  assert.equal(
+    shouldReportPushSubscription(true, { data: { appId: "app", hrId: "B-13" }, success: true }),
+    true,
+    "a real employee must still mirror the subscription, or push_subscriptions goes stale for everyone",
+  );
+  // Only a definite "no identity" stops it — a failed or unreadable context read keeps reporting.
+  assert.equal(shouldReportPushSubscription(false, { error: "forbidden" }), true, "a failed context read keeps the old behaviour");
+  assert.equal(shouldReportPushSubscription(true, null), true, "an unreadable context body keeps the old behaviour");
+  assert.equal(shouldReportPushSubscription(true, { data: {} }), true, "a body without hrId is not a definite no-identity");
+
+  // 8. And the provider consults it before it reports anything.
+  const provider = readFileSync(new URL("../src/components/notifications/onesignal-provider.tsx", import.meta.url), "utf8");
+  const decideAt = provider.indexOf("reportsSubscription = shouldReportPushSubscription(");
+  const stopAt = provider.indexOf("if (!reportsSubscription) return;");
+  const firstReportAt = provider.indexOf("reportSubscriptionState(OneSignal.User");
+  assert.notEqual(decideAt, -1, "the OneSignal provider must decide with shouldReportPushSubscription from the push context answer");
+  assert.ok(stopAt > decideAt && stopAt < firstReportAt, "the provider must stop BEFORE it reports the subscription state");
+
 }
