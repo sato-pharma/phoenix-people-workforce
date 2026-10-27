@@ -633,6 +633,7 @@ policy):
    | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
+   | `phoenix-crm-touch-trail-archive` | `37 4 * * *` | 3h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
    | `phoenix-crm-approval-nudge` | `57 9 * * *` | 2h | cron-job.org job `8563266` · **in-house only** |
    | `phoenix-crm-visit-rollup` | `49 * * * *` | 1h | cron-job.org job `8580289` · **in-house only** |
@@ -735,6 +736,7 @@ policy):
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
    | `phoenix-crm-integrity-sweep` | `crm in-house-only` | Phoenix CRM's 03:35 photo-duplicate and integrity sweep. It notifies nobody by design and only writes evidence for the board, so a red here is the only way anyone learns it stopped. |
+   | `phoenix-crm-touch-trail-archive` | `crm in-house-only` | Phoenix CRM's 04:37 touch-trail archive. Touches older than 30 days are written to the private archive bucket, read back and checked, then deleted from the database. It notifies nobody, so a red here is the only way anyone learns the trail has stopped shrinking. |
    | `phoenix-crm-plan-reminder` | `crm in-house-only silent-when-clean` | Phoenix CRM's 12:57 and 17:57 reminder that a rep's coming week is not sent, to him and to his district manager. It is silent outside the window the week is due in. |
    | `phoenix-crm-approval-nudge` | `crm in-house-only silent-when-clean` | Phoenix CRM's 09:57 nudge to whoever has a list request, an off-plan visit or a week edit waiting at his step for more than a day. A morning with nothing overdue sends nothing. |
    | `phoenix-crm-visit-rollup` | `crm in-house-only` | Phoenix CRM's hourly rollup of the routine planned visits submitted in the previous completed clock hour, one batched message per in-scope manager. A red means an hour of field work was never reported upward. |

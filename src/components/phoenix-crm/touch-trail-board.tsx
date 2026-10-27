@@ -167,6 +167,14 @@ function SessionPills({ session }: { session: TouchTrailSessionCard }) {
 }
 
 function SessionList({ view }: { view: TouchTrailDayView }) {
+  if (view.sessions.length === 0 && view.archived) {
+    return (
+      <CrmEmpty
+        message="This day is older than 30 days. Its taps were moved out of the database into the touch trail archive, where they are kept in full."
+        title="This day is archived"
+      />
+    );
+  }
   if (view.sessions.length === 0) {
     return (
       <CrmEmpty

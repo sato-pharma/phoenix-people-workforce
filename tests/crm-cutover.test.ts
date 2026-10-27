@@ -16,9 +16,14 @@ import {
   type CrmCutoverSetting,
 } from "../src/lib/crm/cutover.ts";
 import {
+  CRM_CONTACT_MASTER_FORCE_REFRESH_MS,
+  CRM_HOUSEKEEPING_LEASE_KEY,
+  CRM_HOUSEKEEPING_LEASE_TTL_SECONDS,
   CRM_HOUSEKEEPING_PROBATION_DV_GAP_MS,
   CRM_HOUSEKEEPING_RETRY_AFTER_FAILURE_MS,
+  CRM_HOUSEKEEPING_TICK_MS,
   isContactMasterActivityDue,
+  isContactMasterListRefreshDue,
   isProbationDvCaptureDue,
 } from "../src/lib/crm/housekeeping-scheduler.ts";
 import {
@@ -347,6 +352,44 @@ function housekeepingTests() {
   assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-22", lastActivityCairoDay: null }), true, "the first retired tick runs the activity pass");
   assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-22", lastActivityCairoDay: "2026-10-22" }), false, "once per Cairo day, not every tick");
   assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-23", lastActivityCairoDay: "2026-10-22" }), true, "and again the next day");
+
+  // ONE timer across every process, and no refresh when nothing changed (owner, 2026-10-27, the afternoon
+  // stalls): every process ran its own timer, so the 1.1 s refresh ran ~8 times an hour instead of 4.
+  const leaseAt = runOnce.indexOf("if (!(await housekeepingLease.ensure())) return;");
+  assert.ok(leaseAt > standDown && leaseAt < refreshAt, "the lease is claimed after the stand-down and before any refresh or capture");
+  assert.ok(scheduler.includes("jobKey: CRM_HOUSEKEEPING_LEASE_KEY,"), "the lease is keyed on the housekeeping job");
+  assert.equal(CRM_HOUSEKEEPING_LEASE_KEY, "crm-housekeeping");
+  assert.ok(CRM_HOUSEKEEPING_LEASE_TTL_SECONDS * 1000 > CRM_HOUSEKEEPING_TICK_MS, "the lease outlives one tick, so its holder keeps it");
+  const refreshFn = scheduler.slice(scheduler.indexOf("async function refreshContactMasterAfterCutover"));
+  const stampAt = refreshFn.indexOf("await readCrmContactMasterInputsStamp()");
+  assert.ok(stampAt > 0 && stampAt < refreshFn.indexOf("refreshCrmContactMaster({ includeActivity })"), "the stamp is read before the refresh, never after");
+  assert.ok(
+    refreshFn.indexOf("contactRefresh.lastStamp = stamp;") > refreshFn.indexOf('if (outcome.status === "refreshed")'),
+    "only a refresh that landed records its stamp",
+  );
+  const due = { includeActivity: false, lastRefreshMs: now - 60_000, lastStamp: "a", nowMs: now, stamp: "a" };
+  assert.equal(isContactMasterListRefreshDue(due), false, "the same inputs as the last refresh skip the tick");
+  assert.equal(isContactMasterListRefreshDue({ ...due, stamp: "b" }), true, "a changed input refreshes");
+  assert.equal(isContactMasterListRefreshDue({ ...due, includeActivity: true }), true, "the daily activity pass always runs");
+  assert.equal(isContactMasterListRefreshDue({ ...due, stamp: null }), true, "an unreadable stamp refreshes as before");
+  assert.equal(isContactMasterListRefreshDue({ ...due, lastStamp: null, lastRefreshMs: null }), true, "the first tick refreshes");
+  assert.equal(
+    isContactMasterListRefreshDue({ ...due, lastRefreshMs: now - CRM_CONTACT_MASTER_FORCE_REFRESH_MS }),
+    true,
+    "at least every two hours, whatever the stamp says",
+  );
+  const stampSql = read("supabase/migrations/20261027174307_crm_contact_master_inputs_stamp.sql");
+  for (const input of [
+    "(now() at time zone 'Africa/Cairo')::date",
+    "public.crm_cutover",
+    "public.phoenix_crm_customers",
+    "public.phoenix_crm_doctor_list_reps()",
+    "public.ireports360_contacts",
+    "public.ireports360_crm_customer_brick_resolutions",
+    "public.ireports360_crm_region_brick_resolutions",
+  ]) {
+    assert.ok(stampSql.includes(input), `the inputs stamp covers ${input}`);
+  }
 
   const instrumentation = read("instrumentation.ts");
   const earlyBirds = instrumentation.indexOf('await import("@/lib/early-birds/close-scheduler")');

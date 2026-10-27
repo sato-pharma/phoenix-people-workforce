@@ -151,6 +151,9 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
     watchingSince: "2026-09-27T21:42:07Z",
   },
   { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
+  // 04:37 Cairo nightly (owner, 2026-10-27): touches older than 30 days go to the archive bucket and
+  // leave the database. Must match scripts/cronjob-sync.mjs exactly. NO watchingSince: a NEW declaration.
+  { slug: "phoenix-crm-touch-trail-archive", kind: "cron", schedule: "37 4 * * *", graceSeconds: 3 * HOUR },
   // 12:57 and 17:57 Cairo, every day (owner, 2026-10-02): the "your coming week is not sent" reminder.
   // Daily rather than due-days-only, so the heartbeat stays a plain daily one — on a day with nothing
   // due it reads nothing and sends nothing. On :57 so a red execution names one job. Must match

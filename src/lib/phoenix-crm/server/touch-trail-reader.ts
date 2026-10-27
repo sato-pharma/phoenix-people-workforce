@@ -47,6 +47,7 @@ import {
   type TouchTrailRow,
   type TouchTrailSession,
 } from "@/lib/phoenix-crm/touch-trail-reader";
+import { isArchivedTrailDay } from "@/lib/phoenix-crm/touch-trail-archive";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const TABLE = "phoenix_crm_touch_trail";
@@ -91,6 +92,11 @@ export type TouchTrailSessionCard = {
 
 export type TouchTrailDayView = {
   day: string;
+  /**
+   * True when the day is older than the 30 the database keeps (owner, 2026-10-27): its touches were
+   * moved to the archive bucket, so an empty view says so instead of "nothing was recorded".
+   */
+  archived: boolean;
   /** The visit days the picker offers, newest first. */
   days: ReadonlyArray<string>;
   people: ReadonlyArray<TouchTrailPerson>;
@@ -272,6 +278,7 @@ export async function loadTouchTrailDay(
   for (const session of sessions) for (const screen of session.screens) screens.add(screen);
 
   return {
+    archived: isArchivedTrailDay(day, viewer.visitDay),
     day,
     days: dayList(viewer),
     partial: hitCeiling,

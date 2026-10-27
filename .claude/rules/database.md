@@ -30,6 +30,7 @@ This file is loaded because this session opened a file of this module (or the mo
 ### Retention
 
 - 🔒 **RETENTION IS THE OWNER'S DECISION, SET 2026-10-04: `audit_logs` 12 months, `email_delivery_events` 6 months, `attendance_raw_punches` 12 months — nothing else is pruned.** `public.phx_prune_retention()` deletes past those ages in 5,000-row batches; pg_cron job `phoenix-data-retention` runs it daily at 01:40 UTC, **production only — and that is now a fact about `cron.job`, no longer a fact about staging**, which has had `pg_cron` since 2026-10-08, so replaying `20261004041000` there would schedule real pruning. Change a period by editing that ONE function in a new migration, only on his word; never add a table to it on your own. Migration `20261004041000_perf_review_indexes_and_data_retention.sql`.
+- 🔒 **THE ONE PRUNE OUTSIDE `phx_prune_retention`: `phoenix_crm_touch_trail` keeps 30 days and archives the rest to Storage** (owner, 2026-10-27). It is an app cron (`phoenix-crm-touch-trail-archive`, 04:37 Cairo), not pg_cron, because every file is read back from the bucket before its ids are deleted. Account: `docs/agents-owner-rules.md`, "The touch trail keeps 30 days".
 
 ### The migration ledger
 

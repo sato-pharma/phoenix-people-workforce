@@ -19,7 +19,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CONTACT_MASTER_REFRESH_RPC } from "@/lib/crm/tables";
+import { CRM_CONTACT_MASTER_INPUTS_STAMP_RPC, CRM_CONTACT_MASTER_REFRESH_RPC } from "@/lib/crm/tables";
 
 export type ContactMasterRefreshResult = {
   activityContactsAdded: number;
@@ -134,5 +134,20 @@ export async function refreshCrmContactMaster(input: { includeActivity: boolean 
     return { result: parseContactMasterRefreshResult(data), status: "refreshed" };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error), status: "failed" };
+  }
+}
+
+/**
+ * The fingerprint of everything the refresh reads (`crm_contact_master_inputs_stamp`, under 1 ms). Never
+ * throws: null when it cannot be read — a missing function included — and the caller then refreshes as
+ * it always did, so a stamp that cannot be trusted can only cost a refresh, never skip one.
+ */
+export async function readCrmContactMasterInputsStamp(): Promise<string | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc(CRM_CONTACT_MASTER_INPUTS_STAMP_RPC);
+    if (error) return null;
+    return typeof data === "string" && data.length > 0 ? data : null;
+  } catch {
+    return null;
   }
 }

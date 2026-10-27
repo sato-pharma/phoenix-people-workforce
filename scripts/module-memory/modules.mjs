@@ -297,8 +297,8 @@ export const MODULES = [
     title: "Phoenix CRM — the silent detectors, the touch trail and the SFE's boards",
     scope: "Location, behaviour and photo integrity, mock-location detection, the touch trail, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
     globs: [
-      "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts",
-      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-reader}.ts",
+      "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-archive,touch-trail-reader}.ts",
+      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-archive,touch-trail-reader}.ts",
       "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
       // The location-integrity board's own pure modules and its view (2026-10-13). They sit under
       // `crm-integrity/`, which the `crm` module owns as a BROAD glob — so these narrow globs load
@@ -310,6 +310,7 @@ export const MODULES = [
       "app/**/field-crm/touch-trail/**",
       "app/api/phoenix-crm/touch-trail/**",
       "app/api/cron/phoenix-crm-integrity-sweep/**",
+      "app/api/cron/phoenix-crm-touch-trail-archive/**",
       "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board,touch-trail}*",
       "tests/crm-integrity-*",
       // The Visit report generator (2026-10-15) reads the integrity evidence and shares its audience, so its

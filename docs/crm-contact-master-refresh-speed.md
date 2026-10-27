@@ -177,3 +177,46 @@ with `prosecdef false` and `proconfig search_path=public` unchanged.
 Every one of the ten new assertions in `tests/crm-contact-master-refresh-speed.test.ts` section `3c` was
 proved by reverting the fix it pins and watching its own headline message fire — eight realistic reverts,
 plus five runs with the first-throwing assert neutralised to reach the four it shadowed.
+
+## The 27 October pass: one timer, and no refresh when nothing changed
+
+The owner asked on 27 Oct 2026 why the production database stalls every afternoon. The database server
+has 2 GB of RAM and holds a 4.3 GB database. It swapped out about 6.6 GB in the 52 hours after the
+25 Oct boot, almost all of it during the working day. The heaviest daytime statement was this refresh:
+**417 calls in those 52 hours, about eight an hour, 1.1 s mean, 7.2 s max, 370k disk blocks read.**
+
+**Why eight an hour, not four.** After the cutover the housekeeping timer
+(`src/lib/crm/housekeeping-scheduler.ts`) is the refresh's only caller. The poller stands down whole, so
+its own call is dead. The timer ticks every 15 minutes, but it had only an in-memory `started` flag and
+no lease, so **every production process that passed the host guards ran its own copy**.
+
+**What changed.**
+
+- **One timer.** Each tick claims the `crm-housekeeping` job lease (`public.job_leases`, the same
+  `createJobLeaseKeeper` the live poller uses) after the stand-down check. The TTL is 20 minutes,
+  longer than a tick, so the holder keeps the lease. A process that cannot claim it stands by. The lease
+  fails open.
+- **No refresh when nothing changed.** Before the list pass the timer reads
+  `crm_contact_master_inputs_stamp()` (migration `20261027174307`; under 1 ms on production). The stamp
+  is an md5 over:
+  - the Cairo date (the refresh reads `v_today`);
+  - `crm_cutover`;
+  - from `phoenix_crm_customers`: the count and the newest created, updated and status-changed times;
+  - the rows of `phoenix_crm_doctor_list_reps()`;
+  - the count and newest update of `ireports360_contacts` and of the two brick-resolution tables.
+
+  The timer skips the refresh only when all of these hold:
+  - this tick is not the daily activity pass;
+  - the stamp equals the stamp the last *successful* refresh read;
+  - that refresh landed under two hours ago (`CRM_CONTACT_MASTER_FORCE_REFRESH_MS`).
+
+  The stamp is read **before** the refresh, so a change that lands while the refresh runs moves the
+  stamp and the next tick picks it up. If the stamp cannot be read, the refresh runs.
+
+**What it saves.** The doctor list changed in 47 of the last 96 quarter-hours, so the expected load is
+four refreshes an hour at most (one process), and about two an hour on an average day. Overnight and on
+quiet afternoons the refresh runs about once every two hours.
+
+**What it does not change.** The refresh function and its answer are untouched. It still runs with the
+activity pass once per Cairo day, and still runs on every real change to an input. Pinned by
+`tests/crm-cutover.test.ts` (`housekeepingTests`).
