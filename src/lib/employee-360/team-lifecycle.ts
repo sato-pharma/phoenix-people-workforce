@@ -39,9 +39,12 @@ export type TeamLifecycleSummary = {
   managerCount: number; // district and regional managers beneath the subject (owner, 2026-10-20)
   // Weekly-plan compliance in the window — the reps' Phoenix CRM weeks and the managers' Phoenix
   // CRM manager weeks (team-plan-compliance.ts)
-  planSubmittedCount: number; // people with >=1 week sent (submitted, approved or returned)
-  planApprovedCount: number; // people with >=1 approved week
-  planCoverageRate: number; // planSubmittedCount / (repCount + managerCount)
+  // Null when a plan read failed: the screen prints "—" and the reason, never a zero nobody measured.
+  planSubmittedCount: number | null; // people with >=1 week sent (submitted, approved or returned)
+  planApprovedCount: number | null; // people with >=1 approved week
+  planCoverageRate: number | null; // planSubmittedCount / (repCount + managerCount)
+  /** Why the plan figures are null, in plain words; null when they were read. */
+  planUnavailableReason: string | null;
   // Field discipline — confirmed no-activity deduction flags in the window's months.
   disciplineHasData: boolean;
   disciplineFlaggedReps: number; // distinct team members with any live field-workforce flag
@@ -90,6 +93,7 @@ const EMPTY: TeamLifecycleSummary = {
   planSubmittedCount: 0,
   planApprovedCount: 0,
   planCoverageRate: 0,
+  planUnavailableReason: null,
   disciplineHasData: false,
   disciplineFlaggedReps: 0,
   disciplineNoActivityDays: 0,
@@ -142,11 +146,6 @@ export async function getEmployee360TeamLifecycle(input: {
     fetchManagerPlanCompliance(teamManagers, input.window),
     fetchFieldDiscipline([...compactToKey.keys()], months, compactToKey),
   ]);
-  // Two disjoint sets of people, so the counts add.
-  const plans = {
-    submitted: repPlans.submitted + managerPlans.submitted,
-    approved: repPlans.approved + managerPlans.approved,
-  };
 
   // Probation — canonical rule: hire_date + 90 days > today.
   const today = input.now ? new Date(input.now) : new Date();
@@ -163,14 +162,11 @@ export async function getEmployee360TeamLifecycle(input: {
   }
   probationReps.sort((a, b) => a.daysRemaining - b.daysRemaining);
 
-  const total = teamPeople.length;
   return {
     hasData: true,
     repCount: teamReps.length,
     managerCount: teamManagers.length,
-    planSubmittedCount: plans.submitted,
-    planApprovedCount: plans.approved,
-    planCoverageRate: total > 0 ? plans.submitted / total : 0,
+    ...combinePlanCompliance(repPlans, managerPlans, teamPeople.length),
     disciplineHasData: discipline.hasData,
     disciplineFlaggedReps: discipline.flaggedReps,
     disciplineNoActivityDays: discipline.noActivityDays,
@@ -179,15 +175,44 @@ export async function getEmployee360TeamLifecycle(input: {
   };
 }
 
+type PlanCounts = { submitted: number; approved: number };
+
+/**
+ * PURE. The reps' and the managers' plan counts as the panel's plan figures. The two are disjoint sets of people, so
+ * the counts add. Either read having failed (null) makes every plan figure null with the reason — a half-read team is
+ * not a figure, and a zero would say nobody planned.
+ */
+export function combinePlanCompliance(
+  repPlans: PlanCounts | null,
+  managerPlans: PlanCounts | null,
+  total: number,
+): Pick<TeamLifecycleSummary, "planSubmittedCount" | "planApprovedCount" | "planCoverageRate" | "planUnavailableReason"> {
+  if (!repPlans || !managerPlans) {
+    return {
+      planSubmittedCount: null,
+      planApprovedCount: null,
+      planCoverageRate: null,
+      planUnavailableReason: "The weekly plans could not be read just now.",
+    };
+  }
+  const submitted = repPlans.submitted + managerPlans.submitted;
+  return {
+    planSubmittedCount: submitted,
+    planApprovedCount: repPlans.approved + managerPlans.approved,
+    planCoverageRate: total > 0 ? submitted / total : 0,
+    planUnavailableReason: null,
+  };
+}
+
 /**
  * The team reps' Phoenix CRM weeks starting inside the window — a Medical Rep's weekly plan lives
  * there, never in the legacy `employee_plan_headers` (the rules are in team-plan-compliance.ts).
- * Best-effort like the rest of this panel: a failed read leaves the tiles at zero.
+ * A failed read is null, so the tiles say "—" with the reason, never zero.
  */
 async function fetchPlanCompliance(
   teamReps: EmployeeDirectoryRow[],
   window: { from: string; to: string },
-): Promise<{ submitted: number; approved: number }> {
+): Promise<PlanCounts | null> {
   try {
     const org = await loadPhoenixCrmOrg();
     const repKeyBySeat = new Map<string, string>();
@@ -232,21 +257,22 @@ async function fetchPlanCompliance(
         return key && teamKeys.has(key) ? key : null;
       },
     });
-  } catch {
-    // The org tree or phoenix_crm_plans unavailable — leave empty.
-    return { submitted: 0, approved: 0 };
+  } catch (error) {
+    // The org tree or phoenix_crm_plans unavailable — unknown, never zero.
+    console.error("[employee-360] the team's weekly plans could not be read", error);
+    return null;
   }
 }
 
 /**
  * The team managers' Phoenix CRM manager weeks starting inside the window, counted by the same rule as
  * a rep's week (owner, 2026-10-20). A manager's week is keyed by HIS HR id, never a seat, so each row
- * is credited to the manager who owns it. Best-effort like the rest of this panel.
+ * is credited to the manager who owns it. A failed read is null, never zero.
  */
 async function fetchManagerPlanCompliance(
   teamManagers: EmployeeDirectoryRow[],
   window: { from: string; to: string },
-): Promise<{ submitted: number; approved: number }> {
+): Promise<PlanCounts | null> {
   if (teamManagers.length === 0) return { submitted: 0, approved: 0 };
   try {
     // The manager-plan readers store and return a personKey; the team is keyed by canonicalHrIdKey.
@@ -275,9 +301,10 @@ async function fetchManagerPlanCompliance(
       repKeyBySeat: new Map(),
       repKeyOf: (hrId) => teamKeyByPerson.get(personKey(hrId) ?? "") ?? null,
     });
-  } catch {
-    // phoenix_crm_manager_plans unavailable — leave the managers' weeks uncounted.
-    return { submitted: 0, approved: 0 };
+  } catch (error) {
+    // phoenix_crm_manager_plans unavailable — unknown, never zero.
+    console.error("[employee-360] the team managers' weekly plans could not be read", error);
+    return null;
   }
 }
 

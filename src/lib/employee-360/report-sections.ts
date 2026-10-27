@@ -22,7 +22,41 @@ export type Employee360SectionSignals = {
   salesHasData: boolean;
   /** The payroll trips or the outstation records have rows in the window. */
   expensesHaveData: boolean;
+  /** Phoenix CRM plan compliance (`crm-insights.ts`): absent when it was not loaded for this role. */
+  crmPlanCompliance?: Employee360CrmInsightState;
+  /** Phoenix CRM visit frequency by customer grade (`crm-insights.ts`). */
+  crmFrequency?: Employee360CrmInsightState;
 };
+
+/**
+ * Whether a Phoenix CRM section has something to draw: figures, a read that failed (drawn as "Could not
+ * be read", never as 0), or nothing at all (not drawn).
+ */
+export type Employee360CrmInsightState = "data" | "unread" | "empty";
+
+/**
+ * Which Phoenix CRM sections a role's report carries (owner, 2026-10-27). A medical rep: his own plan
+ * against his visits, and his own customers' visit frequency by grade. Every manager who files a
+ * manager's week (district, regional, national, product and training managers): his planned against
+ * done. A district manager also gets his team's visit frequency by grade — one territory at a time is
+ * how Phoenix CRM reads frequency, so the wider teams of a regional or national manager are left out.
+ */
+export function employee360CrmInsightRoles(category: Employee360RoleCategory): {
+  repPlan: boolean;
+  managerPlan: boolean;
+  frequency: boolean;
+} {
+  const isRep = category === "medical-rep";
+  return {
+    repPlan: isRep,
+    managerPlan: !isRep,
+    frequency: isRep || category === "district-manager",
+  };
+}
+
+function drawsCrmInsight(state: Employee360CrmInsightState | undefined): boolean {
+  return state === "data" || state === "unread";
+}
 
 export type Employee360SectionPlan = {
   /** Anyone but a Medical Rep: leads with what they deliver. */
@@ -51,6 +85,10 @@ export type Employee360SectionPlan = {
   showBricks: boolean;
   /** Expenses & Outstation, given the page already allows the section for this role. */
   showExpenses: boolean;
+  /** Phoenix CRM plan compliance: the role carries it and it has figures or a failed read to say. */
+  showCrmPlanCompliance: boolean;
+  /** Phoenix CRM visit frequency by customer grade, on the same terms. */
+  showCrmFrequency: boolean;
 };
 
 /** The role families whose report drops a section with nothing to show (owner, 2026-10-20). */
@@ -65,6 +103,7 @@ export function planEmployee360Sections(
   const isLeader = category !== "medical-rep";
   const isRep = category === "medical-rep";
   const hidesEmptySections = HIDES_EMPTY_SECTIONS.has(category);
+  const crmRoles = employee360CrmInsightRoles(category);
   return {
     isLeader,
     hidesEmptySections,
@@ -82,5 +121,7 @@ export function planEmployee360Sections(
     showOwnSales: isRep,
     showBricks: isRep,
     showExpenses: expensesAllowed && (!hidesEmptySections || signals.expensesHaveData),
+    showCrmPlanCompliance: (crmRoles.repPlan || crmRoles.managerPlan) && drawsCrmInsight(signals.crmPlanCompliance),
+    showCrmFrequency: crmRoles.frequency && drawsCrmInsight(signals.crmFrequency),
   };
 }

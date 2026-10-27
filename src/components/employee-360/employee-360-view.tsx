@@ -46,6 +46,8 @@ import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 import { planEmployee360Sections } from "@/lib/employee-360/report-sections";
+import { crmInsightState, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
+import { Employee360CrmInsightsSections } from "./crm-insights-sections";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
 
@@ -276,8 +278,7 @@ const KPI_EXPLAIN: Record<string, string> = {
   "PM visits": "How many visits were made in the afternoon.",
   // Outstation
   Claimed: "The total amount claimed for outstation trips.",
-  Variance: "The gap between what was claimed and what was expected — positive means more was claimed than expected.",
-  Flagged: "How many trips were flagged for review (possible fraud, eligibility, or territory issues).",
+  Flagged: "How many outstation requests have an eligibility or territory issue to review.",
 };
 
 function KpiTile({
@@ -718,6 +719,7 @@ export function Employee360View({
   teamLifecycle = null,
   tmAnalytics = null,
   pmMarketing = null,
+  crmInsights = null,
   bare = false,
 }: {
   /**
@@ -737,6 +739,8 @@ export function Employee360View({
   teamLifecycle?: TeamLifecycleSummary | null;
   tmAnalytics?: TrainingManagerAnalytics | null;
   pmMarketing?: PmMarketingSummary | null;
+  /** Phoenix CRM plan compliance and visit frequency by grade (`crm-insights.ts`). */
+  crmInsights?: Employee360CrmInsights | null;
   /**
    * The employee portal's page shell already pads and sizes the content column, so its two call
    * sites render the report BARE: no second padding (32px lost at 375px) and no max-width, which
@@ -765,6 +769,8 @@ export function Employee360View({
       leadershipHasData: Boolean(summary.leadership?.hasData),
       salesHasData: summary.sales.hasData,
       expensesHaveData: summary.expenses.payroll.hasData || summary.expenses.outstation.hasData,
+      crmPlanCompliance: crmInsightState(crmInsights?.planCompliance),
+      crmFrequency: crmInsightState(crmInsights?.frequency),
     },
     showExpenses,
   );
@@ -841,7 +847,7 @@ export function Employee360View({
           <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={companyAvg(intFmt.format(b.regularVisits))} />
           <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={companyAvg(intFmt.format(b.campaignVisits))} />
           {plan.showDoublesReceived ? (
-            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint="visits with a manager alongside" />
+            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint={doublesReceivedHint(summary.doublesReceivedByKind)} />
           ) : null}
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
@@ -849,7 +855,11 @@ export function Employee360View({
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <KpiTile label="Last 30 days" value={intFmt.format(summary.last30)} hint={`previous 30 days: ${intFmt.format(summary.prev30)} · ${MOMENTUM_LABEL[summary.momentumTrend]}`} goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null} />
           <KpiTile label="Avg visits / customer" value={ratio1(summary.avgVisitsPerCustomer)} hint={`${summary.repeatCustomers} repeat · ${summary.oneTimeCustomers} one-time`} />
-          <KpiTile label="Utilization" value={pct(summary.utilization)} hint={`${summary.activeDays}/${summary.workingDaysInWindow} working days`} />
+          <KpiTile
+            label="Utilization"
+            value={pct(summary.utilization)}
+            hint={`${summary.activeDays}/${summary.workingDaysInWindow} working days, Saturday to Wednesday less national holidays${summary.holidaysComplete === false ? " (the holiday calendar could not be read, so holidays may still be counted)" : ""}`}
+          />
         </div>
 
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -982,7 +992,6 @@ export function Employee360View({
 
             <div className="mt-4 text-xs text-slate-400">
               Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {formatPharmacyFigure(visitSplitOf(summary), { formatNumber: (value) => intFmt.format(value), numberFirst: true })}</span>
-              {summary.unknownAmpm > 0 ? ` · ${intFmt.format(summary.unknownAmpm)} unmarked` : ""}
             </div>
           </>
         )}
@@ -995,6 +1004,13 @@ export function Employee360View({
       {/* Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise). */}
       {plan.showBricks && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
 
+      {/* Phoenix CRM — plan compliance and visit frequency by grade, each only with something to say. */}
+      <Employee360CrmInsightsSections
+        insights={crmInsights}
+        showPlanCompliance={plan.showCrmPlanCompliance}
+        showFrequency={plan.showCrmFrequency}
+      />
+
       {/* Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM). */}
       {plan.showExpenses ? (
         <ExpensesSection
@@ -1004,7 +1020,6 @@ export function Employee360View({
             pmVisits: summary.pmVisits,
             pharmacyVisits: summary.pharmacyVisits ?? 0,
             phoenixVisits: summary.phoenixVisits ?? 0,
-            unknownAmpm: summary.unknownAmpm,
             regularVisits: summary.regularVisits,
             campaignVisits: summary.campaignVisits,
           }}
@@ -1026,6 +1041,24 @@ export function Employee360View({
       </p>
     </div>
   );
+}
+
+/** The kinds of double visit a leader conducts, in the order the tiles show them. */
+const CONDUCTED_KINDS: ReadonlyArray<{ key: keyof NonNullable<LeadershipActivity["dvByKind"]>; label: string; hint: string }> = [
+  { key: "doubles", label: "Double visits", hint: "the leader and one rep" },
+  { key: "chains", label: "Chain visits", hint: "two leaders and a rep" },
+  { key: "productManagerVisits", label: "Product manager visits", hint: "in the product or training manager's seat" },
+];
+
+/** "12 with a manager · 3 chain · 1 with a product or training manager" — only the kinds that happened. */
+function doublesReceivedHint(byKind: { withManager: number; chain: number; withProductManager: number } | undefined): string {
+  if (!byKind) return "visits with a manager alongside";
+  const parts = [
+    byKind.withManager > 0 ? `${intFmt.format(byKind.withManager)} with a manager` : null,
+    byKind.chain > 0 ? `${intFmt.format(byKind.chain)} chain` : null,
+    byKind.withProductManager > 0 ? `${intFmt.format(byKind.withProductManager)} with a product or training manager` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : "visits with a manager alongside";
 }
 
 /** "AM 2 · PM 9 · Pharmacies 5" — the three figures apart, never added (owner, 2026-10-23). */
@@ -1054,18 +1087,37 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
               value={intFmt.format(leadership.coachingDelivered)}
               hint={`${leadership.coachingRepsReached} rep${leadership.coachingRepsReached === 1 ? "" : "s"} coached`}
             />
+            {/* iReports360 double visits plus his Phoenix CRM ride-alongs; "—" when the Phoenix CRM read failed. */}
             <KpiTile
               label="Double-visits conducted"
-              value={intFmt.format(leadership.dvConducted)}
-              hint={`${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`}
+              value={leadership.dvConducted == null ? "—" : intFmt.format(leadership.dvConducted)}
+              hint={
+                leadership.dvSplit
+                  ? `${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`
+                  : "the Phoenix CRM visits could not be read just now"
+              }
             />
+            {/* One figure per kind he conducted, only the kinds that happened. */}
+            {leadership.dvByKind
+              ? CONDUCTED_KINDS.filter((kind) => (leadership.dvByKind?.[kind.key] ?? 0) > 0).map((kind) => (
+                  <KpiTile key={kind.key} label={kind.label} value={intFmt.format(leadership.dvByKind?.[kind.key] ?? 0)} hint={kind.hint} />
+                ))
+              : null}
             {/* His own single visits, logged in Phoenix CRM (owner, 2026-10-23) — kept apart from the double visits and
-                from every rep's figures. "—" when the read failed: never a zero that was not measured. */}
+                from every rep's figures. A visit on a half-day planned with his own manager is never single (owner,
+                2026-10-27): it has a tile of its own. "—" when the read failed: never a zero that was not measured. */}
             <KpiTile
               label="Own single visits"
               value={leadership.ownSingle ? intFmt.format(leadership.ownSingle.visits) : "—"}
               hint={leadership.ownSingle ? splitLine(leadership.ownSingle.split) : "could not be read just now"}
             />
+            {leadership.ownSingle && leadership.ownSingle.withSenior.visits > 0 ? (
+              <KpiTile
+                label="Own visits with a senior"
+                value={intFmt.format(leadership.ownSingle.withSenior.visits)}
+                hint={`with their own manager or a product manager · ${splitLine(leadership.ownSingle.withSenior.split)}`}
+              />
+            ) : null}
             <KpiTile label="Reps reached" value={intFmt.format(leadership.distinctRepsReached)} hint="distinct reps coached or accompanied" />
             <KpiTile
               label="Avg score given"
@@ -1127,6 +1179,23 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
   );
 }
 
+/** A month whose closing is not published shows no figure at all — never a zero (owner, 2026-10-27). */
+function UnpublishedSalesMonths({ months }: { months: readonly string[] }) {
+  return (
+    <div className="mt-5 space-y-1.5">
+      <div className="text-xs font-bold text-slate-500">Months waiting for the closing</div>
+      {months.map((month) => (
+        <div key={month} className="flex items-center gap-3">
+          <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(month)}</div>
+          <div className="flex min-h-4 flex-1 items-center border border-dashed border-slate-300 bg-white px-2 text-phx-2xs font-semibold text-slate-500">
+            Not published yet
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; field: FieldBenchmarks }) {
   const untargeted = sales.untargetedLabel;
   const coverage = salesCoverageText(field);
@@ -1144,7 +1213,13 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
         Sales &amp; Achievement{sales.isTeamRollup ? " (Team)" : ""}
       </SectionHeader>
       {!sales.hasData ? (
-        <EmptyState>No validated sales records for this employee yet{coverage ? ` (${coverage})` : ""}.</EmptyState>
+        sales.teamUnreadable ? (
+          <EmptyState>{sales.summaryText}</EmptyState>
+        ) : sales.unpublishedMonths.length > 0 ? (
+          <UnpublishedSalesMonths months={sales.unpublishedMonths} />
+        ) : (
+          <EmptyState>No validated sales records for this employee yet{coverage ? ` (${coverage})` : ""}.</EmptyState>
+        )
       ) : (
         <>
           <SummaryLine text={sales.summaryText} />
@@ -1230,6 +1305,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
               })}
             </div>
           ) : null}
+          {sales.unpublishedMonths.length > 0 ? <UnpublishedSalesMonths months={sales.unpublishedMonths} /> : null}
           {sales.topProducts.length > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Top products by sales</div>
@@ -2027,17 +2103,24 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* A failed plan read is "—" with the reason, never a zero nobody measured. */}
             <KpiTile
               label="Plans submitted"
-              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(teamCount)}`}
+              value={lifecycle.planSubmittedCount == null ? "—" : `${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(teamCount)}`}
               hint={
-                lifecycle.managerCount > 0
-                  ? `${Math.round(cov * 100)}% of ${intFmt.format(lifecycle.repCount)} reps and ${intFmt.format(lifecycle.managerCount)} managers`
-                  : `${Math.round(cov * 100)}% of reps`
+                cov == null
+                  ? (lifecycle.planUnavailableReason ?? "The weekly plans could not be read just now.")
+                  : lifecycle.managerCount > 0
+                    ? `${Math.round(cov * 100)}% of ${intFmt.format(lifecycle.repCount)} reps and ${intFmt.format(lifecycle.managerCount)} managers`
+                    : `${Math.round(cov * 100)}% of reps`
               }
-              goodWhenAbove={cov >= 0.6}
+              goodWhenAbove={cov == null ? null : cov >= 0.6}
             />
-            <KpiTile label="Plans approved" value={intFmt.format(lifecycle.planApprovedCount)} />
+            <KpiTile
+              label="Plans approved"
+              value={lifecycle.planApprovedCount == null ? "—" : intFmt.format(lifecycle.planApprovedCount)}
+              hint={lifecycle.planApprovedCount == null ? (lifecycle.planUnavailableReason ?? "The weekly plans could not be read just now.") : undefined}
+            />
             <KpiTile
               label="No-activity flags"
               value={lifecycle.disciplineHasData ? intFmt.format(lifecycle.disciplineFlaggedReps) : "—"}
@@ -2138,7 +2221,7 @@ function ExpensesSection({
   activity,
 }: {
   expenses: Employee360Profile["expenses"];
-  activity: { amVisits: number; pmVisits: number; pharmacyVisits: number; phoenixVisits?: number; unknownAmpm: number; regularVisits: number; campaignVisits: number };
+  activity: { amVisits: number; pmVisits: number; pharmacyVisits: number; phoenixVisits?: number; regularVisits: number; campaignVisits: number };
 }) {
   const { payroll, outstation } = expenses;
   const hasAny = payroll.hasData || outstation.hasData;
@@ -2293,7 +2376,7 @@ function ExpensesSection({
               <div className="mt-5">
                 <div className="mb-1.5 text-xs font-bold text-slate-500">Field activity (visits this period)</div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                  <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} hint={activity.unknownAmpm > 0 ? `${intFmt.format(activity.unknownAmpm)} unmarked` : undefined} />
+                  <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} />
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
                   <KpiTile label="Pharmacy visits" value={pharmacyTile.value} hint={pharmacyTile.note ?? undefined} />
                   <KpiTile label="Regular visits" value={intFmt.format(activity.regularVisits)} />
@@ -2316,12 +2399,11 @@ function ExpensesSection({
 
           {outstation.hasData ? (
             <div className="mt-5 rounded-[14px] border border-slate-200 p-3.5">
-              <div className="mb-2 text-sm font-bold text-slate-800">System-submitted outstation (GPS-verified)</div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="mb-2 text-sm font-bold text-slate-800">Outstation requests submitted in Phoenix</div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <KpiTile label="Trips" value={intFmt.format(outstation.tripCount)} />
                 <KpiTile label="Claimed" value={compactFmt.format(outstation.claimedTotal)} hint={`expected ${compactFmt.format(outstation.expectedTotal)}`} />
-                <KpiTile label="Variance" value={compactFmt.format(outstation.varianceTotal)} goodWhenAbove={!(outstation.varianceTotal > 0)} hint={`${outstation.overClaimCount} over-claim`} />
-                <KpiTile label="Flagged" value={intFmt.format(outstation.flaggedCount)} goodWhenAbove={!(outstation.flaggedCount > 0)} hint="fraud / eligibility / territory" />
+                <KpiTile label="Flagged" value={intFmt.format(outstation.flaggedCount)} goodWhenAbove={!(outstation.flaggedCount > 0)} hint="eligibility or territory issue" />
               </div>
             </div>
           ) : null}

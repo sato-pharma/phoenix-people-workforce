@@ -6,7 +6,6 @@ import {
   windowSalesEfficiency,
   type VisitRow,
 } from "../src/lib/employee-360/service.ts";
-import { dropPreHireEmployee360Rows } from "../src/lib/employee-360/sales-canonical.ts";
 
 // Regression coverage for the Employee 360 audit of 2026-09-21.
 //
@@ -18,9 +17,9 @@ import { dropPreHireEmployee360Rows } from "../src/lib/employee-360/sales-canoni
 // 2. Sales / visit and Sales / customer divided EVERY month since the history floor by the
 //    window's visits. They must use only the months the window touches, and a team roll-up gets
 //    no ratio at all.
-// 3. Owner ruling 2026-09-21: a rep's figures start at their hire month. The engine names today's
-//    seat holder on every past month, so Esraa Awad Hemida (hired 2026-10-01) read Fayoum's July
-//    and August as hers, and Manar Sadek (hired 2026-09-01) read January to August.
+//
+// The hire-month cut that once lived here is now seat tenure (each month credited to whoever held
+// the seat on its last day), pinned in tests/employee-360-canonical-sales.test.ts.
 
 const WINDOW = { from: "2026-08-23", to: "2026-09-21", label: "Last 30 days" };
 
@@ -88,42 +87,4 @@ export async function runEmployee360CustomerKeyTests() {
   const quiet = windowSalesEfficiency({ monthly, window: { from: "2026-10-01", to: "2026-10-31" }, isTeamRollup: false, productiveVisits: 10, distinctCustomers: 4 });
   assert.equal(quiet.salesPerVisit, null, "no sales in the window is no ratio, not zero");
   assert.equal(windowSalesEfficiency({ monthly, window: WINDOW, isTeamRollup: false, productiveVisits: 0, distinctCustomers: 0 }).salesPerVisit, null);
-
-  // ── dropPreHireEmployee360Rows: a month before the hire month is the area's, not the rep's ──
-  const saleRow = (hrId: string | null, year: number | null, month: number | null) => ({
-    employee_hr_id: hrId,
-    year,
-    month,
-    sales_value: 1_000,
-  });
-  const hireMonths = new Map([
-    ["pd-0017", "2026-10"],
-    ["cn-0007", "2026-09"],
-  ]);
-  const kept = dropPreHireEmployee360Rows(
-    [
-      saleRow("PD-0017", 2026, 7),
-      saleRow("PD-0017", 2026, 8),
-      saleRow("PD-0017", 2026, 10),
-      saleRow("CN-0007", 2026, 1),
-      saleRow("CN-0007", 2026, 8),
-      saleRow("CN-0007", 2026, 9),
-      saleRow("CN-0007", 2025, 12),
-      saleRow("B-158", 2026, 1),
-      saleRow(null, 2026, 1),
-      saleRow("CN-0007", null, null),
-    ],
-    hireMonths,
-  );
-  const keptKeys = kept.map((r) => `${r.employee_hr_id ?? "-"}:${r.year ?? "-"}-${r.month ?? "-"}`);
-  assert.deepEqual(
-    keptKeys,
-    ["PD-0017:2026-10", "CN-0007:2026-9", "B-158:2026-1", "-:2026-1", "CN-0007:---"],
-    "pre-hire months drop (Esraa's July/August, Manar's Jan-Aug and last December); the hire month stays; no hire date or no month keeps the row",
-  );
-  assert.equal(
-    dropPreHireEmployee360Rows([saleRow("pd-0017", 2026, 9)], hireMonths).length,
-    0,
-    "matched on the canonical HR id, whatever the row's casing",
-  );
 }

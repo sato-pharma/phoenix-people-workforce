@@ -272,10 +272,11 @@ export function runVisitCountGoldenRuleTests() {
       { from: "2026-09-01", label: "September", to: "2026-09-30" },
     );
     assert.deepEqual(
-      { am: summary.amVisits, pharmacies: summary.pharmacyVisits, pm: summary.pmVisits, unmarked: summary.unknownAmpm },
-      { am: 1, pharmacies: 2, pm: 1, unmarked: 1 },
-      "Employee 360 counts a pharmacy under Pharmacies whatever period it carries, and an unmarked doctor visit stays unmarked",
+      { am: summary.amVisits, pharmacies: summary.pharmacyVisits, pm: summary.pmVisits },
+      { am: 1, pharmacies: 2, pm: 2 },
+      "Employee 360 counts a pharmacy under Pharmacies whatever period it carries, and a doctor visit with no period is PM — there is no fourth bucket",
     );
+    assert.equal("unknownAmpm" in summary, false, "no 'unmarked' figure is carried beside the three");
     const e360Service = readFileSync("src/lib/employee-360/service.ts", "utf8");
     // `speciality` was the LAST select item until the Phoenix field set was appended on 2026-10-07 and
     // the list became several concatenated literals. It pins the ITEM now: the guarantee is that the

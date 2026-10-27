@@ -17,8 +17,15 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
-import { addBucketToSplit, emptyVisitCountSplit, mergeVisitCountSplits, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
-import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
+import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
+import { REGULAR_TYPE } from "@/lib/crm/visit-types";
+import { managerDayFigures, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
+import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
+import { payableExpenseAmount } from "@/lib/outstation/payable";
+import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import {
   phoenixDetailViewer,
@@ -29,17 +36,18 @@ import {
 } from "@/lib/crm/phoenix-visit-detail";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { currentCairoDateParts } from "@/lib/i18n/format";
+import { logError } from "@/lib/observability/log";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
 import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
-  dropPreHireEmployee360Rows,
+  buildEmployee360TeamSales,
   loadCanonicalEmployee360SalesRows,
-  loadEmployee360HireMonths,
+  loadEmployee360SalesWindow,
   maskRestrictedEmployee360Rows,
   selectEmployee360RowsForFamilies,
-  selectEmployee360RowsForHrIds,
 } from "@/lib/employee-360/sales-canonical";
 import {
   CAMPAIGN_TYPE,
@@ -88,6 +96,16 @@ export type SalesSummary = {
    * not. With no target anywhere every figure already reads "—", so there is nothing to name.
    */
   untargetedLabel: string | null;
+  /**
+   * Months with sales whose Monthly Closing is not published yet, ascending (`YYYY-MM`). Never a
+   * figure: the section names each one "Not published yet" (owner, 2026-10-27).
+   */
+  unpublishedMonths: string[];
+  /**
+   * The seat map did not load for a manager, so his team total cannot be placed. Every figure is
+   * withheld and the summary says it could not be read — never a smaller, rep-only number.
+   */
+  teamUnreadable: boolean;
   monthsHitTarget: number;
   growthPct: number | null;
   salesPerVisit: number | null;
@@ -150,21 +168,19 @@ export function applyRestrictedProductFilter<T extends SalesRow>(
   return stripRestrictedRowsByName(rows, restrictedNames, (r) => r.product, true);
 }
 
-async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
-  // One range load for the whole company, then narrowed in memory. This replaced a paged
-  // sales_records scan (1,000 rows per request, per chunk of 100 HR-id keys) that cost an NSM's
-  // line dozens of sequential round trips to eu-central-1 — and, more importantly, answered
-  // from the wrong engine: it read B-158's H1 as 700,019.87 while every other surface read
-  // 460,228.50. See sales-canonical.ts.
+async function getEmployeeSales(subjectHrId: string, teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
+  // One window load for the whole company, then narrowed in memory (see sales-canonical.ts):
+  // published closing months only, each month credited to whoever held the seat then, and a
+  // manager's team taken from the seats he held — vacant rep seats included — not from his reps.
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
-  const [all, hireMonths] = await Promise.all([loadCanonicalEmployee360SalesRows(), loadEmployee360HireMonths()]);
-  // A rep's figures start at their hire month (owner, 2026-09-21): the engine names today's seat
-  // holder on every past month, and those months belong to the area. Not on the PM path below —
-  // a brand's sales are the Product Manager's whoever held the seat.
-  let rows = maskRestrictedEmployee360Rows(
-    dropPreHireEmployee360Rows(selectEmployee360RowsForHrIds(all, keys), hireMonths),
-    viewerRole,
-  );
+  const team = buildEmployee360TeamSales(await loadEmployee360SalesWindow(), subjectHrId, keys, viewerRole);
+  if (team.teamUnreadable) {
+    logError("Employee 360 sales seat map is empty for a manager; team total withheld", {
+      labels: { event: "employee_360_seat_tree_failed" },
+    });
+    return teamSalesUnreadable();
+  }
+  let rows = team.rows;
   // Code-based masking above is exact; the name pass stays as a backstop for a product whose
   // name matches a restricted one but whose code does not (a rename that outran the master).
   if (!canViewRestrictedProducts(viewerRole)) {
@@ -172,12 +188,40 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   }
   // The subject's OWN aliases must not count as contributing team-mates, or a solo rep whose
   // rows carry an alias of their HR id reads as a one-person "team roll-up".
-  const subjectKeys = new Set(hrIdLookupKeys(String(teamHrIds[0] ?? "")).map((k) => k.trim().toLowerCase()));
+  const subjectKeys = new Set(hrIdLookupKeys(subjectHrId).map((k) => k.trim().toLowerCase()));
   const contributingReps = new Set(
     rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && !subjectKeys.has(k)),
   );
-  const isTeamRollup = teamHrIds.length > 1 && contributingReps.size > 0;
-  return aggregateSalesRows(rows, isTeamRollup, contributingReps.size);
+  // A vacant seat's month (no rep) is team sales too, though it adds no rep to the head count.
+  const isTeamRollup = teamHrIds.length > 1 && (contributingReps.size > 0 || rows.some((r) => !r.employee_hr_id));
+  return withUnpublishedMonths(aggregateSalesRows(rows, isTeamRollup, contributingReps.size), team.unpublishedPeriods);
+}
+
+/** A manager's sales when the seat map could not be read: no figure at all, and the reason. PURE. */
+export function teamSalesUnreadable(): SalesSummary {
+  return {
+    ...aggregateSalesRows([], true, 0),
+    teamUnreadable: true,
+    summaryText: "The team's sales could not be read because the sales seat map did not load. No partial total is shown.",
+  };
+}
+
+/**
+ * Name the months still waiting on a published closing (owner, 2026-10-27: "Not published yet",
+ * never a figure and never a zero). With nothing published at all, the summary says so instead of
+ * "no sales records", which would be false. PURE.
+ */
+export function withUnpublishedMonths(summary: SalesSummary, unpublishedMonths: readonly string[]): SalesSummary {
+  const months = [...new Set(unpublishedMonths)].sort();
+  if (months.length === 0) return summary;
+  const label = describeSalesMonths(months);
+  return {
+    ...summary,
+    unpublishedMonths: months,
+    summaryText: summary.hasData
+      ? `${summary.summaryText} ${label}: not published yet.`.trim()
+      : `${label}: not published yet. Sales show here once that month's closing is published.`,
+  };
 }
 
 /**
@@ -351,6 +395,8 @@ export function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, cont
     targetedMonthsCount: targetedMonths.length,
     untargetedMonths,
     untargetedLabel,
+    unpublishedMonths: [],
+    teamUnreadable: false,
     monthsHitTarget,
     growthPct,
     salesPerVisit: null,
@@ -658,9 +704,10 @@ function poolImpact(rows: ProductiveRow[], eventDates: string[], windowDays: num
 }
 
 // ── Expenses & Outstation ────────────────────────────────────────────────────
-// Real expense history lives in outstation_expenses (Excel-imported). The newer
-// GPS/variance/fraud outstation_expense_requests system is barely populated yet,
-// so it is folded in as a secondary "system-submitted" enrichment when present.
+// Real expense history lives in outstation_expenses. Outstation requests submitted
+// in Phoenix (outstation_expense_requests) are folded in beside it when present:
+// claimed and expected amounts, and requests with an eligibility or territory issue.
+// No variance and no fraud signal is computed for them any more.
 export type ExpenseCategory = { key: string; label: string; amount: number; pct: number };
 export type NamedCost = { name: string; cost: number; trips: number };
 export type ExpenseMonth = { month: string; cost: number; trips: number };
@@ -705,13 +752,11 @@ export type OutstationSummary = {
   tripCount: number;
   claimedTotal: number;
   expectedTotal: number;
-  varianceTotal: number;
-  overClaimCount: number;
   flaggedCount: number;
 };
 export type EmployeeExpenses = { payroll: ExpenseSummary; outstation: OutstationSummary };
 
-type PayrollExpenseRow = {
+export type PayrollExpenseRow = {
   expense_date: string | null;
   request_type: string | null;
   to_location: string | null;
@@ -724,6 +769,8 @@ type PayrollExpenseRow = {
   allowance: number | null;
   other_amount: number | null;
   total: number | null;
+  /** What HR approved when it changed the claim; null means the claim stands. */
+  approved_amount: number | null;
   km: number | null;
   status: string | null;
   hr_approved: boolean | null;
@@ -731,7 +778,7 @@ type PayrollExpenseRow = {
   pharmacy_workload: number | null;
   pm_workload: number | null;
 };
-type OutstationRow = {
+export type OutstationRow = {
   claimed_total_amount: number | null;
   expected_total_amount: number | null;
   eligibility_status: string | null;
@@ -791,8 +838,6 @@ function emptyEmployeeExpenses(): EmployeeExpenses {
       tripCount: 0,
       claimedTotal: 0,
       expectedTotal: 0,
-      varianceTotal: 0,
-      overClaimCount: 0,
       flaggedCount: 0,
     },
   };
@@ -805,7 +850,7 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const [payrollRes, outstationRes] = await Promise.all([
     supabase
       .from("outstation_expenses")
-      .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,km,status,hr_approved,am_workload,pharmacy_workload,pm_workload")
+      .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,km,status,hr_approved,am_workload,pharmacy_workload,pm_workload")
       .in("hr_id", keys)
       .gte("expense_date", window.from)
       .lte("expense_date", window.to)
@@ -823,7 +868,21 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const rows = (payrollRes.data ?? []) as PayrollExpenseRow[];
   const outRows = (outstationRes.data ?? []) as OutstationRow[];
 
-  // ---- payroll expenses ----
+  return { payroll: summarizePayrollExpenseRows(rows), outstation: summarizeOutstationRequests(outRows) };
+}
+
+/**
+ * The payroll-expense summary, from the employee's `outstation_expenses` rows.
+ *
+ * A trip is worth what it PAYS, never what was claimed: `payableExpenseAmount` (the one rule payroll
+ * uses) takes HR's `approved_amount` when HR changed the claim. A REJECTED trip pays nothing and is
+ * left out of every cost, count and breakdown here; it is only counted, in `rejectedCount`. Which
+ * queue a trip sits in comes from `expenseApprovalState`, the same decision the approvals screen uses.
+ *
+ * The four cost components always add up to the claim, so when HR cut a claim they are scaled by
+ * the same share; the category split then adds up to the total it sits under.
+ */
+export function summarizePayrollExpenseRows(rows: readonly PayrollExpenseRow[]): ExpenseSummary {
   let totalCost = 0;
   let travel = 0;
   let allowance = 0;
@@ -847,25 +906,28 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const unresolved: ExpenseTrip[] = [];
 
   for (const r of rows) {
-    const t = Number(r.total ?? 0);
+    const state = expenseApprovalState({ hrApproved: r.hr_approved, status: r.status });
+    if (state === "rejected") {
+      rejectedCount += 1;
+      continue;
+    }
+    const claimed = Number(r.total ?? 0);
+    const t = payableExpenseAmount(r.approved_amount, r.total);
+    const share = Number.isFinite(claimed) && claimed > 0 ? t / claimed : 1;
     totalCost += t;
-    travel += Number(r.travel_cost ?? 0);
-    allowance += Number(r.allowance ?? 0);
-    meeting += Number(r.meeting_amount ?? 0);
-    other += Number(r.other_amount ?? 0);
+    travel += Number(r.travel_cost ?? 0) * share;
+    allowance += Number(r.allowance ?? 0) * share;
+    meeting += Number(r.meeting_amount ?? 0) * share;
+    other += Number(r.other_amount ?? 0) * share;
     totalKm += Number(r.km ?? 0);
     amWorkload += Number(r.am_workload ?? 0);
     // NULL is "not counted separately", never a zero: that trip's pharmacies sit inside AM/PM.
     if (r.pharmacy_workload === null || r.pharmacy_workload === undefined) pharmacyUncountedTrips += 1;
     else pharmacyWorkload = (pharmacyWorkload ?? 0) + Number(r.pharmacy_workload);
     pmWorkload += Number(r.pm_workload ?? 0);
-    // Approval state comes from `status` (Approved / Rejected / blank=pending).
-    const st = String(r.status ?? "").trim().toLowerCase();
-    if (st === "approved") {
+    if (state === "approved") {
       approvedCount += 1;
       approvedCost += t;
-    } else if (st === "rejected") {
-      rejectedCount += 1;
     } else {
       pendingCount += 1;
     }
@@ -920,7 +982,8 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     else trips.push(trip);
   }
 
-  const tripCount = rows.length;
+  // A rejected trip pays nothing, so it is not part of this period's spend.
+  const tripCount = rows.length - rejectedCount;
   const catRaw = [
     { key: "travel", label: "Travel / transport", amount: travel },
     { key: "allowance", label: "Allowance", amount: allowance },
@@ -951,15 +1014,19 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const topCat = categories[0];
   const topDest = byDestination[0];
   const typeBreakdown = byType.map((b) => `${b.trips} ${b.type.toLowerCase()}`).join(", ");
+  const rejectedNote = rejectedCount > 0 ? ` ${rejectedCount} rejected and left out.` : "";
   const summaryText =
     tripCount === 0
-      ? "No expense or outstation records for this employee in this period."
-      : `${tripCount} expense${tripCount === 1 ? "" : "s"} (${typeBreakdown}) costing ${compactMoney(totalCost)}. ` +
+      ? rejectedCount > 0
+        ? `No payable expenses in this period. ${rejectedCount} rejected.`
+        : "No expense or outstation records for this employee in this period."
+      : `${tripCount} expense${tripCount === 1 ? "" : "s"} (${typeBreakdown}) paying ${compactMoney(totalCost)}. ` +
         (topCat ? `Biggest bucket: ${topCat.label.toLowerCase()} ${compactMoney(topCat.amount)} (${Math.round(topCat.pct * 100)}%). ` : "") +
         (topDest ? `Top destination ${topDest.name} (${topDest.trips} trips, ${compactMoney(topDest.cost)}). ` : "") +
-        `${approvedCount} of ${tripCount} approved.`;
+        `${approvedCount} of ${tripCount} approved.` +
+        rejectedNote;
 
-  const payroll: ExpenseSummary = {
+  return {
     hasData: tripCount > 0,
     tripCount,
     totalCost,
@@ -989,9 +1056,14 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     pmWorkload,
     summaryText,
   };
+}
 
-  // ---- outstation (system-submitted). Variance + fraud were removed from the product,
-  // so those signals are no longer read here; eligibility/territory issues still flag a trip.
+/**
+ * Outstation requests submitted in Phoenix (`outstation_expense_requests`). The product no longer
+ * computes a variance or a fraud signal, so neither is read or shown; an eligibility or territory
+ * issue still flags a request.
+ */
+export function summarizeOutstationRequests(outRows: readonly OutstationRow[]): OutstationSummary {
   let claimedTotal = 0;
   let expectedTotal = 0;
   let flaggedCount = 0;
@@ -1010,32 +1082,47 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     const territoryIssue = o.territory_validation_status === "matched";
     if (eligIssue || territoryIssue) flaggedCount += 1;
   }
-  const outstation: OutstationSummary = {
+  return {
     hasData: outRows.length > 0,
     tripCount: outRows.length,
     claimedTotal,
     expectedTotal,
-    varianceTotal: 0,
-    overClaimCount: 0,
     flaggedCount,
   };
-
-  return { payroll, outstation };
 }
 
 // ── Training-manager identity ────────────────────────────────────────────────
-async function getTrainingManagerHrIds(): Promise<Set<string>> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,job_title")
-    .ilike("job_title", "%training%");
-  if (error) throw new Error(`Employee 360 TM lookup: ${error.message}`);
+/**
+ * Who is a Training Manager, decided the way the CRM double-visit analytics decides it: the job
+ * FUNCTION of the employee's job title or position title (`resolveJobFunctionRole`), never a
+ * substring of the title. A "%training%" match also caught any title that merely mentions
+ * training, and missed a Training Manager recorded only by position. In a Phoenix visit the
+ * Training Manager rides in the product-manager seat (`product_manager_hr_id`), which the visits
+ * door hands on as the double partner, so the double-visit columns are where this set is checked.
+ *
+ * Keys are trimmed and lower-cased, which is how every reader below looks them up.
+ */
+export function trainingManagerKeysOf(
+  rows: ReadonlyArray<{ hrId: string | null; jobTitle?: string | null; positionTitle?: string | null }>,
+): Set<string> {
   const set = new Set<string>();
-  for (const row of (data ?? []) as { hr_id: string | null }[]) {
-    if (row.hr_id) set.add(String(row.hr_id).trim().toLowerCase());
+  for (const row of rows) {
+    const hrId = String(row.hrId ?? "").trim().toLowerCase();
+    if (!hrId) continue;
+    if (
+      resolveJobFunctionRole(row.jobTitle) === "Training Manager" ||
+      resolveJobFunctionRole(row.positionTitle) === "Training Manager"
+    ) {
+      set.add(hrId);
+    }
   }
   return set;
+}
+
+async function getTrainingManagerHrIds(): Promise<Set<string>> {
+  // Former Training Managers stay in: a double visit from last year was still a training visit.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  return trainingManagerKeysOf(directory);
 }
 
 // ── Leadership activity (coaching + double-visits DELIVERED) ──────────────────
@@ -1061,15 +1148,22 @@ export type LeadershipActivity = {
   coachingDelivered: number;
   coachingRepsReached: number;
   avgScoreGiven: number | null;
-  dvConducted: number;
-  /** The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23) — a campaign or admin row is in none. */
-  dvSplit: VisitCountSplit;
   /**
-   * His OWN single visits logged in Phoenix CRM, which no visits door carries (owner, 2026-10-23: "the manager himself
-   * can submit a single visit … any record submitted by himself … must appear"). Null when that read failed — never
-   * a zero that was not measured.
+   * The double visits he CONDUCTED: the iReports360 ones from the visits door, plus his Phoenix CRM ride-alongs read
+   * through `loadManagerRideAlongDetails`. Null when the Phoenix CRM read failed — never a figure that left half out.
    */
-  ownSingle: { visits: number; split: VisitCountSplit } | null;
+  dvConducted: number | null;
+  /** The same visits, one figure per kind. Null when the Phoenix CRM read failed. */
+  dvByKind: ConductedByKind | null;
+  /** The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23) — a campaign or admin row is in none. */
+  dvSplit: VisitCountSplit | null;
+  /**
+   * His OWN visits logged in Phoenix CRM, which no visits door carries (owner, 2026-10-23: "the manager himself
+   * can submit a single visit … any record submitted by himself … must appear"). `visits` is the ones he made ALONE;
+   * `withSenior` the ones on a half-day planned with his own manager or a product manager, which are never single
+   * (owner, 2026-10-27). Null when that read failed — never a zero that was not measured.
+   */
+  ownSingle: { visits: number; split: VisitCountSplit; withSenior: { visits: number; split: VisitCountSplit } } | null;
   dvRepsReached: number;
   distinctRepsReached: number;
   byRep: LeaderRepTouch[];
@@ -1090,9 +1184,15 @@ type DeliveredCoachingRow = {
   final_score_percent: number | null;
   performance_zone: string | null;
 };
+/** Conducted double visits by kind: with one rep, a chain (two leaders and a rep), with a product or training manager. */
+export type ConductedByKind = { doubles: number; chains: number; productManagerVisits: number };
+
 type ConductedDvRow = {
   agent_hr_id: string | null;
   agent_name: string | null;
+  /** Negative on a Phoenix CRM row in the unified door. */
+  crm_visit_id?: number | null;
+  double2_hr_id?: string | null;
   ampm?: string | null;
   speciality?: string | null;
   source?: string | null;
@@ -1205,21 +1305,111 @@ export function conductedVisitBucket(row: Pick<ConductedDvRow, "ampm" | "comment
   return classifyVisit(row.visit_type, row.comment, row.visit_type_description).bucket === "regular" ? bucket : null;
 }
 
-/** His own Phoenix CRM single visits in the window, through the only door out of that table. A failed read is null. */
-async function readOwnSingleVisits(hrId: string, window: Employee360Window): Promise<{ visits: number; split: VisitCountSplit } | null> {
-  try {
-    const days = await loadManagerOwnVisitDays({ end: window.to, managerHrIds: [hrId], start: window.from });
-    const split = emptyVisitCountSplit();
-    let visits = 0;
-    for (const day of days) {
-      visits += day.visits;
-      if (day.split) mergeVisitCountSplits(split, day.split);
-    }
-    return { split: { am: split.am, pharmacies: split.pharmacies, pm: split.pm }, visits };
-  } catch (error) {
-    console.error("[employee-360] the manager's own single visits could not be read", error);
-    return null;
+/**
+ * The AM · PM · Pharmacies bucket of one Phoenix CRM visit, by the same rule `managerDayFigures` uses: the customer's
+ * list decides, and only a customer on his own Manager's list (no list) falls back to the half he logged it in. A
+ * visit whose customer is not validated yet is in no figure.
+ */
+function phoenixVisitBucket(visit: ManagerDayVisit) {
+  if (visit.awaitingValidation) return null;
+  return visitCountBucketForListType(visit.source === "own" && visit.listType === null ? visit.bucket : visit.listType);
+}
+
+function splitOf(visits: readonly ManagerDayVisit[]): VisitCountSplit {
+  const split = emptyVisitCountSplit();
+  for (const visit of visits) {
+    const bucket = phoenixVisitBucket(visit);
+    if (bucket) addBucketToSplit(split, bucket);
   }
+  return { am: split.am, pharmacies: split.pharmacies, pm: split.pm };
+}
+
+export type LeaderPhoenixFigures = {
+  /** His own visits made alone. */
+  ownSingle: { visits: number; split: VisitCountSplit };
+  /** His own visits on a half-day planned with his own manager or a product manager — never counted as single. */
+  ownWithSenior: { visits: number; split: VisitCountSplit };
+  /** The ride-alongs he joined in Phoenix CRM, one figure per kind. */
+  rides: ConductedByKind;
+  rideSplit: VisitCountSplit;
+};
+
+/**
+ * PURE. A leader's Phoenix CRM visits (`loadManagerVisitDetails`) as the leadership figures: his own visits alone and
+ * with a senior apart, and the ride-alongs by kind — every count through `managerDayFigures`, the calendar's own.
+ */
+export function leaderVisitFigures(visits: readonly ManagerDayVisit[]): LeaderPhoenixFigures {
+  const own = visits.filter((v) => v.source === "own");
+  const ownAlone = own.filter((v) => v.kind !== "with_senior");
+  const ownWithSenior = own.filter((v) => v.kind === "with_senior");
+  const rides = visits.filter((v) => v.source === "ride_along");
+  const ownFigures = managerDayFigures(own);
+  const rideFigures = managerDayFigures(rides);
+  return {
+    ownSingle: { visits: ownFigures.ownSingle, split: splitOf(ownAlone) },
+    ownWithSenior: { visits: ownFigures.ownWithSenior, split: splitOf(ownWithSenior) },
+    rides: { chains: rideFigures.chains, doubles: rideFigures.doubles, productManagerVisits: rideFigures.productManagerVisits },
+    rideSplit: splitOf(rides),
+  };
+}
+
+/**
+ * PURE. The double visits a leader conducted, from both sides without counting one twice: the iReports360 rows of the
+ * visits door, and his Phoenix CRM ride-alongs. The door's own Phoenix rows are the same visits as the ride-alongs,
+ * so they are left out here and the ride-alongs counted instead (they carry the kind and the product-manager seat).
+ * Null Phoenix visits (that read failed) is null — never a figure that left half the work out.
+ */
+export function conductedDoubleVisitFigures(
+  doorRows: ReadonlyArray<Pick<ConductedDvRow, "ampm" | "comment" | "crm_visit_id" | "double2_hr_id" | "source" | "speciality" | "visit_type" | "visit_type_description">>,
+  phoenix: LeaderPhoenixFigures | null,
+): { total: number; byKind: ConductedByKind; split: VisitCountSplit } | null {
+  if (!phoenix) return null;
+  const byKind: ConductedByKind = { ...phoenix.rides };
+  const split = emptyVisitCountSplit();
+  split.am = phoenix.rideSplit.am;
+  split.pm = phoenix.rideSplit.pm;
+  split.pharmacies = phoenix.rideSplit.pharmacies;
+  for (const row of doorRows) {
+    if (isPhoenixNativeVisitRow(row)) continue;
+    if (String(row.double2_hr_id ?? "").trim()) byKind.chains += 1;
+    else byKind.doubles += 1;
+    const bucket = conductedVisitBucket(row);
+    if (bucket) addBucketToSplit(split, bucket);
+  }
+  return {
+    byKind,
+    split: { am: split.am, pharmacies: split.pharmacies, pm: split.pm },
+    total: byKind.doubles + byKind.chains + byKind.productManagerVisits,
+  };
+}
+
+/**
+ * PURE. A leader's own Phoenix CRM visits as visit rows, so they count in his own field presence (owner, 2026-10-23:
+ * "any record submitted by himself … must appear"). The visits door never carries them, so nothing is counted twice.
+ * Each is a regular visit to the customer he named, in the bucket of his customer's list (or the half he logged it in
+ * on his own Manager's list). A visit whose customer is not validated yet is left out, as in every figure.
+ */
+export function managerOwnVisitsAsVisitRows(visits: readonly ManagerDayVisit[]): VisitRow[] {
+  const rows: VisitRow[] = [];
+  for (const v of visits) {
+    if (v.source !== "own" || v.awaitingValidation) continue;
+    rows.push({
+      ampm: v.listType ?? v.bucket,
+      comment: null,
+      contact_crm_id: null,
+      contact_name: v.customerName,
+      customer_name: v.customerName,
+      double_crm_id: null,
+      double_hr_id: null,
+      double_name: null,
+      source: "phoenix",
+      speciality: v.speciality,
+      visit_date: v.date,
+      visit_type: REGULAR_TYPE,
+      visit_type_description: null,
+    });
+  }
+  return rows;
 }
 
 async function getLeadershipActivity(
@@ -1227,6 +1417,8 @@ async function getLeadershipActivity(
   window: Employee360Window,
   nameByHrId: Map<string, string>,
   computeImpact: boolean,
+  /** His Phoenix CRM visits (own and ride-alongs) for the window, read once by the profile; null when that read failed. */
+  phoenixVisits: readonly ManagerDayVisit[] | null,
 ): Promise<LeadershipActivity> {
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
@@ -1250,12 +1442,14 @@ async function getLeadershipActivity(
       // a partner on a Meeting/Training/Vacation row is not one. And collapse burst-duplicate
       // re-saves so the headline count matches the canonical double-visit definition.
       visitTypes: CRM_DOUBLE_VISIT_TYPE_CODES,
-      columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source",
+      columns: "agent_hr_id, agent_name, crm_visit_id, double2_hr_id, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source",
       limit: 8000,
       collapseDoubleVisits: true,
     }),
   ]);
-  const ownSingle = await readOwnSingleVisits(hrId, window);
+  const phoenix = phoenixVisits ? leaderVisitFigures(phoenixVisits) : null;
+  const ownSingle = phoenix ? { ...phoenix.ownSingle, withSenior: phoenix.ownWithSenior } : null;
+  const conducted = conductedDoubleVisitFigures(dvRows, phoenix);
   if (coachRes.error) throw new Error(`Employee 360 coaching delivered: ${coachRes.error.message}`);
 
   const coachRows = ((coachRes.data ?? []) as DeliveredCoachingRow[]).filter(
@@ -1294,11 +1488,8 @@ async function getLeadershipActivity(
 
   const dvByRepForImpact = new Map<string, { exactIds: Set<string>; dates: string[] }>();
   const recentDv: LeaderDvEvent[] = [];
-  const dvSplit = emptyVisitCountSplit();
   for (const r of dvRows) {
     if (!r.visit_date) continue;
-    const countBucket = conductedVisitBucket(r);
-    if (countBucket) addBucketToSplit(dvSplit, countBucket);
     const rawId = String(r.agent_hr_id ?? "").trim();
     const key = rawId.toLowerCase();
     if (!key) continue;
@@ -1340,11 +1531,19 @@ async function getLeadershipActivity(
 
   const avgScoreGiven = scoreCountAll > 0 ? scoreSumAll / scoreCountAll : null;
   const ownVisits = ownSingle?.visits ?? 0;
-  const hasData = coachRows.length > 0 || dvRows.length > 0 || ownVisits > 0;
-  const ownSentence = ownVisits > 0 ? ` Made ${ownVisits} own single visit${ownVisits === 1 ? "" : "s"}.` : "";
+  const ownWithSenior = ownSingle?.withSenior.visits ?? 0;
+  const dvConducted = conducted?.total ?? null;
+  // A failed Phoenix CRM read still draws the section, so its figures can say "—" instead of the empty state's "none".
+  const hasData = phoenix === null || coachRows.length > 0 || dvRows.length > 0 || (dvConducted ?? 0) > 0 || ownVisits > 0 || ownWithSenior > 0;
+  const ownSentence =
+    (ownVisits > 0 ? ` Made ${ownVisits} own single visit${ownVisits === 1 ? "" : "s"}.` : "") +
+    (ownWithSenior > 0 ? ` Made ${ownWithSenior} own visit${ownWithSenior === 1 ? "" : "s"} with their own manager or a product manager.` : "") +
+    (phoenix ? "" : " The Phoenix CRM visits could not be read just now, so they are not in these figures.");
+  const dvPhrase =
+    dvConducted === null ? "double-visits that could not all be read" : `${dvConducted} double-visit${dvConducted === 1 ? "" : "s"}`;
   const baseSummaryText = !hasData
     ? "No coaching reports authored, double-visits conducted or own visits logged in this period."
-    : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvRows.length} double-visit${dvRows.length === 1 ? "" : "s"}, ` +
+    : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvPhrase}, ` +
       `reaching ${distinctRepsReached} distinct rep${distinctRepsReached === 1 ? "" : "s"}` +
       (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".") +
       ownSentence;
@@ -1357,8 +1556,9 @@ async function getLeadershipActivity(
     coachingDelivered: coachRows.length,
     coachingRepsReached,
     avgScoreGiven,
-    dvConducted: dvRows.length,
-    dvSplit,
+    dvConducted,
+    dvByKind: conducted?.byKind ?? null,
+    dvSplit: conducted?.split ?? null,
     ownSingle,
     dvRepsReached,
     distinctRepsReached,
@@ -1449,13 +1649,13 @@ async function loadCoachedRepHrIds(): Promise<string[] | null> {
 async function getFieldBenchmarks(viewerRole: PhoenixRole): Promise<Employee360FieldBenchmarks | null> {
   try {
     const { year, month } = currentCairoDateParts();
-    const [directory, all, hireMonths, coachedRepHrIds] = await Promise.all([
+    const [directory, all, coachedRepHrIds] = await Promise.all([
       getEmployeeDirectoryRows({ includeInactive: true }),
+      // Published months, each credited to the rep who held the seat then (sales-canonical.ts).
       loadCanonicalEmployee360SalesRows(),
-      loadEmployee360HireMonths(),
       loadCoachedRepHrIds(),
     ]);
-    let salesRows = maskRestrictedEmployee360Rows(dropPreHireEmployee360Rows(all, hireMonths), viewerRole);
+    let salesRows = maskRestrictedEmployee360Rows(all, viewerRole);
     if (!canViewRestrictedProducts(viewerRole)) {
       salesRows = applyRestrictedProductFilter(salesRows, viewerRole, await restrictedProductNameSet());
     }
@@ -1530,7 +1730,18 @@ export async function getEmployee360Profile(
   const salesPromise =
     pmSalesFamilies.length > 0
       ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
-      : getEmployeeSales(salesTeam, viewerRole);
+      : getEmployeeSales(hrId, salesTeam, viewerRole);
+  // A leader's Phoenix CRM visits — his own and the ride-alongs he joined — read ONCE: the leadership figures and his
+  // own field presence both come from it. `productManagerSlot` lets a Training or product manager's seat count too;
+  // for a district manager it answers the first two seats exactly as before. A failed read is null, never a zero.
+  const phoenixVisitsPromise: Promise<ManagerDayVisit[] | null> = isLeader
+    ? loadManagerVisitDetails({ end: window.to, managerHrIds: [hrId], productManagerSlot: true, start: window.from }).catch((error) => {
+        console.error("[employee-360] the leader's Phoenix CRM visits could not be read", error);
+        return null;
+      })
+    : Promise.resolve(null);
+  // The call rate's working days: Saturday to Wednesday less the confirmed national holidays. Never throws.
+  const holidaysPromise = loadCallRateHolidays(window.from, window.to);
   const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact, fieldBenchmarks, coaching] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
@@ -1538,7 +1749,9 @@ export async function getEmployee360Profile(
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
     isLeader
-      ? getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager")
+      ? phoenixVisitsPromise.then((phoenixVisits) =>
+          getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager", phoenixVisits),
+        )
       : Promise.resolve(null),
     // A rep's own area against his own current list. A manager's seat carries no area of his own.
     roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),
@@ -1550,9 +1763,14 @@ export async function getEmployee360Profile(
     // below are built from its dates.
     getEmployeeCoaching(hrId, nameByHrId),
   ]);
+  const [phoenixVisits, holidays] = await Promise.all([phoenixVisitsPromise, holidaysPromise]);
 
-  const visitSummary = summarizeVisits(visits, window, listsByContact);
-  const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
+  // His own field presence counts the visits he logged himself in Phoenix CRM beside the visits door's rows. The door
+  // never carries those, so none is counted twice. The impact rows, the double-visit history and `isMapped` below keep
+  // reading the door alone.
+  const fieldVisits = phoenixVisits ? [...visits, ...managerOwnVisitsAsVisitRows(phoenixVisits)] : visits;
+  const visitSummary = summarizeVisits(fieldVisits, window, listsByContact, holidays);
+  const checkinSummary = summarizeCheckins(checkins, fieldVisits, visitSummary);
   // ONE sight for the whole profile: this page has a single subject, so every Phoenix row on it belongs
   // to the same rep. `phoenixRowSight` still resolves it per row, which is what makes a rep opening his
   // own 360 read `none` while his manager reads the distance.

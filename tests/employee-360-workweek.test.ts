@@ -13,9 +13,9 @@ import {
 //     because VisitSummary.dayOfWeek and CheckinSummary.dayOfWeek collided on the
 //     `{ ...visitSummary, ...checkinSummary }` spread — the check-in array (all
 //     zeros) overwrote the visit array. They are now visitDayOfWeek / checkinDayOfWeek.
-//  2. The Egyptian field-force work week: Saturday IS a full working day (only
-//     Friday is off; Thursday is AM-only). The old code excluded Sat from working
-//     days and dimmed it as weekend.
+//  2. The work week: Saturday IS a working day. Utilization's working days are the
+//     call rate's own (isCallRateWorkingDay): Saturday to Wednesday, less the
+//     confirmed national holidays. Thursday and Friday never count.
 
 const window = { from: "2026-07-01", to: "2026-07-31", label: "July" };
 
@@ -64,9 +64,11 @@ export async function runEmployee360WorkweekTests() {
   // independent, so the visit chart keeps its real distribution.
   assert.notDeepEqual(vs.visitDayOfWeek, cs.checkinDayOfWeek, "visit and check-in day-of-week are independent");
 
-  // ── Bug 2: work week — only Friday is off; Saturday & Thursday are working ──
-  // One full calendar week (Sun 2026-07-05 … Sat 2026-07-11) has exactly one Friday.
-  assert.equal(countWorkingDays("2026-07-05", "2026-07-11"), 6, "a 7-day week has 6 working days (Fri off)");
+  // ── Bug 2: work week — Saturday to Wednesday; Thursday and Friday never count ──
+  // One full calendar week (Sun 2026-07-05 … Sat 2026-07-11) has one Thursday and one Friday.
+  assert.equal(dowOf("2026-07-09"), 4, "2026-07-09 is a Thursday");
+  assert.equal(countWorkingDays("2026-07-05", "2026-07-11"), 5, "a 7-day week has 5 working days (Thu and Fri off)");
+  assert.equal(countWorkingDays("2026-07-09", "2026-07-09"), 0, "a lone Thursday counts 0 working days");
   // A single Friday is not a working day; a single Saturday is.
   assert.equal(dowOf("2026-07-10"), 5, "2026-07-10 is a Friday");
   assert.equal(countWorkingDays("2026-07-10", "2026-07-10"), 0, "a lone Friday counts 0 working days");
