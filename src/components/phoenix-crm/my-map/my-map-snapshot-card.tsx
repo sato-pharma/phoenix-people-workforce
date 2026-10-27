@@ -26,7 +26,7 @@ import type { ReactNode } from "react";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { snapshotFrame } from "@/lib/phoenix-crm/my-map-geometry";
-import { MY_MAP_LAYER_COLOUR, myMapPerListText, type MyMapSnapshot } from "@/lib/phoenix-crm/my-map-rules";
+import { MY_MAP_LAYER_COLOUR, MY_MAP_LAYERS, myMapPerListText, type MyMapSnapshot } from "@/lib/phoenix-crm/my-map-rules";
 
 const WIDTH = 320;
 const HEIGHT = 200;
@@ -151,14 +151,18 @@ export function MyMapSnapshotView({ frame = "manager", snapshot }: { frame?: MyM
   }
 
   const counts = snapshot.counts;
+  // 🔴 "No validated customer" only when there is none: validated customers whose places have no point are named.
+  const someWithoutPin = MY_MAP_LAYERS.some((layer) => snapshot.withoutPin[layer] > 0);
   if (snapshot.points.length === 0) {
     return (
       <Shell frame={frame}>
         <div className="flex flex-col gap-3 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate-500">
-            {snapshot.unplaced > 0
-              ? `No pin yet: ${plural(snapshot.unplaced, "validated place has", "validated places have")} no point.`
-              : "No validated customer on your territories yet. Each one is drawn here as soon as they are validated."}
+            {someWithoutPin
+              ? `No pin yet: ${myMapPerListText(snapshot.withoutPin)} validated, and none of their places has a point.`
+              : snapshot.unplaced > 0
+                ? `No pin yet: ${plural(snapshot.unplaced, "validated place has", "validated places have")} no point.`
+                : "No validated customer on your territories yet. Each one is drawn here as soon as they are validated."}
           </p>
           <OpenLink />
         </div>
@@ -192,7 +196,11 @@ export function MyMapSnapshotView({ frame = "manager", snapshot }: { frame?: MyM
             {snapshot.planRead ? <Stat label="In today's plan" value={myMapPerListText(counts.plannedToday)} /> : null}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-3">
               <p className="min-w-0 break-words text-phx-xs font-medium text-slate-500">
-                {snapshot.unplaced > 0 ? `${plural(snapshot.unplaced, "place", "places")} without a point yet` : "Open My map for directions to any pin"}
+                {someWithoutPin
+                  ? `${myMapPerListText(snapshot.withoutPin)} validated with no pin yet`
+                  : snapshot.unplaced > 0
+                    ? `${plural(snapshot.unplaced, "place", "places")} without a point yet`
+                    : "Open My map for directions to any pin"}
               </p>
               <OpenLink />
             </div>

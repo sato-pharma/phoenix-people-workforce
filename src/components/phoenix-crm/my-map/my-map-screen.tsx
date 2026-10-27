@@ -331,6 +331,7 @@ export function MyMapScreen({ browserKey, view }: { browserKey: string; view: My
     );
   }
 
+  const someWithoutPin = MY_MAP_LAYERS.some((layer) => view.withoutPin[layer] > 0);
   const notes = (
     <>
       {view.planNote ? (
@@ -348,6 +349,9 @@ export function MyMapScreen({ browserKey, view }: { browserKey: string; view: My
           {`${plural(view.unplaced, "place", "places")} of validated customers ${view.unplaced === 1 ? "has" : "have"} no point yet, so ${view.unplaced === 1 ? "it is" : "they are"} counted here and not drawn.`}
         </CrmNote>
       ) : null}
+      {someWithoutPin ? (
+        <CrmNote tone="neutral">{`Validated with no pin: ${myMapPerListText(view.withoutPin)}. None of their places has a point, so they are counted here and not drawn.`}</CrmNote>
+      ) : null}
     </>
   );
 
@@ -356,7 +360,11 @@ export function MyMapScreen({ browserKey, view }: { browserKey: string; view: My
       <div className="grid min-w-0 gap-4">
         {notes}
         <CrmPanel eyebrow="My map" title={SCOPE_TITLE[view.scope]}>
-          <CrmEmpty message="Each customer is drawn here as soon as they are validated." title="No validated customer on these territories yet" />
+          {someWithoutPin ? (
+            <CrmEmpty message="The validated customers counted above are drawn here once one of their places has a point." title="No pin on these territories yet" />
+          ) : (
+            <CrmEmpty message="Each customer is drawn here as soon as they are validated." title="No validated customer on these territories yet" />
+          )}
         </CrmPanel>
       </div>
     );

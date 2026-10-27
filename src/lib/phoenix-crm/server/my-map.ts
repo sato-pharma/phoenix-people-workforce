@@ -27,16 +27,17 @@ import { logWarning } from "@/lib/observability/log";
 import { cairoDayOfInstant } from "@/lib/phoenix-crm/daily-plan-report";
 import { brickLabels, evenSample } from "@/lib/phoenix-crm/my-map-geometry";
 import {
+  aliasPlanned,
   buildMyMapPins,
   countMyMap,
+  mergeTestWorld,
   type MyMapCustomerFact,
   type MyMapManager,
-  type MyMapPlaceFact,
   type MyMapScope,
   type MyMapSeatFact,
   type MyMapSnapshot,
   type MyMapView,
-  type MyMapVisitFact,
+  type MyMapWorldFacts,
 } from "@/lib/phoenix-crm/my-map-rules";
 import {
   heldManagerSeats,
@@ -82,12 +83,14 @@ function mapSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   return [...byId.values()].sort((left, right) => territoryName(left).localeCompare(territoryName(right)) || left.seatId.localeCompare(right.seatId));
 }
 
-type MapFacts = { places: MyMapPlaceFact[]; customers: MyMapCustomerFact[]; visits: MyMapVisitFact[] };
+/** The facts the map draws, and — for a test account — which copy of a customer stands for the other. */
+type MapFacts = MyMapWorldFacts & { alias: Map<string, string> };
 
 function customerFact(row: Row): MyMapCustomerFact {
   const validatedAt = typeof row.validated_at === "string" ? row.validated_at : null;
   return {
     id: String(row.id),
+    seatId: String(row.seat_id),
     listType: row.list_type,
     name: row.name,
     speciality: row.speciality,
@@ -98,8 +101,8 @@ function customerFact(row: Row): MyMapCustomerFact {
 
 const CUSTOMER_COLUMNS = "id, seat_id, name, list_type, speciality, grade, validated_at";
 
-/** The places, the customers and this month's countable visits of these territories, every page of each. */
-async function readMapFacts(seatIds: ReadonlyArray<string>, isTest: boolean, visitDay: string): Promise<MapFacts> {
+/** One world's places, customers and this month's countable visits of these territories, every page of each. */
+async function readWorldFacts(seatIds: ReadonlyArray<string>, isTest: boolean, visitDay: string): Promise<MyMapWorldFacts> {
   const monthStart = `${visitDay.slice(0, 7)}-01`;
   const [placeRows, customerRows, visitRows] = await Promise.all([
     selectByIds<Row>("phoenix_crm_places", "id, seat_id, customer_id, lat, lon, session, label, brick_name", "seat_id", seatIds, (query) =>
@@ -133,6 +136,17 @@ async function readMapFacts(seatIds: ReadonlyArray<string>, isTest: boolean, vis
     customers,
     visits: visitRows.map((row) => ({ customerId: String(row.customer_id), visitDate: String(row.visit_date) })),
   };
+}
+
+/**
+ * The facts the map draws. A real viewer reads the real world. A test account reads the real world AND its own,
+ * the way every report does for one (`docs/test-accounts.md`), and keeps each customer once (`mergeTestWorld`):
+ * its test world is a copy of the real lists with no places, and read alone it drew an empty map.
+ */
+async function readMapFacts(seatIds: ReadonlyArray<string>, isTest: boolean, visitDay: string): Promise<MapFacts> {
+  if (!isTest) return { ...(await readWorldFacts(seatIds, false, visitDay)), alias: new Map() };
+  const [real, test] = await Promise.all([readWorldFacts(seatIds, false, visitDay), readWorldFacts(seatIds, true, visitDay)]);
+  return mergeTestWorld(real, test);
 }
 
 type PlanRead = { planned: Set<string> | null; planRead: boolean; planNote: string | null };
@@ -200,6 +214,7 @@ function emptyView(scope: MyMapScope, visitDay: string, unavailable: boolean): M
     planNote: null,
     plannedWithoutPin: 0,
     unplaced: 0,
+    withoutPin: { AM: 0, PM: 0, Pharmacy: 0 },
   };
 }
 
@@ -233,7 +248,7 @@ export async function loadMyMap(viewer: PhoenixCrmViewer): Promise<MyMapView> {
       places: facts.places,
       customers: facts.customers,
       visits: facts.visits,
-      planned: plan.planned,
+      planned: aliasPlanned(plan.planned, facts.alias),
       newSince: addDays(viewer.cairoToday, -6),
       gradeTargets: viewer.config.settings.gradeTargets,
     });
@@ -264,7 +279,7 @@ const readSnapshot = unstable_cache(
       places: facts.places,
       customers: facts.customers,
       visits: facts.visits,
-      planned: plannedIds ? new Set(plannedIds) : null,
+      planned: aliasPlanned(plannedIds ? new Set(plannedIds) : null, facts.alias),
       newSince,
       gradeTargets: JSON.parse(targetsKey) as PhoenixCrmSettings["gradeTargets"],
     });
@@ -274,6 +289,7 @@ const readSnapshot = unstable_cache(
       points: evenSample(byPlace, SNAPSHOT_POINTS).map((pin) => ({ lat: pin.lat, lon: pin.lon, layer: pin.layer })),
       bricks: brickLabels(built.pins, SNAPSHOT_BRICKS).map((brick) => ({ name: brick.name, lat: brick.lat, lon: brick.lon })),
       unplaced: built.unplaced,
+      withoutPin: built.withoutPin,
     };
   },
   ["phoenix-crm-my-map-snapshot"],
@@ -312,6 +328,7 @@ export async function loadMyMapSnapshot(viewer: PhoenixCrmViewer): Promise<MyMap
       points: [],
       bricks: [],
       unplaced: 0,
+      withoutPin: { AM: 0, PM: 0, Pharmacy: 0 },
     };
   }
 }
