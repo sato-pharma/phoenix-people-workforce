@@ -135,7 +135,7 @@ export function runTerritorySharedPinGuardTests() {
 
   const guardAt = loader.indexOf("sharedCoordinateKeys(");
   const reclassifiedAt = loader.indexOf('shared.has(coordinateKey(');
-  const pushAt = loader.indexOf("bricks.push(");
+  const pushAt = loader.indexOf("lineBricks.push(");
   assert.ok(guardAt > -1, "loadTerritoryMap must consult the shared-pin guard — a guard nothing calls is not a guard");
   assert.ok(
     reclassifiedAt > -1 && pushAt > reclassifiedAt,

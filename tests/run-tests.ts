@@ -2697,6 +2697,7 @@ import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headli
 import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
 import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
 import { runTerritoryCurrentBricksTests } from "./territory-current-bricks.test.ts";
+import { runTerritoryAllocationFindingsTests } from "./territory-allocation-findings.test.ts";
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
@@ -10590,6 +10591,10 @@ await runTest(
 await runTest(
   "territory bricks in force: a moved brick's husk is never drawn, counted or searchable in the area it left; a successor with no pin takes its predecessor's, and a husk never makes its successor look shared",
   runTerritoryCurrentBricksTests,
+);
+await runTest(
+  "territory allocation findings: the area centre is a median one stray brick cannot drag, a brick is compared with every area of the line rather than only those on screen, a border brick inside its own spread is not flagged, rep GPS pins never read above a geocode, and no finding is dropped from the list",
+  runTerritoryAllocationFindingsTests,
 );
 await runTest(
   "territory brick search region label: a hit's region is the LINE's operational region, so the same brick reads UE-2 on Anti Infective and UE-1 on Pedia, never the line-agnostic brick column",

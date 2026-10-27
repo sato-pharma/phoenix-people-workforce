@@ -82,7 +82,7 @@ export type OverlapBrick = {
 export type AreaCluster = {
   areaCode: string;
   areaName: string;
-  /** Geometric mean of the area's located bricks. */
+  /** Median latitude and median longitude of the area's located bricks — see medianCentre. */
   centre: LatLng | null;
   hull: LatLng[];
   locatedCount: number;
@@ -92,6 +92,8 @@ export type AreaCluster = {
   /** Widest distance between any two bricks in the area. */
   spreadKm: number | null;
   meanPairKm: number | null;
+  /** Half the area's located bricks sit within this distance of its centre. */
+  medianKmFromCentre: number | null;
   orphans: OrphanBrick[];
   overlaps: OverlapBrick[];
   totalCount: number;
@@ -457,11 +459,118 @@ export async function loadTerritoryScopeOverview(access: AccessContext): Promise
 }
 
 // ── geometry ────────────────────────────────────────────────────────────────
-function centreOf(points: LatLng[]): LatLng | null {
-  if (points.length === 0) return null;
-  const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
-  const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
-  return { lat, lng };
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * An area's centre: the median latitude and the median longitude of its located bricks.
+ *
+ * The mean it replaced was dragged by the very bricks the map exists to find. Measured on
+ * production 2026-10-27, Qena 1: one brick sitting 57 km east (قريه الكلاحين, on its check-in GPS
+ * pin) pulled the mean 12 km toward itself, so it measured only 46 km out — inside the old orphan
+ * cut, while the cut itself was inflated by that brick's own long pairs. The median stays with the
+ * area; it moves only when half the area does.
+ */
+export function medianCentre(points: LatLng[]): LatLng | null {
+  const lat = median(points.map((p) => p.lat));
+  const lng = median(points.map((p) => p.lng));
+  return lat == null || lng == null ? null : { lat, lng };
+}
+
+/** Where an area sits, and which of its bricks do not sit with it. */
+export type AreaGeography = {
+  centre: LatLng | null;
+  /** Half the area's located bricks sit within this distance of its centre. */
+  medianKmFromCentre: number | null;
+  orphans: OrphanBrick[];
+  overlaps: OverlapBrick[];
+};
+
+type LocatedBrick = Pick<TerritoryBrick, "areaCode" | "brickId" | "brickName" | "lat" | "lng">;
+
+/** Fewer located bricks than this and an area has no "rest" for one of them to be far from. */
+const ORPHAN_MIN_BRICKS = 3;
+const ORPHAN_SPREAD_MULTIPLE = 3;
+const ORPHAN_FLOOR_KM = 12;
+const OVERLAP_SPREAD_MULTIPLE = 2;
+const OVERLAP_FLOOR_KM = 5;
+
+function roundKm(km: number): number {
+  return Math.round(km * 10) / 10;
+}
+
+/**
+ * Every area's centre, and the bricks that look allocated to the wrong one. Pass EVERY located
+ * brick of the line the viewer may see, not only the areas on screen: "closer to another area" is
+ * a question about the whole line, and asked of the selection alone it had no answer whenever one
+ * area was picked — the commonest way the map is read.
+ *
+ * Both thresholds are relative to the area's own spread — the median distance of its bricks from
+ * its centre — because a Cairo district and an Upper Egypt area are not comparable on a fixed km
+ * rule. They only differ in what they need to be sure of:
+ *   • Orphan  — more than 3× that spread (and 12 km) from its own centre.
+ *   • Overlap — nearer another area's centre than its own, AND more than 2× that spread (and 5 km)
+ *               out. "Nearer" alone flagged 137 of 546 located bricks on one line on production: on a border,
+ *               half of every area is nearer the neighbour's centre than its own, and that is
+ *               geometry, not a mis-allocation.
+ */
+export function areaGeography(located: LocatedBrick[], areaNames: Map<string, string>): Map<string, AreaGeography> {
+  const byArea = new Map<string, LocatedBrick[]>();
+  for (const brick of located) {
+    if (!Number.isFinite(brick.lat) || !Number.isFinite(brick.lng)) continue;
+    const list = byArea.get(brick.areaCode);
+    if (list) list.push(brick);
+    else byArea.set(brick.areaCode, [brick]);
+  }
+  const centres = new Map<string, LatLng>();
+  for (const [areaCode, list] of byArea) {
+    const centre = medianCentre(list);
+    if (centre) centres.set(areaCode, centre);
+  }
+
+  const out = new Map<string, AreaGeography>();
+  for (const [areaCode, list] of byArea) {
+    const centre = centres.get(areaCode) ?? null;
+    if (!centre) continue;
+    const own = list.map((brick) => haversineKm(brick.lat, brick.lng, centre.lat, centre.lng));
+    const typical = median(own) ?? 0;
+    const orphanCut = list.length >= ORPHAN_MIN_BRICKS ? Math.max(typical * ORPHAN_SPREAD_MULTIPLE, ORPHAN_FLOOR_KM) : null;
+    const overlapCut = Math.max(typical * OVERLAP_SPREAD_MULTIPLE, OVERLAP_FLOOR_KM);
+    const orphans: OrphanBrick[] = [];
+    const overlaps: OverlapBrick[] = [];
+
+    list.forEach((brick, i) => {
+      if (orphanCut != null && own[i] > orphanCut) {
+        orphans.push({ brickId: brick.brickId, brickName: brick.brickName, kmFromCentre: roundKm(own[i]) });
+      }
+      if (own[i] <= overlapCut) return;
+      let nearer: { areaCode: string; km: number } | null = null;
+      for (const [otherCode, otherCentre] of centres) {
+        if (otherCode === areaCode) continue;
+        const km = haversineKm(brick.lat, brick.lng, otherCentre.lat, otherCentre.lng);
+        if (km < own[i] && (!nearer || km < nearer.km)) nearer = { areaCode: otherCode, km };
+      }
+      if (nearer) {
+        overlaps.push({
+          brickId: brick.brickId,
+          brickName: brick.brickName,
+          kmToOtherCentre: roundKm(nearer.km),
+          kmToOwnCentre: roundKm(own[i]),
+          nearerAreaCode: nearer.areaCode,
+          nearerAreaName: areaNames.get(nearer.areaCode) ?? nearer.areaCode,
+        });
+      }
+    });
+
+    orphans.sort((a, b) => b.kmFromCentre - a.kmFromCentre);
+    overlaps.sort((a, b) => a.kmToOtherCentre - a.kmToOwnCentre - (b.kmToOtherCentre - b.kmToOwnCentre));
+    out.set(areaCode, { centre, medianKmFromCentre: roundKm(typical), orphans, overlaps });
+  }
+  return out;
 }
 
 /**
@@ -845,6 +954,11 @@ export async function loadTerritoryMap(params: {
   }
   const requested = areaCodes.filter((code) => areaNames.has(code));
   if (requested.length === 0) return empty;
+  const wanted = new Set(requested);
+  // Every area of the line this viewer may see — the same set the area picker offers — so "closer
+  // to another area" is asked against the whole line, never only the areas on screen. Only the
+  // requested areas are returned; the rest are read for their centres alone.
+  const lineAreaCodes = [...new Set([...visibleLineAreas(allowed, scope).keys(), ...requested])];
 
   const regionNameByCode = new Map(
     (references ?? (await loadSalesReferenceData({ includeCustomerBricks: false }))).regions.map((r) => [
@@ -858,14 +972,15 @@ export async function loadTerritoryMap(params: {
     const { data, error } = await getSupabaseAdmin()
       .from("source_of_sales_bricks")
       .select("brick_id, brick_name, block_code, area_code, active")
-      .in("area_code", requested)
+      .in("area_code", lineAreaCodes)
       .eq("active", true)
       .is("superseded_by_brick_id", null)
       .or(brickInForceFilter(today))
       .range(from, to);
     return error ? null : (data as Row[] | null);
   });
-  if (brickRows.length === 0) return empty;
+  const requestedRows = brickRows.filter((row) => wanted.has(str(row.area_code)));
+  if (requestedRows.length === 0) return empty;
 
   const centroidRows = await pageAll<Row>(async (from, to) => {
     const { data, error } = await getSupabaseAdmin()
@@ -894,8 +1009,10 @@ export async function loadTerritoryMap(params: {
   // sitting in an unselected area would let its partner through.
   const shared = sharedCoordinateKeys(pins.values());
 
-  const bricks: TerritoryBrick[] = [];
-  const unlocated: UnlocatedBrick[] = [];
+  // Every area of the line is classified the same way, so a neighbour's centre is drawn from the
+  // same trusted pins as the area's own; only the requested areas' bricks are returned.
+  const lineBricks: TerritoryBrick[] = [];
+  const lineUnlocated: UnlocatedBrick[] = [];
   for (const row of brickRows) {
     const brickId = str(row.brick_id);
     const areaCode = str(row.area_code);
@@ -908,15 +1025,15 @@ export async function loadTerritoryMap(params: {
     };
     const centroid = pins.get(brickId);
     if (!centroid) {
-      unlocated.push({ ...base, reason: "missing" });
+      lineUnlocated.push({ ...base, reason: "missing" });
     } else if (centroid.status !== "success") {
-      unlocated.push({ ...base, reason: centroid.status === "shared_fallback" ? "shared-fallback" : "wrong-region" });
+      lineUnlocated.push({ ...base, reason: centroid.status === "shared_fallback" ? "shared-fallback" : "wrong-region" });
     } else if (shared.has(coordinateKey(centroid.lat, centroid.lng))) {
       // Same verdict as the geocoder's own `shared_fallback`, reached a step later: the pin is real
       // but it is not THIS brick's. Reported, never drawn and never fed to the residence search.
-      unlocated.push({ ...base, reason: "shared-fallback" });
+      lineUnlocated.push({ ...base, reason: "shared-fallback" });
     } else {
-      bricks.push({
+      lineBricks.push({
         ...base,
         confidence: pinConfidence(centroid.provider, centroid.status),
         lat: centroid.lat,
@@ -926,6 +1043,8 @@ export async function loadTerritoryMap(params: {
       });
     }
   }
+  const bricks = lineBricks.filter((brick) => wanted.has(brick.areaCode));
+  const unlocated = lineUnlocated.filter((brick) => wanted.has(brick.areaCode));
 
   const byArea = new Map<string, TerritoryBrick[]>();
   for (const brick of bricks) {
@@ -934,67 +1053,32 @@ export async function loadTerritoryMap(params: {
     else byArea.set(brick.areaCode, [brick]);
   }
   const totalByArea = new Map<string, number>();
-  for (const row of brickRows) {
+  for (const row of requestedRows) {
     const areaCode = str(row.area_code);
     totalByArea.set(areaCode, (totalByArea.get(areaCode) ?? 0) + 1);
   }
 
-  const centres = new Map<string, LatLng | null>();
-  for (const [areaCode, list] of byArea) centres.set(areaCode, centreOf(list));
+  const geography = areaGeography(lineBricks, areaNames);
 
   const areas: AreaCluster[] = [];
   for (const areaCode of requested) {
     const list = byArea.get(areaCode) ?? [];
-    const centre = centres.get(areaCode) ?? null;
+    const geo = geography.get(areaCode);
     const { edges, totalKm } = minimumSpanningTree(list);
     const { meanKm, spreadKm } = pairStats(list);
-
-    // Orphan: sits well outside its own area's cluster. Threshold is RELATIVE to the area's own
-    // mean pair distance — Cairo and Upper Egypt are not comparable on a fixed km rule.
-    const orphanCut = meanKm != null ? Math.max(meanKm * 1.75, 12) : null;
-    const orphans: OrphanBrick[] = [];
-    const overlaps: OverlapBrick[] = [];
-
-    for (const brick of list) {
-      if (!centre) continue;
-      const own = haversineKm(brick.lat, brick.lng, centre.lat, centre.lng);
-      if (orphanCut != null && own > orphanCut) {
-        orphans.push({ brickId: brick.brickId, brickName: brick.brickName, kmFromCentre: Math.round(own * 10) / 10 });
-      }
-      // Overlap: physically closer to a DIFFERENT selected area's centre than to its own. This is
-      // the finding worth acting on — it usually means the brick belongs to the neighbour.
-      let nearer: { areaCode: string; km: number } | null = null;
-      for (const [otherCode, otherCentre] of centres) {
-        if (otherCode === areaCode || !otherCentre) continue;
-        const km = haversineKm(brick.lat, brick.lng, otherCentre.lat, otherCentre.lng);
-        if (km < own && (!nearer || km < nearer.km)) nearer = { areaCode: otherCode, km };
-      }
-      if (nearer) {
-        overlaps.push({
-          brickId: brick.brickId,
-          brickName: brick.brickName,
-          kmToOtherCentre: Math.round(nearer.km * 10) / 10,
-          kmToOwnCentre: Math.round(own * 10) / 10,
-          nearerAreaCode: nearer.areaCode,
-          nearerAreaName: areaNames.get(nearer.areaCode) ?? nearer.areaCode,
-        });
-      }
-    }
-
-    orphans.sort((a, b) => b.kmFromCentre - a.kmFromCentre);
-    overlaps.sort((a, b) => a.kmToOtherCentre - a.kmToOwnCentre - (b.kmToOtherCentre - b.kmToOwnCentre));
 
     areas.push({
       areaCode,
       areaName: areaNames.get(areaCode) ?? areaCode,
-      centre,
+      centre: geo?.centre ?? null,
       hull: convexHull(list.map((b) => ({ lat: b.lat, lng: b.lng }))),
       locatedCount: list.length,
       meanPairKm: meanKm,
+      medianKmFromCentre: geo?.medianKmFromCentre ?? null,
       mstEdges: edges,
       mstKm: list.length >= 2 ? totalKm : null,
-      orphans,
-      overlaps,
+      orphans: geo?.orphans ?? [],
+      overlaps: geo?.overlaps ?? [],
       spreadKm,
       totalCount: totalByArea.get(areaCode) ?? list.length,
     });
@@ -1015,7 +1099,7 @@ export async function loadTerritoryMap(params: {
       located: bricks.length,
       missing: unlocated.filter((b) => b.reason === "missing").length,
       sharedFallback: unlocated.filter((b) => b.reason === "shared-fallback").length,
-      total: brickRows.length,
+      total: requestedRows.length,
       wrongRegion: unlocated.filter((b) => b.reason === "wrong-region").length,
     },
     residence,
@@ -1223,6 +1307,14 @@ export function pinConfidence(provider: string | null, status: string | null): P
       return { label: "Placed at its block centre — name not found", percent: 40, verified: false };
     case "google_area_centre":
       return { label: "Placed at its area centre — name not found", percent: 30, verified: false };
+    // GPS a rep's phone reported is evidence of where someone stood, never of where the brick is —
+    // check-ins can be spoofed (owner rule). They fell to "Unverified" at 50%, above a block centre.
+    // The pins moved onto check-in GPS on 2 Aug 2026 include ones that moved AWAY from the right
+    // place: احمد عرابى went from 1.4 km to 13.7 km from its area's centre, سخا from 6.1 to 16.6.
+    case "checkin_gps":
+      return { label: "Moved to reps' check-in GPS — not confirmed", percent: 40, verified: false };
+    case "field_gps":
+      return { label: "Placed at its pharmacies' field GPS — not confirmed", percent: 40, verified: false };
     default:
       return { label: "Unverified", percent: 50, verified: false };
   }
