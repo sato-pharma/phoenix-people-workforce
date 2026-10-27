@@ -16,7 +16,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
-import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
+import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited, visitPartnerHrIds } from "@/lib/crm/reads";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
@@ -582,6 +582,12 @@ export type DoubleVisitEvent = {
    * visit the rep received (`totalReceived` counts it once) and it is in BOTH managers' records, so he is
    * in `byVisitor` and `distinctVisitors` exactly as the first manager is (owner, 2026-10-08). */
   double2Name: string | null;
+  /**
+   * Everyone else on the visit past the two slots — a Phoenix visit carries any mix of companions (owner,
+   * 2026-10-27: "Everything is applicable"), and the third and fourth stand only in `companion_hr_ids`.
+   * Null where the name is not on record. Empty on a vendor row and on a visit of one or two.
+   */
+  otherNames: (string | null)[];
   isTrainingManager: boolean;
   kind: "Regular" | "Campaign" | "Other";
   ampm: string | null;
@@ -600,6 +606,23 @@ export type DoubleVisitHistory = {
   events: DoubleVisitEvent[];
 };
 
+/**
+ * The days a Training Manager was on a double visit the rep received — the dates the training-impact
+ * window pools around. Any companion counts, not only the two slots: the Training Manager can be the
+ * third or fourth on a chain (owner, 2026-10-27). `tmIds` is lower-cased.
+ */
+export function trainingManagerVisitDates(visits: readonly VisitRow[], tmIds: ReadonlySet<string>): string[] {
+  return visits
+    .filter(
+      (v) =>
+        isCrmDoubleVisitRow(v) &&
+        v.double_hr_id &&
+        v.visit_date &&
+        visitPartnerHrIds(v).some((id) => tmIds.has(id.toLowerCase())),
+    )
+    .map((v) => v.visit_date as string);
+}
+
 export function buildDoubleVisitHistory(
   visits: VisitRow[],
   tmIds: Set<string>,
@@ -616,8 +639,11 @@ export function buildDoubleVisitHistory(
     if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
     const key2 = v.double2_hr_id ? String(v.double2_hr_id).trim().toLowerCase() : null; // gitleaks:allow — a map key, not a credential
-    // A Training Manager on EITHER slot makes this a training double visit the rep received.
-    const isTm = tmIds.has(key) || (key2 !== null && tmIds.has(key2));
+    // Everyone on the visit: the two slots and every companion past them (2026-10-27), each once.
+    const partnerKeys = visitPartnerHrIds(v).map((id) => id.toLowerCase());
+    const otherKeys = partnerKeys.filter((k) => k !== key && k !== key2);
+    // A Training Manager ANYWHERE on the visit makes it a training double visit the rep received.
+    const isTm = partnerKeys.some((k) => tmIds.has(k));
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
     const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
     const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
@@ -626,6 +652,7 @@ export function buildDoubleVisitHistory(
       doubleHrId: v.double_hr_id,
       doubleName: name,
       double2Name: v.double2_name?.trim() || null,
+      otherNames: otherKeys.map((k) => nameByHrId.get(k) ?? null),
       isTrainingManager: isTm,
       kind,
       ampm: v.ampm,
@@ -640,6 +667,7 @@ export function buildDoubleVisitHistory(
     };
     credit(key, name);
     if (key2 && key2 !== key) credit(key2, v.double2_name?.trim() || nameByHrId.get(key2) || null);
+    for (const other of otherKeys) credit(other, nameByHrId.get(other) ?? null);
   }
   events.sort((a, b) => b.date.localeCompare(a.date));
   const visitorList: DoubleVisitor[] = Array.from(byVisitor.entries())
@@ -1831,16 +1859,7 @@ export async function getEmployee360Profile(
 
   const coachingDates = coaching.reports.map((r) => r.date);
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
-  const tmDvDates = visits
-    .filter(
-      (v) =>
-        isCrmDoubleVisitRow(v) &&
-        v.double_hr_id &&
-        v.visit_date &&
-        (tmIds.has(String(v.double_hr_id).trim().toLowerCase()) ||
-          (v.double2_hr_id ? tmIds.has(String(v.double2_hr_id).trim().toLowerCase()) : false)),
-    )
-    .map((v) => v.visit_date as string);
+  const tmDvDates = trainingManagerVisitDates(visits, tmIds);
 
   const impact: InterventionImpact = {
     windowDays: IMPACT_WINDOW_DAYS,
