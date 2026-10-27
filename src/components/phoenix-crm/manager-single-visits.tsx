@@ -202,6 +202,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     status={
                       <>
                         {customer.half ? <CrmPill>{customer.half}</CrmPill> : null}
+                        {customer.withSenior ? <CrmPill tone="info">{`With ${customer.withSenior}`}</CrmPill> : null}
                         {customer.own ? <CrmPill tone="orange">Manager&apos;s own list</CrmPill> : null}
                         {customer.vacant ? <CrmPill tone="warn">Vacant area</CrmPill> : null}
                         {customer.logged ? <CrmPill tone="good">Logged</CrmPill> : null}

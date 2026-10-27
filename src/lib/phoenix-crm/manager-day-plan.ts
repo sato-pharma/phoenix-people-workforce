@@ -83,10 +83,15 @@ function halfOfVisit(visit: ManagerDayVisit): ManagerHalf {
   return visit.loggedHalf ?? "PM";
 }
 
-/** A with-a-rep half is answered by a rep's visit, a single-visit half by the manager's own — never the other way round. */
+/**
+ * A with-a-rep half is answered by a rep's visit, a single-visit half by the manager's own alone, a With my manager half
+ * by his own visit logged on it — never the other way round.
+ */
 function sourceFits(kind: ManagerSlotKind, visit: ManagerDayVisit): boolean {
   if (kind === "with_rep") return visit.source === "ride_along";
-  if (kind === "single_visit") return visit.source === "own";
+  if (kind === "single_visit") return visit.source === "own" && visit.kind !== "with_senior";
+  // His own visit logged on the With my manager half-day answers that half's customers (owner, 2026-10-27).
+  if (kind === "with_senior") return visit.source === "own" && visit.kind === "with_senior";
   return false;
 }
 

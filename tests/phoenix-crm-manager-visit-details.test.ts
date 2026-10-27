@@ -22,6 +22,7 @@ import { ownVisitBucket } from "../src/lib/phoenix-crm/server/manager-plan-reade
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import { attachVisitDetails } from "../src/lib/private-calendar/visit-detail-items.ts";
+import { managerOwnVisitValues } from "../src/lib/phoenix-crm/visit-report-own-visits.ts";
 
 /**
  * A district manager's visits, in full (owner, 2026-10-20): *"when a district manager does visits the visit
@@ -392,8 +393,57 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
   }
 
   everyonesVisitsInFull();
+  ownVisitWithHerManager();
 
   console.log("phoenix-crm manager visit details: OK");
+}
+
+/**
+ * 🔴 HER OWN VISIT ON A WITH MY MANAGER HALF-DAY IS A VISIT WITH THAT MANAGER, NEVER "SINGLE VISIT, ALONE" (owner,
+ * 2026-10-27: "she submitted but it appeared as single visit, it should count with her manager"). The visit is logged
+ * in her own table against the half-day (`plan_slot_id`); the reader names the manager from that half-day's
+ * `senior_visit`, the figures count it apart from her alone ones, and the plan-against-actual table matches it to the
+ * customer she planned on that half — a single-visit half never takes it, and a With my manager half never takes an
+ * alone visit.
+ */
+function ownVisitWithHerManager(): void {
+  const withMagdy = visit({
+    bucket: "PM",
+    customerKey: "c:khaled",
+    customerName: "Dr. Khaled Youssef",
+    id: "own:w1",
+    kind: "with_senior",
+    kindLabel: "Visit with a manager",
+    withPeople: [{ hrId: "AI-0008", name: "Magdy El Senosey", role: "National sales manager" }],
+  });
+
+  const figures = managerDayFigures([withMagdy, visit({ id: "own:alone" })]);
+  assert.equal(figures.ownWithSenior, 1, "the visit with her manager is counted as one");
+  assert.equal(figures.ownSingle, 1, "and never among the visits she made alone");
+  assert.equal(managerDaySummaryLine(figures), "1 own single visit · 1 visit with a manager");
+  assert.match(managerVisitLine(withMagdy), /Visit with a manager .*With Magdy El Senosey \(National sales manager\)/, "the line names who she went with");
+  assert.doesNotMatch(managerVisitLine(withMagdy), /Single visit, alone/);
+
+  const customer = { flagLabel: null, key: "c:khaled", name: "Dr. Khaled Youssef", outcome: "done" as const, outcomeLabel: "Done", own: false, place: null };
+  const half = (kind: "with_senior" | "single_visit") => ({ customers: [customer], half: "PM" as const, kind, kindLabel: kind, note: null, title: kind });
+  const answered = buildPlanVsActual({ halves: [half("with_senior")], sent: true, statusLine: "Approved" }, [withMagdy]);
+  assert.equal(answered.rows.find((row) => row.plan?.kind === "with_senior")?.actual?.id, "own:w1", "her visit answers the customer she planned with her manager");
+  assert.equal(answered.summary.unplanned, 0, "and is never a second, unplanned row");
+  const alone = buildPlanVsActual({ halves: [half("with_senior")], sent: true, statusLine: "Approved" }, [visit({ customerKey: "c:khaled", id: "own:a1" })]);
+  assert.equal(alone.rows.find((row) => row.plan?.kind === "with_senior")?.actual, null, "a visit she made alone never answers a With my manager half");
+  const single = buildPlanVsActual({ halves: [half("single_visit")], sent: true, statusLine: "Approved" }, [withMagdy]);
+  assert.equal(single.rows.find((row) => row.plan?.kind === "single_visit")?.actual, null, "and a visit with her manager never answers a single-visit half");
+
+  assert.equal(managerOwnVisitValues(withMagdy, "Weam").visitType, "Manager's own visit · with Magdy El Senosey", "the Visit Report row names him, and stays her own row");
+  assert.equal(managerOwnVisitValues(visit(), "Weam").visitType, "Manager's own visit");
+
+  const loader = stripComments(source("src/lib/phoenix-crm/server/manager-visit-details.ts"));
+  assert.match(loader, /const OWN_COLUMNS =\s*"[^"]*\bplan_slot_id";/, "the reader reads the half-day each visit was logged on");
+  assert.match(loader, /\.from\("phoenix_crm_manager_plan_slots"\)\.select\("id, kind, senior_visit"\)\.in\("id", part\)\.eq\("kind", "with_senior"\)/, "and that half-day's manager, With my manager halves only");
+  assert.match(loader, /kind: senior \? "with_senior" : "single",/, "a visit on such a half is a visit with that manager");
+  const today = stripComments(source("src/lib/phoenix-crm/server/manager-visits.ts"));
+  assert.match(today, /withSenior: seniorOfSlot\.has\(row\.slotId\) \?/, "the My single visits list names the manager on that half's customers");
+  assert.match(source("src/components/phoenix-crm/manager-single-visits.tsx"), /\{customer\.withSenior \? <CrmPill tone="info">/, "and shows it on the card");
 }
 
 function item(overrides: Partial<PrivateCalendarItem>): PrivateCalendarItem {
