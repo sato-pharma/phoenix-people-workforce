@@ -3568,8 +3568,8 @@ the brick and the area are read from.
 than that. On 26 Oct 2026 (~16:00 Cairo) 746 places holding the pin beside a usable photo were moved
 onto their photo, their address re-read where the photo sat 25 m or more from the pin, and 588 of
 their visits measured again (`scripts/phoenix-crm-settle-on-photo.ts`): no brick or area changed and
-one visit flag moved, far to ok. The pre-image is `phoenix_crm_photo_point_backup_20261026_places` and
-`_visits`. 🔴 **Six places were HELD on the pin**: their photo sits 300 m or more from it (Dr Tharwat
+one visit flag moved, far to ok. The pre-image is `phoenix_crm_backup_20261026.phoenix_crm_photo_point_backup_20261026_places` and
+`_visits` (moved out of `public` on 27 Oct, `20261027235603`). 🔴 **Six places were HELD on the pin**: their photo sits 300 m or more from it (Dr Tharwat
 Milad's 10 km cold-receiver photo, Sehet Behteem Hospital's ±200 m photo 327 m off, and four more), the
 contradicting readings — moving them is his decision, place by place. The places whose photo is rougher
 than 250 m keep the pin, and validations saved before this merge served need the script run once more.

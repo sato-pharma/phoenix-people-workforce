@@ -150,7 +150,18 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (272 as of 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (274 as of 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 272 to 274 on 2026-10-27 — the two 26 Oct photo-point pre-images.** Production read
+**274**. The 2 that joined are, by oid, the newest two: `phoenix_crm_photo_point_backup_20261026_places`
+(480362) and `_visits` (480377), taken in `public` with row security on and no policy. They and
+`majed_owais_brick_move_backup_20261026` (row security off, so not in this count) were also the whole
+of the `snapshot_table_in_public` error that failed the daily Migration Drift Check from 23 Oct.
+`20261027235603` moved all 3 into the dated schemas `phoenix_crm_backup_20261026` and
+`brick_move_backup_20261026`, which no browser role can use. `phx_ci_advisor_counts()` reads every
+non-managed schema, so the 2 stay counted until `scripts/audit-backup-schemas.mjs` retires that schema
+at the 90-day line. Re-proved live the same day: **0** tables outside the managed schemas are row
+security off or policy-less **and** grant `anon` or `authenticated` anything.
 
 **Raised 260 to 272 on 2026-10-26 — 7 that joined, and 5 added on purpose by the audit fixes.**
 Production read **267** that day. The 7 that joined since 2026-10-23 are all new server-only tables
