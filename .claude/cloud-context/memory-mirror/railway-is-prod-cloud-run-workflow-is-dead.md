@@ -13,7 +13,7 @@ approval step, no waiting. Confirmed 2026-08-02: merge `522262b2` landed 05:43:0
 deployment started 05:43:12Z (4 seconds later), success at 05:45:25Z.
 
 Verify a deploy through the **GitHub deployments API**, not gcloud:
-`gh api repos/Gawish-1997/phoenix-people-workforce/deployments` — rows read
+`gh api repos/it-gawish-hr/phoenix-people-workforce/deployments` — rows read
 `Phoenix-HR-Workforce / production … "Deployed to Railway"`, and
 `/deployments/<id>/statuses` gives in_progress → success.
 

@@ -9,7 +9,7 @@ metadata:
 ---
 
 **Launcher 6.48 / versionCode 15480** is the live fleet launcher as of 23 Oct 2026 (Cairo), fork
-`Gawish-1997/hmdm-android`, branch `phoenix/launcher-6.48-combined` (built green by `phoenix-build.yml`
+`it-gawish-hr/hmdm-android`, branch `phoenix/launcher-6.48-combined` (built green by `phoenix-build.yml`
 run 39887245317, signed APK 6,290,217 bytes, Phoenix cert `7b48e751…1c49` — the installed key, so no
 re-enroll). It is the **superset** of three disjoint launcher lines that were racing on one version row:
 

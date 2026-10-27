@@ -9,7 +9,7 @@ metadata:
 ---
 
 Both reported by the owner on **2026-08-28**, minutes apart, on the Doctor Coverage board.
-Fixed in [PR #2584](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2584).
+Fixed in [PR #2584](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2584).
 
 **1. "Anyone can filter by any line… and can choose any region and anything."**
 A filter bar must never offer more than the viewer's access scope. `loadCoverageFilterTree`

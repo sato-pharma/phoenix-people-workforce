@@ -38,7 +38,7 @@ migration hygiene. **Those seven tests are written BEFORE any feature code.**
 rules in executable form. Extraction started; see [[phoenix-rules-spec-extraction]]. Expect ~80–100
 owner rulings to surface; they go to him as **one XLSX with dropdowns**, never as chat questions.
 
-**The new repo exists: `E:\New`** → remote **`Gawish-1997/phoenix-next`, PRIVATE**, pushed
+**The new repo exists: `E:\New`** → remote **`it-gawish-hr/phoenix-next`, PRIVATE**, pushed
 2026-08-17 (before that it lived only on the E: drive). **The whole situation for a fresh
 account is `E:\New\plans\00-START-HERE.md`**, with one self-contained `.md` per plan (`00`–`09`)
 beside it. He is switching accounts when his limit ends — point any new session at that file first,

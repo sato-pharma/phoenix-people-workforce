@@ -19,7 +19,13 @@ import { execFileSync } from 'node:child_process';
 /** The three names that stopped being checks on 2026-09-27 (#4527). */
 export const RETIRED_CHECK_NAMES = ['lint', 'typecheck', 'test'];
 
-const REPO = 'Gawish-1997/phoenix-people-workforce';
+/**
+ * The GitHub account that owns this repository, and the repository itself — the ONE place the scripts
+ * read them from (moved to a new account on 2026-10-26). `tests/github-owner-slug.test.ts` refuses any
+ * other account name in code, CI, scripts, hooks and tests.
+ */
+export const GITHUB_OWNER = 'it-gawish-hr';
+export const REPO = `${GITHUB_OWNER}/phoenix-people-workforce`;
 
 /**
  * What branch protection ACTUALLY requires, or `{ skipped: <why> }`. Never throws and never guesses.

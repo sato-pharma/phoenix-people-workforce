@@ -12,7 +12,7 @@ The Weekly Summarized Report's **Tab 6 (Month vs Target)** shipped 2026-08-16 in
 every manager's sales by the **national** target. `loadWeeklyDashboard` redacts the SALES via
 `applyWeeklyAccessScope`, but `phx_monthly_targets` is `SECURITY DEFINER` with **no viewer bound**,
 and the route narrowed it only by the URL filters. Fixed the same day in
-[#2177](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2177), squash `82f6fa46`,
+[#2177](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2177), squash `82f6fa46`,
 **live on prod 2026-08-16 22:08 Cairo** (confirmed via `/api/healthz` revision).
 
 Measured on the real production August-2026 grid — a Regional Manager bounded to AB/D1/D2:

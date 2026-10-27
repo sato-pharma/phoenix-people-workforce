@@ -37,7 +37,7 @@ clears from the worktree. Note `gh pr view` has **no `merged` JSON field** (it i
 for one errors out and lists the valid fields.
 
 **A cleaner path that avoided the error entirely:** run the merge from a NON-git directory (the
-session scratchpad), with `--repo Gawish-1997/phoenix-people-workforce`, no `--delete-branch`
+session scratchpad), with `--repo it-gawish-hr/phoenix-people-workforce`, no `--delete-branch`
 (`delete_branch_on_merge` deletes the remote branch anyway), and `--match-head-commit <CI-green sha>`
 so it can only merge the commit that passed. `gh` then has no local checkout to touch and exits 0.
 Confirmed 2026-09-16 on PR #3880 (exit 0, then `state: MERGED`). Still read the PR state afterwards.

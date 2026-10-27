@@ -211,7 +211,7 @@ What this acceptance does and does not say:
 
 🔴 **GITHUB CLOSED THIS ALERT AS `fixed` THE SAME DAY, 2026-10-06 17:53 Cairo — so this row is the
 record of a decision, not a live acceptance.** Read live: `gh api
-repos/Gawish-1997/phoenix-people-workforce/dependabot/alerts/113` returns `state: fixed`, `fixed_at
+repos/it-gawish-hr/phoenix-people-workforce/dependabot/alerts/113` returns `state: fixed`, `fixed_at
 2026-10-06T14:53:13Z`, `dismissed_at: null`. Nothing in this repository dismissed it and no bump
 was made here, so the closure came from GitHub's own re-scan and the alert itself does not record
 why. **That is not evidence the acceptance below was unnecessary**: it was taken at 05:56 Cairo on

@@ -842,7 +842,7 @@ reads **43% AM, 94% PM**, and the board says *"the morning is not producing the 
 Pinned by `runKpiAttainmentAndIdentityTests` in `tests/kpis-filters.test.ts`, which asserts 100% AM /
 0% PM on that rep **and** that no combined field exists on the row at all. It runs in the required CI
 `validate` job. Shipped in
-[#3068](https://github.com/Gawish-1997/phoenix-people-workforce/pull/3068), live as `28fb7a40d`.
+[#3068](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/3068), live as `28fb7a40d`.
 
 ### 🔒 AM · PM · Pharmacies — a pharmacy is never counted among the PM doctors
 

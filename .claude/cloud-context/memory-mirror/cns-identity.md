@@ -10,7 +10,7 @@ metadata:
 
 The CNS line's identity is a **repo skill**, not a folder of images: `.claude/skills/cns-identity/`,
 built 13 October 2026 on `codex/cns-identity` (PR
-[#5872](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5872), unmerged when this was
+[#5872](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/5872), unmerged when this was
 written). Claude Code loads it by itself when a CNS piece is asked for — there is nothing to
 remember beyond that it exists and what it refuses to do.
 

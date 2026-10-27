@@ -13,7 +13,7 @@ along means **the remote ref was gone when you pushed** — and on this repo tha
 the PR merged and `delete_branch_on_merge` deleted it. Your push silently **recreates** a branch
 GitHub had retired.
 
-What happened on 2026-10-23 with [#6307](https://github.com/Gawish-1997/phoenix-people-workforce/pull/6307):
+What happened on 2026-10-23 with [#6307](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/6307):
 merged at 07:04 UTC as squash `36eb9dbcd` while the session was merging `main` in again; the next
 push reported `[new branch]`, and `gh pr view` then read `MERGED` with head still the pre-merge sha.
 

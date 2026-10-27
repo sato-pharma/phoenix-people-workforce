@@ -65,7 +65,7 @@ chief, and Dr Anwar's title is `Ceo`.
 
 ## Narrowed 2026-08-27 — a 6-hourly SUMMARY may now be emailed
 
-Owner approved [PR #2438](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2438) after
+Owner approved [PR #2438](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2438) after
 being shown this rule. The **per-push** notification is still never emailed; what is new is a
 **batched 6-hour digest** ("you received N CVs") from
 `src/lib/recruitment/inbound/cv-intake-digest-6h.ts`, which calls `sendPhoenixEmail` directly and so

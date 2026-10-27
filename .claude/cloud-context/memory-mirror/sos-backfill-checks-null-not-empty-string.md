@@ -12,7 +12,7 @@ metadata:
 commit `b7a3dcd0`) — this memory's earlier "still needs merging" note is stale, do not repeat it.
 The migration file is now `supabase/migrations/20260809222929_sos_backfill_matches_empty_brick_
 sentinel.sql` (renamed from `20260810120000_...` by follow-up
-[PR #1985](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1985) so its filename
+[PR #1985](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1985) so its filename
 matches the version production's ledger actually recorded — see
 [[mcp-apply-migration-versions-drift-from-filename]] for why that mismatch happens and why it
 wasn't a CI failure either way). The predicate is broadened to `(r.brick_id is null or r.brick_id

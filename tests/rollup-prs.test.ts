@@ -1151,7 +1151,7 @@ export function runRollupPrsTests(): void {
   {
     const HEAD_AT = "2026-10-09T00:24:30Z";
     const RUN_URL = (run: string, job: string) =>
-      `https://github.com/Gawish-1997/phoenix-people-workforce/actions/runs/${run}/job/${job}`;
+      `https://github.com/it-gawish-hr/phoenix-people-workforce/actions/runs/${run}/job/${job}`;
     const CANCELLED_RUN = "37864635258";
     const SURVIVING_RUN = "37864679406";
     // The four required-check entries exactly as gh returned them for #5605.

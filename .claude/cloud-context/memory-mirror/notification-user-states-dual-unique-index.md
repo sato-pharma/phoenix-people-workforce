@@ -39,7 +39,7 @@ right one). Verified on staging: old arbiter → 42P10 rejected; new arbiter wit
 the affected user's session ends and resume when they browse again, so "log went quiet" is not
 evidence of a fix. Related: [[supabase-advisor-by-design]].
 
-**RESOLVED 2026-07-30.** PR [#1474](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1474)
+**RESOLVED 2026-07-30.** PR [#1474](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1474)
 squash-merged as `c931d6ee`, deployed as revision `phoenix-hr-00658-rij` (100% traffic), and only
 then was the migration applied to production. Verified after: redundant index gone, `hr_id` NOT NULL,
 219 rows preserved, and a rolled-back probe confirmed the new arbiter handles a divergent `user_id`

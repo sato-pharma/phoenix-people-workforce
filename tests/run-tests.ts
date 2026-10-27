@@ -2707,6 +2707,7 @@ import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpu
 import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
 import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desktop-fits-the-screen.test.ts";
 import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
+import { runGithubOwnerSlugTests } from "./github-owner-slug.test.ts";
 import { runDependabotAlertsTests } from "./dependabot-alerts.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
 import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
@@ -10639,6 +10640,10 @@ await runTest(
 await runTest(
   "the required-check list cannot drift: AGENTS.md 2 declares it, its stated count must equal the names it lists, every name must be produced by a real workflow job, a name retired on 2026-09-27 (lint, typecheck, test) must not come back as a job while protection does not require it, and no file a session ACTS on - AGENTS.md, CLAUDE.md, the ship and verify-context skills, the PR template - may still name a retired check as a gate",
   runRequiredCheckNamesTests,
+);
+await runTest(
+  "one GitHub account owns every repository: GITHUB_OWNER in scripts/required-check-names.mjs is a real GitHub login (never a placeholder), no code, CI, script, hook or test names the old account the repositories were moved off on 2026-10-26, every written owner/repository reference to one of the ten repositories names the current owner, and a GHCR path names it in lower case",
+  runGithubOwnerSlugTests,
 );
 await runTest(
   "the Dependabot early warning is honest in both directions: every verdict lives in the pure judgeAlerts (the CLI owns no literal exit, because the live API answers only whatever is true today and would never exercise a failing path), a reading it could not obtain SKIPS with exit 0 while saying in words that it is not a pass, zero open alerts with the feature SWITCHED OFF fails because a zero nobody looked for is not evidence, an unreadable severity is graded urgent rather than quiet, an open HIGH or CRITICAL fails and names the version to bump to plus the --depth Infinity a transitive one needs, moderate and low alone pass and say so, an alert with no patched version never reads as actionable, and neither file may acquire auto-merge or any write verb",

@@ -70,7 +70,7 @@ opposite shape: the deployment **is** created, reaches `in_progress`, and then d
 | `fab743655` | 5719 | 00:32 | success |
 
 - The cheap signal, needing no Railway CLI:
-  `gh api repos/Gawish-1997/phoenix-people-workforce/deployments/<id>/statuses --jq "[.[].state]"`.
+  `gh api repos/it-gawish-hr/phoenix-people-workforce/deployments/<id>/statuses --jq "[.[].state]"`.
   A `failure` there under a green CI means the BUILD died, not the code.
 - **Compare `/api/healthz` `revision` to `origin/main`, never to your own commit** — a revision that
   is neither is the tell that an intermediate deploy died.

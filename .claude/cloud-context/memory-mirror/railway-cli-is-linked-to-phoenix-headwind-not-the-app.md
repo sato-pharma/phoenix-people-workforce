@@ -34,7 +34,7 @@ three times.
 - **To read deployments, do not use `railway deployment list` at all.** Either
   `railway status --json` and pick the `production` environment's `phoenix-people-workforce`
   instance (`serviceId 30356676-116b-4886-ac6e-89041d80185e`, domain `phoenix-hr.satopharma.com`),
-  or ask GitHub: `gh api repos/Gawish-1997/phoenix-people-workforce/deployments?per_page=8`.
+  or ask GitHub: `gh api repos/it-gawish-hr/phoenix-people-workforce/deployments?per_page=8`.
   `railway status` with no flags prints the linked service under a heading that reads like the whole
   project.
 - **Never read a sha agreeing with your expectation as confirmation** — the worker and the web

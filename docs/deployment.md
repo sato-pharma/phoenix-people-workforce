@@ -980,7 +980,7 @@ script or the `Dockerfile` builds and boots the image (nothing pushed), which al
 **The Railway side** (`scripts/fallback-image-deploy.mjs`, public GraphQL, introspected 2026-10-21):
 `serviceInstanceUpdate(source: {image}, registryCredentials)` moves a service onto the image, then the
 script waits for the new deployment and, for the web service, for `/api/healthz` to report the commit.
-`restore` reconnects `Gawish-1997/phoenix-people-workforce@main` with `serviceConnect` and waits again.
+`restore` reconnects `it-gawish-hr/phoenix-people-workforce@main` with `serviceConnect` and waits again.
 
 - 🔴 **The source is service-level, shared by every environment** (§2.3's `source connect` incident), so
   `switch` and `restore` refuse `--env staging`: a "staging test" of a source change would change
@@ -988,7 +988,7 @@ script waits for the new deployment and, for the web service, for `/api/healthz`
   deletes only what it created (re-checked by name), and `cleanup` removes a leftover.
 - **The private image needs a pull credential.** With the secret `GHCR_PULL_TOKEN` (a classic personal
   access token with ONLY `read:packages`, stored by the owner himself:
-  `gh secret set GHCR_PULL_TOKEN --repo Gawish-1997/phoenix-people-workforce`) Railway can re-pull the
+  `gh secret set GHCR_PULL_TOKEN --repo it-gawish-hr/phoenix-people-workforce`) Railway can re-pull the
   image for as long as the fallback is in use. Without it the run's own token is used: enough to start
   the container now, **not** enough for a later restart on another node. The production job's summary
   says which one was used. Never make the package public — it holds the compiled server code.
@@ -1041,7 +1041,7 @@ build from production), and Vercel is a retired platform here.
    `ci.yml` push run. 🔴 **Off Railway this is the ONLY gate**: the container's readiness gate keys on
    `RAILWAY_ENVIRONMENT_NAME`, which the standby never has.
 2. **The image** — the fallback route's own build (`fallback-image.yml` called with `deploy=none`, so no Railway service
-   is touched), reused when `ghcr.io/gawish-1997/phoenix-people-workforce:<sha>` already exists. The job hands it to
+   is touched), reused when `ghcr.io/it-gawish-hr/phoenix-people-workforce:<sha>` already exists. The job hands it to
    Fly's own registry, because Fly cannot pull the private ghcr package — never make it public.
 3. **The standby** — `infra/fly-standby/fly.toml`: Frankfurt (`fra`), one `shared-cpu-2x` machine with 2 GB, health
    check `/api/healthz`. 🔴 **WEB ONLY**: `[env]` forces `PHOENIX_PROCESS_ROLE=web` (the schedulers refuse to start)
@@ -1063,9 +1063,9 @@ build from production), and Vercel is a retired platform here.
 **What only the owner does, once** (a session may not create accounts or handle these tokens):
 
 - A Fly.io account with a card (pay-as-you-go; the standby has no machines between emergencies).
-- An organisation token from the Fly dashboard → `gh secret set FLY_API_TOKEN --repo Gawish-1997/phoenix-people-workforce`.
+- An organisation token from the Fly dashboard → `gh secret set FLY_API_TOKEN --repo it-gawish-hr/phoenix-people-workforce`.
 - A Cloudflare API token with **Zone → DNS → Edit** and **Zone → Zone → Read** on `satopharma.com` only →
-  `gh secret set CLOUDFLARE_API_TOKEN --repo Gawish-1997/phoenix-people-workforce`.
+  `gh secret set CLOUDFLARE_API_TOKEN --repo it-gawish-hr/phoenix-people-workforce`.
 - Then Actions → Emergency host → `setup`, then `rehearse`. Optional repository variables: `FLY_APP` (default
   `phoenix-hr-standby`, if that name is taken on Fly) and `FLY_ORG` (default `personal`).
 
@@ -1154,7 +1154,7 @@ To confirm a deploy happened at all, use the GitHub deployments API or the Railw
 `Phoenix-HR-Workforce / production … "Deployed to Railway"`:
 
 ```bash
-gh api repos/Gawish-1997/phoenix-people-workforce/deployments
+gh api repos/it-gawish-hr/phoenix-people-workforce/deployments
 ```
 
 **One command reads all of it** — the PR's state and merge sha, the production deployment rows with
@@ -1437,7 +1437,7 @@ reading still says `main`.** Found on 2026-10-23: the staging domain answered
 
 and its newest deployment was `REMOVED`, dated **14 Oct 11:48 Cairo** — nine days and roughly 180
 merges earlier. Nothing was misconfigured. The domain existed, the service instance existed, its
-GitHub source read `Gawish-1997/phoenix-people-workforce`, its source branch read `main`, and all 50
+GitHub source read `it-gawish-hr/phoenix-people-workforce`, its source branch read `main`, and all 50
 environment variables were present and resolving to the staging Supabase project. The project had
 **three** deployment triggers and all three were on the **production** environment, so `main` moved
 180 times and no merge ever built staging.

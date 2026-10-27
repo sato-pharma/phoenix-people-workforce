@@ -40,7 +40,7 @@ it, then a migration pitch he did not want. Re-opening it costs him the same tim
 **How to apply:** do **not** propose a mail migration, an MX/archiving gateway, or per-mailbox app
 passwords unless he raises it himself. If a session hits "Could not connect to that mailbox", the
 cause is the credential (wrong account, or not an app password), never the host. What *does* work
-and shipped in [#2548](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2548) (prod
+and shipped in [#2548](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2548) (prod
 `487725b6`): the monitor lists the company mailboxes Phoenix **already** holds credentials for —
 from `RECRUITMENT_EMAIL_INBOXES_JSON`, whose password field is `password`, not `pass` — and connects
 them on one click, no password typed or sent. Proven live read-only: `hr@` 21 folders / 421 messages,

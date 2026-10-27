@@ -20,7 +20,7 @@ the launcher under the stock Lenovo home, so nothing relaunches it. 6.41's manif
 `BOOT_COMPLETED`; `PushLongPollingService` starts only from `Initializer.startServicesAndLoadConfig`.
 So EVERY self-update leaves the tablet unmanaged (no commands, no sync, no location) until a reboot.
 
-**Fix:** fork `Gawish-1997/hmdm-android`, branch `phoenix/restart-after-self-update`, commit
+**Fix:** fork `it-gawish-hr/hmdm-android`, branch `phoenix/restart-after-self-update`, commit
 `9776c84`, **6.42 / versionCode 15420**: `PackageReplacedReceiver` on `MY_PACKAGE_REPLACED` (delivered
 to the NEW version; exempt from the Android 8 implicit-broadcast limits) re-runs `Initializer.init` +
 `startServicesAndLoadConfig(ctx, false)` — the `false` skips launching RustDesk so nothing flashes on

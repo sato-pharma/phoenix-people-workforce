@@ -58,7 +58,7 @@ branch"*, which is the same sentence it prints while a run is still being queued
 read is the positive one:
 
 ```bash
-gh api "repos/Gawish-1997/phoenix-people-workforce/actions/runs?head_sha=<head>&per_page=20" --jq '.total_count'
+gh api "repos/it-gawish-hr/phoenix-people-workforce/actions/runs?head_sha=<head>&per_page=20" --jq '.total_count'
 ```
 
 `0` on a PR that has been open for minutes is proof, not a symptom.

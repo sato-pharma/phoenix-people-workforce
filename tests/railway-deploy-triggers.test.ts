@@ -30,7 +30,7 @@ const WORKER = "b955f4dc-a597-4972-953b-410e3c91bc81";
 const HEADWIND = "3ff181a3-3408-4118-ab13-6e63d24fbe4a";
 const CRON = "179e6a73-d891-4fbc-a89e-ac53ef461821";
 const HEADWIND_DB = "f6cf6ddb-2141-4a95-a1cd-3801fbc24d0e";
-const REPO = "Gawish-1997/phoenix-people-workforce";
+const REPO = "it-gawish-hr/phoenix-people-workforce";
 
 /** The Phoenix project as Railway reported it at 21:10 Cairo on 2026-10-23, minus the staging trigger. */
 function livePreFix(): Live {
@@ -75,7 +75,7 @@ export function runRailwayDeployTriggersTests() {
   // environment that lost its trigger. Nine days of merges did not reach staging and nothing was red.
   const gaps = findTriggerGaps(livePreFix());
   assert.equal(gaps.length, 1, `the pre-fix shape must yield exactly one finding, got: ${gaps.join(" | ")}`);
-  assert.match(gaps[0], /^staging\/phoenix-people-workforce: deploys from Gawish-1997\/phoenix-people-workforce but has NO deployment trigger/);
+  assert.match(gaps[0], /^staging\/phoenix-people-workforce: deploys from it-gawish-hr\/phoenix-people-workforce but has NO deployment trigger/);
   assert.match(gaps[0], /nothing turns red/, "the finding must say the failure is silent, or it reads as cosmetic");
 
   // And the fixed shape is clean — otherwise the check is noise and gets ignored.
@@ -93,10 +93,10 @@ export function runRailwayDeployTriggersTests() {
 
   // A trigger on the right service but the WRONG repository: it fires for someone else's pushes.
   const wrongRepo = liveFixed();
-  wrongRepo.triggers[3].repository = "Gawish-1997/some-other-repo";
+  wrongRepo.triggers[3].repository = "it-gawish-hr/some-other-repo";
   assert.match(
     findTriggerGaps(wrongRepo).join("\n"),
-    /staging\/phoenix-people-workforce: its deployment trigger watches Gawish-1997\/some-other-repo/,
+    /staging\/phoenix-people-workforce: its deployment trigger watches it-gawish-hr\/some-other-repo/,
   );
 
   // A trigger with no branch can never fire, which looks identical to a working one in a listing.

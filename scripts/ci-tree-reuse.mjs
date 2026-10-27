@@ -64,6 +64,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { REPO as DEFAULT_REPO } from "./required-check-names.mjs";
 
 // A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
 refuseUnknownFlags({
@@ -496,8 +497,6 @@ const reusableJobsFailed = (jobs) =>
     const job = (jobs ?? []).find((j) => j?.name === name);
     return !job || job.conclusion !== "success";
   });
-
-const DEFAULT_REPO = "Gawish-1997/phoenix-people-workforce";
 
 // ── The observation window and its clock ────────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ metadata:
   modified: 2026-08-09T13:00:53.890Z
 ---
 
-`git push` to `github.com/Gawish-1997/phoenix-people-workforce` intermittently hangs with no output
+`git push` to `github.com/it-gawish-hr/phoenix-people-workforce` intermittently hangs with no output
 and never returns. Observed **three times on 2026-07-31/08-01** in one session (7 min, 9 min, and a
 10-min tool timeout). **Every retry succeeded within seconds**, pushing the identical commit.
 

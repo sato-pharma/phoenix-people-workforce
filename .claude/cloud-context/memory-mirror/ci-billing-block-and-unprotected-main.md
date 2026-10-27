@@ -16,7 +16,7 @@ On 2026-06-14 the `validate` CI job on PRs failed in 1-2s with **zero steps run*
 
 **~~Key unblock:~~ RETRACTED 2026-08-23 — do not act on the paragraph below.** It read: *"`main` has **NO branch protection** … So a red/blocked CI check does NOT prevent merge … When CI is billing-blocked but code passed the full local gate (`npm run check:harden`), it is safe to `gh pr merge --squash`."* Kept verbatim only so a future session recognises it and stops.
 
-🔴 **Every clause of that is now false, and following it would ship broken code to production.** Verified live 2026-08-23 against `gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection`:
+🔴 **Every clause of that is now false, and following it would ship broken code to production.** Verified live 2026-08-23 against `gh api repos/it-gawish-hr/phoenix-people-workforce/branches/main/protection`:
 
 - **`main` IS branch-protected.** `enforce_admins: true`, two **required** status checks — `validate`, `checks`. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* A red check now genuinely blocks the merge, for the owner too. (`strict` is `false`, so behind-`main` alone does not block — that part is deliberate, see AGENTS.md §2.)
 - **The local gate it defers to no longer exists.** `check:harden` was retired 2026-08-18 at the owner's instruction and is gone from `package.json`. There is no local run that can stand in for CI, and AGENTS.md §7 forbids inventing one. See [[local-validation-gates-are-gone-ci-is-the-gate]].

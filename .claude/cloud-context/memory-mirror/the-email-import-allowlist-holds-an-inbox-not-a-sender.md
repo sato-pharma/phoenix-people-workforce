@@ -45,7 +45,7 @@ same phone.
 **Why:** the gate looks configured, and a `railway variables` glance reads as healthy, so nobody
 questions it. `treated_as_import = 0` is the only reading that exposes it.
 
-**RESOLVED 2026-08-24.** [#2388](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2388)
+**RESOLVED 2026-08-24.** [#2388](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2388)
 (squash `2d317a58`) taught `isEmailImportSender` that an entry beginning `@` matches the whole
 domain; the variable is now `@satopharma.com`, verified read-back as 15 chars, one entry, no BOM.
 **CORRECTED 2026-08-28 — a variable change DOES trigger a deploy. This read a LATENCY as an

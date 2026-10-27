@@ -303,7 +303,7 @@ independently.
 **Open items:**
 
 1. ~~**Doc-vs-reality drift (low, but it is a security doc).**~~ **FIXED AND LIVE — PR
-   [#2032](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2032), merged as `6cfc1aab`,
+   [#2032](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2032), merged as `6cfc1aab`,
    serving in production (`/api/healthz` confirmed 2026-08-12 00:32 Cairo).**
    `docs/specs/direct-orders.md:135` claimed RLS was enabled with "**zero
    policies**" on the direct-order tables. Production has **two** `service_role`-only policies
@@ -435,7 +435,7 @@ commits excluded; there were none.
 
 Authoritative module spec remains `docs/specs/direct-orders.md`, and it is now **accurate as
 written**. Its one factual error (the RLS "zero policies" line) was corrected in PR
-[#2032](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2032), merged as `6cfc1aab` and
+[#2032](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2032), merged as `6cfc1aab` and
 live. A reviewer reading that file on `main` today sees the corrected text.
 
 **Note for the reviewer:** the audit body above was written against `76e4016b`. `main` has moved on
@@ -445,7 +445,7 @@ No Direct Orders source, test or migration changed, so the delta ZIP in §15 (cu
 remains a faithful source snapshot.
 
 **One follow-on, raised directly by this audit's Finding 21 and now merged:** PR
-[#2033](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2033) (`7f39011e`, live) fixes
+[#2033](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2033) (`7f39011e`, live) fixes
 **migration-ledger drift, not a production exposure**. The ledger contains no
 `enable row level security` for `direct_order_pharmacy_validations` — the table was created
 2026-08-05, four days before `20260809130000` removed the public-schema default, and it was missed by

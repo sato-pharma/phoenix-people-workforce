@@ -26,7 +26,7 @@ done
 
 If CI's `validate` job fails fast (~30s) on a PR whose lint/typecheck/test/build all pass locally, check `check:migrations` output first — a duplicate-timestamp collision with a since-merged PR is the likely cause.
 
-**RECURRED 2026-07-28** (I ignored this memory): used round `20260728100000` for `au_resign_vacate_all_open_seats` (#1416); #1415's `restore_report_rpc_statement_timeouts` merged first with the same round timestamp; each PR was green alone; **main went red** after #1416 merged. Fixed via [PR #1418](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1418).
+**RECURRED 2026-07-28** (I ignored this memory): used round `20260728100000` for `au_resign_vacate_all_open_seats` (#1416); #1415's `restore_report_rpc_statement_timeouts` merged first with the same round timestamp; each PR was green alone; **main went red** after #1416 merged. Fixed via [PR #1418](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1418).
 
 **TWO different fixes depending on state — this is the key refinement:**
 - **Collision caught PRE-MERGE / not-yet-applied:** `git mv` your file to a NON-ROUND timestamp (the MCP assigns its own server-side `version`, so renaming an un-applied or staging-only file is safe).

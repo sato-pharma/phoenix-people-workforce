@@ -13,8 +13,8 @@ When every required check fails in **seconds** (3–12s, against a normal 2–4 
 The real message is visible only through the check-run annotation:
 
 ```bash
-gh api repos/Gawish-1997/phoenix-people-workforce/actions/runs/<run-id>/jobs --jq '.jobs[0].id'
-gh api repos/Gawish-1997/phoenix-people-workforce/check-runs/<job-id>/annotations --jq '.[].message'
+gh api repos/it-gawish-hr/phoenix-people-workforce/actions/runs/<run-id>/jobs --jq '.jobs[0].id'
+gh api repos/it-gawish-hr/phoenix-people-workforce/check-runs/<job-id>/annotations --jq '.[].message'
 ```
 
 On **2026-08-05 ~20:24Z** that returned: *"The job was not started because recent account payments have failed or your spending limit needs to be increased."* Last green run 20:18:41Z, first failure 20:24:03Z — a clean cutover, and `gh run rerun --failed` failed identically, so it is persistent, not a blip.
@@ -31,7 +31,7 @@ Same cause, third occurrence. Cap crossed between **14:46 and 14:58 Cairo**: run
   `gh api repos/.../actions/runs/<id>/jobs --jq '.jobs[] | "\(.name): \(.conclusion) steps=\(.steps|length)"'`
   A job that fails having executed **zero steps** cannot have been failed by the diff. On 2026-08-28 that read `changes: failure steps=0` with every other job `skipped` — the cascade from a `needs:` dependency, which reads misleadingly like four separate problems.
 - **The old billing endpoint is GONE.** `users/<u>/settings/billing/actions` now returns **HTTP 410 "This endpoint has been moved."** The live one is:
-  `gh api "users/Gawish-1997/settings/billing/usage?year=2026&month=8"`
+  `gh api "users/it-gawish-hr/settings/billing/usage?year=2026&month=8"`
   It returns `usageItems[]` with `grossAmount`, `discountAmount`, `netAmount` per SKU per day. **Sum `netAmount`: a total landing on an exactly round figure IS the cap.** Measured that day: gross $233.58 − included $33.58 = **net exactly $200.00**, against 36,466 Actions minutes for the month. Note the endpoint reports SPEND, never the LIMIT — so after the owner raises it, the API still reads $200.00 and cannot confirm the change. **Only a rerun proves it.**
 - **Recovery once he has raised it: `gh run rerun <id>` on the PR's own `pull_request`-sourced run** — verified working 2026-08-28, both the `CI` and `Security Scan (OSS)` runs, jobs went from 0 to **43 steps executing**. Rerun BOTH workflows: `secret-scan` is a required check and lives in `security-scan.yml`, not `ci.yml`. Do not reach for `gh workflow run` — a `workflow_dispatch` run's checks never enter the PR's `statusCheckRollup`, so branch protection ignores them ([[a-conflicted-pr-runs-no-ci-at-all]] neighbours this trap).
 
@@ -58,7 +58,7 @@ identical attempt 2 — persistent, not a blip.
   `github.event_name == 'pull_request'`, so a push to `main` is always `ubuntu-latest`. A billing stop
   therefore freezes the Railway "Wait for CI" deploy whatever the switch reads. Production itself keeps
   serving: `/api/healthz` `revision` read `3fd76851f` = `main`'s head throughout.
-- 🔴 **The spend endpoint is now unreadable from here.** `users/Gawish-1997/settings/billing/usage`
+- 🔴 **The spend endpoint is now unreadable from here.** `users/it-gawish-hr/settings/billing/usage`
   answers 404 plus *"needs the \"user\" scope"* — the repo token does not carry it, and refreshing his
   `gh` scopes is interactive and his. **Do not spend turns trying to read the number**; say the block is
   live, name Settings → Billing & plans, and rerun on his word.

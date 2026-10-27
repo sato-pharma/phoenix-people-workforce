@@ -35,7 +35,7 @@ near-worthless until that term is gone.
   `us-central1`, so it *looks* like the region cutover might have freed it up. It did not.
   Builds stay on the default `e2-standard-2` (240s warm / 330s cold with BuildKit cache).
 - **Larger GitHub-hosted runners**: `gh api user` → `plan: pro` on a **personal** account
-  (`Gawish-1997/phoenix-people-workforce`). Larger runners need Team/Enterprise.
+  (`it-gawish-hr/phoenix-people-workforce`). Larger runners need Team/Enterprise.
 
 **Lever 1 that works:** a `workflow_run: [CI]` trigger on `main` collapses the wait term to
 ~0. Proven 2026-07-30: CI green at 02:09:12Z → deploy fired the same instant → live in 9 min.

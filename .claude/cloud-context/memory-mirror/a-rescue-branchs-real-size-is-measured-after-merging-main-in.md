@@ -12,7 +12,7 @@ metadata:
 measure — the number usually collapses, and what survives can still be the discarded design.**
 
 **Measured 2026-10-12, 19:5x Cairo**, on `rescue/phoenix-mcp-source-pipeline-wip` (PR
-[#5807](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5807)). Six commits that had
+[#5807](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/5807)). Six commits that had
 lived only on the laptop, never pushed, no PR. Its own diff read **49 files, 4,959 insertions** —
 which sounds like a fortnight of lost work.
 

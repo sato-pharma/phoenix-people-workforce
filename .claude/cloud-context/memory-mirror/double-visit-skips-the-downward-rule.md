@@ -96,8 +96,8 @@ performance is worse than the leak being fixed.
 
 Branches `codex/dv-downward-scope` (attempts 1–2, tip `f08100e06`) and `codex/dv-downward-scope-2`
 (attempt 3, tip `9f5b73b41`) on origin. **Closed** PRs
-[#3672](https://github.com/Gawish-1997/phoenix-people-workforce/pull/3672) and
-[#3704](https://github.com/Gawish-1997/phoenix-people-workforce/pull/3704), whose closing comments
+[#3672](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/3672) and
+[#3704](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/3704), whose closing comments
 carry all three reviews.
 
 **Sound and worth salvaging from attempt 3:** the chain-only module

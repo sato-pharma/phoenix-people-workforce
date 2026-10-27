@@ -3,7 +3,7 @@ name: Security Scan (OSS)
 # Secret scanning for this repository.
 #
 # GitHub Advanced Security (native secret scanning + push protection) is not purchasable here:
-# Gawish-1997 is a personal User account, and GHAS is only sold to Team/Enterprise Cloud accounts
+# This repository's owner is a personal User account, and GHAS is only sold to Team/Enterprise Cloud accounts
 # (confirmed 2026-07-25, re-confirmed 2026-07-26 after the transfer, and again 2026-08-08 —
 # repos/{owner}/{repo} still returns security_and_analysis: null). So this workflow is not a
 # belt-and-braces extra: it is the ONLY automated secret detection on a private repo that holds
