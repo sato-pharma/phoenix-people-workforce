@@ -555,9 +555,10 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     summary:
       "Write notes and reminders for the HR team, choose who may see each, view them as a list, a week or a month, and join the conversation under any of them.",
     // The owner, 2026-10-17: a small shared-notes module for "the HR team, Yasmin, Yomna, and me,
-    // and an office coordinator that will be hired". Held by BOTH working HR seats, so whoever is
-    // given the HR Operations seat — the office coordinator included — joins the team without a
-    // code change. NOT a job-description section, and it says so rather than borrowing one.
+    // and an office coordinator that will be hired". Held by EVERY HR seat, so whoever is given
+    // one joins the team without a code change. The office coordinator took the HR Operations
+    // Specialist seat (HR Administration) on 2026-10-28, the owner's pick over HR Operations.
+    // NOT a job-description section, and it says so rather than borrowing one.
     jdSections: ["owner 2026-10-17 — HR team reminders, shared notes and calendar"],
     grants: {
       // `read` opens the page and lets a person comment on what they may see; create / update /
@@ -644,8 +645,9 @@ export const HR_ROLE_BUNDLES = {
     // (tests/cv-database-recruiting-boundary.test.ts), and what she gains is a search box that
     // answers with the people she searched for and nothing else.
     "cv_lookup",
-    // Added 2026-10-17 (HR team reminders, the owner's request). The office coordinator the owner
-    // is about to hire is expected to take THIS seat, which is why it is not a per-person grant.
+    // Added 2026-10-17 (HR team reminders, the owner's request) as a seat grant, never a
+    // per-person one. The office coordinator was expected to take THIS seat; on 2026-10-28 the
+    // owner put her on the HR Operations Specialist seat (HR Administration) instead.
     "team_reminders",
   ],
   // The Talent Acquisition seat, opened 2026-10-08 from the owner's own ticks on the access
