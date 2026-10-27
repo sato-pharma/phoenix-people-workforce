@@ -16,6 +16,13 @@ import {
 } from "./secret-policy.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import {
+  describeAttempt,
+  firstErrorLine,
+  isAuthRejection,
+  railwayCliAttempts,
+  railwayCliEnv,
+} from "./lib/railway-cli-credentials.mjs";
 
 // A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
 refuseUnknownFlags({
@@ -29,22 +36,15 @@ const dryRun = args.includes("--dry-run");
 const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";
 const projectId = process.env.RAILWAY_PROJECT_ID?.trim();
 const serviceName = process.env.RAILWAY_SERVICE_NAME?.trim() || process.env.RAILWAY_SERVICE_ID?.trim();
-// 🔴 BOTH TOKEN NAMES, BECAUSE THE TWO KINDS ARE NOT INTERCHANGEABLE AND THE CLI TELLS YOU SO BADLY.
-// Railway mints ACCOUNT tokens and PROJECT tokens, and the CLI reads them from different variable
-// names. Until 2026-09-30 this script read `RAILWAY_TOKEN` alone while its sibling
-// sync-railway-production-secrets.mjs accepted either — so an owner who only ever minted an ACCOUNT
-// token got a clean sync followed by a hard "RAILWAY_TOKEN is required" here, and the workflow's own
-// comment pointed the reader at token KIND when the problem was the NAME.
-//
-// Worse than the missing case is the present-but-wrong one: the sync script's comment records that an
-// account token supplied under `RAILWAY_TOKEN` fails as `Unauthorized`, which is indistinguishable
-// from an expired token. So the name that carries the value is preserved and passed through to the CLI
-// deliberately, rather than being normalised onto one name here — see railwayEnv() below.
-// Either name carries the credential; which NAME the CLI must see it under is decided by trying both
-// (see runRailway below), never by which one arrived — the workflow populates both from one secret.
-const railwayToken = process.env.RAILWAY_API_TOKEN?.trim() || process.env.RAILWAY_TOKEN?.trim();
+// 🔴 BOTH SECRETS, EACH UNDER ITS OWN NAME FIRST — NEVER ONE MERGED VALUE (2026-10-27).
+// Railway mints PROJECT tokens (RAILWAY_TOKEN) and ACCOUNT/workspace tokens (RAILWAY_API_TOKEN), and
+// the CLI reads them under different names. This script used to read `RAILWAY_API_TOKEN ||
+// RAILWAY_TOKEN` into one value, so with both secrets set the project key was never tried, and the
+// two keys broke each other for a week. The attempts and the account live in
+// scripts/lib/railway-cli-credentials.mjs, shared with the sync script.
+const attempts = railwayCliAttempts(process.env);
 
-if (!railwayToken) {
+if (attempts.length === 0) {
   console.error("[validate-railway-production-secrets] RAILWAY_API_TOKEN or RAILWAY_TOKEN is required.");
   process.exit(1);
 }
@@ -75,56 +75,35 @@ if (dryRun) {
   process.exit(0);
 }
 
-/** The credential under ONE name, the other blanked so the CLI cannot mis-classify it. */
-function railwayEnv(varName) {
-  return {
-    ...process.env,
-    // Blanking is what makes the outcome deterministic: this process inherits `...process.env` and
-    // the workflow supplies BOTH names, so leaving both set lets the CLI pick — and which one it
-    // picks is not something this script could then state.
-    RAILWAY_API_TOKEN: varName === "RAILWAY_API_TOKEN" ? railwayToken : "",
-    RAILWAY_TOKEN: varName === "RAILWAY_TOKEN" ? railwayToken : "",
-    RAILWAY_PROJECT_ID: projectId,
-    RAILWAY_SERVICE_NAME: serviceName,
-    RAILWAY_ENVIRONMENT: railEnv,
-  };
-}
-
 /**
- * Run the Railway CLI, trying the credential as an ACCOUNT token and then as a PROJECT token.
+ * Run the Railway CLI through each attempt in turn until one is accepted.
  *
- * 🔴 THE RETRY IS THE WHOLE POINT, AND OMITTING IT BROKE PRODUCTION'S SECRET CHECK FOR ONE COMMIT.
- * An earlier version of this fix read both variable names but then committed to whichever one
- * ARRIVED — and since the workflow sets `RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN ||
- * secrets.RAILWAY_TOKEN }}`, that name is ALWAYS populated, from the project-token secret. So the
- * validator handed a PROJECT token to the CLI under the ACCOUNT-token name and got `Unauthorized`
- * on `ad47f56e0` (2026-09-30) — reading the two names made it strictly worse than reading one,
- * because it started preferring the name this repo's credential is not.
- *
- * The owner cannot reasonably be expected to know which kind they minted: Railway offers both from
- * different screens and the rejection is indistinguishable from expiry ("Unauthorized", not
- * "Invalid"). So try both and let the CLI decide — which is exactly what
- * sync-railway-production-secrets.mjs has always done, and why the sync half of that same workflow
- * kept working while this half failed.
+ * 🔴 THE RETRY IS THE WHOLE POINT. Nobody can be expected to remember which kind of key was minted,
+ * or which secret it was pasted into: Railway offers both from different screens and the
+ * rejection reads like expiry ("Unauthorized", not "Invalid"). Each refused attempt prints its first
+ * error line, so a run that fails every way says which secret was refused and how — never its value.
  */
 function runRailway() {
   let last = null;
-  for (const varName of ["RAILWAY_API_TOKEN", "RAILWAY_TOKEN"]) {
+  for (const attempt of attempts) {
     last = spawnSync(npmCommand, cliArgs, {
       cwd: process.cwd(),
-      env: railwayEnv(varName),
+      env: railwayCliEnv(attempt, {
+        RAILWAY_PROJECT_ID: projectId,
+        RAILWAY_SERVICE_NAME: serviceName,
+        RAILWAY_ENVIRONMENT: railEnv,
+      }),
       stdio: "pipe",
       encoding: "utf8",
     });
     if (last.status === 0) {
-      console.log(`[validate-railway-production-secrets] credential accepted as ${varName}`);
+      console.log(`[validate-railway-production-secrets] credential accepted: ${describeAttempt(attempt)}`);
       return last;
     }
-    // Only an auth rejection is worth retrying under the other name. A genuine failure — a bad
-    // project id, a missing service — fails identically both ways, and retrying it would bury the
-    // real message behind a second copy of itself.
-    const message = `${last.stderr || ""}${last.stdout || ""}`;
-    if (!/Unauthorized|Invalid RAILWAY/i.test(message)) return last;
+    console.log(`[validate-railway-production-secrets] refused: ${describeAttempt(attempt)} — ${firstErrorLine(last)}`);
+    // Only an auth rejection is worth another attempt. A genuine failure — a bad project id, a
+    // missing service — fails identically every way, and retrying it would bury the real message.
+    if (!isAuthRejection(last)) return last;
   }
   return last;
 }

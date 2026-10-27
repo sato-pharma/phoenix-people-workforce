@@ -14,7 +14,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describeWiring, findTriggerGaps } from "../scripts/check-railway-deploy-triggers.mjs";
+import { describeWiring, findTriggerGaps, projectIdsFrom } from "../scripts/check-railway-deploy-triggers.mjs";
 
 type Live = {
   environments: Array<{ id: string; name: string }>;
@@ -114,6 +114,31 @@ export function runRailwayDeployTriggersTests() {
   triggeredImage.triggers.push({ environmentId: PRODUCTION, serviceId: CRON, branch: "main", repository: REPO });
   assert.match(findTriggerGaps(triggeredImage).join("\n"), /points at an instance deployed from an image, not from git/);
 
+  // 🔴 THE ACCOUNT MOVE (2026-10-27): for two hours every source read the new owner while 7 triggers
+  // still watched the old one, and the old check passed it, because GitHub redirects a moved repo.
+  // A source or a trigger on any owner but the one this repository lives on is a finding. The old
+  // name is spelled in pieces so tests/github-owner-slug.test.ts keeps refusing it everywhere else.
+  const OLD_REPO = `${["Gawish", "1997"].join("-")}/phoenix-people-workforce`;
+  const staleTriggers = liveFixed();
+  for (const trigger of staleTriggers.triggers.slice(0, 3)) trigger.repository = OLD_REPO;
+  const stale = findTriggerGaps(staleTriggers).filter((line: string) => line.includes("does not own"));
+  assert.equal(stale.length, 3, `🔴 a trigger left on the old owner passed the check: ${findTriggerGaps(staleTriggers).join(" | ")}`);
+  assert.match(stale.join("\n"), /production\/phoenix-people-workforce: its deployment trigger watches .+, which it-gawish-hr does not own/);
+  const staleSource = liveFixed();
+  for (const instance of staleSource.instances) if (instance.repo) instance.repo = OLD_REPO;
+  for (const trigger of staleSource.triggers) trigger.repository = OLD_REPO;
+  assert.equal(
+    findTriggerGaps(staleSource).filter((line: string) => /deploys from .+, which it-gawish-hr does not own/.test(line)).length,
+    4,
+    "🔴 sources and triggers both on the old owner agree with each other, so only the owner check can see it",
+  );
+  assert.deepEqual(findTriggerGaps(liveFixed(), { owner: "IT-Gawish-HR" }), [], "an owner differs from GitHub's casing, not from itself");
+
+  // Every project named is read once, the Phoenix one first, so the website's services are covered too.
+  assert.deepEqual(projectIdsFrom({ RAILWAY_PROJECT_ID: "p1", RAILWAY_PROJECT_IDS: "p1, p2\np3" }), ["p1", "p2", "p3"]);
+  assert.deepEqual(projectIdsFrom({ RAILWAY_PROJECT_ID: "p1" }), ["p1"]);
+  assert.deepEqual(projectIdsFrom({ RAILWAY_PROJECT_IDS: " " }), [], "no project at all must reach CANNOT TELL, never an empty OK");
+
   // The human-readable record: every git-sourced instance appears, images never do, and the unwired
   // one says NOTHING in words rather than printing an empty branch.
   const before = describeWiring(livePreFix());
@@ -147,4 +172,9 @@ export function runRailwayDeployTriggersTests() {
   const leg = workflow.slice(workflow.indexOf("check-railway-deploy-triggers.mjs"));
   assert.match(leg.slice(0, 900), /::warning::/, "exit 2 must be reported as a warning, never swallowed as a pass");
   assert.match(workflow, /RAILWAY_PROJECT_ID: \$\{\{ vars\.RAILWAY_PROJECT_ID \}\}/);
+  assert.match(
+    workflow,
+    /RAILWAY_PROJECT_IDS: \$\{\{ vars\.RAILWAY_PROJECT_IDS \}\}/,
+    "🔴 the step lost the project list, so the website's services go unchecked again",
+  );
 }

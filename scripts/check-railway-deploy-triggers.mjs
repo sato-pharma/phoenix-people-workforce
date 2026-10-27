@@ -23,8 +23,17 @@
 // It also names a trigger pointing at a different repository than the instance deploys from, a trigger
 // with no branch, and a trigger for an environment/service pair that has no git source at all.
 //
+// 🔴 SINCE THE ACCOUNT MOVE (2026-10-27) IT ALSO CHECKS THE OWNER. The move left 7 of the 8 triggers
+// on the old GitHub account for two hours while every source already read the new one, and the old
+// check passed them: it only compared a trigger's repository with its instance's, and both still
+// named a repository that existed (GitHub redirects a moved one). A source or a trigger on any owner
+// but GITHUB_OWNER is a finding, because it stops deploying the day the old account's app is removed.
+//
+// It reads EVERY project in RAILWAY_PROJECT_ID plus RAILWAY_PROJECT_IDS (comma- or space-separated).
+// Before 2026-10-27 it read Phoenix only, so the website's three services were never checked.
+//
 // Exit 0 = every git-sourced instance is wired · 1 = at least one is not (each line says which and
-// what it costs) · 2 = cannot tell (no credential, or the API refused). A 2 is NEVER a pass.
+// what it costs) · 2 = cannot tell (no credential, or the API refused a project). A 2 is NEVER a pass.
 //
 // The credential is tried as an ACCOUNT token (Authorization: Bearer) and then as a PROJECT token
 // (Project-Access-Token), the same two-way try scripts/check-railway-deploy-settings.mjs makes.
@@ -32,23 +41,43 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { GITHUB_OWNER } from "./required-check-names.mjs";
+
 const API = "https://backboard.railway.com/graphql/v2";
+
+const ownerOf = (slug) => String(slug).split("/")[0].toLowerCase();
+
+/** Every project to read: RAILWAY_PROJECT_ID first, then RAILWAY_PROJECT_IDS, each once. */
+export function projectIdsFrom(env) {
+  const ids = [env.RAILWAY_PROJECT_ID, ...String(env.RAILWAY_PROJECT_IDS || "").split(/[\s,]+/)]
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
+}
 
 /**
  * The gaps between what deploys from git and what is wired to deploy. `live` is `{ environments: [{
  * id, name }], services: [{ id, name }], instances: [{ environmentId, serviceId, repo }], triggers:
  * [{ environmentId, serviceId, branch, repository }] }`, where `repo` is null for an image-sourced
- * instance. Returns one plain-words line per gap.
+ * instance. `owner` is the GitHub account every source and trigger must sit on. Returns one
+ * plain-words line per gap.
  */
-export function findTriggerGaps(live) {
+export function findTriggerGaps(live, { owner = GITHUB_OWNER } = {}) {
   const environmentName = new Map(live.environments.map((e) => [e.id, e.name]));
   const serviceName = new Map(live.services.map((s) => [s.id, s.name]));
   const where = (environmentId, serviceId) =>
     `${environmentName.get(environmentId) ?? environmentId}/${serviceName.get(serviceId) ?? serviceId}`;
+  const notOurs = (slug) => Boolean(slug) && ownerOf(slug) !== owner.toLowerCase();
   const gaps = [];
 
   for (const instance of live.instances) {
     if (!instance.repo) continue;
+    if (notOurs(instance.repo)) {
+      gaps.push(
+        `${where(instance.environmentId, instance.serviceId)}: deploys from ${instance.repo}, which ${owner} does not own — ` +
+          "it keeps deploying only while that account's GitHub app stays installed",
+      );
+    }
     const triggers = live.triggers.filter(
       (t) => t.environmentId === instance.environmentId && t.serviceId === instance.serviceId,
     );
@@ -60,6 +89,12 @@ export function findTriggerGaps(live) {
       continue;
     }
     for (const trigger of triggers) {
+      if (notOurs(trigger.repository)) {
+        gaps.push(
+          `${where(instance.environmentId, instance.serviceId)}: its deployment trigger watches ${trigger.repository}, ` +
+            `which ${owner} does not own — merges on ${owner} will not fire it`,
+        );
+      }
       if (trigger.repository && trigger.repository !== instance.repo) {
         gaps.push(
           `${where(instance.environmentId, instance.serviceId)}: its deployment trigger watches ${trigger.repository}, ` +
@@ -132,6 +167,7 @@ export async function readLiveWiring(token, projectId) {
   const data = await query(
     token,
     `query { project(id: ${JSON.stringify(projectId)}) {
+      name
       environments { edges { node { id name } } }
       deploymentTriggers { edges { node { environmentId serviceId branch repository } } }
       services { edges { node { id name serviceInstances { edges { node {
@@ -152,6 +188,7 @@ export async function readLiveWiring(token, projectId) {
     }
   }
   return {
+    name: project.name ?? projectId,
     environments: project.environments.edges.map((e) => ({ id: e.node.id, name: e.node.name })),
     services,
     instances,
@@ -161,43 +198,53 @@ export async function readLiveWiring(token, projectId) {
 
 async function main() {
   const token = (process.env.RAILWAY_API_TOKEN || process.env.RAILWAY_TOKEN || "").trim();
-  const projectId = (process.env.RAILWAY_PROJECT_ID || "").trim();
-  if (!token || !projectId) {
+  const projectIds = projectIdsFrom(process.env);
+  if (!token || projectIds.length === 0) {
     console.log(
       "[railway-deploy-triggers] CANNOT TELL — RAILWAY_API_TOKEN (or RAILWAY_TOKEN) and RAILWAY_PROJECT_ID are required. This is not a pass.",
     );
     process.exitCode = 2;
     return;
   }
-  let live;
-  try {
-    live = await readLiveWiring(token, projectId);
-  } catch (error) {
-    console.log(`[railway-deploy-triggers] CANNOT TELL — Railway's API refused or failed: ${error.message}`);
-    process.exitCode = 2;
-    return;
+  const gaps = [];
+  const unread = [];
+  let deployedCount = 0;
+  for (const projectId of projectIds) {
+    let live;
+    try {
+      live = await readLiveWiring(token, projectId);
+    } catch (error) {
+      unread.push(`${projectId}: Railway's API refused or failed: ${error.message}`);
+      continue;
+    }
+    const deployed = live.instances.filter((instance) => instance.repo);
+    if (deployed.length === 0) {
+      unread.push(`${live.name}: the project reports no git-sourced service instance at all, so nothing was compared`);
+      continue;
+    }
+    deployedCount += deployed.length;
+    console.log(`  [${live.name}]`);
+    for (const line of describeWiring(live)) console.log(`    ${line}`);
+    for (const line of findTriggerGaps(live)) gaps.push(`${live.name} · ${line}`);
   }
-  const deployed = live.instances.filter((instance) => instance.repo);
-  if (deployed.length === 0) {
-    console.log(
-      "[railway-deploy-triggers] CANNOT TELL — the project reports no git-sourced service instance at all, so nothing was compared.",
-    );
-    process.exitCode = 2;
-    return;
-  }
-  for (const line of describeWiring(live)) console.log(`  ${line}`);
-  const gaps = findTriggerGaps(live);
   if (gaps.length) {
     console.log(`[railway-deploy-triggers] UNWIRED — ${gaps.length} problem(s):`);
     for (const line of gaps) console.log(`  - ${line}`);
+    for (const line of unread) console.log(`  - and could not read ${line}`);
     console.log(
-      '  Fix: add the missing trigger on the environment that lost it (docs/deployment.md, "Staging stopped deploying because its trigger was gone").',
+      '  Fix: add the missing trigger on the environment that lost it, or repoint the source and trigger to the owner named above (docs/deployment.md, "Staging stopped deploying because its trigger was gone").',
     );
     process.exitCode = 1;
     return;
   }
+  if (unread.length) {
+    console.log(`[railway-deploy-triggers] CANNOT TELL — ${unread.length} of ${projectIds.length} project(s) could not be read. This is not a pass:`);
+    for (const line of unread) console.log(`  - ${line}`);
+    process.exitCode = 2;
+    return;
+  }
   console.log(
-    `[railway-deploy-triggers] OK — all ${deployed.length} git-sourced service instances have a deployment trigger in their own environment.`,
+    `[railway-deploy-triggers] OK — all ${deployedCount} git-sourced service instances across ${projectIds.length} project(s) deploy from ${GITHUB_OWNER} and have a deployment trigger in their own environment.`,
   );
 }
 

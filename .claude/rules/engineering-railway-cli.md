@@ -1,0 +1,45 @@
+---
+paths:
+  - ".railway/**"
+  - "scripts/*railway*"
+  - "scripts/lib/railway-cli-credentials.mjs"
+  - ".github/workflows/*railway*"
+  - ".github/workflows/secret-drift-check.yml"
+  - "tests/railway-*.test.ts"
+---
+
+# Module memory — Engineering — the railway CLI, its two keys, and each service's source and trigger
+
+**Scope:** The railway CLI's own traps (variables, ssh, source connect, scale), the project key and the workspace key and which job needs which, and the git source and deployment trigger that wire each service to this repository.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+## Rules
+
+Moved here from `engineering-deploys` on 2026-10-27, word for word, when its pointer passed the 4,000-byte margin (see the SPLIT comment in `scripts/module-memory/modules.mjs`). A Railway script loads both modules.
+
+### The railway CLI, its two keys, and each service's source and trigger
+
+- **`railway variables --stdin` stores a BOM** inside the value.
+- **`railway ssh` JOINS argv and lands as ROOT.**
+- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** Never use it to preview; staging a branch needs a separate service.
+- 🔴 **`railway service scale <region>=1` ADDS a region, it does not MOVE one** — it answered `EU West (1) · sfo (1) — 2 replicas`, i.e. two live copies of an MDM server writing one database (2026-09-28, Headwind EU cut-over). **Pass the old region `=0` in the SAME command**, and read the region map the call prints back before believing a move happened. A new service is created in `sfo`, so every one needs this explicitly (§3, "it must stay in Europe").
+- **The `railway` CLI is linked to `production` — every variable command needs `-e staging`.** Setting a variable redeploys (unless `--skip-deploys`). 🔴 **THAT NAMES THE ENVIRONMENT, NEVER THE SERVICE — and the PRIMARY checkout is linked to `phoenix-headwind`, not the app.** So `railway run` there injects the wrong service's variables and `CRON_SECRET` reads as ABSENT, which looks like a half-rotated secret and sends a session hunting a rotation §2.3 forbids. **Always pass `--service phoenix-people-workforce`**; a worktree answers `No linked project found` instead. `railway-cli-is-linked-to-phoenix-headwind-not-the-app` Account: `docs/agents-production-hooks.md`.
+- ✅ **RESOLVED 2026-09-30 — the second undocumented project (`superb-smile`) is GONE, so the deploy gate IS now assertable: ONE project deploys this repo.** 🔴 **All FOUR of its triggers read `checkSuites: false` since Wait for CI went off on 2026-10-20 — this line said `true` for production until then.** Read the trigger, never a doc. Account: `docs/agents-production-hooks.md`.
+- 🔴 **“TRACKS `main`” IS A SOURCE BRANCH *AND* A DEPLOYMENT TRIGGER — LOSE THE TRIGGER AND EVERY DEPLOY STOPS WHILE EVERY READING STILL SAYS `main`** (staging, 2026-10-23: no trigger at all, so nine days and ~180 merges never built it; newest deployment `REMOVED 14 Oct 11:48`). 🔴 **The edge answers `404 Application not found` — the ROUTER finding no service for that Host, which reads like a DELETED DOMAIN rather than a stale service** (a stale one answers 200 with an old `revision`); `railway status`, the dashboard, CI and the drift check were all green and correct, and there is no failed deploy to find because there was no deploy. **`scripts/check-railway-deploy-triggers.mjs`, the 4th leg of `secret-drift-check.yml`, now catches it from a DERIVED invariant — every GIT-sourced service instance must have a trigger in its OWN environment, an IMAGE instance is exempt** — and is read-only by assertion. Fix it by creating the trigger: never `railway redeploy` and never a source repoint, neither of which makes one. Account: `docs/deployment.md`, “Staging stopped deploying because its trigger was gone”.
+- 🔴 **THE TWO RAILWAY KEYS ARE TRIED APART, NEVER MERGED — `RAILWAY_TOKEN` IS A PROJECT KEY, `RAILWAY_API_TOKEN` A WORKSPACE KEY, AND A CLI STEP NEVER READS `RAILWAY_API_TOKEN || RAILWAY_TOKEN`** (2026-10-27). The merge meant only the first was ever tried, so each swap of one key broke a different job: 21–23 Oct the workspace key failed the secrets check, 23 Oct a production-only project key fixed it and broke the fallback rehearsal, 27 Oct the workspace key came back and broke the check again. `scripts/lib/railway-cli-credentials.mjs` tries each under its own name and prints each attempt's first error line, so a dead key is named; pinned by `tests/railway-cli-credentials.test.ts`. The trigger check (`scripts/check-railway-deploy-triggers.mjs`) refuses any source or trigger owner but `GITHUB_OWNER`, across `RAILWAY_PROJECT_ID` and `vars.RAILWAY_PROJECT_IDS`. Minting either key is the owner's. Account: `docs/ci-self-hosted-runner.md`, "The Railway key fix".
+- **That deploy serves in MINUTES — confirm by listing DEPLOYMENTS**, never by probing the app, and never `railway redeploy` to make a variable "take".
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (0)
+
+_No notes filed under this module yet._
+<!-- module-memory:notes:end -->

@@ -187,6 +187,92 @@ function assertScheduledDetectorsCannotBeCancelled(files: string[]) {
   }
 }
 
+/**
+ * A CEILING ON SCHEDULED RUNS A DAY (2026-10-27).
+ *
+ * Every scheduled run is billed like any other: at least one whole minute per job, plus its setup and
+ * install. A cron that fires every 30 minutes is 48 runs a day — more than the whole of ci.yml's
+ * push runs — and a one-character edit (`*\/30` → `*\/5`) multiplies it by six with nothing turning
+ * red. The account's Actions budget stops ALL usage at its limit, and that stop takes CI, the release
+ * gate and every production deploy with it. So each scheduled workflow's runs a day is pinned here by
+ * name, the one dispatched from production by cron-job.org is pinned beside it, and the total has a
+ * ceiling with a dated note. Raising one is a decision about money, made in a PR, never a side effect.
+ */
+export const SCHEDULED_RUNS_PER_DAY: Record<string, number> = {
+  "attendance-weekly-digest.yml": 2,
+  "deploy-drift-check.yml": 48,
+  "migration-drift-check.yml": 1,
+  "origin-certificate-check.yml": 1,
+  "secret-drift-check.yml": 1,
+  "security-scan.yml": 1,
+  "staging-hr-drift-check.yml": 1,
+};
+
+/** Workflows started by production's own scheduler (cron-job.org → workflow_dispatch), by slug in job-schedule.ts. */
+export const DISPATCHED_RUNS_PER_DAY: Record<string, { slug: string; runsPerDay: number }> = {
+  "synthetic-journeys.yml": { slug: "phoenix-run-synthetic-journeys", runsPerDay: 6 },
+};
+
+export const SCHEDULED_RUNS_CEILING = {
+  perDay: 61,
+  note: "2026-10-27: 55 GitHub-scheduled (deploy-drift-check 48, attendance-weekly-digest 2, five daily checks 1 each) + 6 synthetic-journeys dispatched by cron-job.org",
+};
+
+/** How many values one cron field takes: `*`, `*\/n`, `a`, `a-b`, `a-b/n`, and comma lists of those. */
+function cronFieldCount(field: string, min: number, max: number): number {
+  const values = new Set<number>();
+  for (const part of field.split(",")) {
+    const match = /^(\*|\d+(?:-\d+)?)(?:\/(\d+))?$/.exec(part);
+    assert.ok(match, `cron field \`${field}\` has a part this ceiling cannot count: \`${part}\``);
+    const [lo, hi] =
+      match[1] === "*" ? [min, max] : match[1].includes("-") ? match[1].split("-").map(Number) : [Number(match[1]), match[2] ? max : Number(match[1])];
+    const step = match[2] ? Number(match[2]) : 1;
+    for (let v = lo; v <= hi; v += step) values.add(v);
+  }
+  return values.size;
+}
+
+/** Runs on a day the cron fires. A day-of-month or day-of-week restriction counts as its busiest day. */
+export function cronRunsPerDay(expr: string): number {
+  const fields = expr.trim().split(/\s+/);
+  assert.equal(fields.length, 5, `cron \`${expr}\` does not have five fields`);
+  return cronFieldCount(fields[0], 0, 59) * cronFieldCount(fields[1], 0, 23);
+}
+
+function assertScheduledRunsPerDayCeiling(files: string[]) {
+  const counted: Record<string, number> = {};
+  for (const file of files) {
+    const source = readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
+    if (!/^ {2}schedule:\s*$/m.test(source)) continue;
+    const crons = [...source.matchAll(/^\s*- cron:\s*["']([^"']+)["']/gm)].map((m) => m[1]);
+    assert.ok(crons.length > 0, `${file} has a \`schedule:\` trigger but no cron line this ceiling can read`);
+    counted[file] = crons.reduce((n, expr) => n + cronRunsPerDay(expr), 0);
+  }
+
+  const why =
+    "Every scheduled run is billed in whole minutes, and the Actions budget's stop takes CI and every production deploy " +
+    "with it. Change SCHEDULED_RUNS_PER_DAY (and SCHEDULED_RUNS_CEILING with a new dated note, if the total rises) in " +
+    "tests/github-workflow-validity.test.ts in the same PR.";
+  assert.deepEqual(counted, SCHEDULED_RUNS_PER_DAY, `the scheduled workflows' runs a day changed: ${JSON.stringify(counted)}. ${why}`);
+
+  const jobSchedule = readFileSync("src/lib/observability/job-schedule.ts", "utf8");
+  let dispatched = 0;
+  for (const [file, { slug, runsPerDay }] of Object.entries(DISPATCHED_RUNS_PER_DAY)) {
+    assert.ok(files.includes(file), `${file} is listed as dispatched by production's scheduler but no such workflow exists`);
+    const entry = new RegExp(`slug: "${slug}",[^}]*schedule: "([^"]+)"`).exec(jobSchedule);
+    assert.ok(entry, `src/lib/observability/job-schedule.ts no longer lists \`${slug}\`, which starts ${file}`);
+    assert.equal(cronRunsPerDay(entry[1]), runsPerDay, `${slug} (${entry[1]}) now starts ${file} ${cronRunsPerDay(entry[1])} times a day, not ${runsPerDay}. ${why}`);
+    dispatched += runsPerDay;
+  }
+
+  const total = Object.values(counted).reduce((n, v) => n + v, 0) + dispatched;
+  assert.ok(/^\d{4}-\d{2}-\d{2}: /.test(SCHEDULED_RUNS_CEILING.note), "SCHEDULED_RUNS_CEILING.note must start with the date it was set");
+  assert.ok(
+    total <= SCHEDULED_RUNS_CEILING.perDay,
+    `scheduled and dispatched workflows now start ${total} runs a day, over the ceiling of ${SCHEDULED_RUNS_CEILING.perDay} (${SCHEDULED_RUNS_CEILING.note}). ${why}`,
+  );
+}
+
 export function runGithubWorkflowValidityTests() {
   const files = workflowFiles();
   assert.ok(files.length > 0, "expected at least one workflow file to lint");
@@ -270,4 +356,5 @@ export function runGithubWorkflowValidityTests() {
   );
 
   assertScheduledDetectorsCannotBeCancelled(files);
+  assertScheduledRunsPerDayCeiling(files);
 }

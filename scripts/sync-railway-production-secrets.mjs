@@ -6,6 +6,13 @@ import { pathToFileURL } from "node:url";
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import {
+  describeAttempt,
+  firstErrorLine,
+  isAuthRejection,
+  railwayCliAttempts,
+  railwayCliEnv,
+} from "./lib/railway-cli-credentials.mjs";
 
 // A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
 refuseUnknownFlags({
@@ -204,18 +211,17 @@ function main() {
   // every variable failing, no secret could be rotated into production, which silently froze
   // ATTENDANCE_AGENT_TOKEN and stopped attendance data reaching payroll for ten days.
   //
-  // This script passes --project/--service/--environment explicitly, which is the account-token
-  // pattern, so accept either and prefer the account token when both are present.
-  const accountToken = process.env.RAILWAY_API_TOKEN?.trim();
-  const projectToken = process.env.RAILWAY_TOKEN?.trim();
-  const railwayToken = accountToken || projectToken;
-  const tokenVarName = accountToken ? "RAILWAY_API_TOKEN" : "RAILWAY_TOKEN";
+  // 🔴 BOTH SECRETS, EACH UNDER ITS OWN NAME FIRST — NEVER ONE MERGED VALUE (2026-10-27). This used
+  // to read `RAILWAY_API_TOKEN || RAILWAY_TOKEN` into one value, so with both secrets set the project
+  // key was never tried, and the CLI refused the workspace key. The attempts and the account live in
+  // scripts/lib/railway-cli-credentials.mjs, shared with the validator.
+  const attempts = railwayCliAttempts(process.env);
 
-  if (!railwayToken) {
+  if (attempts.length === 0) {
     console.error("[sync-railway-production-secrets] RAILWAY_API_TOKEN or RAILWAY_TOKEN is required.");
     process.exit(1);
   }
-  console.log(`[sync-railway-production-secrets] credential supplied via ${tokenVarName}; kind is auto-detected`);
+  console.log(`[sync-railway-production-secrets] ${attempts.length} credential attempt(s); the CLI decides which is accepted`);
   if (!projectId) {
     console.error("[sync-railway-production-secrets] RAILWAY_PROJECT_ID is required.");
     process.exit(1);
@@ -229,53 +235,47 @@ function main() {
   const cliArgsBase = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "set"];
   const commonArgs = ["--skip-deploys", "--service", serviceName, "--environment", railEnv, "--project", projectId];
 
-  // Which variable name the CLI actually accepted. Deliberately starts null even when
-  // RAILWAY_API_TOKEN was the one supplied: pre-seeding it would collapse the retry list to one
-  // entry and defeat the fallback below. Set on the first successful command, then reused — so the
-  // retry costs one extra invocation per run, not one per variable.
-  let workingTokenVar = null;
-
-  function railwayEnv(varName) {
-    return {
-      ...process.env,
-      // Set the credential under ONE name and blank the other, so the CLI cannot fall back to a
-      // stale ambient value and mis-classify the token.
-      RAILWAY_API_TOKEN: varName === "RAILWAY_API_TOKEN" ? railwayToken : "",
-      RAILWAY_TOKEN: varName === "RAILWAY_TOKEN" ? railwayToken : "",
-      RAILWAY_PROJECT_ID: projectId,
-      RAILWAY_SERVICE_NAME: serviceName,
-      RAILWAY_ENVIRONMENT: railEnv,
-    };
-  }
+  // Which attempt the CLI actually accepted. Deliberately starts null: pre-seeding it would collapse
+  // the retry list to one entry and defeat the fallback below. Set on the first successful command,
+  // then reused — so the retries cost a few extra invocations per run, not per variable.
+  let workingAttempt = null;
+  const cliContext = {
+    RAILWAY_PROJECT_ID: projectId,
+    RAILWAY_SERVICE_NAME: serviceName,
+    RAILWAY_ENVIRONMENT: railEnv,
+  };
 
   /**
-   * Runs the Railway CLI, trying the credential as an ACCOUNT token and then as a PROJECT token.
+   * Runs the Railway CLI through each credential attempt until one is accepted.
    *
-   * The owner cannot reasonably be expected to know which kind they minted — Railway offers both
-   * from different screens and the failure mode is indistinguishable from expiry ("Unauthorized",
-   * not "Invalid"). Rather than demand the right one, try both and remember which worked.
+   * Nobody can be expected to remember which kind of key was minted, or which secret it was pasted
+   * into — Railway offers both from different screens and the failure mode is indistinguishable from
+   * expiry ("Unauthorized", not "Invalid"). Rather than demand the right one, try each and remember
+   * which worked. Every refusal prints its first error line, never the value.
    */
   function runRailway(cliArgs) {
-    const order = workingTokenVar ? [workingTokenVar] : ["RAILWAY_API_TOKEN", "RAILWAY_TOKEN"];
+    const order = workingAttempt ? [workingAttempt] : attempts;
     let last = null;
-    for (const varName of order) {
+    for (const attempt of order) {
       last = spawnSync(npmCommand, cliArgs, {
         cwd: process.cwd(),
-        env: railwayEnv(varName),
+        env: railwayCliEnv(attempt, cliContext),
         stdio: "pipe",
         encoding: "utf8",
       });
       if (last.status === 0) {
-        if (!workingTokenVar) {
-          workingTokenVar = varName;
-          console.log(`[sync-railway-production-secrets] credential accepted as ${varName}`);
+        if (!workingAttempt) {
+          workingAttempt = attempt;
+          console.log(`[sync-railway-production-secrets] credential accepted: ${describeAttempt(attempt)}`);
         }
         return last;
       }
-      const message = `${last.stderr || ""}${last.stdout || ""}`;
-      // Only an auth rejection is worth retrying under the other name. A genuine failure (bad
-      // value, missing service) would fail identically both ways and must not be masked.
-      if (!/Unauthorized|Invalid RAILWAY/i.test(message)) return last;
+      if (!workingAttempt) {
+        console.log(`[sync-railway-production-secrets] refused: ${describeAttempt(attempt)} — ${firstErrorLine(last)}`);
+      }
+      // Only an auth rejection is worth another attempt. A genuine failure (bad value, missing
+      // service) would fail identically every way and must not be masked.
+      if (!isAuthRejection(last)) return last;
     }
     return last;
   }

@@ -2762,6 +2762,9 @@ import { runRollupBuildVerdictTests } from "./rollup-build-verdict.test.ts";
 import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
 import { runRailwayDeploySettingsDriftTests } from "./railway-deploy-settings-drift.test.ts";
 import { runRailwayDeployTriggersTests } from "./railway-deploy-triggers.test.ts";
+import { runRailwayCliCredentialsTests } from "./railway-cli-credentials.test.ts";
+import { runActionsCostAlarmTests } from "./actions-cost-alarm.test.ts";
+import { runTokenExpiryAlarmTests } from "./token-expiry-alarm.test.ts";
 import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
 import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
 import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
@@ -10866,6 +10869,21 @@ await runTest(
 await runTest(
   "railway deployment triggers: every git-sourced service instance must have a trigger in its OWN environment (staging had none for nine days and answered 404 with every setting correct), image services are exempt, a wrong repository, a branchless trigger and an orphan are all named, the checker never mutates Railway, and the scheduled drift check actually runs it",
   runRailwayDeployTriggersTests,
+);
+
+await runTest(
+  "the two Railway keys each reach the Railway CLI under their own name (2026-10-27): the project key in RAILWAY_TOKEN is tried as a project key before anything else, neither CLI script merges RAILWAY_API_TOKEN || RAILWAY_TOKEN into one value, no workflow step that runs them merges the two secrets, and the log names the secret, never the token",
+  runRailwayCliCredentialsTests,
+);
+
+await runTest(
+  "the daily Actions cost alarm names the Cairo day the budget stops CI (2026-10-27): the rate covers complete days only, the account's part-empty first day is left out, the 1st reads last month's days, a discount never exceeds its row, a budget already reached says Actions has stopped, every read failure says what to do, and the drift check runs it with the budget variable",
+  runActionsCostAlarmTests,
+);
+
+await runTest(
+  "the token-expiry alarm reads GitHub's own expiry header for the dispatch, GHCR and billing tokens (2026-10-27): a 401 or a past date is DEAD, 21 days out warns, nothing readable is CANNOT TELL and never a pass, the date is Cairo's, it never falls back to GITHUB_TOKEN, and the drift check passes every watched secret under its own name",
+  runTokenExpiryAlarmTests,
 );
 
 await runTest(
