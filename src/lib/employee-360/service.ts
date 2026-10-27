@@ -243,6 +243,8 @@ export type VisitSummary = {
    * row carries none, so it is read as a visit with a manager. The three add up to `doublesReceived`.
    */
   doublesReceivedByKind: DoublesReceivedByKind;
+  /** The distinct days those double visits were made on (owner, 2026-10-27: "how many days"). */
+  doublesReceivedDays: number;
   singleVisits: number;
   // THE AM · PM · PHARMACIES GOLDEN RULE (src/lib/crm/visit-count-buckets.ts): three figures
   // apart — a pharmacy visit is counted in pharmacyVisits only, never in pmVisits or amVisits.
@@ -482,6 +484,7 @@ export function summarizeVisits(
   let adminVisits = 0;
   let doublesReceived = 0;
   const doublesReceivedByKind: DoublesReceivedByKind = { withManager: 0, chain: 0, withProductManager: 0 };
+  const doublesReceivedDaySet = new Set<string>();
   let productiveDoubles = 0;
   // THE AM · PM · PHARMACIES GOLDEN RULE: every counted visit lands in exactly one of the three.
   const split = emptyVisitCountSplit();
@@ -512,6 +515,7 @@ export function summarizeVisits(
     // the resolved double_hr_id which can be null for a real, unmapped partner.
     if (isCrmDoubleVisitRow(row)) {
       doublesReceived += 1;
+      if (row.visit_date) doublesReceivedDaySet.add(row.visit_date);
       const kind = doubleReceivedKind(row);
       if (kind === "chain") doublesReceivedByKind.chain += 1;
       else if (kind === "product_manager") doublesReceivedByKind.withProductManager += 1;
@@ -643,6 +647,7 @@ export function summarizeVisits(
     distinctCustomers,
     doublesReceived,
     doublesReceivedByKind,
+    doublesReceivedDays: doublesReceivedDaySet.size,
     singleVisits: productiveVisits - productiveDoubles,
     amVisits: split.am,
     pmVisits: split.pm,

@@ -168,17 +168,20 @@ export async function runEmployee360CatchUpTests() {
     const phoenix = leaderVisitFigures([
       managerVisit({ kind: "double", listType: "AM", source: "ride_along" }),
       managerVisit({ kind: "product_manager", listType: "PM", source: "ride_along" }),
+      // His own visit on another day is not a double visit, so its day is not a double-visit day.
+      managerVisit({ date: "2026-09-20", kind: "single" }),
     ]);
     const door = [
-      { ampm: "AM", comment: null, crm_visit_id: 101, double2_hr_id: null, source: "ireports360", speciality: null, visit_type: 0, visit_type_description: null },
-      { ampm: "PM", comment: null, crm_visit_id: 102, double2_hr_id: "rm-1", source: "ireports360", speciality: null, visit_type: 0, visit_type_description: null },
-      // The door's own Phoenix row is the same visit as a ride-along above: never counted twice.
-      { ampm: "AM", comment: null, crm_visit_id: -7, double2_hr_id: null, source: "phoenix", speciality: null, visit_type: 0, visit_type_description: null },
+      { ampm: "AM", comment: null, crm_visit_id: 101, double2_hr_id: null, source: "ireports360", speciality: null, visit_date: "2026-09-06", visit_type: 0, visit_type_description: null },
+      { ampm: "PM", comment: null, crm_visit_id: 102, double2_hr_id: "rm-1", source: "ireports360", speciality: null, visit_date: "2026-09-08", visit_type: 0, visit_type_description: null },
+      // The door's own Phoenix row is the same visit as a ride-along above: never counted twice, and its day neither.
+      { ampm: "AM", comment: null, crm_visit_id: -7, double2_hr_id: null, source: "phoenix", speciality: null, visit_date: "2026-09-25", visit_type: 0, visit_type_description: null },
     ];
     const conducted = conductedDoubleVisitFigures(door, phoenix);
     assert.ok(conducted, "C9: a figure when both reads worked");
     assert.deepEqual(conducted.byKind, { chains: 1, doubles: 2, productManagerVisits: 1 }, "C9: one figure per kind, the door's Phoenix row left out");
     assert.equal(conducted.total, 4, "C9: the total is the sum of the kinds");
+    assert.equal(conducted.days, 2, "D1: 4 double visits on 2 days — 6 Sep (two ride-alongs and a door visit) and 8 Sep; his own visit's day and the door's Phoenix copy are not counted");
     assert.deepEqual(conducted.split, { am: 2, pharmacies: 0, pm: 2 });
     assert.equal(conductedDoubleVisitFigures(door, null), null, "C13 spirit: a failed Phoenix read is no figure, never half of one");
   }
