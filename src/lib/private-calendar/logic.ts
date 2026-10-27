@@ -302,14 +302,16 @@ export function canReadPrivateCalendarEmployee(
   if (isPrivateCalendarGlobalViewer(access, globalHrIds)) return true;
   if (hrIdsMatch(access.hrId, employee.hrId) || hrIdsMatch(access.loginId, employee.hrId)) return true;
   if (hrIdsMatch(access.hrId, employee.managerHrId) || hrIdsMatch(access.loginId, employee.managerHrId)) return true;
-  // A Regional or National Sales Manager manages THROUGH his district managers, so a direct-report
-  // match showed him his district managers and not one medical rep (owner, 2026-10-20: "when you
-  // filter by manager you find no manager … every single role that is applicable to appear").
-  // He sees his whole reporting subtree, by the same walker and for the same two roles as the
-  // employee directory's canSeeEmployee — every other manager keeps self plus direct reports.
+  // EVERY MANAGER SEAT SEES HIS WHOLE TEAM BENEATH HIM, NOT ONLY HIS DIRECT REPORTS (owner,
+  // 2026-10-27: "apply that same whole-team rule"). A Marketing Manager whose Product Manager
+  // reports to his Group Product Manager could pick the Group Product Manager and not the Product
+  // Manager below her. The seats are the fingerprint attendance's isHierarchyAttendanceViewer —
+  // `hierarchy` (Regional), `line` (National Sales, Product, Group Product, Marketing) and `team`
+  // (District Manager, Manager) — so a manager who can open someone's attendance can open his
+  // calendar too. Downward only: a peer or a manager above is never reached.
   if (
     options?.byCanonicalHrId &&
-    (access.role === "Regional Manager" || access.role === "National Sales Manager")
+    (access.scope === "hierarchy" || access.scope === "line" || access.scope === "team")
   ) {
     const viewerKey = canonicalHrIdKey(access.hrId);
     if (!viewerKey) return false;
