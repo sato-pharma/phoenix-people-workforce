@@ -26,9 +26,17 @@
 import { unstable_cache } from "next/cache";
 
 import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
+import { todayInCairo } from "@/lib/date-only";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import {
+  brickHistoryFilter,
+  brickInForceFilter,
+  currentBrickPins,
+  type BrickHistory,
+  type BrickPin,
+} from "@/lib/territory-management/service";
 import { singleFlight } from "@/lib/utils/single-flight";
 
 /** One brick with a known geographic centre, ready for distance comparison. */
@@ -92,6 +100,82 @@ function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): nu
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
 }
 
+/** One `brick_centroid` pin as read from `geo_locations`. */
+export type BrickCentroidPinRow = {
+  geocode_provider: string | null;
+  geocode_status: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  source_key: string | null;
+};
+
+/** One brick in force today, as read from `source_of_sales_bricks`. */
+export type BrickInForceRow = {
+  area_code: string | null;
+  brick_id: string | null;
+  brick_name: string | null;
+  region_code: string | null;
+};
+
+/**
+ * The centroid index from the four reads: one centroid per brick IN FORCE today, at its own pin or,
+ * when it has none, at the pin of the brick that moved into it.
+ *
+ * A moved brick is never switched off — it stays `active` so closed months still resolve it, and is
+ * retired by `effective_to` (its last day, inclusive) plus `superseded_by_brick_id`. Filtering on
+ * `active` alone therefore kept every husk as check-in geography: measured on production 2026-10-27,
+ * a check-in at أبنود or قوص resolved to the Qena 1 husk (B209-2 / B209-8) because their Qena 2
+ * successors have no pin of their own, and one near فوه could resolve to Kafr El-Sheikh 2's B200-5
+ * (retired 31 July) instead of Kafr El-Sheikh 1's B199-9. `bricks` holds only bricks in force, so a
+ * history pin is never drawn; `currentBrickPins` — the territory module's own rule — hands a pinless
+ * successor its predecessor's pin (a `success` one first, following a chain), and a successor's own
+ * pin always wins.
+ */
+export function buildBrickCentroids(input: {
+  areaNames: ReadonlyMap<string, string>;
+  bricks: readonly BrickInForceRow[];
+  history: Iterable<BrickHistory>;
+  points: readonly BrickCentroidPinRow[];
+  regionNames: ReadonlyMap<string, string>;
+}): BrickCentroid[] {
+  const brickById = new Map<string, BrickInForceRow>();
+  for (const b of input.bricks) {
+    if (b.brick_id) brickById.set(b.brick_id, b);
+  }
+
+  const pins = new Map<string, BrickPin>();
+  for (const point of input.points) {
+    if (!point.source_key || point.latitude == null || point.longitude == null) continue;
+    pins.set(point.source_key, {
+      lat: Number(point.latitude),
+      lng: Number(point.longitude),
+      provider: point.geocode_provider ?? "",
+      status: point.geocode_status ?? "",
+    });
+  }
+
+  const centroids: BrickCentroid[] = [];
+  for (const [brickId, pin] of currentBrickPins(pins, input.history)) {
+    const brick = brickById.get(brickId);
+    // Only a brick in force today is a valid target — a retired, moved or switched-off brick must
+    // never be proposed as a check-in's geography, and an orphan pin has no brick at all.
+    if (!brick) continue;
+    const areaCode = brick.area_code ?? null;
+    const regionCode = brick.region_code ?? null;
+    centroids.push({
+      areaCode,
+      areaName: areaCode ? input.areaNames.get(areaCode) ?? null : null,
+      brickId,
+      brickName: brick.brick_name ?? null,
+      lat: pin.lat,
+      lon: pin.lng,
+      regionCode,
+      regionName: regionCode ? input.regionNames.get(regionCode) ?? null : null,
+    });
+  }
+  return centroids;
+}
+
 /**
  * The raw read+join, with NO error handling on purpose: any failure throws, and `unstable_cache`
  * only ever caches a resolved value, so a transient DB error is never written into the cache. The
@@ -122,25 +206,39 @@ const loadBrickCentroidsCached = unstable_cache(
     // KEEPING fetchAllRows here is deliberate: the margin is 178 rows, every brick retired from
     // source_of_sales_bricks mints a fresh orphan, and the failure mode is a silent truncation
     // rather than an error — which is exactly what nobody notices.
-    const [points, bricks, areasRes, regionsRes] = await Promise.all([
-      fetchAllRows<{ latitude: number | null; longitude: number | null; source_key: string | null }>(
+    //
+    // "Today" is Cairo's day, read inside the cached callback: a brick whose last day was yesterday
+    // drops out within one 300-second window of Cairo midnight.
+    const today = todayInCairo();
+    const [points, bricks, historyRows, areasRes, regionsRes] = await Promise.all([
+      fetchAllRows<BrickCentroidPinRow>(
         () =>
           supabase
             .from("geo_locations")
-            .select("source_key, latitude, longitude")
+            .select("source_key, latitude, longitude, geocode_status, geocode_provider")
             .eq("source_type", "brick_centroid")
             .not("latitude", "is", null)
             .not("longitude", "is", null),
         "source_key",
       ),
-      fetchAllRows<{
-        active: boolean | null;
-        area_code: string | null;
-        brick_id: string | null;
-        brick_name: string | null;
-        region_code: string | null;
-      }>(
-        () => supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, region_code, active"),
+      // Bricks in force today only — the same three conditions the territory map reads.
+      fetchAllRows<BrickInForceRow>(
+        () =>
+          supabase
+            .from("source_of_sales_bricks")
+            .select("brick_id, brick_name, area_code, region_code")
+            .eq("active", true)
+            .is("superseded_by_brick_id", null)
+            .or(brickInForceFilter(today)),
+        "brick_id",
+      ),
+      // The history the master keeps, so a pinless successor can take its predecessor's pin.
+      fetchAllRows<{ brick_id: string | null; superseded_by_brick_id: string | null }>(
+        () =>
+          supabase
+            .from("source_of_sales_bricks")
+            .select("brick_id, superseded_by_brick_id")
+            .or(brickHistoryFilter(today)),
         "brick_id",
       ),
       // Small masters (~48 areas, ~6 regions) — comfortably inside one page.
@@ -148,7 +246,7 @@ const loadBrickCentroidsCached = unstable_cache(
       supabase.from("source_of_sales_regions").select("region_code, region_name"),
     ]);
 
-    // Thrown, like the two paginated reads: this callback has no error handling on purpose (see
+    // Thrown, like the three paginated reads: this callback has no error handling on purpose (see
     // above), and an unchecked error here was cached for five minutes as bricks with no area name.
     if (areasRes.error) throw areasRes.error;
     if (regionsRes.error) throw regionsRes.error;
@@ -161,34 +259,11 @@ const loadBrickCentroidsCached = unstable_cache(
     for (const r of (regionsRes.data ?? []) as Array<{ region_code: string | null; region_name: string | null }>) {
       if (r.region_code) regionName.set(r.region_code, r.region_name ?? "");
     }
-    const brickById = new Map<
-      string,
-      { active: boolean | null; area_code: string | null; brick_name: string | null; region_code: string | null }
-    >();
-    for (const b of bricks) {
-      if (b.brick_id) brickById.set(b.brick_id, b);
-    }
+    const history: BrickHistory[] = historyRows
+      .filter((row) => row.brick_id)
+      .map((row) => ({ brickId: row.brick_id as string, successorId: row.superseded_by_brick_id ?? "" }));
 
-    const centroids: BrickCentroid[] = [];
-    for (const point of points) {
-      if (!point.source_key || point.latitude == null || point.longitude == null) continue;
-      const brick = brickById.get(point.source_key);
-      // Only bricks that still exist AND are active are valid targets — a retired brick must never
-      // be proposed as a check-in's geography.
-      if (!brick || !(brick.active ?? true)) continue;
-      const areaCode = brick.area_code ?? null;
-      const regionCode = brick.region_code ?? null;
-      centroids.push({
-        areaCode,
-        areaName: areaCode ? areaName.get(areaCode) ?? null : null,
-        brickId: point.source_key,
-        brickName: brick.brick_name ?? null,
-        lat: Number(point.latitude),
-        lon: Number(point.longitude),
-        regionCode,
-        regionName: regionCode ? regionName.get(regionCode) ?? null : null,
-      });
-    }
+    const centroids = buildBrickCentroids({ areaNames: areaName, bricks, history, points, regionNames: regionName });
     return centroids;
   },
   ["crm-brick-centroids"],
@@ -199,7 +274,7 @@ const loadBrickCentroidsCached = unstable_cache(
  * One cache lookup for every caller that arrives at the same moment.
  *
  * `unstable_cache` does not dedupe a miss: every caller that arrives while the entry is absent or
- * expired runs the four reads above itself. Several callers resolve a whole LIST one row at a time —
+ * expired runs the five reads above itself. Several callers resolve a whole LIST one row at a time —
  * `attachOutstationCapturedLocations` calls this once per outstation request, and the Super Admin
  * sidebar's 30-second badge poll lists every request — so each expiry became one full read of
  * `source_of_sales_bricks` per request row. Production, 2026-09-17: 7,178 reads a day, 93% of them
