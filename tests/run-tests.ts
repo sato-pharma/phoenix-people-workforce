@@ -2694,6 +2694,7 @@ import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.te
 import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headline.test.ts";
 import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
 import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
+import { runTerritoryCurrentBricksTests } from "./territory-current-bricks.test.ts";
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
@@ -10577,6 +10578,10 @@ await runTest(
 await runTest(
   "territory shared-pin guard: bricks sharing one coordinate are unlocated, not drawn as confident pins nor fed to the residence search; a unanimously hand-placed point is exempt and an already-demoted pin implicates nobody",
   runTerritorySharedPinGuardTests,
+);
+await runTest(
+  "territory bricks in force: a moved brick's husk is never drawn, counted or searchable in the area it left; a successor with no pin takes its predecessor's, and a husk never makes its successor look shared",
+  runTerritoryCurrentBricksTests,
 );
 await runTest(
   "territory brick search region label: a hit's region is the LINE's operational region, so the same brick reads UE-2 on Anti Infective and UE-1 on Pedia, never the line-agnostic brick column",
