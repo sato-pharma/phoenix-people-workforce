@@ -39,7 +39,7 @@ change. See [[public-areas-never-got-the-beni-suef-split]] for the label work th
 ## FIXED 2026-08-19 — applied to PRODUCTION and STAGING, do not undo
 
 Migration `20260819060000_terminal_vacancy_guard_duplicate_code.sql`, PR
-[#2195](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2195). Applied by hand to both
+[#2195](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2195). Applied by hand to both
 projects **before** the PR, per [[railway-deploy-applies-no-migrations]].
 
 **The staging rehearsal found a SECOND failure mode the production error had hidden.** The guard's

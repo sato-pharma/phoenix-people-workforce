@@ -447,7 +447,7 @@ also carry a `SUPERSEDED` banner at the top of the file itself.
 - [User wants visible task tracking (TaskCreate + TaskUpdate) for every command, every session — permanently enforced via hook](feedback-task-tracker.md)
 - [gh pr list's trailing timestamp column is createdAt, not mergedAt, even when the state column reads MERGED — use gh pr view --json mergedAt for the real merge time](gh-pr-list-timestamp-is-createdat-not-mergedat.md)
 - [On this Windows machine, piping openssl/any generator into `gcloud secrets versions add --data-file=-` via the Bash tool appends \\r\\n — the stored secret is silently wrong and every consumer 401s. Caused a real ~14-min prod cron outage 2026-07-31. Always strip with tr -d '\\r\\n' and verify the byte length.](git-bash-crlf-corrupts-secrets-written-to-secret-manager.md)
-- [The GitHub MCP server (plugin_github_github) authenticates as bot account Phoenix-HR, which has no access to Gawish-1997/phoenix-people-workforce — use the gh CLI instead](github-mcp-token-wrong-account.md)
+- [The GitHub MCP server (plugin_github_github) authenticates as bot account Phoenix-HR, which has no access to it-gawish-hr/phoenix-people-workforce — use the gh CLI instead](github-mcp-token-wrong-account.md)
 - [check:harden passed twice and then failed on the SAME code once the cache was cold — always confirm with `tsc --noEmit --incremental false` before claiming a branch is green](harden-can-false-green-on-a-warm-incremental-cache.md)
 - [2026-06-27 — most "fix this part" tasks were already shipped by the parallel swarm; only line-scope was unique → PR](line-scope-fixes-pr544-and-swarm-redundancy.md)
 - [CLOSED 2026-08-13 — _wt-office-lock is gone from disk and its 16 uncommitted files were committed and pushed as f2192ed6 on branch wip/office-differentiation. Nothing to protect any more; the general lesson (git status before retiring any worktree) still stands.](office-lock-worktree-is-live-do-not-retire.md)
@@ -1558,8 +1558,8 @@ compression lever was already spent (0 em-dashes, 0 trailing whitespace, 0 doubl
 items shipped on 2026-08-23 and were verified merged before the hooks were pulled. **Nothing here
 is retired as wrong** — the pointers live on, and this file has no cliff and no budget.
 
-- 🔴 [nursery INVENTED codes; RETIRED 08-23](nursery-venues-were-saved-as-pharmacies-with-invented-codes.md) - deactivate, NEVER delete (FK CASCADE). Shipped as [PR #2320](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2320), merged 2026-08-23T07:09:04Z; the file's own header reads RESOLVED and is kept for WHY the shape existed.
-- 🔴 [one_part has NO Part 2 for deductions](one-part-employees-have-no-part-2-for-deductions-to-land-in.md) - carry fwd; a LEAVER has no later run. FIXED by [PR #2318](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2318), merged 2026-08-23T05:56:37Z. **The "a leaver has no later run" half is NOT lost from the index** - it still reads on the held-payroll line ("A leaver has NO later run - transfer only") and on the leaver's-earlier-months line.
+- 🔴 [nursery INVENTED codes; RETIRED 08-23](nursery-venues-were-saved-as-pharmacies-with-invented-codes.md) - deactivate, NEVER delete (FK CASCADE). Shipped as [PR #2320](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2320), merged 2026-08-23T07:09:04Z; the file's own header reads RESOLVED and is kept for WHY the shape existed.
+- 🔴 [one_part has NO Part 2 for deductions](one-part-employees-have-no-part-2-for-deductions-to-land-in.md) - carry fwd; a LEAVER has no later run. FIXED by [PR #2318](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2318), merged 2026-08-23T05:56:37Z. **The "a leaver has no later run" half is NOT lost from the index** - it still reads on the held-payroll line ("A leaver has NO later run - transfer only") and on the leaver's-earlier-months line.
 
 ### The six-people hook was CORRECTED, not retired
 

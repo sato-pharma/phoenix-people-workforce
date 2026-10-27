@@ -10,7 +10,7 @@ metadata:
 
 ✅ **PROVEN 23 Oct 2026 04:45 Cairo** (owner: "rerun the fallback-image rehearsal now that Railway deploys again").
 Run 39885039493, ref e1f9375ae (main, release gate green): gate ✓, image ✓, rehearsal ✓ — service
-`fallback-rehearsal-e1f9375a` in STAGING pulled `ghcr.io/gawish-1997/phoenix-people-workforce:e1f9375ae…` (deployment
+`fallback-rehearsal-e1f9375a` in STAGING pulled `ghcr.io/it-gawish-hr/phoenix-people-workforce:e1f9375ae…` (deployment
 be9e4158), its container started, the service was deleted, cleanup found nothing left. The "if it passes, run
 `deploy=production`" step below was for a Railway that could not BUILD; Railway builds again, so production stays on
 git and nothing was switched. Use `deploy=production` only on a future day Railway's builder is down but deploys work.

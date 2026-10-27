@@ -11,13 +11,13 @@ metadata:
 Owner decision, **2026-08-15**: the "new CV received" notice to Talent Acquisition/Super Admin
 (`eventType: "recruitment_inbound_cv"`, fired from `notifyTalentAcquisitionOfInboundCv` in
 `src/lib/recruitment/inbound/recruitment-notify.ts`) must never be emailed — in-app + Telegram
-(+ push) only now. Shipped in [PR #2155](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2155),
+(+ push) only now. Shipped in [PR #2155](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2155),
 merged and confirmed live on production (`revision 0b3a087d2b524185e6bebd10033e478c67c1d8f7`
 on `/api/healthz`) 2026-08-15.
 
 ## ⚠️ NARROWED 2026-08-27 — the owner approved a CV digest email. Do NOT undo it.
 
-He was shown this rule verbatim, told that [PR #2438](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2438)
+He was shown this rule verbatim, told that [PR #2438](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2438)
 contradicted it, and answered that he wanted it merged anyway. **That is a live owner decision and it
 outranks the 2026-08-15 note below.** It merged as `63ff936b` and was serving on production by
 03:34 Cairo the same night.

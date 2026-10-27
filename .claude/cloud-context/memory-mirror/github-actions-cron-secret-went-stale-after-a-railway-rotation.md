@@ -41,7 +41,7 @@ Railway write and the last PATCH — do it in one scripted pass, not by hand.
 | Store | Who reads it | How to check |
 | --- | --- | --- |
 | **Railway** production env | the running app, and **cron-job.org**'s **14** jobs send the matching value | `railway variables --environment production --service phoenix-people-workforce --json` |
-| **GitHub Actions** repo secret | `.github/workflows/direct-orders-sweeps.yml` — since 2026-08-23 it has **no `schedule:`**, so this copy is now read only by a hand-run `workflow_dispatch` | `gh api repos/Gawish-1997/phoenix-people-workforce/actions/secrets/CRON_SECRET` → read `updated_at` |
+| **GitHub Actions** repo secret | `.github/workflows/direct-orders-sweeps.yml` — since 2026-08-23 it has **no `schedule:`**, so this copy is now read only by a hand-run `workflow_dispatch` | `gh api repos/it-gawish-hr/phoenix-people-workforce/actions/secrets/CRON_SECRET` → read `updated_at` |
 
 The 2026-08-14 rotation (the one in [[railway-stdin-bom-trap]]) updated Railway and cron-job.org.
 GitHub's copy still read `"updated_at": "2026-08-05T09:19:25Z"`. So **eleven cron jobs kept working
@@ -80,7 +80,7 @@ it emails the owner and the CEO when it flags anything.
 Re-align (owner runs it — a session must not handle the token):
 
 ```bash
-railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET --repo Gawish-1997/phoenix-people-workforce
+railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET --repo it-gawish-hr/phoenix-people-workforce
 ```
 
 Related: [[railway-stdin-bom-trap]] (the rotation that started it),
@@ -159,7 +159,7 @@ raw="$(railway variables --environment production --service phoenix-people-workf
 secret="$(printf '%s' "$raw" | jq -r '.CRON_SECRET' | tr -d '\r\n')"   # strip CRLF
 [ "${#secret}" -eq 64 ] || exit 1
 printf '%s' "Bearer ${secret}" | sha256sum | cut -c1-16     # must equal the live fleet's fp
-printf '%s' "$secret" | gh secret set CRON_SECRET --repo Gawish-1997/phoenix-people-workforce
+printf '%s' "$secret" | gh secret set CRON_SECRET --repo it-gawish-hr/phoenix-people-workforce
 ```
 
 `updated_at` moving proves the write landed; the pre-pipe fingerprint proves WHAT landed. A GitHub

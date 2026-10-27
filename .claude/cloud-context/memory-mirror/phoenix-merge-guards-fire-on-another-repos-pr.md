@@ -8,7 +8,7 @@ metadata:
   modified: 2026-10-18T21:40:31.032Z
 ---
 
-Run from a Phoenix worktree, `gh pr merge <n> --repo Gawish-1997/Sato-Pharma-Website` is
+Run from a Phoenix worktree, `gh pr merge <n> --repo it-gawish-hr/Sato-Pharma-Website` is
 inspected by `.claude/hooks/bash-guard.mjs` as if it were a Phoenix PR. On 2026-10-16 clause
 **C10** refused the merge of Sato-Pharma-Website PR #40 ("changes 2 files … THIS PR IS NOT GREEN
 YET") — but that repository has **no checks configured at all**, so `gh pr checks` reports none and

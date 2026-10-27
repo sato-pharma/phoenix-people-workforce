@@ -44,9 +44,10 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { REPO } from "./required-check-names.mjs";
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 
-export const REPO = "Gawish-1997/phoenix-people-workforce";
+export { REPO };
 export const PRODUCTION_URL = "https://phoenix-hr.satopharma.com";
 export const RAILWAY_PROJECT_ID = "dc218ad3-99b7-4aff-be38-953a57524a71";
 export const RAILWAY_ENVIRONMENT = "production";

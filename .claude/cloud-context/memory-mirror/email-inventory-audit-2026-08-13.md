@@ -62,7 +62,7 @@ investigated and found to need NO change — already hard-capped per-request, re
 `deferred` rather than dropping or auto-continuing it, and the UI shows the real count before
 selection. Both audited findings from this project are now closed.
 
-**Implemented 2026-08-13, merged as PR [#2088](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2088) → commit `9210bb41`, live in prod (confirmed via `/api/healthz`).**
+**Implemented 2026-08-13, merged as PR [#2088](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2088) → commit `9210bb41`, live in prod (confirmed via `/api/healthz`).**
 Cut/trimmed: weekly-plans `manager_approve`/`hr_acknowledge`/approved-edit-request; direct-orders
 `submitted`/`revived`/`released`/`cancelled` (courtesy copies to SFE Manager + Super Admin dropped,
 approve-with-next-step narrowed to just the next approver); vacation's two confirmed duplicate-sends

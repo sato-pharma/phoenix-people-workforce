@@ -8,7 +8,7 @@ metadata:
   modified: 2026-10-01T00:00:00.000Z
 ---
 
-Two separate traps on `gh pr merge` in `Gawish-1997/phoenix-people-workforce`.
+Two separate traps on `gh pr merge` in `it-gawish-hr/phoenix-people-workforce`.
 
 ## 1. `--auto` does not mean "merge when green"
 

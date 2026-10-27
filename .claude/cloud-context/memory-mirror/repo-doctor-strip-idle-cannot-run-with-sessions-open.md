@@ -84,7 +84,7 @@ own output is internally consistent.
   switching tools is worth exactly ONE retry, then hand the command to the owner (a third route is working
   around the denial). **Deleting a remote ref is blocked on EVERY route** (`git push origin --delete` via Bash
   and PowerShell, `gh api --method DELETE .../git/refs/heads/<b>`); reads all work, so verify a branch is
-  stale but hand the delete one-liner to the owner. (The repo is `Gawish-1997/phoenix-people-workforce`, not
+  stale but hand the delete one-liner to the owner. (The repo is `it-gawish-hr/phoenix-people-workforce`, not
   `phoenix-workforce` — a hand-built `gh api` path 404s otherwise.)
 - **The run takes MANY MINUTES with no incremental output** (even a bare flagless run ~70s) — measuring
   mid-run reads as "it did nothing"; check for the live `repo-doctor.mjs` node process before concluding

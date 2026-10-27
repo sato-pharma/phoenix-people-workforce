@@ -279,6 +279,6 @@ All fixed in [#6479] unless a line says otherwise.
   All are correct.
 - **The only service worker is OneSignal's**, and it has no fetch handler.
 
-[#6476]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6476
-[#6479]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6479
-[#6482]: https://github.com/Gawish-1997/phoenix-people-workforce/pull/6482
+[#6476]: https://github.com/it-gawish-hr/phoenix-people-workforce/pull/6476
+[#6479]: https://github.com/it-gawish-hr/phoenix-people-workforce/pull/6479
+[#6482]: https://github.com/it-gawish-hr/phoenix-people-workforce/pull/6482

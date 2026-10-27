@@ -196,7 +196,7 @@ fi
 # and the server still boots, so a bad release can never take the whole MDM down. The release asset is
 # immutable, so its byte size is pinned and a wrong size is refused.
 PHX_LAUNCHER_APK="hmdm-phoenix-6.40.apk"
-PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.40-r1/${PHX_LAUNCHER_APK}"
+PHX_LAUNCHER_URL="https://github.com/it-gawish-hr/hmdm-android/releases/download/launcher-6.40-r1/${PHX_LAUNCHER_APK}"
 PHX_LAUNCHER_SIZE=6286121   # bytes — the exact size of the signed Phoenix launcher release asset
 PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
 have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
@@ -225,7 +225,7 @@ fi
 # Drop this line in a later change, once version 10045 names 6.40. Same Phoenix key, same pinned size.
 PHX_LAUNCHER_PREVIOUS_SIZE=6286121   # bytes — the signed 6.39 release asset (the same size as 6.40 by coincidence)
 provision_official_apk "hmdm-phoenix-6.39.apk" \
-  "https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.39-r1/hmdm-phoenix-6.39.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
+  "https://github.com/it-gawish-hr/hmdm-android/releases/download/launcher-6.39-r1/hmdm-phoenix-6.39.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
 
 # 🔴 THE EVERYDAY APPS ARE FETCHED IN THE BACKGROUND, SO TOMCAT STARTS AT ONCE. WhatsApp, Telegram and WPS
 # are about 390 MB together and no enrolment needs them (RustDesk and the launcher above stay in the

@@ -4,8 +4,8 @@
 # Direct Orders V2 — Agreed Specification
 
 **Date agreed:** 2026-08-04 (evening, after the module's first live day)
-**Status:** Stage 1 shipped as [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738)
-and Stage 2 as [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748); both are
+**Status:** Stage 1 shipped as [#1738](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1738)
+and Stage 2 as [#1748](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1748); both are
 merged and live. All six migrations those two PRs carried are applied in production — verified
 2026-08-06 against `pg_class`/`pg_proc`, not the migration ledger. **15 of 28 items are closed**;
 every remaining box is open, and section H records exactly what each one is still waiting on.
@@ -32,7 +32,7 @@ database ever touches approvals, sales, achievement, or incentives.
       → lands on the **Super Admin validation desk** showing the evidence, the map pin, and the
       closest directory matches → SA either **matches to an existing code** (order rewires),
       **approves as new** (official code, provisional), or **rejects**.
-      **Closed by** [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748) ·
+      **Closed by** [#1748](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1748) ·
       `tests/direct-orders-pharmacy-validation.test.ts` — locks live-capture only ("the shutter must
       refuse before a location exists"), the server-computed area verdict ("the browser must never
       supply its own compliance verdict"), and all three SA outcomes incl. "rejecting must NOT
@@ -41,13 +41,13 @@ database ever touches approvals, sales, achievement, or incentives.
       confirms it: appears in a distributor sheet OR its collection is paid. Footprint → auto
       promote to trusted. No footprint in 90 days → **automatic phantom report** (pharmacy, order,
       value, **rep's name**) to owner + CEO.
-      **Closed by** [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748) ·
+      **Closed by** [#1748](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1748) ·
       `tests/direct-orders-pharmacy-validation.test.ts` — locks "the probation window is 90 days",
       both footprints ("distributor sales count", "a paid collection counts"), and the demotion of a
       provisional pharmacy "so a wrong approval self-corrects". Phantom report:
       `src/lib/direct-orders/phantom-report.ts`, swept by `/api/cron/direct-orders-probation`.
       **Repaired 2026-08-06** in
-      [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829): the footprint
+      [#1829](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1829): the footprint
       lookup queried `source_of_sales_import_rows.customer_code`, a column that does not exist —
       PostgREST answered with an error and no count, the code read `count ?? 0`, and so the
       **promotion half of probation could never fire once.** Two live pharmacies had 23 matching
@@ -74,27 +74,27 @@ database ever touches approvals, sales, achievement, or incentives.
       `20260804183000_direct_order_customer_directory_search.sql` shipped in #1738 and **is applied
       in production** — `phx_normalize_arabic` and `phx_search_direct_order_customers` both confirmed
       live 2026-08-06. Box stays open: no test locks this search path. See H.)
-      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      **Closed by** [#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830) ·
       `tests/direct-orders-arabic-search.test.ts`. The rule lives in SQL, so the test locks the
       migration: one assertion per letter family, and a guard on the harakat strip class —
       widening it to swallow the Arabic LETTERS at 0621..063A emptied the probe, and an empty
       probe `ilike '%%'` matched **all 51,192 rows while looking like a working search**.
 - [x] **B3. Area auto-fills from the chosen customer** (by AREA, per owner — not brick) and locks.
-      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      **Closed by** [#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830) ·
       `tests/direct-orders-area-autofill.test.ts`. The real rule is stronger than "auto-fills":
       the request body carries **pointers only**. If the client could send an area, a rep could
       file any pharmacy in the country under their own geography and every downstream number —
       counters, attribution, the chain built from the requester's line — would agree with them.
 - [x] **B4. Did-you-mean (AI v1):** before a "new pharmacy" claim is accepted, show closest
       directory matches; **record shown-and-refused** on the request.
-      **Closed by** [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748) ·
+      **Closed by** [#1748](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1748) ·
       `tests/direct-orders-pharmacy-validation.test.ts` — locks "what Phoenix offered must be
       recorded on the claim", "the shown-and-refused record must be computed server-side, not taken
       from the client", and reproducibility ("suggestions use trigram similarity — deterministic, so
       the record reproduces identically later").
 - [x] **B5. Invoice-photo prefill (AI v1):** photograph the distributor invoice → extract
       customer code, products, quantities → prefill the form.
-      **Closed by** [#1795](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1795) ·
+      **Closed by** [#1795](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1795) ·
       `tests/direct-orders-invoice-prefill.test.ts` — locks that an unconfirmed customer code
       prefills NOTHING (no nearest-match fallback, asserted), that unmatched lines are named
       rather than dropped, and that it is mounted on BOTH submit forms.
@@ -102,7 +102,7 @@ database ever touches approvals, sales, achievement, or incentives.
       enters NO approval chain, appears in NO approver queue, injects NOTHING. Requester sees a
       "Start pharmacy validation" path. **14-day expiry**: untouched held orders auto-expire,
       logged, counted per rep.
-      **Closed by** [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738) ·
+      **Closed by** [#1738](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1738) ·
       `tests/direct-orders-held-lane.test.ts` — locks "a held submit must seed NO approval steps —
       the chain is built at revival, not submission", "the clock defaults to 14 days (owner spec
       B6)", "held is NOT terminal — it has three live doors out", "expired is terminal — a dead end,
@@ -112,7 +112,7 @@ database ever touches approvals, sales, achievement, or incentives.
 
 - [x] **C1. Chain shape:** SFE Manager → requester's management line (person rungs) → CEO.
       **Super Admin is not a rung.** SA keeps: see-all, act-on-any-rung override, return-for-edit.
-      **Closed by** [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738) ·
+      **Closed by** [#1738](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1738) ·
       `tests/direct-orders-approval-flow.test.ts` + `tests/direct-orders-approval-detail-names.test.ts`
       — lock "the chain is SFE → sales line → CEO, with no acknowledgment rung wedged into it", "no
       chain may push a Super Admin rung — the rung is retired", "SFE must still be pushed onto the
@@ -122,7 +122,7 @@ database ever touches approvals, sales, achievement, or incentives.
       happens ONLY when the Finance Manager (HR_ID B-185, or SA) selects the order's month; null
       month = in no month. (Already live since #1666.) **UI must show the state in words:**
       "approved — awaiting Finance month" badge everywhere the order appears.
-      **Closed by** [#1820](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1820) ·
+      **Closed by** [#1820](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1820) ·
       `tests/direct-orders-finance-month-badge.test.ts` — the badge now appears on all five
       surfaces via one shared pill, and the rule is EXECUTED across all ten status/month
       combinations, including the inverse error (a booked order must not show it).
@@ -130,14 +130,14 @@ database ever touches approvals, sales, achievement, or incentives.
       per request — **To: requester BY NAME (never a code)**, CC: SFE Manager, direct manager,
       CEO — "held until you provide a valid pharmacy code; your pharmacy is not in the master
       database."
-      **Closed by** [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738) ·
+      **Closed by** [#1738](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1738) ·
       `tests/direct-orders-held-lane.test.ts` — locks "the notice must address the requester by
       NAME, never by code (owner rule)" and "a request that is no longer held must be SKIPPED —
       never email a stale demand". UI: `src/components/direct-orders/held-desk.tsx`.
 - [x] **C4. ONE email, To + CC — never duplicate copies.** Every direct-order notification sends
       a single email: To = the concerned person, CC = the others. No more N copies of the same
       message.
-      **Closed by** [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738) ·
+      **Closed by** [#1738](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1738) ·
       `tests/direct-orders-held-lane.test.ts` — locks "the held notice must lead with the requester
       (the email's To) and CC SFE, direct manager, CEO"; the suite is registered in
       `tests/run-tests.ts` under "…one To/Cc email per event".
@@ -154,7 +154,7 @@ database ever touches approvals, sales, achievement, or incentives.
       status/transition, `expectedNextStatus` couplings, notification fan-out, role gates incl.
       denial paths, held/returned/reversed edges, Finance gate. Deliverable: findings + fixes.
 
-      **Closed by** [#1820](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1820) ·
+      **Closed by** [#1820](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1820) ·
       `docs/audits/direct-orders-workflow-audit.md` — 7 findings, all fixed (F1 caused a
       production outage). Each fix carries its own test; see the audit for the table.
 ## D. The approval window (premium)
@@ -172,8 +172,8 @@ database ever touches approvals, sales, achievement, or incentives.
       products, values). Provisional pharmacy → "no history — new pharmacy, probation day X/90"
       in words. An empty table must never read as zero.
       **Closed by** the retail table in
-      [#1665](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1665) plus the standing
-      prose in [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829) ·
+      [#1665](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1665) plus the standing
+      prose in [#1829](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1829) ·
       `tests/direct-orders-pharmacy-standing.test.ts` — locks "a null probation clock is not day
       zero — it is no clock at all", "an established pharmacy with no sales must read as not having
       bought, never as unverified", and that the window renders the domain's sentence rather than
@@ -189,7 +189,7 @@ database ever touches approvals, sales, achievement, or incentives.
       **Closed by TWO PRs, and #1833 alone was not enough** ·
       `tests/direct-orders-approval-window-mobile.test.ts`.
 
-      [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) — the tables.
+      [#1833](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1833) — the tables.
       Desktop was already right: three full tables, zero truncation, 50 `whitespace-nowrap`.
       **Mobile did not exist** — no `md:hidden` anywhere in the file, so a phone got three tables,
       two of them 820px and 760px wide behind a horizontal scroll. Backwards, too:
@@ -198,7 +198,7 @@ database ever touches approvals, sales, achievement, or incentives.
       table. The test locks it **per table**, not by counting breakpoint classes file-wide — a
       file-wide count stays green when a fourth table arrives with no wrapper.
 
-      [#1836](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1836) — the field grid,
+      [#1836](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1836) — the field grid,
       which #1833 left alone on the reasoning that it already carried a breakpoint
       (`grid-cols-2 md:grid-cols-4`). That reasoning was wrong. Measured live at 375px: two columns
       give each value 150px while **eight values need up to 287px** — the request id, the
@@ -230,7 +230,7 @@ database ever touches approvals, sales, achievement, or incentives.
       server-side so nothing in the browser betrays a model. Applies to B4, B5, E2, E3 and
       anything AI-assisted later.
 
-      **Closed by** [#1795](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1795) ·
+      **Closed by** [#1795](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1795) ·
       `tests/direct-orders-invoice-prefill.test.ts` — an EXECUTABLE sweep, not a promise: it
       strips comments and imports, extracts every user-visible string and JSX text node, and
       fails on `AI`, `GPT`, `OpenAI`, `LLM`, `model`, `confidence` or a sparkle. Repeated for the
@@ -247,7 +247,7 @@ database ever touches approvals, sales, achievement, or incentives.
 - [x] **D5b. Live web link.** Same data as a read-only page for a person with no account.
       **Passcode required**, carried in the POST body — never the query string, where it would
       land in browser history, referrer headers and proxy logs and look protected while leaking.
-      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      **Closed by** [#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830) ·
       `tests/direct-orders-share-link-controls.test.ts`. Before it, the word *passcode* appeared
       **nowhere in the suite**. Locks: POST only (a passcode in a query string leaks to history,
       referrers and proxy logs — protected-looking while leaking), min 4 chars on the human
@@ -256,7 +256,7 @@ database ever touches approvals, sales, achievement, or incentives.
       one-click revoke · scope FROZEN to the creator at creation (a link cannot widen when its
       creator is promoted) · every open counted and stamped · `no-store` + `noindex` so a cached
       or crawled copy cannot outlive a revoke · Super Admin sees every link that exists.
-      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      **Closed by** [#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830) ·
       `tests/direct-orders-share-link-controls.test.ts` — 32-byte token, expiry clamped to
       [1, 180] with 30 default and **no branch that writes a null**, revoke and expiry both
       refused, wrong-surface answers *not found* identically to missing, file access a separate
@@ -265,7 +265,7 @@ database ever touches approvals, sales, achievement, or incentives.
 - [x] **D5d. Gated on EXPORT, not read.** Publishing the report outside the login wall is the
       strongest form of export; a reader who may not download the file must not be able to
       publish it instead.
-      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      **Closed by** [#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830) ·
       `tests/direct-orders-share-link-controls.test.ts` — all three entry points gated on
       `export`, and the gate asserted to run **before** the first database call.
 - [ ] ~~**D5e. Push into the Sheet** via the Google Sheets API~~ — **BLOCKED, and the outcome is
@@ -279,12 +279,12 @@ database ever touches approvals, sales, achievement, or incentives.
 ## E. Deterrence & reporting
 
 - [x] **E1. Per-rep counters:** held, expired, refused-matches — visible to managers and owner.
-      **Closed by** [#1780](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1780) ·
+      **Closed by** [#1780](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1780) ·
       `tests/direct-orders-rep-counters.test.ts` + `tests/direct-orders-counters-refused.test.ts`
       — the second exists because the counters went BLANK once the false pharmacies were
       rejected: they queried only `held`/`expired`, so solving the problem erased its record.
 - [x] **E2. Vision check** on storefront evidence (is it a pharmacy; sign vs claimed name).
-      **Closed by** [#1828](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1828) ·
+      **Closed by** [#1828](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1828) ·
       `tests/direct-orders-evidence-check.test.ts`. Read once when the rep files, verdict stored on
       `direct_order_pharmacy_validations.evidence_check`, shown at the Super Admin desk.
       **It ADVISES and must never gate** — same rule `AREA_PROXIMITY_FLAG_KM` already states. An
@@ -334,11 +334,11 @@ before it was true. Desktop was already correct: three full tables, zero truncat
 `whitespace-nowrap`. Mobile did not exist at all, so the manager's phone showed two tables 820px and
 760px wide behind a horizontal scroll, while four siblings in the same module — including the
 employee-portal copy of that same screen — already rendered cards.
-[#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) fixed the tables and
+[#1833](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1833) fixed the tables and
 **left the field grid at two columns**, on the reasoning that it already carried a breakpoint. At
 375px that gave each value 150px while eight of them ran to 287px, and because every value is
 `whitespace-nowrap` they did not wrap — they printed on top of the next column.
-[#1836](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1836) fixed that.
+[#1836](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1836) fixed that.
 
 **Only a browser could have caught it**, and that is the one thing to carry out of this box. After
 #1833 the tables were provably desktop-only, the cards rendered, the page did not scroll sideways,
@@ -358,7 +358,7 @@ but never saw the test suite that already guarded them. Six boxes were closed th
 | B1 | same | *"a stale type-ahead response must not overwrite a newer one"* |
 | C5 | `direct-orders-approval-flow` | *"an assigned approver must always be able to open the request"* |
 | D1 | `direct-orders-approval-detail-names` | *"the detail payload must resolve the area's medical rep"* |
-| D2 | same | *"retail history must have its own loader, separate from direct orders"* — the table was real since #1665; [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829) then added the part that genuinely was missing, the probation wording |
+| D2 | same | *"retail history must have its own loader, separate from direct orders"* — the table was real since #1665; [#1829](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1829) then added the part that genuinely was missing, the probation wording |
 | D5a | `direct-orders-report-columns` | column parity with the .xlsx |
 
 It also recorded **D2 as never built**, which was false — it grepped `src/components/direct-orders/`
@@ -372,7 +372,7 @@ because a box looked empty.
 ### The five that genuinely had nothing
 
 B2, B3, D5b, D5c and D5d were real gaps, closed by
-[#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830). The share-link three are
+[#1830](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1830). The share-link three are
 worth naming: the word *passcode* appeared **nowhere in the suite**, and nothing asserted the expiry
 clamp, revocation, or the frozen scope — on bearer credentials that serve pharmacy names, doctors,
 quantities, prices and sales values to a reader with no Phoenix account.

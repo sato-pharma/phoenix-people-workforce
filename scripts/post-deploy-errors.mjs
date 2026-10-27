@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { REPO } from "./required-check-names.mjs";
 import {
   BASELINE_DAYS,
   DEFAULT_WINDOW_MINUTES,
@@ -45,7 +46,6 @@ refuseUnknownFlags({
   ],
 });
 
-const REPO = "Gawish-1997/phoenix-people-workforce";
 const HEALTHZ = "https://phoenix-hr.satopharma.com/api/healthz";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const POLL_MS = 90_000;

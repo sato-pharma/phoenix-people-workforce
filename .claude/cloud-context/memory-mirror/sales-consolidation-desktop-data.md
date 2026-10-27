@@ -113,7 +113,7 @@ column maps → `source_of_sales_distributor_profile`; the monthly fill script �
   approval; see [[pr24-supabase-bridge-prod-lockout]] for app-side caution and [[ireports360-crm-integration]].
 - ⚠️ **The deploy mechanics recorded during this task (Vercel git-target=production, the phoenix-workspace
   team, github.com/Phoenix-HR) are SUPERSEDED** — production is now Railway and the repo is
-  `Gawish-1997/phoenix-people-workforce`. Only the DB facts above (customer_map loaded in prod, the rollback)
+  `it-gawish-hr/phoenix-people-workforce`. Only the DB facts above (customer_map loaded in prod, the rollback)
   are current.
 
 ## Still open

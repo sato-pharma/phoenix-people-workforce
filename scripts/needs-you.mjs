@@ -62,7 +62,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import { readProtectionContexts } from './required-check-names.mjs';
+import { REPO, readProtectionContexts } from './required-check-names.mjs';
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -78,7 +78,6 @@ refuseUnknownFlags({
 
 const execFileAsync = promisify(execFile);
 
-const REPO = 'Gawish-1997/phoenix-people-workforce';
 const HEALTHZ = 'https://phoenix-hr.satopharma.com/api/healthz';
 
 /** Where the shared answer lives. One per machine, not one per worktree — see the header. */

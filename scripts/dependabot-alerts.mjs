@@ -27,7 +27,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-const REPO = 'Gawish-1997/phoenix-people-workforce';
+import { REPO } from './required-check-names.mjs';
 
 /**
  * Severities that fail `--audit-level=high`. `moderate`/`medium` and `low` do NOT fail the audit, so

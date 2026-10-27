@@ -10,7 +10,7 @@ metadata:
 
 On 2026-10-20 at 23:20 Cairo, a `serviceInstanceDeployV2` deploy of `main` (834ab92d7) on the production web service `phoenix-people-workforce` FAILED twelve seconds in, with the build log reading only `using build driver railpack-v0.43.0` / `railpack prepare exited with an error`. The worker service built the same commit fine.
 
-The cause was the service's **Root Directory** setting. It held `ghcr.io/gawish-1997/phoenix-people-workforce:a661f4dc7…`, an image address that the container-deploy session (`codex/container-deploy`, 22:35 Cairo, never opened as a PR) wrote while trying to route around Railway's build pause. With a root directory that does not exist, Railway cannot see the root `Dockerfile`, so it falls back to Railpack and fails at once. Every successful deploy before it built with the Dockerfile and an empty root directory.
+The cause was the service's **Root Directory** setting. It held `ghcr.io/it-gawish-hr/phoenix-people-workforce:a661f4dc7…`, an image address that the container-deploy session (`codex/container-deploy`, 22:35 Cairo, never opened as a PR) wrote while trying to route around Railway's build pause. With a root directory that does not exist, Railway cannot see the root `Dockerfile`, so it falls back to Railpack and fails at once. Every successful deploy before it built with the Dockerfile and an empty root directory.
 
 **Why:** the build log names Railpack, not the root directory, so it reads like a builder or outage fault. Re-triggering the deploy only fails again the same way.
 

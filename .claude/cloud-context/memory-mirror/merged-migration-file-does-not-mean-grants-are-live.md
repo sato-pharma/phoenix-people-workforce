@@ -45,6 +45,6 @@ function-named, git-tracked backstop (this repo's established convention — see
 so the fix has an audit trail independent of whether the original feature migration ever gets
 re-applied correctly again.
 
-Fixed in [PR #1990](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1990) (open, not
+Fixed in [PR #1990](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1990) (open, not
 merged — owner approval pending). Staging verified clean via a fresh `get_advisors(security)` scan
 after the fix; production required no change.

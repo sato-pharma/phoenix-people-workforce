@@ -14,7 +14,7 @@ Do NOT re-apply and do NOT revert.** Owner approved the production apply explici
 All four `authenticated` policies on `public.sales_records` had their access helpers wrapped in scalar
 subqueries: `sales_records_select_access`, `_hr_update`, `_hr_delete`, `_hr_insert`. Migration file
 `supabase/migrations/20260813133000_sales_records_rls_initplan_hoist.sql`, PR
-[#2075](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2075).
+[#2075](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2075).
 
 **Why:** the helpers were called bare, so Postgres made them part of the per-row qual and re-ran them
 for every row. Each runs its own `select` against `user_access_profiles`; at 11,267 rows that is

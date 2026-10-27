@@ -56,15 +56,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { readProtectionContexts } from './required-check-names.mjs';
+import { GITHUB_OWNER, REPO, readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMemberHeads, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { staleRollupMembers } from './rollup-member-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { pathDeltaLanded, registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
 import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from './rollup-check-state.mjs';
-
-const REPO = 'Gawish-1997/phoenix-people-workforce';
 
 /** A merge pays a full run on the PR and another on `main`. Used only to report the saving. */
 const BILLABLE_MINUTES_PER_MERGE = 28;
@@ -268,7 +266,7 @@ if (fixturePath) {
     deletions: p.deletions ?? 0,
     mergeStateStatus: p.mergeStateStatus ?? 'CLEAN',
     isDraft: p.isDraft ?? false,
-    author: { login: p.author ?? 'Gawish-1997' },
+    author: { login: p.author ?? GITHUB_OWNER },
     paths: p.paths,
     carriedFixture: p.carried === true,
     // Present-and-null is NOT the same as absent, and the difference is the only way to test the live

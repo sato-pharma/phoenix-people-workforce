@@ -111,7 +111,7 @@ What that cost. `src/lib/needs-you/service.ts` logs a Needs You source timeout w
 never **which** source timed out, for whom, in what scope — so the failing adapters had to be
 reconstructed out of the delivered Telegram digests in `notification_events.metadata`, a table that
 happens to keep the payload rather than one designed as the error record. Found while fixing
-[#6301](https://github.com/Gawish-1997/phoenix-people-workforce/pull/6301).
+[#6301](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/6301).
 
 **This was fixed from two ends at once, on the same day.** #6307 fixed the `stack` column —
 `persistedStack` reads a non-`Error` through `describeThrown` (a Supabase rejection is a plain

@@ -8,7 +8,7 @@ metadata:
   modified: 2026-10-22T05:17:40.995Z
 ---
 
-**6.41 (versionCode 15410)** of the custom Headwind launcher, fork `Gawish-1997/hmdm-android`,
+**6.41 (versionCode 15410)** of the custom Headwind launcher, fork `it-gawish-hr/hmdm-android`,
 branch `phoenix/rustdesk-unattended-reporting` (commit `b703722`, off the 6.40 base `aa9e5e2`
 `phoenix/location-relock-frp`). Built + signed green by the fork's own `phoenix-build.yml` on
 22 Oct 2026 ~06:39 Cairo: `apksigner verify` → "Verifies", signed APK 6,286,121 bytes, artifact

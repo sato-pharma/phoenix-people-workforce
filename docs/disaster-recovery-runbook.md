@@ -107,7 +107,7 @@ curl -s https://phoenix-hr.satopharma.com/api/healthz
 ```
 
 `revision` should move off the bad SHA. To independently confirm a deploy actually fired (separate
-from what's serving traffic): `gh api repos/Gawish-1997/phoenix-people-workforce/deployments` —
+from what's serving traffic): `gh api repos/it-gawish-hr/phoenix-people-workforce/deployments` —
 rows read `Phoenix-HR-Workforce / production … "Deployed to Railway"`.
 
 🔴 **This applies no migrations.** If the bad deploy shipped a schema change, the revert only undoes

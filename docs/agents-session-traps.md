@@ -441,13 +441,13 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   "phoenix-workforce"`, `.claude/launch.json` names the dev server `phoenix-workforce`, and the
   dead GCP project is `phoenix-workforce-498619`. Only the GitHub remote carries the longer name.
   A session reconstructing an API path from the folder it is sitting in therefore writes
-  `repos/Gawish-1997/phoenix-workforce/…`, and GitHub answers
+  `repos/it-gawish-hr/phoenix-workforce/…`, and GitHub answers
   `{"message":"Not Found","status":"404"}` — the same body a genuinely missing deployment would
   produce. On 2026-08-29 that 404 came back for `…/commits/<sha>` on a commit that was
   simultaneously the tip of `origin/main`, and was first read as API propagation lag. On
   `…/deployments` the identical mistake reads as *the production deploy never happened*, which is
   the one question that command exists to answer. **Nothing committed here has ever carried the
-  wrong name** — verified 2026-08-29 across every ref (`git log -S "Gawish-1997/phoenix-workforce"
+  wrong name** — verified 2026-08-29 across every ref (`git log -S "it-gawish-hr/phoenix-workforce"
   --all` returns no commits), across all six `repos/…` references (`AGENTS.md` §7,
   `docs/deployment.md`, `docs/disaster-recovery-runbook.md`, `docs/agents-incident-history.md`,
   and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. There is no longer ANY
@@ -455,7 +455,7 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   `.github/workflows/deploy-cloud-run.yml`, interpolated `repos/${{ github.repository }}` and could
   not be wrong; that workflow was deleted 2026-09-08. So this is never a defect to go fix in a
   file — it is a typo the checkout invites, and the fix is to read the name rather than infer it:
-  `gh repo view --json nameWithOwner` returns `Gawish-1997/phoenix-people-workforce`, and
+  `gh repo view --json nameWithOwner` returns `it-gawish-hr/phoenix-people-workforce`, and
   `git remote -v` agrees.
 
 **Migrations**

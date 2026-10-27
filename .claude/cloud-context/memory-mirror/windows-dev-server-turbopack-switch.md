@@ -11,7 +11,7 @@ metadata:
 **Status: PR #1435 confirmed MERGED 2026-07-28T18:45:07Z** (re-verified 2026-07-29 via `gh pr view`). This session also independently confirmed cold-Turbopack-compile behavior (20-56s, "looks hung, isn't") while testing an unrelated change on 2026-07-29.
 
 `pnpm run dev` on Windows now runs `next dev --turbopack` unconditionally (package.json), same as
-macOS/Linux. [PR #1435](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1435), branch
+macOS/Linux. [PR #1435](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/1435), branch
 `claude/dazzling-gauss-be8ed5`, committed `e7c5d43c`.
 
 **Why:** a report of `pnpm run dev` 500ing on every Windows route (webpack failing to resolve

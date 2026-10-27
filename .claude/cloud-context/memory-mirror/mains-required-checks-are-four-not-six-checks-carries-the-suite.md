@@ -40,7 +40,7 @@ and it has failed in both directions:
   longer existed, and had to read the API to settle that a fully green PR was green. That session was
   this one, on PRs 4545 and 4549.
 
-So: **read `gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection --jq
+So: **read `gh api repos/it-gawish-hr/phoenix-people-workforce/branches/main/protection --jq
 '.required_status_checks.contexts'` and count passes against what it returns.** Never quote a doc,
 this memory included, as the source.
 

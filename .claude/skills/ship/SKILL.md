@@ -57,7 +57,7 @@ gh pr checks <n>
 list has changed five times (4 → 5 → 6 → 4 → 2) and every change left the docs stating the old one:
 
 ```bash
-gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection/required_status_checks \
+gh api repos/it-gawish-hr/phoenix-people-workforce/branches/main/protection/required_status_checks \
   --jq '.contexts'
 ```
 
@@ -153,7 +153,7 @@ queries a column that is not there.
 ## 5 · Merge — from a directory that is not a worktree
 
 ```bash
-gh pr merge <n> --squash --repo Gawish-1997/phoenix-people-workforce --match-head-commit <sha from phase 1>
+gh pr merge <n> --squash --repo it-gawish-hr/phoenix-people-workforce --match-head-commit <sha from phase 1>
 ```
 
 Run it from the session scratchpad, or any folder outside every git worktree.
@@ -233,7 +233,7 @@ What it protects you from, and what to do if you read the sources by hand instea
   build goes live, not when it starts, so the earlier commit can carry the later `created_at` and
   serve while the newer one is still `in_progress`. One `in_progress` beside one `success` is a
   queue, not a revert.
-  `gh api repos/Gawish-1997/phoenix-people-workforce/deployments/<id>/statuses --jq '.[0].state'`
+  `gh api repos/it-gawish-hr/phoenix-people-workforce/deployments/<id>/statuses --jq '.[0].state'`
   Only the newest row reads `success`; every earlier one flips to **`inactive`**, which means
   superseded, not failed — your own merge reading `inactive` an hour later is the normal, healthy
   state, and ancestry is what answers whether it is still in the running code.
@@ -291,7 +291,7 @@ tell.
 ## 8 · Read main's own CI
 
 ```bash
-REPO=Gawish-1997/phoenix-people-workforce
+REPO=it-gawish-hr/phoenix-people-workforce
 gh api "repos/$REPO/actions/runs?head_sha=<merge sha>&per_page=30" --jq '
   .workflow_runs[]
   | select(.path == ".github/workflows/ci.yml")

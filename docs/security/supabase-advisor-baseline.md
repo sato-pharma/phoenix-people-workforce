@@ -117,7 +117,7 @@ manager matches for real users; the function's ACL is unchanged, so the count st
 `tests/can-see-employee-blank-id.test.ts` pins the latest definition.
 
 **Why the count fell 14 → 11.** PR
-[#5489](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5489), merged **2026-10-08
+[#5489](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/5489), merged **2026-10-08
 at 10:14:50 Cairo**. Its migration
 `20261008032000_revoke_authenticated_execute_on_unreferenced_access_helpers.sql` takes
 `authenticated`'s EXECUTE off three of the fourteen — `current_access_is_admin()`,

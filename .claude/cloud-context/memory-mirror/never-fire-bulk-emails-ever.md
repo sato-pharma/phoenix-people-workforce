@@ -41,7 +41,7 @@ added.
 ## One owner-granted exception, 2026-08-27 — the 6-hourly CV digest
 
 The owner was shown this rule and the two sibling never-email rules, told that
-[PR #2438](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2438) contradicted all
+[PR #2438](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2438) contradicted all
 three, and chose to merge it anyway. `src/lib/recruitment/inbound/cv-intake-digest-6h.ts` therefore
 mails every manager who received candidates in the last 6 hours, CC'ing their manager (not for NSM)
 and omar.anwar always. It is **live** — cron-job.org job **8334658** fires it at

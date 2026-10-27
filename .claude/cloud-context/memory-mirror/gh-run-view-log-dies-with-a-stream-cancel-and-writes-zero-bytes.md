@@ -13,7 +13,7 @@ Reading a failed CI job's log on 2026-10-23 (PR 6302, run `39914758150`):
 - `gh run view <run> --job <id> --log-failed` printed **nothing** for two jobs that had genuinely
   failed, and `--log` then failed with `failed to get run log: stream error: stream ID 1; CANCEL;
   received from peer`, **exit 1, 0 bytes written**.
-- `gh api repos/Gawish-1997/phoenix-people-workforce/actions/jobs/<job id>/logs` pulled the same
+- `gh api repos/it-gawish-hr/phoenix-people-workforce/actions/jobs/<job id>/logs` pulled the same
   logs immediately — 43 KB and 559 KB.
 
 **Why:** the download is an HTTP/2 stream the server cancels; `gh` surfaces it on stderr and still

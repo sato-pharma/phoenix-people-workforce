@@ -36,7 +36,7 @@ and silently omit the rest. Two sessions could read the same table and reach opp
 
 ## Update 2026-08-27 — the stale header figure is removed by PR #2436
 
-PR [#2436](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2436) rewrites that header
+PR [#2436](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2436) rewrites that header
 comment and the "34,138 of 34,838 rows (98.0%)" line is gone from it. **Until that PR merges the
 stale figure is still on `main`** — check which you are reading before quoting anything from it.
 The rule above is unchanged: re-measure, and quote the EGP.

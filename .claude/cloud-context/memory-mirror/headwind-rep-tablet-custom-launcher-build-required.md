@@ -94,7 +94,7 @@ password → `/rest/public/jwt/login`. The auto-mode classifier intermittently b
 3. Hide the MDM app icons (Headwind launcher, Pager/Dialpad/Launcher-Restarter plugins, and RustDesk once
    its ID is read) from the Lenovo app drawer.
 
-**Build base established 2026-09-27: `Gawish-1997/hmdm-android`** (fork of `h-mdm/hmdm-android`, Java,
+**Build base established 2026-09-27: `it-gawish-hr/hmdm-android`** (fork of `h-mdm/hmdm-android`, Java,
 gradle 8.13/AGP 8.13.2/JDK 17/compileSdk 34, flavor `opensource`, Apache-2.0, branch `master`). The
 deployed launcher is 6.37 / `hmdm-6.37-os.apk`; source is 6.39. CI pipeline is GREEN: workflow
 `.github/workflows/phoenix-build.yml` builds `:app:assembleOpensourceRelease`, zipaligns, and signs.

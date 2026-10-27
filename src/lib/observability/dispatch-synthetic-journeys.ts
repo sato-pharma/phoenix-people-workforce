@@ -24,7 +24,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 // waiting would risk the false `Failed (timeout)` that phoenix-notify-daily logs every morning.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const OWNER = "Gawish-1997";
+const OWNER = "it-gawish-hr";
 const REPO = "phoenix-people-workforce";
 
 /**

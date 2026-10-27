@@ -165,7 +165,7 @@ production-ops guidance. They stay in the index.
   secret="$(printf '%s' "$raw" | jq -r '.CRON_SECRET' | tr -d '\r\n')"   # strip CR/LF
   [ "${#secret}" -eq 64 ] || { echo 'refusing: unexpected length'; exit 1; }
   printf '%s' "Bearer ${secret}" | sha256sum | cut -c1-16           # must equal the live fleet fp
-  printf '%s' "$secret" | gh secret set CRON_SECRET --repo Gawish-1997/phoenix-people-workforce
+  printf '%s' "$secret" | gh secret set CRON_SECRET --repo it-gawish-hr/phoenix-people-workforce
   ```
 
   `updated_at` moving proves the write landed; the pre-pipe fingerprint proves *what* landed. A
@@ -775,7 +775,7 @@ next takes over, which is a service genuinely being replaced per merge rather th
 **`Run Headwind on Railway, and use RustDesk own relay` (#4434)**, merged 2026-09-25 23:44 Cairo — the
 stray project first built **28 minutes after that commit landed**. The mechanism is almost certainly
 this repository own runbook: [devices/headwind-rustdesk.md](devices/headwind-rustdesk.md) step 133
-reads *"New -> GitHub Repo -> `Gawish-1997/phoenix-people-workforce`. Name the service
+reads *"New -> GitHub Repo -> `it-gawish-hr/phoenix-people-workforce`. Name the service
 phoenix-headwind."* Run from the Railway dashboard ROOT rather than from inside the existing project,
 that creates a NEW auto-named project wired to the repo default branch instead of a service in the old
 one — and `superb-smile` is exactly Railway auto-generated project-name style. So this is one misclick

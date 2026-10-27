@@ -12,7 +12,7 @@ Marketing's `not_found` capture gate — the one `tests/marketing-submission-cap
 pins the existence of — **had never once fired in production.** `fetchPharmacyCodes` in
 `src/lib/marketing-requests/service.ts` selected only `id, pharmacy_id, active`, so
 `code.reference_status` was `undefined` on every row and `=== "not_found"` could never be true.
-Fixed 2026-08-23 in [PR #2320](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2320).
+Fixed 2026-08-23 in [PR #2320](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2320).
 
 **Why:** PostgREST does not error on a column you did not ask for — it simply is not there. The
 TypeScript row type is usually cast (`as SomeDbRow`), so `tsc` does not object either. The gate

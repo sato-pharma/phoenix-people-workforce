@@ -8,7 +8,7 @@ metadata:
   modified: 2026-08-26T19:14:10.386Z
 ---
 
-**RESOLVED 2026-08-23** — [PR #2320](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2320),
+**RESOLVED 2026-08-23** — [PR #2320](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2320),
 squash `4ebbf45cf17c`, serving in production (confirmed via `/api/healthz` `revision`). The codes
 below are now retired; keep this file for WHY the shape existed and how it was unwound.
 
@@ -62,7 +62,7 @@ makes that a collision — both were distributor 14 / `0000`.
 has `merged_into_pharmacy_id` / `merged_at` / `merged_by_hr_id` (used properly on 2026-08-13 to fold
 four duplicate `حضانة زمزم` rows into `80b53100-…`); `marketing_pharmacies` had no equivalent, so a
 marketing merge could only be expressed as deactivation plus prose.
-**Closed by [PR #2323](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2323), squash
+**Closed by [PR #2323](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2323), squash
 `1c21ade9`, merged 2026-08-23 07:57Z** — all four required checks green.
 `mergeMarketingVenue(access, {loserId, survivorId, reason})` moves all four child tables, deactivates
 the loser, stamps the trail and writes a required audit row (`entityType: "marketing_pharmacy"`).

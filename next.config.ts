@@ -675,7 +675,7 @@ function withOptionalSentry(config: NextConfig): NextConfig {
           release: {
             name: release,
             deploy: { env: "production" },
-            setCommits: { repo: "Gawish-1997/phoenix-people-workforce", commit: release, ignoreMissing: true },
+            setCommits: { repo: "it-gawish-hr/phoenix-people-workforce", commit: release, ignoreMissing: true },
           },
         }
       : {}),

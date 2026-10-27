@@ -36,7 +36,7 @@ is a leak of somebody's money.
 - **Every other role still waits for a human** (owner decision 2026-08-08). This is the single
   exception to it. A session tightening payroll controls must not "fix" it back.
 - Pinned by `tests/outstation-nsm-no-hold.test.ts`, registered in `tests/run-tests.ts`. Shipped in
-  [PR #2580](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2580).
+  [PR #2580](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2580).
 - Only **two people** hold this role in production (Anti Infective and CNS) — see
   [[nsm-title-is-held-once-per-line-not-company-wide]].
 - **The backlog was released 2026-08-28 — do NOT release it again.** All 8 stuck claims (45, 52,

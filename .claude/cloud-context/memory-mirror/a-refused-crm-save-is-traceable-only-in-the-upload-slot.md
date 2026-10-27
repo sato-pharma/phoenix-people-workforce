@@ -47,7 +47,7 @@ of real file, and not one `used_at`. `app_error_events` held nothing of hers and
 
 **What it proved that day:** her phone reported accuracy exactly **2000 m** all day (Android
 approximate-location blurring, an exact 2 km grid point). That SAVED at 10:25/10:54/10:58/11:10 and
-was flagged; [#5234](https://github.com/Gawish-1997/phoenix-people-workforce/pull/5234) ("both
+was flagged; [#5234](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/5234) ("both
 readings within 100 m") merged **08:24:27 UTC = 11:24 Cairo**, 14 minutes after her last successful
 save, and from then on the same reading is refused at the door. **The phone did not change — the code
 did.** Read a rep's dead end against the deploy time before blaming the device.

@@ -185,7 +185,7 @@ A hint that omits a real governorate is worse than no hint: it actively pushes t
 applicants onto the wrong row.
 
 **A region hint follows the RECRUITMENT map, not the sales map.** The two disagree on purpose since
-[#2509](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2509), which moved Qalyubia,
+[#2509](https://github.com/it-gawish-hr/phoenix-people-workforce/pull/2509), which moved Qalyubia,
 Sharqia, Suez and Ismailia onto Delta (3) in `governorateRegions` while deliberately leaving
 `au_v_canonical_areas` alone until the August closing is published. The hints follow
 `governorateRegions` because that is the vocabulary the Region filter on the CV database and the

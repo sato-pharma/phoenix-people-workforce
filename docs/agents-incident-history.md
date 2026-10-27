@@ -92,7 +92,7 @@ If GitHub ever *does* refuse a merge as *"not up to date"*, the strict setting h
 on — confirm before assuming the rule is wrong:
 
 ```bash
-gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection --jq '.required_status_checks.strict'
+gh api repos/it-gawish-hr/phoenix-people-workforce/branches/main/protection --jq '.required_status_checks.strict'
 ```
 
 ## `gh pr update-branch` acts on the server
@@ -547,7 +547,7 @@ diagnosis to the wrong place.
 
 ### There are four, not three
 
-`gh api repos/Gawish-1997/phoenix-people-workforce/actions/workflows` returns four active scheduled
+`gh api repos/it-gawish-hr/phoenix-people-workforce/actions/workflows` returns four active scheduled
 workflows:
 
 | workflow | cron | state |
@@ -693,7 +693,7 @@ affected. Do not claim role safety from code inspection alone when real role tes
 
 **Deploy verification.** Production is Railway auto-deploy on push to `main` — there is no Cloud Run
 workflow to watch. Confirm a deploy through the GitHub deployments API
-(`gh api repos/Gawish-1997/phoenix-people-workforce/deployments`) or `railway status`, and confirm
+(`gh api repos/it-gawish-hr/phoenix-people-workforce/deployments`) or `railway status`, and confirm
 what actually serves traffic by requesting `/api/healthz` and reading `revision`. Use the live
 staging app (§3) to smoke-test before a risky production deploy when there is time. After a
 runtime-impacting production deploy, verify the public domain, smoke-test the changed workflow, and

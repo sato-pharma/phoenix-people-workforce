@@ -35,7 +35,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-import { readProtectionContexts } from './required-check-names.mjs';
+import { REPO, readProtectionContexts } from './required-check-names.mjs';
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -45,8 +45,6 @@ refuseUnknownFlags({
   entry: import.meta.url,
   known: ["--ship", "--green", "--timeout"],
 });
-
-const REPO = 'Gawish-1997/phoenix-people-workforce';
 
 /**
  * `PHX_WAIT_PR_FIXTURE=<file.json>` replays a scripted sequence of readings instead of calling `gh`.
