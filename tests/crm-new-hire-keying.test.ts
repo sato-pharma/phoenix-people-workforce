@@ -319,8 +319,8 @@ export function runCrmNewHireKeyingTests() {
     applyVisitFilter(recordingQuery(calls), { doubleOnly: true }, "");
     assert.deepEqual(
       calls,
-      [["or", "and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)"]],
-      "F1b: a double visit is a real partner CRM id OR, on a Phoenix native row only, a resolved partner hr id — a vendor row's stray hr id is not a partner (audit finding A)",
+      [["or", "and(source.eq.phoenix,double_hr_id.not.is.null),and(source.neq.phoenix,double_crm_id.not.is.null,double_crm_id.neq.0)"]],
+      "F1b: a double visit is a real partner CRM id OR, on a Phoenix native row only, a resolved partner hr id — a vendor row's stray hr id is not a partner (audit finding A); the crm-id half names source.neq.phoenix so Postgres tests a Phoenix row before its joins (infrastructure audit, 2026-10-28)",
     );
 
     // Employee 360's visit read must carry the native marker, or isCrmDoubleVisitRow keeps the vendor
