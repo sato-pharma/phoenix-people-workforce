@@ -1291,7 +1291,7 @@ export function VisitLogForm({
           height) the way the plan's save bar is: under his thumb wherever he has scrolled to. It is still
           the form's ONE way to save — the press is read at the button and `save` keeps its own
           single-flight guard — and it says the one thing still missing before he taps, not after. */}
-      <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
+      <div data-portal-action-bar="" className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
         {/* He tried to leave with a recording on the form. Said HERE, in the bar, so it is in view from
             either exit — the back arrow at the top or Cancel at the bottom. It states the mechanism and
             offers both doors: "Leave without it" always works, because a guard he cannot get out of is a

@@ -249,10 +249,12 @@ export function PortalBottomNavQuickActions({
 
   return (
     <>
+      {/* A page with its own sticky Back / Next / Submit bar marks it data-portal-action-bar, and the
+          button steps aside — it sat on top of Next on the Submit expense form (2026-10-27). */}
       <button
         aria-expanded={open}
         aria-label="Start something"
-        className={`fixed right-3 z-[45] flex h-12 w-12 items-center justify-center bg-[#F05A1A] text-white shadow-[0_10px_26px_rgba(240,90,26,0.45)] transition-[scale,rotate,opacity] duration-200 ease-out active:scale-95 motion-reduce:transition-none lg:hidden ${
+        className={`fixed right-3 z-[45] flex h-12 w-12 items-center justify-center bg-[#F05A1A] text-white shadow-[0_10px_26px_rgba(240,90,26,0.45)] transition-[scale,rotate,opacity] duration-200 ease-out active:scale-95 motion-reduce:transition-none lg:hidden [body:has([data-portal-action-bar])_&]:hidden ${
           open ? "rotate-45" : ""
         } ${
           // It goes away with the bar it sits above — but never while its own sheet is open, which

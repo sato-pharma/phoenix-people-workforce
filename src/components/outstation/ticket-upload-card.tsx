@@ -48,7 +48,7 @@ export function TicketUploadCard({
       ? "Upload any supporting attachment for the trip if needed. The request amount still comes from the server calculation."
       : isTicketBased
         ? required
-          ? "Attach go and return tickets — required to submit a train or bus request. They are kept as proof of travel. PDF or photo."
+          ? "Attach go and return tickets as a PDF or a photo — they are kept as proof of travel. Without them the claim still submits, but it is held for review until you attach them from My claims."
           : "Optional for your role. If you have the tickets, attach them as a PDF or a photo — you can take the photo here. The request submits either way."
         : "Attach any supporting document for this expense request.");
 

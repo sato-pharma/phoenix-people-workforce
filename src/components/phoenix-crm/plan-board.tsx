@@ -1695,7 +1695,7 @@ function SaveBar({
 
   return (
     // Held above the portal's bottom bar on phones (the app sets --crm-sticky-bottom to its height).
-    <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 mt-3 border border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
+    <div data-portal-action-bar="" className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 mt-3 border border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 basis-56">
           <p className="break-words text-sm font-black text-slate-950">{dirty ? `Unsaved changes · ${weeks}` : `The plan needs saving · ${weeks}`}</p>

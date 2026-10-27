@@ -7,6 +7,7 @@ import {
   eligibilityAfterMissingTicketAttached,
   missingTicketAttachedSentence,
   OUTSTATION_ELIGIBLE_LOCATION_REASON,
+  OUTSTATION_NO_TICKET_HOLD_REASON,
   OUTSTATION_OFFLINE_TICKET_HOLD_REASON,
   OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
 } from "../src/lib/outstation/missing-ticket.ts";
@@ -40,6 +41,11 @@ function functionSlice(source: string, signature: string): string {
   const rest = source.slice(start + signature.length);
   const next = rest.search(/\n(?:export )?async function /);
   return rest.slice(0, next === -1 ? rest.length : next);
+}
+
+function submit0(): string {
+  const wizard = code(WIZARD);
+  return wizard.slice(wizard.indexOf("async function submit()"), wizard.indexOf("async function submit()") + 4000);
 }
 
 export function runOutstationMissingTicketTests() {
@@ -93,6 +99,11 @@ export function runOutstationMissingTicketTests() {
   assert.ok(!after.includes(OUTSTATION_OFFLINE_TICKET_HOLD_REASON), "HEADLINE: the hold sentence, no longer true, is replaced");
   assert.ok(after.startsWith(sentence), "by the attached sentence, in its place");
   assert.ok(after.endsWith(`${JOURNEY_CHECK_MARKER} route reviewed.`), "the Journey check group stays the tail");
+  // The ONLINE hold (owner, 2026-10-27) clears the same way once the ticket is attached.
+  const heldOnline = `${OUTSTATION_NO_TICKET_HOLD_REASON} ${JOURNEY_CHECK_MARKER} route reviewed.`;
+  const afterOnline = approvalReasonAfterMissingTicketAttached(heldOnline, sentence);
+  assert.ok(!afterOnline.includes(OUTSTATION_NO_TICKET_HOLD_REASON), "the online hold sentence is replaced too");
+  assert.ok(afterOnline.startsWith(sentence));
   const plain = approvalReasonAfterMissingTicketAttached(`GPS was weak. ${JOURNEY_CHECK_MARKER} ok.`, sentence);
   assert.equal(plain, `GPS was weak. ${sentence} ${JOURNEY_CHECK_MARKER} ok.`, "with no hold sentence it is added ahead of the Journey check");
   assert.equal(approvalReasonAfterMissingTicketAttached(null, sentence), sentence);
@@ -108,6 +119,17 @@ export function runOutstationMissingTicketTests() {
   assert.match(attach, /deleteOutstationTicketAttachments\(/, "a failed write deletes the uploaded files");
   assert.match(attach, /source: "employee_missing_ticket"/, "and every attach leaves an audit row");
 
+  // A train or bus claim sent ONLINE with no ticket is HELD, never refused (owner, 2026-10-27: a
+  // District Sales Manager's train claim could not get past the evidence step). The throw is gone and
+  // the online hold sentence is chosen when the submit was not captured offline.
+  assert.doesNotMatch(service, /A ticket attachment is required for train and bus expense requests/, "HEADLINE: an online ticketless claim is no longer refused");
+  assert.match(
+    service,
+    /calculation\.offlineCaptured\s*\?\s*OUTSTATION_OFFLINE_TICKET_HOLD_REASON\s*:\s*OUTSTATION_NO_TICKET_HOLD_REASON/,
+    "the online submit is held with its own sentence",
+  );
+  assert.doesNotMatch(submit0(), /attach the ticket — a train or bus claim needs it/, "and the form no longer refuses Submit without it");
+
   const route = code(ROUTE);
   assert.match(route, /assertSameOriginMutation\(request\)/);
   assert.match(route, /assertPermission\(access, "outstation", "create"\)/);
@@ -118,8 +140,7 @@ export function runOutstationMissingTicketTests() {
   assert.match(sync, /syncOfflineOutstationRequest\([\s\S]*\{ ticketAttachments \}\)/, "the offline route passes the ticket it was sent");
   assert.match(functionSlice(service, "export async function syncOfflineOutstationRequest("), /options,?\s*\)/, "and the service passes it on");
 
-  const wizard = code(WIZARD);
-  const submit = wizard.slice(wizard.indexOf("async function submit()"), wizard.indexOf("async function submit()") + 4000);
+  const submit = submit0();
   assert.doesNotMatch(
     submit,
     /if \(!isOffline && \(isTicketBased \|\| isNonTravel\) && ticketFiles\.length > 0\)/,

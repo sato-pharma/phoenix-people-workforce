@@ -33,6 +33,15 @@ export const OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON =
 export const OUTSTATION_OFFLINE_TICKET_HOLD_REASON =
   "This train or bus claim was captured offline and could not carry its ticket attachment, so it is held for Super Admin review before it moves to payroll.";
 
+/**
+ * The hold the submit path writes onto a ticketless claim sent ONLINE. A train or bus claim without
+ * its ticket used to be refused at Next and again at Submit (owner, 2026-10-27, after a manager's
+ * train claim sat on the evidence step with no way forward): the system flags, it never refuses
+ * a person's money, so it is held exactly like the offline one and cleared the same way.
+ */
+export const OUTSTATION_NO_TICKET_HOLD_REASON =
+  "This train or bus claim was submitted without its ticket, so it is held for Super Admin review until the ticket is attached from My claims.";
+
 /** Refused when the claim already carries a ticket — this tool fills a gap, it never adds a second copy. */
 export const MISSING_TICKET_ALREADY_ATTACHED_MESSAGE =
   "This claim already has its ticket attached. To add another leg, use Add tickets on the Expense Dashboard.";
@@ -80,7 +89,7 @@ export function missingTicketAttachedSentence(attachedOnLabel: string, fileCount
 }
 
 /**
- * The approval reason once the ticket is attached. The offline hold sentence is REPLACED by the
+ * The approval reason once the ticket is attached. The hold sentence (offline or online) is REPLACED by the
  * attached sentence (it is no longer true); with no hold sentence, the attached one is added to the
  * free text. Either way it stays AHEAD of the system's "Journey check:" group, which must remain
  * the tail (decision-note.ts) so a re-priced journey can still replace it.
@@ -90,8 +99,8 @@ export function approvalReasonAfterMissingTicketAttached(
   attachedSentence: string,
 ): string {
   const text = String(reason ?? "");
-  if (text.includes(OUTSTATION_OFFLINE_TICKET_HOLD_REASON)) {
-    return text.replace(OUTSTATION_OFFLINE_TICKET_HOLD_REASON, attachedSentence);
+  for (const hold of [OUTSTATION_OFFLINE_TICKET_HOLD_REASON, OUTSTATION_NO_TICKET_HOLD_REASON]) {
+    if (text.includes(hold)) return text.replace(hold, attachedSentence);
   }
   const cut = text.indexOf(JOURNEY_CHECK_MARKER);
   const head = (cut >= 0 ? text.slice(0, cut) : text).trim();
