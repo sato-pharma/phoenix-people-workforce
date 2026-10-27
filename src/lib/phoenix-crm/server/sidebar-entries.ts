@@ -16,6 +16,7 @@ import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import {
+  canReadMyMap,
   doubleVisitReportAudience,
   readsFieldHeardByProduct,
   readsTeamPlaceChecks,
@@ -63,6 +64,7 @@ export type PhoenixCrmSidebarEntries = {
   forecast: boolean;
   placeChecks: boolean;
   doubleVisitRequests: boolean;
+  myMap: boolean;
 };
 
 /** No row at all — what a failed, refused or seatless lookup answers. */
@@ -71,6 +73,7 @@ export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = {
   forecast: false,
   placeChecks: false,
   doubleVisitRequests: false,
+  myMap: false,
 };
 
 /**
@@ -99,6 +102,9 @@ export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<P
       // The Double visit requests report (owner, 2026-10-16) — every manager up to the CEO and the product
       // managers a rep can ask. The page's own predicate, so the row cannot open onto a redirect.
       doubleVisitRequests: doubleVisitReportAudience(viewer) !== null,
+      // My map (owner, 2026-10-27) — the rep, his managers up the chain, and the company roles. The page's own
+      // predicate, so the row cannot open onto a redirect.
+      myMap: canReadMyMap(viewer),
       // No plan-switch answer here any more (2026-10-23): the Plans tab stopped reading it on 2026-10-17,
       // and asking it cost every district manager a third sequential wave on every portal page.
     };

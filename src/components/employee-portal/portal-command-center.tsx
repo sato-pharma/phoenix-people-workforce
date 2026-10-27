@@ -31,6 +31,7 @@ import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboard
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
 import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-command-center";
+import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-adherence-report";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -1224,7 +1225,15 @@ function RepPanelLoading({ title }: { title: string }) {
 // tidy-up — `tests/portal-tools-grid-fits-a-phone.test.ts` records the removal and fails if it
 // comes back on its own.
 
-function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: RepTodayPlan | null; snapshot: PortalHomeSnapshot }) {
+function MedicalRepCommandCenter({
+  access,
+  repTodayPlan,
+  snapshot,
+}: {
+  access?: AccessContext;
+  repTodayPlan: RepTodayPlan | null;
+  snapshot: PortalHomeSnapshot;
+}) {
   const {
     shell,
     pendingVacationCount,
@@ -1337,6 +1346,15 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                 pendingVacationCount={pendingVacationCount}
               />
             </Suspense>
+
+            {/* My map — his own territory's validated customers as pins, AM, PM and pharmacies in their own
+                colours (owner, 2026-10-27). It loads itself under its own Suspense, so the page never waits
+                for it, and it opens the full map with directions to any pin. */}
+            {access ? (
+              <Suspense fallback={<RepPanelLoading title="My map" />}>
+                <MyMapSnapshotCard access={access} frame="rep" />
+              </Suspense>
+            ) : null}
 
             <Suspense fallback={<RepPanelLoading title="Your record" />}>
               <RepRecord daysUntilRenewal={daysUntilRenewal} record={cards.record} serviceDuration={serviceDuration} />
@@ -1875,6 +1893,6 @@ export function PortalCommandCenter({
     case "Regional Manager":
       return <RmCommandCenter snapshot={snapshot} access={access} />;
   }
-  if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter repTodayPlan={repTodayPlan} snapshot={snapshot} />;
+  if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter access={access} repTodayPlan={repTodayPlan} snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
 }

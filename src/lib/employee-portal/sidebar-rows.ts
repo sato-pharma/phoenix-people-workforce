@@ -34,6 +34,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/place-checks", label: "Place checks", section: "Phoenix CRM" },
   { href: "/employee-portals/visit-report", label: "Visit report", section: "Phoenix CRM" },
   { href: "/employee-portals/double-visit-requests", label: "Double visit requests", section: "Phoenix CRM" },
+  { href: "/employee-portals/my-map", label: "My map", section: "Phoenix CRM" },
 
   { href: "/employee-portals", label: "Command Center", section: "My Workspace" },
   { href: "/employee-portals/interview-calendar", label: "Interview Calendar", section: "My Workspace" },

@@ -147,6 +147,11 @@ export type EmployeePortalNavVisibility = {
    * very predicate that gates the page and its routes, so the row can never open onto a redirect.
    */
   showDoubleVisitRequestsTab?: boolean;
+  /**
+   * My map — a pin for every validated customer place on the territories the viewer reads (owner, 2026-10-27).
+   * Not a role test either: `phoenixCrmSidebarEntries` answers it with `canReadMyMap`, the page's own gate.
+   */
+  showMyMapTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -574,6 +579,7 @@ export function resolveEmployeePortalNavVisibility(
   hasPhoenixCrmForecast?: boolean,
   hasTeamPlaceChecks?: boolean,
   hasDoubleVisitRequests?: boolean,
+  hasMyMap?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -972,6 +978,8 @@ export function resolveEmployeePortalNavVisibility(
     showTeamPlaceChecksTab: hasTeamPlaceChecks === true,
     // And the report of the double visits reps ask for (owner, 2026-10-16), the module's own answer too.
     showDoubleVisitRequestsTab: hasDoubleVisitRequests === true,
+    // And My map (owner, 2026-10-27), answered by the page's own `canReadMyMap`.
+    showMyMapTab: hasMyMap === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.
