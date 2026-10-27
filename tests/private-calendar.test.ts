@@ -43,7 +43,7 @@ export async function runPrivateCalendarTests() {
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "AA", role: "CEO", scope: "company" }), unrelated), true, "CEO can read all private calendars");
   // A Regional or National Sales Manager manages through his district managers — owner, 2026-10-20:
   // "when you filter by manager you find no manager". With the directory index he reads his whole
-  // subtree, down to the medical rep; every other manager keeps self plus direct reports.
+  // subtree, down to the medical rep.
   const nsm = { hrId: "N-1", managerHrId: "AA" };
   const districtManager = { hrId: "D-1", managerHrId: "N-1" };
   const rep = { hrId: "R-1", managerHrId: "D-1" };
@@ -57,8 +57,21 @@ export async function runPrivateCalendarTests() {
   assert.equal(canReadPrivateCalendarEmployee(nsmAccess, rep), false, "without the directory index the walk never runs — a single-row caller stays conservative");
   const rsmAccess = access({ hrId: "D-1", loginId: "D-1", role: "Regional Manager", scope: "hierarchy" });
   assert.equal(canReadPrivateCalendarEmployee(rsmAccess, rep, undefined, { byCanonicalHrId }), true, "a Regional Manager reads his subtree too");
+  // Every manager seat reads his whole team beneath him (owner, 2026-10-27) — the Marketing Manager
+  // whose Product Manager reports to his Group Product Manager, and a plain Manager alike.
+  const wholeTeamMarketingManager = { hrId: "MM-1", managerHrId: "AA" };
+  const wholeTeamGroupProductManager = { hrId: "GPM-1", managerHrId: "MM-1" };
+  const wholeTeamProductManager = { hrId: "PM-1", managerHrId: "GPM-1" };
+  const headOfficeIndex = buildPrivateCalendarHierarchyIndex([wholeTeamMarketingManager, wholeTeamGroupProductManager, wholeTeamProductManager, nsm, districtManager, rep]);
+  const marketingAccess = access({ hrId: "MM-1", loginId: "MM-1", role: "Marketing Manager", scope: "line" });
+  assert.equal(canReadPrivateCalendarEmployee(marketingAccess, wholeTeamProductManager, undefined, { byCanonicalHrId: headOfficeIndex }), true, "a Marketing Manager reads the Product Manager under his Group Product Manager");
+  assert.equal(canReadPrivateCalendarEmployee(marketingAccess, rep, undefined, { byCanonicalHrId: headOfficeIndex }), false, "a Marketing Manager never reads outside his own subtree");
+  const groupProductAccess = access({ hrId: "GPM-1", loginId: "GPM-1", role: "Group Product Manager", scope: "line" });
+  assert.equal(canReadPrivateCalendarEmployee(groupProductAccess, wholeTeamMarketingManager, undefined, { byCanonicalHrId: headOfficeIndex }), false, "the subtree is downward only — never the manager above");
   const plainManager = access({ hrId: "N-1", loginId: "N-1", role: "Manager", scope: "team" });
-  assert.equal(canReadPrivateCalendarEmployee(plainManager, rep, undefined, { byCanonicalHrId }), false, "a head-office Manager keeps direct reports only, even with the index");
+  assert.equal(canReadPrivateCalendarEmployee(plainManager, rep, undefined, { byCanonicalHrId }), true, "a head-office Manager reads his whole team beneath him too");
+  const selfOnly = access({ hrId: "N-1", loginId: "N-1", role: "Finance Manager", scope: "self" });
+  assert.equal(canReadPrivateCalendarEmployee(selfOnly, rep, undefined, { byCanonicalHrId }), false, "a self-scoped seat never walks the subtree");
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "B-10", role: "Employee", scope: "self" }), unrelated), true, "configured HR manager ID can read all private calendars");
   assert.equal(isPrivateCalendarGlobalViewer(access({ hrId: "admin-HR", loginId: "admin-HR" })), true, "admin-HR is a configured global viewer");
 
