@@ -152,10 +152,20 @@ function egp(value: number) {
 }
 
 
+/** What a test account reads after Submit or an offline replay: the claim ran, and nothing was kept. */
+const TEST_CLAIM_NOT_SAVED_TITLE = "Test claim — checked, not saved";
+const TEST_CLAIM_NOT_SAVED_DETAIL =
+  "Every check ran exactly as it does for the real claim. Nothing was saved: no claim, no photo, no ticket, no payroll line and no email.";
+
 /** What the screen after Submit names: the claim, and where the trip went. */
 type SubmittedClaim = {
   arrivalPhotoOwed: boolean;
   destination: string | null;
+  /**
+   * A test account's claim: every check ran and NOTHING was saved (owner, 2026-10-28 — "Runs fully,
+   * saves nothing"; the stop is in submitOutstationRequest). Carries the total Phoenix priced it at.
+   */
+  dryRun: { expectedTotal: number | null } | null;
   id: number | null;
   /** A car trip can add stops on the way (chained-journey.ts) — the screen after Submit says how. */
   isCarTrip: boolean;
@@ -778,12 +788,16 @@ export function MobileOutstationWizard({
             method: "POST",
           });
           if (response.ok) {
+            const replayed = (await response.json().catch(() => null)) as { dryRun?: unknown } | null;
             resetFormState();
             // A replayed draft carries no ticket file (a file cannot live in localStorage), so a
             // train or bus claim lands without one — and the departure photo is still owed. Both
             // are said here, and the refresh puts both cards at the top of the page.
+            // A test account's replay was checked and not saved, so nothing is owed on it.
             setMessage(
-              "Your saved claim was sent now that you are back online. Take the departure photo before you leave, and for a train or bus trip attach the ticket on the claim under My claims below.",
+              replayed?.dryRun === true
+                ? `${TEST_CLAIM_NOT_SAVED_TITLE}. ${TEST_CLAIM_NOT_SAVED_DETAIL}`
+                : "Your saved claim was sent now that you are back online. Take the departure photo before you leave, and for a train or bus trip attach the ticket on the claim under My claims below.",
             );
             router.refresh();
           } else {
@@ -1407,8 +1421,13 @@ export function MobileOutstationWizard({
       // this step and the next"). The refresh re-reads the page, so the departure-photo card
       // appears at its top straight away.
       const claimId = Number(payload?.id);
+      const expectedTotal = Number(payload?.expectedTotalAmount);
       setSubmitted({
         arrivalPhotoOwed,
+        dryRun:
+          payload?.dryRun === true
+            ? { expectedTotal: Number.isFinite(expectedTotal) ? expectedTotal : null }
+            : null,
         destination:
           (typeof payload?.toLabel === "string" && payload.toLabel.trim()) ||
           (captured ? destinationLocation.shortLabel : null),
@@ -2346,6 +2365,7 @@ function NextSteps({ items }: { items: ReadonlyArray<AfterSubmitItem> }) {
  * number, and what is still owed on it, in order — the departure photo first when the trip owes one.
  */
 function SubmittedClaimPanel({ claim, onAnother }: { claim: SubmittedClaim; onAnother: () => void }) {
+  if (claim.dryRun) return <TestClaimPanel expectedTotal={claim.dryRun.expectedTotal} onAnother={onAnother} />;
   const items = afterSubmitGuidance(claim);
   return (
     <section aria-label="Claim submitted" className="border border-slate-200 bg-white shadow-sm">
@@ -2366,6 +2386,32 @@ function SubmittedClaimPanel({ claim, onAnother }: { claim: SubmittedClaim; onAn
             See it under My claims
             <ChevronRight aria-hidden className="h-4 w-4" />
           </a>
+          <button className={cn(phxButtonGhostClassName, "min-h-12 justify-center")} onClick={onAnother} type="button">
+            Submit another expense
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** A test account's Submit: the same panel, saying the claim was checked and nothing was kept. */
+function TestClaimPanel({ expectedTotal, onAnother }: { expectedTotal: number | null; onAnother: () => void }) {
+  return (
+    <section aria-label="Test claim checked" className="border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
+        <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <CircleCheck aria-hidden className="h-4 w-4" />
+          Test account
+        </p>
+        <h2 className="mt-1 text-lg font-black text-slate-900">{TEST_CLAIM_NOT_SAVED_TITLE}</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{TEST_CLAIM_NOT_SAVED_DETAIL}</p>
+        {expectedTotal != null ? (
+          <p className="mt-2 text-sm font-black text-slate-900">Phoenix priced it at {egp(expectedTotal)}.</p>
+        ) : null}
+      </div>
+      <div className="px-5 pb-5 sm:px-8">
+        <div className="mt-5 flex flex-wrap gap-2">
           <button className={cn(phxButtonGhostClassName, "min-h-12 justify-center")} onClick={onAnother} type="button">
             Submit another expense
           </button>

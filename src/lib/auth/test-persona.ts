@@ -59,7 +59,25 @@ export const TEST_ACCOUNT_WRITABLE_PREFIXES = ["/api/phoenix-crm/", "/api/auth/"
  * back off disk and fails if it contains an insert/update/upsert/audit call, so a route that grows a
  * write drops out of the list rather than letting a test account write as the person it mirrors.
  */
-export const TEST_ACCOUNT_READONLY_POSTS = ["/api/milestones/my-card", "/api/spotlight/me/sheet"] as const;
+export const TEST_ACCOUNT_READONLY_POSTS = [
+  "/api/milestones/my-card",
+  "/api/spotlight/me/sheet",
+  // The expense form's location capture and its live pricing (owner, 2026-10-28: a test account
+  // runs the whole expense form). Both price a trip and return it; neither stores anything.
+  "/api/outstation/capture-location",
+  "/api/outstation/calculate",
+] as const;
+
+/**
+ * POST routes a test account RUNS IN FULL and that SAVE NOTHING for it (owner, 2026-10-28: "be able to
+ * submit expense", answered "Runs fully, saves nothing"). Every check runs exactly as for the person it
+ * mirrors — the location, the distance, the total, the duplicate-trip guard, the photo rules — and then
+ * `submitOutstationRequest` (src/lib/outstation/service.ts) returns `dryRun: true` BEFORE its first
+ * upload or row: no claim, no photo, no ticket, no payroll line, no email. Both paths end in that one
+ * function. `tests/test-account-expense-dry-run.test.ts` pins the stop before the first write; a
+ * route here that does not end in such a stop must never be added. Exact paths, never a prefix.
+ */
+export const TEST_ACCOUNT_DRY_RUN_POSTS = ["/api/outstation/submit", "/api/outstation/sync-offline"] as const;
 
 /**
  * POST routes that write ONLY the test account's own diagnostic record, filed under ITS login and
@@ -79,6 +97,7 @@ export function testAccountMayRun(method: string | null | undefined, pathname: s
   if (READ_METHODS.has(String(method ?? "GET").toUpperCase())) return true;
   const path = String(pathname ?? "");
   if ((TEST_ACCOUNT_READONLY_POSTS as readonly string[]).includes(path)) return true;
+  if (String(method ?? "").toUpperCase() === "POST" && (TEST_ACCOUNT_DRY_RUN_POSTS as readonly string[]).includes(path)) return true;
   if (String(method ?? "").toUpperCase() === "POST" && (TEST_ACCOUNT_OWN_DIAGNOSTIC_POSTS as readonly string[]).includes(path)) return true;
   return TEST_ACCOUNT_WRITABLE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
@@ -91,7 +110,7 @@ function pathnameOf(url: string): string {
   }
 }
 
-/** Throws the refusal when a test account sends a write outside the writable prefixes. */
+/** Throws the refusal when a test account sends a write outside the lists above. */
 export function assertTestAccountMayRun(access: Pick<AccessContext, "testPersona">, request: Pick<Request, "method" | "url">): void {
   if (!isTestAccount(access)) return;
   if (testAccountMayRun(request.method, pathnameOf(request.url))) return;
