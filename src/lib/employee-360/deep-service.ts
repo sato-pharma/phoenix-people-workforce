@@ -592,6 +592,8 @@ export type DoubleVisitEvent = {
 export type DoubleVisitor = { hrId: string; name: string | null; count: number; isTrainingManager: boolean };
 export type DoubleVisitHistory = {
   totalReceived: number;
+  /** The distinct days those double visits were made on (owner, 2026-10-27). */
+  daysReceived: number;
   tmCount: number;
   distinctVisitors: number;
   byVisitor: DoubleVisitor[];
@@ -646,6 +648,7 @@ export function buildDoubleVisitHistory(
 
   return {
     totalReceived: events.length,
+    daysReceived: new Set(events.map((e) => e.date)).size,
     tmCount: events.filter((e) => e.isTrainingManager).length,
     distinctVisitors: visitorList.length,
     byVisitor: visitorList.slice(0, 10),
@@ -1153,6 +1156,8 @@ export type LeadershipActivity = {
    * through `loadManagerRideAlongDetails`. Null when the Phoenix CRM read failed — never a figure that left half out.
    */
   dvConducted: number | null;
+  /** The distinct days those double visits were made on (owner, 2026-10-27). Null when the Phoenix CRM read failed. */
+  dvDays: number | null;
   /** The same visits, one figure per kind. Null when the Phoenix CRM read failed. */
   dvByKind: ConductedByKind | null;
   /** The conducted double visits AM · PM · Pharmacies apart (owner, 2026-10-23) — a campaign or admin row is in none. */
@@ -1331,6 +1336,8 @@ export type LeaderPhoenixFigures = {
   ownWithSenior: { visits: number; split: VisitCountSplit };
   /** The ride-alongs he joined in Phoenix CRM, one figure per kind. */
   rides: ConductedByKind;
+  /** The day of every ride-along counted in `rides`, so the conducted double visits can say on how many days. */
+  rideDates: string[];
   rideSplit: VisitCountSplit;
 };
 
@@ -1349,6 +1356,7 @@ export function leaderVisitFigures(visits: readonly ManagerDayVisit[]): LeaderPh
     ownSingle: { visits: ownFigures.ownSingle, split: splitOf(ownAlone) },
     ownWithSenior: { visits: ownFigures.ownWithSenior, split: splitOf(ownWithSenior) },
     rides: { chains: rideFigures.chains, doubles: rideFigures.doubles, productManagerVisits: rideFigures.productManagerVisits },
+    rideDates: rides.filter((v) => v.kind === "double" || v.kind === "chain" || v.kind === "product_manager").map((v) => v.date),
     rideSplit: splitOf(rides),
   };
 }
@@ -1357,20 +1365,23 @@ export function leaderVisitFigures(visits: readonly ManagerDayVisit[]): LeaderPh
  * PURE. The double visits a leader conducted, from both sides without counting one twice: the iReports360 rows of the
  * visits door, and his Phoenix CRM ride-alongs. The door's own Phoenix rows are the same visits as the ride-alongs,
  * so they are left out here and the ride-alongs counted instead (they carry the kind and the product-manager seat).
+ * `days` is the distinct days those same visits were made on (owner, 2026-10-27: "how many days").
  * Null Phoenix visits (that read failed) is null — never a figure that left half the work out.
  */
 export function conductedDoubleVisitFigures(
-  doorRows: ReadonlyArray<Pick<ConductedDvRow, "ampm" | "comment" | "crm_visit_id" | "double2_hr_id" | "source" | "speciality" | "visit_type" | "visit_type_description">>,
+  doorRows: ReadonlyArray<Pick<ConductedDvRow, "ampm" | "comment" | "crm_visit_id" | "double2_hr_id" | "source" | "speciality" | "visit_date" | "visit_type" | "visit_type_description">>,
   phoenix: LeaderPhoenixFigures | null,
-): { total: number; byKind: ConductedByKind; split: VisitCountSplit } | null {
+): { total: number; days: number; byKind: ConductedByKind; split: VisitCountSplit } | null {
   if (!phoenix) return null;
   const byKind: ConductedByKind = { ...phoenix.rides };
   const split = emptyVisitCountSplit();
   split.am = phoenix.rideSplit.am;
   split.pm = phoenix.rideSplit.pm;
   split.pharmacies = phoenix.rideSplit.pharmacies;
+  const days = new Set(phoenix.rideDates);
   for (const row of doorRows) {
     if (isPhoenixNativeVisitRow(row)) continue;
+    if (row.visit_date) days.add(row.visit_date);
     if (String(row.double2_hr_id ?? "").trim()) byKind.chains += 1;
     else byKind.doubles += 1;
     const bucket = conductedVisitBucket(row);
@@ -1378,6 +1389,7 @@ export function conductedDoubleVisitFigures(
   }
   return {
     byKind,
+    days: days.size,
     split: { am: split.am, pharmacies: split.pharmacies, pm: split.pm },
     total: byKind.doubles + byKind.chains + byKind.productManagerVisits,
   };
@@ -1533,6 +1545,7 @@ async function getLeadershipActivity(
   const ownVisits = ownSingle?.visits ?? 0;
   const ownWithSenior = ownSingle?.withSenior.visits ?? 0;
   const dvConducted = conducted?.total ?? null;
+  const dvDays = conducted?.days ?? null;
   // A failed Phoenix CRM read still draws the section, so its figures can say "—" instead of the empty state's "none".
   const hasData = phoenix === null || coachRows.length > 0 || dvRows.length > 0 || (dvConducted ?? 0) > 0 || ownVisits > 0 || ownWithSenior > 0;
   const ownSentence =
@@ -1540,7 +1553,9 @@ async function getLeadershipActivity(
     (ownWithSenior > 0 ? ` Made ${ownWithSenior} own visit${ownWithSenior === 1 ? "" : "s"} with their own manager or a product manager.` : "") +
     (phoenix ? "" : " The Phoenix CRM visits could not be read just now, so they are not in these figures.");
   const dvPhrase =
-    dvConducted === null ? "double-visits that could not all be read" : `${dvConducted} double-visit${dvConducted === 1 ? "" : "s"}`;
+    dvConducted === null
+      ? "double-visits that could not all be read"
+      : `${dvConducted} double-visit${dvConducted === 1 ? "" : "s"}` + (dvDays ? ` on ${dvDays} day${dvDays === 1 ? "" : "s"}` : "");
   const baseSummaryText = !hasData
     ? "No coaching reports authored, double-visits conducted or own visits logged in this period."
     : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvPhrase}, ` +
@@ -1557,6 +1572,7 @@ async function getLeadershipActivity(
     coachingRepsReached,
     avgScoreGiven,
     dvConducted,
+    dvDays,
     dvByKind: conducted?.byKind ?? null,
     dvSplit: conducted?.split ?? null,
     ownSingle,

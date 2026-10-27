@@ -200,7 +200,7 @@ const KPI_EXPLAIN: Record<string, string> = {
   "Distinct customers": "How many different customers (doctors/pharmacies) they saw — each one counted once, no matter how often visited.",
   "Regular visits": "Normal day-to-day customer visits, not tied to a special campaign.",
   "Campaign visits": "Visits made as part of a marketing campaign or special push.",
-  "Doubles received": "Visits where a manager came along with them in the field (a joint or double visit).",
+  "Doubles received": "Visits where a manager came along with them in the field (a joint or double visit), and on how many days.",
   "Admin / non-visit": "Days spent on things other than seeing customers — meetings, training, or leave.",
   "Last 30 days": "Productive visits in the most recent 30 days, with the previous 30 days shown for comparison.",
   "Avg visits / customer": "On average, how many times each customer was visited during this period.",
@@ -216,7 +216,7 @@ const KPI_EXPLAIN: Record<string, string> = {
   "Distinct locations": "How many different physical spots (about 110m apart) their GPS check-ins came from.",
   // Leadership
   "Coaching delivered": "How many coaching reports this manager wrote for their team members.",
-  "Double-visits conducted": "How many times this manager went into the field alongside a team member.",
+  "Double-visits conducted": "How many times this manager went into the field alongside a team member, and on how many days.",
   "Reps reached": "How many different team members this manager coached or joined in the field.",
   "Avg score given": "The average coaching score this manager awarded to their team.",
   // Team development (manager) & Training-Manager effectiveness
@@ -261,7 +261,7 @@ const KPI_EXPLAIN: Record<string, string> = {
   Reports: "How many coaching reports they have received.",
   "Average score": "The average of all their coaching scores.",
   // Double-visits received
-  "Double-visits received": "How many times a manager joined this person in the field.",
+  "Double-visits received": "How many times a manager joined this person in the field, and on how many days.",
   "With Training Manager": "Of those joint visits, how many were with a Training Manager (field coaching).",
   "Distinct visitors": "How many different managers accompanied them in the field.",
   // Expenses
@@ -847,7 +847,7 @@ export function Employee360View({
           <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={companyAvg(intFmt.format(b.regularVisits))} />
           <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={companyAvg(intFmt.format(b.campaignVisits))} />
           {plan.showDoublesReceived ? (
-            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint={doublesReceivedHint(summary.doublesReceivedByKind)} />
+            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint={`${onDays(summary.doublesReceivedDays, summary.doublesReceived)}${doublesReceivedHint(summary.doublesReceivedByKind)}`} />
           ) : null}
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
@@ -867,7 +867,7 @@ export function Employee360View({
             <DayOfWeekBars counts={summary.visitDayOfWeek} title="Visits by day of week — Sat–Wed full · Thu AM · Fri off" />
             <div className="mt-3 text-xs text-slate-400">
               Single visits {intFmt.format(summary.singleVisits)}
-              {plan.showDoublesReceived ? ` · Double visits ${intFmt.format(summary.doublesReceived)}` : ""}
+              {plan.showDoublesReceived ? ` · Double visits ${intFmt.format(summary.doublesReceived)}${summary.doublesReceived > 0 ? ` on ${daysWord(summary.doublesReceivedDays)}` : ""}` : ""}
             </div>
           </div>
           <div>
@@ -1061,6 +1061,16 @@ function doublesReceivedHint(byKind: { withManager: number; chain: number; withP
   return parts.length > 0 ? parts.join(" · ") : "visits with a manager alongside";
 }
 
+/** "1 day" · "12 days" — the distinct days a set of double visits was made on (owner, 2026-10-27). */
+function daysWord(days: number): string {
+  return `${intFmt.format(days)} day${days === 1 ? "" : "s"}`;
+}
+
+/** "on 12 days · " ahead of a double-visit tile's own hint; nothing when there were no visits to place on a day. */
+function onDays(days: number | null | undefined, visits: number | null | undefined): string {
+  return days != null && (visits ?? 0) > 0 ? `on ${daysWord(days)} · ` : "";
+}
+
 /** "AM 2 · PM 9 · Pharmacies 5" — the three figures apart, never added (owner, 2026-10-23). */
 function splitLine(split: { am: number; pm: number; pharmacies: number }): string {
   return `AM ${intFmt.format(split.am)} · PM ${intFmt.format(split.pm)} · Pharmacies ${intFmt.format(split.pharmacies)}`;
@@ -1093,7 +1103,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
               value={leadership.dvConducted == null ? "—" : intFmt.format(leadership.dvConducted)}
               hint={
                 leadership.dvSplit
-                  ? `${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`
+                  ? `${onDays(leadership.dvDays, leadership.dvConducted)}${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied · ${splitLine(leadership.dvSplit)}`
                   : "the Phoenix CRM visits could not be read just now"
               }
             />
@@ -1807,7 +1817,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
         <>
           {/* One column on a phone: three across left ~54px tiles at 375px, labels spilling out. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <KpiTile label="Double-visits received" value={intFmt.format(dv.totalReceived)} />
+            <KpiTile label="Double-visits received" value={intFmt.format(dv.totalReceived)} hint={`on ${daysWord(dv.daysReceived)}`} />
             <KpiTile label="With Training Manager" value={intFmt.format(dv.tmCount)} hint="TM field coaching" />
             <KpiTile label="Distinct visitors" value={intFmt.format(dv.distinctVisitors)} />
           </div>

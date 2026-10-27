@@ -271,6 +271,7 @@ function runEmployee360Tests() {
   );
   assert.equal(history.totalReceived, 3, "the rep's Employee 360 receives each visit once");
   assert.equal(history.distinctVisitors, 2, "from two managers");
+  assert.equal(history.daysReceived, 2, "three double visits on two days (6 and 7 Oct), owner 2026-10-27");
   const counts = Object.fromEntries(history.byVisitor.map((visitor) => [visitor.hrId, visitor.count]));
   assert.deepEqual(counts, { "d-1": 3, "h-1": 2 }, "the second manager is credited with both chain visits, as the first is");
 
