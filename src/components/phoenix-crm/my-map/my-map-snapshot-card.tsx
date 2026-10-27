@@ -8,9 +8,11 @@
  * `<Suspense>`, because nothing under `components/phoenix-crm` may import server code
  * (`tests/phoenix-crm-boundary.test.ts`).
  *
- * 🔴 A DRAWN PICTURE, NEVER A MAP. The pins are squares in the territory's own frame (`snapshotFrame`), with the
- * busiest bricks named where their pins are. No map tiles are loaded, so a landing page is never billed for a
- * map, and the picture is the territory, not the country.
+ * 🔴 A REAL GOOGLE MAP, WITH THE DRAWN PICTURE UNDER IT (owner, 2026-10-28, asking where the map view was). The
+ * pins are drawn on Google's streets and towns (`MyMapCardMap`), framed on the territory, never the country. The
+ * map is loaded only when the card comes into view, because each one is a billed map load; until it has drawn,
+ * and whenever there is no browser key or it fails, the card shows the drawn picture instead: the pins as squares
+ * in the territory's own frame (`snapshotFrame`), with the busiest bricks named where their pins are.
  *
  * 🔴 AM, PM AND PHARMACIES ARE THREE FIGURES, side by side and never added up (`myMapPerListText`).
  *
@@ -25,6 +27,7 @@ import type { ReactNode } from "react";
 
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { countText, plural } from "@/components/phoenix-crm/format";
+import { MyMapCardMap } from "@/components/phoenix-crm/my-map/my-map-card-map";
 import { snapshotFrame } from "@/lib/phoenix-crm/my-map-geometry";
 import { MY_MAP_LAYER_COLOUR, MY_MAP_LAYERS, myMapPerListText, type MyMapSnapshot } from "@/lib/phoenix-crm/my-map-rules";
 
@@ -141,7 +144,16 @@ function Picture({ snapshot }: { snapshot: MyMapSnapshot }) {
   );
 }
 
-export function MyMapSnapshotView({ frame = "manager", snapshot }: { frame?: MyMapCardFrame; snapshot: MyMapSnapshot }) {
+export function MyMapSnapshotView({
+  browserKey = "",
+  frame = "manager",
+  snapshot,
+}: {
+  /** The Google Maps browser key, read on the server by the loader; without it the card keeps the drawn picture. */
+  browserKey?: string;
+  frame?: MyMapCardFrame;
+  snapshot: MyMapSnapshot;
+}) {
   if (snapshot.unavailable) {
     return (
       <Shell frame={frame}>
@@ -175,7 +187,9 @@ export function MyMapSnapshotView({ frame = "manager", snapshot }: { frame?: MyM
       <div className="@container">
         <div className="grid min-w-0 gap-px bg-slate-200 @xl:grid-cols-2">
           <div className="min-w-0 bg-white p-3">
-            <Picture snapshot={snapshot} />
+            <MyMapCardMap browserKey={browserKey} points={snapshot.points}>
+              <Picture snapshot={snapshot} />
+            </MyMapCardMap>
             <ul aria-label="What the colours mean" className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
               {(["AM", "PM", "Pharmacy"] as const).map((layer) => (
                 <li className="flex items-center gap-1.5 text-phx-xs font-semibold text-slate-600" key={layer}>
