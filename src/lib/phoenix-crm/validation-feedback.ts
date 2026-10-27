@@ -173,6 +173,21 @@ export const VALIDATION_REASON_REQUIRED =
  */
 export const VALIDATION_NOTE_LABEL = "Note for the record — optional (the rep reads only the reason above)";
 
+// ── A place check is not an add to the rep's list ────────────────────────────────────────────────
+
+/**
+ * Under every control that approves a place check, and on the board's own explanation (owner,
+ * 2026-10-27, after a rep was told her doctors were "approved" and waited for them to reach her list).
+ *
+ * 🔴 WORDING ONLY. Approving a place check confirms the place and nothing else; a customer outside the
+ * rep's list stays outside until the rep asks to add them and that request is decided on its own. The
+ * sentences name nobody, so they stand on the district manager's board too.
+ */
+export const PLACE_APPROVAL_IS_NOT_A_LIST_ADD =
+  "Approving confirms the place only. It does not add the customer to the rep's list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own.";
+/** Beside a settled or just-saved approval, where the long sentence above would crowd the row. */
+export const PLACE_APPROVED_NOT_A_LIST_ADD = "The place only — this does not add the customer to the rep's list.";
+
 // ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
 
 /** Said first, so the clause's "its" has a subject and the rep knows which photo is meant. */

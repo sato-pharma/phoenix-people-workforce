@@ -27,6 +27,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { useRouter } from "next/navigation";
 
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
+import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
 
 /** What a saved decision did, in the review's own words. */
 export type PlaceCheckOutcome = "approved" | "rejected" | "refused" | "restored" | "kept" | "settled" | "reopened";
@@ -101,13 +102,17 @@ export function useSavedOutcome(subject: unknown): { saved: PlaceCheckOutcome | 
   return { saved: mark !== null && mark.snapshot === snapshot ? mark.outcome : null, markSaved };
 }
 
-/** What a decision control draws once its decision is saved: the outcome, and no button to press twice. */
+/**
+ * What a decision control draws once its decision is saved: the outcome, and no button to press twice.
+ * An approval also says it confirmed the place only (owner, 2026-10-27) — never an add to the rep's list.
+ */
 export function PlaceCheckSaved({ outcome }: { outcome: PlaceCheckOutcome }) {
   const label = SAVED_LABEL[outcome];
+  const approval = outcome === "approved" || outcome === "restored";
   return (
     <div className="min-w-0 space-y-1" role="status">
       <CrmPill tone={label.tone}>{label.text}</CrmPill>
-      <p className="break-words text-xs text-slate-500">Saved.</p>
+      <p className="break-words text-xs text-slate-500">{approval ? `Saved. ${PLACE_APPROVED_NOT_A_LIST_ADD}` : "Saved."}</p>
     </div>
   );
 }
