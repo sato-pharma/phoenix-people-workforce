@@ -16,7 +16,8 @@ import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
 import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { getDoubleVisitRows, visitPartnerHrIds } from "@/lib/crm/reads";
+import { compareUuidText, dayScanRuns, DOUBLE_VISIT_SLICE_DAYS, getDoubleVisitRows, visitPartnerHrIds } from "@/lib/crm/reads";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
@@ -586,23 +587,54 @@ async function paginateLiveMirrorVisits(
   // compensates by preferring the raw CRM label over a resigned employee's identity, since the
   // resolved agent_hr_id is frequently just a stale, reused CRM account (see memory
   // crm-resigned-slot-reused-for-new-hire).
-  return getDoubleVisitRows<MirrorVisitRow>({
-    dateFrom,
-    dateTo,
-    includeResignedAgents: options?.includeResignedAgents,
-    // Whole days only (see findDoubleVisitCalendarDays): every row of each listed day, whoever it names.
-    ...(options?.visitDates ? { visitDates: options.visitDates } : {}),
-    visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
-    columns:
-      "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, companion_hr_ids, ampm, " +
-      "visit_type, visit_type_description, speciality, " +
-      // THE PHOENIX FIELD SET, raw. This loader has no reader — `getDoubleVisitReportData` holds the
-      // access context and shapes it to that reader's tier there. Selecting it here and deciding sight
-      // there is deliberate: this function also feeds the scoring engine and the private calendar,
-      // neither of which prints a column, so neither needs a viewer threaded into it.
-      PHOENIX_VISIT_DETAIL_COLUMNS,
-  });
+  const read = (filter: { dateFrom: string; dateTo: string; visitDates?: readonly string[] }) =>
+    getDoubleVisitRows<MirrorVisitRow>({
+      ...filter,
+      includeResignedAgents: options?.includeResignedAgents,
+      visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
+      columns:
+        "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
+        "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, companion_hr_ids, ampm, " +
+        "visit_type, visit_type_description, speciality, " +
+        // THE PHOENIX FIELD SET, raw. This loader has no reader — `getDoubleVisitReportData` holds the
+        // access context and shapes it to that reader's tier there. Selecting it here and deciding sight
+        // there is deliberate: this function also feeds the scoring engine and the private calendar,
+        // neither of which prints a column, so neither needs a viewer threaded into it.
+        PHOENIX_VISIT_DETAIL_COLUMNS,
+    });
+  // Whole days only (see findDoubleVisitCalendarDays): every row of each listed day, whoever it names.
+  if (options?.visitDates) return readListedDayRuns(options.visitDates, { end: dateTo, start: dateFrom }, read);
+  return read({ dateFrom, dateTo });
+}
+
+/** Week-runs of listed days in flight at once — as many as the door's own day slices. */
+const LISTED_DAY_RUN_CONCURRENCY = 4;
+
+/**
+ * A read of listed whole days, a week of them per request, back in the whole-window read's id order.
+ *
+ * WHY A WEEK PER REQUEST (2026-10-28, "now fix the double-visit read"). A day list travels in the
+ * request URL, and past a few hundred values PostgREST answers an empty set with no error (50 is the
+ * house limit, see `rep-doctor-lists.ts`). So one request carries only its own run of days, bounded by
+ * the run's first and last day, and about a week of double visits fits in one page (see
+ * DOUBLE_VISIT_SLICE_DAYS) — a run is usually one request. Any number of days can be read this way.
+ *
+ * WHY THE SORT. The runs come back in day order, but the whole-window read is in id order and chain
+ * visits are resolved from a day's rows in that order, so the rows are put back in it. Each day lands
+ * in exactly one run, and the door's duplicate collapse works inside one day, so the rows are exactly
+ * the whole-window read's rows for those days. Exported for its unit test.
+ */
+export async function readListedDayRuns<Row extends { id: string }>(
+  days: readonly string[],
+  window: { end: string; start: string },
+  read: (filter: { dateFrom: string; dateTo: string; visitDates: string[] }) => Promise<Row[]>,
+): Promise<Row[]> {
+  const listed = Array.from(new Set(days)).filter((day) => day >= window.start && day <= window.end).sort();
+  const runs = dayScanRuns(listed, DOUBLE_VISIT_SLICE_DAYS);
+  const parts = await mapWithConcurrency(runs, LISTED_DAY_RUN_CONCURRENCY, (run) =>
+    read({ dateFrom: run[0], dateTo: run[run.length - 1], visitDates: run }),
+  );
+  return parts.flat().sort((left, right) => compareUuidText(left.id, right.id));
 }
 
 // RETIRED 2026-08-01: a hardcoded agent_crm_id -> hr_id corrections map used to live here, with two
@@ -2001,8 +2033,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   const trendStart = `${buckets[0].month}-01`;
   const periodTo = todayIso();
 
-  const [allDvRows, probationRows, probationDvProgress] = await Promise.all([
-    getLiveDoubleVisitRows(trendStart, periodTo, employees),
+  const [probationRows, probationDvProgress] = await Promise.all([
     getProbationRows(access).catch(() => []),
     loadProbationDvProgress(),
   ]);
@@ -2020,9 +2051,29 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     const key = canonicalHrIdKey(row.hr_id);
     return key ? scopedHrKeys.has(key) : false;
   });
-  const ownRows = viewerCanonicalKey
-    ? perDoubleVisitorRows(allDvRows).filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
-    : [];
+  // Block 3's order is settled before the read (a stable sort, as it always was): only the first
+  // FOCUS_PROBATION_DISPLAY_LIMIT probationers are shown, so only theirs is a count the panel needs.
+  const probationOrdered = [...medicalRepProbationRows].sort((a, b) => a.days_remaining - b.days_remaining);
+  const probationShown = probationOrdered.slice(0, FOCUS_PROBATION_DISPLAY_LIMIT);
+
+  // 🔴 THE PANEL READS ITS PEOPLE'S DAYS, NOT THE COMPANY'S YEAR (2026-10-28, "now fix the
+  // double-visit read"). It read every double visit since January — 17,535 rows in 44 requests on
+  // every District Manager's and NSM's portal landing — to keep the viewer's own visits and up to eight
+  // probationers' counts. Every figure on it comes from a row naming one of those people, or from the
+  // rest of that row's day (a chain visit), so those whole days give every figure the whole-window
+  // read gives it (see findDoubleVisitCalendarDays for why whole days are enough). Nobody to show →
+  // no read; a lookup that fails → the whole window, as before.
+  const viewerHrId = viewer?.hrId ?? access.hrId ?? null;
+  const focusHrIds = [...(viewerCanonicalKey && viewerHrId ? [viewerHrId] : []), ...probationShown.map((row) => row.hr_id)];
+  const focusWindow = { end: periodTo, start: trendStart };
+  const focusDays = focusHrIds.length > 0 ? await findDoubleVisitFocusDays(focusHrIds, focusWindow) : null;
+  const allDvRows =
+    focusHrIds.length === 0
+      ? []
+      : await getLiveDoubleVisitRows(trendStart, periodTo, employees, {
+          ...(focusDays ? { crmIdentityResolutions: focusDays.resolutions, visitDates: focusDays.days } : {}),
+        });
+  const { dvCountByHrId, ownRows } = doubleVisitFocusTallies(allDvRows, viewerCanonicalKey);
 
   // Block 1 — viewer's own monthly DV trend (own performed visits only, per owner decision).
   const countByMonth = new Map<string, number>();
@@ -2081,36 +2132,45 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   // probation double visit of its own, so it falls back to a raw DV count (any double-visitor,
   // matched the same canonical way as everything else in this function).
   const dvTier = PROBATION_DV_TIER_BY_ROLE[role];
-  const dvCountByHrId = new Map<string, number>();
-  for (const row of allDvRows) {
-    const key = canonicalHrIdKey(row.visited_employee_hr_id);
-    if (!key) continue;
-    dvCountByHrId.set(key, (dvCountByHrId.get(key) ?? 0) + asNumber(row.visit_count));
-  }
-  const probationAll: DoubleVisitFocusProbationEntry[] = medicalRepProbationRows
-    .map((row) => {
-      const key = canonicalHrIdKey(row.hr_id);
-      return {
-        daysRemaining: row.days_remaining,
-        dvCount: key ? dvCountByHrId.get(key) ?? 0 : 0,
-        dvDone: resolveProbationDvDone(row, dvTier, probationDvProgress),
-        hireDate: row.hire_date,
-        hrId: row.hr_id,
-        name: row.full_name,
-        probationEndDate: row.probation_end_date,
-      } satisfies DoubleVisitFocusProbationEntry;
-    })
-    .sort((a, b) => a.daysRemaining - b.daysRemaining);
+  const probation: DoubleVisitFocusProbationEntry[] = probationShown.map((row) => {
+    const key = canonicalHrIdKey(row.hr_id);
+    return {
+      daysRemaining: row.days_remaining,
+      dvCount: key ? dvCountByHrId.get(key) ?? 0 : 0,
+      dvDone: resolveProbationDvDone(row, dvTier, probationDvProgress),
+      hireDate: row.hire_date,
+      hrId: row.hr_id,
+      name: row.full_name,
+      probationEndDate: row.probation_end_date,
+    } satisfies DoubleVisitFocusProbationEntry;
+  });
 
   return {
     periodFrom: trendStart,
     periodTo,
-    probation: probationAll.slice(0, FOCUS_PROBATION_DISPLAY_LIMIT),
-    probationTruncated: probationAll.length > FOCUS_PROBATION_DISPLAY_LIMIT,
+    probation,
+    probationTruncated: medicalRepProbationRows.length > FOCUS_PROBATION_DISPLAY_LIMIT,
     reportHref: "/employee-portals/double-visit-report",
     scope,
     trend,
   };
+}
+
+/** What the focus panel reads off its double visits: the viewer's own visits (one row per visit he
+ * was a double-visitor on, matched by his canonical key) and each visited rep's double-visit count.
+ * Over the days read for these people, both are what the whole window gives them; another rep's
+ * count may be partial and is never shown. Pure, exported for its unit test. */
+export function doubleVisitFocusTallies(rows: DoubleVisitDbRow[], viewerCanonicalKey: string | null) {
+  const ownRows = viewerCanonicalKey
+    ? perDoubleVisitorRows(rows).filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
+    : [];
+  const dvCountByHrId = new Map<string, number>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.visited_employee_hr_id);
+    if (!key) continue;
+    dvCountByHrId.set(key, (dvCountByHrId.get(key) ?? 0) + asNumber(row.visit_count));
+  }
+  return { dvCountByHrId, ownRows };
 }
 
 // ── Double Visit Report page: flat, filterable, sortable, exportable drill-down ────
@@ -2675,22 +2735,13 @@ export async function findDoubleVisitCalendarDays(
   window: { end: string; start: string },
   readers: DoubleVisitDayReaders = DOOR_DAY_READERS,
 ): Promise<{ days: string[]; resolutions: readonly CrmResolutionRow[] } | null> {
-  const hrIds = Array.from(new Set(employeeHrIds.map((hrId) => String(hrId ?? "").trim()).filter(Boolean)));
-  const selected = new Set(hrIds.map(normalizedHrKey).filter((key): key is string => Boolean(key)));
-  if (selected.size === 0 || hrIds.length > DOUBLE_VISIT_DAYS_MAX_PEOPLE) return null;
   try {
-    const [resolutions, hrDays] = await Promise.all([
-      readers.resolutions(),
-      readers.days({ dateFrom: window.start, dateTo: window.end, participantHrIds: hrIds }),
-    ]);
-    const overridden = crmIdsOverriddenTo(selected, resolutions);
-    const crmDays =
-      overridden.length > 0
-        ? await readers.days({ dateFrom: window.start, dateTo: window.end, participantCrmIds: overridden })
-        : [];
-    const days = Array.from(new Set([...hrDays, ...crmDays])).sort();
-    if (days.length > DOUBLE_VISIT_DAYS_MAX_LISTED) return null;
-    return { days, resolutions };
+    return await findDoubleVisitDays(
+      employeeHrIds,
+      window,
+      { maxDays: DOUBLE_VISIT_DAYS_MAX_LISTED, maxPeople: DOUBLE_VISIT_DAYS_MAX_PEOPLE },
+      readers,
+    );
   } catch (error) {
     logWarning("Private calendar could not find its double-visit days; reading the whole window", {
       labels: { event: "private_calendar_double_visit_days_failed" },
@@ -2698,6 +2749,63 @@ export async function findDoubleVisitCalendarDays(
     });
     return null;
   }
+}
+
+/** The portal focus panel's people: its viewer and the probationers it shows a count for. Each hr id
+ * travels in up to five spellings (`hrIdLookupKeys`), so nine keep the lookup's `in` lists at 45
+ * values, inside the 50-value house limit. */
+export const DOUBLE_VISIT_FOCUS_MAX_PEOPLE = 1 + FOCUS_PROBATION_DISPLAY_LIMIT;
+
+/**
+ * The days of the window the portal focus panel must read for its viewer and the probationers it
+ * shows (see getDoubleVisitPortalFocus), and the override snapshot that decided them — or `null`,
+ * meaning read the whole window. The calendar's lookup with no cap on days: the read takes any number
+ * of them a week per request (readListedDayRuns). A lookup that fails reads the whole window.
+ */
+export async function findDoubleVisitFocusDays(
+  employeeHrIds: readonly string[],
+  window: { end: string; start: string },
+  readers: DoubleVisitDayReaders = DOOR_DAY_READERS,
+): Promise<{ days: string[]; resolutions: readonly CrmResolutionRow[] } | null> {
+  try {
+    return await findDoubleVisitDays(
+      employeeHrIds,
+      window,
+      { maxDays: Number.POSITIVE_INFINITY, maxPeople: DOUBLE_VISIT_FOCUS_MAX_PEOPLE },
+      readers,
+    );
+  } catch (error) {
+    logWarning("Portal double-visit focus could not find its days; reading the whole window", {
+      labels: { event: "portal_focus_double_visit_days_failed" },
+      error,
+    });
+    return null;
+  }
+}
+
+/** The lookup both wrappers above share (the reasoning is on findDoubleVisitCalendarDays). `null`
+ * past either limit, before anything is read; a failed read throws to the wrapper. */
+async function findDoubleVisitDays(
+  employeeHrIds: readonly string[],
+  window: { end: string; start: string },
+  limits: { maxDays: number; maxPeople: number },
+  readers: DoubleVisitDayReaders,
+): Promise<{ days: string[]; resolutions: readonly CrmResolutionRow[] } | null> {
+  const hrIds = Array.from(new Set(employeeHrIds.map((hrId) => String(hrId ?? "").trim()).filter(Boolean)));
+  const selected = new Set(hrIds.map(normalizedHrKey).filter((key): key is string => Boolean(key)));
+  if (selected.size === 0 || hrIds.length > limits.maxPeople) return null;
+  const [resolutions, hrDays] = await Promise.all([
+    readers.resolutions(),
+    readers.days({ dateFrom: window.start, dateTo: window.end, participantHrIds: hrIds }),
+  ]);
+  const overridden = crmIdsOverriddenTo(selected, resolutions);
+  const crmDays =
+    overridden.length > 0
+      ? await readers.days({ dateFrom: window.start, dateTo: window.end, participantCrmIds: overridden })
+      : [];
+  const days = Array.from(new Set([...hrDays, ...crmDays])).sort();
+  if (days.length > limits.maxDays) return null;
+  return { days, resolutions };
 }
 
 export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[], start: string, end: string) {
