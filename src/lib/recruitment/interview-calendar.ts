@@ -50,6 +50,7 @@ import {
   setCandidateRating,
   updateCandidateStatus,
 } from "@/lib/recruitment/candidates";
+import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
@@ -805,9 +806,9 @@ export async function setInterviewerConfirmation(
 
 /**
  * Replace (or attach) the CV kept on an OUTSIDE candidate's interview (owner, 2026-09-26, Tier 3 —
- * edit the CV, e.g. one added after booking). Only for an external booking: an in-house candidate's
- * CV lives on their Recruitment record, not here. Needs book-level access, like every other detail
- * edit. Records the change.
+ * edit the CV, e.g. one added after booking). An in-house candidate's CV lives on their Recruitment
+ * record: one with NO readable CV gets it attached there (attachMissingCandidateCv); one who has one
+ * is refused. Needs book-level access, like every other detail edit. Records the change.
  */
 export async function replaceInterviewExternalCv(
   caller: InterviewCalendarCaller,
@@ -816,7 +817,7 @@ export async function replaceInterviewExternalCv(
 ): Promise<InterviewBooking> {
   const row = await loadBookingRow(bookingId);
   requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
-  if (row.candidate_id) throw new Error("This candidate's CV lives on their Recruitment record — edit it there.");
+  if (row.candidate_id) return attachMissingCandidateCv(caller, row, row.candidate_id, cv);
   const storage = getRecruitmentFileStorage();
   if (!storage.supportsUpload) throw new Error("CV uploads are not switched on in Phoenix yet.");
   const stored = await storage.uploadFile({ bytes: cv.bytes, fileName: cv.fileName, mimeType: cv.mimeType });
@@ -831,6 +832,47 @@ export async function replaceInterviewExternalCv(
   const who = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
   await recordBookingChange(row.id, actor, "cv", `${who} ${row.external_cv_file_id ? "replaced" : "added"} the CV (${cv.fileName}).`);
   const [booking] = await hydrate([saved], caller);
+  return booking;
+}
+
+/**
+ * A CV added from the calendar for a Phoenix candidate who has none (owner, 2026-10-28: "No readable
+ * CV is attached to this candidate"). Someone typed in while booking is added to Recruitment with or
+ * without a CV, and until now nothing on the calendar could add one afterwards — this route refused
+ * every in-house candidate, so the interview opened on that sentence for good.
+ *
+ * It ADDS a missing CV and never replaces one: a candidate who already has a readable CV keeps it,
+ * and changing it stays on their Recruitment record. The file lands on the record itself, exactly as
+ * a CV attached while booking does, so Recruitment, the pool and the calendar all read the same one.
+ */
+async function attachMissingCandidateCv(
+  caller: InterviewCalendarCaller,
+  row: BookingRow,
+  candidateId: string,
+  cv: { bytes: Buffer; fileName: string; mimeType: string },
+): Promise<InterviewBooking> {
+  await assertMayUseRecruitmentFromCalendar(caller.access, "create");
+  const upload = checkCvUpload({ ...cv, sizeBytes: cv.bytes.length });
+  const existing = await listCandidateFiles(candidateId);
+  const hasReadableCv = existing.some(
+    (file) => file.kind === "cv" && detectCvFileKind(file.mimeType ?? "", file.fileName) !== "unsupported",
+  );
+  if (hasReadableCv) throw new Error("This candidate already has a CV on their Recruitment record — change it there.");
+  await uploadCandidateFile(caller.access, {
+    bytes: upload.bytes,
+    candidateId,
+    fileName: upload.fileName,
+    kind: "cv",
+    mimeType: upload.mimeType,
+    origin: "interview_calendar",
+    sizeBytes: upload.sizeBytes,
+  });
+  // The same Drive mirror a CV attached while booking gets, for the same reason (see createInterviewBooking).
+  await mirrorCandidateCvsToDrive(candidateId).catch(() => {});
+  const actor = hrIdForStorage(caller.access.hrId);
+  const who = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
+  await recordBookingChange(row.id, actor, "cv", `${who} added the CV (${upload.fileName}).`);
+  const [booking] = await hydrate([row], caller);
   return booking;
 }
 

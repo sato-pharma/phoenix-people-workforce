@@ -29,12 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Six 2 Aug check-in pins restored 2026-10-27](brick-pin-restore-2026-10-27.md) - put back to their earlier geocodes; rollback values of the restore inline.
-- [2,920 duplicate sheets moved aside 2026-10-27](duplicate-sheets-moved-aside-2026-10-27.md) - each drive's `Duplicate Sheets` folder; list and undo in `F:\Duplicate Sheets`.
-- [Supabase secret key refuses a browser User-Agent](supabase-secret-key-refuses-a-browser-user-agent.md) - PowerShell 5.1 sends Mozilla by default → 401; every laptop Telegram alarm was mute ~8–27 Oct.
-- [69 brick pins hand-corrected 27 Oct](brick-pins-hand-corrected-2026-10-27.md) - 24 re-pins + 25 map fixes + 20 hidden bricks pinned from their pharmacies at 21:22 (602/626 drawn, 24 hidden on every line); held ones and the screen issues listed; a field_gps rebuild would undo them.
-- [35 wrong-brick customers moved 27 Oct](wrong-brick-customers-fixed-2026-10-27.md) - off منيل الروضة, النزهه (Alex), بنى عبيد (Minia) + Ibn Sina `EL ISMAELIA SQ` alias → ميدان الإسماعيليه; history NOT re-pointed (reconcile-apply decides).
-- [The afternoon stalls are the 2 GB box swapping](the-afternoon-stalls-are-the-2gb-box-swapping-under-daytime-load.md) - 27 Oct: 6.6 GB swapped out in 52 h, 4.3 GB DB on 2 GB RAM; roster cache worked; new top loads named.
 
 
 
