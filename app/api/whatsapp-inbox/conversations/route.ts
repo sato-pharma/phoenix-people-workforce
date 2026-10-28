@@ -11,6 +11,7 @@ import {
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { findWhatsAppInboxLine, whatsAppInboxLines } from "@/lib/whatsapp-inbox/lines";
 import { startInboxConversation } from "@/lib/whatsapp-inbox/send";
+import { parseInboxReadState } from "@/lib/whatsapp-inbox/read-state";
 import { listInboxConversations } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
       position: url.searchParams.get("position"),
       region: url.searchParams.get("region"),
       search: url.searchParams.get("q"),
-      unreadOnly: url.searchParams.get("unread") === "1",
+      readState: parseInboxReadState(url.searchParams.get("state")),
     });
     return NextResponse.json({
       ...result,

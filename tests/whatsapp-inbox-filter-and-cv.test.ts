@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { pickInboxCvs, type InboxDocumentMessage } from "../src/lib/whatsapp-inbox/cv-pick.ts";
+import { parseInboxReadState } from "../src/lib/whatsapp-inbox/read-state.ts";
 import {
   addInboxPositionRecord,
   INBOX_NO_POSITION,
@@ -27,7 +28,9 @@ import {
 //   · job, region and area must all belong to ONE application — two applications never combine;
 //   · the place shows beside the position as "Region · Area";
 //   · "Open CV" opens the NEWEST document the person sent and counts the rest, whatever order the
-//     rows arrive in, and sits outside the row's button as a link that opens a new tab.
+//     rows arrive in, and sits outside the row's button as a link that opens a new tab;
+//   · Read and Unread (owner, 2026-10-28): the list filters All · Unread · Read, and any chat can be
+//     marked read or unread from its row, or unread from the open chat — Phoenix only, no blue ticks.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
@@ -198,6 +201,44 @@ function runWiringTests() {
   assert.match(link, /Open CV/);
 }
 
+function runReadStateTests() {
+  assert.equal(parseInboxReadState("unread"), "unread");
+  assert.equal(parseInboxReadState("read"), "read");
+  assert.equal(parseInboxReadState(null), null, "no filter shows every chat");
+  assert.equal(parseInboxReadState("1"), null, "an unknown value shows every chat, never an empty list");
+
+  const has = (source: string, text: string, message?: string) => assert.ok(source.includes(text), message ?? `expected: ${text}`);
+
+  const store = read("src/lib/whatsapp-inbox/store.ts");
+  has(store, `if (input.readState === "unread") query = query.gt("unread_count", 0);`, "Unread keeps the chats with something unread");
+  has(store, `if (input.readState === "read") query = query.eq("unread_count", 0);`, "Read keeps the chats with nothing unread");
+  const unreadAt = store.indexOf("export async function markInboxConversationUnread(");
+  assert.ok(unreadAt > 0, "a chat can be marked unread");
+  const unreadBody = store.slice(unreadAt, store.indexOf("\n}", unreadAt));
+  has(unreadBody, "if (row.unread_count > 0) return", "a chat already unread keeps its own count");
+  has(unreadBody, ".update({ unread_count: 1,", "a read chat marked unread counts one");
+
+  has(read("app/api/whatsapp-inbox/conversations/route.ts"), `readState: parseInboxReadState(url.searchParams.get("state")),`);
+  const readRoute = read("app/api/whatsapp-inbox/conversations/[id]/read/route.ts");
+  const fenceAt = readRoute.indexOf("await assertInboxConversationVisibleTo(access, id);");
+  assert.ok(fenceAt > 0 && fenceAt < readRoute.indexOf("markInboxConversationUnread(id)"), "the Talent Acquisition fence runs before marking");
+  has(readRoute, "if (body.unread === true) {");
+  assert.doesNotMatch(readRoute, /sendWhatsApp|graph/i, "marking a chat sends nothing to WhatsApp");
+
+  const screen = read("src/components/whatsapp-inbox/whatsapp-inbox.tsx");
+  has(screen, `if (filters.readState) params.set("state", filters.readState);`);
+  for (const state of [`""`, `"unread"`, `"read"`]) {
+    has(screen, `<Segment active={filters.readState === ${state}} onClick={() => applyFilters({ ...filters, readState: ${state} })}>`, `the ${state} segment filters the list`);
+  }
+  has(screen, "onClick={() => void markChat(item.id, unread)}", "every row toggles read and unread");
+  has(screen, "read ? {} : { unread: true }");
+  has(screen, "if (!read && selectedRef.current === conversationId) closeConversation();", "marking the open chat unread closes it, or the next refresh would read it again");
+  has(screen, "onMarkUnread={() => void markChat(thread.conversation.id, false)}");
+  const thread = read("src/components/whatsapp-inbox/inbox-thread.tsx");
+  const markAt = thread.indexOf("onClick={onMarkUnread}");
+  assert.ok(markAt > 0 && thread.indexOf("Mark as unread", markAt) - markAt < 200, "the open chat offers Mark as unread");
+}
+
 export async function runWhatsAppInboxFilterAndCvTests() {
   runCascadeTests();
   runMatchTests();
@@ -205,4 +246,5 @@ export async function runWhatsAppInboxFilterAndCvTests() {
   runRecordTests();
   runCvPickTests();
   runWiringTests();
+  runReadStateTests();
 }

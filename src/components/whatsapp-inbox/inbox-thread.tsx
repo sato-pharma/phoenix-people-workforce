@@ -8,7 +8,7 @@
 // which, because "who told this applicant that?" is the question this screen gets asked.
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Download, FileText, History, Link2, Save, Unlink } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Download, FileText, History, Link2, Mail, Save, Unlink } from "lucide-react";
 
 import { Action, ActionLink, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
@@ -196,11 +196,14 @@ function MessageBubble({
 export function InboxThreadView({
   onBack,
   onChanged,
+  onMarkUnread,
   thread,
 }: {
   onBack: () => void;
   /** Re-read the thread and the list after anything here changed them. */
   onChanged: () => Promise<void>;
+  /** Mark as unread: puts the chat back in the Unread pile and closes it. */
+  onMarkUnread: () => void;
   thread: InboxThread;
 }) {
   const [panel, setPanel] = useState<Panel>({ kind: "none" });
@@ -296,6 +299,10 @@ export function InboxThreadView({
               Unlink
             </Action>
           ) : null}
+          <Action disabled={busy} onClick={onMarkUnread} title="Put this chat back in the Unread pile" tone="ghost">
+            <Mail aria-hidden className="h-3.5 w-3.5" />
+            Mark as unread
+          </Action>
         </div>
       </div>
 
