@@ -31,6 +31,7 @@ import {
   AdminInsightChip,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -45,6 +46,7 @@ import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-pro
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import { humanizeCode } from "@/lib/format/code-label";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   DistributorSalesAreaSummary,
@@ -463,7 +465,7 @@ function SummaryTable({
           cards — the admin shell's own rule, desktop tables and mobile cards. The sort that lives
           in the header on a laptop moves to a control above the cards, so a phone loses neither
           the data nor the ordering. Measured at 375px: the table wanted 760px in a 273px column
-          and the `overflow-x-auto` around it WAS the sideways scroll. */}
+          and the scroll wrapper around it WAS the sideways scroll. */}
       <div className="border border-phx-line md:hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
           <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
@@ -730,7 +732,7 @@ function UploadedSheetsTable({
                 <option value="all">All distributors</option>
                 {distributorOptions.map((option) => (
                   <option key={option.code} value={option.code}>
-                    {option.name} / {option.code}
+                    {option.name}
                   </option>
                 ))}
               </SearchableSelect>
@@ -778,7 +780,7 @@ function UploadedSheetsTable({
             </AdminCallout>
           ) : (
             <div>
-              {/* Ten columns over a min-w-[980px]. Qty and B. Qty MERGE into one Quantity
+              {/* Ten columns do not fit a laptop. Qty and B. Qty MERGE into one Quantity
                   cell, and the four detail columns fold into the File cell below lg, so
                   nothing is dropped at either width. */}
               <div className="overflow-hidden rounded-[16px] border border-phx-line">
@@ -816,7 +818,7 @@ function UploadedSheetsTable({
                             <p className="break-words font-semibold text-phx-ink">{batch.fileName}</p>
                             <p className="mt-1 break-words text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
                             <p className="mt-1 break-words text-xs text-phx-ink-soft lg:hidden">
-                              {batch.distributorName} / {batch.distributorCode} · {batch.period ?? "-"}
+                              {batch.distributorName} · {batch.period ?? "—"}
                             </p>
                             <p className="mt-0.5 text-xs tabular-nums text-phx-ink-soft lg:hidden">
                               {formatNumber(batch.rowCount)} rows · {numberWithDecimals(batch.totalQty)} qty
@@ -824,11 +826,11 @@ function UploadedSheetsTable({
                             </p>
                             <p className="mt-0.5 text-xs text-phx-ink-soft lg:hidden">{new Date(batch.createdAt).toLocaleString()}</p>
                           </td>
-                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{batch.distributorName} / {batch.distributorCode}</td>
-                          <td className="hidden px-4 py-3 align-top lg:table-cell">{batch.period ?? "-"}</td>
+                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{batch.distributorName}</td>
+                          <td className="hidden px-4 py-3 align-top lg:table-cell">{batch.period ?? "—"}</td>
                           <td className="px-4 py-3 align-top">
                             <Badge variant={batch.status === "validated" ? "success" : "danger"}>
-                              {batch.status}
+                              {humanizeCode(batch.status)}
                             </Badge>
                           </td>
                           <td className="hidden px-4 py-3 align-top tabular-nums lg:table-cell">{formatNumber(batch.rowCount)}</td>

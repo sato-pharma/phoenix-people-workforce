@@ -267,7 +267,7 @@ function SeriesTable({
   // Same ruling as the closing matrix — the scroll stays.
   return (
     <MatrixScroller>
-      <table className="w-full min-w-[52rem] border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+      <table className="w-full border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
             <th className={headClassName}>{rowHeading}</th>
