@@ -176,17 +176,17 @@ function arabicGender(gender: string | null): string {
 }
 
 /** A value that IS there, marked so the preview screen can offer it for correction. */
-function filledMarker(token: string, text: string): string {
+export function filledMarker(token: string, text: string): string {
   return `<span class="fill" data-hp-key="${escapeHtml(token)}">${escapeHtml(text)}</span>`;
 }
 
 /** A value that is NOT there: a run of dots carrying its token, so the fill screen can see it. */
-function blankMarker(token: string, rule: string): string {
+export function blankMarker(token: string, rule: string): string {
   return `<span class="rule-line" data-hp-key="${escapeHtml(token)}">${escapeHtml(rule)}</span>`;
 }
 
 /** Substitute the blanks in a run of prose, marking each one. */
-function fillMarkedHtml(
+export function fillMarkedHtml(
   template: string,
   values: Partial<Record<HrPaperToken, string>>,
 ): string {
@@ -213,7 +213,7 @@ function fillMarkedHtml(
  * would otherwise turn wholly one way and render the other half backwards. This company has already
  * printed its own tax card `477-108-318` as `318-108-477`.
  */
-function gridValue(
+export function gridValue(
   field: HrPaperField,
   values: Partial<Record<HrPaperToken, string>>,
 ): string {

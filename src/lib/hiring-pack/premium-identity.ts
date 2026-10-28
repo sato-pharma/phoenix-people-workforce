@@ -54,7 +54,9 @@ export const PREMIUM_IDENTITY_CODE = "SATO-DIS-2026-01 v1.0";
  * changes his mind often and this is one line, with nothing rebuilt. Only a paper with a corporate
  * branch to fall back on needs a switch. The English certificate of experience and the English salary
  * letter were answered "change", so they wear it outright and have none; the contract, its annex and
- * its notice stay corporate by his earlier word and never import this module at all.
+ * its notice stay corporate by his earlier word and never import this module at all. The ARABIC
+ * certificate of experience moved on his word of 2026-10-28 into the certificate's own design, through
+ * its own renderer (`experience-certificate-ar.ts`) — so it is not listed in `hrPapers` either.
  *
  *   clearance   both clearance forms        custody   both custody receipts
  *   workerForm  the worker data form        hrPapers  an HR paper's FAMILY (its id without `-vN`)
