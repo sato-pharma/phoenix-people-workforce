@@ -135,6 +135,17 @@ export async function register() {
       } catch (error) {
         console.error("[process-health] failed to start:", error);
       }
+
+      // One `db_host` line a minute about the DATABASE SERVER (memory, swap, CPU, disks, start times),
+      // read from Supabase's metrics endpoint. One process only — the worker, or "all" before a split —
+      // and production by APP_ENV; db-host-metrics.ts decides and says why when it does not start.
+      try {
+        const { startDbHostSampler } = await import("@/lib/observability/db-host-sampler");
+        const result = startDbHostSampler();
+        console.log(result.started ? "[db-host] sampling once a minute" : `[db-host] not started: ${result.reason}`);
+      } catch (error) {
+        console.error("[db-host] failed to start:", error);
+      }
     } else {
       console.log("[schedulers] not started: not a production build (next dev does not compile them)");
     }
