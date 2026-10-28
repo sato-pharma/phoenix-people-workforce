@@ -19,6 +19,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
 import { pickInboxCvs, type InboxDocumentMessage } from "@/lib/whatsapp-inbox/cv-pick";
 import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
+import type { InboxReadState } from "@/lib/whatsapp-inbox/read-state";
 import {
   addInboxPositionRecord,
   inboxAreaOptions,
@@ -363,7 +364,8 @@ export async function listInboxConversations(input: {
   access: Pick<AccessContext, "role" | "scope">;
   phoneNumberId?: string | null;
   search?: string | null;
-  unreadOnly?: boolean;
+  /** "unread" keeps the chats with something unread, "read" the chats with nothing unread. */
+  readState?: InboxReadState | null;
   position?: string | null;
   region?: string | null;
   area?: string | null;
@@ -389,7 +391,8 @@ export async function listInboxConversations(input: {
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .limit(position || fenced ? INBOX_LIST_MAX : limit);
   if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
-  if (input.unreadOnly) query = query.gt("unread_count", 0);
+  if (input.readState === "unread") query = query.gt("unread_count", 0);
+  if (input.readState === "read") query = query.eq("unread_count", 0);
   const search = sanitizeInboxSearch(input.search);
   if (search) {
     const value = ilikeContainsValue(search);
@@ -589,6 +592,23 @@ export async function markInboxConversationRead(conversationId: string): Promise
     .eq("id", conversationId);
   if (error) throw error;
   return { previousUnread: row.unread_count };
+}
+
+/**
+ * Puts a chat back in the Unread pile by hand, as WhatsApp's own "Mark as unread" does: a chat with
+ * nothing unread gets a count of one; a chat that already has unread messages keeps its count.
+ * Phoenix only — nothing is sent to WhatsApp either way.
+ */
+export async function markInboxConversationUnread(conversationId: string): Promise<{ unreadCount: number }> {
+  const row = await loadConversationRow(conversationId);
+  if (row.unread_count > 0) return { unreadCount: row.unread_count };
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .update({ unread_count: 1, updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+  if (error) throw error;
+  return { unreadCount: 1 };
 }
 
 // ── Linking a chat to a person ───────────────────────────────────────────────────────────────────

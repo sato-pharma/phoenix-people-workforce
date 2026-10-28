@@ -17,6 +17,8 @@ import {
   FileText,
   Link2,
   Loader2,
+  Mail,
+  MailOpen,
   Map as MapIcon,
   MapPin,
   MessageCirclePlus,
@@ -53,7 +55,9 @@ import {
 
 export type InboxLineOption = { phoneNumberId: string; label: string; displayNumber: string };
 
-type Filters = { line: string; search: string; unreadOnly: boolean; position: string; region: string; area: string; limit: number };
+/** "" shows every chat; "unread" and "read" are the Read / Unread filter. */
+type ReadFilter = "" | "unread" | "read";
+type Filters = { line: string; search: string; readState: ReadFilter; position: string; region: string; area: string; limit: number };
 
 /** Every job the candidate pool sorts people into, then the chats where nothing says which job. */
 const POSITION_OPTIONS = [
@@ -69,7 +73,7 @@ function listUrl(filters: Filters): string {
   const params = new URLSearchParams();
   if (filters.line) params.set("line", filters.line);
   if (filters.search) params.set("q", filters.search);
-  if (filters.unreadOnly) params.set("unread", "1");
+  if (filters.readState) params.set("state", filters.readState);
   if (filters.position) params.set("position", filters.position);
   if (filters.region) params.set("region", filters.region);
   if (filters.area) params.set("area", filters.area);
@@ -98,8 +102,8 @@ export function WhatsAppInbox({
     line: "",
     position: "",
     region: "",
+    readState: "",
     search: "",
-    unreadOnly: false,
   });
   const [areaOptions, setAreaOptions] = useState<string[]>([]);
   const [searchDraft, setSearchDraft] = useState("");
@@ -186,6 +190,19 @@ export function WhatsAppInbox({
     setThreadError(null);
   }
 
+  // Mark as read / Mark as unread, from a chat's row or the open chat. Marking the open chat unread
+  // closes it — left open, the next refresh would read it again at once, as WhatsApp's own does.
+  async function markChat(conversationId: string, read: boolean) {
+    if (!read && selectedRef.current === conversationId) closeConversation();
+    setListError(null);
+    try {
+      await postJson(`/api/whatsapp-inbox/conversations/${conversationId}/read`, read ? {} : { unread: true });
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : "Could not change whether the chat is read.");
+    }
+    await loadList(filtersRef.current);
+  }
+
   const refreshAll = useCallback(async () => {
     const open = selectedRef.current;
     await Promise.all([loadList(filtersRef.current), open ? loadThread(open) : Promise.resolve()]);
@@ -211,7 +228,7 @@ export function WhatsAppInbox({
     setComposingNew(true);
   }
 
-  const filtered = Boolean(filters.search || filters.unreadOnly || filters.line || filters.position);
+  const filtered = Boolean(filters.search || filters.readState || filters.line || filters.position);
 
   // Height and floor are divided by the display scale: this frame sits inside <main>'s zoom, which
   // does not compensate viewport units, so a bare 100vh painted it at 80% of the window. See the
@@ -270,20 +287,23 @@ export function WhatsAppInbox({
                 </Segment>
               ))}
             </div>
-            <button
-              aria-pressed={filters.unreadOnly}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 border px-2.5 py-1.5 text-[12px] font-bold leading-none transition",
-                filters.unreadOnly
-                  ? "border-orange-300 bg-orange-50 text-orange-700 shadow-[0_1px_2px_rgba(249,115,22,0.12),0_4px_12px_rgba(249,115,22,0.12)]"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
-              )}
-              onClick={() => applyFilters({ ...filters, unreadOnly: !filters.unreadOnly })}
-              type="button"
+            <div
+              aria-label="Read or unread"
+              className="inline-flex flex-wrap border border-slate-200 bg-slate-100/80 p-0.5 shadow-[inset_0_1px_2px_rgba(15,23,42,0.07)]"
+              role="group"
             >
-              <span aria-hidden className={cn("h-2 w-2", filters.unreadOnly ? "bg-orange-500" : "border border-slate-300 bg-white")} />
-              Unread only
-            </button>
+              <Segment active={filters.readState === ""} onClick={() => applyFilters({ ...filters, readState: "" })}>
+                All
+              </Segment>
+              <Segment active={filters.readState === "unread"} onClick={() => applyFilters({ ...filters, readState: "unread" })}>
+                <span aria-hidden className="h-2 w-2 bg-orange-500" />
+                Unread
+              </Segment>
+              <Segment active={filters.readState === "read"} onClick={() => applyFilters({ ...filters, readState: "read" })}>
+                <span aria-hidden className="h-2 w-2 border border-slate-400 bg-white" />
+                Read
+              </Segment>
+            </div>
             <FilterSelect
               active={Boolean(filters.position)}
               ariaLabel="Filter chats by the position applied for"
@@ -428,7 +448,7 @@ export function WhatsAppInbox({
                 <InboxEmptyState
                   body={
                     filtered
-                      ? "Try another number, position, region or area, clear the search, or turn off Unread only."
+                      ? "Try another number, position, region or area, clear the search, or choose All instead of Read or Unread."
                       : "Messages appear here as soon as someone writes to either number."
                   }
                   compact
@@ -462,7 +482,8 @@ export function WhatsAppInbox({
                     />
                     <InboxAvatar name={item.contactName} tone={lineToneFor(item.lineLabel)} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="flex w-full items-baseline gap-2">
+                      {/* Room on the right for the Mark as read / unread button, which sits over this line. */}
+                      <span className="flex w-full items-baseline gap-2 pr-7">
                         <span
                           className={cn(
                             "min-w-0 flex-1 break-words text-[13px] leading-snug tracking-[-0.005em]",
@@ -525,6 +546,15 @@ export function WhatsAppInbox({
                       ) : null}
                     </span>
                   </button>
+                  <button
+                    aria-label={unread ? `Mark the chat with ${title} as read` : `Mark the chat with ${title} as unread`}
+                    className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center border border-transparent text-slate-400 transition hover:border-slate-300 hover:bg-white hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+                    onClick={() => void markChat(item.id, unread)}
+                    title={unread ? "Mark as read" : "Mark as unread"}
+                    type="button"
+                  >
+                    {unread ? <MailOpen aria-hidden className="h-3.5 w-3.5" /> : <Mail aria-hidden className="h-3.5 w-3.5" />}
+                  </button>
                   {item.cv ? (
                     // A link, so it cannot live inside the row's button; it opens the CV in a new tab and
                     // leaves the chat list exactly where it was.
@@ -572,7 +602,12 @@ export function WhatsAppInbox({
               }}
             />
           ) : selectedId && thread && thread.conversation.id === selectedId ? (
-            <InboxThreadView onBack={closeConversation} onChanged={refreshAll} thread={thread} />
+            <InboxThreadView
+              onBack={closeConversation}
+              onChanged={refreshAll}
+              onMarkUnread={() => void markChat(thread.conversation.id, false)}
+              thread={thread}
+            />
           ) : selectedId ? (
             <div className="flex flex-1 flex-col gap-3 p-4 text-[12px]">
               <Action className="self-start lg:hidden" onClick={closeConversation} tone="ghost">
