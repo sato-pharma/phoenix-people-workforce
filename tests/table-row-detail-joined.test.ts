@@ -19,7 +19,7 @@ import { stripComments, stripCssComments } from "./support/comment-strip.ts";
  * Counted on codex/tables-said-once-fit when this test was written. Lower it as the builders retire
  * sites; never raise it.
  */
-const BASELINE = 86;
+const BASELINE = 81;
 
 const ROOTS = ["app", "src/components"];
 const TR_THEN_COLSPAN_TD = /<tr\b[^>]*>\s*<td\b[^>]*\bcolSpan\b/g;

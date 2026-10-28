@@ -24,7 +24,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // raise one to make a red run green.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASELINE = { noColgroup: 93, noPhoneLayout: 25, minWidth: 31, notFixed: 46 };
+const BASELINE = { noColgroup: 69, noPhoneLayout: 19, minWidth: 19, notFixed: 21 };
 
 /** Exempt files and why. A new entry needs the owner's word, not a convenience. */
 const ALLOWED: Readonly<Record<string, string>> = {
