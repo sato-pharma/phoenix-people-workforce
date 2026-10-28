@@ -131,9 +131,13 @@ function checkTimetable() {
   const paper = note(adviseOnTimetable({ verdict: "unjudged", scheduleText: null, hoursRead: null, reason: "unreadable", problem: "not_a_timetable" }));
   assert.equal(paper.refusal, "schedule_missing");
   const onScreen = note(adviseOnTimetable({ verdict: "no_schedule", scheduleText: null, hoursRead: null, reason: "schedule_missing", problem: "on_a_screen" }));
-  assert.equal(onScreen.kind, "reject", "🔴 a timetable photographed off a screen is rejected");
-  assert.equal(onScreen.refusal, "schedule_missing");
-  assert.match(onScreen.reason, /phone or computer screen/, "and the reason says it was a screen, not a missing timetable");
+  // 🔴 A SCREEN PHOTO IS HELD FOR HIM, NEVER REFUSED (owner, 2026-10-28: "some polyclinics have their timetable only online").
+  assert.equal(onScreen.kind, "look", "🔴 a timetable photographed off a screen is his to look at, never a recommended rejection");
+  assert.equal(onScreen.refusal, null, "and no refusal is pre-picked");
+  assert.match(onScreen.reason, /phone or computer screen/, "the reason says it was a screen, not a missing timetable");
+  assert.match(onScreen.reason, /only online/, "and why that can be right");
+  const heldOnScreen = note(adviseOnTimetable({ verdict: "unjudged", scheduleText: null, hoursRead: null, reason: null, heldBecause: "timetable_on_a_screen" }));
+  assert.equal(heldOnScreen.kind, "look", "the scanner's own on-a-screen hold reads the same");
 
   for (const reason of ["call_failed", "no_api_key", "no_bytes", "held_elsewhere"]) {
     const advice = note(adviseOnTimetable({ verdict: "unjudged", scheduleText: null, hoursRead: null, reason }));

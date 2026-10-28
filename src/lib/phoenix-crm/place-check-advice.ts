@@ -174,8 +174,13 @@ export function adviseOnTimetable(timetable: TimetableEvidence, buildingHasNone 
   if (timetable.verdict === "other_name") {
     return reject("The timetable was read clearly and the customer's name is not on it.", read, "schedule_other_name");
   }
-  if (timetable.verdict === "no_schedule" && timetable.problem === "on_a_screen") {
-    return reject("The timetable was photographed off a phone or computer screen, not on the building's wall.", read, "schedule_missing");
+  // 🔴 A screen photo is SAVED AND HELD for you, never refused (owner, 2026-10-28): some polyclinics post
+  // their timetable only online, so the system cannot say it is wrong — it says what it saw and you decide.
+  if (timetable.problem === "on_a_screen" || timetable.heldBecause === "timetable_on_a_screen") {
+    return look(
+      "The timetable was photographed on a phone or computer screen, not on the building's wall. Some polyclinics post their timetable only online: check the customer's name on the screen and decide.",
+      read,
+    );
   }
   if (timetable.verdict === "no_schedule") return reject("The photo does not show a timetable.", read, "schedule_missing");
 

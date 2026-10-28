@@ -681,7 +681,7 @@ On 19 Oct he asked to "read the 31 left in Not readable and fix". Every photo wa
 **Timetables (15 polyclinics, 29 seated customers).** None of the stored readings contains the customers' names, so no matcher change confirms them.
 
 - Three were photographed off a screen: a laptop showing the clinic's Facebook post, a phone showing a WhatsApp image, and a phone showing a photo of the sheet.
-- **He chose "Refuse at the door".** The reader now names `on_a_screen` as its own problem. `judgeSchedule` checks it before the name and answers `no_schedule`, so the door asks for the wall and counts the try.
+- **He chose "Refuse at the door"** (replaced 2026-10-28, see "Timetables that exist only online" below). The reader now names `on_a_screen` as its own problem. `judgeSchedule` checks it before the name and answers `no_schedule`, so the door asks for the wall and counts the try.
 - The rep reads: "This photo shows the timetable on a phone or computer screen. Photograph the timetable on the building's own wall." The third try holds like any missing timetable.
 - A display fixed on the clinic's own wall is the clinic's board, never this.
 - Photos already read are not read again (one read per photo). Their advice to him says Reject only when the stored reading says `on_a_screen`.
@@ -796,3 +796,10 @@ are filed as `system_admin`, which is what the rep reads ("From the System Admin
 
 Pinned by `tests/phoenix-crm-sfe-place-checks.test.ts`, which evaluates the predicates rather than
 spelling-checking them, and by the boundary and refusal suites it sits beside.
+
+### Timetables that exist only online (2026-10-28)
+
+- Nada Saied could not validate her doctors at Alma, a polyclinic in Shibin el Kom. Alma's only timetable is the picture it posts online, so her photo of it on a screen was refused twice as "no timetable".
+- The owner: *"some polyclinics have their timetable only online"*, and he chose **"Save it, hold for me"**.
+- A timetable photographed on a phone or computer screen is now saved and held for him on the first try, as `timetable_on_a_screen`. No try is spent, because a retake cannot fix it. The rep reads: "The timetable was photographed on a screen, so it is held for admin approval."
+- It still never validates by itself. In Place checks the system says what it saw and recommends nothing ("look"); he checks the customer's name on the screen and decides. Until then the doctor stays out of the KPIs, like every held seating.
