@@ -100,13 +100,13 @@ function achClass(a: number | null) {
   return "text-rose-600";
 }
 const Ach = ({ value }: { value: number | null }) => (
-  <span className={cn("whitespace-nowrap font-black tabular-nums", achClass(value))}>{pct(value)}</span>
+  <span className={cn("font-black tabular-nums", achClass(value))}>{pct(value)}</span>
 );
 
-const TH = "whitespace-nowrap px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "break-words px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 const THR = `${TH} text-right`;
 const TD = "px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
-const TDR = `${TD} text-right tabular-nums whitespace-nowrap`;
+const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
 const FIELD = "rounded border border-slate-100 bg-slate-50 px-2.5 py-2";
@@ -389,7 +389,7 @@ export function RepBusinessReview({
               <dt className={FIELD_LABEL}>{periodColumnLabel(month, months)}</dt>
               <dd
                 className={cn(
-                  "mt-0.5 whitespace-nowrap text-xs font-bold",
+                  "mt-0.5 break-words text-xs font-bold",
                   (trend[index] ?? 0) < 0 ? "text-rose-700" : "text-slate-800",
                 )}
               >
@@ -432,7 +432,7 @@ export function RepBusinessReview({
               {months.map((month, index) => (
                 <div className={FIELD} key={month}>
                   <dt className={FIELD_LABEL}>{periodColumnLabel(month, months)}</dt>
-                  <dd className="mt-0.5 whitespace-nowrap text-xs font-bold text-slate-800">{num(visits.byMonth[index] ?? 0)} visits</dd>
+                  <dd className="mt-0.5 break-words text-xs font-bold text-slate-800">{num(visits.byMonth[index] ?? 0)} visits</dd>
                 </div>
               ))}
             </dl>

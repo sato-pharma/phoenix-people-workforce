@@ -1159,9 +1159,6 @@ function PlannerResult({
               <tr className="border-b border-slate-200 last:border-b-0" key={row.materialId}>
                 <td className={TD}>
                   <p className="font-bold text-slate-900 break-words">{S.name(row)}</p>
-                  <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                    <Num>{row.code}</Num>
-                  </p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {supplierChip(row, t)}
                     {row.isImported ? <Chip tone="amber">{t.chipImported}</Chip> : null}
@@ -1563,9 +1560,6 @@ export function StockTab({
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
                     <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
-                    <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                      <Num>{material.code}</Num>
-                    </p>
                   </td>
                   <td className={TD}>
                     {factory ? (
@@ -2354,9 +2348,6 @@ export function SettingsTab({
               <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                 <td className={TD}>
                   <p className="font-bold break-words text-slate-900">{S.name(material)}</p>
-                  <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                    <Num>{material.code}</Num>
-                  </p>
                   {/* 🔴 Named BEFORE the retire click, never after it. Retiring is a MATERIAL-level
                       switch, so a material both products use leaves the other product's buy list
                       short — and the citric acid anhydrous and the lemon flavour genuinely are
@@ -2428,9 +2419,6 @@ export function SettingsTab({
           {data.materials.map((material) => (
             <div className={CARD} key={material.id}>
               <p className="font-bold break-words text-slate-900">{S.name(material)}</p>
-              <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                <Num>{material.code}</Num>
-              </p>
               <p className="mt-1.5 text-[12px] text-slate-800">
                 {material.composition ? (
                   <>
@@ -2605,8 +2593,7 @@ export function SettingsTab({
                   key={material.id}
                 >
                   <span className="min-w-0 break-words">
-                    <span className="font-bold">{S.name(material)}</span>{" "}
-                    <Num className="text-slate-500">{material.code}</Num>
+                    <span className="font-bold">{S.name(material)}</span>
                   </span>
                   <button
                     className={BUTTON_QUIET}
