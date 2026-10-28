@@ -38,6 +38,7 @@ import {
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { oneRowPerDoctor } from "@/lib/phoenix-crm/server/duplicate-customers";
 import {
   assertManagerPlanWriter,
   managerAskDeciderRole,
@@ -334,7 +335,11 @@ export type AreaCustomer = {
   vacant: boolean;
 };
 
-/** The customers of the rep lists of these seats — AM and PM, active or not validated yet; never a pharmacy. */
+/**
+ * The customers of the rep lists of these seats — AM and PM, active or not validated yet; never a pharmacy.
+ * A doctor entered twice on one rep's list comes back once (`oneRowPerDoctor`, owner 2026-10-28) — the
+ * plan board's area list (single visit, With my manager), My single visits and the Add a customer match all read this.
+ */
 async function loadRepListCustomers(seatIds: ReadonlyArray<string>, isTest: boolean): Promise<Row[]> {
   const rows: Row[] = [];
   for (const part of chunk(dedupeIds(seatIds), 50)) {
@@ -343,7 +348,7 @@ async function loadRepListCustomers(seatIds: ReadonlyArray<string>, isTest: bool
         () =>
           getSupabaseAdmin()
             .from("phoenix_crm_customers")
-            .select("id, seat_id, name, grade, speciality, list_type, status")
+            .select("id, seat_id, name, grade, speciality, list_type, status, created_at")
             .in("seat_id", part)
             .eq("is_test", isTest)
             .in("status", ["active", "pending"])
@@ -352,7 +357,7 @@ async function loadRepListCustomers(seatIds: ReadonlyArray<string>, isTest: bool
       )),
     );
   }
-  return rows;
+  return oneRowPerDoctor(rows);
 }
 
 export type AreaCustomersView = {

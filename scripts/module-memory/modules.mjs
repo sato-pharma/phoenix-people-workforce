@@ -450,6 +450,7 @@ export const MODULES = [
       "src/lib/phoenix-crm/manager-day-plan.ts",
       "src/lib/phoenix-crm/manager-visit-detail.ts",
       "src/lib/phoenix-crm/server/manager-visit-details.ts",
+      "src/lib/phoenix-crm/server/manager-customers.ts",
       "supabase/migrations/*phoenix_crm_manager_plan_with_*",
       "tests/phoenix-crm-manager-plan*",
     ],

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { customerIdSlices, groupSameRepDuplicates } from "../src/lib/phoenix-crm/server/duplicate-customers.ts";
+import { customerIdSlices, groupSameRepDuplicates, oneRowPerDoctor } from "../src/lib/phoenix-crm/server/duplicate-customers.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -159,4 +159,56 @@ export function runPhoenixCrmDuplicateCustomerTests() {
   assert.match(counts, /from public\.phoenix_crm_visits v\s+where v\.customer_id = any \(p_customer_ids\)\s+group by/, "every visit, as the row read counted — no narrowing it never had");
   assert.match(counts, /from public\.phoenix_crm_customer_moves m\s+where m\.customer_id = any \(p_customer_ids\)\s+group by/, "every move");
   assert.doesNotMatch(counts, /is_test/, "no is_test narrowing — the row reads never had one, so adding it would change a keeper");
+
+  // ── A manager's picker shows a doctor once (owner, 2026-10-28: "Merge and hide") ─────────────────
+  // 🔴 REAL SHAPE: احمد الصواف on one test seat, an active row of 12 Oct beside a not-validated copy of
+  //    19 Oct — the With my manager list showed him twice. The fold hides; it never drops a row.
+  const listed = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    seat_id: "seat-1",
+    name,
+    list_type: "PM",
+    status: "pending",
+    speciality: null as string | null,
+    created_at: "2026-10-19T21:35:00Z",
+    ...extra,
+  });
+  const ids = (rows: { id: string }[]) => rows.map((one) => one.id).sort();
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("b", "احمد الصواف"), listed("a", "احمد الصواف", { status: "active", created_at: "2026-10-12T09:00:00Z" })])),
+    ["a"],
+    "an active row beside a not-validated copy: the active one is shown, once",
+  );
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("z", "احمد الصواف", { status: "active", created_at: "2026-10-20T09:00:00Z" }), listed("y", "احمد الصواف", { created_at: "2026-10-01T09:00:00Z" })])),
+    ["z"],
+    "active wins even over an older not-validated row",
+  );
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("x", "عادل المليسي", { created_at: "2026-10-20T09:00:00Z" }), listed("w", "عادل المليسي", { created_at: "2026-10-10T09:00:00Z" })])),
+    ["w"],
+    "two not-validated copies: the older is shown",
+  );
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("1", "احمد شلبي", { speciality: "Pediatrics" }), listed("2", "احمد شلبي", { speciality: "Dermatology" })])),
+    ["1", "2"],
+    "two specialities are two doctors — both stay",
+  );
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("1", "احمد شلبي", { list_type: "AM" }), listed("2", "احمد شلبي", { list_type: "PM" })])),
+    ["1", "2"],
+    "AM and PM never fold — the hospital row and the clinic row are both his",
+  );
+  assert.deepEqual(
+    ids(oneRowPerDoctor([listed("1", "احمد شلبي"), listed("2", "احمد شلبي", { seat_id: "seat-2" })])),
+    ["1", "2"],
+    "two reps each holding the doctor is two lists — both stay",
+  );
+  assert.deepEqual(ids(oneRowPerDoctor([listed("1", "محمد"), listed("2", "محمد")])), ["1", "2"], "a one-word name is never evidence — both stay");
+  const managerCustomers = stripComments(readFileSync("src/lib/phoenix-crm/server/manager-customers.ts", "utf8"));
+  assert.match(
+    managerCustomers,
+    /async function loadRepListCustomers[\s\S]*?\.select\("[^"]*\bcreated_at\b[^"]*"\)[\s\S]*?return oneRowPerDoctor\(rows\);\r?\n\}/,
+    "the one loader behind the area list, My single visits and the name match folds each doctor to one row",
+  );
 }

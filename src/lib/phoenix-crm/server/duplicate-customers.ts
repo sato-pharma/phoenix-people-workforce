@@ -140,6 +140,50 @@ export function groupSameRepDuplicates(
   return out;
 }
 
+/** The row a picker shows of one doctor entered twice: active before not-validated-yet, then the older, then the lower id. */
+function shownFirst(left: Row | undefined, right: Row | undefined): number {
+  const rank = (row: Row | undefined) => (text(row?.status) === "active" ? 0 : 1);
+  return (
+    rank(left) - rank(right) ||
+    text(left?.created_at).localeCompare(text(right?.created_at)) ||
+    text(left?.id).localeCompare(text(right?.id))
+  );
+}
+
+/**
+ * One doctor, one row, in a manager's picker — the rep lists a manager chooses from show a doctor entered
+ * twice on one rep's list ONCE (owner, 2026-10-28: "WHEN PICKING WITH A MANGER I THINK THEIR IS A
+ * DUPLICATION HERE SOMETHING IS WRONG", then "Merge and hide").
+ *
+ * The rows stay as they are — this hides, it never drops: removing a customer is still the two-step
+ * request, and a merge is still `phoenix_crm_merge_duplicate_customer`. 🔴 THE BAR IS
+ * `groupSameRepDuplicates` AND NOTHING LOOSER — one seat, one kind (AM never folds into PM), the same
+ * name spelled the same way, no speciality conflict. Measured on production 2026-10-28: 38 doctors on 8
+ * real seats were listed twice, almost all an active row beside a not-validated copy added again later.
+ */
+export function oneRowPerDoctor<T extends Row>(rows: readonly T[]): T[] {
+  const bySeat = new Map<string, (IdentityCandidate & { sourceId: string })[]>();
+  const byId = new Map<string, T>();
+  for (const row of rows) {
+    const seatId = text(row.seat_id);
+    const id = text(row.id);
+    const name = text(row.name);
+    if (!seatId || !id || !name) continue;
+    byId.set(id, row);
+    const held = bySeat.get(seatId) ?? [];
+    held.push({ kind: identityKindOf(row.list_type), name, source: "phoenix_crm", sourceId: id, speciality: text(row.speciality) || null });
+    bySeat.set(seatId, held);
+  }
+  const hidden = new Set<string>();
+  for (const candidates of bySeat.values()) {
+    for (const group of groupSameRepDuplicates(candidates).values()) {
+      const [shown] = [...group].sort((a, b) => shownFirst(byId.get(a.sourceId), byId.get(b.sourceId)));
+      for (const one of group) if (one.sourceId !== shown?.sourceId) hidden.add(one.sourceId);
+    }
+  }
+  return rows.filter((row) => !hidden.has(text(row.id)));
+}
+
 /**
  * Who reads this list: the Super Admin and the SFE Manager.
  *
