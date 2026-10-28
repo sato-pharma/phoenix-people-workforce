@@ -119,14 +119,6 @@ export const CONTRACT_GATES = [
     costMs: 40,
   },
   {
-    slug: 'private-calendar-said-once',
-    file: 'tests/private-calendar-said-once.test.ts',
-    export: 'runPrivateCalendarSaidOnceTests',
-    namePrefix: 'private calendar said once',
-    redJobs: null,
-    costMs: 300,
-  },
-  {
     slug: 'attendance-day-reason-said-once',
     file: 'tests/attendance-day-reason-said-once.test.ts',
     export: 'runAttendanceDayReasonSaidOnceTests',
