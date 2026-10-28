@@ -4428,7 +4428,8 @@ band drawn as an inline vector, and the Phoenix running foot carrying the identi
 
 - **Wears it (his answers of 13 October, below):** the English certificate of experience (and, since
   28 October, the Arabic one - see "The certificate of experience's own design" below), the English
-  salary letter, the exit interview, the payslip, the organogram employee record, the interview
+  salary letter (and, since 28 October, the Arabic one - see "The HR letter in the certificate's
+  design" below), the exit interview, the payslip, the organogram employee record, the interview
   calendar PDF, the Phoenix CRM start guide, the Field Activity report, and a new fifth job-offer
   design called Premium. **Everything else he ticked "keep" and prints as it did before the identity
   existed** - the clearances, the custody receipts, the worker data form and every other HR paper -
@@ -4469,6 +4470,34 @@ signing it.
   renderer, not through the house papers' premium branch. An archived version would still print
   through `renderHrPaperHtml` in the dress it was signed in.
 - Pinned by `tests/hr-premium-identity.test.ts` and `tests/hr-forms-house-papers.test.ts`.
+
+### The HR letter in the certificate's design (2026-10-28)
+
+The same evening, about 17:40 Cairo: *"SHOW ME HR LETTER WITH SAME IDENTITY"* - the salary
+certificate, English and Arabic, in the certificate of experience's design. Shown the previews, he
+wrote *"PUT THE BASE NOT THE BASIC SALARY"*, then answered *"Make it the HR letter"* for both
+languages and *"Move them to the new boxes"* for his hand-placed Arabic marks.
+
+- **Both letters wear the certificate's design** - the two-weight title beside the issuing company,
+  the employee's details as a ruled list, the words, the salary at a glance in figures, and blank
+  signing boxes. The English letter (`salary-letter-en.ts`) has three - name and title, signature,
+  company stamp. The Arabic letter (`salary-letter-ar.ts`) has two, because its template signs with a
+  name and a signature only.
+- **The Arabic words are the template's, unchanged** - every sentence, heading and label is still read
+  from `salary-letter-ar-v1` in `hr-paper-text.ts`. The Arabic letter had been ticked "keep" on 13
+  October; this word moves it.
+- **Both state the BASE salary on record.** This reverses his rule of 13 September, *"salary we put
+  basic not net"*, for the English letter; the Arabic letter has stated the base since 20 September.
+  Never the basic, the net or the gross. With no base on record the sentence carries a dotted rule
+  and the strip is left out, so nothing reads as a zero.
+- **His hand-placed marks moved with the design.** The signature and stamp he placed on 29 September
+  were anchored inside the old signature table; they are re-anchored to the new signature box
+  (`section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(2)`) and still print only when
+  ticked in the print dialog.
+- No seal is drawn, and an archived version still prints through `renderHrPaperHtml` in the dress it
+  was signed in.
+- Pinned by `tests/hiring-pack-salary-letter.test.ts`, `tests/hiring-pack-salary-letter-ar.test.ts`
+  and `tests/hr-premium-identity.test.ts`.
 
 ### The Arabic logo: watermark and footer only
 

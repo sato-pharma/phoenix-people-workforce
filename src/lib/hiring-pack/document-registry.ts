@@ -75,7 +75,7 @@ const BUILT_IN_LABELS: Readonly<Record<HiringPackDocument, string>> = {
   appointmentDocsReturn: "Appointment documents returned",
   experienceCertificate: "Certificate of experience (Arabic)",
   experienceCertificateEn: "Certificate of experience (English)",
-  salaryLetterEn: "HR letter — basic salary (English)",
+  salaryLetterEn: "HR letter — base salary (English)",
   salaryLetterAr: "HR letter — base salary (Arabic)",
   disciplinaryWarning: "Disciplinary warning",
   disciplinaryPenalty: "Administrative penalty",

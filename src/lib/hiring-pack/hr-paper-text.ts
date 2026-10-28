@@ -709,10 +709,10 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
 /*
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * THE ARABIC HR LETTER — 2026-09-20. The Arabic counterpart of `salary-letter-en.ts`, the way this
- * certificate is the Arabic counterpart of `experience-certificate-en.ts`. It wears the SAME layout
- * as the certificate immediately above — masthead, purpose band, company block, employee grid, a
- * one-column signature table — for the reason the owner already gave the English letter: "this is
- * better" than a plain prose letter under a letterhead.
+ * certificate is the Arabic counterpart of `experience-certificate-en.ts`. These are its WORDS; since
+ * 2026-10-28 its dress is `salary-letter-ar.ts`, the certificate of experience's design, worn by the
+ * English letter too (owner: "Make it the HR letter", both languages). An archived version prints
+ * through `render-hr-paper.ts` in the layout it was signed in.
  *
  * NOT A `certificate`: see the note on `HrPaperKind.salaryLetter`. Sharing the certificate's `kind`
  * would pull in its print-banner warning about blank dates and pool its archived versions with a
@@ -720,9 +720,9 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
  *
  * STATES THE BASE SALARY, AND ONLY THE BASE SALARY — the owner, 2026-09-20: "you will not put the
  * basic, you will put the base and you will call it ويتقاضى أجرًا شهريًا مقداره". It stated the BASIC
- * salary from its first day (2026-09-13, "salary we put basic not net"), and the English letter still
- * does; this one now reads the figure on the record as it is, so `render-hr-paper.ts` no longer runs
- * it through the payroll policy's basic formula. A missing base salary prints as a dotted rule, never
+ * salary from its first day (2026-09-13, "salary we put basic not net"); this one now reads the figure
+ * on the record as it is, never run through the payroll policy's basic formula, and since 2026-10-28
+ * the English letter does too ("PUT THE BASE NOT THE BASIC SALARY"). A missing base salary prints as a dotted rule, never
  * as a zero.
  *
  * NO COMPANY SEAL — the first paper to lose it (owner, 2026-09-20: "remove the stamp"), and since

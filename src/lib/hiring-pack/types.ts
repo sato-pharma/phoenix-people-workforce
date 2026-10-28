@@ -212,13 +212,13 @@ export function isOfficialPackFormDocument(document: string): document is Offici
 
 /**
  * The HR letters an employee asks for while he works here — the salary letter, which states the
- * salary — the BASIC in English (owner, 2026-09-13), the BASE in Arabic (2026-09-20). Neither arriving nor leaving,
- * so both are filed under "other" with a folder of their own on the drive.
+ * BASE salary on record in both languages (the Arabic since 2026-09-20, the English since 2026-10-28).
+ * Neither arriving nor leaving, so both are filed under "other" with a folder of their own on the drive.
  *
  * NEITHER IS IN `HOUSE_PAPER_DOCUMENTS`, though for opposite reasons. `salaryLetterEn` has its own
- * English renderer, the way the English certificate of experience does. `salaryLetterAr` IS an
- * `HrPaperTemplate`, drawn through the shared `render-hr-paper.ts` pipeline the Arabic certificate of
- * experience already uses — but it is listed here rather than spread into `HOUSE_PAPER_DOCUMENTS`,
+ * English renderer, the way the English certificate of experience does. `salaryLetterAr`'s words ARE
+ * an `HrPaperTemplate` — drawn since 2026-10-28 by its own renderer in the certificate's design, as the
+ * Arabic certificate of experience is — but it is listed here rather than spread into `HOUSE_PAPER_DOCUMENTS`,
  * because that list is already spread into `HIRING_PACK_DOCUMENTS` separately from this one, and
  * adding it to both would enter it twice. See `HR_PAPER_SALARY_LETTER_AR_V1` in `hr-paper-text.ts`.
  */

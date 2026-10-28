@@ -64,7 +64,6 @@ import {
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SALARY_ADJUSTMENT_V1,
-  HR_PAPER_SALARY_LETTER_AR_V1,
   HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
   HR_PAPER_TRANSFER_DECISION_V1,
@@ -72,6 +71,7 @@ import {
 import { renderOfficialPackFormHtml } from "@/lib/hiring-pack/render-official-form";
 import { renderExperienceCertificateArHtml } from "@/lib/hiring-pack/experience-certificate-ar";
 import { renderExperienceCertificateEnHtml } from "@/lib/hiring-pack/experience-certificate-en";
+import { renderSalaryLetterArHtml } from "@/lib/hiring-pack/salary-letter-ar";
 import { renderSalaryLetterEnHtml } from "@/lib/hiring-pack/salary-letter-en";
 import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
 import type { HrPaperTemplate } from "@/lib/hiring-pack/hr-paper-template";
@@ -186,15 +186,18 @@ const RENDERERS: Record<
     render: renderExperienceCertificateEnHtml,
     copies: systemContractDefaults.experienceCertificateCopies,
   },
-  // The HR letter — English, its own renderer, and it states the BASIC salary only.
+  // THE HR LETTER, BOTH LANGUAGES, WEARS THE CERTIFICATE'S DESIGN (owner, 2026-10-28), and both state
+  // the BASE salary on record — "PUT THE BASE NOT THE BASIC SALARY". The English one is an
+  // English-facing document with its own renderer, the way the payslip is.
   salaryLetterEn: {
     render: renderSalaryLetterEnHtml,
     copies: systemContractDefaults.salaryLetterCopies,
   },
-  // Its Arabic counterpart IS an `HrPaperTemplate`, drawn through `housePaper` the way the Arabic
-  // certificate of experience is — see the note on `HrPaperKind.salaryLetter`.
+  // Its Arabic counterpart's WORDS are still an `HrPaperTemplate`; it has its own renderer for the
+  // dress, as the Arabic certificate does, and an archived version still prints through
+  // `renderHrPaperHtml` — see `salary-letter-ar.ts`.
   salaryLetterAr: {
-    render: housePaper(HR_PAPER_SALARY_LETTER_AR_V1),
+    render: renderSalaryLetterArHtml,
     copies: systemContractDefaults.salaryLetterCopies,
   },
   // THE LETTERS PACK OF 2026-09-13. The company's own papers are house papers; the government

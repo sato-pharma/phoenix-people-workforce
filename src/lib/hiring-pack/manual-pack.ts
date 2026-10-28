@@ -105,9 +105,10 @@ const BASELINE_KEYS = [
 /**
  * What the ENGLISH papers print that the field inventory cannot offer a box for.
  *
- * Their tokens — `EMPLOYEE_NAME_EN`, `JOB_TITLE_EN`, `BASIC_SALARY_EN` — carry no binding (they are
+ * Their tokens — `EMPLOYEE_NAME_EN`, `JOB_TITLE_EN`, `BASE_SALARY_EN` — carry no binding (they are
  * English-only or derived), so without this a typed-in English paper would have no box for the name
- * it certifies. The salary letter asks for the BASE salary: the paper prints the basic derived from it.
+ * it certifies. The salary letter asks for the BASE salary, and since 2026-10-28 it prints that figure
+ * as it is.
  */
 const DOCUMENT_KEYS: Readonly<Partial<Record<string, readonly string[]>>> = {
   experienceCertificateEn: ["employee.fullName", "employee.gender", "employee.hrId", "employee.jobTitle"],
@@ -119,7 +120,7 @@ const DOCUMENT_KEYS: Readonly<Partial<Record<string, readonly string[]>>> = {
     "employee.baseSalary",
   ],
   // The Arabic letter uses BASELINE_KEYS like every other Arabic HR paper; the one thing baseline
-  // does not already cover is the base salary the basic figure is derived from.
+  // does not already cover is the base salary it states.
   salaryLetterAr: ["employee.baseSalary"],
 };
 
