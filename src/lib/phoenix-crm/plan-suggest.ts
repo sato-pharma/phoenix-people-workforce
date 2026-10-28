@@ -91,12 +91,16 @@ export type SuggestSummary = {
   pm: number;
   /** Distinct bricks the placements sit in; a customer with no brick is not one. */
   bricks: number;
+  /** Those bricks' names, each as first spelt, in the order placed: what the report names. */
+  brickNames: string[];
   /** Placed with no days and hours yet (not validated). */
   noHours: number;
   /** Days that took at least one placement. */
   days: number;
   /** Why nothing was placed; null when something was. */
   why: SuggestBlock | "nobody" | null;
+  /** A day that is already full: what it holds, AM and PM, so the report can say so. Null otherwise. */
+  held: { am: number; pm: number } | null;
 };
 
 export type SuggestResult = { placements: PlanItemDraft[]; summary: SuggestSummary };
@@ -234,18 +238,35 @@ function compareFollowUps(left: Candidate, right: Candidate): number {
   return Number(right.followUpOn !== null) - Number(left.followUpOn !== null);
 }
 
+/**
+ * The brick a customer is planned in: his place's, or iReports360's (the sales master's) while he is not
+ * validated yet. 🔴 Reading only the place's brick left every customer not validated yet with none, so
+ * Suggest filled their days by the alphabet across the whole territory (owner walk, 2026-10-28).
+ */
+function rawBrickOf(customer: PlannerCustomer, place: { brick: string | null } | null | undefined): string | null {
+  const brick = place ? place.brick : (customer.reference?.brick ?? null);
+  return brick && brick.trim() !== "" ? brick.trim() : null;
+}
+
+/** The same brick as one key, however it is spelt. */
+function brickOf(customer: PlannerCustomer, place: { brick: string | null } | null | undefined): string | null {
+  return normalizeArea(rawBrickOf(customer, place));
+}
+
 function compareWithinBrick(left: Candidate, right: Candidate): number {
   return (
     right.need - left.need ||
     (left.customer.grade ? GRADE_ORDER[left.customer.grade] : 9) - (right.customer.grade ? GRADE_ORDER[right.customer.grade] : 9) ||
     left.startMinute - right.startMinute ||
+    // The one gone longest unseen first, never seen at all before him; the name only breaks a true tie.
+    (left.customer.insight?.lastSeenOn ?? "").localeCompare(right.customer.insight?.lastSeenOn ?? "") ||
     left.customer.name.localeCompare(right.customer.name) ||
     left.customer.customerId.localeCompare(right.customer.customerId)
   );
 }
 
-function emptyResult(why: SuggestSummary["why"]): SuggestResult {
-  return { placements: [], summary: { am: 0, pm: 0, bricks: 0, noHours: 0, days: 0, why } };
+function emptyResult(why: SuggestSummary["why"], held: SuggestSummary["held"] = null): SuggestResult {
+  return { placements: [], summary: { am: 0, pm: 0, bricks: 0, brickNames: [], noHours: 0, days: 0, why, held } };
 }
 
 /** The customers suggested for ONE day of the week, and how it went. */
@@ -254,7 +275,12 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
   if (!day) return emptyResult("passed");
   const activity = activityOn(input.activities, day.date);
   const block = daySuggestBlock({ day, items: input.items, activity, customers: input.customers, caps: input.caps, dayTargets: input.dayTargets });
-  if (block) return emptyResult(block);
+  if (block) {
+    // A full day says what it already holds, so a press that placed nobody reads as the day's share
+    // being met rather than as a button that did nothing (the role walk, 2026-10-28).
+    const counts = block === "full" ? dayCounts(resolveDayRows(day, input.items, indexCustomers(input.customers))) : null;
+    return emptyResult(block, counts ? { am: counts.AM, pm: counts.PM } : null);
+  }
 
   const byId = indexCustomers(input.customers);
   const room = roomOf(day, input.items, activity, byId, suggestionCaps(input.caps, input.dayTargets));
@@ -267,8 +293,8 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
   // The bricks he has already started the day in: the day stays in them first.
   const dayBricks = new Set<string>();
   for (const row of rows) {
-    const place = row.customer?.places.find((entry) => entry.placeId === row.placeId);
-    const brick = normalizeArea(place?.brick ?? null);
+    if (!row.customer) continue;
+    const brick = brickOf(row.customer, row.customer.places.find((entry) => entry.placeId === row.placeId) ?? null);
     if (brick) dayBricks.add(brick);
   }
 
@@ -287,7 +313,7 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
     candidates.push({
       customer,
       placeId: fit.placeId,
-      brick: normalizeArea(fit.place?.brick ?? null) ?? NO_BRICK,
+      brick: brickOf(customer, fit.place) ?? NO_BRICK,
       need,
       band: noHours ? (already > 0 ? 3 : 2) : already > 0 ? 1 : 0,
       startMinute: fit.windows[0]?.startMinute ?? 9999,
@@ -299,35 +325,23 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
 
   // One area at a time: the day's own bricks, then the brick with the most fresh candidates, then the most
   // candidates at all, then the most owed. Customers with no brick come after every brick.
-  const bricks = new Map<string, { fresh: number; all: number; need: number }>();
-  for (const candidate of candidates) {
-    if (candidate.band >= 2) continue;
-    const entry = bricks.get(candidate.brick) ?? { fresh: 0, all: 0, need: 0 };
-    if (candidate.band === 0) entry.fresh += 1;
-    entry.all += 1;
-    entry.need += candidate.need;
-    bricks.set(candidate.brick, entry);
-  }
-  const brickOrder = [...bricks.entries()]
-    .sort(
-      ([leftKey, left], [rightKey, right]) =>
-        Number(leftKey === NO_BRICK) - Number(rightKey === NO_BRICK) ||
-        Number(dayBricks.has(rightKey)) - Number(dayBricks.has(leftKey)) ||
-        right.fresh - left.fresh ||
-        right.all - left.all ||
-        right.need - left.need ||
-        leftKey.localeCompare(rightKey),
-    )
-    .map(([key]) => key);
-  const brickRank = new Map(brickOrder.map((key, index) => [key, index]));
+  const brickRank = rankBricks(candidates.filter((candidate) => candidate.band < 2), dayBricks);
+  // With no hours yet the same, by iReports360's brick: the day's bricks and the ones the receiving
+  // customers fill first, then the brick where iReports360 most often saw them on this weekday.
+  const pendingRank = rankBricks(
+    candidates.filter((candidate) => candidate.band >= 2),
+    new Set([...dayBricks, ...[...brickRank.keys()].filter((key) => key !== NO_BRICK)]),
+  );
 
-  // A follow-up due this week first; then the bands, the known days by brick and, with no hours yet,
-  // iReports360's usual days for this weekday ahead of the rest.
+  // A follow-up due this week first; then the bands and, inside each, one brick at a time. With no hours
+  // yet, iReports360's usual days for this weekday go first inside the brick.
   const ordered = [...candidates].sort(
     (left, right) =>
       compareFollowUps(left, right) ||
       left.band - right.band ||
-      (left.band < 2 ? (brickRank.get(left.brick) ?? 0) - (brickRank.get(right.brick) ?? 0) : left.usual - right.usual) ||
+      (left.band < 2
+        ? (brickRank.get(left.brick) ?? 0) - (brickRank.get(right.brick) ?? 0)
+        : (pendingRank.get(left.brick) ?? 0) - (pendingRank.get(right.brick) ?? 0) || left.usual - right.usual) ||
       compareWithinBrick(left, right),
   );
 
@@ -341,6 +355,35 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
   }
   const summary = summarize(placements, byId);
   return { placements, summary: { ...summary, why: placements.length > 0 ? null : "nobody" } };
+}
+
+/**
+ * The bricks in the order a day fills them: the ones already started (`first`), then the most fresh
+ * candidates, the most usually seen on this weekday, the most candidates, the most owed. No brick is last.
+ */
+function rankBricks(candidates: ReadonlyArray<Candidate>, first: ReadonlySet<string>): Map<string, number> {
+  const bricks = new Map<string, { fresh: number; usual: number; all: number; need: number }>();
+  for (const candidate of candidates) {
+    const entry = bricks.get(candidate.brick) ?? { fresh: 0, usual: 0, all: 0, need: 0 };
+    if (candidate.band === 0 || candidate.band === 2) entry.fresh += 1;
+    if (candidate.usual === 0) entry.usual += 1;
+    entry.all += 1;
+    entry.need += candidate.need;
+    bricks.set(candidate.brick, entry);
+  }
+  const order = [...bricks.entries()]
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        Number(leftKey === NO_BRICK) - Number(rightKey === NO_BRICK) ||
+        Number(first.has(rightKey)) - Number(first.has(leftKey)) ||
+        right.fresh - left.fresh ||
+        right.usual - left.usual ||
+        right.all - left.all ||
+        right.need - left.need ||
+        leftKey.localeCompare(rightKey),
+    )
+    .map(([key]) => key);
+  return new Map(order.map((key, index) => [key, index]));
 }
 
 // ── The week ────────────────────────────────────────────────────────────────────────────────────
@@ -373,14 +416,28 @@ function summarize(placements: ReadonlyArray<PlanItemDraft>, byId: ReadonlyMap<s
   let pm = 0;
   let noHours = 0;
   const bricks = new Set<string>();
+  const brickNames = new Map<string, string>();
   for (const placement of placements) {
     const customer = byId.get(placement.customerId);
     if (!customer) continue;
     if (customer.listType === "AM") am += 1;
     else pm += 1;
     if (placement.placeId === null) noHours += 1;
-    const brick = normalizeArea(customer.places.find((place) => place.placeId === placement.placeId)?.brick ?? null);
-    if (brick) bricks.add(brick);
+    // 🔴 iReports360's brick counts too: "across 1 brick" was said of 57 visits in 7 (owner walk, 2026-10-28).
+    const place = customer.places.find((entry) => entry.placeId === placement.placeId) ?? null;
+    const brick = brickOf(customer, place);
+    if (brick) {
+      bricks.add(brick);
+      if (!brickNames.has(brick)) brickNames.set(brick, rawBrickOf(customer, place) ?? brick);
+    }
   }
-  return { am, pm, bricks: bricks.size, noHours, days: new Set(placements.map((placement) => placement.planDate)).size };
+  return {
+    am,
+    pm,
+    bricks: bricks.size,
+    brickNames: [...brickNames.values()],
+    noHours,
+    days: new Set(placements.map((placement) => placement.planDate)).size,
+    held: null,
+  };
 }

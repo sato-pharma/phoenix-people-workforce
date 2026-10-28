@@ -468,6 +468,15 @@ export function runPhoenixCrmPlanSuggestTests(): void {
     assert.match(dayPanel, /\{suggestMenu\}\s*\{copyMenu\}/, "Suggest this day sits beside Copy a day");
 
     // The phone's month strip: AM and PM apart, the full cards kept from md up.
+    // The report says what happened, in his words (the role walk, 2026-10-28).
+    assert.match(menu, /\$\{countText\(am\)\} on \$\{weekday\} morning and \$\{countText\(pm\)\} in the afternoon/, "a day reads by its halves");
+    assert.match(menu, /title: `\$\{weekday\} already holds \$\{holds\}`/, "a full day says what it holds");
+    assert.ok(menu.includes("Suggest fills a day only up to its share of this month's visits."), "and why nothing more went on");
+    assert.match(menu, /onto \$\{ontoText\(placed\)\}/, "a copy names the days it filled");
+    assert.ok(menu.includes("if (shown.length === 0 && !report) return null;"), "a copy menu with nothing to copy is not shown");
+    assert.match(board, /setFillNote\(\{ key, report: suggestReport\(/, "the board keeps the day's fill report");
+    assert.match(dayPanel, /\{fillReport \? \(\s*<CrmNote className="mt-3" title=\{fillReport\.title\} tone=\{fillReport\.tone\}>/, "and the day screen shows it");
+
     assert.match(board, /<div className="grid grid-cols-2 gap-2 md:hidden">/, "a phone reads the month as one two-column strip");
     assert.match(board, /const lists: ReadonlyArray<PhoenixCrmDoctorListType> = \["AM", "PM"\];/, "one column for AM and one for PM — never one added figure");
     assert.match(board, /<div className="hidden md:block">\s*<CrmStatGrid>/, "and the eight full cards stay on a tablet and a desktop");
@@ -475,6 +484,29 @@ export function runPhoenixCrmPlanSuggestTests(): void {
     // The week and day on screen are marked in their choosers.
     assert.match(board, /<ChoiceLabel chosen=\{state\.week\.weekStart === selected\?\.week\.weekStart\}>/, "the week on screen carries a tick");
     assert.match(weekPanel, /<ChoiceLabel chosen=\{day\.date === selectedDay\.date\}>/, "and so does the day");
+  }
+
+  // ── (j) Not validated yet: iReports360's brick keeps the day in one area (owner walk, 2026-10-28) ──
+  {
+    const pendingIn = (customerId: string, brick: string): PlannerCustomer => ({
+      ...customer(customerId, "PM", { pending: true }),
+      reference: { brick, area: null, address: null },
+    });
+    const pendings = [pendingIn("a-dokki", "Dokki"), pendingIn("b-zamalek", "Zamalek"), pendingIn("c-dokki", "Dokki")];
+    const two = suggestDay({ ...input(pendings, { caps: { amDailyCap: 5, pmDailyCap: 2 } }), date: SAT });
+    assert.deepEqual(ids(two), ["a-dokki", "c-dokki"], "the two in Dokki, never the alphabet across bricks");
+    assert.deepEqual([two.summary.bricks, two.summary.brickNames], [1, ["Dokki"]], "and the report counts and names their brick");
+    const three = suggestDay({ ...input(pendings, { caps: { amDailyCap: 5, pmDailyCap: 3 } }), date: SAT });
+    assert.deepEqual([three.summary.bricks, [...three.summary.brickNames].sort()], [2, ["Dokki", "Zamalek"]], "each brick named once");
+
+    const full = suggestDay({
+      ...input([customer("a1", "AM"), customer("p1", "PM"), customer("p2", "PM"), customer("p3", "PM")], {
+        dayTargets: { am: 1, pm: 2 },
+        items: [placed(SAT, "a1"), placed(SAT, "p1"), placed(SAT, "p2")],
+      }),
+      date: SAT,
+    });
+    assert.deepEqual([full.summary.why, full.summary.held], ["full", { am: 1, pm: 2 }], "a full day says what it holds");
   }
 
   console.log("phoenix-crm plan suggest: OK");

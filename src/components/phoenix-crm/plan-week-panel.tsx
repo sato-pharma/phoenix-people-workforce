@@ -39,7 +39,7 @@ import { Check } from "lucide-react";
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { cairoStamp, countText, dayLabel, plural, weekLabel } from "@/components/phoenix-crm/format";
 import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
-import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
+import { PlanCopyMenu, PlanSuggestMenu, type CopiedPlacements, type CopyReport, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { PlanDayPanel } from "@/components/phoenix-crm/plan-day-panel";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
@@ -211,6 +211,7 @@ export function PlanWeekPanel({
   dirty,
   editable,
   editLocked,
+  fillReport = null,
   filter,
   filterOptions,
   gradeTargets,
@@ -279,6 +280,8 @@ export function PlanWeekPanel({
    * week's buttons (Send, Ask to edit) but never his ticks.
    */
   editLocked?: boolean;
+  /** What the step form's last "Suggest this day" did to the day on screen; null when nothing yet. */
+  fillReport?: CopyReport | null;
   filter: DoctorFilter;
   filterOptions: {
     bricks: ReadonlyArray<{ value: string; label: string }>;
@@ -735,7 +738,9 @@ export function PlanWeekPanel({
         }
         customers={customers}
         day={selectedDay}
+        dayTargets={suggest?.dayTargets}
         editing={editingDay}
+        fillReport={fillReport}
         filter={filter}
         filterOptions={filterOptions}
         focus={dayFocus}

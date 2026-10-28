@@ -56,6 +56,8 @@ export function PlanFilterBar({
   onChange,
   onQueryChange,
   query = "",
+  /** A screen that shows one list (the rep's AM or PM step) hides the AM or PM control. */
+  showSession = true,
   /** A screen that fixes the weekday hides its control and the day part of the label. */
   showWeekday = true,
   specialities = [],
@@ -71,6 +73,7 @@ export function PlanFilterBar({
   /** The name search; without it the search box is not shown. */
   onQueryChange?: (next: string) => void;
   query?: string;
+  showSession?: boolean;
   showWeekday?: boolean;
   /** Specialities present on the list, for the speciality picker; empty hides it. */
   specialities?: ReadonlyArray<string>;
@@ -133,22 +136,24 @@ export function PlanFilterBar({
           </CrmField>
         ) : null}
 
-        <CrmField htmlFor={sessionId} label="AM or PM">
-          <CrmSelect
-            disabled={locked}
-            id={sessionId}
-            onChange={(event) => {
-              if (isSession(event.target.value)) onChange({ ...filter, session: event.target.value });
-            }}
-            value={filter.session}
-          >
-            {SESSION_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </CrmSelect>
-        </CrmField>
+        {showSession ? (
+          <CrmField htmlFor={sessionId} label="AM or PM">
+            <CrmSelect
+              disabled={locked}
+              id={sessionId}
+              onChange={(event) => {
+                if (isSession(event.target.value)) onChange({ ...filter, session: event.target.value });
+              }}
+              value={filter.session}
+            >
+              {SESSION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+        ) : null}
 
         {grades.length > 0 ? (
           <CrmField htmlFor={gradeId} label="Grade">

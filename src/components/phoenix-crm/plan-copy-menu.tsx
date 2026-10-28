@@ -26,7 +26,7 @@
  * presses Send. `autosave` says so in the words under the buttons and in the report after them.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
 import { countText, dayLabel, monthLabel, plural, shiftIsoDay, weekLabel } from "@/components/phoenix-crm/format";
@@ -67,7 +67,7 @@ export type CopyScope =
   | { kind: "week"; target: CopyTargetWeek }
   | { kind: "day"; target: CopyTargetWeek; date: string };
 
-type CopyReport = { tone: NoteTone; title: string; message: string };
+export type CopyReport = { tone: NoteTone; title: string; message: string };
 
 /** The placements a copy made, by week — what the board adds to its drafts. */
 export type CopiedPlacements = ReadonlyMap<string, PlanItemDraft[]>;
@@ -83,25 +83,47 @@ function missedSentence(summary: Pick<CopySummary, "full" | "noPlace" | "notOnLi
   return `${countText(missed)} could not be placed: ${parts.join(", ")}.`;
 }
 
+/** "1 falls on a day that has passed." — a copy never fills one, so the count is said apart. */
+function passedSentence(passed: number): string | null {
+  if (passed <= 0) return null;
+  return passed === 1 ? "1 falls on a day that has passed." : `${countText(passed)} fall on days that have passed.`;
+}
+
+/** "A, B and C" — the words joined the way he reads them. */
+function andList(words: ReadonlyArray<string>): string {
+  return words.length <= 1 ? (words[0] ?? "") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
+/** The days a copy landed on: "Wed 28 Oct", up to three by name, else "5 days, Sat 24 Oct to Thu 29 Oct". */
+function ontoText(placed: ReadonlyArray<PlanItemDraft>): string {
+  const dates = [...new Set(placed.map((item) => item.planDate))].sort();
+  if (dates.length > 3) return `${countText(dates.length)} days, ${dayLabel(dates[0])} to ${dayLabel(dates[dates.length - 1])}`;
+  return andList(dates.map(dayLabel));
+}
+
 /** Under the buttons: what a press keeps, and what still waits for him. */
 function keptLine(autosave: boolean): string {
   return autosave ? "Nothing is sent until you press Send." : "Nothing is saved or sent until you do.";
 }
 
-function reportOf(summary: CopySummary, from: string, autosave: boolean): CopyReport {
+function reportOf(summary: CopySummary, from: string, autosave: boolean, placed: ReadonlyArray<PlanItemDraft>): CopyReport {
   const missed = missedSentence(summary);
+  const passed = passedSentence(summary.passed);
   if (summary.placed === 0) {
     return {
       tone: "info",
       title: "Nothing was copied",
-      message: missed ?? `There is nothing to copy from ${from} onto the days you can still change.`,
+      message: [missed, passed].filter(Boolean).join(" ") || `There is nothing to copy from ${from} onto the days you can still change.`,
     };
   }
   return {
     tone: "good",
-    title: `Copied ${plural(summary.placed, "planned visit", "planned visits")} from ${from}`,
+    // Which days it filled (the role walk, 2026-10-28): a copy of a whole week onto its last two days
+    // said only how many landed, never where.
+    title: `Copied ${plural(summary.placed, "planned visit", "planned visits")} from ${from} onto ${ontoText(placed)}`,
     message: [
       missed,
+      passed,
       autosave ? "They save by themselves. Check the days — nothing is sent until you press Send." : "Nothing is saved or sent yet. Check the days, then save.",
     ]
       .filter(Boolean)
@@ -120,6 +142,11 @@ function dayFinder(weeks: ReadonlyArray<DraftWeek>): (date: string) => DraftDay 
   const byDate = new Map<string, DraftDay>();
   for (const week of weeks) for (const day of week.days) byDate.set(day.date, day);
   return (date) => byDate.get(date) ?? null;
+}
+
+/** What a copy would copy, read the same way for the copy and for the look that hides an empty one. */
+function readCopySource(seatId: string, test: boolean, from: string, to: string): Promise<PlanCopySourceView> {
+  return crmGet<PlanCopySourceView>(crmUrl("/api/phoenix-crm/plans/copy-source", { seatId, test, from, to }), "source");
 }
 
 export function PlanCopyMenu({
@@ -152,9 +179,30 @@ export function PlanCopyMenu({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<CopyReport | null>(null);
+  // The sources that hold nothing to copy (the role walk, 2026-10-28): their buttons are not offered, so
+  // a copy he can press always has something in it. A source that cannot be read keeps its button — the
+  // press says what went wrong. Copy last month is always offered: it falls back to iReports360.
+  const [empty, setEmpty] = useState<ReadonlySet<string>>(() => new Set());
+  const probes = scope.kind === "week" ? [shiftIsoDay(scope.target.week.weekStart, -7)] : scope.kind === "day" ? dayCopySources(scope.date) : [];
+  const probeKey = probes.map((from) => `${from}~${scope.kind === "week" ? shiftIsoDay(from, 5) : from}`).join(",");
+  useEffect(() => {
+    if (probeKey === "") return;
+    let live = true;
+    for (const probe of probeKey.split(",")) {
+      const [from = "", to = ""] = probe.split("~");
+      readCopySource(seatId, test, from, to)
+        .then((source) => {
+          if (live && source.placements.length === 0) setEmpty((current) => new Set(current).add(from));
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      live = false;
+    };
+  }, [probeKey, seatId, test]);
 
   function readSource(from: string, to: string): Promise<PlanCopySourceView> {
-    return crmGet<PlanCopySourceView>(crmUrl("/api/phoenix-crm/plans/copy-source", { seatId, test, from, to }), "source");
+    return readCopySource(seatId, test, from, to);
   }
 
   async function run(key: string, work: () => Promise<CopyReport>) {
@@ -194,7 +242,7 @@ export function PlanCopyMenu({
       }
       if (byWeek.size > 0) onPlace(byWeek);
       const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf(copyWeeks), placed });
-      return reportOf(summary, monthLabel(monthKeyOf(previousMonth)), autosave);
+      return reportOf(summary, monthLabel(monthKeyOf(previousMonth)), autosave, placed);
     }
 
     // His first Phoenix month: last month's iReports360 plan, placed by the weekdays he had then.
@@ -222,20 +270,42 @@ export function PlanCopyMenu({
     }
     if (byWeek.size > 0) onPlace(byWeek);
     const notOnList = entries.filter((entry) => !entry.nativeCustomerId || !byId.has(entry.nativeCustomerId)).length;
-    return reportOf({ placed: placed.length, full: 0, noPlace, notOnList }, `your iReports360 plan for ${history.historyMonthLabel}`, autosave);
+    // The visits it would have put on a day of these weeks that has passed: each customer's weekdays
+    // merged, as the copy merges them, on every passed day his list fits and he is not already on.
+    const weekdaysOf = new Map<string, Set<number>>();
+    for (const entry of entries) {
+      if (!entry.nativeCustomerId || !byId.has(entry.nativeCustomerId)) continue;
+      const set = weekdaysOf.get(entry.nativeCustomerId) ?? new Set<number>();
+      for (const weekday of entry.weekdays) set.add(weekday);
+      weekdaysOf.set(entry.nativeCustomerId, set);
+    }
+    let passed = 0;
+    for (const week of copyWeeks) {
+      for (const day of week.days) {
+        if (day.editable) continue;
+        const weekday = weekdayOfIsoDay(day.date);
+        const onDay = new Set(day.items.map((item) => item.customerId));
+        for (const [customerId, weekdays] of weekdaysOf) {
+          const customer = byId.get(customerId);
+          if (customer && weekdays.has(weekday) && day.listTypes.includes(customer.listType) && !onDay.has(customerId)) passed += 1;
+        }
+      }
+    }
+    return reportOf({ placed: placed.length, full: 0, noPlace, notOnList, passed }, `your iReports360 plan for ${history.historyMonthLabel}`, autosave, placed);
   }
 
   /** Copy last week: the previous field-week, weekday onto weekday. */
   async function copyWeek(target: CopyTargetWeek): Promise<CopyReport> {
     const previous = shiftIsoDay(target.week.weekStart, -7);
     const source = await readSource(previous, shiftIsoDay(previous, 5));
+    if (source.placements.length === 0) setEmpty((current) => new Set(current).add(previous));
     const targetDayOf = sameWeekdayIn(target.week);
     const targetWeek = copyWeekOf(target.week, target.items, byId);
     const drafts = buildWeekCopyPlacements(source.placements, customers, targetWeek, caps);
     const settled = settleCopiedPlaces(drafts, dayFinder([target.week]), byId);
     if (settled.kept.length > 0) onPlace(new Map([[target.week.weekStart, settled.kept]]));
     const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf([targetWeek]), placed: settled.kept });
-    return reportOf(summary, weekLabel(previous), autosave);
+    return reportOf(summary, weekLabel(previous), autosave, settled.kept);
   }
 
   /** Copy a day: the same weekday one or two weeks back, onto this day. */
@@ -245,6 +315,7 @@ export function PlanCopyMenu({
     const copyDayTarget = targetWeek.days.find((entry) => entry.date === date) ?? null;
     if (!day || !copyDayTarget) return { tone: "info", title: "Nothing was copied", message: "Open a day of this week, then copy onto it." };
     const source = await readSource(from, from);
+    if (source.placements.length === 0) setEmpty((current) => new Set(current).add(from));
     const targetDayOf = onTheDay(day);
     const drafts = buildDayCopyPlacements(
       source.placements.map((placement) => placement.customerId),
@@ -255,12 +326,13 @@ export function PlanCopyMenu({
     const settled = settleCopiedPlaces(drafts, dayFinder([target.week]), byId);
     if (settled.kept.length > 0) onPlace(new Map([[target.week.weekStart, settled.kept]]));
     const summary = summarizeCopy({ source: source.placements, targetDayOf, byId, alreadyOn: alreadyOnOf([targetWeek]), placed: settled.kept });
-    return reportOf(summary, dayLabel(from), autosave);
+    return reportOf(summary, dayLabel(from), autosave, settled.kept);
   }
 
   const locked = disabled || busy !== null;
   let explain: string;
-  let buttons: Array<{ key: string; label: string; onClick: () => void }>;
+  // `source`: the day the button copies from, when it can come back empty.
+  let buttons: Array<{ key: string; label: string; onClick: () => void; source?: string }>;
   if (scope.kind === "month") {
     const { monthStart, weeks } = scope;
     const previousMonth = monthLabel(monthKeyOf(monthStartOf(shiftIsoDay(monthStart, -1))));
@@ -270,7 +342,9 @@ export function PlanCopyMenu({
     const { target } = scope;
     const previous = shiftIsoDay(target.week.weekStart, -7);
     explain = `Each day of ${weekLabel(previous)} onto the same day of this week.`;
-    buttons = [{ key: "week", label: compact ? "Copy last week's plan" : "Copy last week", onClick: () => void run("week", () => copyWeek(target)) }];
+    buttons = [
+      { key: "week", label: compact ? "Copy last week's plan" : "Copy last week", onClick: () => void run("week", () => copyWeek(target)), source: previous },
+    ];
   } else {
     const { target, date } = scope;
     explain = "The same day one or two weeks back, onto this day.";
@@ -278,14 +352,17 @@ export function PlanCopyMenu({
       key: from,
       label: `Copy ${dayLabel(from)}`,
       onClick: () => void run(from, () => copyDay(target, date, from)),
+      source: from,
     }));
   }
+  const shown = buttons.filter((button) => !button.source || !empty.has(button.source));
+  if (shown.length === 0 && !report) return null;
 
   return (
     <div className={compact ? "contents" : "grid min-w-0 gap-2"}>
       {compact ? null : <p className="break-words text-xs font-semibold leading-5 text-slate-500">{explain} {keptLine(autosave)}</p>}
       <div className={compact ? "contents" : "grid gap-2 sm:flex sm:flex-wrap"}>
-        {buttons.map((button) => (
+        {shown.map((button) => (
           <CrmButton busy={busy === button.key} disabled={locked} key={button.key} onClick={button.onClick} size="sm">
             {button.label}
           </CrmButton>
@@ -316,19 +393,73 @@ function suggestedTitle(result: SuggestResult, morningOnly: boolean, scope: Sugg
   return `Placed ${lists}${where}${when}`;
 }
 
-function suggestReport(result: SuggestResult, morningOnly: boolean, scope: SuggestScope, autosave: boolean): CopyReport {
-  if (result.placements.length === 0) {
-    const days = scope.kind === "day" ? `on ${PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(scope.date)]}` : "on the days left";
+/** "Zamalek, Dokki and Agouza"; past three, "Zamalek, Dokki and 4 more bricks". */
+function brickList(names: ReadonlyArray<string>): string {
+  if (names.length > 3) return `${names.slice(0, 2).join(", ")} and ${countText(names.length - 2)} more bricks`;
+  return andList(names);
+}
+
+/**
+ * One day, the way he plans it (the role walk, 2026-10-28): "Placed 2 on Wednesday morning and 5 in the
+ * afternoon in Zamalek and Dokki" — the halves of the day and the bricks by name, never a count of them.
+ */
+function dayPlacedTitle(result: SuggestResult, date: string): string {
+  const { am, brickNames, pm } = result.summary;
+  const weekday = PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(date)];
+  const halves =
+    am > 0 && pm > 0
+      ? `${countText(am)} on ${weekday} morning and ${countText(pm)} in the afternoon`
+      : am > 0
+        ? `${countText(am)} on ${weekday} morning`
+        : `${countText(pm)} on ${weekday} afternoon`;
+  return `Placed ${halves}${brickNames.length > 0 ? ` in ${brickList(brickNames)}` : ""}`;
+}
+
+/** Why nothing was placed, in a sentence of its own for each reason. */
+function nothingReport(result: SuggestResult, morningOnly: boolean, scope: SuggestScope): CopyReport {
+  const weekday = scope.kind === "day" ? PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(scope.date)] : null;
+  const why = result.summary.why;
+  if (why === "full" && weekday) {
+    const held = result.summary.held ?? { am: 0, pm: 0 };
+    const pm = morningOnly ? 0 : held.pm;
+    const holds =
+      held.am > 0 && pm > 0
+        ? `its ${countText(held.am)} morning and ${countText(pm)} afternoon visits`
+        : held.am > 0
+          ? `its ${plural(held.am, "morning visit", "morning visits")}`
+          : pm > 0
+            ? `its ${plural(pm, "afternoon visit", "afternoon visits")}`
+            : null;
+    return holds
+      ? { tone: "info", title: `${weekday} already holds ${holds}`, message: "Suggest fills a day only up to its share of this month's visits." }
+      : { tone: "info", title: "Nothing to suggest", message: `${weekday} has no room left for a visit.` };
+  }
+  if (why === "full") {
+    return { tone: "info", title: "Nothing to suggest", message: "Every day left already holds its share of this month's visits." };
+  }
+  if (why === "activity") {
     return {
       tone: "info",
       title: "Nothing to suggest",
-      message: `Every customer who receives ${days} is already at their grade this month, or already planned.`,
+      message: weekday ? `${weekday} is given over to another activity.` : "Every day left is given over to another activity.",
     };
   }
+  if (why === "passed") {
+    return { tone: "info", title: "Nothing to suggest", message: weekday ? `${weekday} has passed.` : "Every day of this week has passed." };
+  }
+  return {
+    tone: "info",
+    title: "Nothing to suggest",
+    message: `Every customer who receives ${weekday ? `on ${weekday}` : "on the days left"} is already at their grade this month, or already planned.`,
+  };
+}
+
+export function suggestReport(result: SuggestResult, morningOnly: boolean, scope: SuggestScope, autosave: boolean): CopyReport {
+  if (result.placements.length === 0) return nothingReport(result, morningOnly, scope);
   const noHours = result.summary.noHours;
   return {
     tone: "good",
-    title: suggestedTitle(result, morningOnly, scope),
+    title: scope.kind === "day" ? dayPlacedTitle(result, scope.date) : suggestedTitle(result, morningOnly, scope),
     message: [
       noHours > 0 ? `${plural(noHours, "of them has", "of them have")} no days and hours yet.` : null,
       autosave ? "They save by themselves. Review them — nothing is sent until you press Send." : "Nothing is saved or sent yet. Review them, then save.",

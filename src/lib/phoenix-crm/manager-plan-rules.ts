@@ -1084,8 +1084,13 @@ export function managerPlanStatusLine(input: {
   byAdministrator?: boolean;
   /** HR acknowledged the approved week by itself — a regional, national or product manager's only. */
   hrAcknowledged?: boolean;
+  /**
+   * The reader is the manager himself: his own screen says "you", never his own name in the third person
+   * (owner walk, 2026-10-28: "Drafted by Rasha Sabry" on Rasha Sabry's own board).
+   */
+  self?: boolean;
 }): string {
-  const manager = nameOrNull(input.managerName);
+  const manager = input.self ? "you" : nameOrNull(input.managerName);
   const first = nameOrNull(input.firstName);
   const second = nameOrNull(input.secondName);
   const decider = input.byAdministrator ? "the Administrator" : nameOrNull(input.deciderName);
@@ -1097,6 +1102,7 @@ export function managerPlanStatusLine(input: {
     const approved = decider ? `Approved by ${decider}` : managerPlanStatusLabel("approved");
     return input.hrAcknowledged ? `${approved} · ${MANAGER_PLAN_HR_ACK_TEXT}` : approved;
   }
+  if (input.self) return "Not started — you draft it";
   return manager ? `Not started — ${manager} drafts it` : managerPlanStatusLabel(null);
 }
 
@@ -1506,4 +1512,15 @@ export function matchCustomerName<T extends NameCandidate>(typed: string, candid
     else if (key.length >= 4 && (folded.includes(key) || key.includes(folded))) partial.push(candidate);
   }
   return [...exact, ...partial].slice(0, limit);
+}
+
+/**
+ * One customer's name, however it was spelt — folded as `matchCustomerName` folds it; an empty fold is
+ * nobody. Owner walk, 2026-10-28: مستشفى أشمون العام was added to Manager's own list while it stood on Aya
+ * Ibrahim's, because the save went before the offer came back. The add now asks first; namesakes are real,
+ * so "It is a different customer" still adds it.
+ */
+export function sameCustomerName(left: string | null | undefined, right: string | null | undefined): boolean {
+  const key = normalizeContactName(left);
+  return key.length > 0 && key === normalizeContactName(right);
 }

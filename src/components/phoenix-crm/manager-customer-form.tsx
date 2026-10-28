@@ -28,6 +28,7 @@ import {
   MANAGER_CUSTOMER_POTENTIAL_GRADES,
   MANAGER_PLAN_NOTE_MAX,
   missingManagerCustomerField,
+  sameCustomerName,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import type { CustomerMatch, ManagerAreaBricks, ManagerCustomerLocated, ManagerCustomerView } from "@/lib/phoenix-crm/view-types";
 
@@ -75,6 +76,10 @@ export function ManagerCustomerForm({
   const [matches, setMatches] = useState<CustomerMatch[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The customers already on a list under exactly this name, found at the save; he says which it is. */
+  const [sameFound, setSameFound] = useState<{ name: string; matches: CustomerMatch[] } | null>(null);
+  // Held for the name it was found for: a change to the name lets him save again.
+  const sameNamed = sameFound && sameFound.name === name ? sameFound.matches : null;
   const asked = useRef(0);
   const bricks = useCrmGet<ManagerAreaBricks>(areaSeatId ? crmUrl(BRICKS, { area: areaSeatId }) : null, "bricks");
 
@@ -142,7 +147,12 @@ export function ManagerCustomerForm({
     }
   }
 
-  async function add() {
+  /**
+   * The save looks the name up itself (owner walk, 2026-10-28: a quick save beat the offer and the same
+   * hospital went on two lists). The same name on a list stops it once, to choose that one or to say it is a
+   * different customer; `differentCustomer` tells the server he said so.
+   */
+  async function add(differentCustomer = false) {
     if (missing) {
       setError(missing);
       return;
@@ -150,6 +160,16 @@ export function ManagerCustomerForm({
     setSaving(true);
     setError(null);
     try {
+      if (!differentCustomer) {
+        const found = await crmPost<CustomerMatch[]>("/api/phoenix-crm/manager-plans/customers/match", { name: name.trim(), test }, "matches").catch(() => []);
+        const same = found.filter((match) => sameCustomerName(match.name, name));
+        if (same.length > 0) {
+          setMatches(found);
+          setSameFound({ name, matches: same });
+          setSaving(false);
+          return;
+        }
+      }
       const added = await crmPost<ManagerCustomerView>(
         "/api/phoenix-crm/manager-plans/customers",
         {
@@ -164,6 +184,7 @@ export function ManagerCustomerForm({
           areaSeatId,
           comment: comment.trim() || null,
           ...(pin ? { pin: { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters } } : {}),
+          ...(differentCustomer ? { differentCustomer: true } : {}),
           test,
         },
         "customer",
@@ -253,7 +274,8 @@ export function ManagerCustomerForm({
       </CrmField>
 
       <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Where the customer is · optional</p>
+        {/* The area is required and the rest is not (owner walk, 2026-10-28: "optional" sat over "Area *"). */}
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Where the customer is · the area is required</p>
         <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. Or fill them in below." label="Location">
           <CaptureLocation disabled={saving || locating} onChange={(next) => void capture(next)} value={pin} />
         </CrmField>
@@ -303,8 +325,20 @@ export function ManagerCustomerForm({
       </div>
 
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      {sameNamed ? (
+        <CrmNote title={`${sameNamed[0].name} is already on a list`} tone="warn">
+          <p className="break-words">
+            {`${sameNamed.map((match) => match.detail).join("; ")}. ${onPickExisting ? "Choose that one above" : "Plan that one"} rather than adding the same customer twice.`}
+          </p>
+          <div className="mt-2">
+            <CrmButton busy={saving} disabled={locating} onClick={() => void add(true)} size="sm">
+              It is a different customer — add it
+            </CrmButton>
+          </div>
+        </CrmNote>
+      ) : null}
       <div className="flex flex-wrap gap-2">
-        <CrmButton busy={saving} disabled={locating} onClick={() => void add()} variant="primary">
+        <CrmButton busy={saving} disabled={locating || sameNamed !== null} onClick={() => void add()} variant="primary">
           Add to my list
         </CrmButton>
         <CrmButton disabled={saving} onClick={onCancel} variant="ghost">

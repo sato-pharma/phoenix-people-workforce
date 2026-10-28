@@ -305,7 +305,8 @@ export function runPhoenixCrmPlanInsightTests(): void {
     );
 
     // 🔴 The threshold reaches Suggest through the builder: a customer seen ONCE, on a Sunday, has no
-    // usual day at all — so on a Monday he is NOT pushed behind a customer nothing is known about.
+    // usual day at all — so the weekday changes nothing about where he stands. Since the role walk
+    // (2026-10-28) the one never seen goes first on every day: longest unseen first.
     const fromHistory = buildPlannerInsights({
       customers: [
         { customerId: "a-one-sunday-visit", savedDays: false, referenceContactCrmId: 701 },
@@ -318,10 +319,12 @@ export function runPhoenixCrmPlanInsightTests(): void {
     const once = customer("a-one-sunday-visit", "PM", { pending: true, insight: fromHistory.get("a-one-sunday-visit") ?? null });
     const none = customer("z-nothing-known", "PM", { pending: true, insight: fromHistory.get("z-nothing-known") ?? null });
     assert.equal(plannerRowInsight(once, { target: null, today: TODAY, weekStart: WEEK_START }).usual, null, "so no hint on his row");
+    const onMonday = ids(suggestDay({ ...input([once, none], oneRoom), date: MON }));
+    assert.deepEqual(onMonday, ["z-nothing-known"], "the one never seen goes first: longest unseen first");
     assert.deepEqual(
-      ids(suggestDay({ ...input([once, none], oneRoom), date: MON })),
-      ["a-one-sunday-visit"],
-      "and no order preference: on a Monday he and a customer nothing is known about are equals, taken by name",
+      ids(suggestDay({ ...input([once, none], oneRoom), date: SUN })),
+      onMonday,
+      "and no order preference: his one Sunday visit does not put him first on a Sunday either",
     );
 
     // Across the week each lands on his own day (names sort the other way, so the order is the rule's).

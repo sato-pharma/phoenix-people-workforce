@@ -6,10 +6,13 @@ import {
   EMPTY_DOCTOR_FILTER,
   filterPlannerCustomers,
   plannerBricks,
+  plannerFilterOptions,
   plannerGrades,
   plannerSpecialities,
+  specialityKey,
   type DoctorFilter,
 } from "../src/lib/phoenix-crm/plan-filters.ts";
+import { compareFoldedNames, foldedWordsMatch, foldSearchText } from "../src/lib/phoenix-crm/name-fold.ts";
 import type { PlannerCustomer } from "../src/lib/phoenix-crm/suggestions.ts";
 import { receivesInRange, windowOverlapsRange } from "../src/lib/phoenix-crm/timings.ts";
 import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSeason, PhoenixCrmTiming } from "../src/lib/phoenix-crm/types.ts";
@@ -143,5 +146,56 @@ export function runPhoenixCrmPlanFiltersTests() {
     const weekPanel = readFileSync("src/components/phoenix-crm/plan-week-panel.tsx", "utf8");
     assert.match(board, /<CrmChoice\s+columns=\{4\}\s+label="Week"/, "the Week picker stays a row of buttons");
     assert.match(weekPanel, /<CrmChoice\s+columns=\{3\}\s+label="Day"/, "and so does the Day picker");
+  }
+
+  // ── One spelling for a name typed two ways (owner walk, 2026-10-28) ─────────────────────────────
+  // Typing مستشفى بنها found only the ى spelling, and أحمد sat about 30 rows from احمد.
+  assert.equal(foldSearchText("مستشفى"), foldSearchText("مستشفي"), "a final ى and ي are one letter");
+  assert.equal(foldSearchText("أحمد"), foldSearchText("احمد"), "a hamza carrier is a bare alef");
+  assert.equal(foldSearchText("صيدلية"), foldSearchText("صيدليه"), "a final ة is ه");
+  assert.equal(foldedWordsMatch("مستشفي بنها", ["مستشفى بنها العام"]), true, "typing مستشفي بنها finds مستشفى بنها");
+  assert.equal(foldedWordsMatch("بنها مستشفى", ["مستشفي بنها"]), true, "in any order, either spelling on either side");
+  assert.equal(foldedWordsMatch("طنطا", ["مستشفى بنها"]), false, "and a word that is not there is still not there");
+  assert.deepEqual(["احمد علي", "بسمة", "أحمد سعيد"].sort(compareFoldedNames), ["أحمد سعيد", "احمد علي", "بسمة"], "أحمد and احمد sort side by side");
+
+  // ── One speciality typed several ways is one choice (owner walk, 2026-10-28: Uro and Urology) ───
+  assert.equal(specialityKey("Uro"), specialityKey("Urology"), "Uro is Urology");
+  assert.equal(specialityKey("\u200fGP"), specialityKey("General Practitioner"), "a hidden right-to-left mark is not a second GP");
+  assert.notEqual(specialityKey("GP + Pedia"), specialityKey("GP"), "a combined speciality stays apart");
+  assert.equal(specialityKey("   "), null, "a blank speciality is none");
+  {
+    const spelt = [
+      customer("u1", "PM", "Dokki", [], { speciality: "Urology" }),
+      customer("u2", "PM", "Dokki", [], { speciality: "Urology" }),
+      customer("u3", "PM", "Dokki", [], { speciality: "Uro" }),
+      customer("g1", "PM", "Dokki", [], { speciality: "\u200fGP" }),
+    ];
+    assert.deepEqual(plannerSpecialities(spelt), ["GP", "Urology"], "one choice per speciality, named the way most of them spell it");
+    assert.deepEqual(ids(filterPlannerCustomers(spelt, filter({ speciality: "Urology" }))), ["u1", "u2", "u3"], "and choosing it finds every spelling");
+  }
+
+  // ── A customer not validated yet is in iReports360's brick, for the brick filter too ──────────
+  {
+    const pending: PlannerCustomer = {
+      ...customer("pending-zamalek", "PM", null, []),
+      pending: true,
+      places: [],
+      reference: { brick: "Zamalek", area: null, address: null },
+    };
+    assert.deepEqual(
+      plannerFilterOptions([docSat, pending]).bricks,
+      [
+        { value: "nasr city", label: "Brick Nasr City" },
+        { value: "zamalek", label: "Brick Zamalek" },
+      ],
+      "the brick he is grouped under is offered",
+    );
+    assert.deepEqual(ids(filterPlannerCustomers([docSat, pending], filter({ brick: "zamalek" }))), ["pending-zamalek"], "and choosing it finds him");
+    const dayPanel = readFileSync("src/components/phoenix-crm/plan-day-panel.tsx", "utf8");
+    assert.match(
+      dayPanel,
+      /plannerFilterOptions\(offeredCustomers\.filter\(\(customer\) => customer\.listType === focus\)\)/,
+      "the day screen offers the choices of the list on screen, never the whole list's",
+    );
   }
 }

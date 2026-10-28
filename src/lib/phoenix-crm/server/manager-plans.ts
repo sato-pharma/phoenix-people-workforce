@@ -24,9 +24,9 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import { logWarning } from "@/lib/observability/log";
-import { fieldWeekStart, isIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekStart, isIsoDay, planDeadlinePassed, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
 import {
   findManagerPlanScope,
   flagManagerCustomer,
@@ -377,6 +377,8 @@ export type ManagerBoardDay = {
   holiday: string | null;
   halves: ManagerHalf[];
   editable: boolean;
+  /** Before Cairo today: greyed and labelled "Passed" on the day step, and skipped by Next. */
+  passed: boolean;
   slots: ManagerBoardSlot[];
   /** Each rep's own customers for each half of the day; a rep with nothing that half is absent. */
   repHalves: ManagerBoardRepHalf[];
@@ -389,6 +391,10 @@ export type ManagerBoardPlan = {
   statusLine: string;
   version: number | null;
   dueText: string;
+  /** When it was sent, in Cairo — null for a draft or a week not started. */
+  sentText: string | null;
+  /** Not sent and past Thursday 23:55 Cairo: the board says so beside the due date. */
+  overdue: boolean;
   submittedLate: boolean | null;
   returnedDay: string | null;
   decisionNote: string | null;
@@ -416,7 +422,11 @@ export type ManagerPlanBoardView = {
   /** The Super Admin may delete this week's plan as if it never happened (owner, 2026-10-23). */
   adminDeletes: boolean;
   weekStart: string;
-  weeks: Array<{ weekStart: string; name: string }>;
+  /**
+   * The weeks he may plan. `coming` is the week after this one (its Send button says so); `statusLabel` is
+   * that week's own state, so the week step shows where both stand, not only the one on screen.
+   */
+  weeks: Array<{ weekStart: string; name: string; coming: boolean; statusLabel: string | null }>;
   /** "pick" mode: every manager to choose from. Null in "own" mode. */
   managers: Array<{ hrId: string; name: string; place: string }> | null;
   manager: { hrId: string; name: string; place: string } | null;
@@ -540,7 +550,12 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     canWrite: false,
     adminDeletes: canEnterMissedRecords(viewer),
     weekStart,
-    weeks: managerPlanWeeks(viewer.cairoToday).map((week) => ({ weekStart: week, name: managerPlanWeekName(week, viewer.cairoToday) })),
+    weeks: managerPlanWeeks(viewer.cairoToday).map((week) => ({
+      weekStart: week,
+      name: managerPlanWeekName(week, viewer.cairoToday),
+      coming: week !== fieldWeekStart(viewer.cairoToday),
+      statusLabel: null,
+    })),
     managers: null,
     manager: null,
     writer: null,
@@ -636,12 +651,22 @@ async function buildBoard(
   const team = district.filter((entry) => Boolean(personKey(entry.occupantHrId)));
   const weekEnd = addDaysIso(weekStart, 5);
 
-  const [holidays, planRows, seniorOffers] = await Promise.all([
+  const [holidays, planRows, seniorOffers, otherWeekRows] = await Promise.all([
     loadPlanHolidays(weekStart, weekEnd),
     loadWeekPlanRows([managerHrId], weekStart, isTest),
     managerSeniorOffers(viewer, writer),
+    Promise.all(
+      view.weeks
+        .filter((entry) => entry.weekStart !== weekStart)
+        .map(async (entry) => [entry.weekStart, (await loadWeekPlanRows([managerHrId], entry.weekStart, isTest))[0] ?? null] as const),
+    ),
   ]);
   const plan = planRows[0] ?? null;
+  const weekRows = new Map(otherWeekRows);
+  view.weeks = view.weeks.map((entry) => ({
+    ...entry,
+    statusLabel: managerPlanStatusLabel((entry.weekStart === weekStart ? plan : weekRows.get(entry.weekStart))?.status ?? null),
+  }));
   // A sent week carries its own approvers, so they are worked out (an `employees` read for everyone but a
   // district manager) only for a draft or a week not started.
   const [slots, asks, approvers] = await Promise.all([
@@ -718,9 +743,12 @@ async function buildBoard(
       deciderName: plan?.decidedByHrId ? nameOf(names, plan.decidedByHrId) : null,
       byAdministrator: decidedByAdministrator(plan?.decidedByRole ?? null),
       hrAcknowledged: plan?.hrAcknowledgedAt != null,
+      self: managerHrId === viewer.hrId,
     }),
     version: plan?.version ?? null,
     dueText: planDueLabel(plan?.dueOn ?? weeklyPlanDueOn(weekStart)),
+    sentText: plan && plan.status !== "draft" && plan.submittedAt ? formatPhoenixDateTime(plan.submittedAt) : null,
+    overdue: (!plan || plan.status === "draft") && planDeadlinePassed(plan?.dueOn ?? weeklyPlanDueOn(weekStart)),
     submittedLate: plan?.submittedLate ?? null,
     returnedDay: plan?.returnedDay ?? null,
     decisionNote: plan?.status === "returned" ? plan.decisionNote : null,
@@ -884,7 +912,7 @@ async function buildBoard(
         repHalves.push({ seatId: rep.seatId, half, weekState: week.state, bricks: bricksOf(customers), customers });
       }
     }
-    return { date, dateText: formatPhoenixLongDate(date), holiday, halves, editable, slots: daySlots, repHalves };
+    return { date, dateText: formatPhoenixLongDate(date), holiday, halves, editable, passed: date < viewer.cairoToday, slots: daySlots, repHalves };
   });
 
   return view;

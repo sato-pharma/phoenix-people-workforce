@@ -61,6 +61,7 @@ import {
   managerWeekState,
   managerAskStage,
   matchCustomerName,
+  sameCustomerName,
   MANAGER_CUSTOMER_ADDRESS_MAX,
   MANAGER_OWN_VISIT_ON_VACANT_LINE,
   MANAGER_OWN_VISIT_ON_VACANT_NOTE,
@@ -395,6 +396,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(managerPlanStatusLine({ status: "first_approved", secondName: "Ali Mohamed Ali" }), "Waiting for Ali Mohamed Ali to approve");
   assert.equal(managerPlanStatusLine({ status: "approved", deciderName: "Hany Saad", byAdministrator: true }), "Approved by the Administrator");
   assert.equal(managerPlanStatusLine({ status: "returned", managerName: "Mohamed Ali" }), "Waiting for Mohamed Ali to edit and resend");
+  // His own board says "you" (owner walk, 2026-10-28: "Drafted by Rasha Sabry" on Rasha Sabry's own board).
+  assert.equal(managerPlanStatusLine({ status: "draft", managerName: "Rasha Sabry", self: true }), "Drafted by you");
+  assert.equal(managerPlanStatusLine({ status: "returned", managerName: "Rasha Sabry", self: true }), "Waiting for you to edit and resend");
+  assert.equal(managerPlanStatusLine({ status: null, managerName: "Rasha Sabry", self: true }), "Not started — you draft it");
+  assert.ok(source("src/lib/phoenix-crm/server/manager-plans.ts").includes("self: managerHrId === viewer.hrId,"), "only when the reader is that manager");
+  // The area list a with-manager half reads is the one his own scope reaches.
+  assert.ok(source("src/lib/phoenix-crm/server/manager-customers.ts").includes("areaListReach(viewer, writer, raw.scope)"), "the area list is read for the half's scope");
+  assert.ok(source("src/components/phoenix-crm/manager-plan-board.tsx").includes("crmUrl(AREA, { area: listArea, scope: view.scope, test })"), "and the board asks for it with that scope");
 
   // A ticked customer, read against the rep's own day: a rep's draft is "not sent"; a dropped one is flagged, never removed.
   assert.equal(flagManagerCustomer({ onRepDay: true, repWeekSent: true }), null);
@@ -426,6 +435,17 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   ];
   assert.deepEqual(matchCustomerName("Ahmed Samir", candidates).map((entry) => entry.id), ["a", "b", "c"], "both namesakes, then the longer name");
   assert.deepEqual(matchCustomerName("   ", candidates), [], "an empty name matches nothing");
+  // The add asks before a second one (owner walk, 2026-10-28: مستشفى أشمون العام went on two lists).
+  assert.equal(sameCustomerName("مستشفى أشمون العام", "مستشفي اشمون العام"), true, "one hospital, spelt two ways");
+  assert.equal(sameCustomerName("مستشفى أشمون العام", "مستشفى أشمون"), false, "a longer name is offered, never refused");
+  assert.equal(sameCustomerName("  ", "  "), false, "an empty name is nobody");
+  {
+    const form = source("src/components/phoenix-crm/manager-customer-form.tsx");
+    assert.ok(form.includes("const same = found.filter((match) => sameCustomerName(match.name, name));"), "the save looks the name up itself");
+    assert.ok(form.includes("onClick={() => void add(true)}"), "and only his word adds a second one");
+    const server = source("src/lib/phoenix-crm/server/manager-customers.ts");
+    assert.ok(server.includes("if (body.differentCustomer !== true) {"), "the server holds the same line");
+  }
 
   // ── 2. Who plans, reads, writes and decides ───────────────────────────────────────────────────
 
@@ -2027,8 +2047,8 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const seniorPart = functionBody(source("src/components/phoenix-crm/manager-plan-board.tsx"), "function WithSeniorPart(");
   assert.match(
     functionBody(seniorPart, "const toggleArea = "),
-    /if \(on\) \{\s*setPickedArea\(seatId\);/,
-    "the area he ticks is the list he sees (owner, 2026-10-27: \"every area he stands on its list appears\")",
+    /if \(!on\) \{\s*askDrop\(seatId\);\s*return;\s*\}\s*setPickedArea\(seatId\);/,
+    "the area he ticks is the list he sees (owner, 2026-10-27: \"every area he stands on its list appears\"), and an untick asks first (the role walk, 2026-10-28)",
   );
   assert.match(seniorPart, /label="Show the list of"/, "and with several ticked he can step back to any one of them");
   assert.equal(holdsPlannedDoctors("single_visit"), true, "as a single visit's are");
