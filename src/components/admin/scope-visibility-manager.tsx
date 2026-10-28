@@ -9,7 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ProductOption, UserScopeOverride } from "@/lib/auth/scope-visibility";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 
 const PRODUCT_LINES = ["Pedia", "CNS", "Anti Infective"] as const;
 
@@ -338,37 +346,44 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
           </Button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
+        <div>
+          <table className={cn(portalStackingTableClassName, "text-sm md:w-full md:table-fixed md:border-collapse")}>
+            <colgroup>
+              <col className="md:w-[20%]" />
+              <col className="md:w-[12%]" />
+              <col className="md:w-[18%]" />
+              <col className="md:w-[24%]" />
+              <col className="md:w-[16%]" />
+              <col className="md:w-[10%]" />
+            </colgroup>
+            <thead className={portalStackingHeadClassName}>
               <tr className="border-b border-slate-100 text-left text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 <th className="pb-2 pr-4">User</th>
                 <th className="pb-2 pr-4">Role</th>
                 <th className="pb-2 pr-4">Line Override</th>
                 <th className="pb-2 pr-4">Product Codes</th>
                 <th className="pb-2 pr-4">Sales Scope</th>
-                <th className="pb-2"></th>
+                <th className="pb-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className={cn(portalStackingBodyClassName, "divide-y divide-slate-50")}>
               {filtered.map((row) => {
                 const isEditing = editingLoginId === row.loginId;
                 return (
-                  <tr key={row.loginId} className="align-top">
-                    <td className="py-3 pr-4">
+                  <tr key={row.loginId} className={cn(portalStackingRowClassName, "align-top")}>
+                    <PortalStackingCell className="py-3 pr-4" label="User">
                       <p className="font-medium text-slate-900">{row.displayName ?? row.fullName ?? row.loginId}</p>
                       <p className="text-phx-xs text-slate-400">
                         {row.loginId}
-                        {row.hrId ? ` · ${row.hrId}` : ""}
                       </p>
-                    </td>
-                    <td className="py-3 pr-4">
+                    </PortalStackingCell>
+                    <PortalStackingCell className="py-3 pr-4" label="Role">
                       <span className="text-slate-600">{row.role ?? "—"}</span>
-                    </td>
+                    </PortalStackingCell>
 
                     {isEditing && editState ? (
                       <>
-                        <td className="py-3 pr-4">
+                        <PortalStackingCell className="py-3 pr-4" label="Line override">
                           <div className="flex flex-wrap gap-1.5">
                             {PRODUCT_LINES.map((line) => (
                               <button
@@ -388,16 +403,16 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           <p className="mt-1 text-phx-2xs text-slate-400">
                             Click to toggle. Empty = role default.
                           </p>
-                        </td>
-                        <td className="py-3 pr-4">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3 pr-4" label="Product codes">
                           <ProductMultiSelect
                             onChange={(codes) => setEditState({ ...editState, productCodes: codes })}
                             products={initialProducts}
                             selected={editState.productCodes}
                           />
                           <p className="mt-1 text-phx-2xs text-slate-400">Empty = no restriction.</p>
-                        </td>
-                        <td className="py-3 pr-4">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3 pr-4" label="Sales scope">
                           <select
                             aria-label={`Sales scope override for ${row.displayName ?? row.fullName ?? row.loginId}`}
                             className={phxSelectClassName}
@@ -412,8 +427,8 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                               </option>
                             ))}
                           </select>
-                        </td>
-                        <td className="py-3">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3" label="Actions">
                           <div className="flex items-center gap-1">
                             <Button
                               aria-label={`Save scope changes for ${row.displayName ?? row.fullName ?? row.loginId}`}
@@ -444,11 +459,11 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           {saveError ? (
                             <p className="mt-1 text-phx-2xs text-red-600">{saveError}</p>
                           ) : null}
-                        </td>
+                        </PortalStackingCell>
                       </>
                     ) : (
                       <>
-                        <td className="py-3 pr-4">
+                        <PortalStackingCell className="py-3 pr-4" label="Line override">
                           {row.lineNames && row.lineNames.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {row.lineNames.map((line) => (
@@ -460,8 +475,8 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           ) : (
                             <span className="text-phx-xs text-slate-400">role default</span>
                           )}
-                        </td>
-                        <td className="py-3 pr-4">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3 pr-4" label="Product codes">
                           {row.productCodes !== null && row.productCodes !== undefined ? (
                             row.productCodes.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
@@ -477,8 +492,8 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           ) : (
                             <span className="text-phx-xs text-slate-400">no restriction</span>
                           )}
-                        </td>
-                        <td className="py-3 pr-4">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3 pr-4" label="Sales scope">
                           {row.salesScopeOverride ? (
                             <Badge className="text-phx-2xs" variant="warning">
                               {row.salesScopeOverride}
@@ -486,8 +501,8 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           ) : (
                             <span className="text-phx-xs text-slate-400">role default</span>
                           )}
-                        </td>
-                        <td className="py-3">
+                        </PortalStackingCell>
+                        <PortalStackingCell className="py-3" label="Actions">
                           <Button
                             aria-label={`Edit scope for ${row.displayName ?? row.fullName ?? row.loginId}`}
                             className="h-7 px-2"
@@ -497,19 +512,19 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                        </td>
+                        </PortalStackingCell>
                       </>
                     )}
                   </tr>
                 );
               })}
               {filtered.length === 0 ? (
-                <tr>
-                  <td className="py-8 text-center text-sm text-slate-400" colSpan={6}>
+                <tr className={portalStackingRowClassName}>
+                  <PortalStackingCell className="py-8 text-center text-sm text-slate-400" colSpan={6} label="">
                     {search || filterLine || filterRole
                       ? "No users match your filters."
                       : "No active users found."}
-                  </td>
+                  </PortalStackingCell>
                 </tr>
               ) : null}
             </tbody>

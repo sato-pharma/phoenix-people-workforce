@@ -52,7 +52,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { displayTitleForRole } from "@/lib/auth/hr-functions";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { humanizeCode } from "@/lib/format/code-label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -158,15 +158,6 @@ const scopes: BusinessScope[] = [
 
 const panelClassName =
   "rounded-xl border border-slate-200 bg-white shadow-sm";
-
-const permissionHeaderCellClass =
-  "sticky top-0 z-20 border-b border-slate-200 bg-stone-50 px-4 py-3 shadow-sm";
-
-const permissionRoleHeaderCellClass =
-  "sticky left-0 top-0 z-30 border-b border-r border-slate-200 bg-stone-50 px-4 py-3 shadow-sm";
-
-const permissionRoleCellClass =
-  "sticky left-0 z-10 border-r border-slate-100/80 bg-white px-4 py-3 transition-colors group-hover:bg-stone-50";
 
 const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manager" | "employee"> = {
   CEO: "executive",
@@ -340,6 +331,7 @@ export function AccessControlManager({
   const [bulkSending, setBulkSending] = React.useState<"copy" | "email" | null>(null);
   const [bulkResults, setBulkResults] = React.useState<BulkSetupLinkSummary | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
+  const [matrixRole, setMatrixRole] = React.useState<(typeof assignablePhoenixRoles)[number]>(assignablePhoenixRoles[0]);
   const [showAudit, setShowAudit] = React.useState(false);
   const [pendingGovernanceAction, setPendingGovernanceAction] = React.useState<{
     body: string;
@@ -803,6 +795,11 @@ export function AccessControlManager({
   });
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
+  const managerNameOf = (user: AccessUserRow) => {
+    if (!user.managerHrId) return null;
+    const manager = users.find((candidate) => candidate.hrId === user.managerHrId);
+    return manager?.name ?? null;
+  };
   const selectedCount = users.filter((user) => user.isActive && selectedLoginIds.has(user.loginId)).length;
   const selectableFilteredCount = filteredUsers.filter((user) => user.isActive).length;
   const pageActiveUsers = visibleUsers.filter((user) => user.isActive);
@@ -1110,27 +1107,33 @@ export function AccessControlManager({
           title="Upload validation results"
         >
           <div className="max-h-96 overflow-y-auto">
-            <table className="min-w-full text-left text-sm">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
+              <colgroup>
+                <col className="w-[8%]" />
+                <col className="w-[28%]" />
+                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[26%]" />
+              </colgroup>
               <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 <tr>
-                  <th className="px-4 py-3">Row</th>
-                  <th className="px-4 py-3">HR_ID</th>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Line</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Errors</th>
+                  <th className="px-3 py-3">Row</th>
+                  <th className="px-3 py-3">Name</th>
+                  <th className="px-3 py-3">Role / Line</th>
+                  <th className="px-3 py-3">Action</th>
+                  <th className="px-3 py-3">Errors</th>
                 </tr>
               </thead>
               <tbody>
                 {uploadResults.map((result) => (
-                  <tr className="border-b border-phx-line" key={result.row}>
-                    <td className="px-4 py-2 font-mono text-xs">{result.row}</td>
-                    <td className="px-4 py-2">{result.hrId}</td>
-                    <td className="px-4 py-2">{result.name}</td>
-                    <td className="px-4 py-2">{displayTitleForRole(result.role)}</td>
-                    <td className="px-4 py-2">{result.line}</td>
-                    <td className="px-4 py-2">
+                  <tr className="border-b border-phx-line align-top" key={result.row}>
+                    <td className="px-3 py-2 font-mono text-xs">{result.row}</td>
+                    <td className="min-w-0 break-words px-3 py-2">{result.name || result.hrId || "—"}</td>
+                    <td className="min-w-0 break-words px-3 py-2">
+                      <p>{displayTitleForRole(result.role)}</p>
+                      {result.line ? <p className="text-xs text-slate-500">{result.line}</p> : null}
+                    </td>
+                    <td className="min-w-0 break-words px-3 py-2">
                       <Badge
                         variant={
                           result.action === "created" || result.action === "updated"
@@ -1143,8 +1146,8 @@ export function AccessControlManager({
                         {result.action}
                       </Badge>
                     </td>
-                    <td className="px-4 py-2 text-xs text-[#DC2626]">
-                      {result.errors.length > 0 ? result.errors.join(", ") : "-"}
+                    <td className="min-w-0 break-words px-3 py-2 text-xs text-[#DC2626]">
+                      {result.errors.length > 0 ? result.errors.join(", ") : "—"}
                     </td>
                   </tr>
                 ))}
@@ -1559,8 +1562,16 @@ export function AccessControlManager({
                 </div>
               )}
 
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="min-w-full text-left">
+              <div className="hidden lg:block">
+                <table className="w-full table-fixed border-collapse text-left">
+                  <colgroup>
+                    {canManageUsers ? <col className="w-[4%]" /> : null}
+                    <col className={canManageUsers ? "w-[24%]" : "w-[28%]"} />
+                    <col className="w-[18%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[24%]" />
+                  </colgroup>
                   <thead className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-600">
                     <tr>
                       {canManageUsers && (
@@ -1577,10 +1588,9 @@ export function AccessControlManager({
                           />
                         </th>
                       )}
-                      <th className="px-4 py-3">User</th>
-                      <th className="px-4 py-3">Role / Line</th>
-                      <th className="px-4 py-3">Access</th>
-                      <th className="px-3 py-3">Password</th>
+                      <th className="px-3 py-3">User</th>
+                      <th className="px-3 py-3">Role / Line</th>
+                      <th className="px-3 py-3">Access</th>
                       <th className="px-3 py-3">Status</th>
                       <th className="px-3 py-3 text-right">Actions</th>
                     </tr>
@@ -1607,7 +1617,7 @@ export function AccessControlManager({
                               />
                             </td>
                           )}
-                          <td className="px-4 py-3 align-top">
+                          <td className="min-w-0 break-words px-3 py-3 align-top">
                             <div className="flex items-start gap-2.5">
                               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-100 to-orange-50 text-orange-700 font-semibold text-sm shadow-sm transition-all duration-160 ease-out group-hover:scale-110 group-hover:shadow-md group-hover:from-orange-200 group-hover:to-orange-100">
                                 {user.name.charAt(0).toUpperCase()}
@@ -1615,43 +1625,34 @@ export function AccessControlManager({
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold text-slate-900 transition-colors duration-160 ease-out group-hover:text-orange-950">{user.name}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
-                                  <span className="font-mono text-slate-700">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"}</span>
-                                  <span className="text-slate-400">/</span>
                                   <span className="font-mono text-slate-700">{user.loginId}</span>
-                                  {user.email && (
-                                    <>
-                                      <span className="text-slate-400">-</span>
-                                      <span className="truncate text-slate-700">{user.email}</span>
-                                    </>
-                                  )}
+                                  {user.email && <span className="break-all text-slate-700">{user.email}</span>}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 align-top">
+                          <td className="min-w-0 break-words px-3 py-3 align-top">
                             <div className="flex flex-col gap-1.5">
                               <RoleBadge role={user.role} />
                               <span className="text-xs text-slate-700 font-medium">Line: {user.line}</span>
-                              <span className="text-xs text-slate-500">Manager: {formatHrIdForDisplay(user.managerHrId) ?? "-"}</span>
+                              {managerNameOf(user) ? <span className="text-xs text-slate-500">Manager: {managerNameOf(user)}</span> : null}
                             </div>
                           </td>
-                          <td className="px-4 py-3 align-top">
+                          <td className="min-w-0 break-words px-3 py-3 align-top">
                             <div className="flex flex-col gap-1.5">
                               <ScopeBadge label="Sales" scope={user.salesScope} />
                               <ScopeBadge label="Payroll" scope={user.payrollScope} />
                               {user.salesScopeOverride && <span className={badgeClassName("orange")}>Scope override</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-3 align-top">
-                            <PasswordBadge forcePasswordReset={user.forcePasswordReset} />
-                          </td>
-                          <td className="px-3 py-3 align-top">
-                            <div className="flex flex-col gap-1.5">
+                          <td className="min-w-0 break-words px-3 py-3 align-top">
+                            <div className="flex flex-col items-start gap-1.5">
                               <StatusBadge isActive={user.isActive} />
+                              <PasswordBadge forcePasswordReset={user.forcePasswordReset} />
                               <span className="text-phx-xs text-slate-500">Updated {formatDate(user.updatedAt)}</span>
                             </div>
                           </td>
-                          <td className="px-3 py-3 align-top text-right">
+                          <td className="min-w-0 px-3 py-3 align-top text-right">
                             {renderUserActions(user)}
                           </td>
                         </tr>
@@ -1659,7 +1660,7 @@ export function AccessControlManager({
                       })
                     ) : (
                       <tr>
-                        <td className="px-4 py-16" colSpan={canManageUsers ? 7 : 6}>
+                        <td className="px-4 py-16" colSpan={canManageUsers ? 6 : 5}>
                           {renderEmptyUsers()}
                         </td>
                       </tr>
@@ -1686,9 +1687,9 @@ export function AccessControlManager({
                             />
                           )}
                           <div className="min-w-0">
-                            <p className="truncate text-base font-semibold text-slate-900">{user.name}</p>
-                            <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"} / {user.loginId}</p>
-                            {user.email && <p className="mt-1 truncate text-xs text-slate-500">{user.email}</p>}
+                            <p className="break-words text-base font-semibold text-slate-900">{user.name}</p>
+                            <p className="mt-1 break-all font-mono text-xs text-slate-600">{user.loginId}</p>
+                            {user.email && <p className="mt-1 break-all text-xs text-slate-500">{user.email}</p>}
                           </div>
                         </div>
                         <StatusBadge isActive={user.isActive} />
@@ -1703,10 +1704,12 @@ export function AccessControlManager({
                           <span>Line</span>
                           <span className="font-semibold text-slate-800">{user.line}</span>
                         </div>
-                        <div className="flex justify-between gap-3">
-                          <span>Manager HR_ID</span>
-                          <span className="font-mono text-slate-800">{formatHrIdForDisplay(user.managerHrId) ?? "-"}</span>
-                        </div>
+                        {managerNameOf(user) ? (
+                          <div className="flex justify-between gap-3">
+                            <span>Manager</span>
+                            <span className="text-slate-800">{managerNameOf(user)}</span>
+                          </div>
+                        ) : null}
                         <div className="flex flex-wrap gap-2">
                           <ScopeBadge label="Sales" scope={user.salesScope} />
                           <ScopeBadge label="Payroll" scope={user.payrollScope} />
@@ -1773,102 +1776,85 @@ export function AccessControlManager({
                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-500">Restricted</span>
                   {!canManagePermissions && <span className="font-medium text-slate-500">Permission changes are locked to Super Admin governance.</span>}
                 </div>
-                <div className="max-h-[70vh] overflow-auto">
-                  <table className="min-w-full text-left text-xs">
-                    <thead className="bg-stone-50 text-phx-2xs font-medium uppercase tracking-wider text-slate-500">
-                      <tr>
-                        <th className={permissionRoleHeaderCellClass}>Role</th>
-                        <th className={permissionHeaderCellClass}>Sales</th>
-                        <th className={permissionHeaderCellClass}>Payroll</th>
-                        {permissionResources.map((resource) => (
-                          <th className={permissionHeaderCellClass} key={resource}>
-                            {resource}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="border-b border-slate-200/80 px-4 py-3">
+                  <SearchableSelect
+                    aria-label="Role"
+                    className="h-9 w-full px-3 sm:w-72"
+                    onChange={(event) => setMatrixRole(event.target.value as (typeof assignablePhoenixRoles)[number])}
+                    value={matrixRole}
+                  >
                     {assignablePhoenixRoles.map((role) => (
-                      <tr className="group border-b border-slate-100/80 transition-colors hover:bg-stone-50/50" key={role}>
-                        <td className={permissionRoleCellClass}>
-                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium border ${
-                            role === "Super Admin" || role === "CEO"
-                              ? "bg-gradient-to-r from-rose-50 to-orange-50 text-rose-700 border-rose-200/60"
-                              : role === "HR Operations" || role === "HR Resourcing" || role === "HR Administration" || role === "Finance Manager"
-                              ? "bg-gradient-to-r from-emerald-50 to-emerald-100/50 text-emerald-700 border-emerald-200/60"
-                              : "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border-violet-200/60"
-                          }`}>
-                            {displayTitleForRole(role)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const classes = getScopeSemanticClasses(getSalesScope({ role }));
-                            return (
-                              <span className={`inline-flex items-center rounded-md ${classes.bg} px-2 py-0.5 text-xs font-medium ${classes.text} border ${classes.border} ${classes.shadow}`}>
-                                {getSalesScope({ role })}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const classes = getScopeSemanticClasses(getPayrollScope({ role }));
-                            return (
-                              <span className={`inline-flex items-center rounded-md ${classes.bg} px-2 py-0.5 text-xs font-medium ${classes.text} border ${classes.border} ${classes.shadow}`}>
-                                {getPayrollScope({ role })}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        {permissionResources.map((resource) => {
-                          const allowedActions = data?.permissions?.[role]?.[resource] ?? [];
-                          return (
-                            <td className="border-l border-slate-100/80 px-4 py-3" key={`${role}-${resource}`}>
-                              <div className="flex flex-wrap gap-2">
-                                {permissionActions.map((action) => {
-                                  const isAllowed = allowedActions.includes(action);
-                                  const isAllowOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:allow`);
-                                  const isDenyOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:deny`);
-                                  const provenance = isAllowOverride || isDenyOverride
-                                    ? "Override"
-                                    : isAllowed
-                                      ? "Inherited"
-                                      : "Restricted";
-                                  return (
-                                    <label
-                                      className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-phx-2xs transition-colors ${
-                                        isAllowOverride || isDenyOverride
-                                          ? "border-orange-200 bg-orange-50 text-orange-700"
-                                          : isAllowed
-                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                            : "border-slate-200 bg-white text-slate-500"
-                                      } ${canManagePermissions ? "cursor-pointer hover:text-slate-700" : "cursor-not-allowed opacity-70"}`}
-                                      key={`${role}-${resource}-${action}`}
-                                      title={`${provenance}: ${role} ${action} ${resource}`}
-                                    >
-                                      <input
-                                        checked={isAllowed}
-                                        className="h-3.5 w-3.5 accent-orange-500"
-                                        disabled={!canManagePermissions || permissionSaving === `${role}:${resource}:${action}`}
-                                        onChange={(event) =>
-                                          void updatePermission(role, resource, action, event.target.checked)
-                                        }
-                                        type="checkbox"
-                                      />
-                                      <span className="uppercase font-medium">{action}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
+                      <option key={role} value={role}>
+                        {displayTitleForRole(role)}
+                      </option>
                     ))}
+                  </SearchableSelect>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Sales: <span className="font-semibold text-slate-800">{getSalesScope({ role: matrixRole })}</span> · Payroll:{" "}
+                    <span className="font-semibold text-slate-800">{getPayrollScope({ role: matrixRole })}</span>
+                  </p>
+                </div>
+                <table className="w-full table-fixed border-collapse text-left text-xs">
+                  <colgroup>
+                    <col className="w-[34%]" />
+                    <col className="w-[66%]" />
+                  </colgroup>
+                  <thead className="bg-stone-50 text-phx-2xs font-medium uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-3 py-3">Area</th>
+                      <th className="px-3 py-3">Allowed actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {permissionResources.map((resource) => {
+                      const role = matrixRole;
+                      const allowedActions = data?.permissions?.[role]?.[resource] ?? [];
+                      return (
+                        <tr className="border-b border-slate-100/80 align-top transition-colors hover:bg-stone-50/50" key={`${role}-${resource}`}>
+                          <td className="min-w-0 break-words px-3 py-3 font-medium text-slate-700">{humanizeCode(resource)}</td>
+                          <td className="min-w-0 px-3 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              {permissionActions.map((action) => {
+                                const isAllowed = allowedActions.includes(action);
+                                const isAllowOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:allow`);
+                                const isDenyOverride = permissionOverrideSet.has(`${role}:${resource}:${action}:deny`);
+                                const provenance = isAllowOverride || isDenyOverride
+                                  ? "Override"
+                                  : isAllowed
+                                    ? "Inherited"
+                                    : "Restricted";
+                                return (
+                                  <label
+                                                        className={`flex items-center gap-1.5 border px-1.5 py-1 text-phx-2xs transition-colors ${
+                                                          isAllowOverride || isDenyOverride
+                                                            ? "border-orange-200 bg-orange-50 text-orange-700"
+                                                            : isAllowed
+                                                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                              : "border-slate-200 bg-white text-slate-500"
+                                                        } ${canManagePermissions ? "cursor-pointer hover:text-slate-700" : "cursor-not-allowed opacity-70"}`}
+                                                        key={`${role}-${resource}-${action}`}
+                                                        title={`${provenance}: ${matrixRole} ${action} ${resource}`}
+                                                      >
+                                                        <input
+                                                          checked={isAllowed}
+                                                          className="h-3.5 w-3.5 accent-orange-500"
+                                                          disabled={!canManagePermissions || permissionSaving === `${matrixRole}:${resource}:${action}`}
+                                                          onChange={(event) =>
+                                                            void updatePermission(role, resource, action, event.target.checked)
+                                                          }
+                                                          type="checkbox"
+                                                        />
+                                                        <span className="uppercase font-medium">{action}</span>
+                                                      </label>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-                </div>
               </div>
             )}
           </Card>

@@ -338,34 +338,50 @@ pnpm run synthetic:save-report`}
           </div>
 
           <AdminTableShell description={`${activeRun.results.length} journeys checked ${formatDateTime(activeRun.finishedAt)}`} title="Journey Results">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left text-sm">
+            <div className="hidden md:block">
+              <table className="w-full table-fixed border-collapse text-left text-sm">
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[34%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-3">Journey</th>
-                    <th className="px-3 py-3">Route</th>
                     <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Duration</th>
-                    <th className="px-3 py-3">Last checked</th>
-                    <th className="px-3 py-3">Failure reason</th>
-                    <th className="px-3 py-3">Recommendation</th>
+                    <th className="px-3 py-3">Checked</th>
+                    <th className="px-3 py-3">Failure reason and recommendation</th>
                     <th className="px-3 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {activeRun.results.map((result) => (
                     <tr key={result.id} className={result.status === "failed" ? "cursor-pointer hover:bg-rose-50/60" : ""} onClick={() => result.status === "failed" && setSelectedResult(result)}>
-                      <td className="px-3 py-3 font-semibold text-slate-800">{result.journeyName}</td>
-                      <td className="px-3 py-3 font-mono text-xs text-slate-500">{result.route}</td>
-                      <td className="px-3 py-3"><StatusPill status={result.status} /></td>
-                      <td className="px-3 py-3 text-slate-600">{formatDuration(result.durationMs)}</td>
-                      <td className="px-3 py-3 text-slate-600">{formatDateTime(result.createdAt)}</td>
-                      <td className="max-w-xs truncate px-3 py-3 text-slate-600">{result.failureReason ?? "—"}</td>
-                      <td className="max-w-xs truncate px-3 py-3 text-slate-600">{result.recommendation ?? "—"}</td>
-                      <td className="px-3 py-3">
+                      <td className="min-w-0 break-words px-3 py-3 align-top">
+                        <p className="font-semibold text-slate-800">{result.journeyName}</p>
+                        <p className="mt-0.5 break-words font-mono text-xs text-slate-500">{result.route}</p>
+                      </td>
+                      <td className="min-w-0 break-words px-3 py-3 align-top">
+                        <StatusPill status={result.status} />
+                        <p className="mt-1 text-xs text-slate-600">{formatDuration(result.durationMs)}</p>
+                      </td>
+                      <td className="min-w-0 break-words px-3 py-3 align-top text-slate-600">{formatDateTime(result.createdAt)}</td>
+                      <td className="min-w-0 break-words px-3 py-3 align-top text-slate-600">
+                        {result.failureReason || result.recommendation ? (
+                          <>
+                            {result.failureReason ? <p>{result.failureReason}</p> : null}
+                            {result.recommendation ? <p className="mt-1 text-xs text-slate-500">{result.recommendation}</p> : null}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-top">
                         {result.status === "failed" ? (
                           <button
-                            className="rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                            className="border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
                             onClick={(event) => { event.stopPropagation(); setSelectedResult(result); }}
                             type="button"
                           >
@@ -380,43 +396,71 @@ pnpm run synthetic:save-report`}
                 </tbody>
               </table>
             </div>
+            <div className="divide-y divide-slate-100 md:hidden">
+              {activeRun.results.map((result) => (
+                <div key={result.id} className="min-w-0 space-y-1.5 px-4 py-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <p className="min-w-0 break-words text-sm font-black text-slate-900">{result.journeyName}</p>
+                    <StatusPill status={result.status} />
+                  </div>
+                  <p className="break-words font-mono text-xs text-slate-500">{result.route}</p>
+                  <p className="text-xs text-slate-600">{formatDuration(result.durationMs)} · {formatDateTime(result.createdAt)}</p>
+                  {result.failureReason ? <p className="break-words text-xs text-slate-700">{result.failureReason}</p> : null}
+                  {result.recommendation ? <p className="break-words text-xs text-slate-500">{result.recommendation}</p> : null}
+                  {result.status === "failed" ? (
+                    <button
+                      className="border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                      onClick={() => setSelectedResult(result)}
+                      type="button"
+                    >
+                      View details
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </AdminTableShell>
 
           {runs.length > 0 && (
             <AdminTableShell description="Last 20 saved runs" title="Run History">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
-                      <th className="px-3 py-3">Run</th>
-                      <th className="px-3 py-3">Status</th>
-                      <th className="px-3 py-3">Passed / Failed / Skipped</th>
-                      <th className="px-3 py-3">Duration</th>
-                      <th className="px-3 py-3"></th>
+              <table className="w-full table-fixed border-collapse text-left text-sm">
+                <colgroup>
+                  <col className="w-[34%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-2 py-3 sm:px-3">Run</th>
+                    <th className="px-2 py-3 sm:px-3">Status</th>
+                    <th className="px-2 py-3 sm:px-3">Passed / Failed / Skipped</th>
+                    <th className="px-2 py-3 sm:px-3">Duration</th>
+                    <th className="px-2 py-3 sm:px-3"><span className="sr-only">Open</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {runs.map((run) => (
+                    <tr key={run.id} className={run.id === activeRun.id ? "bg-orange-50/60" : ""}>
+                      <td className="min-w-0 break-words px-2 py-3 text-slate-700 sm:px-3">{formatDateTime(run.createdAt)}</td>
+                      <td className="min-w-0 break-words px-2 py-3 sm:px-3"><AdminInsightChip tone={run.overallStatus === "failed" ? "orange" : run.overallStatus === "healthy" ? "emerald" : "slate"} surface="light">{OVERALL_TONE[run.overallStatus].label}</AdminInsightChip></td>
+                      <td className="min-w-0 break-words px-2 py-3 text-slate-600 sm:px-3">{run.passedCount} / {run.failedCount} / {run.skippedCount}</td>
+                      <td className="min-w-0 break-words px-2 py-3 text-slate-600 sm:px-3">{formatDuration(run.durationMs)}</td>
+                      <td className="px-2 py-3 sm:px-3">
+                        <button
+                          className="border border-slate-300 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          disabled={run.id === activeRun.id || historyLoading === run.id}
+                          onClick={() => viewRun(run.id)}
+                          type="button"
+                        >
+                          {historyLoading === run.id ? "Loading…" : run.id === activeRun.id ? "Viewing" : "View"}
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {runs.map((run) => (
-                      <tr key={run.id} className={run.id === activeRun.id ? "bg-orange-50/60" : ""}>
-                        <td className="px-3 py-3 text-slate-700">{formatDateTime(run.createdAt)}</td>
-                        <td className="px-3 py-3"><AdminInsightChip tone={run.overallStatus === "failed" ? "orange" : run.overallStatus === "healthy" ? "emerald" : "slate"} surface="light">{OVERALL_TONE[run.overallStatus].label}</AdminInsightChip></td>
-                        <td className="px-3 py-3 text-slate-600">{run.passedCount} / {run.failedCount} / {run.skippedCount}</td>
-                        <td className="px-3 py-3 text-slate-600">{formatDuration(run.durationMs)}</td>
-                        <td className="px-3 py-3">
-                          <button
-                            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                            disabled={run.id === activeRun.id || historyLoading === run.id}
-                            onClick={() => viewRun(run.id)}
-                            type="button"
-                          >
-                            {historyLoading === run.id ? "Loading…" : run.id === activeRun.id ? "Viewing" : "View"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </AdminTableShell>
           )}
         </>

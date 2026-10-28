@@ -217,59 +217,95 @@ export default async function MPayrollPage({
             Period selected: {periodLabel} • Showing uploads stored in the payroll vault
           </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-phx-line bg-phx-paper text-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                <th className="px-3 py-3">Uploaded File</th>
-                <th className="px-3 py-3">Uploaded by HR</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Uploaded At</th>
-                <th className="px-3 py-3">Actions</th>
+        <table className="hidden w-full table-fixed border-collapse text-left text-sm md:table">
+          <colgroup>
+            <col className="w-[32%]" />
+            <col className="w-[20%]" />
+            <col className="w-[14%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-phx-line bg-phx-paper text-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+              <th className="px-3 py-3">Uploaded File</th>
+              <th className="px-3 py-3">Uploaded by HR</th>
+              <th className="px-3 py-3">Status</th>
+              <th className="px-3 py-3">Uploaded At</th>
+              <th className="px-3 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-phx-line">
+            {fetchError || periodBatches.length === 0 ? (
+              <tr>
+                <td className="px-3 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
+                  {fetchError
+                    ? "Payroll batches could not be loaded."
+                    : `No salary sheets were uploaded for ${periodLabel}.`}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-phx-line">
-              {fetchError || periodBatches.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
-                    {fetchError
-                      ? "Payroll batches could not be loaded."
-                      : `No salary sheets were uploaded for ${periodLabel}.`}
-                  </td>
-                </tr>
-              ) : (
-                periodBatches.map((batch) => {
-                  const isSelected = selectedBatchId === batch.id;
-                  return (
-                    <tr className={`transition-colors ${isSelected ? "bg-phx-accent-soft" : "hover:bg-[#FCFDFE]"}`} key={batch.id}>
-                      <td className="px-3 py-3">
-                        <p className="font-semibold text-phx-ink">{batch.fileName}</p>
-                        <p className="mt-0.5 text-xs text-phx-ink-soft">Batch ID: {batch.id}</p>
-                      </td>
-                      <td className="px-3 py-3 text-phx-ink">{batch.uploadedBy ?? "System Upload"}</td>
-                      <td className="px-3 py-3">{statusBadge(batch.status)}</td>
-                      <td className="px-3 py-3 text-phx-ink-soft">{formatDateTimeValue(batch.createdAt)}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
-                            <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
-                              <Download className="mr-2 h-3.5 w-3.5" />
-                              Download
-                            </Button>
-                          </Link>
-                          <Link href={`/admin/m-payroll?batchId=${encodeURIComponent(batch.id)}`}>
-                            <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
-                              Open batch
-                            </Button>
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+            ) : (
+              periodBatches.map((batch) => {
+                const isSelected = selectedBatchId === batch.id;
+                return (
+                  <tr className={`align-top transition-colors ${isSelected ? "bg-phx-accent-soft" : "hover:bg-[#FCFDFE]"}`} key={batch.id}>
+                    <td className="min-w-0 break-words px-3 py-3 font-semibold text-phx-ink">{batch.fileName}</td>
+                    <td className="min-w-0 break-words px-3 py-3 text-phx-ink">{batch.uploadedBy ?? "System Upload"}</td>
+                    <td className="min-w-0 break-words px-3 py-3">{statusBadge(batch.status)}</td>
+                    <td className="min-w-0 break-words px-3 py-3 text-phx-ink-soft">{formatDateTimeValue(batch.createdAt)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
+                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </Link>
+                        <Link href={`/admin/m-payroll?batchId=${encodeURIComponent(batch.id)}`}>
+                          <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                            Open batch
+                          </Button>
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+        <div className="divide-y divide-phx-line md:hidden">
+          {fetchError || periodBatches.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-phx-ink-soft">
+              {fetchError
+                ? "Payroll batches could not be loaded."
+                : `No salary sheets were uploaded for ${periodLabel}.`}
+            </p>
+          ) : (
+            periodBatches.map((batch) => (
+              <div className={`min-w-0 space-y-1.5 px-4 py-3 ${selectedBatchId === batch.id ? "bg-phx-accent-soft" : ""}`} key={batch.id}>
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-semibold text-phx-ink">{batch.fileName}</p>
+                  {statusBadge(batch.status)}
+                </div>
+                <p className="text-xs text-phx-ink-soft">
+                  {batch.uploadedBy ?? "System Upload"} · {formatDateTimeValue(batch.createdAt)}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Link href={`/api/payroll/${batch.id}/download`} target="_blank">
+                    <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Download
+                    </Button>
+                  </Link>
+                  <Link href={`/admin/m-payroll?batchId=${encodeURIComponent(batch.id)}`}>
+                    <Button className="h-9 px-3 py-1.5 text-xs" variant="secondary">
+                      Open batch
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Card>
     </div>
