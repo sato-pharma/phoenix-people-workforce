@@ -261,7 +261,7 @@ export async function runOrganogramVacancyHireLinkTests() {
   );
 
   // The report's own gate, and the rule that it must not widen the table: the action rides
-  // inside the status cell, because that table already scrolls sideways at desktop width.
+  // inside the status cell, because the table is fixed to the screen's width.
   const reportSource = fs.readFileSync(
     path.join(process.cwd(), "src", "components", "reports", "vacancies-report.tsx"),
     "utf8",
@@ -271,9 +271,13 @@ export async function runOrganogramVacancyHireLinkTests() {
     "the report's hire action must be gated on both the capability and an OPEN row",
   );
   assert.equal(
-    (reportSource.match(/<th className="px-4 py-3">/g) ?? []).length,
-    9,
-    "the hire action must NOT add a tenth column — the rule is fit by merging, never widening",
+    (reportSource.match(/<th className="px-3 py-3">/g) ?? []).length,
+    5,
+    "the hire action must NOT add a sixth column — the rule is fit by merging, never widening",
+  );
+  assert.ok(
+    reportSource.includes("table-fixed") && reportSource.includes("<colgroup>") && !reportSource.includes("overflow-x-auto"),
+    "the vacancies table fits the screen: table-fixed over a colgroup, no sideways scroll",
   );
   assert.ok(
     /buildSeatHireHref\([\s\S]*?row\.pendingOffer/.test(reportSource),
@@ -376,8 +380,8 @@ export async function runOrganogramVacancyHireLinkTests() {
     );
   }
   assert.ok(
-    /className="[^"]*\bflex w-36\b[^"]*"/.test(reportSource),
-    "the admin table's button must stay width-bounded, or the full label widens that column",
+    /className="[^"]*\bflex w-(?:36|full)\b[^"]*"/.test(reportSource),
+    "the admin table's button must stay width-bounded (w-full inside a fixed column), or the full label widens that column",
   );
   assert.ok(
     /className="[^"]*\bflex w-full\b[^"]*"[\s\S]{0,200}buildSeatHireHref\("\/employee-portals\/employees"/.test(

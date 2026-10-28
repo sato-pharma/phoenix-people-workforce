@@ -448,10 +448,8 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               >
                 <PortalRecordFields
                   fields={[
-                    { label: "HR ID", value: row.hr_id || "-" },
-                    { label: "CRM ID", value: row.crm_id || "-" },
-                    { label: "Line", value: row.line || "-" },
-                    { label: "Area", value: row.area || "-" },
+                    { label: "Line", value: row.line || "—" },
+                    { label: "Area", value: row.area || "—" },
                     { label: "Hire Date", value: formatStoredDate(row.contract_signed_date) },
                     { label: "Renewal Date", value: formatStoredDate(row.contract_renewal_date) },
                   ]}
@@ -474,21 +472,18 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               className="text-xs"
               cols={
                 <colgroup>
-                  <col className="w-[8%]" />
-                  <col className="w-[8%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
                 </colgroup>
               }
             >
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90">
-                  {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
+                  {["Employee", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
                     <th className={tableHeaderClassName} key={col}>{col}</th>
                   ))}
                 </tr>
@@ -500,8 +495,6 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   const isWarning = days >= 0 && days <= 30;
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={`${row.hr_id}-${index}`}>
-                      <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
-                      <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
                       {/*
                         The WhatsApp action lives INSIDE the employee cell rather than in a column of
                         its own. This table is a table-fixed PortalDesktopTable sized to the viewport,
@@ -521,10 +514,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                             <MessageCircle className="h-3.5 w-3.5" />
                           </button>
                         </span>
+                        <span className="mt-0.5 block break-words font-normal text-text-secondary">{row.job_title}</span>
                       </td>
-                      <td className={cn("max-w-[190px] break-words", tableCellClassName)}>{row.job_title}</td>
-                      <td className={tableCellClassName}>{row.line}</td>
-                      <td className={tableCellClassName}>{row.area}</td>
+                      <td className={cn("break-words", tableCellClassName)}>{row.line || "—"}</td>
+                      <td className={cn("break-words", tableCellClassName)}>{row.area || "—"}</td>
                       <td className={tableCellClassName}>{formatStoredDate(row.contract_signed_date)}</td>
                       <td className={tableCellClassName}>{formatStoredDate(row.contract_renewal_date)}</td>
                       <td className={tableCellClassName}>
