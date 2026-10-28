@@ -107,15 +107,18 @@ export function runPhoenixCrmTimetableScannerTests() {
   const street = judgeSchedule({ ...base, schedulePresent: null, scheduleText: null, personNames: [], problem: "not_a_timetable" });
   assert.equal(street.verdict, "no_schedule", "the reader's own 'not a timetable' with nothing read is no_schedule");
   assert.equal(judgeSchedule({ ...base, schedulePresent: null, scheduleText: null, personNames: [] }).verdict, "unjudged", "an unsure reader with nothing read is unreadable, not missing");
-  // 🔴 A TIMETABLE PHOTOGRAPHED OFF A SCREEN IS REFUSED AT THE DOOR, HIS NAME ON IT OR NOT (owner, 2026-10-19).
+  // 🔴 A TIMETABLE PHOTOGRAPHED OFF A SCREEN IS NEVER A VALIDATION BY ITSELF, HIS NAME ON IT OR NOT (owner,
+  // 2026-10-19) — and since 2026-10-28 it is SAVED AND HELD for the administrator, never refused ("some
+  // polyclinics have their timetable only online", then "Save it, hold for me").
   const offAScreen = judgeSchedule({ ...base, personNames: ["سارة محمود"], scheduleText: "سارة محمود", legibility: "clear", problem: "on_a_screen" });
   assert.equal(offAScreen.verdict, "no_schedule", "🔴 a Facebook post on a laptop with the customer's name on it is still not the building's wall");
   assert.equal(offAScreen.reason, "schedule_missing");
   const screenDoor = scheduleDoorAction(offAScreen, 0);
-  assert.equal(screenDoor.kind, "retake", "the rep is asked for the wall, and it counts as a try");
-  assert.ok(screenDoor.kind === "retake" && screenDoor.reason === "timetable_missing");
-  assert.ok(screenDoor.kind === "retake" && /phone or computer screen/.test(screenDoor.message) && /building's own wall/.test(screenDoor.message), "and told why in words");
-  assert.equal(scheduleDoorAction(offAScreen, 2).kind, "hold", "the third screen photo holds like any third missing timetable");
+  assert.equal(screenDoor.kind, "hold", "🔴 the FIRST screen photo saves and holds — a retake cannot fix an online-only timetable");
+  assert.ok(screenDoor.kind === "hold" && screenDoor.heldBecause === "timetable_on_a_screen", "held as a screen, not as a missing timetable");
+  assert.match(scheduleHeldText(screenDoor.kind === "hold" ? screenDoor.heldBecause : null) ?? "", /on a screen/, "and the rep is told why in words");
+  const screenNoName = judgeSchedule({ ...base, personNames: [], scheduleText: null, legibility: "clear", problem: "on_a_screen" });
+  assert.equal(scheduleDoorAction(screenNoName, 0).kind, "hold", "a screen without his name is held the same — he decides");
 
   // 🔴 A BOARD THAT WRITES FIRST NAMES ONLY NAMES HIM WHEN NOBODY ELSE ON IT SHARES THAT NAME (owner,
   // 2026-10-24, "Count it if unique"). The two boards are the real readings of Ali Mohamed Shehata's held

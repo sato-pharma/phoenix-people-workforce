@@ -67,8 +67,10 @@ export type ScheduleLegibility = "clear" | "partial" | "unreadable";
 
 /**
  * What is wrong with the photograph, when something is — the words the rep is told come from this.
- * `on_a_screen` (owner, 2026-10-19: "refuse at the door") is a timetable photographed off a phone or a
- * computer — a WhatsApp image, a Facebook post — which proves nobody stood at the building's wall.
+ * `on_a_screen` is a timetable photographed off a phone or a computer — a WhatsApp image, a Facebook
+ * post — which proves nobody stood at the building's wall. Refused at the door from 2026-10-19; since
+ * 2026-10-28 SAVED AND HELD for the administrator instead (owner: "some polyclinics have their
+ * timetable only online" — Alma, Shibin el Kom), see `scheduleDoorAction`.
  */
 export type ScheduleProblem = "not_a_timetable" | "on_a_screen" | "too_far" | "blurred" | "glare" | "cut_off";
 
@@ -169,7 +171,8 @@ export function judgeSchedule(input: {
   // "refuse at the door"). Read by eye that day: a laptop showing the clinic's Facebook post (the
   // customer's name on it), a phone showing a WhatsApp image, a phone showing a photo of the sheet. The
   // board proves the rep stood at the wall; a copy on a screen travels with him. So it is checked BEFORE
-  // the name, and it is "no timetable" — the door asks for the wall and counts the try.
+  // the name, and it is "no timetable" — never a validation by itself. Since 2026-10-28 the door SAVES
+  // and HOLDS it for the administrator rather than refusing it (`scheduleDoorAction`).
   if (problem === "on_a_screen") return { ...base, nameScore: null, reason: "schedule_missing", verdict: "no_schedule" };
 
   // The PM mode of the module's one name-matcher: a timetable is a list of PEOPLE, whatever list the
@@ -216,7 +219,7 @@ export const SCHEDULE_MAX_TRIES = 3;
 export const SCHEDULE_RETAKE_CODE = "phoenix_crm_photo_timetable_retake";
 
 /** Why the scanner held a seating — the sentence the rep reads is keyed by it. */
-export type ScheduleHeldBecause = "name_not_on_timetable" | "timetable_unreadable" | "timetable_missing";
+export type ScheduleHeldBecause = "name_not_on_timetable" | "timetable_unreadable" | "timetable_missing" | "timetable_on_a_screen";
 
 /** The two refusal reasons the tries are counted under, as `phoenix_crm_refused_readings` stores them. */
 export type ScheduleRetakeReason = "timetable_unreadable" | "timetable_missing";
@@ -235,6 +238,7 @@ export const SCHEDULE_HELD_TEXT: Record<ScheduleHeldBecause, string> = {
   name_not_on_timetable: "The customer's name is not on the timetable, so it is held for admin approval.",
   timetable_unreadable: `The timetable could not be read after ${SCHEDULE_MAX_TRIES} tries, so it is held for admin approval.`,
   timetable_missing: `No timetable was found in the photo after ${SCHEDULE_MAX_TRIES} tries, so it is held for admin approval.`,
+  timetable_on_a_screen: "The timetable was photographed on a screen, so it is held for admin approval.",
 };
 
 export function parseScheduleHeldBecause(value: unknown): ScheduleHeldBecause | null {
@@ -247,9 +251,6 @@ export function scheduleHeldText(value: unknown): string | null {
 
 /** What the rep is told to do differently, by what the reader said was wrong. Never names a check. */
 function retakeAdvice(check: PhoenixCrmScheduleCheck): string {
-  if (check.problem === "on_a_screen") {
-    return "This photo shows the timetable on a phone or computer screen. Photograph the timetable on the building's own wall.";
-  }
   if (check.verdict === "no_schedule" || check.problem === "not_a_timetable") {
     return "This photo does not show the building's timetable. Photograph the timetable on the wall, with the names in the frame.";
   }
@@ -282,6 +283,12 @@ function retakeAdvice(check: PhoenixCrmScheduleCheck): string {
 export function scheduleDoorAction(check: PhoenixCrmScheduleCheck, earlierTries: number): ScheduleDoorAction {
   if (check.verdict === "match") return { kind: "save" };
   const tried = Math.max(0, Math.floor(Number.isFinite(earlierTries) ? earlierTries : 0));
+  // 🔴 A TIMETABLE ON A SCREEN IS SAVED AND HELD, NEVER REFUSED (owner, 2026-10-28: "some polyclinics
+  // have their timetable only online", then "Save it, hold for me"). Nada Saied was refused twice at
+  // Alma, whose only timetable is the picture it posts online — no photograph of a wall could ever pass.
+  // `judgeSchedule` still calls it "no timetable", so it never validates by itself: the administrator
+  // looks at the screen and decides. No try is spent, because a retake cannot fix it.
+  if (check.problem === "on_a_screen") return { kind: "hold", heldBecause: "timetable_on_a_screen", tries: tried + 1 };
   if (check.verdict === "other_name") return { kind: "hold", heldBecause: "name_not_on_timetable", tries: tried + 1 };
   const photoProblem = check.verdict === "no_schedule" || (check.verdict === "unjudged" && check.reason === "unreadable");
   if (!photoProblem) return { kind: "save" };
