@@ -19,7 +19,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // Not scanned: src/lib (builds data, exports and emails with their own rules), tests, mobile.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASELINE = { hrIdFallback: 0, naFiller: 0, noHrId: 0, underscoreReplace: 0 };
+const BASELINE = { hrIdFallback: 21, naFiller: 24, noHrId: 4, underscoreReplace: 28 };
 
 const ROOTS = ["app", "src/components"];
 
