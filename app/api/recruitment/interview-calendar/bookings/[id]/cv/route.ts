@@ -31,8 +31,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 // Replace (or attach) the CV on an OUTSIDE candidate's interview — a `cv` file in multipart form data
-// (owner, 2026-09-26, Tier 3: edit the CV, e.g. one added after booking). Needs book-level access;
-// refused for an in-house candidate, whose CV lives on their Recruitment record.
+// (owner, 2026-09-26, Tier 3: edit the CV, e.g. one added after booking). Needs book-level access.
+// For a Phoenix candidate with NO readable CV it adds one to their Recruitment record (owner,
+// 2026-10-28); one who already has a CV keeps it, and changing it stays on that record.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const csrfError = assertSameOriginMutation(request);

@@ -35,7 +35,16 @@ export function runInterviewTier3Tests() {
 
   // CV replace — external only, and it records the change.
   assert.match(domain, /export async function replaceInterviewExternalCv/, "the CV-replace helper exists");
-  assert.match(domain, /row\.candidate_id\) throw new Error\("This candidate's CV lives on their Recruitment record/, "an in-house candidate's CV is not replaced here");
+  // An in-house candidate (owner, 2026-10-28): a missing CV is ATTACHED to their Recruitment record from
+  // the calendar; one who already has a readable CV is refused, never replaced.
+  assert.match(domain, /if \(row\.candidate_id\) return attachMissingCandidateCv\(caller, row, row\.candidate_id, cv\)/, "an in-house candidate goes to the attach-missing path");
+  const attachStart = domain.indexOf("async function attachMissingCandidateCv");
+  assert.ok(attachStart >= 0, "the attach-missing helper exists");
+  const attach = domain.slice(attachStart, domain.indexOf("function asPlatform", attachStart));
+  assert.match(attach, /if \(hasReadableCv\) throw new Error\("This candidate already has a CV/, "a candidate who has a readable CV is refused");
+  assert.ok(attach.indexOf("if (hasReadableCv) throw") >= 0 && attach.indexOf("if (hasReadableCv) throw") < attach.indexOf("uploadCandidateFile("), "the refusal comes before any upload");
+  assert.match(attach, /uploadCandidateFile\(caller\.access, \{[\s\S]*?kind: "cv"[\s\S]*?origin: "interview_calendar"/, "the CV lands on the candidate record");
+  assert.match(attach, /assertMayUseRecruitmentFromCalendar\(caller\.access, "create"\)/, "attaching needs Recruitment create access");
   assert.match(domain, /recordBookingChange\(row\.id, actor, "cv"/, "a CV change is written to the history");
 
   // The change history is APPEND-ONLY and best-effort — a missing log never fails the change.

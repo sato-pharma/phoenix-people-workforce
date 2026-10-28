@@ -42,6 +42,7 @@ import {
   Send,
   Share2,
   Trash2,
+  Upload,
   UserRound,
   Users,
   Video,
@@ -1168,6 +1169,11 @@ function InterviewDetail({
   const candidateId = booking.candidateId;
   const [files, setFiles] = useState<CalendarFile[] | null>(null);
   const [filesError, setFilesError] = useState<string | null>(null);
+  // Bumped after a CV is attached here, so the files are read again and the CV opens in place.
+  const [filesVersion, setFilesVersion] = useState(0);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const attachRef = useRef<HTMLInputElement | null>(null);
   // The candidate's WhatsApp application, when there is one this viewer may open: the id of the
   // conversation the Download and Print buttons act on. Null draws no buttons.
   const [applicationSessionId, setApplicationSessionId] = useState<string | null>(null);
@@ -1188,7 +1194,33 @@ function InterviewDetail({
     return () => {
       live = false;
     };
-  }, [api, candidateId, cvsNeedSignIn]);
+  }, [api, candidateId, cvsNeedSignIn, filesVersion]);
+
+  // A Phoenix candidate booked with no CV (typed in on the calendar, nothing attached) — the CV is
+  // added here and lands on their Recruitment record. The server adds a missing CV only, never a
+  // replacement, and refuses anyone who may not add to Recruitment from the calendar.
+  async function attachCv() {
+    const file = attachRef.current?.files?.[0];
+    if (!file) {
+      setAttachError("Choose the CV file first.");
+      return;
+    }
+    setAttaching(true);
+    setAttachError(null);
+    try {
+      const form = new FormData();
+      form.append("cv", file);
+      const data = await api.postForm(`/bookings/${encodeURIComponent(booking.id)}/cv`, form);
+      onChanged(data.booking as InterviewBooking);
+      setFiles(null);
+      setFilesError(null);
+      setFilesVersion((version) => version + 1);
+    } catch (reason) {
+      setAttachError(reasonText(reason, "The CV could not be attached."));
+    } finally {
+      setAttaching(false);
+    }
+  }
 
   useEffect(() => {
     if (!candidateId || cvsNeedSignIn) return;
@@ -1256,6 +1288,7 @@ function InterviewDetail({
   }
 
   const waiting = Boolean(candidateId) && !cvsNeedSignIn && files === null;
+  const mayAttach = Boolean(candidateId) && !cvsNeedSignIn && files !== null && !filesError && canBookInterviews(role);
   const why = cvsNeedSignIn
     ? "Sign in to Phoenix to open this CV."
     : candidateId
@@ -1271,6 +1304,22 @@ function InterviewDetail({
       >
         {waiting ? "Opening the CV…" : why}
       </p>
+      {mayAttach ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            accept=".pdf,.doc,.docx,image/*"
+            aria-label="CV file"
+            className="max-w-full text-[12px] text-slate-700 file:mr-2 file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-[12px] file:font-semibold"
+            ref={attachRef}
+            type="file"
+          />
+          <Action disabled={attaching} onClick={() => void attachCv()} tone="quiet">
+            {attaching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            Attach CV
+          </Action>
+          {attachError ? <div className="w-full"><ErrorLine>{attachError}</ErrorLine></div> : null}
+        </div>
+      ) : null}
       {applicationActions ? <div className="mb-4">{applicationActions}</div> : null}
       {panel}
     </CalendarDialog>
