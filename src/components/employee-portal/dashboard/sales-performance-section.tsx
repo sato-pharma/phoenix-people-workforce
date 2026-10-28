@@ -238,8 +238,8 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
               <MetricCard label="Target Value" value={egp(data.sales.currentMonthTarget)} tooltip="Current month target" />
               <MetricCard label="Achievement %" value={`${data.sales.achievementPercent.toFixed(1)}%`} tooltip="Current month achievement" />
               <MetricCard label="Units" value={formatUnits(data.sales.units)} />
-              <MetricCard label="Rank" value={data.sales.rankInTeam ? `#${data.sales.rankInTeam.position}/${data.sales.rankInTeam.total}` : "N/A"} />
-              <MetricCard label="Top Product" value={data.sales.topProduct ?? "N/A"} />
+              <MetricCard label="Rank" value={data.sales.rankInTeam ? `#${data.sales.rankInTeam.position}/${data.sales.rankInTeam.total}` : "—"} />
+              <MetricCard label="Top Product" value={data.sales.topProduct ?? "—"} />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { humanizeCode } from "@/lib/format/code-label";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -133,7 +134,7 @@ function actionLabel(action: ProbationWorkflowAction) {
 }
 
 function workflowStatusLabel(status: string | null | undefined) {
-  return status ? status.replace(/_/g, " ") : "not requested";
+  return status ? humanizeCode(status) : "Not requested";
 }
 
 function workflowBadgeColors(status: string | null | undefined) {
@@ -722,11 +723,11 @@ export function EmployeeProbationDashboard({
                             aria-valuemax={100}
                             aria-valuemin={0}
                             aria-valuenow={progress}
-                            className="h-1.5 w-full overflow-hidden rounded bg-slate-100"
+                            className="h-1.5 w-full overflow-hidden bg-slate-100"
                             role="progressbar"
                           >
                             <div
-                              className={`h-full rounded ${colors.bg}`}
+                              className={`h-full ${colors.bg}`}
                               style={{ width: `${progress}%` }}
                             />
                           </div>
@@ -739,7 +740,7 @@ export function EmployeeProbationDashboard({
                       {/* Zone */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
+                          className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
                         >
                           {zoneLabel(traffic)}
                         </span>
@@ -748,7 +749,7 @@ export function EmployeeProbationDashboard({
                       {/* Review */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                          className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
                         >
                           {workflowStatusLabel(row.workflow?.status)}
                         </span>
@@ -759,7 +760,7 @@ export function EmployeeProbationDashboard({
                         <div className="flex flex-wrap gap-1.5">
                           {row.workflow && allowed.map((action) => (
                             <button
-                              className={`rounded px-2.5 py-1.5 text-phx-xs font-semibold transition disabled:opacity-50 ${
+                              className={`px-2.5 py-1.5 text-phx-xs font-semibold transition disabled:opacity-50 ${
                                 action === "terminate"
                                   ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                   : action === "pass"
@@ -857,7 +858,7 @@ export function EmployeeProbationDashboard({
                   {/* Review + actions */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                     <span
-                      className={`inline-flex items-center rounded px-2 py-0.5 text-phx-2xs font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                      className={`inline-flex items-center rounded px-2 py-0.5 text-phx-2xs font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
                     >
                       {workflowStatusLabel(row.workflow?.status)}
                     </span>

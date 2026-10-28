@@ -2831,7 +2831,7 @@ export function PlansWorkspace({
                                     dateTime={group.activityDate}
                                     title={group.activityDate}
                                   >
-                                    <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white shadow-[0_6px_18px_rgba(249,115,22,0.08)]">
+                                    <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-orange-50">
                                       <span className="text-phx-2xs font-black uppercase tracking-wide text-orange-500">
                                         {formatDayName(group.activityDate)}
                                       </span>
@@ -2859,7 +2859,7 @@ export function PlansWorkspace({
                                         aria-pressed={shownDayMode(group, allowHalfDays) === mode}
                                         className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
                                           shownDayMode(group, allowHalfDays) === mode
-                                            ? "bg-slate-950 text-white shadow-[0_4px_10px_rgba(15,23,42,0.18)]"
+                                            ? "bg-slate-950 text-white"
                                             : "text-slate-600 hover:bg-white"
                                         }`}
                                         disabled={!canEdit || groupLocked}
@@ -2871,11 +2871,53 @@ export function PlansWorkspace({
                                       </button>
                                     ))}
                                   </div>
+                                  <div className="mt-3 min-w-0 space-y-2">
+                                    <label className="block text-phx-xs font-black uppercase tracking-[0.14em] text-orange-600">
+                                      Notes
+                                      <input
+                                        className={`${tableInputClass} mt-1 normal-case tracking-normal`}
+                                        disabled={!canEdit}
+                                        onChange={(e) => updateDayNotes(group.activityDate, e.target.value)}
+                                        placeholder="Notes for this day..."
+                                        value={group.dayNote}
+                                      />
+                                    </label>
+                                    {groupLocked ? (
+                                      <div className="flex items-start gap-2 break-words text-xs font-bold text-violet-800">
+                                        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span className="min-w-0">
+                                          {group.rows.find((row) => row.locked)?.sourceLabel ?? "Locked"} — read-only. This
+                                          day comes from an approved request.
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                    {groupWarnings.length > 0 ? (
+                                      <div className="flex items-start gap-2 break-words text-xs font-bold text-amber-800">
+                                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span className="min-w-0">{groupWarnings[0]}</span>
+                                      </div>
+                                    ) : null}
+                                    {groupConflictWarnings.map((warning) => (
+                                      <div className="flex items-start gap-2 break-words text-xs font-bold text-red-800" key={warning}>
+                                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span className="min-w-0">{warning}</span>
+                                      </div>
+                                    ))}
+                                    {hasReturnNotes ? (
+                                      <div className="space-y-1 break-words border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
+                                        {group.rows.flatMap((row) => row.returnNotes ?? []).map((note) => (
+                                          <p key={note.id}>
+                                            {note.actorRole ?? "Reviewer"}: {note.note}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 </td>
                               ) : null}
                               <td className="px-3 py-3">
                                 <div className="mb-1 flex items-center gap-1.5">
-                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
+                                  <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
                                   <span
                                     className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
                                   >
@@ -3052,58 +3094,6 @@ export function PlansWorkspace({
                             </tr>
                           );
                         })}
-                        <tr className={`${rowTone} border-t border-orange-100/80`}>
-                          <td className="px-4 pb-4 pt-0" colSpan={5}>
-                            <div className="border border-orange-100 bg-orange-50/45 px-3 py-2">
-                              <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-                                <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-orange-600">
-                                  Notes
-                                </span>
-                                <input
-                                  className={tableInputClass}
-                                  disabled={!canEdit}
-                                  onChange={(e) => updateDayNotes(group.activityDate, e.target.value)}
-                                  placeholder="Notes for this day..."
-                                  value={group.dayNote}
-                                />
-                              </div>
-                              {groupLocked ? (
-                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-violet-800">
-                                  <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  <span>
-                                    {group.rows.find((row) => row.locked)?.sourceLabel ?? "Locked"} — read-only. This
-                                    day comes from an approved request.
-                                  </span>
-                                </div>
-                              ) : null}
-                              {groupWarnings.length > 0 ? (
-                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-amber-800">
-                                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  <span>{groupWarnings[0]}</span>
-                                </div>
-                              ) : null}
-                              {groupConflictWarnings.map((warning) => (
-                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-red-800" key={warning}>
-                                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  <span>{warning}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                        {hasReturnNotes ? (
-                          <tr className="bg-amber-50/80">
-                            <td className="px-4 py-2" colSpan={5}>
-                              <div className="space-y-1 border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
-                                {group.rows.flatMap((row) => row.returnNotes ?? []).map((note) => (
-                                  <p key={note.id}>
-                                    {note.actorRole ?? "Reviewer"}: {note.note}
-                                  </p>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        ) : null}
                       </Fragment>
                     );
                   })}

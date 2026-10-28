@@ -1646,10 +1646,13 @@ export function PrivateCalendar({
                   <p className="text-sm font-semibold text-slate-400">No calendar items for this day.</p>
                 </div>
               ) : (
-                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-                  {timelineItems.map((item) => (
-                    <TimelineItem item={item} key={item.id} showHrIds={showHrIds} showSourceTrace={deskDetail} viewMode={viewMode} />
-                  ))}
+                <div className="space-y-4">
+                  <SourceNotesLegend items={timelineItems} />
+                  <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                    {timelineItems.map((item) => (
+                      <TimelineItem item={item} key={item.id} showHrIds={showHrIds} showSourceTrace={deskDetail} viewMode={viewMode} />
+                    ))}
+                  </div>
                 </div>
               )}
             </section>
@@ -1681,6 +1684,7 @@ function PrivateCalendarAgenda({
   }
   return (
     <div className="space-y-3">
+      <SourceNotesLegend items={agendaDays.flatMap((day) => day.dayItems)} />
       {agendaDays.map(({ date, dayExceptions, dayItems }) => (
         <div className={`overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={date}>
           <button
@@ -2049,6 +2053,39 @@ function plainDetailLines(item: PrivateCalendarItem): string[] {
   return item.detailLines.filter((line) => !cards.has(line));
 }
 
+/**
+ * Where the entries on screen come from, once per source: the source's name and what it does and does not
+ * change (the "read-only activity context" note). An entry never repeats either.
+ */
+function SourceNotesLegend({ items }: { items: PrivateCalendarItem[] }) {
+  const sources = new Map<string, Set<string>>();
+  for (const item of items) {
+    if (!item.sourceLabel) continue;
+    const notes = sources.get(item.sourceLabel) ?? new Set<string>();
+    if (item.approvalImpact) notes.add(item.approvalImpact);
+    sources.set(item.sourceLabel, notes);
+  }
+  if (sources.size === 0) return null;
+  return (
+    <section aria-label="Where these entries come from" className="border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+        <FileSearch className="h-3 w-3" />
+        Recorded in
+      </div>
+      <ul className="mt-2 space-y-1.5 text-xs font-semibold text-slate-600">
+        {Array.from(sources.entries()).map(([label, notes]) => (
+          <li className="min-w-0 break-words" key={label}>
+            <span className="font-black text-slate-800">{label}</span>
+            {Array.from(notes).map((note) => (
+              <span className="block text-slate-500" key={note}>{note}</span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function TimelineItem({
   item,
   showHrIds,
@@ -2127,27 +2164,20 @@ function TimelineItem({
           <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-500">{item.description}</p>
         ) : null}
 
-        {item.approvalImpact ? (
-          <div className="mt-3 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200/60">
-            {item.approvalImpact}
+        {/* The note about what a source does and does not change, and the source's name, are said ONCE per
+            source in the legend above the entries (SourceNotesLegend) - never on every entry. Database
+            table names and record IDs (`ireports360_visits`, `v2_vacation_requests`, a UUID) are
+            for the desk and stay per entry, because they differ per entry. */}
+        {showSourceTrace ? (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+              <FileSearch className="h-3 w-3" />
+              Source trace
+            </div>
+            <p className="mt-1 break-words text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
+            {item.sourceRecordId ? <p className="break-all font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
           </div>
         ) : null}
-
-        {/* An employee sees WHERE the entry came from, by its name. Database table names and
-            record IDs (`ireports360_visits`, `v2_vacation_requests`, a UUID) are for the desk. */}
-        <div className="mt-4 border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-            <FileSearch className="h-3 w-3" />
-            {showSourceTrace ? "Source trace" : "Recorded in"}
-          </div>
-          <p className="mt-1 break-words text-phx-xs font-semibold text-slate-500">{item.sourceLabel}</p>
-          {showSourceTrace ? (
-            <>
-              <p className="break-words text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
-              {item.sourceRecordId ? <p className="break-all font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
-            </>
-          ) : null}
-        </div>
       </div>
     </article>
   );

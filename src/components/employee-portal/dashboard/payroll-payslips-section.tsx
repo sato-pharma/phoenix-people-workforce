@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import { humanizeCode } from "@/lib/format/code-label";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -45,8 +46,7 @@ function payrollStatusLabel(value: string | null | undefined) {
   if (!key) return "Unknown";
   const known = PAYROLL_STATUS_LABELS[key];
   if (known) return known;
-  const words = key.replace(/_/g, " ");
-  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  return humanizeCode(key);
 }
 
 function payrollStatusTone(value: string) {
@@ -391,7 +391,7 @@ export function PayrollPayslipsSection({
               </div>
 
               {/* Desktop: full table */}
-              <div className="hidden max-h-[320px] overflow-y-auto overflow-x-hidden rounded border border-slate-100 md:block">
+              <div className="hidden max-h-[320px] overflow-y-auto overflow-x-hidden border border-slate-100 md:block">
                 <table className="w-full border-collapse table-fixed text-left text-xs sm:text-sm">
                   <colgroup>
                     <col className="w-[32%]" />
@@ -417,7 +417,7 @@ export function PayrollPayslipsSection({
                         <tr className="transition hover:bg-slate-50/60" key={row.id}>
                           <td className="border border-slate-100 px-2 py-2.5 font-medium text-slate-900 sm:px-3">{row.label}</td>
                           <td className="border border-slate-100 px-2 py-2.5 sm:px-3">
-                            <Badge className="max-w-full whitespace-nowrap px-2 py-0.5 text-phx-2xs sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
+                            <Badge className="max-w-full break-words px-2 py-0.5 text-phx-2xs sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
                               {payrollStatusLabel(row.status)}
                             </Badge>
                           </td>
