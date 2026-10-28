@@ -22,8 +22,8 @@
  * only signal.
  *
  * DESIGN IDENTITY is the Rep Tablets page it sits under — the same slate borders, square corners and
- * 9px micro-labels. IT FITS THE SCREEN: the desktop table is `table-fixed` with three columns and the
- * action buttons on their own full-width row beneath each tablet, so nothing is shrunk to fit; phones
+ * 9px micro-labels. IT FITS THE SCREEN: the desktop table is `table-fixed` with four columns, the
+ * action buttons in each tablet's own Actions cell, so nothing is shrunk to fit; phones
  * get cards. Nothing truncates — every line wraps. The factory reset asks twice before it fires.
  */
 
@@ -32,6 +32,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { useDisarmAfterWindow } from "@/components/devices/headwind-panel-kit";
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
@@ -512,17 +513,18 @@ export function HeadwindFleet() {
 
       {rows.length > 0 ? (
         <>
-          {/* DESKTOP — three columns, with each tablet's actions on their own full-width row. */}
+          {/* DESKTOP — four columns, each tablet's actions in its own last cell. */}
           <div className="mt-4 hidden md:block">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col className="w-[34%]" />
-                <col className="w-[26%]" />
-                <col className="w-[40%]" />
+                <col className="w-[22%]" />
+                <col className="w-[18%]" />
+                <col className="w-[22%]" />
+                <col className="w-[38%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-300 bg-slate-50">
-                  {["Tablet", "Holder", "Status"].map((heading) => (
+                  {["Tablet", "Holder", "Status", "Actions"].map((heading) => (
                     <th className={`px-3 py-2 text-left ${MICRO_LABEL}`} key={heading} scope="col">
                       {heading}
                     </th>
@@ -533,7 +535,7 @@ export function HeadwindFleet() {
                 {rows.map((row) => (
                   <FleetRowBlock
                     busyKey={busyKey}
-                    columns={3}
+                    columns={4}
                     commands={commands}
                     confirmKey={confirmKey}
                     error={errors[row.deviceNumber]}
@@ -725,7 +727,12 @@ function FleetActions({
   const canAddToCustody = row.unregistered && Boolean(row.serialNumber ?? row.imei);
   return (
     <div className="flex flex-wrap gap-2">
-      <button className={ACTION_BUTTON} onClick={() => onToggle(row)} type="button">
+      <button
+        className={ACTION_BUTTON}
+        onClick={() => onToggle(row)}
+        type="button"
+        {...rowDetailToggleProps(`tablet-${row.deviceNumber}`, open)}
+      >
         {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         {open ? "Close this tablet" : "Open this tablet"}
       </button>
@@ -879,42 +886,42 @@ function FleetRowBlock(props: BlockProps) {
   return (
     <>
       <tr className="border-b border-slate-100 align-top">
-        <td className="px-3 pt-3">
+        <td className="px-3 py-3">
           <TabletCell row={row} />
         </td>
-        <td className="px-3 pt-3">
+        <td className="px-3 py-3">
           <HolderCell row={row} />
         </td>
-        <td className="px-3 pt-3">
+        <td className="px-3 py-3">
           <StatusCell location={location} row={row} />
         </td>
-      </tr>
-      <tr className="border-b border-slate-200">
-        <td className="px-3 pb-3 pt-2" colSpan={columns}>
+        <td className="min-w-0 px-3 py-3">
           <FleetActions {...props} />
           {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
-          {open ? (
-            <HeadwindTabletPanel
-              custody={{
-                assignable: props.assignable,
-                assignmentId: row.assignmentId,
-                holderJobTitle: row.holderJobTitle,
-                holderName: row.holderName,
-                placeholderName: row.placeholderName,
-                registerDeviceId: row.registerDeviceId,
-                registerStatus: row.registerStatus,
-                registerUnreadable: !row.unregistered && !row.registerDeviceId,
-              }}
-              deviceNumber={row.deviceNumber}
-              onCustodyChanged={props.onRefresh}
-              onRemoteScreenIdSaved={props.onRefresh}
-              remoteScreenId={row.rustDeskId}
-              tabletName={row.assetTag ?? row.name}
-            />
-          ) : null}
         </td>
       </tr>
+      {open ? (
+        <TableRowDetail colSpan={columns} id={`tablet-${row.deviceNumber}`}>
+          <HeadwindTabletPanel
+            custody={{
+              assignable: props.assignable,
+              assignmentId: row.assignmentId,
+              holderJobTitle: row.holderJobTitle,
+              holderName: row.holderName,
+              placeholderName: row.placeholderName,
+              registerDeviceId: row.registerDeviceId,
+              registerStatus: row.registerStatus,
+              registerUnreadable: !row.unregistered && !row.registerDeviceId,
+            }}
+            deviceNumber={row.deviceNumber}
+            onCustodyChanged={props.onRefresh}
+            onRemoteScreenIdSaved={props.onRefresh}
+            remoteScreenId={row.rustDeskId}
+            tabletName={row.assetTag ?? row.name}
+          />
+        </TableRowDetail>
+      ) : null}
     </>
   );
 }

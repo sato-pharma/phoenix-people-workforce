@@ -2,6 +2,8 @@
 
 import { Fragment, useState } from "react";
 
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+
 import { MAX_MARKED_DAYS, type ReviewWeekStage } from "@/lib/attendance/digest-rules.ts";
 import type { DigestLineRow, ReviewEmployee, ReviewWeek, ReviewWeekOption } from "@/lib/attendance/digest-service.ts";
 import {
@@ -456,11 +458,6 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
           {line.action !== "pending" && !cleared ? (
             <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{answerText(line)}</p>
           ) : null}
-          {waiting ? (
-            <p className="text-xs font-semibold text-slate-500">
-              {line.deduct ? "Ticked: the employee is asked about it on release" : "Not ticked: cleared on release, never deducted"}
-            </p>
-          ) : null}
           {canMark && line.deduct ? (
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-600" htmlFor={`days-${id}`}>
@@ -740,6 +737,11 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
 
           {week.employees.length ? (
             <>
+              {canManage && week.stage === "awaiting_release" ? (
+                <p className="border-b border-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">
+                  Ticked days are put to the employee on release; unticked days are cleared and never deducted.
+                </p>
+              ) : null}
               {/* Desktop: one fixed table, no min-width. */}
               <table className="hidden w-full table-fixed border-collapse md:table">
                 <colgroup>
@@ -757,7 +759,10 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 <tbody>
                   {week.employees.map((employee) => (
                     <Fragment key={employee.digestId}>
-                      <tr className="align-top">
+                      <tr
+                        className="align-top"
+                        {...rowDetailToggleProps(`release-${employee.digestId}`, confirming === employee.digestId)}
+                      >
                         <td className="break-words border-b border-slate-100 px-4 py-3">
                           <p className="text-sm font-bold text-slate-800">{employee.employeeName}</p>
                           {employee.jobTitle ? <p className="text-xs text-slate-500">{employee.jobTitle}</p> : null}
@@ -780,11 +785,9 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                         </td>
                       </tr>
                       {confirming === employee.digestId && employeeReleasable(week, employee) ? (
-                        <tr>
-                          <td className="border-b border-slate-200 bg-slate-50 px-4 py-3" colSpan={3}>
-                            {employeeConfirmation(week, employee)}
-                          </td>
-                        </tr>
+                        <TableRowDetail colSpan={3} id={`release-${employee.digestId}`}>
+                          {employeeConfirmation(week, employee)}
+                        </TableRowDetail>
                       ) : null}
                     </Fragment>
                   ))}
