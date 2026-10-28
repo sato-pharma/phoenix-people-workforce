@@ -74,8 +74,12 @@ export function startDbHostSampler(): { reason?: string; started: boolean } {
       const text = await response.text();
       const atMs = Date.now();
       const sample = parseDbHostMetrics(text);
-      const rates = previous ? dbHostRates(previous.sample.counters, sample.counters, (atMs - previous.atMs) / 1000) : null;
-      previous = { atMs, sample };
+      const rates = previous
+        ? dbHostRates(previous.sample.counters, sample.counters, (atMs - previous.atMs) / 1000, sample.cpuCount)
+        : null;
+      // A repeated snapshot keeps the last fresh one as the base, so the next minute's rates span the real
+      // interval instead of starting from a copy of it (dbHostRates says why).
+      if (!rates?.stale) previous = { atMs, sample };
 
       logInfo("database host", {
         labels: { event: "db_host" },
@@ -85,6 +89,7 @@ export function startDbHostSampler(): { reason?: string; started: boolean } {
           cpuPercent: rates?.cpuPercent ?? null,
           counterReset: rates?.counterReset ?? null,
           dataDiskFreeMb: sample.dataDiskFreeMb,
+          intervalS: rates?.intervalS ?? null,
           load: [sample.load1, sample.load5, sample.load15],
           majorFaultsPerMin: rates?.majorFaultsPerMin ?? null,
           memAvailableMb: sample.memAvailableMb,
@@ -94,6 +99,7 @@ export function startDbHostSampler(): { reason?: string; started: boolean } {
           postgresUp: sample.postgresUp,
           readMs: atMs - startedAtMs,
           rootDiskFreeMb: sample.rootDiskFreeMb,
+          stale: rates?.stale ?? null,
           swapInPagesPerMin: rates?.swapInPagesPerMin ?? null,
           swapOutPagesPerMin: rates?.swapOutPagesPerMin ?? null,
           swapUsedMb: sample.swapUsedMb,
