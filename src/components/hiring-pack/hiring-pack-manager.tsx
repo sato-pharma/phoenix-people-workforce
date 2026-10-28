@@ -2122,9 +2122,9 @@ export function HiringPackManager({
 
                 {/*
                   THE HR LETTER, in both languages. Asked for by somebody still employed — a bank, an
-                  embassy — so it sits with the papers of a working life. The English one states the
-                  BASIC salary; the Arabic one states the BASE salary (owner, 2026-09-20), so the two
-                  are different figures on purpose.
+                  embassy — so it sits with the papers of a working life. Both state the BASE salary
+                  on record (the Arabic one since 2026-09-20, the English one since 2026-10-28: "PUT
+                  THE BASE NOT THE BASIC SALARY"), so a pair printed together states one figure.
                 */}
                 <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
@@ -2134,7 +2134,7 @@ export function HiringPackManager({
                     copies={copies.salaryLetterEn}
                     gaps={gapsFor(pack.gaps, "salaryLetterEn")}
                     onCopiesChange={(value) => setCopiesFor("salaryLetterEn", value)}
-                    footnote="For a bank, an embassy or a landlord. It states the BASIC monthly salary derived from the base salary on record, in figures and in words — never the net or the gross."
+                    footnote="For a bank, an embassy or a landlord. It states the BASE monthly salary on record, in figures and in words — never the basic, the net or the gross."
                     onPreview={() => openPreview("salaryLetterEn")}
                     onPrint={() => requestPrint("salaryLetterEn")}
                     onSign={() => undefined}
@@ -2145,7 +2145,7 @@ export function HiringPackManager({
                     signedDate={null}
                     signable={false}
                     subtitle="شهادة راتب — باللغة الإنجليزية"
-                    title="HR letter — basic salary"
+                    title="HR letter — base salary (English)"
                   />
                   <DocumentCard
                     busy={false}
@@ -2154,7 +2154,7 @@ export function HiringPackManager({
                     copies={copies.salaryLetterAr}
                     gaps={gapsFor(pack.gaps, "salaryLetterAr")}
                     onCopiesChange={(value) => setCopiesFor("salaryLetterAr", value)}
-                    footnote="لبنك أو سفارة أو مالك عقار. تُبيّن الأجر الأساسي الشهري المشتق من الأجر الأصلي المسجَّل، رقمًا وكتابةً — دون الصافي أو الإجمالي."
+                    footnote="لبنك أو سفارة أو مالك عقار. تُبيّن الأجر الشهري المسجَّل، رقمًا وكتابةً — دون الأجر الأساسي أو الصافي أو الإجمالي."
                     onPreview={() => openPreview("salaryLetterAr")}
                     onPrint={() => requestPrint("salaryLetterAr")}
                     onSign={() => undefined}

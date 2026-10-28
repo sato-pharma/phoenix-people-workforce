@@ -48,7 +48,7 @@ export type HrPaperKind =
   | "certificate"
   /**
    * The Arabic counterpart of `salary-letter-en.ts` — the letter a bank or an embassy reads, stating
-   * the BASE salary and nothing else (the English one states the basic).
+   * the BASE salary and nothing else, as the English one does since 2026-10-28.
    *
    * NOT a `certificate`: `renderHrPaperHtml`'s banner for that kind warns about the certificate's own
    * "no salary, no reason for leaving" omissions, which would be actively wrong printed above a

@@ -54,6 +54,7 @@ import {
   renderContractRenewalHtml,
 } from "../src/lib/hiring-pack/render-renewal.ts";
 import { renderWorkerFormHtml } from "../src/lib/hiring-pack/render-worker-form.ts";
+import { renderSalaryLetterArHtml } from "../src/lib/hiring-pack/salary-letter-ar.ts";
 import { renderSalaryLetterEnHtml } from "../src/lib/hiring-pack/salary-letter-en.ts";
 import {
   collectHiringPackGaps,
@@ -168,15 +169,17 @@ const PREMIUM_BAND = /<svg class="pm-band"[^>]*>[\s\S]*?<path d="M[^"]*Q[\s\S]*?
 /**
  * THE PAPERS THE OWNER ANSWERED "CHANGE" ON — his review page, 2026-10-13 about 00:40 Cairo. The
  * English certificate of experience and the English salary letter wear it outright; the exit interview
- * is the one HR paper that does. Every other paper the pack prints is a "keep" — except the Arabic
- * certificate of experience, which he had ticked "keep" and moved to the certificate's own design on
- * 2026-10-28 ("make this the certificate of experience in the hr forms module"), so it wears the
- * identity through `experience-certificate-ar.ts` rather than through a switch.
+ * is the one HR paper that does. Every other paper the pack prints is a "keep" — except two he had
+ * ticked "keep" and moved to the certificate's own design on 2026-10-28: the Arabic certificate of
+ * experience ("make this the certificate of experience in the hr forms module") and the Arabic salary
+ * letter ("Make it the HR letter", both languages). They wear the identity through their own renderers
+ * (`experience-certificate-ar.ts`, `salary-letter-ar.ts`) rather than through a switch.
  */
 const CHANGED_PAPERS = [
   "certificate of experience (English)",
   "certificate of experience (Arabic)",
   "salary letter (English)",
+  "salary letter (Arabic)",
   "exit-interview-v1",
 ];
 
@@ -269,10 +272,14 @@ function currentNormalPapers(): ReadonlyArray<readonly [string, string]> {
     if (!held || held.version < paper.version) currentByFamily.set(family, paper);
   }
   for (const paper of currentByFamily.values()) {
-    // The certificate of experience is the one HR paper the print route hands to its own renderer
-    // (`render-paper.ts`), in the certificate's design since 2026-10-28.
+    // The certificate of experience and the salary letter are the two HR papers the print route hands
+    // to their own renderers (`render-paper.ts`), in the certificate's design since 2026-10-28.
     if (paper.kind === "certificate") {
       papers.push(["certificate of experience (Arabic)", renderExperienceCertificateArHtml(left, 2)]);
+      continue;
+    }
+    if (paper.kind === "salaryLetter") {
+      papers.push(["salary letter (Arabic)", renderSalaryLetterArHtml(live, 2)]);
       continue;
     }
     papers.push([paper.id, renderHrPaperHtml(live, 2, paper)]);
@@ -305,7 +312,7 @@ function testThePapersTheOwnerSaidKeepPrintAsToday(): void {
   const papers = currentNormalPapers();
   assert.equal(papers.length, 24, "seven pack papers and the seventeen current HR papers (nineteen less two archived versions)");
   const kept = papers.filter(([name]) => !CHANGED_PAPERS.includes(name));
-  assert.equal(kept.length, 20, "twenty-four papers less the four that wear the identity");
+  assert.equal(kept.length, 19, "twenty-four papers less the five that wear the identity");
   for (const [name, html] of kept) {
     assert.ok(!isPremiumPaper(html), `${name}: he said keep, so it carries no premium page chrome`);
     assert.ok(!/\bpm-[a-z]/.test(html), `${name}: he said keep, so no premium class is on it`);
@@ -328,11 +335,11 @@ function testEveryPremiumBranchStillRendersWhenItsSwitchIsOn(): void {
  * THE CHROME IS THE LAST CHILD OF EVERY COPY.
  *
  * Hand-placed stamps and signatures are anchored by positional paths measured inside a copy —
- * `table:nth-of-type(1) > … > td:nth-of-type(2)` on the Arabic salary letter, `article:nth-of-type(1)
- * > section:nth-of-type(2)` on the English certificate (both live on 2026-10-12), and
+ * `article:nth-of-type(1) > section:nth-of-type(2)` on the English certificate (live on 2026-10-12),
  * `section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(3)` — the stamp box — on both
- * certificates of experience since their shared design (2026-10-28). Chrome added in front of them
- * would move every one. So in each copy, nothing the paper says may follow it.
+ * certificates of experience since their shared design, and `… > span:nth-of-type(2)` — the signature
+ * box — on the Arabic salary letter in the same design (both 2026-10-28). Chrome added in front of
+ * them would move every one. So in each copy, nothing the paper says may follow it.
  */
 function testTheChromeIsAppendedLastInEveryCopy(): void {
   withEveryPaperPremium(() => {
@@ -486,12 +493,14 @@ function testThePremiumLetterheadKeepsEveryWord(): void {
 }
 
 /**
- * THE ARABIC SALARY LETTER STILL FITS ITS ONE SHEET, IF IT IS EVER SWITCHED TO THE PREMIUM DRESS. Its sheet is stretched to the printable height
- * (the owner, 2026-09-20), and under the premium sheet that height is 297 mm less the 12.5 mm top and
- * 19.5 mm bottom insets. One millimetre over prints a second, empty page.
+ * THE ARABIC SALARY LETTER'S OLD DRESS STILL FITS ONE SHEET UNDER THE PREMIUM SWITCH. The current
+ * letter is drawn in the certificate's design (`salary-letter-ar.ts`, 2026-10-28); the house papers'
+ * renderer still draws an archived version in the dress it was signed in, and that dress's sheet is
+ * stretched to the printable height (the owner, 2026-09-20). Under the premium sheet that height is
+ * 297 mm less the 12.5 mm top and 19.5 mm bottom insets. One millimetre over prints a second, empty page.
  */
 function testTheSalaryLetterSheetFitsThePremiumPage(): void {
-  // The Arabic salary letter was answered 'keep', so this proves the branch behind its switch.
+  // The branch behind the house renderer's switch, for this letter.
   const html = withEveryPaperPremium(() => renderHrPaperHtml(packFixture(), 1, HR_PAPER_SALARY_LETTER_AR_V1));
   const heights = [...html.matchAll(/\.copy--salaryLetter \.doc-sheet \{ height: (\d+(?:\.\d+)?)mm; \}/g)].map(
     (match) => Number(match[1]),

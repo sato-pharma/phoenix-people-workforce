@@ -128,15 +128,67 @@ export function certificateSpanHtml(input: CertificateSpanInput): string {
 }
 
 /**
- * The three signing boxes, BLANK. Each is a `span` inside `div.cert__signrow` — the shape the stored
+ * The signing boxes, BLANK. Each is a `span` inside `div.cert__signrow` — the shape the stored
  * hand-placed marks were measured against (`… > div:nth-of-type(1) > span:nth-of-type(3)` is the
  * stamp box), so a mark still finds its box.
+ *
+ * Three on a certificate (name and title, signature, stamp). Two on the Arabic HR letter, whose
+ * template signs with a name and a signature only — the row then carries `xl-cells--2` so the two
+ * boxes share the width instead of leaving a third column empty.
  */
-export function certificateSignCellsHtml(labels: readonly [string, string, string]): string {
+export function certificateSignCellsHtml(
+  labels: readonly [string, string] | readonly [string, string, string],
+): string {
   const cells = labels
     .map((label) => `<span class="xc-cell"><em class="xc-lbl">${escapeHtml(label)}</em></span>`)
     .join("");
-  return `<div class="cert__signrow xc-cells">${cells}</div>`;
+  const width = labels.length === 2 ? " xl-cells--2" : "";
+  return `<div class="cert__signrow xc-cells${width}">${cells}</div>`;
+}
+
+/** 11000 → "11,000"; 7700.5 → "7,700.50". A whole amount carries no decimals in the strip. */
+function moneyFigure(amount: number): string {
+  const whole = Number.isInteger(Math.round(amount * 100) / 100);
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * THE HR LETTER'S SALARY AT A GLANCE — the certificate's period strip, carrying the salary instead of
+ * the span: the joining date (and a leaver's last day) in outline, the BASE monthly salary filled.
+ *
+ * It repeats the salary sentence above it in figures, so it adds no fact. That is why it is left out
+ * entirely when no base salary is on record: the sentence carries the rule for a pen, and an empty
+ * box here would only repeat it — or worse, read as a zero.
+ */
+export function certificatePayStripHtml(
+  lang: CertificateLang,
+  startsOn: string | null | undefined,
+  endsOn: string | null | undefined,
+  departed: boolean,
+  amount: number | null,
+): string {
+  if (amount === null) return "";
+  const en = lang === "en";
+  const cells: string[] = [];
+  const joined = dateFigure(startsOn, lang);
+  if (joined) {
+    cells.push(`<div><span class="xc-micro">${en ? "Joined" : "تاريخ الالتحاق بالعمل"}</span>${joined}</div>`);
+  }
+  const last = departed ? dateFigure(endsOn, lang) : "";
+  if (last) {
+    cells.push(`<div><span class="xc-micro">${en ? "Last working day" : "آخر يوم عمل"}</span>${last}</div>`);
+  }
+  const label = en
+    ? departed ? "Last base monthly salary" : "Base monthly salary"
+    : departed ? "آخر أجر شهري" : "الأجر الشهري";
+  const unit = en ? "EGP" : "جنيه";
+  cells.push(
+    `<div class="xc-tot"><span class="xc-micro">${label}</span><div class="xc-fig"><b>${moneyFigure(amount)}</b><em>${unit}</em></div></div>`,
+  );
+  return `<div class="xc-span xl-pay xl-pay--${cells.length}">${cells.join("")}</div>`;
 }
 
 /**
@@ -268,4 +320,39 @@ export const EXPERIENCE_CERTIFICATE_DESIGN_CSS = `
   .xc--ar .cert__signfor { font-size: 10.4pt; }
   .xc--ar .xc-cells > .xc-cell { border-left: 0; border-right: .4pt solid ${C.hair}; }
   .xc--ar .xc-cells > .xc-cell:first-child { padding-left: 4mm; padding-right: 0; border-right: 0; }
+`;
+
+/**
+ * THE HR LETTER'S OVERRIDES — appended AFTER `EXPERIENCE_CERTIFICATE_DESIGN_CSS` on the two salary
+ * letters (`.xl`; the English one adds `.xl--en`). The letter carries more on one sheet than the
+ * certificate — the company block, seven details and the salary — so its gaps are tighter, its
+ * figures smaller, and its details grid wider in the label column for "Date of joining".
+ */
+export const SALARY_LETTER_DESIGN_CSS = `
+  .xl-pay--1 { grid-template-columns: 1fr; }
+  .xl-pay--2 { grid-template-columns: 1fr 1.6fr; }
+  .xl-pay--3 { grid-template-columns: 1fr 1fr 1.4fr; }
+  .xl-cells--2 { grid-template-columns: 1.15fr 1fr; }
+  .xl--en .xc-fields > div { grid-template-columns: 31mm 1fr; padding: 1.5mm 0; }
+  .xl--en .xc-hero h2 b { font-size: 42pt; }
+  .xl .xc-hero { margin-top: 5mm; }
+  .xl .xc-tick { margin: 3.4mm 0 2.6mm; }
+  .xl .xc-party { margin-top: 4.5mm; }
+  .xl .xc-text { margin-top: 5mm; }
+  .xl .xc-salute { margin-bottom: 2.4mm; }
+  .xl--en .xc-text p { font-size: 10.2pt; line-height: 1.55; }
+  .xl--en .xc-text p + p { margin-top: 2.4mm; }
+  .xc--ar.xl .xc-text p { line-height: 1.7; }
+  .xl .xc-span { margin: 3mm 0; }
+  .xl .xc-span > div { padding-top: 1.8mm; padding-bottom: 2mm; }
+  .xl .xc-fig { margin-top: 1.4mm; }
+  .xl .xc-fig b { font-size: 23pt; }
+  .xl .xc-sign { margin-top: 5mm; }
+  .xc--ar.xl .xc-facts > div { padding: 1.4mm 0; }
+  .xc--ar.xl .xc-issuer .fill { white-space: normal; }
+  .xl .xl-co { margin-top: 1.4mm; color: ${C.deep}; font-size: 9pt; font-weight: 700; line-height: 1.45; }
+  .xl .xc-issuer .fill { font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+  .xl--en .xc-fields > .xc-wide dd { font-size: 15pt; }
+  .xc .xc-text .fill[data-hp-key="BASE_SALARY_WORDS_EN"],
+  .xc .xc-text .fill[data-hp-key="BASE_SALARY_WORDS"] { white-space: normal; }
 `;
