@@ -4426,7 +4426,8 @@ raised to premium — the same three blues, the same ink rule — plus a page fr
 microtext, the Arabic mark as a 5% watermark, a masthead with the Latin mark and the engine-turned
 band drawn as an inline vector, and the Phoenix running foot carrying the identity code.
 
-- **Wears it (his answers of 13 October, below):** the English certificate of experience, the English
+- **Wears it (his answers of 13 October, below):** the English certificate of experience (and, since
+  28 October, the Arabic one - see "The certificate of experience's own design" below), the English
   salary letter, the exit interview, the payslip, the organogram employee record, the interview
   calendar PDF, the Phoenix CRM start guide, the Field Activity report, and a new fifth job-offer
   design called Premium. **Everything else he ticked "keep" and prints as it did before the identity
@@ -4445,6 +4446,29 @@ band drawn as an inline vector, and the Phoenix running foot carrying the identi
   unchanged and byte-pinned by `tests/payslip-document.test.ts`; the payslip now calls
   `premiumLetterhead()` instead.
 - **No seal**, as on every hiring paper: the seal is the job offer's alone.
+
+### The certificate of experience's own design (2026-10-28)
+
+He had a premium pair of certificates printed for one employee that day, approved it, and then asked
+for it in the HR forms module: *"make this the certificate of experience in the hr forms module"*.
+Asked whether the printed papers should carry his signature, he chose *"Blank box, sign by hand"* -
+anyone with access to HR forms can print a certificate, so a blank box means none leaves without HR
+signing it.
+
+- **Both certificates wear it - the English one and the Arabic one.** The Arabic certificate had been
+  ticked "keep" on 13 October; this word moves it. It is drawn by its own renderer,
+  `experience-certificate-ar.ts`, beside `experience-certificate-en.ts`, and both share
+  `experience-certificate-design.ts`. It sits inside the premium identity (same masthead, band, frame,
+  watermark and foot) and adds a two-weight title, the holder's details, the period in figures, and
+  three signing boxes.
+- **The Arabic words are the template's, unchanged** - every sentence, heading and label is still read
+  from `experience-certificate-v1` in `hr-paper-text.ts`, including «السيد / السيدة المبيّنة بياناته».
+- **The three signing boxes print BLANK** - name and title, signature, company stamp. No name, no
+  signature and no seal is drawn into them. His signature file never enters the repository.
+- `PREMIUM_DRESS.hrPapers` is unchanged: the Arabic certificate wears the design through its own
+  renderer, not through the house papers' premium branch. An archived version would still print
+  through `renderHrPaperHtml` in the dress it was signed in.
+- Pinned by `tests/hr-premium-identity.test.ts` and `tests/hr-forms-house-papers.test.ts`.
 
 ### The Arabic logo: watermark and footer only
 

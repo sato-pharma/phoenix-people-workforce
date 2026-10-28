@@ -59,7 +59,6 @@ import {
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
   HR_PAPER_EXIT_INTERVIEW_V1,
-  HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
   HR_PAPER_HANDOVER_RECORD_V1,
   HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
@@ -71,6 +70,7 @@ import {
   HR_PAPER_TRANSFER_DECISION_V1,
 } from "@/lib/hiring-pack/hr-paper-text";
 import { renderOfficialPackFormHtml } from "@/lib/hiring-pack/render-official-form";
+import { renderExperienceCertificateArHtml } from "@/lib/hiring-pack/experience-certificate-ar";
 import { renderExperienceCertificateEnHtml } from "@/lib/hiring-pack/experience-certificate-en";
 import { renderSalaryLetterEnHtml } from "@/lib/hiring-pack/salary-letter-en";
 import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
@@ -173,8 +173,11 @@ const RENDERERS: Record<
     render: housePaper(HR_PAPER_DOCUMENTS_RETURN_V1),
     copies: systemContractDefaults.appointmentDocsReturnCopies,
   },
+  // THE ARABIC CERTIFICATE WEARS THE CERTIFICATE'S OWN DESIGN (owner, 2026-10-28), the same as the
+  // English one, so it has its own renderer too. Its words are still the house template's, and an
+  // archived version still prints through `renderHrPaperHtml` — see `experience-certificate-ar.ts`.
   experienceCertificate: {
-    render: housePaper(HR_PAPER_EXPERIENCE_CERTIFICATE_V1),
+    render: renderExperienceCertificateArHtml,
     copies: systemContractDefaults.experienceCertificateCopies,
   },
   // THE ENGLISH CERTIFICATE IS NOT A HOUSE PAPER and does not go through `housePaper`: it is an
