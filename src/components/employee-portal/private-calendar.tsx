@@ -46,6 +46,7 @@ import {
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import {
   phxButtonAccentClassName,
   phxButtonGhostClassName,
@@ -323,29 +324,8 @@ function storeOpen(key: string, open: boolean) {
 const KEY_FIGURES_OPEN_KEY = "phx.privateCalendar.keyFiguresOpen";
 const FILTERS_OPEN_KEY = "phx.privateCalendar.filtersOpen";
 
-// An item's status arrives as its source's own code — `pending_hr`, `performed`, `holiday` — or,
-// for attendance, as a word already written for people ("Late", "Short day"). Codes are named
-// here; anything else keeps its own wording, with a stray underscore turned into a space.
-const statusLabels: Record<string, string> = {
-  approved: "Approved",
-  holiday: "Holiday",
-  needs_assignment: "Awaiting assignment",
-  pending: "Pending",
-  pending_hr: "Waiting for HR",
-  pending_manager: "Waiting for manager",
-  pending_review: "Under review",
-  performed: "Done",
-  rejected: "Rejected",
-  submitted: "Submitted",
-};
-
-function statusLabel(status: string) {
-  const known = statusLabels[status.trim().toLowerCase()];
-  if (known) return known;
-  if (!status.includes("_") && !/^[a-z]/.test(status)) return status;
-  const words = status.replace(/_+/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
+// An item's status as words: src/lib/approvals-hub/request-status-label.ts owns the map.
+const statusLabel = requestStatusLabel;
 
 function itemSearchText(item: PrivateCalendarItem) {
   return [
