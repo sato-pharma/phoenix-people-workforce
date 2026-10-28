@@ -450,6 +450,10 @@ export const MODULES = [
       "src/lib/phoenix-crm/manager-day-plan.ts",
       "src/lib/phoenix-crm/manager-visit-detail.ts",
       "src/lib/phoenix-crm/server/manager-visit-details.ts",
+      // The day table that shows those visits against the plan (owner, 2026-10-28): `phoenix-crm-manager-plan` sat at
+      // 3,990 of its 4,000-byte pointer margin, so its said-once rule lives here, beside `manager-day-plan.ts`.
+      "src/lib/phoenix-crm/manager-visit-table.ts",
+      "src/components/phoenix-crm/manager-plan-actual-table.tsx",
       "src/lib/phoenix-crm/server/manager-customers.ts",
       "supabase/migrations/*phoenix_crm_manager_plan_with_*",
       "tests/phoenix-crm-manager-plan*",
