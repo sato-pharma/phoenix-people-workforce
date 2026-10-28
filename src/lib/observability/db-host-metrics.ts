@@ -174,8 +174,12 @@ export type DbHostRates = {
   counterReset: boolean;
   /** Share of CPU time per mode over the interval, whole percent. `steal` is time the cloud host took back. */
   cpuPercent: Record<string, number> | null;
+  /** Seconds the two snapshots are apart, by the host's own CPU clock when it has one (see dbHostRates). */
+  intervalS: number | null;
   majorFaultsPerMin: number | null;
   oomKills: number | null;
+  /** True when this reading is the SAME snapshot as the last one — Supabase had not refreshed yet. */
+  stale: boolean;
   swapInPagesPerMin: number | null;
   swapOutPagesPerMin: number | null;
 };
@@ -185,17 +189,36 @@ function perMinute(previous: number | null, current: number | null, elapsedS: nu
   return Math.round(((current - previous) * 60) / elapsedS);
 }
 
-/** Per-minute rates between two readings. Pages are the host's 4 KB pages. */
-export function dbHostRates(previous: DbHostCounters, current: DbHostCounters, elapsedS: number): DbHostRates {
+/**
+ * Per-minute rates between two readings. Pages are the host's 4 KB pages.
+ *
+ * 🔴 THE INTERVAL IS THE HOST'S OWN CPU CLOCK, NOT THE TIME BETWEEN OUR TWO READS. Supabase refreshes these
+ * figures about every 62 s (measured 28 Oct 2026: fresh snapshots at 03:24:37, 03:25:40, 03:26:42), not on
+ * every request. Read every 60 s, about one minute in 25 returns the SAME snapshot again, and the next
+ * minute's counters then span two refreshes. Divided by the 60 s between the reads, every rate on that
+ * minute came out roughly DOUBLE (seen live the first hour: 583 page faults a minute, 29 pages swapped in).
+ * Each CPU adds one second per second across all its modes, so the summed CPU seconds over `cpuCount` is
+ * how far apart the two snapshots really are. No CPU figure, or a count of 0: the read times are used.
+ * A snapshot whose CPU clock has not moved is the last one again: `stale`, no rate at all, and the caller
+ * keeps the earlier reading as the base for the next one.
+ */
+export function dbHostRates(
+  previous: DbHostCounters,
+  current: DbHostCounters,
+  wallElapsedS: number,
+  cpuCount = 0,
+): DbHostRates {
   const empty: DbHostRates = {
     counterReset: false,
     cpuPercent: null,
+    intervalS: null,
     majorFaultsPerMin: null,
     oomKills: null,
+    stale: false,
     swapInPagesPerMin: null,
     swapOutPagesPerMin: null,
   };
-  if (!(elapsedS > 0)) return empty;
+  if (!(wallElapsedS > 0)) return empty;
 
   const pairs: Array<[number | null, number | null]> = [
     [previous.swapInPages, current.swapInPages],
@@ -220,17 +243,22 @@ export function dbHostRates(previous: DbHostCounters, current: DbHostCounters, e
     deltas[mode] = current.cpuSeconds[mode] - before;
     total += deltas[mode];
   }
+  const hasCpuClock = cpuCount > 0 && Object.keys(deltas).length > 0;
+  if (hasCpuClock && total === 0) return { ...empty, stale: true };
   if (total > 0) {
     cpuPercent = {};
     for (const [mode, delta] of Object.entries(deltas)) cpuPercent[mode] = Math.round((delta / total) * 100);
   }
+  const elapsedS = hasCpuClock && total > 0 ? total / cpuCount : wallElapsedS;
 
   return {
     counterReset: false,
     cpuPercent,
+    intervalS: Math.round(elapsedS),
     majorFaultsPerMin: perMinute(previous.majorFaults, current.majorFaults, elapsedS),
     // A count, not a rate: any kill at all is the news.
     oomKills: previous.oomKills != null && current.oomKills != null ? current.oomKills - previous.oomKills : null,
+    stale: false,
     swapInPagesPerMin: perMinute(previous.swapInPages, current.swapInPages, elapsedS),
     swapOutPagesPerMin: perMinute(previous.swapOutPages, current.swapOutPages, elapsedS),
   };

@@ -28,7 +28,9 @@ function read(path: string) {
 const MB = 1048576;
 
 // The shape Supabase answers with (names and labels as read on 28 Oct 2026), the figures made up.
-function exposition(overrides: { avail?: number; cpu0User?: number; pswpin?: number; rootAvail?: number } = {}) {
+function exposition(
+  overrides: { avail?: number; cpu0User?: number; cpu1User?: number; pswpin?: number; rootAvail?: number } = {},
+) {
   const avail = overrides.avail ?? 879 * MB;
   const rootAvail = overrides.rootAvail ?? 1210 * MB;
   return [
@@ -49,7 +51,7 @@ function exposition(overrides: { avail?: number; cpu0User?: number; pswpin?: num
     `node_cpu_seconds_total{cpu="0",mode="user",service_type="db"} ${overrides.cpu0User ?? 400}`,
     `node_cpu_seconds_total{cpu="0",mode="steal",service_type="db"} 10`,
     `node_cpu_seconds_total{cpu="1",mode="idle",service_type="db"} 1000`,
-    `node_cpu_seconds_total{cpu="1",mode="user",service_type="db"} 400`,
+    `node_cpu_seconds_total{cpu="1",mode="user",service_type="db"} ${overrides.cpu1User ?? 400}`,
     `node_cpu_seconds_total{cpu="1",mode="steal",service_type="db"} 10`,
     `node_filesystem_avail_bytes{device="/dev/nvme0n1p2",fstype="ext4",mountpoint="/",service_type="db"} ${rootAvail}`,
     `node_filesystem_size_bytes{device="/dev/nvme0n1p2",fstype="ext4",mountpoint="/",service_type="db"} 1.0461904896e+10`,
@@ -97,16 +99,33 @@ export async function runDbHostMetricsTests() {
   assert.doesNotThrow(() => parseDbHostMetrics(undefined as unknown as string), "the parser never throws");
 
   // --- per-minute rates ----------------------------------------------------------------------------
-  const later = parseDbHostMetrics(exposition({ cpu0User: 460, pswpin: 1000300 }));
-  const rates = dbHostRates(sample.counters, later.counters, 60);
+  // Two CPUs, each 60 s busier: the host's own clock says the snapshots are 60 s apart.
+  const later = parseDbHostMetrics(exposition({ cpu0User: 460, cpu1User: 460, pswpin: 1000300 }));
+  const rates = dbHostRates(sample.counters, later.counters, 60, sample.cpuCount);
   assert.equal(rates.counterReset, false);
+  assert.equal(rates.stale, false);
+  assert.equal(rates.intervalS, 60);
   assert.equal(rates.swapInPagesPerMin, 300, "300 pages swapped in over 60 s is 300 a minute");
   assert.equal(rates.swapOutPagesPerMin, 0);
   assert.equal(rates.oomKills, 0);
   assert.deepEqual(rates.cpuPercent, { idle: 0, steal: 0, user: 100 }, "the CPU share is of the interval, not of all time");
 
   const slow = dbHostRates(sample.counters, later.counters, 120);
-  assert.equal(slow.swapInPagesPerMin, 150, "a reading two minutes after the last is normalised to one minute");
+  assert.equal(slow.swapInPagesPerMin, 150, "with no CPU count, a reading two minutes after the last is normalised by the read times");
+
+  // 🔴 The doubled minute seen live on 28 Oct: our reads 60 s apart, but the counters span two of
+  // Supabase's ~62 s refreshes because the minute before was a repeat. The host's clock says 125 s.
+  const twoRefreshes = parseDbHostMetrics(exposition({ cpu0User: 525, cpu1User: 525, pswpin: 1000600 }));
+  const spanned = dbHostRates(sample.counters, twoRefreshes.counters, 60, sample.cpuCount);
+  assert.equal(spanned.intervalS, 125, "the interval is the host's CPU clock, not the 60 s between our reads");
+  assert.equal(spanned.swapInPagesPerMin, 288, "600 pages over 125 s is 288 a minute, never 600 over a 60 s guess");
+
+  const repeat = dbHostRates(later.counters, later.counters, 60, later.cpuCount);
+  assert.equal(repeat.stale, true, "a snapshot whose CPU clock has not moved is the last one again");
+  assert.equal(repeat.swapInPagesPerMin, null, "and a repeat carries no rate, not a zero");
+  assert.equal(repeat.cpuPercent, null);
+  assert.equal(repeat.counterReset, false);
+  assert.equal(dbHostRates(later.counters, later.counters, 60).stale, false, "with no CPU count a repeat cannot be told apart");
 
   const reset = dbHostRates(later.counters, sample.counters, 60);
   assert.equal(reset.counterReset, true, "a counter that went down means the host reset between readings");
@@ -200,6 +219,8 @@ export async function runDbHostMetricsTests() {
 
   // --- wiring --------------------------------------------------------------------------------------
   const sampler = read("src/lib/observability/db-host-sampler.ts");
+  assert.match(sampler, /if \(!rates\?\.stale\) previous = \{ atMs, sample \};/, "a repeated snapshot never becomes the base for the next rate");
+  assert.match(sampler, /\(atMs - previous\.atMs\) \/ 1000, sample\.cpuCount\)/, "the sampler hands the CPU count over, so the host's clock is used");
   assert.match(sampler, /signal: AbortSignal\.timeout\(FETCH_TIMEOUT_MS\)/, "every read has a deadline");
   assert.match(sampler, /const FETCH_TIMEOUT_MS = 10_000;/);
   assert.match(sampler, /if \(inFlight\) return;/, "a slow read is never doubled by the next minute");
