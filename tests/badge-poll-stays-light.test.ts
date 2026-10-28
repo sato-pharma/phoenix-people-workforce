@@ -77,7 +77,7 @@ export function runBadgePollStaysLightTests() {
   }
   assert.match(
     bodyOf(hub, "async function getVacationAwaitingForBadge(", HUB),
-    /partitionVacationApprovals\(access, source\?\.centerRows \?\? \[\], source\?\.scopedRows \?\? \[\]\)\.awaiting/,
+    /\(await partitionVacationApprovals\(access, source\?\.centerRows \?\? \[\], source\?\.scopedRows \?\? \[\]\)\)\.awaiting/,
     "the badge must split awaiting from upcoming with the hub page's own partition",
   );
   assert.match(

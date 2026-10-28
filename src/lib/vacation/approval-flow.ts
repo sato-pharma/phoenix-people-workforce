@@ -474,3 +474,22 @@ function resolveBaseActionAvailability(input: {
     : { enabled: false, disabledReason: approveEval.reason };
   return availability;
 }
+
+/**
+ * Whose turn a viewer has on an open SICK leave — the one type on the legacy parallel flow, where
+ * the managers and HR decide side by side and the status stays `pending_manager` for all of them.
+ *
+ * The same rule `getPendingVacationApprovalStepForActor` applies when the decision is posted: the
+ * viewer's own pending step first (HR when it is an HR step, management otherwise), then — for an
+ * HR authority actor — any pending HR step, since HR is one authority across its fanned-out rows.
+ * Null: nothing pending is this viewer's to decide.
+ */
+export function sickLeaveTurnForViewer(input: {
+  isHrActor: boolean;
+  pendingSteps: Array<{ matchesViewer: boolean; stepKey: VacationWorkflowStepKey }>;
+}): "management" | "hr" | null {
+  const own = input.pendingSteps.find((step) => step.matchesViewer);
+  if (own) return own.stepKey === "hr" ? "hr" : "management";
+  if (input.isHrActor && input.pendingSteps.some((step) => step.stepKey === "hr")) return "hr";
+  return null;
+}
