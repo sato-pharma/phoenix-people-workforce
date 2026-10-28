@@ -496,6 +496,7 @@ function buildMonthlyWeekView(inputs: MonthlyWeekInputs, weekStart: string, plan
       repName: territory.repName,
       reviewerName: territory.reviewerName,
       deciderName: weekPlan?.decidedByName ?? null,
+      passed: !open,
     }),
     days,
     plan: weekPlan,
