@@ -1373,6 +1373,7 @@ import { runWeeklyProductUnitsTests } from "./weekly-product-units.test.ts";
 import { runOutboundDeadlinesTests } from "./outbound-deadlines.test.ts";
 import { runCandidateListSlimCallersTests } from "./candidate-list-slim-callers.test.ts";
 import { runProcessHealthTests } from "./process-health.test.ts";
+import { runDbHostMetricsTests } from "./db-host-metrics.test.ts";
 import { runChromiumSlotLimiterTests } from "./chromium-slot-limiter.test.ts";
 import { runDataBackupExclusiveTests } from "./data-backup-exclusive.test.ts";
 import { runVacationRowsCachePackedTests } from "./vacation-rows-cache-packed.test.ts";
@@ -5804,6 +5805,10 @@ await runTest(
 );
 await runTest("the six list-shaped candidate reads skip the repeating CV blocks (59% of the pool's bytes)", runCandidateListSlimCallersTests);
 await runTest("process health: per-minute event-loop, heap and timing line, started once, production only", runProcessHealthTests);
+await runTest(
+  "database host: Supabase's metrics read into one sample, per-minute rates, five minutes under 100 MB or a root disk under 500 MB alarms once a Cairo day, the worker alone samples, production only",
+  runDbHostMetricsTests,
+);
 await runTest(
   "Chromium renders at most two at a time (waiters served first-in first-out; a throwing render still frees its slot; a timed-out wait rejects with ChromiumBusyError, a ChromiumUnavailableError, and is removed from the queue; withChromiumPage and renderOfferPdf both launch and close inside withChromiumSlot)",
   runChromiumSlotLimiterTests,

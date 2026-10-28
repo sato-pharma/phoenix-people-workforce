@@ -1447,3 +1447,87 @@ Pinned by `tests/audit-outbox.test.ts` (the mechanism, including a stub queue th
 landing probe stops the second write) and `tests/notification-outbox.test.ts` (the payload guards,
 the predicate, and the write that must not be queued). Both sections were confirmed by breaking the
 fix and watching that section's own headline assertion fire.
+
+## The database host sampler (28 October 2026)
+
+**What it answers.** Production's database server reset itself 14 times between 7 and 25 October.
+Each was a whole-machine reset: no out-of-memory line, no slow-query warning, nothing in any log
+Phoenix can read. Supabase's metrics endpoint (`/customer/v1/privileged/metrics`) is the only
+place that shows the server's own memory, swap, CPU and disks — and it keeps **no history**. A
+reading taken after a reset says nothing about the minutes before it. So, until now, the lead-up to
+every reset was gone before anyone looked.
+
+**What it does.** Once a minute the worker reads that endpoint and writes one `db_host` log line:
+
+| Field | Meaning |
+| --- | --- |
+| `memAvailableMb` / `memTotalMb` | memory the server can still hand out, of its total (1,932 MB on the Small plan) |
+| `swapUsedMb`, `swapInPagesPerMin`, `swapOutPagesPerMin` | how much is swapped out, and how hard it is swapping this minute |
+| `majorFaultsPerMin` | page reads that had to wait for the disk |
+| `cpuPercent`, `load`, `cpuCount` | CPU busy share over the last minute, the 1/5/15-minute load, the core count |
+| `rootDiskFreeMb`, `dataDiskFreeMb` | the system disk and the database's data disk |
+| `oomKills` | out-of-memory kills since the last minute |
+| `postgresStartedAt`, `authStartedAt`, `postgresUp` | when the database and the sign-in service last started |
+| `counterReset` | true when a counter went backwards — the server restarted between two readings |
+| `readMs` | how long the read took |
+
+The first line after a start has the rates as `null`, because a rate needs two readings. Supabase
+refreshes these figures on its own schedule, not on every request: two reads 20 seconds apart on
+28 October returned identical counters (so no CPU share), while two reads 66 seconds apart gave
+91% idle, 7% user and 6 disk-wait page reads a minute. A minute is the right interval, and a rare
+`cpuPercent: null` mid-run means a refresh was missed, not a fault.
+
+**Reading it back:**
+
+```
+railway logs <deployment-id> -s phoenix-workforce-worker -e production -d --lines 5000 | grep db_host
+```
+
+A refused read writes `db_host_failed` with the HTTP status only; a timeout or a parse surprise
+writes the same event with the error. Either costs that minute's line, never the process.
+
+**The two alarms.** Both go to the technical-health audience (`weekly_system_health_digest` at
+`/admin/notification-recipients`) by in-app, Telegram and push. **Never email**, for the same two
+reasons as the database restart alarm: no feature may add an outbound email, and an alarm about the
+database must not travel through an outbox that lives in that same database.
+
+| Alarm | Fires when |
+| --- | --- |
+| `low_memory` | under 100 MB available for **5 readings in a row** — one bad minute is a spike, five is the server living there; a missing reading breaks the run |
+| `low_root_disk` | the system disk under 500 MB free, on one reading |
+
+Each fires **at most once per Cairo day**. The in-process rule says so, and the idempotency key
+`database-host-<kind>:<day>:<hrId>` says so again, so a redeploy mid-day cannot send the same
+standing fault twice. Each alarm also writes a `db_host_alarm` error line and an audit-log row.
+
+**Where it runs.** One process only, decided by `dbHostSamplerRefusal` in
+`src/lib/observability/db-host-metrics.ts`, which also says why when it does not start:
+
+- `PHOENIX_DB_HOST_METRICS=off` (or `0`, `false`) on the service is the kill switch;
+- it needs a production build **and** `APP_ENV=production`, so staging and `next dev` never sample;
+- `PHOENIX_PROCESS_ROLE=web` is refused, so with the web/worker split it runs on the worker alone;
+- it needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+At start-up `instrumentation.ts` logs `[db-host] sampling once a minute`, or `[db-host] not
+started: <reason>`. Seeing the first on the worker and the second (`…web`) on the web service is
+the post-deploy check.
+
+**Safety.** It runs on the server only. The service-role key is read from the environment at the
+moment of each call and goes in the request header alone — never stored, logged or put in a URL.
+The User-Agent is named (`phoenix-db-host-sampler`), because the secret key refuses a browser agent
+with a 401 (memory note `supabase-secret-key-refuses-a-browser-user-agent`). Nothing the endpoint
+returns is personal, and the line keeps server figures and two start times only.
+
+**Cost.** Measured on 28 October: one read is about 460 KB of text, sent gzip-compressed, and
+answers in 0.4–1.8 s. A 10-second timeout and a no-overlap guard stop a slow minute from stacking
+reads. It needs no migration, no new table and no paid resource.
+
+**What it does not prove.** It records what the server did; it does not show that memory pressure
+caused the resets. The next reset leaves its own lead-up in the log, and that is what answers it.
+
+Pinned by `tests/db-host-metrics.test.ts`: the parser against a sample in Supabase's own format, the
+rates and a counter reset, both alarm rules and their once-a-day limit, the start-up gate, the URL and
+the wiring (timeout, no overlap, named agent, no email, no static import). A live read through the
+same parser on 28 October returned every field. The
+five-minute rule and the strict "under 100 MB" line were each confirmed by breaking them and
+watching their own assertion fire.
