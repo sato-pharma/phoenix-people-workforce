@@ -47,7 +47,7 @@ import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek, VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { countsAsManagersDoubleVisit, DOUBLE_VISIT_PLANNER_TIERS } from "@/lib/phoenix-crm/double-visit-plan-rules";
-import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { isUuid, PLAN_NEVER_PLANNED_TEXT } from "@/lib/phoenix-crm/plan-rules";
 import {
   heldManagerSeats,
   personKey,
@@ -722,13 +722,17 @@ export function managerWeekState(input: {
   /** His ask to edit this week is waiting on his approver. */
   editAsked: boolean;
 }): ManagerWeekState {
-  const thursday = addDaysIso(input.weekStart, 5);
-  if (thursday < input.cairoToday) return "closed";
+  if (managerWeekPassed(input.weekStart, input.cairoToday)) return "closed";
   if (isManagerPlanSent(input.status)) return input.editAsked ? "asked" : "sent";
   if (input.weekStart === repPlanWeek(input.cairoToday)) return "plan";
   if (input.status === "returned") return "plan";
   if (input.weekStart === fieldWeekStart(input.cairoToday)) return "plan";
   return "closed";
+}
+
+/** Every day of the week has passed: its Thursday is behind the Cairo day. */
+export function managerWeekPassed(weekStart: string, cairoToday: string): boolean {
+  return addDaysIso(weekStart, 5) < cairoToday;
 }
 
 /** The weeks his board offers: the week he is in while it still has a day ahead, and the coming one. */
@@ -1089,6 +1093,11 @@ export function managerPlanStatusLine(input: {
    * (owner walk, 2026-10-28: "Drafted by Rasha Sabry" on Rasha Sabry's own board).
    */
   self?: boolean;
+  /**
+   * Every day of the week has passed. A week with no plan then can no longer be drafted, so it never
+   * says "drafts it" — the rep's weekly plan's own words (the production smoke test, 2026-10-29).
+   */
+  passed?: boolean;
 }): string {
   const manager = input.self ? "you" : nameOrNull(input.managerName);
   const first = nameOrNull(input.firstName);
@@ -1102,6 +1111,7 @@ export function managerPlanStatusLine(input: {
     const approved = decider ? `Approved by ${decider}` : managerPlanStatusLabel("approved");
     return input.hrAcknowledged ? `${approved} · ${MANAGER_PLAN_HR_ACK_TEXT}` : approved;
   }
+  if (input.passed) return PLAN_NEVER_PLANNED_TEXT;
   if (input.self) return "Not started — you draft it";
   return manager ? `Not started — ${manager} drafts it` : managerPlanStatusLabel(null);
 }
