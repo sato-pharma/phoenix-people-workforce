@@ -87,6 +87,11 @@ simplifying the door itself — fewer union branches and fewer InitPlans — not
 
 ## Why the two iReports360 branches stay as they are
 
+> **Superseded on 28 October 2026** — the check-in door now reads `ireports360_checkins` once, in a
+> different shape from the merge measured below, and that shape does not lose. See "28 October: the
+> one-scan door, re-measured" further down. The 23 October account stays because it explains why the
+> first merge lost.
+
 The follow-on from "What is still slow": the check-ins door's iReports360 half is two union branches
 that differ only in the team-start bound, and merging them was the obvious way to cut the planning
 cost. It was built and measured on production on 23 October 2026, and **it is a loss** — recorded
@@ -128,7 +133,44 @@ they were nearly free, and the saving is spent probing the anti-joins **137,709*
 6,962. Net: execution is a wash and **planning more than doubles**, which is the one thing the merge
 was supposed to reduce.
 
-Fewer page touches is not less time. The two branches stay.
+Fewer page touches is not less time. The two branches stayed — until the shape below.
+
+## 28 October: the one-scan door, re-measured
+
+Migration `20261028024500` (Stage 2a of the infrastructure roadmap) puts the check-in door's
+iReports360 half back into ONE scan, the way `crm_visits_unified` has read its vendor table since
+`20261024005000`. It is not the 23 October merge:
+
+| | 23 Oct merge (lost) | 28 Oct one-scan (kept) |
+| --- | --- | --- |
+| The team-start bound | dropped | kept, as the OR's first arm: `check_date < first_day OR (the two Phoenix-wins checks)` |
+| What the checks read | the MATERIALIZED CTE over `phoenix_crm_rep_entry_days()` — a function scan the planner can neither index nor estimate | `phoenix_crm_rep_entry_days_cache` directly — its primary key `(hr_key, entry_day)` and its partial `(agent_crm_id, entry_day)` index |
+| How the checks run | probed 137,709 times | the first is one hashed SubPlan over the 764-row cache; the second is an index-only probe behind a One-Time Filter, so it runs only for a row with a blank hr id |
+
+Why no row can move is written out in the migration's header ("EXACTNESS"): the first-day bound is
+coalesced to infinity, so for every row that reaches the choice `check_date < first_day` is true or
+false, never null, and the OR keeps exactly the rows the two old branches kept, with nothing counted
+twice. The function the CTE read is `select … from phoenix_crm_rep_entry_days_cache` and nothing else
+(764 rows either way, none different), so the checks ask the same rows.
+
+**Measured on production on 28 October, about 03:10 Cairo** — read-only SELECTs and plain
+`EXPLAIN (summary on)`, no ANALYZE: the old two-branch body inlined as a subquery against the live
+view, each run warm, pages from `pg_stat_statements` with `calls = 1`, the rows md5-hashed both times.
+
+| Probe | Rows (md5 identical) | Pages per call, old → new | Execution, old → new | Planning, warm |
+| --- | --- | --- | --- | --- |
+| Export page, 2026-01-01 → 2026-10-23, 5,000 rows | 5,000 | 112,707 → 112,806 (+0.1 %) | mean 611 → 671 ms over two runs each (old 606–615, new 633–709) | old 11.9 / 11.9 / 15.4 ms; new 12.7 / 13.0 ms (22.0 cold) |
+| One day, 2026-10-15 | 89 | 1,468 → 1,405 (−4 %) | old best 24.2 ms, new best 26.6 ms | — |
+| The rep list's check-ins of 50 doctors (`loadCheckins`) | 481 | 795 → 618 (−22 %) | — | — |
+
+Planning did **not** double the way it did on 23 October (39.3 ms). Plain `EXPLAIN` alone touched 1,968
+pages for the old body and 2,579 for the new. The whole door: 145,388 rows (138,477 vendor) before and
+after, 0 and 0 differences under `except all`, md5 `69955e3ed9576f5b9c1142183d42e9e2` both times.
+
+**Verdict:** a wash on the export page, a win on the doctor-chunk read the rep list makes all day,
+which is where the door's pages actually went (421 and 472 pages a call, about 7.1 million in all).
+🔴 **Never re-split it into two branches** — and never put the materialized CTE back: that, not the
+merge, is what lost on 23 October.
 
 ### The one unsliced ordered read left is unreachable
 

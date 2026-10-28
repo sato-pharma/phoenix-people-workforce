@@ -86,6 +86,26 @@ The projected index-only scan is impossible: the door's iReports360 branch proje
 the row set the `distinct` forces, and the only way to stop paying it per call is to stop computing
 it per call.
 
+**The same holds for the indexes added on 28 October** (`20261028024500`, roadmap Stage 2a):
+`ireports360_visits_agent_hr_date_id_idx` on `(agent_hr_id, visit_date, id)` INCLUDE
+`(agent_crm_id, double_hr_id, agent_name, double_name)`, and `ireports360_visits_agent_crm_date_idx`
+on `(agent_crm_id, visit_date)`. The INCLUDE list was added for an index-only scan the door cannot
+give — the plan still reads `Index Scan` at row width 1,223. The hr index wins another way: with `id`
+in the key, a reader's `id > $last` keyset is checked on the index tuple, so only the rows past the
+cursor are fetched from the heap. Measured on production, pages per call, rows md5-identical: rep
+visits in a window by keyset 13,789 → 6,236 (−55 %), the same with names 13,879 → 6,320 (−54 %), an
+agent by CRM id or hr id in October 28,233 → 24,692 (−13 %, the CRM-date index). 🔴 **One reader got
+heavier:** `getMappedAgentHrIds` in `src/lib/crm/reads.ts` (17,900 → 23,345, +30 %). It reads every
+visit a set of reps ever made, with no lower date, to learn which of them has any; the planner now
+guesses 3,744 rows and picks a plain index scan, one heap page per row, where it used to bitmap-scan
+each page once. Its cure is in that reader — it needs one visit per rep — never in the door.
+
+🔴 **The two older indexes this one would replace STAY — the owner declined dropping them on
+28 October 2026** (`perf_ireports360_visits_agent_hr_id_visit_date_crm` and
+`ireports360_visits_agent_crm_id_idx`). Each one's keys are a prefix of its new neighbour's, so the
+planner no longer needs them; `tests/crm-agent-crm-ids-cache.test.ts` refuses a drop of either in any
+later migration, and that pin changes only with his word.
+
 What the drop did buy is real and small — 2.8 MB back and one less index maintained on every
 insert into a 1.6-million-row table. **It was applied to PRODUCTION only; staging still carries the
 duplicate index.**

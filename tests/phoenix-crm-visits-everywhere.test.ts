@@ -1690,31 +1690,56 @@ function runCheckinDoorTests(plans: string): void {
     }),
     "the 16 columns keep their names, types and order — the doctor's name is Phoenix's where he is validated (20261022163000)",
   );
+  assert.equal(view.split("\nunion all\n").length, 2, "and only those two: the vendor table is no longer two runs of its own");
   const vendor = flat(vendorBranch);
-  // The visit door's split and once-built entry days, on the check-in's wall-clock day: a check-in before the
-  // first day's midnight "UTC" (the vendor's Cairo wall clock) is on a day before it.
-  assert.ok(
-    vendor.includes("with entry_days as materialized ( select e.hr_key, e.agent_crm_id, e.entry_day from public.phoenix_crm_rep_entry_days() e )"),
-    "the same once-built entry days as the visit door",
+  // ONE SCAN, AND THE ENTRY DAY IS AN INDEX LOOKUP (speed, 2026-10-28) — the visit door's shape since
+  // 20261024005000, on the check-in's wall-clock day. Until 20261028024500 the vendor check-ins were two
+  // union-all runs split at Phoenix CRM's first day, so the rep list's 50-doctor read walked the
+  // (contact_crm_id, check_date) index twice, and both checks asked a MATERIALIZED CTE over
+  // phoenix_crm_rep_entry_days(), which a function scan left the planner no way to index. Measured on
+  // production: 795 -> 618 pages for the same 481 rows, byte-identical; the whole door, 145,388 rows, 0
+  // and 0 differences.
+  assert.equal(
+    view.split("phoenix_crm_rep_entry_days()").length - 1,
+    0,
+    "the door does not call phoenix_crm_rep_entry_days() at all any more — a function scan carries no index",
   );
-  assert.equal(view.split("phoenix_crm_rep_entry_days()").length - 1, 1, "and the function is named once in the whole door");
+  assert.doesNotMatch(vendor, /entry_days as materialized/, "and there is no materialized CTE left to walk per row");
+  // THE RULE DID NOT MOVE, THE READ DID: phoenix_crm_rep_entry_days_calc() is still the one body that
+  // computes an entry day, and the door reads the table that body writes. The cache is granted to
+  // postgres and service_role alone — the door's own two grantees, both BYPASSRLS — so the reach is
+  // unchanged.
+  assert.equal(
+    view.split("public.phoenix_crm_rep_entry_days_cache").length - 1,
+    2,
+    "it reads the cache table directly, once per check and no more",
+  );
+  // A check-in before the first day's midnight "UTC" (the vendor's Cairo wall clock) is on a day before
+  // it, where no rep has an entry day: that bound is now the first ARM of one scan, not a second run.
   const cutover = "x.check_date < coalesce( (select k.cutover_date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz )";
   const firstDay =
     "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date)::timestamp at time zone 'UTC' from public.phoenix_crm_team_starts t )";
-  assert.ok(
-    vendor.includes(
-      `from ( select x.* from public.ireports360_checkins x where ${cutover} and x.check_date < ${firstDay} union all ` +
-        `select x.* from public.ireports360_checkins x where ${cutover} and x.check_date >= ${firstDay} and not exists`,
-    ),
-    "its cutover clause as it was on both runs, split at Phoenix CRM's first day, and only the second run asks",
+  assert.equal(
+    vendor.split("from public.ireports360_checkins x").length - 1,
+    1,
+    "the vendor table is scanned ONCE, not once per side of the split",
   );
   assert.ok(
-    vendor.includes("where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = (x.check_date at time zone 'UTC')::date"),
+    vendor.includes(`from ( select x.* from public.ireports360_checkins x where ${cutover} and ( x.check_date < ${firstDay} or ( not exists`),
+    "one scan, its cutover clause as it was, and the first-day bound as the first arm of the choice",
+  );
+  assert.ok(
+    vendor.includes(
+      "not exists ( select 1 from public.phoenix_crm_rep_entry_days_cache e where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = (x.check_date at time zone 'UTC')::date )",
+    ),
     "PHOENIX WINS THE DAY on a check-in too: it is ignored only on a day its rep has a Phoenix entry, as his visits are",
   );
   assert.ok(
-    vendor.includes("where nullif(btrim(x.agent_hr_id), '') is null and e.agent_crm_id = x.agent_crm_id and e.entry_day = (x.check_date at time zone 'UTC')::date ) ) c"),
-    "by CRM id on a check-in with no hr id",
+    vendor.includes(
+      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days_cache e where nullif(btrim(x.agent_hr_id), '') is null " +
+        "and e.agent_crm_id = x.agent_crm_id and e.entry_day = (x.check_date at time zone 'UTC')::date ) ) ) ) c",
+    ),
+    "by CRM id on a check-in with no hr id, and the choice closes before the scan does",
   );
   assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "no longer from the start's window");
 

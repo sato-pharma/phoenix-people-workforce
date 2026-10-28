@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { stripSqlComments } from "./support/comment-strip.ts";
 
@@ -214,6 +214,30 @@ export async function runCrmAgentCrmIdsCacheTests(): Promise<void> {
       inventory.includes("20261023181000_crm_drop_duplicate_visits_agent_index.sql"),
       "the duplicate-index drop is in ACKNOWLEDGED_EXCEPTIONS with its evidence",
     );
+  }
+
+  // ── The two older vendor-visit indexes STAY, on the owner's word (2026-10-28) ─────────────────
+  {
+    // 20261028024500 added (agent_hr_id, visit_date, id) and (agent_crm_id, visit_date). Each older
+    // index's keys are a prefix of its new neighbour's, so the planner no longer needs them — and the
+    // owner declined dropping either on 28 October. A drop of either needs his word first; this pin
+    // changes together with that word, never on its own.
+    const migrations = readdirSync(new URL("../supabase/migrations/", import.meta.url))
+      .filter((name) => name.endsWith(".sql") && name >= "20261028024500")
+      .sort();
+    assert.ok(migrations.includes("20261028024500_crm_visit_and_checkin_doors_read_less.sql"), "the migration that added their neighbours is read");
+    for (const file of migrations) {
+      const body = stripSqlComments(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8"));
+      for (const kept of ["perf_ireports360_visits_agent_hr_id_visit_date_crm", "ireports360_visits_agent_crm_id_idx"]) {
+        assert.equal(
+          new RegExp(`drop\\s+index[^;]*\\b${kept}\\b`, "i").test(body),
+          false,
+          `${file} drops ${kept} — the owner declined that drop on 2026-10-28; ask him before changing this pin`,
+        );
+      }
+    }
+    const added = readFileSync(new URL("../supabase/migrations/20261028024500_crm_visit_and_checkin_doors_read_less.sql", import.meta.url), "utf8");
+    assert.ok(added.includes("THE TWO OLDER INDEXES STAY — THE OWNER DECLINED DROPPING THEM"), "and the migration says so where the next reader looks");
   }
 
   console.log("crm agent-crm-ids cache: OK");
