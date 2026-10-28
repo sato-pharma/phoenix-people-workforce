@@ -1,20 +1,29 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildParticipantOrFilter, collapseDuplicateVisitSubmissions, expandHrIdFilterValues } from "../src/lib/crm/reads.ts";
+import {
+  buildParticipantOrFilter,
+  collapseDuplicateVisitSubmissions,
+  DOUBLE_VISIT_SLICE_DAYS,
+  expandHrIdFilterValues,
+} from "../src/lib/crm/reads.ts";
 import type { CrmResolutionRow } from "../src/lib/crm/types.ts";
 import {
   crmIdsOverriddenTo,
   DOUBLE_VISIT_DAYS_MAX_LISTED,
   DOUBLE_VISIT_DAYS_MAX_PEOPLE,
+  DOUBLE_VISIT_FOCUS_MAX_PEOPLE,
+  doubleVisitFocusTallies,
   doubleVisitPrivateCalendarItemsFromRows,
   findDoubleVisitCalendarDays,
+  findDoubleVisitFocusDays,
   liveDoubleVisitRowsFromMirror,
+  readListedDayRuns,
   type DoubleVisitDayReaders,
   type MirrorVisitRow,
 } from "../src/lib/double-visit-analytics/service.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
-import { normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
+import { canonicalHrIdKey, normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
 
 // THE PRIVATE CALENDAR READ THE WHOLE COMPANY'S MONTH OF DOUBLE VISITS FOR ONE REP (2026-10-01,
 // "speed up the rep's Private Calendar page"): 2,220 September rows for a rep on 5 of its 24 days,
@@ -267,6 +276,125 @@ function runOverrideTests() {
   );
 }
 
+// THE PORTAL FOCUS PANEL READ EVERY DOUBLE VISIT SINCE JANUARY (2026-10-28, "now fix the
+// double-visit read"): 17,535 rows in 44 requests on every District Manager's and NSM's landing, to
+// keep the viewer's own visits and up to eight probationers' counts. It now finds those people's days
+// and reads them whole, a week of days per request. The same fixture month, with its ids also turned
+// backwards (production ids are random, so a later day's rows can sort before an earlier day's), must
+// give every viewer the same own visits, row for row and in order, and every shown probationer the
+// same count as the whole-window read.
+
+/** The fixture month with ids running against the dates, in id order as the door returns it. */
+const BACKWARDS = MONTH.map((row, index) => ({ ...row, id: `00000000-0000-0000-0000-${(0xfff - index).toString(16).padStart(12, "0")}` })).sort(
+  (left, right) => (left.id < right.id ? -1 : 1),
+);
+
+async function focusFromDays(table: typeof MONTH, viewer: string, probationers: readonly string[]) {
+  const viewerKey = canonicalHrIdKey(viewer);
+  const found = await findDoubleVisitFocusDays([viewer, ...probationers], WINDOW, readersOver(table));
+  assert.ok(found, `${viewer}: the focus finds its days`);
+  const mirror = await readListedDayRuns(found.days, WINDOW, async (filter) => doorRead(table, filter));
+  return { days: found.days, tallies: doubleVisitFocusTallies(liveDoubleVisitRowsFromMirror(mirror, EMPLOYEES, found.resolutions), viewerKey) };
+}
+
+function wholeWindowFocus(table: typeof MONTH, viewer: string) {
+  const rows = liveDoubleVisitRowsFromMirror(doorRead(table, { dateFrom: WINDOW.start, dateTo: WINDOW.end }), EMPLOYEES, RESOLUTIONS);
+  return doubleVisitFocusTallies(rows, canonicalHrIdKey(viewer));
+}
+
+async function runSameFocusTests() {
+  const panels: Array<[string, string, string[]]> = [
+    ["the Giza DM (his chain day, his campaign day, his ambiguous day)", "B-311", ["B-301", "B-302", "B-306"]],
+    ["the Delta DM (a reused account credited by override, a lowercase row)", "B-312", ["B-303", "B-305"]],
+    ["the NSM (reps he reached only through a chain)", "B-321", ["B-301", "B-303", "B-305", "B-306"]],
+    ["a viewer with no double visit of his own", "B-304", ["B-301"]],
+    ["a full panel: the viewer and eight probationers", "B-321", ["B-301", "B-302", "B-303", "B-304", "B-305", "B-306", "B-399", "B-312"]],
+  ];
+  for (const [table, order] of [[MONTH, "in id order"], [BACKWARDS, "ids against the dates"]] as const) {
+    for (const [label, viewer, probationers] of panels) {
+      const whole = wholeWindowFocus(table, viewer);
+      const { tallies } = await focusFromDays(table, viewer, probationers);
+      assert.deepEqual(tallies.ownRows, whole.ownRows, `${label}, ${order}: the viewer's own visits from the found days are the whole window's, row for row`);
+      for (const hrId of probationers) {
+        const key = canonicalHrIdKey(hrId) ?? "";
+        assert.equal(tallies.dvCountByHrId.get(key) ?? 0, whole.dvCountByHrId.get(key) ?? 0, `${label}, ${order}: ${hrId}'s count is the whole window's`);
+      }
+    }
+  }
+
+  // The fixture exercises what it claims to, and the narrowing actually narrows.
+  const nsm = wholeWindowFocus(MONTH, "B-321");
+  assert.ok(
+    nsm.ownRows.some((row) => row.activity_date === "2026-09-02" && canonicalHrIdKey(row.visited_employee_hr_id) === "b-301"),
+    "the NSM's 2 September row is credited, through the chain, to Rep One",
+  );
+  assert.equal(wholeWindowFocus(MONTH, "B-312").dvCountByHrId.get("b-303"), 1, "the reused account's visit counts once for Rep Three");
+  const delta = await focusFromDays(MONTH, "B-312", ["B-303", "B-305"]);
+  assert.deepEqual(delta.days, ["2026-09-07", "2026-09-10", "2026-09-21", "2026-09-22", "2026-09-28"], "the Delta DM's panel reads 5 of the month's 9 days");
+
+  // Nine people is the panel's ceiling; the days are not capped — the read takes any number of them.
+  assert.equal(DOUBLE_VISIT_FOCUS_MAX_PEOPLE, 9, "the viewer and the eight probationers the panel shows");
+  assert.ok(DOUBLE_VISIT_FOCUS_MAX_PEOPLE * 5 <= 50, "nine hr ids in five spellings each stay inside one in-list's 50 values");
+  const ten = ["B-321", "B-301", "B-302", "B-303", "B-304", "B-305", "B-306", "B-399", "B-312", "B-311"];
+  const calls: Array<Record<string, unknown>> = [];
+  assert.equal(await findDoubleVisitFocusDays(ten, WINDOW, readersOver(MONTH, calls)), null, "more people than the panel shows reads the whole window");
+  assert.equal(calls.length, 0, "and asks nothing first");
+  const manyDays: DoubleVisitDayReaders = {
+    days: async () => Array.from({ length: 60 }, (_, index) => `2026-0${index < 30 ? 8 : 9}-${String((index % 30) + 1).padStart(2, "0")}`),
+    resolutions: async () => [],
+  };
+  assert.equal(
+    (await findDoubleVisitFocusDays(["B-311"], { end: "2026-09-30", start: "2026-08-01" }, manyDays))?.days.length,
+    60,
+    "a busy manager's sixty days are read, not given up on",
+  );
+  const failing: DoubleVisitDayReaders = {
+    days: async () => {
+      throw new Error("statement timeout");
+    },
+    resolutions: async () => RESOLUTIONS,
+  };
+  assert.equal(await findDoubleVisitFocusDays(["B-311"], WINDOW, failing), null, "a failed lookup reads the whole window — slower, never wrong");
+}
+
+async function runListedDayRunTests() {
+  const days = ["2026-09-02", "2026-09-03", "2026-09-07", "2026-09-08", "2026-09-10", "2026-09-15", "2026-09-21", "2026-09-22", "2026-09-28"];
+  const calls: Array<{ dateFrom: string; dateTo: string; visitDates: string[] }> = [];
+  const rows = await readListedDayRuns(days, WINDOW, async (filter) => {
+    calls.push(filter);
+    return doorRead(BACKWARDS, filter);
+  });
+  assert.deepEqual(
+    calls.map((call) => call.visitDates),
+    [days.slice(0, DOUBLE_VISIT_SLICE_DAYS), days.slice(DOUBLE_VISIT_SLICE_DAYS)],
+    "a week of listed days per request — never the whole list in one URL",
+  );
+  assert.deepEqual(
+    calls.map((call) => [call.dateFrom, call.dateTo]),
+    [["2026-09-02", "2026-09-21"], ["2026-09-22", "2026-09-28"]],
+    "each request bounded by its own first and last day",
+  );
+  assert.deepEqual(
+    rows,
+    doorRead(BACKWARDS, { dateFrom: WINDOW.start, dateTo: WINDOW.end, visitDates: days }),
+    "the runs give the one read's rows, in its id order, with the duplicate save collapsed once",
+  );
+
+  const tidy: string[][] = [];
+  await readListedDayRuns(["2026-09-10", "2026-08-31", "2026-09-02", "2026-09-10", "2026-10-01"], WINDOW, async (filter) => {
+    tidy.push(filter.visitDates);
+    return [];
+  });
+  assert.deepEqual(tidy, [["2026-09-02", "2026-09-10"]], "days outside the window are dropped, a repeated day is read once, in order");
+  let asked = 0;
+  const nothing = await readListedDayRuns([], WINDOW, async () => {
+    asked += 1;
+    return [] as typeof MONTH;
+  });
+  assert.deepEqual(nothing, [], "no listed day reads nothing");
+  assert.equal(asked, 0, "and asks nothing");
+}
+
 function runDoorEmulationGuards() {
   // The emulated door above assumes the participant filters match the agent OR the partner, by hr id
   // (every casing) or by CRM id. Pin the expressions the real door sends.
@@ -300,6 +428,27 @@ function runWiringGuards() {
     /options\?\.crmIdentityResolutions \?\? \(await getCrmIdentityResolutions\(\)\)/,
     "every other reader still reads the overrides itself",
   );
+  assert.match(
+    service,
+    /if \(options\?\.visitDates\) return readListedDayRuns\(options\.visitDates, \{ end: dateTo, start: dateFrom \}, read\);/,
+    "a listed-day read goes a week of days per request",
+  );
+  const focus = service.slice(service.indexOf("export async function getDoubleVisitPortalFocus"), service.indexOf("export function doubleVisitFocusTallies"));
+  assert.ok(focus.length > 0, "the focus panel's body is located");
+  assert.match(focus, /const probationShown = probationOrdered\.slice\(0, FOCUS_PROBATION_DISPLAY_LIMIT\);/);
+  assert.match(
+    focus,
+    /const focusHrIds = \[\.\.\.\(viewerCanonicalKey && viewerHrId \? \[viewerHrId\] : \[\]\), \.\.\.probationShown\.map\(\(row\) => row\.hr_id\)\];/,
+    "the panel finds the days of its viewer AND of every probationer it shows a count for",
+  );
+  assert.match(focus, /findDoubleVisitFocusDays\(focusHrIds, focusWindow\)/);
+  assert.match(
+    focus,
+    /\.\.\.\(focusDays \? \{ crmIdentityResolutions: focusDays\.resolutions, visitDates: focusDays\.days \} : \{\}\)/,
+    "it reads only those whole days, crediting with the snapshot that found them — and the whole window when it found none",
+  );
+  assert.match(focus, /const probation: DoubleVisitFocusProbationEntry\[\] = probationShown\.map\(/, "a count is shown only for a probationer whose days were read");
+  assert.match(focus, /doubleVisitFocusTallies\(allDvRows, viewerCanonicalKey\)/, "the panel tallies through the tested helper");
 
   const reads = readFileSync("src/lib/crm/reads.ts", "utf8");
   assert.match(reads, /if \(filter\.visitDates && filter\.visitDates\.length > 0\) result = result\.in\("visit_date", \[\.\.\.filter\.visitDates\]\);/);
@@ -318,6 +467,8 @@ function runWiringGuards() {
 export async function runPrivateCalendarDoubleVisitDaysTests() {
   await runSameCalendarTests();
   await runBoundsTests();
+  await runSameFocusTests();
+  await runListedDayRunTests();
   runOverrideTests();
   runDoorEmulationGuards();
   runWiringGuards();
