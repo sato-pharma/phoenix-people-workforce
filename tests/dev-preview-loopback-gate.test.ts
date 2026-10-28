@@ -102,7 +102,7 @@ function testTheLauncherBindsLoopback() {
   const root = mkdtempSync(join(tmpdir(), "phx-dev-bind-"));
   try {
     mkdirSync(join(root, "scripts"));
-    for (const file of ["dev-server.mjs", "dev-server-heap-cap.mjs", "dev-server-exit-reason.mjs"]) {
+    for (const file of ["dev-server.mjs", "dev-server-heap-cap.mjs", "dev-server-exit-reason.mjs", "dev-server-lean.mjs"]) {
       copyFileSync(resolve("scripts", file), join(root, "scripts", file));
     }
     const bin = join(root, "node_modules", "next", "dist", "bin");

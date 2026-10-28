@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
+    "dev:lean": "node scripts/dev-server.mjs --lean",
     "dev:webpack": "node scripts/dev-server.mjs --webpack",
     "dev:turbopack": "node scripts/dev-server.mjs --turbopack",
     "dev:no-turbopack": "node scripts/dev-server.mjs --webpack",

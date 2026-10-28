@@ -476,6 +476,32 @@ const nextConfig: NextConfig = {
           webpackMemoryOptimizations: true,
         }),
   },
+  // DEV-ONLY, OFF UNLESS PHOENIX_DEV_LEAN_SERVER_MAPS=1 (2026-10-29). `next dev` gives every compiler,
+  // the server ones included, full `eval-source-map`, and reverts a changed `devtool`, so the only
+  // lever is Next's own source-map plugin. With the switch on, the SERVER and EDGE compilers drop it:
+  // their loaders stop producing a map per module and webpack stops holding them. The browser bundle
+  // keeps its full maps, so client debugging is unchanged. The cost: a server error's stack names the
+  // compiled `.next/server` file, not the line in `src/`. `next build` never runs this branch.
+  //
+  // DEV-ONLY, OFF UNLESS PHOENIX_DEV_NO_DISK_CACHE=1 (2026-10-29). In dev Next keeps webpack's cache
+  // in memory (its MemoryWithGcCachePlugin) AND gzips it to `.next/dev/cache/webpack` a second
+  // after each compile. That write held 1.1 GB of buffers outside the heap on 2026-10-29 (memory
+  // probe, /admin from cold: outside-heap 515 -> 1,627 MB while `*.pack.gz_` files were written).
+  // With the switch on, the cache stays in memory only (Next adds MemoryWithGcCachePlugin in dev
+  // whatever `cache` says), so rebuilds inside one server still reuse it; the cost is that every
+  // new server start compiles cold (/admin: first byte in 40 s on this machine, 2026-10-29).
+  webpack: (config, { dev, isServer }) => {
+    if (dev && isServer && process.env.PHOENIX_DEV_LEAN_SERVER_MAPS === "1") {
+      config.plugins = (config.plugins ?? []).filter(
+        (plugin: { constructor?: { name?: string } } | null) =>
+          plugin?.constructor?.name !== "EvalSourceMapDevToolPlugin",
+      );
+    }
+    if (dev && process.env.PHOENIX_DEV_NO_DISK_CACHE === "1") {
+      config.cache = false;
+    }
+    return config;
+  },
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",

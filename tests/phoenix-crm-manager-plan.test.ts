@@ -58,6 +58,7 @@ import {
   managerPlanStatusLine,
   managerPlanSummaryText,
   managerPlanWeeks,
+  managerWeekPassed,
   managerWeekState,
   managerAskStage,
   matchCustomerName,
@@ -401,6 +402,16 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(managerPlanStatusLine({ status: "returned", managerName: "Rasha Sabry", self: true }), "Waiting for you to edit and resend");
   assert.equal(managerPlanStatusLine({ status: null, managerName: "Rasha Sabry", self: true }), "Not started — you draft it");
   assert.ok(source("src/lib/phoenix-crm/server/manager-plans.ts").includes("self: managerHrId === viewer.hrId,"), "only when the reader is that manager");
+  // A week that passed with no plan can no longer be drafted — the rep's weekly plan's own words (the
+  // production smoke test, 2026-10-29). A week that passed WITH a plan keeps its own words.
+  assert.equal(managerPlanStatusLine({ status: null, managerName: "Rasha Sabry", passed: true }), "Never planned — the week has passed");
+  assert.equal(managerPlanStatusLine({ status: null, managerName: "Rasha Sabry", self: true, passed: true }), "Never planned — the week has passed");
+  assert.equal(managerPlanStatusLine({ status: "approved", deciderName: "Hany Saad", passed: true }), "Approved by Hany Saad");
+  assert.equal(managerPlanStatusLine({ status: "draft", managerName: "Rasha Sabry", passed: true }), "Drafted by Rasha Sabry");
+  assert.equal(managerWeekPassed("2026-10-17", "2026-10-22"), false, "a week is not passed on its own Thursday");
+  assert.equal(managerWeekPassed("2026-10-17", "2026-10-23"), true, "it is the day after");
+  assert.ok(source("src/lib/phoenix-crm/server/manager-plans.ts").includes("passed: managerWeekPassed(weekStart, viewer.cairoToday),"), "the board tells the composer a week has passed");
+  assert.ok(source("src/lib/phoenix-crm/server/manager-plan-report.ts").includes("passed: managerWeekPassed(weekStart, viewer.cairoToday),"), "so does the report's Last week");
   // The area list a with-manager half reads is the one his own scope reaches.
   assert.ok(source("src/lib/phoenix-crm/server/manager-customers.ts").includes("areaListReach(viewer, writer, raw.scope)"), "the area list is read for the half's scope");
   assert.ok(source("src/components/phoenix-crm/manager-plan-board.tsx").includes("crmUrl(AREA, { area: listArea, scope: view.scope, test })"), "and the board asks for it with that scope");
