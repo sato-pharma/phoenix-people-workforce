@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import { isPlanSentForReview } from "../src/lib/phoenix-crm/plan-rules.ts";
 
@@ -265,6 +265,29 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
       newestView,
       /coalesce\(c\.validated_at is not null or c\.list_type = 'Pharmacy', false\) as customer_validated/,
       "and the column stays two-state: never null, whatever the join",
+    );
+
+    // THE OFF-PLAN APPROVAL IS A HASHED IN SINCE 2026-10-28 (20261028024500), not a LEFT JOIN. The join
+    // probed phoenix_crm_unplanned_visits' primary key once for EVERY visit any reader walked — about 12
+    // million probes on production — to read one column. The IN is one hash of the approved rows per read,
+    // and exact: visit_id is that table's primary key, so the list holds no NULL and at most one row per
+    // visit. Measured on the whole view: 6,952 rows, 0 and 0 differences, byte-identical. Read with the
+    // SQL comments gone: the file explains the change in prose that names the join it replaced.
+    const newestBody = stripSqlComments(newestView).replace(/\s+/g, " ");
+    assert.equal(
+      /\bjoin public\.phoenix_crm_unplanned_visits\b/.test(newestBody),
+      false,
+      `the newest view (${latestView}) no longer joins the off-plan table per visit`,
+    );
+    assert.match(
+      newestBody,
+      /or v\.id in \( select uv\.visit_id from public\.phoenix_crm_unplanned_visits uv where uv\.status = 'approved' \)/,
+      "an off-plan visit still counts only once it is approved — asked by a hashed IN over the approved rows",
+    );
+    assert.match(
+      newestBody,
+      /where \( not v\.is_unplanned or v\.id in \(.*?\) or v\.unplanned_kind = 'out_of_list' \) and not exists \( select 1 from public\.phoenix_crm_visit_recordings r where r\.visit_id = v\.id and r\.review_status <> 'approved' \)/,
+      "the three ways a visit counts are the same three, and a recorded visit still waits for the Administrator",
     );
   }
 

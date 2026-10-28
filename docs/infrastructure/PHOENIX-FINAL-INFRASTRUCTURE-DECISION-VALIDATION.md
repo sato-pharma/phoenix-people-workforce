@@ -243,6 +243,12 @@ vCPU-month: about $1–3.
    - **The plan view is done** (PR 6620, 28 Oct). Its two heaviest shapes touch 70 % and 77 % fewer pages a call, measured
      on production. The view returns the same 10,065 rows, with the same md5. Only the server reads it (no grants to
      signed-in users), so every screen's filter on top of it returns the same rows.
+   - **The visit and check-in views are done** (migration `20261028024500`, 28 Oct). Measured on production, pages a
+     call, the same rows by md5:
+     - The two heaviest rep-visit reads: −55 % and −54 %. An agent's month: −13 %.
+     - The check-in view's heaviest read, 50 doctors at a time: −22 %. Its export page is unchanged.
+     - One reader is heavier, "which reps have any visit": +30 %. Its fix is in that reader.
+     - Like the plan view, both are read by the server only.
    - The combined CRM views read only the sources and columns each screen needs, and the import-row search is narrowed.
    - Each read shape first needs the owner's approval for one `EXPLAIN (ANALYZE, BUFFERS)`, run outside working hours.
    - Every role must get exactly the same rows back, shown by a role sweep.

@@ -77,7 +77,22 @@ with its own owner approval. None moves employee data to a new provider.
   acceptance line is met for the plan view.
 - **The contact-assignment read was already done** before the audit, by PR 6473 on 26 Oct. Its row in the audit counts calls
   from the eight hours between the boot and that fix.
-- **Left for 2a:** the visit view and the check-in view.
+- **The visit view and the check-in view: done**, in one migration, `20261028024500`.
+  - Two vendor-visit indexes, so a rep read skips the rows behind its cursor and reaches only the agents it asks for.
+  - The countable-visits view stops probing the off-plan table once per visit (about 12 million probes).
+  - The check-in view reads the vendor table once instead of twice.
+- **Measured on production, pages per call, the same rows by md5:**
+  - The two heaviest rep-visit shapes: 13,789 → 6,236 (−55 %) and 13,879 → 6,320 (−54 %). The acceptance line is met
+    for the visit view.
+  - An agent by CRM id or hr id in a month: 28,233 → 24,692 (−13 %).
+  - The check-in view's heaviest read, the rep list's check-ins of 50 doctors: 795 → 618 (−22 %). Its export page is
+    unchanged (+0.1 %). The 50 % line is NOT met for the check-in view.
+  - One reader got heavier: "which of these reps has any visit", 17,900 → 23,345 (+30 %). It reads each rep's whole
+    history; the fix belongs in that reader, not the view. Weighed by calls, the visit view still reads about 20 million
+    fewer pages for 1.3 million more.
+- **The two older indexes stay**, on the owner's word (28 Oct).
+- **The double-visit list**, the visit view's heaviest reader by total, was cut separately by PR 6619 (one 7-day run
+  9,807 → 3,360 pages).
 
 **Data protection, 2d:** the cache already holds the same data today, on Railway's disk. A Redis service in the same Railway
 project keeps it with the same provider, in the same region, on a private network with no public address. It is reached
