@@ -462,7 +462,6 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
     row.lateMinutes ? `Late: ${row.lateMinutes} min` : null,
     row.earlyLeaveMinutes ? `Early leave: ${row.earlyLeaveMinutes} min` : null,
     row.deductionDays ? `Deduction days: ${row.deductionDays}` : null,
-    row.recommendedAction ? `Action: ${row.recommendedAction}` : null,
   ].filter((value): value is string => Boolean(value));
   return {
     approvalImpact: null,
@@ -515,14 +514,13 @@ export function mapVacationRowToPrivateCalendarItem(
   const pending = Boolean(options?.pending);
   return {
     approvalImpact: pending
-      ? "A pending vacation request reserves the day on the private calendar until the manager approves or rejects it."
+      ? "Reserves the day on the private calendar until the manager approves or rejects it."
       : "Approved vacation appears on the employee private calendar and explains the covered attendance day.",
     description: nullableText(row.notes),
     detailLines: [
       duration ? `Duration: ${duration} day(s)` : null,
-      paid ? `Paid: ${paid} day(s)` : null,
+      paid && paid !== duration ? `Paid: ${paid} day(s)` : null,
       row.payment_status ? `Payment: ${displayEnum(row.payment_status)}` : null,
-      row.day_part ? `Day part: ${vacationDayPartLabel(row.day_part)}` : null,
     ].filter((value): value is string => Boolean(value)),
     employeeDepartmentName: null,
     employeeHrId: row.employee_hr_id,
@@ -542,7 +540,7 @@ export function mapVacationRowToPrivateCalendarItem(
     startDate: row.start_date,
     status: row.status,
     time: row.day_part && row.day_part !== "full_day" ? vacationDayPartLabel(row.day_part) : "Full day",
-    title: pending ? `${type} Vacation (pending)` : `${type} Vacation`,
+    title: `${type} Vacation`,
   };
 }
 
@@ -550,9 +548,9 @@ export function mapExcuseRowToPrivateCalendarItem(row: PrivateCalendarExcuseRow)
   const excuseType = cleanText(row.excuse_type).toLowerCase() === "afternoon" ? "Afternoon" : "Morning";
   const duration = cleanText(row.duration_hours) || "2";
   return {
-    approvalImpact: "Approved excuse appears on the employee private calendar as a 2-hour covered block.",
+    approvalImpact: "Approved excuse appears on the employee private calendar as a covered block.",
     description: nullableText(row.manager_decision_comment),
-    detailLines: [`Duration: ${duration} hour(s)`],
+    detailLines: [],
     employeeDepartmentName: null,
     employeeHrId: row.employee_hr_id,
     employeeJobTitle: null,

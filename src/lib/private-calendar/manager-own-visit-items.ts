@@ -69,8 +69,6 @@ export function managerOwnVisitItem(
     description:
       "Single visits the manager made alone and logged in Phoenix CRM. They are kept in the manager's own record, which the CRM read door does not carry, so they are shown here for the day not to read as having no activity.",
     detailLines: [
-      `Kind: ${privateCalendarActivityKindLabels.single_regular}`,
-      `Visits: ${day.visits}`,
       ...(visits.length > 0 ? [`Counted: AM ${figures.am} · PM ${figures.pm} · Pharmacies ${figures.pharmacies}, in the manager's own figures only`] : []),
       ...visits.map((visit) => managerVisitLine(visit)),
     ],
