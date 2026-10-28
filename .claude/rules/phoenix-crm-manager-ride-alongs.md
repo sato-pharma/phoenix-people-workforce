@@ -8,6 +8,8 @@ paths:
   - "src/lib/phoenix-crm/manager-day-plan.ts"
   - "src/lib/phoenix-crm/manager-visit-detail.ts"
   - "src/lib/phoenix-crm/server/manager-visit-details.ts"
+  - "src/lib/phoenix-crm/manager-visit-table.ts"
+  - "src/components/phoenix-crm/manager-plan-actual-table.tsx"
   - "src/lib/phoenix-crm/server/manager-customers.ts"
   - "supabase/migrations/*phoenix_crm_manager_plan_with_*"
   - "tests/phoenix-crm-manager-plan*"
@@ -38,6 +40,10 @@ Moved out of `phoenix-crm-manager-plan` on 2026-10-23 so its injected pointer st
 
 - 🔴 **A VISIT SHE LOGS ON A WITH-MY-MANAGER HALF IS A VISIT WITH THAT MANAGER, NEVER A SINGLE VISIT** (*"she submitted but it appeared as single visit it should count with her manager"*). The row stays her own (`phoenix_crm_manager_visits`, `plan_slot_id` → a `with_senior` slot); the reader gives it kind `with_senior`, labelled "Visit with a manager" ("Visit with a product manager" for a product manager), names the manager from the slot's `senior_visit`, counts it in `ownWithSenior` apart from `ownSingle`, and plan-against-actual matches it to the with-senior half only. Pinned by `ownVisitWithHerManager` in `tests/phoenix-crm-manager-visit-details.test.ts`. Left as it was: the Employee 360 "Own single visits" tile still counts every own visit.
 - 🔴 **A REP LIST A MANAGER PICKS FROM SHOWS EACH DOCTOR ONCE — `loadRepListCustomers` ENDS IN `oneRowPerDoctor`** (owner, 2026-10-28: *"when picking with a manger i think their is a duplication"*; his answer *"Merge and hide"*). The read took active and pending rows with no fold, so a doctor a rep added twice (an active row beside a pending copy) showed twice on With my manager, the single-visit area list, My single visits and the Add a customer match. The fold is the duplicates board's own `groupSameRepDuplicates` per seat: active before pending, then the older row; namesakes of another speciality, the other half or another seat stay apart. The 61 extra rows of that day were merged by the app's merge (backup schema `phoenix_crm_merge_backup_20261028`); two on one approved day stayed and are only hidden. Pinned by `tests/phoenix-crm-duplicate-customers.test.ts`.
+
+### A manager's day table (owner, 2026-10-28)
+
+- 🔴 **A MANAGER'S DAY TABLE SAYS EVERY FACT ONCE — ONE ROW A VISIT, NEVER A DETAIL ROW UNDER IT** (owner, on a district manager's day of four double visits with no sent plan: *"DUPLICATION AND CHAOOOOOOOOOOOOS"*). Which words a row prints is `planActualRowWords` (`manager-visit-table.ts`), never the markup's: no sent plan is ONE note above the table (`planActualSaysNoPlan`), never a chip and a sentence on every row; a chip repeating the half, the plan's kind or "Single visit, alone", a name the plan title gave, a place the customer type gave and an area the brick line gave are left out; "No location captured." shows only when no pin was. A spanning detail row is never added back — the shell's `td` border draws it as a second row. Pinned by `everyFactSaidOnce` in `tests/phoenix-crm-manager-visit-details.test.ts`.
 
 <!-- module-memory:rules:end -->
 

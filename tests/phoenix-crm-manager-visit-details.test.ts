@@ -18,6 +18,7 @@ import {
 } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
 import { phoenixCrmDayPath } from "../src/lib/phoenix-crm/modules.ts";
 import { buildPlanVsActual, planCustomerKey, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
+import { managerVisitPlaceNote, managerVisitTerritoryLine, planActualRowWords, planActualSaysNoPlan } from "../src/lib/phoenix-crm/manager-visit-table.ts";
 import { ownVisitBucket } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
@@ -372,9 +373,9 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     // brick of the actual, then the address and the time.
     const headers = [...table.matchAll(/<th className=\{TH_CLASS\}>([^<]+)<\/th>/g)].map((match) => match[1]);
     assert.deepEqual(headers, ["Plan", "Actual status", "Area · Brick", "Address · Time"], "one table: plan, actual status, area and brick, address and time — in that order");
-    assert.match(table, /<CrmTable columns=\{\["26%", "25%", "17%", "32%"\]\} desktopOnly=\{false\}>/, "the module's one table primitive (fixed layout, colgroup), four named widths that fill the panel — and shown by the container query, never the viewport");
-    assert.match(table, /colSpan=\{4\}/, "the rest of a visit's record is a spanning row INSIDE the table, never a fifth column");
-    assert.match(table, /Matches the plan\./, "a planned customer that was visited reads as matching the plan");
+    assert.match(table, /<CrmTable columns=\{\["20%", "36%", "17%", "27%"\]\} desktopOnly=\{false\}>/, "the module's one table primitive (fixed layout, colgroup), four named widths that fill the panel — and shown by the container query, never the viewport");
+    assert.doesNotMatch(table, /colSpan/, "the rest of a visit's record sits in its own status cell — never a fifth column, never a spanning row (owner, 2026-10-28)");
+    assert.match(source("src/lib/phoenix-crm/manager-visit-table.ts"), /done: "Matches the plan\.",/, "a planned customer that was visited reads as matching the plan");
     assert.doesNotMatch(table, /<table\b/, "no raw <table> in the module: the fits-the-screen golden rule");
     assert.match(table, /@min-\[720px\]:hidden/, "cards when the PANEL is narrow — the private calendar day sits in a narrow column on a wide screen");
     assert.match(table, /@container/, "the switch is the container's width, not the viewport's");
@@ -383,7 +384,7 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     const loader = source("src/lib/phoenix-crm/server/manager-day-detail.ts");
     assert.match(loader, /computeManagerReports\(viewer, \[subject\.hrId\], fieldWeekStart\(date\)/, "the plan is the weekly report's own read");
     assert.match(loader, /planUnread = true/, "a failed plan read is said, never shown as no plan");
-    for (const path of ["src/components/phoenix-crm/manager-plan-actual-table.tsx", "src/lib/phoenix-crm/manager-day-plan.ts"]) {
+    for (const path of ["src/components/phoenix-crm/manager-plan-actual-table.tsx", "src/lib/phoenix-crm/manager-day-plan.ts", "src/lib/phoenix-crm/manager-visit-table.ts"]) {
       const text = source(path);
       assert.doesNotMatch(text, /\brounded(?!-none)(?:-[a-z0-9]+)?\b/, `${path}: square edges only`);
       assert.doesNotMatch(text, /overflow-x|whitespace-nowrap|\btruncate\b|text-ellipsis|line-clamp/, `${path}: nothing scrolls sideways and nothing is cut`);
@@ -394,6 +395,7 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
 
   everyonesVisitsInFull();
   ownVisitWithHerManager();
+  everyFactSaidOnce();
 
   console.log("phoenix-crm manager visit details: OK");
 }
@@ -512,7 +514,15 @@ function everyonesVisitsInFull(): void {
     ],
   );
   const table = source("src/components/phoenix-crm/manager-plan-actual-table.tsx");
-  assert.match(table, /if \(!row\.plan && row\.actual\?\.source === "rep"\) \{/, "the plan cell says what HIS week said");
+  // What HIS week said is said once — the status chip — never again in the plan column or in a sentence under it.
+  assert.deepEqual(
+    rows.map((row) => [planActualRowWords(row).verdict, planActualRowWords(row).sentence]),
+    [
+      ["On the plan", null],
+      ["Not on the plan", null],
+    ],
+  );
+  assert.match(table, /if \(!row\.plan\) return <HalfChip half=\{row\.half\} \/>;/, "a row nobody planned holds its half in the plan column, and nothing more");
 
   // The private calendar: the visits hang on the entry that already counts them.
   const door = item({
@@ -592,4 +602,94 @@ function everyonesVisitsInFull(): void {
   assert.match(dayView, /<ManagerPlanActual plan=\{null\} planUnread=\{false\} visits=\{view\.visitsInFull\} \/>/, "drawn as the same table Mina's day page draws");
   const calendarScreen = source("src/components/employee-portal/private-calendar.tsx");
   assert.match(calendarScreen, /\(item\.managerPlan \|\| item\.managerPlanUnread\) && item\.employeeHrId/, "only a table that draws a plan hides the plan's own entries");
+}
+
+/**
+ * Every fact said once (owner, 2026-10-28, on a district manager's day with no sent plan: four double visits with one
+ * rep, each saying "no plan" four times, its half twice, its customer's type twice, its area twice, "a location was
+ * captured" on every row, and its detail line drawn as a second row under it).
+ */
+function everyFactSaidOnce(): void {
+  const ride = visit({
+    areaName: "Menoufia 2",
+    brickName: "Menouf",
+    customerKey: "c:menouf",
+    customerName: "Menouf General Hospital",
+    id: "ride:aya:1",
+    kind: "double",
+    kindLabel: "Double visit",
+    listType: "AM",
+    placeLabel: "Hospital",
+    source: "ride_along",
+    speciality: "Hospital",
+    territoryName: "Menoufia 2 · Anti Infective",
+    withPeople: [{ name: "Aya Ibrahim", role: "Medical rep" }],
+  });
+
+  // The day he sent: no plan at all, so nothing is judged — and that is said ONCE, above the table.
+  const day = buildPlanVsActual(null, [ride, { ...ride, id: "ride:aya:2" }]);
+  const [row] = day.rows;
+  const words = planActualRowWords(row);
+  assert.equal(row.outcome, "no_plan");
+  assert.equal(words.verdict, null, "no 'No plan sent' chip on the row — the note above the table says it once");
+  assert.equal(words.sentence, null, "and no 'No sent plan' sentence under it");
+  assert.equal(words.listChip, null, "'AM list' is never printed on a row its AM chip already says");
+  assert.equal(words.placeNote, null, "'Hospital' is never printed under 'Hospital · Grade A'");
+  assert.equal(words.territoryLine, "Line Anti Infective", "the territory's area is the area line's own — only its line is new");
+  assert.equal(words.locationNote, null, "a captured pin is what the address shows, never a line of its own");
+  assert.deepEqual(words.withPeople.map((person) => person.name), ["Aya Ibrahim"], "who came along is said");
+  assert.equal(words.customerName, "Menouf General Hospital", "the customer seen is named");
+  assert.equal(planActualSaysNoPlan(null, false, day.rows), true, "a day with no plan at all still says so — once");
+  assert.equal(planActualSaysNoPlan(null, true, day.rows), false, "a plan that failed to load has its own warning, never 'no plan'");
+  assert.equal(planActualSaysNoPlan({ sent: false }, false, []), true, "a week drawn and not sent");
+  assert.equal(planActualSaysNoPlan({ sent: true }, false, day.rows), false);
+  const repDay = buildPlanVsActual(null, [visit({ id: "rep:1", listType: "AM", source: "rep" })]);
+  assert.equal(planActualSaysNoPlan(null, false, repDay.rows), false, "a rep's day answers from his own week");
+  assert.equal(planActualRowWords(repDay.rows[0]).withNobody, null, "never 'Alone' under 'Single visit, alone'");
+
+  // Each word only where it adds something.
+  assert.equal(managerVisitPlaceNote(visit({ placeLabel: "Al Salam Clinic" })), "Al Salam Clinic", "a place label the row has not said is kept");
+  assert.equal(planActualRowWords(day.rows[0]).withNobody, null);
+  assert.equal(planActualRowWords(buildPlanVsActual(null, [visit({ hasPin: false })]).rows[0]).locationNote, "No location captured.", "a missing pin is said");
+  assert.equal(managerVisitTerritoryLine(visit({ areaName: "Cairo East", territoryName: "Cairo East 2 · Pedia" })), "Territory Cairo East 2 · Pedia", "a territory elsewhere is named in full");
+  assert.equal(managerVisitTerritoryLine(visit({ areaName: "Maadi", territoryName: "Maadi" })), null, "a territory that IS the area is not said twice");
+  const pharmacy = visit({ bucket: "Pharmacy", id: "ride:ph", kind: "double", kindLabel: "Double visit", listType: "Pharmacy", loggedHalf: "PM", source: "ride_along" });
+  assert.equal(planActualRowWords(buildPlanVsActual(null, [pharmacy]).rows[0]).listChip, "Pharmacy", "a pharmacy is its own word on a PM row");
+  const alone = visit({ id: "ride:none", kind: "double", kindLabel: "Double visit", source: "ride_along", withPeople: [] });
+  assert.equal(planActualRowWords(buildPlanVsActual(null, [alone]).rows[0]).withNobody, "No one else named.", "a double visit naming nobody says so");
+
+  // A sent week: the plan column names the customer and the rep, so the status column does not name them again.
+  const customer = (name: string, key: string) => ({ flagLabel: null, key, name, outcome: "done" as const, outcomeLabel: "Done", own: false, place: null });
+  const plan: ManagerDayPlan = {
+    halves: [
+      { customers: [customer("Menouf General Hospital", "c:menouf")], half: "AM", kind: "with_rep", kindLabel: "With a rep", note: null, title: "With Aya Ibrahim" },
+      { customers: [], half: "PM", kind: "admin", kindLabel: "Admin", note: null, title: "Training" },
+      { customers: [], half: "PM", kind: "with_rep", kindLabel: "With a rep", note: null, title: "With Mina Farouk" },
+    ],
+    sent: true,
+    statusLine: "Approved",
+  };
+  const extra = visit({ customerKey: "m:other", customerName: "Dr. Zed Kamel", id: "own:9", loggedAt: "2026-10-19T09:10:00Z", planned: false });
+  const sent = buildPlanVsActual(plan, [ride, extra]);
+  const planned = planActualRowWords(sent.rows.find((entry) => entry.actual?.id === "ride:aya:1")!);
+  assert.equal(planned.verdict, "Done");
+  assert.equal(planned.sentence, "Matches the plan.");
+  assert.equal(planned.customerName, null, "the planned customer is named once, in the plan column");
+  assert.deepEqual(planned.withPeople, [], "'With Aya Ibrahim' is the plan's own title — never printed again under it");
+  assert.equal(planned.withNobody, null);
+  const admin = planActualRowWords(sent.rows.find((entry) => entry.plan?.kind === "admin")!);
+  assert.equal(admin.verdict, null, "an Admin half-day is not called 'Admin' twice");
+  assert.equal(admin.sentence, "Nothing to check for this half-day.");
+  const unticked = planActualRowWords(sent.rows.find((entry) => entry.plan?.title === "With Mina Farouk")!);
+  assert.deepEqual([unticked.verdict, unticked.sentence], ["Nothing ticked", null], "'Nothing ticked' is not followed by 'nothing to check'");
+  const unplanned = planActualRowWords(sent.rows.find((entry) => entry.outcome === "unplanned")!);
+  assert.deepEqual([unplanned.verdict, unplanned.sentence], ["Not on the plan", null], "a visit nobody planned says so once");
+
+  // The markup prints those words and none of the old repeats.
+  const table = source("src/components/phoenix-crm/manager-plan-actual-table.tsx");
+  assert.match(table, /const words = planActualRowWords\(row\);/, "which words a row prints is the rule's, never the markup's");
+  assert.match(table, /planActualSaysNoPlan\(plan, planUnread, rows\) \? \(/, "the no-plan note is the day's, shown once");
+  for (const repeat of ["No sent plan to match against", "No sent plan covers this day.", "Nobody put this visit on the week", "A location was captured", '"Alone."', "More about the visit", "No customer ticked.", "managerVisitHalfLabel"]) {
+    assert.ok(!table.includes(repeat), `the table no longer prints "${repeat}"`);
+  }
 }

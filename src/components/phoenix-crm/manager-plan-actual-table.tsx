@@ -2,13 +2,8 @@ import type { ReactNode } from "react";
 
 import { CrmNote, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
 import { buildPlanVsActual, type ManagerDayPlan, type PlanRowOutcome, type PlanVsActualRow, type PlanVsActualSummary } from "@/lib/phoenix-crm/manager-day-plan";
-import {
-  managerVisitAreaLines,
-  managerVisitClock,
-  managerVisitCustomerType,
-  managerVisitHalfLabel,
-  type ManagerDayVisit,
-} from "@/lib/phoenix-crm/manager-visit-detail";
+import { managerVisitAreaLines, managerVisitClock, managerVisitCustomerType, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
+import { planActualRowWords, planActualSaysNoPlan } from "@/lib/phoenix-crm/manager-visit-table";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { cn } from "@/lib/utils";
 
@@ -18,10 +13,14 @@ import { cn } from "@/lib/utils";
  *
  * Four columns, in that order, and nothing else beside them:
  *   Plan · Actual status · Area · Brick · Address · Time
- * One row per planned customer and one per visit nobody planned. The rest of a visit's record (the customer's type,
- * territory, who came along, products, location pin, comment) is NOT another column: it is one spanning line under the
- * row it belongs to, inside the same table, so nothing the owner asked for earlier is lost and the table stays four wide.
+ * One row per planned customer and one per visit nobody planned — ONE table row each (owner, 2026-10-28: a district
+ * manager's day read as two rows a visit, with "no plan" said four times on every one). The rest of a visit's record
+ * (who came along, products, pharmacy feedback, the comment) sits at the foot of its own status cell, never on a
+ * spanning row of its own: the portal's shell draws a hairline round every cell, so a spanning row reads as a second
+ * visit.
  *
+ * 🔴 EVERY FACT IS SAID ONCE — which words a row prints is `planActualRowWords` (manager-visit-table.ts), never decided
+ *    here. A day with no sent plan says so in one note above the table; a no-plan row's plan cell holds its half only.
  * 🔴 The status on a planned row is the weekly report's (`Done` / `Not done` / `Today` / `Coming`), set beside the visit
  *    that proves it; this component decides nothing. "Matches the plan" is said only where the report said Done.
  * 🔴 House rules built in: square edges (`rounded-none`), the module's own `CrmTable` (fixed layout, named widths) so it
@@ -40,17 +39,6 @@ const OUTCOME_STYLES: Record<PlanRowOutcome, { chip: string; accent: string }> =
   not_done: { accent: "border-l-rose-500", chip: "border-rose-200 bg-rose-50 text-rose-700" },
   open: { accent: "border-l-amber-400", chip: "border-amber-200 bg-amber-50 text-amber-800" },
   unplanned: { accent: "border-l-violet-500", chip: "border-violet-200 bg-violet-50 text-violet-700" },
-};
-
-/** What the verdict means in a sentence, so a reader never has to know the report's vocabulary. */
-const OUTCOME_SENTENCE: Record<PlanRowOutcome, string | null> = {
-  ahead: null,
-  done: "Matches the plan.",
-  no_plan: "No sent plan to match against.",
-  not_checkable: "Nothing to check for this half-day.",
-  not_done: "Nothing was logged for it.",
-  open: "Not due yet, or still open today.",
-  unplanned: "Visited, but not on the plan.",
 };
 
 const HALF_STYLES: Record<string, string> = {
@@ -95,34 +83,9 @@ function HalfChip({ half }: { half: string }) {
   return <Chip className={HALF_STYLES[half] ?? HALF_STYLES.AM}>{half}</Chip>;
 }
 
-/** The half-day, then what was planned for it: who with, which customer, the note. */
+/** The half-day, then what was planned for it: who with, which customer, the note. A row nobody planned holds its half only. */
 function PlanCell({ row }: { row: PlanVsActualRow }) {
-  // A rep's own visit: his week is his, and the visit itself recorded whether it was on it (owner, 2026-10-21).
-  if (!row.plan && row.actual?.source === "rep") {
-    const onPlan = row.actual.planned;
-    return (
-      <div className="grid min-w-0 gap-1.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <HalfChip half={row.half} />
-          <Chip className={onPlan ? "border-slate-300 bg-slate-100 text-slate-700" : "border-slate-300 bg-white text-slate-600"}>
-            {onPlan ? "On the plan" : "Not planned"}
-          </Chip>
-        </div>
-        <Muted>{onPlan ? "On the rep's own weekly plan for this day." : "Logged off the rep's weekly plan."}</Muted>
-      </div>
-    );
-  }
-  if (!row.plan) {
-    return (
-      <div className="grid min-w-0 gap-1.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <HalfChip half={row.half} />
-          <Chip className="border-slate-300 bg-white text-slate-600">Not planned</Chip>
-        </div>
-        <Muted>{row.outcome === "no_plan" ? "No sent plan covers this day." : "Nobody put this visit on the week."}</Muted>
-      </div>
-    );
-  }
+  if (!row.plan) return <HalfChip half={row.half} />;
   const { plan } = row;
   return (
     <div className="grid min-w-0 gap-1.5">
@@ -138,9 +101,7 @@ function PlanCell({ row }: { row: PlanVsActualRow }) {
         <p className="break-words text-sm font-bold leading-5 text-slate-800" dir="auto">
           {plan.customerName}
         </p>
-      ) : (
-        <Muted>No customer ticked.</Muted>
-      )}
+      ) : null}
       {plan.place ? (
         <Muted>
           <span dir="auto">{plan.place}</span>
@@ -155,31 +116,79 @@ function PlanCell({ row }: { row: PlanVsActualRow }) {
   );
 }
 
-/** The verdict — matching the plan or not — and, when there is a visit, who was seen and how. */
+function Fact({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <p className="min-w-0 break-words leading-5">
+      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label} </span>
+      <span className="text-xs font-bold text-slate-700">{children}</span>
+    </p>
+  );
+}
+
+/**
+ * The verdict — matching the plan or not — then who was seen and how, then the rest of the visit's record at the foot of
+ * the same cell: who came along, the products, a pharmacy's feedback and the comment.
+ */
 function StatusCell({ row }: { row: PlanVsActualRow }) {
-  const style = OUTCOME_STYLES[row.outcome];
   const visit = row.actual;
-  const sentence = OUTCOME_SENTENCE[row.outcome];
+  const words = planActualRowWords(row);
   const type = visit ? managerVisitCustomerType(visit) : "";
   return (
     <div className="grid min-w-0 gap-1.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Chip className={style.chip}>{row.outcomeLabel}</Chip>
-        {visit ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
-        {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
-      </div>
-      {sentence ? <Muted>{sentence}</Muted> : null}
+      {words.verdict || visit ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {words.verdict ? <Chip className={OUTCOME_STYLES[row.outcome].chip}>{words.verdict}</Chip> : null}
+          {visit ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
+          {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
+        </div>
+      ) : null}
+      {words.sentence ? <Muted>{words.sentence}</Muted> : null}
       {visit ? (
         <>
-          <p className="break-words text-sm font-black leading-5 text-slate-950" dir="auto">
-            {visit.customerName}
-          </p>
+          {words.customerName ? (
+            <p className="break-words text-sm font-black leading-5 text-slate-950" dir="auto">
+              {words.customerName}
+            </p>
+          ) : null}
           {type ? <p className="break-words text-xs font-bold leading-5 text-slate-700">{type}</p> : null}
-          <div className="flex flex-wrap gap-1.5">
-            <Chip className="border-slate-200 bg-white text-slate-600">{managerVisitHalfLabel(visit)}</Chip>
-            {visit.awaitingApproval ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Waiting for approval — not counted yet</Chip> : null}
-            {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">Not scored yet</Chip> : null}
-            {visit.inVacantTerritory ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Vacant area</Chip> : null}
+          {words.listChip || visit.awaitingApproval || visit.awaitingValidation || visit.inVacantTerritory ? (
+            <div className="flex flex-wrap gap-1.5">
+              {words.listChip ? <Chip className="border-slate-200 bg-white text-slate-600">{words.listChip}</Chip> : null}
+              {visit.awaitingApproval ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Waiting for approval — not counted yet</Chip> : null}
+              {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">Not scored yet</Chip> : null}
+              {visit.inVacantTerritory ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Vacant area</Chip> : null}
+            </div>
+          ) : null}
+          <div className="mt-0.5 grid min-w-0 gap-0.5 border-t border-dashed border-slate-200 pt-1.5">
+            {words.withPeople.length > 0 ? (
+              <Fact label="With">
+                {words.withPeople.map((person, index) => (
+                  <span key={`${person.role}|${person.name}`}>
+                    {index > 0 ? ", " : ""}
+                    <span dir="auto">{person.name}</span>
+                    <span className="font-semibold text-slate-500">{` · ${person.role}`}</span>
+                  </span>
+                ))}
+              </Fact>
+            ) : null}
+            {words.withNobody ? (
+              <Fact label="With">
+                <span className="font-semibold text-slate-500">{words.withNobody}</span>
+              </Fact>
+            ) : null}
+            <Fact label="Products">
+              {visit.products.length > 0 ? visit.products.join(", ") : <span className="font-semibold text-slate-500">None recorded.</span>}
+            </Fact>
+            {visit.pharmacyName && visit.listType !== "Pharmacy" ? (
+              <Fact label="Pharmacy feedback from">
+                <span dir="auto">{visit.pharmacyName}</span>
+              </Fact>
+            ) : null}
+            {visit.comment ? (
+              <p className="mt-0.5 min-w-0 whitespace-pre-line break-words border-l-2 border-slate-200 pl-2 text-xs font-semibold leading-5 text-slate-700" dir="auto">
+                {visit.comment}
+              </p>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -187,12 +196,13 @@ function StatusCell({ row }: { row: PlanVsActualRow }) {
   );
 }
 
-/** The brick, then the area, of the visit that was made — never of the plan. Each on its own line. */
+/** The brick, then the area, then the territory's line — of the visit that was made, never of the plan. Each once. */
 function AreaBrickCell({ row }: { row: PlanVsActualRow }) {
   const visit = row.actual;
   if (!visit) return <Muted>—</Muted>;
   const lines = managerVisitAreaLines(visit);
-  if (lines.length === 0) return <Muted>No area or brick on file.</Muted>;
+  const territory = planActualRowWords(row).territoryLine;
+  if (lines.length === 0 && !territory) return <Muted>No area or brick on file.</Muted>;
   return (
     <div className="grid min-w-0 gap-0.5">
       {lines.map((line) => (
@@ -200,6 +210,11 @@ function AreaBrickCell({ row }: { row: PlanVsActualRow }) {
           {line}
         </p>
       ))}
+      {territory ? (
+        <p className="break-words text-xs font-semibold leading-5 text-slate-500" dir="auto">
+          {territory}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -208,6 +223,7 @@ function AreaBrickCell({ row }: { row: PlanVsActualRow }) {
 function AddressTimeCell({ row }: { row: PlanVsActualRow }) {
   const visit = row.actual;
   if (!visit) return <Muted>—</Muted>;
+  const words = planActualRowWords(row);
   return (
     <div className="grid min-w-0 gap-1">
       {visit.address ? (
@@ -217,59 +233,13 @@ function AddressTimeCell({ row }: { row: PlanVsActualRow }) {
       ) : (
         <Muted>No address on file.</Muted>
       )}
-      {visit.placeLabel ? (
+      {words.placeNote ? (
         <Muted>
-          <span dir="auto">{visit.placeLabel}</span>
+          <span dir="auto">{words.placeNote}</span>
         </Muted>
       ) : null}
+      {words.locationNote ? <Muted>{words.locationNote}</Muted> : null}
       <p className="text-base font-black tabular-nums leading-6 tracking-tight text-slate-950">{managerVisitClock(visit.loggedAt)}</p>
-    </div>
-  );
-}
-
-function Fact({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <span className="min-w-0 break-words">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label} </span>
-      <span className="text-xs font-bold leading-5 text-slate-700">{children}</span>
-    </span>
-  );
-}
-
-/** The rest of the visit's record — one line under its row, so the table stays four wide. Null when there is nothing more to say. */
-function MoreAboutVisit({ row }: { row: PlanVsActualRow }) {
-  const visit = row.actual;
-  if (!visit) return null;
-  return (
-    <div className="flex min-w-0 flex-wrap gap-x-5 gap-y-1">
-      {visit.territoryName ? <Fact label="Territory">{visit.territoryName}</Fact> : null}
-      <Fact label="With">
-        {visit.withPeople.length > 0 ? (
-          visit.withPeople.map((person, index) => (
-            <span key={`${person.role}|${person.name}`}>
-              {index > 0 ? ", " : ""}
-              <span dir="auto">{person.name}</span>
-              <span className="font-semibold text-slate-500">{` · ${person.role}`}</span>
-            </span>
-          ))
-        ) : (
-          <span className="font-semibold text-slate-500">{(visit.source === "own" && visit.kind === "single") || (visit.source === "rep" && visit.kind === "single") ? "Alone." : "No one else named."}</span>
-        )}
-      </Fact>
-      <Fact label="Products">
-        {visit.products.length > 0 ? visit.products.join(", ") : <span className="font-semibold text-slate-500">None recorded.</span>}
-      </Fact>
-      {visit.pharmacyName && visit.listType !== "Pharmacy" ? (
-        <Fact label="Pharmacy feedback from">
-          <span dir="auto">{visit.pharmacyName}</span>
-        </Fact>
-      ) : null}
-      <Fact label="Location">{visit.hasPin ? "A location was captured." : "No location captured."}</Fact>
-      {visit.comment ? (
-        <span className="w-full min-w-0 whitespace-pre-line break-words border-l-2 border-slate-200 pl-2 text-xs font-semibold leading-5 text-slate-700" dir="auto">
-          {visit.comment}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -301,10 +271,10 @@ export function ManagerPlanActualTable({
   return (
     <div className="@container grid min-w-0 gap-3">
       {plan?.sent ? <SummaryStrip summary={summary} /> : null}
-      {plan && !plan.sent ? (
+      {planActualSaysNoPlan(plan, planUnread, rows) ? (
         <CrmNote title="No sent plan covers this day" tone="info">
           <p>
-            {plan.statusLine ? `${plan.statusLine} ` : ""}A week that was not sent is not judged, so the visits below are listed in full and none is called planned or missed.
+            {plan?.statusLine ? `${plan.statusLine} ` : ""}A week that was not sent is not judged, so the visits below are listed in full and none is called planned or missed.
           </p>
         </CrmNote>
       ) : null}
@@ -316,7 +286,7 @@ export function ManagerPlanActualTable({
 
       <div className="hidden min-w-0 @min-[720px]:block">
         {/* `desktopOnly={false}`: the container query above decides when this shows, not the viewport. */}
-        <CrmTable columns={["26%", "25%", "17%", "32%"]} desktopOnly={false}>
+        <CrmTable columns={["20%", "36%", "17%", "27%"]} desktopOnly={false}>
           <thead>
             <tr>
               <th className={TH_CLASS}>Plan</th>
@@ -325,35 +295,24 @@ export function ManagerPlanActualTable({
               <th className={TH_CLASS}>Address · Time</th>
             </tr>
           </thead>
-          {rows.map((row, index) => {
-            const more = row.actual ? <MoreAboutVisit row={row} /> : null;
-            const tint = index % 2 === 0 ? "bg-white" : "bg-slate-50/40";
-            return (
-              <tbody key={row.id}>
-                <tr className={cn("align-top", tint)}>
-                  <td className={cn("border-l-4 px-3 pt-3 align-top", more ? "pb-1.5" : "border-b border-b-slate-100 pb-3", OUTCOME_STYLES[row.outcome].accent)}>
-                    <PlanCell row={row} />
-                  </td>
-                  <td className={cn("px-3 pt-3 align-top", more ? "pb-1.5" : "border-b border-slate-100 pb-3")}>
-                    <StatusCell row={row} />
-                  </td>
-                  <td className={cn("px-3 pt-3 align-top", more ? "pb-1.5" : "border-b border-slate-100 pb-3")}>
-                    <AreaBrickCell row={row} />
-                  </td>
-                  <td className={cn("px-3 pt-3 align-top", more ? "pb-1.5" : "border-b border-slate-100 pb-3")}>
-                    <AddressTimeCell row={row} />
-                  </td>
-                </tr>
-                {more ? (
-                  <tr className={tint}>
-                    <td className={cn("border-b border-l-4 border-b-slate-100 px-3 pb-3 pt-1", OUTCOME_STYLES[row.outcome].accent)} colSpan={4}>
-                      <div className="border-t border-dashed border-slate-200 pt-2">{more}</div>
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            );
-          })}
+          <tbody>
+            {rows.map((row, index) => (
+              <tr className={cn("align-top", index % 2 === 0 ? "bg-white" : "bg-slate-50/40")} key={row.id}>
+                <td className={cn("border-b border-l-4 border-b-slate-100 px-3 py-3 align-top", OUTCOME_STYLES[row.outcome].accent)}>
+                  <PlanCell row={row} />
+                </td>
+                <td className="border-b border-slate-100 px-3 py-3 align-top">
+                  <StatusCell row={row} />
+                </td>
+                <td className="border-b border-slate-100 px-3 py-3 align-top">
+                  <AreaBrickCell row={row} />
+                </td>
+                <td className="border-b border-slate-100 px-3 py-3 align-top">
+                  <AddressTimeCell row={row} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
         </CrmTable>
       </div>
 
@@ -381,10 +340,6 @@ export function ManagerPlanActualTable({
                   <section className="grid gap-1 border-t border-slate-100 pt-3">
                     <Label>Address · Time</Label>
                     <AddressTimeCell row={row} />
-                  </section>
-                  <section className="grid gap-1 border-t border-slate-100 pt-3">
-                    <Label>More about the visit</Label>
-                    <MoreAboutVisit row={row} />
                   </section>
                 </>
               ) : null}
