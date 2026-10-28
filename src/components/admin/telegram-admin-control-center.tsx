@@ -12,6 +12,7 @@ import type {
 } from "@/lib/notifications/telegram-admin";
 import type { TelegramModulePolicy } from "@/lib/notifications/telegram-governance";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { humanizeCode } from "@/lib/format/code-label";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 
@@ -60,7 +61,7 @@ function formatDate(value: string | null) {
 }
 
 function moduleLabel(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return humanizeCode(value);
 }
 
 const envLabels = {
@@ -242,6 +243,26 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
   const lastTestLabel = data.summary.lastTestStatus === "none"
     ? "No test yet"
     : `${data.summary.lastTestStatus}${data.summary.lastTestRecipient ? ` · ${data.summary.lastTestRecipient}` : ""}`;
+
+  function connectionActions(connection: (typeof filteredConnections)[number]) {
+    return (
+        <div className="flex flex-wrap gap-2">
+        {connection.status !== "connected" ? (
+          inviteOne?.userId === connection.userId ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-none border border-amber-300 bg-amber-50 px-2 py-1">
+              <span className="min-w-0 break-words text-xs font-bold text-amber-900">Email {inviteOne.name} a connect link? This sends real email.</span>
+              <button className="rounded-none border border-orange-200 bg-orange-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => void sendOneInvitation(inviteOne)} type="button">Send</button>
+              <button className="rounded-none border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => setInviteOne(null)} type="button">Cancel</button>
+            </div>
+          ) : (
+            <button className="rounded-none border border-orange-200 px-2 py-1 text-xs font-bold text-orange-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => setInviteOne({ name: connection.employeeName ?? connection.userId, userId: connection.userId })} type="button"><Mail className="inline h-3 w-3" /> Email invitation</button>
+          )
+        ) : null}
+        <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
+        <button className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disconnect_user", userId: connection.userId }, "Telegram disconnected for user.")} type="button"><Unplug className="inline h-3 w-3" /> Disconnect</button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -513,93 +534,113 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
             <option value="failed">Failed</option>
           </SearchableSelect>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[14%]" />
+              <col className="w-[22%]" />
+              <col className="w-[38%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="adm-col-pin px-3 py-2">Employee</th>
-                <th className="adm-col-hide-xl px-3 py-2">Org Scope</th>
+                <th className="px-3 py-2">Employee · scope</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="adm-col-hide-lg px-3 py-2">Last Connected</th>
-                <th className="adm-col-hide-lg px-3 py-2">Last Delivery</th>
-                <th className="adm-col-hide-xl px-3 py-2">Chat</th>
+                <th className="px-3 py-2">Connected · delivered · chat</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredConnections.map((connection) => (
                 <tr className="align-top" key={connection.userId}>
-                  <td className="adm-col-pin px-3 py-3">
-                    <p className="font-bold text-slate-900">{connection.employeeName ?? connection.userId}</p>
-                    <p className="text-xs text-slate-500">{connection.hrId ?? "No HR ID"}</p>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <p className="font-bold text-slate-900">{connection.employeeName ?? "Unnamed employee"}</p>
+                    <p className="text-xs text-slate-600">
+                      {[connection.department, connection.line, connection.manager].filter(Boolean).join(" · ") || "—"}
+                    </p>
                   </td>
-                  <td className="adm-col-hide-xl px-3 py-3 text-xs text-slate-600">
-                    <p>{connection.department ?? "No department"}</p>
-                    <p>{connection.line ?? "No line"}</p>
-                    <p>{connection.manager ?? "No manager"}</p>
-                  </td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(connection.status)}`}>{connection.status}</span>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(connection.status)}`}>{humanizeCode(connection.status)}</span>
                     <p className="mt-2 text-xs text-slate-500">{connection.telegramEnabled ? "User enabled" : "User disabled"}</p>
                   </td>
-                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(connection.connectedAt)}</td>
-                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(connection.lastDeliveryAt)}</td>
-                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-600">{connection.maskedChatId ?? "Not stored"}</td>
-                  <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                      {connection.status !== "connected" ? (
-                        inviteOne?.userId === connection.userId ? (
-                          <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-none border border-amber-300 bg-amber-50 px-2 py-1">
-                            <span className="min-w-0 break-words text-xs font-bold text-amber-900">Email {inviteOne.name} a connect link? This sends real email.</span>
-                            <button className="rounded-none border border-orange-200 bg-orange-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => void sendOneInvitation(inviteOne)} type="button">Send</button>
-                            <button className="rounded-none border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => setInviteOne(null)} type="button">Cancel</button>
-                          </div>
-                        ) : (
-                          <button className="rounded-none border border-orange-200 px-2 py-1 text-xs font-bold text-orange-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => setInviteOne({ name: connection.employeeName ?? connection.userId, userId: connection.userId })} type="button"><Mail className="inline h-3 w-3" /> Email invitation</button>
-                        )
-                      ) : null}
-                      <button className="rounded border border-amber-200 px-2 py-1 text-xs font-bold text-amber-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disable_user", userId: connection.userId }, "Telegram disabled for user.")} type="button"><PlugZap className="inline h-3 w-3" /> Disable</button>
-                      <button className="rounded border border-rose-200 px-2 py-1 text-xs font-bold text-rose-700 disabled:opacity-50" disabled={!canGovern || Boolean(busy)} onClick={() => request("POST", { action: "disconnect_user", userId: connection.userId }, "Telegram disconnected for user.")} type="button"><Unplug className="inline h-3 w-3" /> Disconnect</button>
-                    </div>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">
+                    <p>Connected {formatDate(connection.connectedAt)}</p>
+                    <p>Delivered {formatDate(connection.lastDeliveryAt)}</p>
+                    <p className="font-semibold">Chat {connection.maskedChatId ?? "not stored"}</p>
+                  </td>
+                  <td className="min-w-0 px-3 py-3">
+                    {connectionActions(connection)}
                   </td>
                 </tr>
               ))}
               {filteredConnections.length === 0 ? (
-                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={7}>No Telegram connections match this filter.</td></tr>
+                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={4}>No Telegram connections match this filter.</td></tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="space-y-3 md:hidden">
+          {filteredConnections.map((connection) => (
+            <div className="space-y-2 break-words border border-slate-200 p-3" key={connection.userId}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-bold text-slate-900">{connection.employeeName ?? "Unnamed employee"}</p>
+                <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(connection.status)}`}>{humanizeCode(connection.status)}</span>
+              </div>
+              <p className="text-xs text-slate-600">
+                {[connection.department, connection.line, connection.manager].filter(Boolean).join(" · ") || "—"}
+              </p>
+              <p className="text-xs text-slate-500">{connection.telegramEnabled ? "User enabled" : "User disabled"}</p>
+              <div className="text-xs text-slate-600">
+                <p>Connected {formatDate(connection.connectedAt)}</p>
+                <p>Delivered {formatDate(connection.lastDeliveryAt)}</p>
+                <p className="font-semibold">Chat {connection.maskedChatId ?? "not stored"}</p>
+              </div>
+              {connectionActions(connection)}
+            </div>
+          ))}
+          {filteredConnections.length === 0 ? (
+            <p className="py-4 text-center text-sm font-semibold text-slate-500">No Telegram connections match this filter.</p>
+          ) : null}
         </div>
       </section>
 
       <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-black text-slate-950">Delivery Monitor</h2>
         <p className="mt-1 text-sm text-slate-600">Recent Telegram deliveries. Payload bodies are intentionally hidden.</p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-4 hidden md:block">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[24%]" />
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[28%]" />
+              <col className="w-[14%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="adm-col-pin px-3 py-2">Module</th>
+                <th className="px-3 py-2">Module · event</th>
                 <th className="px-3 py-2">Recipient</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="adm-col-hide-xl px-3 py-2">Attempts</th>
-                <th className="adm-col-hide-lg px-3 py-2">Next Retry</th>
-                <th className="px-3 py-2">Provider Error</th>
+                <th className="px-3 py-2">Status · attempts</th>
+                <th className="px-3 py-2">Next retry · provider error</th>
                 <th className="px-3 py-2">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.deliveries.map((delivery) => (
                 <tr className="align-top" key={delivery.id}>
-                  <td className="adm-col-pin px-3 py-3">
-                    <p className="font-bold text-slate-900">{delivery.module ?? "Unknown"}</p>
-                    <p className="text-xs text-slate-500">{delivery.eventType ?? "Unknown event"}</p>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <p className="font-bold text-slate-900">{delivery.module ? humanizeCode(delivery.module) : "Unknown"}</p>
+                    <p className="text-xs text-slate-500">{delivery.eventType ? humanizeCode(delivery.eventType) : "Unknown event"}</p>
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{delivery.recipient ?? delivery.recipientHrId ?? "Unknown"}</td>
-                  <td className="px-3 py-3"><span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{delivery.status}</span></td>
-                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-700">{delivery.attempts}</td>
-                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{formatDate(delivery.nextAttemptAt)}</td>
-                  <td className="max-w-md px-3 py-3 text-xs text-slate-600">{delivery.providerError ?? "None"}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">{delivery.recipient ?? "—"}</td>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{humanizeCode(delivery.status)}</span>
+                    <p className="mt-2 text-xs font-semibold text-slate-700">{delivery.attempts} attempt(s)</p>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">
+                    <p>Next retry {formatDate(delivery.nextAttemptAt)}</p>
+                    <p>{delivery.providerError ?? "No provider error"}</p>
+                  </td>
                   <td className="px-3 py-3">
                     <button
                       className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
@@ -614,40 +655,82 @@ export function TelegramAdminControlCenter({ canGovern, canUpdate, initialData }
                 </tr>
               ))}
               {data.deliveries.length === 0 ? (
-                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={7}>No Telegram deliveries recorded yet.</td></tr>
+                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={5}>No Telegram deliveries recorded yet.</td></tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 space-y-3 md:hidden">
+          {data.deliveries.map((delivery) => (
+            <div className="space-y-2 break-words border border-slate-200 p-3" key={delivery.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-slate-900">{delivery.module ? humanizeCode(delivery.module) : "Unknown"}</p>
+                  <p className="text-xs text-slate-500">{delivery.eventType ? humanizeCode(delivery.eventType) : "Unknown event"}</p>
+                </div>
+                <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{humanizeCode(delivery.status)}</span>
+              </div>
+              <p className="text-xs text-slate-600">To {delivery.recipient ?? "—"} · {delivery.attempts} attempt(s)</p>
+              <p className="text-xs text-slate-600">Next retry {formatDate(delivery.nextAttemptAt)}</p>
+              <p className="text-xs text-slate-600">{delivery.providerError ?? "No provider error"}</p>
+              <button
+                      className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
+                      disabled={!canUpdate || Boolean(busy) || delivery.status === "sent"}
+                      onClick={() => request("POST", { action: "retry_delivery", deliveryId: delivery.id }, "Telegram retry processed.")}
+                      type="button"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Retry
+                    </button>
+            </div>
+          ))}
+          {data.deliveries.length === 0 ? (
+            <p className="py-4 text-center text-sm font-semibold text-slate-500">No Telegram deliveries recorded yet.</p>
+          ) : null}
         </div>
       </section>
 
       <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-black text-slate-950">Recent Telegram Audit Logs</h2>
         <p className="mt-1 text-sm text-slate-600">Recent governance actions for Telegram settings, connection, and test activity.</p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-4 hidden md:block">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[24%]" />
+              <col className="w-[22%]" />
+              <col className="w-[54%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="adm-col-pin px-3 py-2">Time</th>
-                <th className="adm-col-hide-xl px-3 py-2">Actor</th>
+                <th className="px-3 py-2">Time</th>
+                <th className="px-3 py-2">Actor</th>
                 <th className="px-3 py-2">Event</th>
-                <th className="adm-col-hide-lg px-3 py-2">Entity</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.auditLogs.map((log) => (
                 <tr className="align-top" key={log.id}>
-                  <td className="adm-col-pin px-3 py-3 text-xs text-slate-600">{formatDate(log.createdAt)}</td>
-                  <td className="adm-col-hide-xl px-3 py-3 text-xs font-semibold text-slate-700">{log.actorLoginId ?? "system"}</td>
-                  <td className="px-3 py-3 text-sm font-bold text-slate-900">{log.summary}</td>
-                  <td className="adm-col-hide-lg px-3 py-3 text-xs text-slate-600">{log.entityId ?? "telegram"}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">{formatDate(log.createdAt)}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs font-semibold text-slate-700">{log.actorLoginId ?? "system"}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-sm font-bold text-slate-900">{log.summary}</td>
                 </tr>
               ))}
               {data.auditLogs.length === 0 ? (
-                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={4}>No Telegram audit logs recorded yet.</td></tr>
+                <tr><td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={3}>No Telegram audit logs recorded yet.</td></tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 space-y-3 md:hidden">
+          {data.auditLogs.map((log) => (
+            <div className="break-words border border-slate-200 p-3" key={log.id}>
+              <p className="text-sm font-bold text-slate-900">{log.summary}</p>
+              <p className="text-xs text-slate-600">{formatDate(log.createdAt)} · {log.actorLoginId ?? "system"}</p>
+            </div>
+          ))}
+          {data.auditLogs.length === 0 ? (
+            <p className="py-4 text-center text-sm font-semibold text-slate-500">No Telegram audit logs recorded yet.</p>
+          ) : null}
         </div>
       </section>
     </div>

@@ -59,9 +59,9 @@ export function runMailboxMonitorTextDirectionTests() {
   //    These are names, subjects and IMAP folder labels — one language each, so block level is right.
   for (const [label, pattern] of [
     ["message subject in the reader", /<div className="text-base font-bold text-slate-900" dir="auto">\{reader\.message\.subject/],
-    ["message subject in the list", /<span className="truncate text-sm text-slate-500" dir="auto">\{summary\.subject/],
-    ["sender name in the list", /className=\{cn\("truncate text-sm"[\s\S]{0,120}?\)\} dir="auto"/],
-    ["IMAP folder name", /<span className="truncate" dir="auto">\{folder\.name\}/],
+    ["message subject in the list", /<span className="min-w-0 break-words text-sm text-slate-500" dir="auto">\{summary\.subject/],
+    ["sender name in the list", /className=\{cn\("min-w-0 break-words text-sm"[\s\S]{0,120}?\)\} dir="auto"/],
+    ["IMAP folder name", /<span className="min-w-0 break-words" dir="auto">\{folder\.name\}/],
   ] as const) {
     assert.match(source, pattern, `${label} must carry dir="auto" — it can be an Arabic value`);
   }

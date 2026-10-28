@@ -7,6 +7,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable, visibleMax } from "@/components/ui/use-sortable-table";
 import type { CeoDvManagerRow } from "@/lib/ceo/command-center";
+import { codeOrWords } from "@/lib/format/code-label";
 
 function pct(v: number | null) {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -96,23 +97,29 @@ export function CeoDvTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+      <div className="hidden md:block">
+        <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[28%]" />
+            <col className="w-[8%]" />
+            <col className="w-[16%]" />
+            <col className="w-[22%]" />
+            <col className="w-[12%]" />
+            <col className="w-[14%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
-              <SortableTh label="Manager"      sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="Role"         sortKey="roleCode"           sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+              <SortableTh label="Manager · role" sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
               <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
-              <SortableTh label="Neglected"    sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
-              <SortableTh label="Neglect %"    sortKey="neglectIndex"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
+              <SortableTh label="Neglected · %" sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
               <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
               <SortableTh label="Coverage"     sortKey="coveragePct"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-emerald-300 text-right" align="right" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {table.rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-slate-400">No manager data available.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-slate-400">No manager data available.</td></tr>
             ) : (
               table.rows.map((row) => {
                 const neglectPct   = maxNeglect > 0 ? ((row.neglectedMrCount ?? 0) / maxNeglect) * 100 : 0;
@@ -121,40 +128,32 @@ export function CeoDvTable({
                 const isStale       = (row.daysSinceLastDv ?? 0) > 14;
                 return (
                   <tr key={row.managerHrId} className="bg-white hover:bg-slate-50">
-                    <td className="px-3 py-2">
+                    <td className="min-w-0 break-words px-3 py-2">
                       <span className="font-semibold text-slate-900">{row.managerName}</span>
-                      {row.lineName ? <span className="ml-1.5 text-phx-2xs text-slate-400">{row.lineName}</span> : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-600">
-                        {row.roleCode ?? "—"}
+                      <span className="block text-phx-2xs text-slate-500">
+                        {[codeOrWords(row.roleCode), row.lineName].filter(Boolean).join(" · ") || "—"}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-900">{row.distinctMrs}</td>
                     <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="h-1 w-16 bg-slate-100">
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="h-1 w-full bg-slate-100">
                           <div className="h-full bg-amber-400" style={{ width: `${Math.max(2, overPct)}%` }} />
                         </div>
-                        <span className={`min-w-[20px] text-right font-bold ${row.overFocusedMrCount > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                        <span className={`font-bold ${row.overFocusedMrCount > 0 ? "text-amber-700" : "text-slate-400"}`}>
                           {row.overFocusedMrCount}
                         </span>
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="h-1 w-16 bg-slate-100">
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="h-1 w-full bg-slate-100">
                           <div className="h-full bg-rose-400" style={{ width: `${Math.max(2, neglectPct)}%` }} />
                         </div>
-                        <span className={`min-w-[20px] text-right font-bold ${isHighNeglect ? "text-rose-700" : "text-slate-700"}`}>
-                          {row.neglectedMrCount ?? "—"}
+                        <span className={`font-bold ${isHighNeglect ? "text-rose-700" : "text-slate-700"}`}>
+                          {row.neglectedMrCount ?? "—"} · {pct(row.neglectIndex)}
                         </span>
                       </div>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className={`font-black ${isHighNeglect ? "text-rose-700" : "text-slate-500"}`}>
-                        {pct(row.neglectIndex)}
-                      </span>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <span className={`font-semibold ${isStale ? "text-rose-600" : "text-slate-700"}`}>
@@ -172,6 +171,24 @@ export function CeoDvTable({
             )}
           </tbody>
         </table>
+      </div>
+      <div className="space-y-2 md:hidden">
+        {table.rows.length === 0 ? (
+          <p className="py-6 text-center text-xs text-slate-400">No manager data available.</p>
+        ) : (
+          table.rows.map((row) => (
+            <div className="space-y-1 break-words border border-slate-200 bg-white p-3 text-xs" key={row.managerHrId}>
+              <p className="text-sm font-semibold text-slate-900">{row.managerName}</p>
+              <p className="text-slate-500">{[codeOrWords(row.roleCode), row.lineName].filter(Boolean).join(" · ") || "—"}</p>
+              <p className="text-slate-700">
+                {row.distinctMrs} MRs · {row.overFocusedMrCount} over-focused · {row.neglectedMrCount ?? "—"} neglected ({pct(row.neglectIndex)})
+              </p>
+              <p className="text-slate-700">
+                Last DV {days(row.daysSinceLastDv)} · Coverage {row.coveragePct != null ? `${Math.round(row.coveragePct)}%` : "—"}
+              </p>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

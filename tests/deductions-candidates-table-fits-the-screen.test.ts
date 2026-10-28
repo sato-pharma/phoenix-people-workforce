@@ -165,8 +165,8 @@ export function runDeductionsCandidatesTableFitsTheScreenTests() {
   );
   assert.match(
     tab,
-    /colSpan=\{canDecide \? 7 : 6\}/,
-    `${WORKSPACE}: the day editor row must span every column of the table (7 with the checkbox, 6 without).`,
+    /<TableRowDetail colSpan=\{canDecide \? 7 : 6\}/,
+    `${WORKSPACE}: the day editor must be a TableRowDetail (tables-said-once-fit: no hand-written second row) spanning every column of the table (7 with the checkbox, 6 without).`,
   );
 
   // 5. HEADLINE — every column holds the widest thing in it that cannot wrap, at the 720px floor.
