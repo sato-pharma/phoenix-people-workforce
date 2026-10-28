@@ -602,6 +602,46 @@ export async function runAdminShellPaletteScopeTests(): Promise<void> {
       "the utility detector must still be able to see a rounded scrollbar",
     );
   }
+
+  // --- 7. the table look is locked, and a row's joined panel is its ONE exception -------------------
+  // docs/tables-said-once-fit.md rule 2 and 5. RULE 2 draws the orange grid on every cell with
+  // `!important`, the header is the shell's flat black and centred, and the table collapses its borders
+  // (`border-separate` doubles every grid line). The ONE thing that may weaken a cell border is the top
+  // edge of `tr[data-row-detail] > td`, so a row and the panel it opens read as one.
+  {
+    const rules = [...stripCssComments(GLOBALS_SOURCE).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+      body: match[2],
+      selectors: splitSelectorList(match[1].trim()).map((selector) => selector.trim()),
+    }));
+    const declared = (selector: string) => rules.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body).join(";");
+    const orangeHairline = /border\s*:\s*1px solid rgba\(249,\s*115,\s*22,\s*0\.22\)\s*!important/;
+
+    for (const shell of [".admin-shell", ".employee-portal-shell"]) {
+      assert.match(declared(`${shell} table`), /border-collapse\s*:\s*collapse/, `${shell} tables must collapse their borders`);
+      assert.match(declared(`${shell} thead th`), /background-color\s*:\s*#000000\s*!important/, `${shell} table header must stay flat black`);
+      assert.match(declared(`${shell} thead th`), /text-align\s*:\s*center\s*!important/, `${shell} table header must stay centred`);
+      assert.ok(
+        rules.some((rule) => rule.selectors.includes(`${shell} td`) && orangeHairline.test(rule.body)),
+        `${shell} td must keep the 1px orange hairline with !important (RULE 2)`,
+      );
+      assert.equal(
+        declared(`${shell} tr[data-row-detail] > td`).replace(/\s+/g, " ").trim().replace(/;$/, ""),
+        "border-top-style: hidden !important",
+        `${shell} joined panel: the top edge is hidden and nothing else changes`,
+      );
+    }
+
+    // No other rule aimed at a cell may remove, hide or zero a border.
+    const cellSelector = /(^|[\s>+~,(:])(td|th)(?![-\w])/;
+    const weakening = /(?:^|;)\s*(?:border|outline)(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-(?:width|style|color))?\s*:\s*[^;]*(?:\bnone\b|\bhidden\b|(?:^|\s)0(?:px|rem)?(?:\s|$|!)|transparent)/;
+    const offenders = rules
+      .flatMap((rule) => rule.selectors.filter((selector) => cellSelector.test(selector) && weakening.test(rule.body)))
+      .filter((selector) => !/^\.(?:admin|employee-portal)-shell tr\[data-row-detail\] > td$/.test(selector));
+    assert.deepEqual(offenders, [], `a rule weakens a table cell border: ${offenders.join(" | ")} — only a row's joined panel may (tests/table-row-detail-joined.test.ts)`);
+    // The control: the detector still sees a hidden border on a cell.
+    assert.ok(cellSelector.test(".admin-shell td") && weakening.test("border-top-style: hidden !important"), "the cell-border detector must still match what it guards");
+    assert.ok(weakening.test("border: none") && !weakening.test("border: 1px solid rgba(249, 115, 22, 0.22) !important"), "the weakening pattern must tell none from the orange hairline");
+  }
 }
 
 /** sRGB hex -> OKLCH. Enough precision to compare lightness and classify hue. */
