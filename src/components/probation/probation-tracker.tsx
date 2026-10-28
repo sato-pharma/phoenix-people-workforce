@@ -1,5 +1,6 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -148,7 +149,7 @@ function workflowBadgeVariant(status: string | null | undefined) {
 }
 
 function workflowLabel(status: string | null | undefined) {
-  return status ? status.replace(/_/g, " ") : "not requested";
+  return status ? humanizeCode(status) : "Not requested";
 }
 
 function actionLabel(action: ProbationWorkflowAction) {
@@ -712,7 +713,7 @@ export function ProbationTracker({
             <Input
               className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, HR ID, CRM ID"
+              placeholder="Search name"
               value={query}
             />
           </label>
@@ -769,7 +770,7 @@ export function ProbationTracker({
                 accent={row.feedbackStatus === "Pending" ? "amber" : "emerald"}
                 meta={
                   <span>
-                    <span className="font-mono">{row.hr_id}</span> · {row.line_name} / {row.area_name}
+                    {row.line_name} / {row.area_name}
                     {row.team_name ? ` / ${row.team_name}` : ""}
                   </span>
                 }
@@ -784,10 +785,10 @@ export function ProbationTracker({
                   fields={[
                     { label: "Hiring Date", value: formatDate(row.hire_date) },
                     { label: "Probation Day / Status", value: row.probationDayStatus },
-                    { label: "Direct Manager", value: row.manager_name ?? row.manager_hr_id ?? "-" },
+                    { label: "Direct Manager", value: row.manager_name ?? "—" },
                     {
                       label: "Manager of Manager",
-                      value: row.manager_manager_name ?? row.manager_manager_hr_id ?? "-",
+                      value: row.manager_manager_name ?? "—",
                     },
                     { label: "Feedback By", value: row.workflow?.managerReviewedBy ?? "-" },
                     {
@@ -851,16 +852,15 @@ export function ProbationTracker({
                     <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
                         <span className="block break-words font-semibold text-text">{row.full_name}</span>
-                        <span className="block break-words font-mono text-text-secondary">{row.hr_id}</span>
                         <span className="block break-words text-text-secondary">
                           Hired {formatDate(row.hire_date)}
                         </span>
                       </td>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>{row.probationDayStatus}</td>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
-                        <span className="block break-words">{row.manager_name ?? row.manager_hr_id ?? "-"}</span>
+                        <span className="block break-words">{row.manager_name ?? "—"}</span>
                         <span className="block break-words text-text-secondary">
-                          via {row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}
+                          via {row.manager_manager_name ?? "—"}
                         </span>
                       </td>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
@@ -929,7 +929,7 @@ export function ProbationTracker({
                 actions={rowActions(row)}
                 meta={
                   <span>
-                    <span className="font-mono">{row.hr_id || "-"}</span> · {row.job_title}
+                    {row.job_title}
                   </span>
                 }
                 status={
@@ -941,7 +941,6 @@ export function ProbationTracker({
               >
                 <PortalRecordFields
                   fields={[
-                    { label: "CRM ID", value: row.crm_id || "-" },
                     { label: "Line", value: row.line_name },
                     { label: "Area", value: row.area_name },
                     { label: "Hire Date", value: formatDate(row.hire_date) },
@@ -960,7 +959,7 @@ export function ProbationTracker({
                           </Badge>
                           {row.workflow?.decision ? (
                             <span className="block text-xs font-semibold text-phx-ink">
-                              Decision: {row.workflow.decision}
+                              Decision: {humanizeCode(row.workflow.decision)}
                             </span>
                           ) : null}
                         </span>
@@ -1024,9 +1023,6 @@ export function ProbationTracker({
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
                         <span className="block break-words font-semibold text-text">{row.full_name}</span>
-                        <span className="block break-words font-mono text-text-secondary">
-                          {row.hr_id || "-"} · {row.crm_id || "-"}
-                        </span>
                         <span className="block break-words text-text-secondary">{row.job_title}</span>
                       </td>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
@@ -1041,7 +1037,7 @@ export function ProbationTracker({
                           {Math.max(0, row.days_remaining)} days
                         </span>
                       </td>
-                      <td className={cn("min-w-[125px]", probationTableCellClassName)}>
+                      <td className={probationTableCellClassName}>
                         {progressCell(traffic, progress)}
                       </td>
                       <td className={probationTableValueClassName}>
@@ -1053,7 +1049,7 @@ export function ProbationTracker({
                         <div className="space-y-2">
                           <Badge variant={workflowBadgeVariant(row.workflow?.status)}>{workflowLabel(row.workflow?.status)}</Badge>
                           {row.workflow?.decision ? (
-                            <div className="text-xs font-semibold text-phx-ink">Decision: {row.workflow.decision}</div>
+                            <div className="text-xs font-semibold text-phx-ink">Decision: {humanizeCode(row.workflow.decision)}</div>
                           ) : null}
                         </div>
                       </td>

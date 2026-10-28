@@ -1,5 +1,6 @@
 ﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿"use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import {
   AlertCircle,
   ArrowLeftRight,
@@ -439,7 +440,7 @@ function dateText(value: string | null | undefined) {
 }
 
 function optionName(value: string) {
-  return value.replace(/_/g, " ");
+  return humanizeCode(value);
 }
 
 function isMedicalRepTitle(value: string | null | undefined) {
@@ -3051,9 +3052,6 @@ export function EmployeeManagement({
                       key={employeeRowKey(employee, index)}
                       meta={
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-2xs font-black uppercase tracking-wider text-slate-600">
-                            {employee.hrId}
-                          </span>
                           {employee.employmentStatus === "active" ? (
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           ) : null}
@@ -3095,17 +3093,12 @@ export function EmployeeManagement({
                           },
                           {
                             label: "Hired",
-                            value: employee.hireDate ? employee.hireDate.slice(0, 10) : "-",
+                            value: employee.hireDate ? employee.hireDate.slice(0, 10) : "—",
                           },
                           {
                             label: "Manager",
                             value: employee.managerHrId ? (
-                              <>
-                                {emptyText(employee.managerName)}{" "}
-                                <span className="font-mono text-phx-2xs text-slate-400">
-                                  {employee.managerHrId}
-                                </span>
-                              </>
+                              emptyText(employee.managerName)
                             ) : (
                               <span className="inline-flex rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-tighter text-phx-warn">
                                 Unassigned
@@ -3144,7 +3137,7 @@ export function EmployeeManagement({
               <thead>
                 <tr className="text-phx-xs font-bold uppercase tracking-wider text-phx-ink-soft">
                   <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Employee Information</th>
-                  <th className={`${frozenHeaderCellClassName} whitespace-nowrap`} style={frozenHeaderCellStyle}>Hiring Date</th>
+                  <th className={`${frozenHeaderCellClassName}`} style={frozenHeaderCellStyle}>Hiring Date</th>
                   <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Organization</th>
                   <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Direct Manager</th>
                   <th className={`${frozenHeaderCellClassName} text-center`} style={frozenHeaderCellStyle}>Payout</th>
@@ -3156,7 +3149,7 @@ export function EmployeeManagement({
                 {filteredEmployees.length === 0 ? (
                   <tr>
                     <td
-                      className="px-6 py-16 text-center text-sm text-phx-ink-faint"
+                      className="px-3 py-16 text-center text-sm text-phx-ink-faint"
                       colSpan={7}
                     >
                       <div className="flex flex-col items-center gap-3">
@@ -3180,7 +3173,7 @@ export function EmployeeManagement({
                         className="group transition-all duration-200 hover:bg-phx-paper data-[state=selected]:bg-phx-accent-soft"
                         key={employeeRowKey(employee, index)}
                       >
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-4">
                         {/* A reader clicking a name gets the Master Details drawer rather than an
                             edit form she cannot save: the same gesture, sent where it can land. */}
                         <button
@@ -3198,9 +3191,6 @@ export function EmployeeManagement({
                             {employee.displayName}
                           </span>
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="font-mono text-phx-2xs font-black tracking-wider text-phx-ink-soft bg-slate-100 px-1.5 py-0.5 rounded uppercase">
-                              {employee.hrId}
-                            </span>
                             {employee.employmentStatus === "active" && (
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             )}
@@ -3219,12 +3209,12 @@ export function EmployeeManagement({
                           </div>
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-4">
                         <span className="font-mono text-xs text-phx-ink-2">
-                          {employee.hireDate ? employee.hireDate.slice(0, 10) : "-"}
+                          {employee.hireDate ? employee.hireDate.slice(0, 10) : "—"}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-semibold text-phx-ink leading-tight">
                             {emptyText(employee.positionTitle ?? employee.jobTitle)}
@@ -3234,14 +3224,11 @@ export function EmployeeManagement({
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-4">
                         {employee.managerHrId ? (
                           <div className="flex flex-col gap-1">
                             <span className="text-xs font-medium text-phx-ink">
                               {emptyText(employee.managerName)}
-                            </span>
-                            <span className="font-mono text-phx-2xs tracking-tight text-phx-ink-faint">
-                              {employee.managerHrId}
                             </span>
                           </div>
                         ) : (
@@ -3250,7 +3237,7 @@ export function EmployeeManagement({
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-3 py-4 text-center">
                         <Badge
                           className={cn(
                             "border-none px-2.5 py-0.5 text-phx-2xs font-bold uppercase tracking-tight whitespace-nowrap",
@@ -3265,9 +3252,9 @@ export function EmployeeManagement({
                             : "1 Part"}
                         </Badge>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-xs font-medium text-phx-ink leading-tight">
+                          <span className="break-words text-xs font-medium text-phx-ink leading-tight">
                             {emptyText(employee.workEmail)}
                           </span>
                           <span className="font-mono text-phx-2xs tracking-tight text-phx-ink-soft">
@@ -3275,7 +3262,7 @@ export function EmployeeManagement({
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-3 py-4 text-right">
                         <div className="flex justify-end gap-1.5 transition-all duration-200">
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
@@ -3531,7 +3518,7 @@ export function EmployeeManagement({
                           <div>
                             <p className="text-sm font-semibold text-phx-ink">{detail.label}</p>
                             <p className="text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
-                              {detail.category.replace(/_/g, " ")} · {detail.valueType}
+                              {humanizeCode(detail.category)} · {detail.valueType}
                             </p>
                           </div>
                           <p className="text-sm font-semibold text-phx-ink">{detail.value || "-"}</p>

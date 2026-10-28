@@ -477,7 +477,7 @@ function StatusDistributionBar({ counts, total }: { counts: Partial<Record<Coach
 }
 
 function ZoneBadge({ zone }: { zone: CoachingPerformanceZone | null }) {
-  if (!zone) return <span className="inline-flex border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">N/A</span>;
+  if (!zone) return <span className="inline-flex border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">—</span>;
   const cfg = zoneConfig[zone];
   return <span className={cn("inline-flex border px-2 py-0.5 text-phx-xs font-semibold", cfg.bg, cfg.border, cfg.text)}>{cfg.label}</span>;
 }
