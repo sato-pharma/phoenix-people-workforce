@@ -1,5 +1,6 @@
 "use client";
 
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { countOf } from "@/lib/i18n/format";
 import * as React from "react";
 import {
@@ -669,13 +670,13 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
       case "requestCode":
         return row.requestCode;
       case "requesterName":
-        return row.requesterName ?? row.requesterHrId;
+        return row.requesterName ?? "";
       case "line":
         return row.line ?? "";
       case "customerName":
         return row.customerName;
       case "status":
-        return STATUS_LABELS[row.status] ?? row.status;
+        return STATUS_LABELS[row.status] ?? requestStatusLabel(row.status);
       case "roiWindow":
         return row.roiWindow ?? "";
       case "requiredRoiValue":
@@ -759,7 +760,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
       {/* trust signals */}
       <div className="flex flex-wrap items-center gap-2 text-phx-xs font-bold">
         <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-ink-2 shadow-[0_1px_1px_rgba(15,23,42,0.05)]">
-          Sales data as of {kpi.salesDataAsOf ?? "n/a"}
+          Sales data as of {kpi.salesDataAsOf ?? "—"}
         </span>
         {kpi.pendingValue > 0 ? (
           <span className="inline-flex items-center gap-1 rounded-[4px] border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
@@ -957,11 +958,11 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
   return (
     <tr className="border-t border-[#FEE7D2] align-top">
       <td className="px-3 py-3">
-        <p className="truncate font-mono text-phx-sm font-bold text-phx-ink" title={row.requestCode}>
+        <p className="break-words font-mono text-phx-sm font-bold text-phx-ink">
           {row.requestCode}
         </p>
         <p className="mt-1 break-words text-phx-xs font-semibold leading-4 text-phx-ink-soft">
-          {row.requesterName ?? row.requesterHrId}
+          {row.requesterName ?? "—"}
         </p>
       </td>
       <td className="px-3 py-3">
@@ -969,12 +970,12 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
           {row.customerName}
         </p>
         <p className="mt-1 break-words text-phx-xs font-bold uppercase tracking-[0.08em] text-phx-ink-faint">
-          {row.line ?? "No line"}
+          {row.line ?? "—"}
         </p>
       </td>
       <td className="px-3 py-3">
-        <p className="break-words font-semibold text-phx-ink-2">{STATUS_LABELS[row.status] ?? row.status}</p>
-        <p className="mt-1 break-words text-phx-xs font-medium text-phx-ink-faint">{row.roiWindow ?? "No window"}</p>
+        <p className="break-words font-semibold text-phx-ink-2">{STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)}</p>
+        <p className="mt-1 break-words text-phx-xs font-medium text-phx-ink-faint">{row.roiWindow ?? "—"}</p>
       </td>
       <td className="px-3 py-3 text-right">
         <div className="space-y-1">
@@ -1011,11 +1012,11 @@ const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { 
     <article className={`${adminPanelClassName} rounded-[6px] p-3`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-mono text-phx-sm font-bold text-phx-ink" title={row.requestCode}>
+          <p className="break-words font-mono text-phx-sm font-bold text-phx-ink">
             {row.requestCode}
           </p>
           <h4 className="mt-1 break-words text-phx-md font-black leading-5 text-phx-ink-2">{row.customerName}</h4>
-          <p className="mt-1 break-words text-phx-xs font-semibold text-phx-ink-soft">{row.requesterName ?? row.requesterHrId}</p>
+          {row.requesterName ? <p className="mt-1 break-words text-phx-xs font-semibold text-phx-ink-soft">{row.requesterName}</p> : null}
         </div>
         <ResultStatusBadge row={row} />
       </div>
@@ -1040,7 +1041,7 @@ const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { 
         </div>
         <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Window</p>
-          <p className="mt-0.5 break-words font-bold text-phx-ink-soft">{row.roiWindow ?? "No window"}</p>
+          <p className="mt-0.5 break-words font-bold text-phx-ink-soft">{row.roiWindow ?? "—"}</p>
         </div>
         <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Data coverage</p>
@@ -1050,7 +1051,7 @@ const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { 
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
-          {(STATUS_LABELS[row.status] ?? row.status)} / {row.line ?? "No line"}
+          {[STATUS_LABELS[row.status] ?? requestStatusLabel(row.status), row.line].filter(Boolean).join(" / ")}
         </p>
         <ViewSalesAction row={row} viewSalesBasePath={viewSalesBasePath} />
       </div>
