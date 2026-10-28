@@ -5,8 +5,10 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 061d8c97-37ba-4e99-8b5d-a309001b06a0
-  modified: 2026-10-21T12:06:28.296Z
+  modified: 2026-10-27T22:09:29.491Z
 ---
+
+🔴 **2026-10-28: Aya Tarek (OF-0005, Office Coordinator) now HOLDS the `HR Administration` seat** — owner asked "add all modules in hr operations specialist account to the office coordinator account", then picked "Specialist seat, no salary" over Yasmeena's HR Operations seat. Four writes done (role, session_version 1→2, access profile SELF, both metadata blocks; she had no live sessions). The seat's alerts that fell to him while it was empty now reach her. Her `employees.job_title` stays "Office Coordinator".
 
 🔴 **2026-10-21 (owner: "return to Yasmeena her original account and leave the new account seat as it is"): Yasmeena (HR-009) is BACK ON `HR Operations`** (shown HR Generalist) — login role, access profile, both auth-metadata blocks, session_version 10→11, her live sessions revoked. The `HR Administration` seat (HR Operations Specialist) is LEFT IN PLACE and now holds nobody: roles row, 3 CHECK constraints, 5 workflow actions and the resignation alert audience untouched. Her `employees.job_title` still reads "HR Operations Specialist" (set before 2026-10-20, unchanged). While she holds `HR Operations`, vacation notices, business cards and that seat's alerts reach her again, not him. Everything below describes the seat's design, not who sits in it.
 

@@ -80,6 +80,7 @@ import {
   loadDirectOrderVenueFieldEvidence,
 } from "@/lib/direct-orders/pharmacy-validation";
 import { loadDirectOrderVenueValidationPhotos } from "@/lib/direct-orders/venue-validation-photos";
+import { loadSamePharmacyFlagForDirectOrder } from "@/lib/direct-orders/same-pharmacy-cross-use-loader";
 import { directOrderFieldEvidenceGap } from "@/lib/direct-orders/field-evidence-gap";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import { resolveDirectOrderPharmacyValidationBadge } from "@/lib/direct-orders/pharmacy-validation-badge";
@@ -6512,7 +6513,21 @@ export async function getDirectOrderApprovalDetail(
   // marketing customers validated there — each with its full captured details (owner, 2026-10-21:
   // "never hide a picture if available"). Ungated like pharmacyEvidence above: anyone who may open
   // the order is deciding on the same venue. Never throws.
-  const venueValidationPhotos = await loadDirectOrderVenueValidationPhotos(request.pharmacyId);
+  // Same pharmacy, same person, BOTH modules (owner, 2026-10-28): the requester's live marketing
+  // requests for this venue, flagged to every rung of the chain, the CEO included — a direct order
+  // already carries its bonus or discount, so a marketing request on top pays the pharmacy twice.
+  // Flagged, never blocked. Never throws.
+  const [venueValidationPhotos, samePharmacyMarketingRequests] = await Promise.all([
+    loadDirectOrderVenueValidationPhotos(request.pharmacyId),
+    loadSamePharmacyFlagForDirectOrder({
+      orderId: request.id,
+      marketingRequestId: request.marketingRequestId,
+      pharmacyId: request.pharmacyId,
+      pharmacyName: pharmacy?.pharmacyName ?? null,
+      requesterHrId: request.requesterHrId,
+      requesterName: nameOf(request.requesterHrId) ?? null,
+    }),
+  ]);
   // The invoice the rep used (owner, 2026-09-14). "Expected" is a NEW pharmacy with a distributor
   // account — exactly what the SFE Manager confirms on this order — so a missing invoice is said out
   // loud there instead of reading as nothing to see.
@@ -6715,6 +6730,7 @@ export async function getDirectOrderApprovalDetail(
     pharmacyValidation: resolveDirectOrderPharmacyValidationBadge(pharmacy, pharmacyEvidence, nameOf),
     pharmacyFieldEvidenceGap,
     venueValidationPhotos,
+    samePharmacyMarketingRequests,
     orderInvoice,
     invoiceExpected,
     canAttachInvoice,

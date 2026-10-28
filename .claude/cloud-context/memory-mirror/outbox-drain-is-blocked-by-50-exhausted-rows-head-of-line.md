@@ -84,7 +84,7 @@ worktree list is the earlier collision signal ([[two-sessions-fixed-one-bug-main
 🔴 **An approval to merge EXPIRES when the base moves** — `main` advancing between the check and the merge
 call made one merge would-be revert 156 lines of a sibling PR's test. **Run `git diff --stat origin/main HEAD`
 immediately before every merge and re-read the required checks against the CURRENT head — green checks prove
-a tree that no longer exists.** Every session authenticates as `Gawish-1997`, so the timeline's actor field
+a tree that no longer exists.** Every session authenticates as the one owner login (`it-gawish-hr` since 27 Oct 2026, `Gawish-1997` before), so the timeline's actor field
 cannot tell you which session acted; do not infer it, and do not assume the owner did. GitHub refuses to
 reopen a closed PR whose head was force-pushed, so a narrowed branch needs a fresh PR number.
 

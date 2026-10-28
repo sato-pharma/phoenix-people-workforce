@@ -10,6 +10,7 @@ import { ValidatedEvidenceLink } from "@/components/validation/validated-evidenc
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
+import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
@@ -281,6 +282,10 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
           venueNoun="customer"
         />
       ) : null}
+
+      {/* Same pharmacy, same person, both modules (owner, 2026-10-28): the requester also raised a
+          direct order to a pharmacy this request targets — that order already carries its bonus. */}
+      <SamePharmacyCrossUseNotice flag={detail.samePharmacyDirectOrders} />
 
       {/* ── Twin warning: the same requester, customer, type and cost already live — a possible
           double payment (twin-request.ts). Named, never decided. ─────────────────────────────── */}

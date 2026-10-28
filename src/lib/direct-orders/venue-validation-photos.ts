@@ -144,7 +144,7 @@ async function loadNames(hrIds: Array<string | null>): Promise<(hrId: string | n
 }
 
 /** The marketing pharmacies this Direct Order venue IS: through the hand-over's link, or its codes. */
-async function findMarketingPharmacyIds(directOrderPharmacyId: string): Promise<string[]> {
+export async function findMarketingPharmacyIds(directOrderPharmacyId: string): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const [{ data: linked }, { data: venueCodes }] = await Promise.all([
     supabase

@@ -111,3 +111,15 @@ icon in her session; the `.msh` carries only MeshName/MeshType/MeshID/ServerID/M
 CAN notice: the pointer moving and characters appearing while he is driving, **Mesh Agent** listed in
 Settings → Apps and as a Windows service, and any files or command history a session leaves behind.
 Turning the prompt or the notification bar ON is a device-group setting in the web UI, his to choose.
+
+🔴 **OUTAGE 22–28 Oct 2026: BOTH SERVERS WERE UNREACHABLE AND NOTHING SAID SO.** The phone tunnel dropped
+22 Oct 22:34 Cairo; the reconciler moved the address to the laptop, but the laptop's `cloudflared-mesh`
+service had crashed (exit 1067, StartMode Auto, Stopped), so `mesh.satopharma.com/meshagents?id=4`
+answered Cloudflare **530** — no alert AND no control for ~5½ days. The phone came back 28 Oct 10:22 Cairo
+(reconciler "SWITCHED to phone", verify 3,453,840-byte MZ). The phone has serial `RK8W203K4ME` (Samsung,
+VID_04E8) — the `VID_2717` Xiaomi device on this laptop's USB is his mouse/keyboard receiver, not the phone.
+Laptop tunnel restarted by him 28 Oct 10:27 Cairo: Cloudflare shows phone AND laptop tunnels `healthy`, 4
+connections each, address on the phone, and `https://127.0.0.1/meshagents?id=4` on the laptop serves the
+same 3,453,840-byte installer — the failover has a live target again. The reconciler only checks the PHONE's
+health, so a dead laptop tunnel stays invisible until the phone drops; read both with the Cloudflare
+`cfd_tunnel/<id>` status, never the reconciler log alone.
