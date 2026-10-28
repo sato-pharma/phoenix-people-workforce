@@ -50,6 +50,8 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+import { humanizeCode } from "@/lib/format/code-label";
 
 
 function formatEGP(value: number) {
@@ -696,7 +698,7 @@ export function ExpenseReport({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-phx-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Verified workload</span>
-          <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
+          <Badge variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
           <span className="text-phx-xs text-text-secondary">{data.sourceLabel}</span>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
@@ -796,13 +798,13 @@ export function ExpenseReport({
             <tbody className="divide-y divide-slate-100">
               {data.dateBreakdown.map((day) => (
                 <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
+                  <td className="break-words px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{pharmacyCellText(day)}</td>
                   <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
                   <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
-                  <td className="whitespace-nowrap px-3 py-2">
+                  <td className="break-words px-3 py-2">
                     {day.total === 0 ? (
                       <span className="font-semibold text-rose-600">No activity</span>
                     ) : (
@@ -1495,7 +1497,7 @@ export function ExpenseReport({
                       <PortalRecordCard
                         accent={reasonMissing ? "rose" : issues.length > 0 ? "amber" : "orange"}
                         key={`card-${record.tripId}-${record.row}`}
-                        meta={record.hrId ? record.hrId : "HR ID not mapped"}
+                        meta={record.hrId ? undefined : "Not mapped to an employee"}
                         status={
                           <Badge variant={issues.length > 0 ? "warning" : "success"}>
                             {issues.length > 0 ? issues.join(", ") : "Ready"}
@@ -1615,10 +1617,10 @@ export function ExpenseReport({
                             read once, a row is read 489 times.
                           */}
                           <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-2 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
-                            <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-xs text-text-secondary">
-                              {record.hrId ? record.hrId : "HR ID not mapped"}
-                            </p>
+                            <p className="break-words font-semibold text-text">{record.specialist || "Unassigned"}</p>
+                            {record.hrId ? null : (
+                              <p className="mt-0.5 break-words text-phx-xs text-text-secondary">Not mapped to an employee</p>
+                            )}
                             {/*
                               The declared-workload chips and the Verify control share ONE wrapping
                               line. They used to be two stacked blocks, which made every review row
@@ -1647,6 +1649,7 @@ export function ExpenseReport({
                                 className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
                                 onClick={() => toggleTripExpand(record)}
                                 type="button"
+                                {...rowDetailToggleProps(`trip-evidence-${record.tripId}-${record.row}`, isExpanded)}
                               >
                                 {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                                 {isExpanded ? "Hide" : "Verify"} workload
@@ -1711,13 +1714,11 @@ export function ExpenseReport({
                           </td>
                         </tr>
                         {isExpanded ? (
-                          <tr className="bg-slate-50/70">
-                            <td className="border-b border-slate-200 p-0" colSpan={visibleDetailColumns.length + 2}>
-                              <div className="sticky left-0 w-[min(920px,100%)] p-4">
-                                {renderTripEvidence(record)}
-                              </div>
-                            </td>
-                          </tr>
+                          <TableRowDetail className="p-0" colSpan={visibleDetailColumns.length + 2} id={`trip-evidence-${record.tripId}-${record.row}`}>
+                            <div className="sticky left-0 w-[min(920px,100%)] p-4">
+                              {renderTripEvidence(record)}
+                            </div>
+                          </TableRowDetail>
                         ) : null}
                         </Fragment>
                         );

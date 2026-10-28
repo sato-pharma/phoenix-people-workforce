@@ -247,8 +247,8 @@ function BarRows({ rows, title }: { rows: GroupRow[]; title: string }) {
                 <p className="truncate text-sm font-bold text-phx-ink">{row.key}</p>
                 <p className="shrink-0 text-phx-xs font-semibold text-phx-ink-soft">{formatNumber(row.count)} rows</p>
               </div>
-              <div className="mt-1.5 h-2 rounded-full bg-phx-paper-2 shadow-inner">
-                <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              <div className="mt-1.5 h-2 bg-phx-paper-2">
+                <div className="h-full bg-phx-accent" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </div>
             <p className="text-right text-xs font-black text-phx-ink">{formatEGP(row.total).replace("EGP", "")}</p>
@@ -291,8 +291,8 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                   { label: "Other", value: formatEGP(row.other) },
                 ]}
               />
-              <div className="mt-3 h-2 w-full rounded-full bg-phx-paper-2 shadow-inner">
-                <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              <div className="mt-3 h-2 w-full bg-phx-paper-2">
+                <div className="h-full bg-phx-accent" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </PortalRecordCard>
           )}
@@ -338,8 +338,8 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                   <td className="px-3 py-2 font-black text-phx-accent-hover">{formatEGP(row.total)}</td>
                   <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2">
-                    <div className="h-2 w-28 rounded-full bg-phx-paper-2 shadow-inner">
-                      <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                    <div className="h-2 w-full bg-phx-paper-2">
+                      <div className="h-full bg-phx-accent" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                     </div>
                   </td>
                 </tr>
@@ -418,7 +418,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
             <tbody className="divide-y divide-phx-line bg-white">
               {rows.slice(0, 50).map((row) => (
                 <tr className="transition-colors hover:bg-phx-accent-soft/70" key={row.key}>
-                  <td className="max-w-[220px] truncate px-3 py-2 font-bold text-phx-ink">{row.key}</td>
+                  <td className="break-words px-3 py-2 font-bold text-phx-ink">{row.key}</td>
                   <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.count)}</td>
                   <td className="px-3 py-2 font-black text-phx-accent-hover">{formatEGP(row.total)}</td>
                   <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.travel)}</td>
@@ -477,8 +477,8 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
                     <p className="text-phx-xs font-semibold text-phx-ink-soft">{formatEGP(costPerVisit)} / visit</p>
                   </div>
                 </div>
-                <div className="ml-10 h-2.5 rounded-full bg-phx-paper-2 shadow-inner">
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#FB923C] to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                <div className="ml-10 h-2.5 bg-phx-paper-2">
+                  <div className="h-full bg-phx-accent" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                 </div>
               </div>
             );

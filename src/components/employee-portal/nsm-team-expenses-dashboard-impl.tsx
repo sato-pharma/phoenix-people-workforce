@@ -50,7 +50,7 @@ function formatKm(value: number) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "N/A";
+  if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return stableEnGbFormatter({
@@ -342,8 +342,8 @@ export function NsmTeamExpensesDashboard({
                       <p className="break-words text-sm font-semibold leading-tight text-slate-900">
                         {formatEmployeeDisplayName(dsm.name)}
                       </p>
-                      <p className="mt-0.5 text-phx-2xs text-slate-400">
-                        {dsm.hrId}{dsm.lineName ? ` · ${dsm.lineName}` : ""}
+                      <p className="mt-0.5 break-words text-phx-2xs text-slate-400">
+                        {dsm.lineName}
                       </p>
                     </div>
                     <p className="shrink-0 text-base font-bold" style={{ color }}>
@@ -383,8 +383,17 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Desktop table view */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-0 text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[8%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[12%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-100">
                 <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 border-r border-slate-100">DSM</th>
@@ -401,7 +410,7 @@ export function NsmTeamExpensesDashboard({
                 <tr key={dsm.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                     <p className="break-words font-medium leading-tight text-slate-900">{formatEmployeeDisplayName(dsm.name)}</p>
-                    <p className="text-phx-2xs text-slate-400">{dsm.hrId}{dsm.lineName ? ` · ${dsm.lineName}` : ""}</p>
+                    {dsm.lineName ? <p className="break-words text-phx-2xs text-slate-400">{dsm.lineName}</p> : null}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100 text-slate-700">
                     {dsm.totalTrips.toLocaleString()}
@@ -463,7 +472,7 @@ export function NsmTeamExpensesDashboard({
                         {expense.dsmName}
                       </p>
                       <p className="mt-0.5 text-phx-2xs text-slate-400">
-                        {formatDate(expense.date)} · Trip #{expense.tripId || "N/A"}
+                        {formatDate(expense.date)}{expense.tripId ? ` · Trip #${expense.tripId}` : ""}
                       </p>
                     </div>
                     <p className="shrink-0 text-base font-bold text-slate-900">
@@ -496,8 +505,18 @@ export function NsmTeamExpensesDashboard({
         </div>
 
         {/* Desktop table view */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-0 text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+              <col className="w-[11%]" />
+              <col className="w-[11%]" />
+              <col className="w-[22%]" />
+              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[12%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-100">
                 <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 border-r border-slate-100">DSM</th>
@@ -521,10 +540,9 @@ export function NsmTeamExpensesDashboard({
                   >
                     <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                       <p className="break-words font-medium leading-tight text-slate-900">{expense.dsmName}</p>
-                      <p className="text-phx-2xs text-slate-400">{expense.hrId ?? "N/A"}</p>
                     </td>
-                    <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
-                      {expense.tripId || "N/A"}
+                    <td className="break-words py-2.5 px-3 text-slate-700 border-r border-slate-100">
+                      {expense.tripId || "—"}
                     </td>
                     <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
                       {formatDate(expense.date)}
@@ -543,7 +561,7 @@ export function NsmTeamExpensesDashboard({
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <span
-                        className="inline-flex rounded px-2 py-0.5 text-phx-xs font-semibold"
+                        className="inline-flex break-words px-2 py-0.5 text-phx-xs font-semibold"
                         style={{
                           backgroundColor: stateTone[state].background,
                           color: stateTone[state].text,

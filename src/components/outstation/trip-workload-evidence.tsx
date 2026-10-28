@@ -12,6 +12,7 @@ import {
   pharmacyTileFigure,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
+import { humanizeCode } from "@/lib/format/code-label";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
@@ -213,7 +214,7 @@ export function TripWorkloadEvidencePanel({
   if (!hrId) {
     return (
       <p className="flex items-center gap-2 text-xs font-medium text-rose-600">
-        <AlertTriangle className="h-4 w-4 shrink-0" /> No HR ID on this trip, so its visits can&apos;t be verified.
+        <AlertTriangle className="h-4 w-4 shrink-0" /> This trip is not linked to an employee, so its visits can&apos;t be verified.
       </p>
     );
   }
@@ -276,7 +277,7 @@ export function TripWorkloadEvidencePanel({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Verified workload</span>
-        <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
+        <Badge variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
         <span className="text-phx-xs text-slate-500">{data.sourceLabel}</span>
       </div>
       {freshness.verdict === "stale" && freshness.headline ? (
@@ -381,13 +382,13 @@ export function TripWorkloadEvidencePanel({
           <tbody className="divide-y divide-slate-100">
             {data.dateBreakdown.map((day) => (
               <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
-                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{formatDateValue(day.date)}</td>
+                <td className="break-words px-3 py-2 font-medium text-slate-900">{formatDateValue(day.date)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.am)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pm)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{pharmacyCellText(day)}</td>
                 <td className="px-3 py-2 text-right font-mono text-sky-700">{fmt(day.regular)}</td>
                 <td className="px-3 py-2 text-right font-mono text-violet-700">{fmt(day.campaign)}</td>
-                <td className="whitespace-nowrap px-3 py-2">
+                <td className="break-words px-3 py-2">
                   {day.total === 0 ? (
                     <span className="font-bold text-rose-600">No activity</span>
                   ) : (
@@ -434,7 +435,7 @@ export function TripWorkloadEvidencePanel({
                                 >
                                   {visit.kind}
                                 </span>
-                                <span className="truncate text-slate-700">
+                                <span className="break-words text-slate-700">
                                   {visit.contact || visit.customer || "—"}
                                   {visit.role === "partner" ? " · double" : ""}
                                 </span>
@@ -465,7 +466,7 @@ export function TripWorkloadEvidencePanel({
                         <ol className="mt-1 space-y-1">
                           {day.checkins.map((checkin, index) => (
                             <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                              <span className="truncate text-slate-700">
+                              <span className="break-words text-slate-700">
                                 {index + 1}.{" "}
                                 {checkin.contact ||
                                   checkin.address ||

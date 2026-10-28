@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
+import { humanizeCode } from "@/lib/format/code-label";
 import type { OutstationCalculationResult } from "@/lib/outstation/types";
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
 
@@ -26,28 +27,24 @@ export function EligibilityResultCard({
       </div>
 
       <div className="mt-4 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-4">
-        <Info
-          accent="border-l-sky-400"
-          label="Distance"
-          value={
-            result.distanceFromResidenceKm != null
-              ? `${result.distanceFromResidenceKm.toFixed(2)} KM`
-              : "N/A"
-          }
-        />
-        <Info
-          accent="border-l-amber-400"
-          label="Duration"
-          value={
-            result.durationMinutes != null
-              ? `${result.durationMinutes.toFixed(0)} mins`
-              : "N/A"
-          }
-        />
+        {result.distanceFromResidenceKm != null ? (
+          <Info
+            accent="border-l-sky-400"
+            label="Distance"
+            value={`${result.distanceFromResidenceKm.toFixed(2)} KM`}
+          />
+        ) : null}
+        {result.durationMinutes != null ? (
+          <Info
+            accent="border-l-amber-400"
+            label="Duration"
+            value={`${result.durationMinutes.toFixed(0)} mins`}
+          />
+        ) : null}
         <Info
           accent="border-l-emerald-400"
           label="Eligible"
-          value={result.eligibilityStatus.replace(/_/g, " ")}
+          value={humanizeCode(result.eligibilityStatus)}
         />
         <Info accent="border-l-orange-400" label="Reason" value={result.eligibilityReason} />
       </div>
@@ -77,10 +74,7 @@ function Info({
       <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
-      <p
-        className="mt-1 truncate text-phx-md font-semibold capitalize text-slate-800"
-        title={value}
-      >
+      <p className="mt-1 break-words text-phx-md font-semibold text-slate-800">
         {value}
       </p>
     </div>
