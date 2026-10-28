@@ -8,7 +8,7 @@
 // "make everything editable to add, for example, job title and add its cost of living."
 
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -248,15 +248,15 @@ export function OfferJobTitleCatalogue({
         <div className="hidden md:block">
           <table className="w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-[26%]" />
-              <col className="w-[34%]" />
-              <col className="w-[18%]" />
-              <col className="w-[22%]" />
+              <col className="w-[20%]" />
+              <col className="w-[44%]" />
+              <col className="w-[16%]" />
+              <col className="w-[20%]" />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
                 <th className="break-words px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
-                <th className="break-words px-3 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
+                <th className="break-words px-3 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design and wording</th>
                 <th className="break-words px-3 py-3 text-right text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   Cost of living (EGP)
                 </th>
@@ -267,8 +267,7 @@ export function OfferJobTitleCatalogue({
               {jobTitles.map((row) => {
                 const pending = edits[row.id];
                 return (
-                  <Fragment key={row.id}>
-                  <tr className="border-b border-slate-100">
+                  <tr className="border-b border-slate-100" key={row.id}>
                     <td className="break-words px-5 py-3">
                       <span className="block font-bold text-slate-900">{row.title}</span>
                       <span className="mt-0.5 block text-xs text-slate-500">
@@ -288,8 +287,21 @@ export function OfferJobTitleCatalogue({
                           <option key={template.id} value={template.id}>{template.name}</option>
                         ))}
                       </select>
+                      <label className={`${offerLabelClassName} mt-3`} htmlFor={`role-${row.id}`}>
+                        What the letter says this job is
+                      </label>
+                      <textarea
+                        className={offerTextareaClassName}
+                        disabled={!canManage || busy === row.id}
+                        id={`role-${row.id}`}
+                        onChange={(event) => editRow(row.id, { roleSummary: event.target.value })}
+                        placeholder={ROLE_SUMMARY_PLACEHOLDER}
+                        rows={4}
+                        value={rowRoleSummary(row)}
+                      />
+                      <p className={offerHintClassName}>{ROLE_SUMMARY_HINT}</p>
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-3 py-3 text-right align-top">
                       <input
                         aria-label={`Cost of living for ${row.title}`}
                         className={`${offerInputClassName} max-w-[160px] text-right tabular-nums`}
@@ -326,31 +338,6 @@ export function OfferJobTitleCatalogue({
                       </div>
                     </td>
                   </tr>
-                  {/*
-                    The role paragraph gets a row of its own across all four columns rather than a
-                    fifth column. The fits-the-screen rule (AGENTS.md §4) is why: a paragraph needs
-                    width, and a fifth column here would reintroduce exactly the sideways scroll the
-                    merge above was done to remove. A full-width row under the title it belongs to
-                    costs no horizontal space at any viewport.
-                  */}
-                  <tr className="border-b border-slate-100 last:border-0">
-                    <td className="px-5 pb-4" colSpan={4}>
-                      <label className={offerLabelClassName} htmlFor={`role-${row.id}`}>
-                        What the letter says this job is
-                      </label>
-                      <textarea
-                        className={offerTextareaClassName}
-                        disabled={!canManage || busy === row.id}
-                        id={`role-${row.id}`}
-                        onChange={(event) => editRow(row.id, { roleSummary: event.target.value })}
-                        placeholder={ROLE_SUMMARY_PLACEHOLDER}
-                        rows={3}
-                        value={rowRoleSummary(row)}
-                      />
-                      <p className={offerHintClassName}>{ROLE_SUMMARY_HINT}</p>
-                    </td>
-                  </tr>
-                  </Fragment>
                 );
               })}
               {jobTitles.length === 0 ? (
