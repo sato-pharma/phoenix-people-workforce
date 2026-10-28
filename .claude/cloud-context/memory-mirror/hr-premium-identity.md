@@ -1,6 +1,6 @@
 ---
 name: hr-premium-identity
-description: "The HR premium identity is the owner's template for the Sato Pharma documents he ticked CHANGE on 13 Oct 2026 (English salary letter and certificate, exit interview, payslip, organogram record, interview calendar, CRM start guide, Field Activity, plus a new Premium job-offer design). Every paper he ticked KEEP prints as before, behind the PREMIUM_DRESS switch table. Government forms and the contract stay as they were."
+description: "The HR premium identity is the owner's template for the Sato Pharma documents he ticked CHANGE on 13 Oct 2026 (English salary letter and certificate - and since 28 Oct 2026 the Arabic certificate and the Arabic salary letter too, in the certificate of experience's design - exit interview, payslip, organogram record, interview calendar, CRM start guide, Field Activity, plus a new Premium job-offer design). Every paper he ticked KEEP prints as before, behind the PREMIUM_DRESS switch table. Government forms and the contract stay as they were."
 metadata:
   node_type: memory
   type: project

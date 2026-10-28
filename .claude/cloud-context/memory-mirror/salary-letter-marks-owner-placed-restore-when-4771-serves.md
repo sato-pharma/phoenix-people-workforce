@@ -1,12 +1,36 @@
 ---
 name: salary-letter-marks-owner-placed-restore-when-4771-serves
-description: "RESTORED 2026-09-29 19:31 Cairo - the owner's own hand-placed stamp and signature positions on the Arabic salary letter, with the coordinates kept in case they are ever lost again"
+description: "MOVED 2026-10-28 18:29 Cairo into the new certificate-design signature box (PR 6638) - the owner's stamp and signature positions on the Arabic salary letter, current values plus every earlier set kept as history"
 metadata:
   node_type: memory
   type: project
   originSessionId: 58f3e480-4d78-4e33-bc7c-c27f8b77f55d
-  modified: 2026-09-29T16:31:32.349Z
+  modified: 2026-10-28T15:35:00.000Z
 ---
+
+🟢 **CURRENT (2026-10-28, 18:29 Cairo) — MOVED, on his word "move my marks once 6638 is live".**
+PR 6638 (merge `05176dd25886`) redrew the Arabic salary letter in the certificate of experience's
+design ("Make it the HR letter", both languages), so the old table cell the marks hung on no longer
+exists. He chose "Move them to the new boxes". Both rows were UPDATED in place (same ids, still
+`hidden = false`, still printed only when ticked in the print dialog) the moment healthz served
+`05176dd25886`:
+
+| Mark | id | anchor_selector | dx | dy | w × h |
+| --- | --- | --- | --- | --- | --- |
+| signature | `7b84faa9-…` | `section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(2)` | 71.00 | −1.32 | 90 × 35 |
+| stamp | `7baaf010-…` | same | 74.93 | −16.00 | 96 × 96 |
+
+The selector is the **signature box** (`التوقيع:`, the second of the two signing boxes). **Why the
+marks sit high (negative dy):** a leaver with a long name and title leaves the signing box only
+77 pt tall (a serving employee's is 112 pt; the box is 240 pt wide), and at the old dy the 96 pt
+stamp overflowed onto the page foot. dy −16 keeps the stamp inside the box's bottom rule on the
+long leaver letter. The renderer does not clamp a negative offset and the table's CHECK
+constraints allow one. These are derived from his old placement (same x relation to the signature)
+and measured in headless Chrome, not hand-dragged — if he drags them in the layout editor, his
+drag wins and this table is history.
+
+**Everything below is history** — the 2026-09-29 values were for the old two-column signature
+table, which a current print no longer draws.
 
 ✅ **RESTORED — this is CLOSED.** The owner's signature and stamp positions are back on the Arabic
 salary letter in production, put back at 19:31 Cairo on 2026-09-29 the moment PR #4771 was confirmed
