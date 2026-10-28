@@ -77,6 +77,7 @@ import {
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { customerGroups, customerPriority, ownInsightKey, suggestedCustomers, type GroupableCustomer } from "@/lib/phoenix-crm/manager-customer-marks-rules";
+import { compareFoldedNames, foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { PLAN_AUTOSAVE_DELAY_MS } from "@/lib/phoenix-crm/plan-week-draft";
 import type {
   AreaCustomersView,
@@ -548,7 +549,39 @@ export function ManagerPlanBoard({
     if (target === 3 && day) showScope(halfScopeOf(day, currentHalf));
   }
 
+  function openDay(next: string) {
+    const nextDay = days.find((entry) => entry.date === next);
+    const firstHalf = nextDay?.halves[0] ?? "AM";
+    setDate(next);
+    setHalf(firstHalf);
+    setStep(3);
+    if (nextDay) showScope(halfScopeOf(nextDay, firstHalf));
+  }
+
+  // 🔴 NEXT WALKS THE WEEK, NOT THE STEPS (owner walk, 2026-10-28) — on "What I do" it went straight to Send
+  // after one half-day, so planning Saturday to Thursday was six trips back to the day list. It goes AM →
+  // PM → the next day he can still plan, and only then to Send. A day already passed, or one he cannot
+  // edit, is stepped over while he plans; read-only, every day still to come is walked.
+  function goNext() {
+    if (step !== 3 || !day) {
+      goStep(step + 1);
+      return;
+    }
+    const halfIndex = day.halves.indexOf(currentHalf);
+    const laterHalf = day.halves[halfIndex + 1];
+    if (laterHalf && (!view?.canWrite || day.editable)) {
+      setHalf(laterHalf);
+      showScope(halfScopeOf(day, laterHalf));
+      return;
+    }
+    const dayIndex = days.findIndex((entry) => entry.date === day.date);
+    const nextDay = days.slice(dayIndex + 1).find((entry) => entry.halves.length > 0 && (view?.canWrite ? entry.editable : !entry.passed));
+    if (nextDay) openDay(nextDay.date);
+    else goStep(4);
+  }
+
   const chip = view.weeks.find((entry) => entry.weekStart === view.weekStart)?.name ?? "This week";
+  const sendWord = sendWordOf(view);
 
   // What a With a rep or Single visit half-day shows in place of its reps and areas while they are not the
   // ones of its district manager yet: the day's choice first, then the load.
@@ -585,7 +618,7 @@ export function ManagerPlanBoard({
           ? "Plan each half-day: choose the region, then go with one of its reps, spend it in one of its areas, or record an admin activity or a day in the Office. The reps do not see it."
           : choosesDistrict
             ? "Plan each half-day: choose the district manager, then go with one of the reps, make single visits in an area of that district, or record an admin activity or a day in the Office. The reps do not see it."
-            : "Plan each half-day: with a rep, an admin activity, or single visits in an area of your district. Your reps do not see it."
+            : "Plan each half-day: with a rep, with your manager or product manager, an admin activity, or single visits in an area of your district. Your reps do not see it."
       }
       eyebrow={view.isTest ? "Plan · test persona" : "Plan"}
       title={view.manager ? `${view.manager.name} · ${view.manager.place}` : "Your week"}
@@ -593,9 +626,12 @@ export function ManagerPlanBoard({
       {plan ? (
         <CrmBlock>
           <CrmNote title={plan.statusLine} tone={plan.status === "returned" ? "warn" : plan.status === "approved" ? "good" : "neutral"}>
+            {/* Each date names what it is (owner walk, 2026-10-28: a bare date under "Waiting for Hany Saad to
+                approve" read as either the send or the deadline). */}
             <span className="block">
-              {plan.dueText}
-              {plan.submittedLate ? " · sent after the Thursday deadline" : ""}
+              {plan.sentText
+                ? `Sent ${plan.sentText}${plan.submittedLate ? ` · late, due ${plan.dueText}` : ""}`
+                : `Due ${plan.dueText}${plan.overdue ? " · overdue" : ""}`}
             </span>
             {plan.decisionNote ? <span className="mt-1 block whitespace-pre-line">What to change: {plan.decisionNote}</span> : null}
             {plan.returnedDay ? (
@@ -621,13 +657,19 @@ export function ManagerPlanBoard({
 
       <div className="min-w-0 border-t border-slate-100">
         <CrmStepForm
-          aside={plan?.firstApproverName ? `Nothing reaches ${plan.firstApproverName} until you press Send this week.` : "Nothing is sent until you press Send this week."}
+          aside={
+            plan && plan.state !== "plan"
+              ? undefined
+              : plan?.firstApproverName
+                ? `Nothing reaches ${plan.firstApproverName} until you press ${sendWord}.`
+                : `Nothing is sent until you press ${sendWord}.`
+          }
           canJump={(target) => target <= 2 || day !== null}
           chip={chip}
           footer={
             <CrmStepFooter back={step > 1 ? () => goStep(step - 1) : null}>
               {statusText ? <span className="self-center text-xs font-bold text-slate-500">{statusText}</span> : null}
-              {step < STEPS.length ? <CrmStepNext disabled={step >= 2 && day === null} onClick={() => goStep(step + 1)} /> : null}
+              {step < STEPS.length ? <CrmStepNext disabled={step >= 2 && day === null} onClick={goNext} /> : null}
             </CrmStepFooter>
           }
           onJump={goStep}
@@ -639,13 +681,7 @@ export function ManagerPlanBoard({
             <DayStep
               days={days}
               drafts={drafts}
-              onDay={(next) => {
-                setDate(next);
-                setHalf("AM");
-                setStep(3);
-                const nextDay = days.find((entry) => entry.date === next);
-                if (nextDay) showScope(halfScopeOf(nextDay, nextDay.halves[0] ?? "AM"));
-              }}
+              onDay={openDay}
               selected={day?.date ?? null}
             />
           ) : null}
@@ -695,11 +731,17 @@ export function ManagerPlanBoard({
 
 // ── Step 1 · the week ───────────────────────────────────────────────────────────────────────────
 
+/** The Send button's words: the coming week is never "this week" (owner walk, 2026-10-28). */
+function sendWordOf(view: ManagerPlanBoardView): string {
+  return view.weeks.find((entry) => entry.weekStart === view.weekStart)?.coming ? "Send the coming week" : "Send this week";
+}
+
 function WeekStep({ onWeek, view }: { onWeek: (week: string) => void; view: ManagerPlanBoardView }) {
+  // Each week says where it stands, the one not on screen too: "Coming week" alone hid a week already sent.
   const options: Array<CrmChoiceOption<string>> = view.weeks.map((entry) => ({
     value: entry.weekStart,
     label: entry.name,
-    note: entry.weekStart === view.weekStart && view.plan ? view.plan.statusLabel : undefined,
+    note: entry.statusLabel ?? undefined,
   }));
   return (
     <div className="grid min-w-0 gap-3">
@@ -737,10 +779,12 @@ function DayStep({
   selected: string | null;
 }) {
   if (days.length === 0) return <CrmEmpty message="This week has no field days." title="No days to plan" />;
+  // A passed day stays open to read what was planned, greyed and named so it is never mistaken for one
+  // still to plan (owner walk, 2026-10-28: Saturday and Sunday looked as plannable as Thursday on a Tuesday).
   const options: Array<CrmChoiceOption<string>> = days.map((day) => ({
     value: day.date,
-    label: day.dateText,
-    note: dayNote(day, drafts),
+    label: day.passed && day.date !== selected ? <span className="text-slate-400">{day.dateText}</span> : day.dateText,
+    note: day.passed ? `Passed · ${dayNote(day, drafts)}` : dayNote(day, drafts),
     disabled: day.halves.length === 0,
     tone: day.halves.length > 0 && day.halves.every((half) => day.slots.some((slot) => slot.half === half && slot.kind)) ? "good" : undefined,
   }));
@@ -799,7 +843,15 @@ function ScopePicker({
             columns={2}
             label={label}
             onChange={onPick}
-            options={scopes.filter((scope) => scope.lineCode === line).map((scope) => scopeOption(scope, disabled))}
+            options={scopes
+              .filter((scope) => scope.lineCode === line)
+              // In place order, "Any rep in <line>" last (owner walk, 2026-10-28: the districts came in seat order).
+              .sort(
+                (left, right) =>
+                  Number(left.dmSeatId === null) - Number(right.dmSeatId === null) ||
+                  (left.place ?? "").localeCompare(right.place ?? "", undefined, { numeric: true }),
+              )
+              .map((scope) => scopeOption(scope, disabled))}
             value={value}
           />
         ) : null}
@@ -1089,6 +1141,14 @@ function WithRepPart({
       ),
     };
   });
+  // Every rep greyed is a dead end the screen must name (owner walk, 2026-10-28: a product manager planning on
+  // time finds the reps not sent yet, since they plan to the same Thursday). One line says why, and one tap
+  // turns the half into single visits in the same district, where the area's doctors are.
+  const noneToPick = canEdit && options.every((option) => option.disabled);
+  const offersSingleVisit = view.slotKinds.some((entry) => entry.key === "single_visit");
+  const noneReason = view.reps.every((rep) => rep.weekState === "no_plan")
+    ? "No rep here has a plan this week yet, so there is nobody to go with this half."
+    : "No rep here has customers planned this half, so there is nobody to go with.";
   const chosen = draft.repSeatId ? halves.get(draft.repSeatId) : undefined;
   const repCustomers = chosen?.customers ?? [];
   // The customers he can tick: all of a Phoenix rep's, and the ones of an old-CRM rep's plan that sit on the
@@ -1123,6 +1183,18 @@ function WithRepPart({
         options={options}
         value={draft.repSeatId}
       />
+      {noneToPick ? (
+        <div className="grid min-w-0 gap-2 border border-slate-200 p-3">
+          <p className="break-words text-sm font-semibold leading-6 text-slate-700">{noneReason}</p>
+          {offersSingleVisit ? (
+            <div>
+              <CrmButton onClick={() => onDraft({ ...emptyDraft(), kind: "single_visit", scope: draft.scope, note: draft.note })} size="sm" variant="primary">
+                Make single visits in this district instead
+              </CrmButton>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {chosen || dropped.length > 0 ? (
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -1379,9 +1451,13 @@ function WithSeniorPart({
   const [pickedArea, setPickedArea] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(AREA_PAGE);
+  // Unticking an area, or Clear, that would take off customers he already chose asks first (owner walk,
+  // 2026-10-28: one stray untick dropped six chosen doctors with no word). Null seat = Clear, every area.
+  const [dropAsk, setDropAsk] = useState<{ seatId: string | null; count: number } | null>(null);
   // The list shown is one ticked area's at a time: the one he last ticked or picked, or the first he ticked.
   const listArea = pickedArea && draft.areaSeatIds.includes(pickedArea) ? pickedArea : (draft.areaSeatIds[0] ?? null);
-  const area = useCrmGet<AreaCustomersView>(listArea && canEdit ? crmUrl(AREA, { area: listArea, test }) : null, "area");
+  // The half's district or line rides along, so another line's reps in the same area never join the list.
+  const area = useCrmGet<AreaCustomersView>(listArea && canEdit ? crmUrl(AREA, { area: listArea, scope: view.scope, test }) : null, "area");
   // A regional, national or product manager picks the district first (owner, 2026-10-25).
   const ownDistrict = view.writer?.kind === "dm";
   if (!ownDistrict && !draft.scope?.startsWith("dm:")) {
@@ -1401,27 +1477,42 @@ function WithSeniorPart({
   }
   const options: Array<CrmChoiceOption<string>> = view.seniors.map((senior) => ({ value: senior.hrId, label: senior.name, note: senior.title, disabled: !canEdit }));
   const ticked = new Set(draft.areaSeatIds);
-  const toggleArea = (seatId: string, on: boolean) => {
-    const without = draft.areaSeatIds.filter((id) => id !== seatId);
-    // The area he ticks is the list he sees (owner, 2026-10-27: "every area he stands on its list appears").
-    if (on) {
-      setPickedArea(seatId);
-      setQuery("");
-      setLimit(AREA_PAGE);
+  const dropArea = (seatId: string | null) => {
+    setDropAsk(null);
+    if (seatId === null) {
+      onDraft({ ...draft, areaSeatIds: [], customers: [] });
+      return;
     }
-    // Unticking an area takes off the customers chosen in it.
     onDraft({
       ...draft,
-      areaSeatIds: on ? [...without, seatId] : without,
-      customers: on ? draft.customers : draft.customers.filter((customer) => customer.areaSeatId !== seatId),
+      areaSeatIds: draft.areaSeatIds.filter((id) => id !== seatId),
+      customers: draft.customers.filter((customer) => customer.areaSeatId !== seatId),
     });
   };
+  const askDrop = (seatId: string | null) => {
+    const count = seatId === null ? draft.customers.length : draft.customers.filter((customer) => customer.areaSeatId === seatId).length;
+    if (count > 0) setDropAsk({ seatId, count });
+    else dropArea(seatId);
+  };
+  const toggleArea = (seatId: string, on: boolean) => {
+    // Unticking an area takes off the customers chosen in it, so it asks first when there are some.
+    if (!on) {
+      askDrop(seatId);
+      return;
+    }
+    // The area he ticks is the list he sees (owner, 2026-10-27: "every area he stands on its list appears").
+    setPickedArea(seatId);
+    setQuery("");
+    setLimit(AREA_PAGE);
+    onDraft({ ...draft, areaSeatIds: [...draft.areaSeatIds.filter((id) => id !== seatId), seatId] });
+  };
+  const dropAreaName = dropAsk?.seatId ? (view.areas.find((entry) => entry.seatId === dropAsk.seatId)?.areaName ?? "this area") : null;
   const chosen = new Set(draft.customers.map((customer) => customer.key));
-  const words = query.trim().toLowerCase();
   const listVacant = view.areas.some((entry) => entry.seatId === listArea && entry.vacant);
+  // Arabic spellings read as one (مستشفى / مستشفي, أحمد / احمد), and the speciality and rep are searched too.
   const repList = (area.data && area.data.area?.seatId === listArea ? area.data.repList : [])
-    .filter((customer) => !words || customer.name.toLowerCase().includes(words))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .filter((customer) => foldedWordsMatch(query, [customer.name, customer.speciality, customer.repName]))
+    .sort((left, right) => compareFoldedNames(left.name, right.name));
   const shown = repList.slice(0, limit);
   const areaChoices: Array<CrmChoiceOption<string>> = view.areas
     .filter((entry) => draft.areaSeatIds.includes(entry.seatId))
@@ -1440,12 +1531,31 @@ function WithSeniorPart({
                 <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
                   Mark all
                 </CrmButton>
-                <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [], customers: [] })} size="sm">
+                <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => askDrop(null)} size="sm">
                   Clear
                 </CrmButton>
               </div>
             ) : null}
           </div>
+          {dropAsk ? (
+            <CrmNote
+              title={
+                dropAreaName
+                  ? `Untick ${dropAreaName} and take off its ${plural(dropAsk.count, "chosen customer", "chosen customers")}?`
+                  : `Clear every area and take off the ${plural(dropAsk.count, "chosen customer", "chosen customers")}?`
+              }
+              tone="warn"
+            >
+              <div className="mt-2 flex flex-wrap gap-2">
+                <CrmButton onClick={() => dropArea(dropAsk.seatId)} size="sm" variant="primary">
+                  Take them off
+                </CrmButton>
+                <CrmButton onClick={() => setDropAsk(null)} size="sm">
+                  Keep them
+                </CrmButton>
+              </div>
+            </CrmNote>
+          ) : null}
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {view.areas.map((area) => (
               <CrmCheck checked={ticked.has(area.seatId)} disabled={!canEdit} key={area.seatId} onChange={(on) => toggleArea(area.seatId, on)}>
@@ -1522,7 +1632,11 @@ function WithSeniorPart({
                 </p>
                 {repList.length === 0 ? (
                   <p className="text-sm font-semibold text-slate-500">
-                    {listVacant && !words ? "The previous rep left no list in this area." : "No customer on these lists matches."}
+                    {query.trim()
+                      ? "No customer on these lists matches."
+                      : listVacant
+                        ? "The previous rep left no list in this area."
+                        : "This area has no customers on its lists yet."}
                   </p>
                 ) : null}
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
@@ -1623,7 +1737,7 @@ function SingleVisitPart({
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(AREA_PAGE);
   const [adding, setAdding] = useState(false);
-  const area = useCrmGet<AreaCustomersView>(draft.areaSeatId && canEdit ? crmUrl(AREA, { area: draft.areaSeatId, test }) : null, "area");
+  const area = useCrmGet<AreaCustomersView>(draft.areaSeatId && canEdit ? crmUrl(AREA, { area: draft.areaSeatId, scope: view.scope, test }) : null, "area");
   // The marks on each customer of the area (owner, 2026-10-23), over every territory its lists come from, and
   // his own list's customers with his own visits.
   const areaSeats = area.data && area.data.area?.seatId === draft.areaSeatId ? [...new Set(area.data.repList.map((customer) => customer.seatId))] : [];
@@ -1633,17 +1747,24 @@ function SingleVisitPart({
     return <CrmEmpty message={choosesADistrict(view) ? "No area of this district is on file yet." : "No area of your district is on file yet."} title="No areas" />;
   }
 
+  // 🔴 AT THE CAP THE AREA IS NOT OFFERED (owner walk, 2026-10-28): with his two free half-days spent and this
+  // date not approved, he could still pick an area and tick doctors, and only the save refused the lot. A
+  // half already saved as single visits is one of the two, so it stays open to change.
+  const atCap =
+    view.writer?.kind === "dm" &&
+    (view.singleVisitHalvesUsed ?? 0) >= DM_SINGLE_VISIT_HALF_DAYS_MAX &&
+    !(view.singleVisitDaysApproved ?? []).includes(date) &&
+    slot?.kind !== "single_visit";
   // A vacant area is offered by its name like any other, and its list is the previous rep's (owner, 2026-10-19).
   const areaOptions: Array<CrmChoiceOption<string>> = view.areas.map((entry) => ({
     value: entry.seatId,
     label: entry.areaName,
     note: entry.vacant ? VACANT_AREA_NOTE : (entry.repName ?? "No rep"),
-    disabled: !canEdit,
+    disabled: !canEdit || atCap,
   }));
   const chosenVacant = view.areas.some((entry) => entry.seatId === draft.areaSeatId && entry.vacant);
   const ticked = new Set(draft.customers.map((customer) => customer.key));
-  const words = query.trim().toLowerCase();
-  const matches = (name: string) => !words || name.toLowerCase().includes(words);
+  const matches = (...parts: Array<string | null>) => foldedWordsMatch(query, parts);
   const marks = insight.data?.insights ?? {};
   const allRep = area.data?.repList ?? [];
   const groupable: GroupableCustomer[] = allRep.map((customer) => ({
@@ -1660,15 +1781,15 @@ function SingleVisitPart({
   );
   // This half's list first, the customers worth the visit most at its top, then by name.
   const repList = allRep
-    .filter((customer) => matches(customer.name))
+    .filter((customer) => matches(customer.name, customer.speciality, customer.repName))
     .sort(
       (left, right) =>
         Number(right.listType === half) - Number(left.listType === half) ||
         Number(suggested.has(right.customerId)) - Number(suggested.has(left.customerId)) ||
         (insight.data ? customerPriority(marks[right.customerId]) - customerPriority(marks[left.customerId]) : 0) ||
-        left.name.localeCompare(right.name),
+        compareFoldedNames(left.name, right.name),
     );
-  const ownList = (area.data?.ownList ?? []).filter((customer) => customer.status === "active" && matches(customer.name));
+  const ownList = (area.data?.ownList ?? []).filter((customer) => customer.status === "active" && matches(customer.name, customer.speciality));
   const shown = repList.slice(0, limit);
 
   function pickMatch(match: CustomerMatch) {
@@ -1799,7 +1920,11 @@ function SingleVisitPart({
                 ) : null}
                 {repList.length === 0 ? (
                   <p className="text-sm font-semibold text-slate-500">
-                    {chosenVacant && !words ? "The previous rep left no list in this area. Add a customer to Manager's own list instead." : "No customer on these lists matches."}
+                    {query.trim()
+                      ? "No customer on these lists matches."
+                      : chosenVacant
+                        ? "The previous rep left no list in this area. Add a customer to Manager's own list instead."
+                        : "This area has no customers on its lists yet."}
                   </p>
                 ) : null}
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
@@ -1863,8 +1988,15 @@ function SendStep({
   const [reason, setReason] = useState("");
   const [asked, setAsked] = useState(false);
   const plan = view.plan;
-  const planned = days.flatMap((day) => day.slots.filter((slot) => slot.kind)).length;
-  const fieldHalves = days.reduce((sum, day) => sum + day.halves.length, 0);
+  const sendWord = sendWordOf(view);
+  // A passed day is history, never a gap to fill: the count is of the days still to come (owner walk,
+  // 2026-10-28: "2 of 11 planned" on a Tuesday counted Saturday to Monday against him).
+  const comingDays = days.filter((day) => !day.passed);
+  const isPlanned = (day: ManagerBoardDay, half: ManagerHalf) =>
+    Boolean(drafts[halfKey(day.date, half)]) || day.slots.some((slot) => slot.half === half && slot.kind);
+  const planned = comingDays.reduce((sum, day) => sum + day.halves.filter((half) => isPlanned(day, half)).length, 0);
+  const fieldHalves = comingDays.reduce((sum, day) => sum + day.halves.length, 0);
+  const emptyHalves = comingDays.flatMap((day) => (day.editable ? day.halves.filter((half) => !isPlanned(day, half)).map((half) => `${day.dateText} ${half}`) : []));
   const offRepDay = days.flatMap((day) => day.slots.flatMap((slot) => slot.customers.filter((customer) => customer.flag))).length;
   // Who decides it, in order — and, for everyone but a district manager, HR's own acknowledgement after.
   const route = [plan?.firstApproverName, plan?.secondApproverName].filter(Boolean).join(", then ");
@@ -1929,10 +2061,23 @@ function SendStep({
                 const waiting = drafts[halfKey(day.date, half)];
                 const flags = slot?.customers.filter((customer) => customer.flag) ?? [];
                 return (
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 py-2" key={half}>
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
-                    <span className="min-w-0 break-words text-sm font-bold text-slate-900">{waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}</span>
-                    {flags.length > 0 ? <CrmPill tone="warn">{`${countText(flags.length)} not on the rep's day`}</CrmPill> : null}
+                  <div className="grid min-w-0 gap-0.5 px-3 py-2" key={half}>
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
+                      <span className="min-w-0 break-words text-sm font-bold text-slate-900">{waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}</span>
+                      {flags.length > 0 ? <CrmPill tone="warn">{`${countText(flags.length)} not on the rep's day`}</CrmPill> : null}
+                    </div>
+                    {/* What he is sending, by name: a count alone made him open every day to check it. */}
+                    {!waiting && slot && slot.customers.length > 0 ? (
+                      <p className="min-w-0 break-words text-xs font-semibold leading-5 text-slate-600" dir="auto">
+                        {slot.customers.map((customer) => customer.name).join(" · ")}
+                      </p>
+                    ) : null}
+                    {!waiting && slot?.note ? (
+                      <p className="min-w-0 whitespace-pre-line break-words text-xs font-semibold leading-5 text-slate-500" dir="auto">
+                        {slot.note}
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
@@ -1940,9 +2085,12 @@ function SendStep({
           ))}
       </div>
       <p className="text-sm font-semibold text-slate-600">
-        {`${countText(planned)} of ${plural(fieldHalves, "half-day", "half-days")} planned`}
+        {`${countText(planned)} of ${plural(fieldHalves, "half-day", "half-days")} still to come planned`}
         {offRepDay > 0 ? ` · ${plural(offRepDay, "customer is", "customers are")} not on the rep's sent day` : ""}
       </p>
+      {plan?.state === "plan" && view.canWrite && emptyHalves.length > 0 ? (
+        <CrmNote tone="warn">{`Nothing planned yet on ${emptyHalves.join(", ")}. You can still send it; those half-days go empty.`}</CrmNote>
+      ) : null}
       {route ? (
         <p className="text-xs font-semibold leading-5 text-slate-500">
           {`It goes to ${route}.${hrAcknowledges ? " Once it is approved, HR acknowledges it automatically." : ""}`}
@@ -1953,11 +2101,11 @@ function SendStep({
 
       {plan?.state === "plan" && view.canWrite ? (
         confirming ? (
-          <CrmNote title={`Send this week to ${plan.firstApproverName ?? "your manager"}?`} tone="info">
+          <CrmNote title={`${sendWord} to ${plan.firstApproverName ?? "your manager"}?`} tone="info">
             <p>Once it is sent, a change needs that approval first.</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <CrmButton busy={busy} onClick={() => void send()} variant="primary">
-                Send this week
+                {sendWord}
               </CrmButton>
               <CrmButton disabled={busy} onClick={() => setConfirming(false)}>
                 Not yet
@@ -1967,7 +2115,7 @@ function SendStep({
         ) : (
           <div>
             <CrmButton disabled={planned === 0 && Object.keys(drafts).length === 0} onClick={() => setConfirming(true)} variant="primary">
-              Send this week
+              {sendWord}
             </CrmButton>
           </div>
         )

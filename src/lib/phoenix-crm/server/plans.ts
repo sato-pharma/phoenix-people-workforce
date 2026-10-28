@@ -200,7 +200,7 @@ export function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
  * the territory, which every caller already has from `describeTerritory`. Left out, the status falls
  * back to the bare word, so an old caller is wrong-free rather than saying "waiting for null".
  */
-export function mapPlan(row: Row, names: PeopleNames, people?: { repName: string | null; reviewerName: string | null }): PlanSummary {
+export function mapPlan(row: Row, names: PeopleNames, people?: { repName: string | null; reviewerName: string | null; self?: boolean }): PlanSummary {
   const status = statusOf(row.status);
   const submittedBy = textOrNull(row.submitted_by_hr_id);
   const decidedBy = textOrNull(row.decided_by_hr_id);
@@ -213,6 +213,7 @@ export function mapPlan(row: Row, names: PeopleNames, people?: { repName: string
       repName: people?.repName ?? null,
       reviewerName: people?.reviewerName ?? null,
       deciderName: decidedBy ? nameOf(names, decidedBy) : null,
+      self: people?.self,
     }),
     version: Number(row.version),
     submittedAt: textOrNull(row.submitted_at),
@@ -563,7 +564,9 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
   const territory = describeTerritory(viewer.org, seat, names);
-  const plan = planRow ? mapPlan(planRow, names, territory) : null;
+  // His own planner says "you" — the rep reading "Drafted by Ahmed Samir" on Ahmed Samir's screen.
+  const selfReader = seat.occupantHrId === viewer.hrId;
+  const plan = planRow ? mapPlan(planRow, names, { ...territory, self: selfReader }) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
 
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
@@ -644,6 +647,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
           repName: territory.repName,
           reviewerName: territory.reviewerName,
           deciderName: decidedBy ? nameOf(names, decidedBy) : null,
+          self: selfReader,
         }),
       };
     }),

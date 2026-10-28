@@ -5,18 +5,19 @@
 
 import { dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import type { PillTone } from "@/components/phoenix-crm/ui";
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { followUpInWeek, usualDaysOf } from "@/lib/phoenix-crm/plan-insight";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_SHORT } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritorySummary } from "@/lib/phoenix-crm/view-types";
 
-/** A search over what a row shows: every word typed must appear somewhere in it, in any order. */
+/**
+ * A search over what a row shows: every word typed must appear somewhere in it, in any order, with the
+ * Arabic spelling folded on both sides (مستشفى finds مستشفي, احمد finds أحمد).
+ */
 export function matchesWords(query: string, parts: ReadonlyArray<string | null | undefined>): boolean {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return true;
-  const text = parts.filter((part): part is string => Boolean(part)).join(" ").toLowerCase();
-  return words.every((word) => text.includes(word));
+  return foldedWordsMatch(query, parts);
 }
 
 /**

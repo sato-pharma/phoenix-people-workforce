@@ -512,13 +512,16 @@ export function CrmSearchField({
   );
 }
 
-/** Under a list shown a page at a time: "Show 25 more of the 40 left". Nothing when nothing is left. */
+/**
+ * Under a list shown a page at a time: "Show 25 more of the 40 left", and "Show the last 7" when one more
+ * page holds the rest ("Show 7 more of the 7 left" read as a sum). Nothing when nothing is left.
+ */
 export function CrmShowMore({ left, onMore, page }: { left: number; onMore: () => void; page: number }) {
   if (left <= 0) return null;
   return (
     <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
       <CrmButton onClick={onMore} size="sm">
-        Show {countText(Math.min(page, left))} more of the {countText(left)} left
+        {left <= page ? (left === 1 ? "Show the last one" : `Show the last ${countText(left)}`) : `Show ${countText(page)} more of the ${countText(left)} left`}
       </CrmButton>
     </div>
   );

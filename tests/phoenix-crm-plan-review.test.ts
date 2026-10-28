@@ -719,6 +719,13 @@ function runNamedStatusTests(): void {
   // With no decider recorded it falls back to the reviewer rather than to the bare word.
   assert.equal(planStatusLine({ ...people, deciderName: null, status: "approved" }), "Approved by Dr Taha");
 
+  // His own screen says "you", never his own name (owner walk, 2026-10-28).
+  assert.equal(planStatusLine({ ...people, self: true, status: "draft" }), "Drafted by you");
+  assert.equal(planStatusLine({ ...people, self: true, status: "returned" }), "Waiting for you to edit and resend");
+  assert.equal(planStatusLine({ ...people, self: true, status: null }), "Not started — you draft it");
+  assert.equal(planStatusLine({ ...people, self: true, status: "submitted" }), "Waiting for Dr Taha to approve", "the reviewer is still named");
+  assert.ok(source("src/lib/phoenix-crm/server/plans.ts").includes("self: selfReader"), "the board tells the composer when the reader is the rep");
+
   // 🔴 NO NAME, NO INVENTION. A vacant seat, an empty manager chain and a blank string each fall back to
   // `planStatusLabel`'s own word — the one thing this must never print is "waiting for null", and a name
   // is never guessed from another field.
@@ -742,7 +749,7 @@ function runNamedStatusTests(): void {
 
   // Every status a screen reads is composed WITH the territory's people — a mapper called without them
   // is the silent half of this defect, because it still returns a perfectly valid bare word.
-  assert.match(plans, /export function mapPlan\(row: Row, names: PeopleNames, people\?: \{ repName: string \| null; reviewerName: string \| null \}\)/);
+  assert.match(plans, /export function mapPlan\(row: Row, names: PeopleNames, people\?: \{ repName: string \| null; reviewerName: string \| null; self\?: boolean \}\)/);
   assert.match(plans, /const plan = planRow \? mapPlan\(planRow, names, territory\) : null;/, "the board's own week");
   assert.match(plans, /const plan = planRow \? mapPlan\(planRow, names, territory\) : null;[\s\S]*?territory,/, "and every row of the Team tab");
   assert.equal(/mapPlan\(planRow, names\)/.test(plans), false, "no caller is left on the nameless mapper");

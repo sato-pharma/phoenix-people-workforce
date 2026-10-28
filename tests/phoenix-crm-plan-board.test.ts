@@ -483,8 +483,19 @@ export function runPhoenixCrmPlanBoardTests(): void {
     const onDay = new Map(targetWeek.days.map((entry) => [entry.date, new Set(entry.items.map((row) => row.customerId))]));
     assert.deepEqual(
       summarizeCopy({ source, targetDayOf: target, byId, alreadyOn: (date) => onDay.get(date) ?? new Set<string>(), placed }),
-      { placed: COPIED_EXPECTED.length, full: 0, noPlace: 0, notOnList: 1 },
+      { placed: COPIED_EXPECTED.length, full: 0, noPlace: 0, notOnList: 1, passed: 0 },
       "a copy reports what it placed and why the rest could not be — never 'not receiving'",
+    );
+    // A day that has passed is never filled, and the report counts it (the role walk, 2026-10-28: "Copied
+    // 6" from a week that held 14 said nothing of the other 8).
+    const passedWeek: DraftWeek = { ...week, days: week.days.map((entry) => (entry.date === "2026-10-06" ? { ...entry, editable: false } : entry)) };
+    const passedTarget = copyWeekOf(passedWeek, draft.items, byId);
+    const passedPlaced = buildWeekCopyPlacements(source, customers, passedTarget, CAPS);
+    const passedOn = new Map(passedTarget.days.map((entry) => [entry.date, new Set(entry.items.map((row) => row.customerId))]));
+    assert.deepEqual(
+      summarizeCopy({ source, targetDayOf: sameWeekdayIn(passedWeek), byId, alreadyOn: (date) => passedOn.get(date) ?? new Set<string>(), placed: passedPlaced }),
+      { placed: 2, full: 0, noPlace: 0, notOnList: 0, passed: 1 },
+      "Tuesday has passed: one copy is counted there, and nobody is placed on it",
     );
     const monthTarget = sameWeekNumberIn([week]);
     assert.equal(monthTarget({ planDate: "2026-09-07", customerId: "pm-sat" })?.date, "2026-10-05", "September Week 1 Monday lands on October Week 1 Monday");
@@ -919,21 +930,30 @@ export function runPhoenixCrmPlanBoardTests(): void {
 
     // The brick's own box: the rest on in the order shown, only as many as fit; all on → all off.
     const rows = ["b1", "b2", "b3", "b4", "b5"].map((id, index) => ({ id, placed: index === 1 }));
-    assert.deepEqual(brickTickState(rows, 10), { all: false, some: true, disabled: false }, "half-ticked while some are on");
+    assert.deepEqual(brickTickState(rows, 10), { all: false, some: true, takesOff: false, disabled: false }, "half-ticked while some are on");
     assert.deepEqual(brickTickPress(rows, 10).place.map((row) => row.id), ["b1", "b3", "b4", "b5"], "a press places the rest, in the order shown");
     assert.deepEqual(brickTickPress(rows, 2).place.map((row) => row.id), ["b1", "b3"], "and never more than the list has room for");
     assert.deepEqual(brickTickPress(rows, 2).takeOff, [], "placing takes nobody off");
-    assert.equal(brickTickState(rows, 0).disabled, true, "with no room and the brick not whole, the box is off — as a customer's own is");
+    assert.deepEqual(brickTickPress(rows, 2).left.map((row) => row.id), ["b4", "b5"], "and the ones that did not fit are named");
+    assert.deepEqual(brickTickPress(rows, 10).left, [], "with room for all, nobody is left over");
+    const none = rows.map((row) => ({ ...row, placed: false }));
+    assert.equal(brickTickState(none, 0).disabled, true, "with no room and none of the brick on the day, the box is off — as a customer's own is");
+    assert.deepEqual(
+      brickTickState(rows, 0),
+      { all: false, some: true, takesOff: true, disabled: false },
+      "with no room, a half-ticked brick still clears",
+    );
     assert.deepEqual(brickTickPress(rows, 0).place, [], "and a press there places nobody");
+    assert.deepEqual(brickTickPress(rows, 0).takeOff.map((row) => row.id), ["b2"], "it takes only the placed ones off");
     const whole = rows.map((row) => ({ ...row, placed: true }));
-    assert.deepEqual(brickTickState(whole, 0), { all: true, some: false, disabled: false }, "a whole brick can always be taken off, full list or not");
+    assert.deepEqual(brickTickState(whole, 0), { all: true, some: false, takesOff: true, disabled: false }, "a whole brick can always be taken off, full list or not");
     assert.deepEqual(brickTickPress(whole, 0).takeOff.map((row) => row.id), ["b1", "b2", "b3", "b4", "b5"], "all on → one press takes the whole brick off");
     assert.equal(brickTickState([], 5).disabled, true, "an empty brick has nothing to tick");
     assert.equal(brickTickState(rows, 10, true).disabled, true, "and nothing ticks while the board is locked");
 
     // The screen: the brick box sits in the heading both layouts share, and goes through the one tick.
     const panel = stripComments(readFileSync("src/components/phoenix-crm/plan-day-panel.tsx", "utf8"));
-    assert.match(panel, /<BrickTick\s+dayName=\{dayName\}\s+label=\{group\.label\}\s+onPress=\{\(\) => pressBrick\(group\.rows, listType\)\}/, "every brick heading carries its box");
+    assert.match(panel, /<BrickTick\s+dayName=\{dayName\}\s+label=\{group\.label\}\s+onPress=\{\(\) => pressBrick\(group\.rows, listType, group\.key\)\}/, "every brick heading carries its box");
     assert.match(panel, /const press = brickTickPress\(rows, room\[listType\]\);/, "the press is brickTickPress's, never a copy of it");
     assert.match(panel, /for \(const row of press\.place\) toggle\(row, true\);/, "and each placement is the ordinary tick");
     // The activities are tick boxes, one per kind, each with its own half day and note.

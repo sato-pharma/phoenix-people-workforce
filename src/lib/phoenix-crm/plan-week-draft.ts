@@ -481,27 +481,40 @@ export function roomOnDay(rows: ReadonlyArray<DraftRow>, caps: DailyCaps): Recor
 // ── A whole brick at once ───────────────────────────────────────────────────────────────────────
 
 /** How a brick's own tick box reads. */
-export type BrickTickState = { all: boolean; some: boolean; disabled: boolean };
+export type BrickTickState = {
+  all: boolean;
+  some: boolean;
+  /** A press takes the brick's placed customers off: every one is on, or some are and the list is full. */
+  takesOff: boolean;
+  disabled: boolean;
+};
 
 /**
  * A brick's own tick box (2026-09-30 — the old weekly plan's brick headers each carry one). Checked once
  * every customer shown under the brick is on the day, half-ticked while some are. With no room left in
- * the list and the brick not whole it is off, exactly as a customer's own box is on a full list.
+ * the list and none of the brick on the day it is off, exactly as a customer's own box is on a full
+ * list; with some of it on, a press there takes those off (the role walk, 2026-10-28: a half-ticked
+ * brick on a full list could not be cleared).
  */
 export function brickTickState(rows: ReadonlyArray<{ placed: boolean }>, room: number, locked = false): BrickTickState {
   const placed = rows.filter((row) => row.placed).length;
   const all = rows.length > 0 && placed === rows.length;
-  return { all, some: placed > 0 && !all, disabled: locked || rows.length === 0 || (!all && room <= 0) };
+  const some = placed > 0 && !all;
+  const takesOff = all || (some && room <= 0);
+  return { all, some, takesOff, disabled: locked || rows.length === 0 || (!takesOff && room <= 0) };
 }
 
 /**
  * What one press of it does: the rest of the brick onto the day — in the order shown, and only as many
- * as the list still has room for — or, once every one is on, the whole brick off. Nothing more: a brick
- * is the ticks he would make one by one, and carries no rule of its own.
+ * as the list still has room for, `left` naming the ones that did not fit — or, once it `takesOff`, the
+ * brick's placed customers off. Nothing more: a brick is the ticks he would make one by one, and
+ * carries no rule of its own.
  */
-export function brickTickPress<T extends { placed: boolean }>(rows: ReadonlyArray<T>, room: number): { place: T[]; takeOff: T[] } {
-  if (brickTickState(rows, room).all) return { place: [], takeOff: [...rows] };
-  return { place: rows.filter((row) => !row.placed).slice(0, Math.max(0, room)), takeOff: [] };
+export function brickTickPress<T extends { placed: boolean }>(rows: ReadonlyArray<T>, room: number): { place: T[]; takeOff: T[]; left: T[] } {
+  if (brickTickState(rows, room).takesOff) return { place: [], takeOff: rows.filter((row) => row.placed), left: [] };
+  const rest = rows.filter((row) => !row.placed);
+  const fits = Math.max(0, room);
+  return { place: rest.slice(0, fits), takeOff: [], left: rest.slice(fits) };
 }
 
 /** How full each of a day's lists is, and whether the day itself is. */
@@ -811,12 +824,15 @@ export type CopySummary = {
   noPlace: number;
   /** He is no longer on the list. */
   notOnList: number;
+  /** It would have landed on a day that has passed, which a copy never fills. */
+  passed: number;
 };
 
 /**
- * How a copy went, placement by placement. A customer already on that day, a day that has passed and a
- * PM customer on a Thursday morning are not counted as failures — a copy only ever fills the days the
- * rep can change with the customers the day can hold.
+ * How a copy went, placement by placement. A customer already on that day and a PM customer on a
+ * Thursday morning are not counted as failures — a copy only ever fills the days the rep can change with
+ * the customers the day can hold. One that would land on a day that has passed is counted apart
+ * (`passed`), so "Copied 6" from a week that held 14 says where the other 8 went.
  */
 export function summarizeCopy(input: {
   source: ReadonlyArray<CopySourcePlacement>;
@@ -828,13 +844,18 @@ export function summarizeCopy(input: {
 }): CopySummary {
   const placedKeys = new Set(input.placed.map((item) => `${item.planDate}|${item.customerId}`));
   const seen = new Set<string>();
-  const summary: CopySummary = { placed: input.placed.length, full: 0, noPlace: 0, notOnList: 0 };
+  const summary: CopySummary = { placed: input.placed.length, full: 0, noPlace: 0, notOnList: 0, passed: 0 };
   for (const placement of input.source) {
     const day = input.targetDayOf(placement);
-    if (!day || !day.editable) continue;
+    if (!day) continue;
     const key = `${day.date}|${placement.customerId}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    if (!day.editable) {
+      const customer = input.byId.get(placement.customerId);
+      if (customer && day.listTypes.includes(customer.listType) && !input.alreadyOn(day.date).has(placement.customerId)) summary.passed += 1;
+      continue;
+    }
     if (placedKeys.has(key) || input.alreadyOn(day.date).has(placement.customerId)) continue;
     const customer = input.byId.get(placement.customerId);
     if (!customer) summary.notOnList += 1;

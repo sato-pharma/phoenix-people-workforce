@@ -26,8 +26,11 @@ import { parseCapturedFix, parseCustomerPhone } from "@/lib/phoenix-crm/entry-ru
 import {
   isSeatlessPlannerKind,
   managerAskStage,
+  managerScopeTerritories,
+  managerWriterTerritories,
   matchCustomerName,
   missingManagerCustomerField,
+  sameCustomerName,
   MANAGER_CUSTOMER_ADDRESS_MAX,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
@@ -35,6 +38,7 @@ import {
   type ManagerPlanWriter,
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
+import { compareFoldedNames } from "@/lib/phoenix-crm/name-fold";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -48,7 +52,7 @@ import {
   readsManagerPlanOf,
   resolveManagerPlanReader,
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
-import { managerApproversFor, managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
+import { managerApproversFor, managerWriterReach, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { resolvePinGeography, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
@@ -373,13 +377,29 @@ function outsideReach(writer: ManagerPlanWriter): string {
 }
 
 /**
- * GET: the customers he chooses from for a single visit in one area he plans in — that area's rep lists
- * (every territory of the area, a vacant one included) and Manager's own list. His own only.
+ * The territories the area list may read: his whole reach, or — a regional, national or product manager who
+ * names the half's scope — that district's or line's only. Owner walk, 2026-10-28: a product manager's Pedia
+ * day with one district manager listed the Anti Infective reps' doctors of the same area beside the Pedia
+ * ones, so one hospital and one doctor showed twice. The area is matched within the scope, never across it.
  */
-export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: unknown; test: unknown }): Promise<AreaCustomersView> {
+async function areaListReach(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter, rawScope: unknown): Promise<OrgSeat[]> {
+  if (writer.kind === "dm") return managerWriterReach(viewer, writer);
+  const scopes = await managerWriterScopes(viewer, writer);
+  const key = typeof rawScope === "string" ? rawScope.trim() : "";
+  const scope = key ? (scopes.find((entry) => entry.key === key) ?? null) : null;
+  if (key && !scope) throw forbiddenError("Choose a district or line you plan in.");
+  return scope ? managerScopeTerritories(viewer.org, scope, writer.hrId) : managerWriterTerritories(viewer.org, writer, scopes);
+}
+
+/**
+ * GET: the customers he chooses from for a single visit in one area he plans in — that area's rep lists
+ * (every territory of the area, a vacant one included) and Manager's own list. His own only. `scope` is the
+ * half's district or line (`managerScopeKey`); a district manager's is his own district and sends none.
+ */
+export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: unknown; test: unknown; scope?: unknown }): Promise<AreaCustomersView> {
   const writer = assertManagerPlanWriter(viewer);
   const isTest = testModeFor(viewer, raw.test);
-  const district = await managerWriterReach(viewer, writer);
+  const district = await areaListReach(viewer, writer, raw.scope);
   const chosen = district.find((seat) => seat.seatId === raw.area) ?? null;
   if (!chosen) throw forbiddenError(outsideReach(writer));
   const areaKey = chosen.areaCode ?? chosen.areaName ?? chosen.seatId;
@@ -410,7 +430,7 @@ export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: u
         },
       ];
     })
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => compareFoldedNames(left.name, right.name));
   return {
     area: { seatId: chosen.seatId, areaName: chosen.areaName ?? territoryName(chosen), vacant: isVacantTerritory(chosen) },
     repList,
@@ -441,13 +461,18 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
   const typed = cleanText(body.name, 200, "The name");
   if (!typed) return [];
   const district = await managerWriterReach(viewer, writer);
+  return matchCustomerName(typed, await nameCandidates(viewer, district, isTest));
+}
+
+/** Every customer on his reps' lists and his own active list, as the match offers them. */
+async function nameCandidates(viewer: PhoenixCrmViewer, district: ReadonlyArray<OrgSeat>, isTest: boolean): Promise<CustomerMatch[]> {
   const [rows, own, names] = await Promise.all([
     loadRepListCustomers(district.map((seat) => seat.seatId), isTest),
     loadManagerCustomers(viewer.hrId, isTest),
     loadPeopleNames(district.map((seat) => seat.occupantHrId)),
   ]);
   const seatById = new Map(district.map((seat) => [seat.seatId, seat]));
-  const candidates: CustomerMatch[] = [
+  return [
     ...rows.flatMap((row): CustomerMatch[] => {
       const id = textOrNull(row.id);
       const name = textOrNull(row.name);
@@ -472,7 +497,6 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
         areaSeatId: customer.areaSeatId,
       })),
   ];
-  return matchCustomerName(typed, candidates);
 }
 
 // ── Adding one ──────────────────────────────────────────────────────────────────────────────────
@@ -636,6 +660,14 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   if (!area) throw validationError(writer.kind === "dm" ? "Choose the area of your district the customer is in." : "Choose the area the customer is in.");
   const brick = brickId ? ((await activeBricksOfArea(area.areaCode)).find((entry) => entry.id === brickId) ?? null) : null;
   if (brickId && !brick) throw validationError("Choose a brick of the area you chose.");
+  // The same name already on a list is asked about before a second one is saved (owner walk, 2026-10-28).
+  // The form asks first; this holds when the save went before its look-up came back.
+  if (body.differentCustomer !== true) {
+    const same = (await nameCandidates(viewer, district, isTest)).filter((candidate) => sameCustomerName(candidate.name, name));
+    if (same.length > 0) {
+      throw conflictError(`${same[0].name} is already on a list (${same.map((entry) => entry.detail).join("; ")}). Choose that one rather than adding the same customer twice.`);
+    }
+  }
 
   let pin: Row = {};
   const fix = readCapturedFix(body);

@@ -64,7 +64,7 @@ import { Check, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { cairoStamp, countText, dayLabel, plural, weekLabel, type Tone } from "@/components/phoenix-crm/format";
 import { pendingListNote, territoryLine } from "@/components/phoenix-crm/labels";
-import type { CopiedPlacements, SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
+import { suggestReport, type CopiedPlacements, type CopyReport, type SuggestContext } from "@/components/phoenix-crm/plan-copy-menu";
 import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/components/phoenix-crm/plan-decision";
 import { PlanReviewSteps } from "@/components/phoenix-crm/plan-review-steps";
 import { ChoiceLabel, PLAN_STATUS_TONE, PlanWeekPanel, problemText, type WeekBusy, type WeekHold } from "@/components/phoenix-crm/plan-week-panel";
@@ -88,7 +88,7 @@ import { monthKeyOf } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import { withSavedBoards, type SavedWeekBoard } from "@/lib/phoenix-crm/plan-board-answer";
-import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, plannerVenues, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
+import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerFilterOptions, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { isPlanEditable, planTurnSentence, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
 import {
@@ -276,6 +276,10 @@ export function PlanBoard({
   // The days the step form has already filled with their suggestion this visit: a day is filled ONCE,
   // so a day he cleared on purpose stays clear when he comes back to it.
   const [filledDays, setFilledDays] = useState<ReadonlySet<string>>(() => new Set());
+  // What the last fill of a day placed, or why it placed nobody, said under that day's buttons: the step
+  // form's "Suggest this day" had no report of its own, so a press on a full day read as nothing (the
+  // role walk, 2026-10-28).
+  const [fillNote, setFillNote] = useState<{ key: string; report: CopyReport } | null>(null);
   // The rep's own board saves itself (owner, 2026-10-02): a save on its way, the last one that failed,
   // whether anything of his has saved since the board opened, and the quiet read that follows a save.
   const [selfSaving, setSelfSaving] = useState(false);
@@ -1009,6 +1013,9 @@ export function PlanBoard({
       date,
     });
     if (result.placements.length > 0) addCopies(new Map([[selected.week.weekStart, result.placements]]));
+    if (force || result.placements.length > 0) {
+      setFillNote({ key, report: suggestReport(result, !target.listTypes.includes("PM"), { kind: "day", date }, repBoard) });
+    }
   }
 
   function requestBack() {
@@ -1062,12 +1069,7 @@ export function PlanBoard({
   const ownWeeks = states.filter((state) => !state.week.leading);
   const bricks = plannerBricks(view.customers);
   const tints = brickTintMap(bricks.map((brick) => brick.value));
-  const filterOptions = {
-    bricks: bricks.map((brick) => ({ value: brick.value, label: `Brick ${brick.label}` })),
-    grades: plannerGrades(view.customers),
-    specialities: plannerSpecialities(view.customers),
-    venues: plannerVenues(view.customers),
-  };
+  const filterOptions = plannerFilterOptions(view.customers);
   const monthBusy = busy?.kind === "month" ? busy.action : null;
   const weekBusy = busy?.kind === "week" && selected && busy.weekStart === selected.week.weekStart ? busy.action : null;
   // His one status line (owner, 2026-10-02), in place of the Save button and its bar. A week that waits
@@ -1344,6 +1346,7 @@ export function PlanBoard({
       selectedDay={selectedDay}
       dayFocus={repBoard && panelSection === "day" ? daySession : undefined}
       onFillDay={() => fillDay(selectedDay.date, true)}
+      fillReport={fillNote?.key === `${selected.scope}|${selectedDay.date}` ? fillNote.report : null}
       // His board waits on a problem rather than refusing a press, so the problem is named while it waits.
       showProblems={showProblems || (repBoard && selected.dirty && selected.problems.length > 0)}
       showSpread={showSpread}

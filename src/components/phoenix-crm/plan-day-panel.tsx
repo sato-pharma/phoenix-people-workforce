@@ -51,6 +51,7 @@ import { Check } from "lucide-react";
 import { countText, dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
 import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
 import { customerMetaText, matchesWords, PENDING_PILL, plannerRowInsight } from "@/components/phoenix-crm/labels";
+import type { CopyReport } from "@/components/phoenix-crm/plan-copy-menu";
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
 import {
   CrmBlock,
@@ -71,9 +72,9 @@ import { fieldWeekStart, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import { dayActivityLabel, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { describeDayStarts, startInputValue, startMinuteFromInput, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
-import { filterPlannerCustomers, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
+import { filterPlannerCustomers, plannerFilterOptions, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { dayOffPhrase, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
-import type { GradeTargets } from "@/lib/phoenix-crm/plan-suggest";
+import { suggestionCaps, type DayTargets, type GradeTargets } from "@/lib/phoenix-crm/plan-suggest";
 import {
   brickTickPress,
   brickTickState,
@@ -139,6 +140,12 @@ function compareTickRows(left: TickRow, right: TickRow): number {
   );
 }
 
+/** "Ali, Omar and Hany"; past three, "Ali, Omar and 3 more". */
+function namesText(names: ReadonlyArray<string>): string {
+  if (names.length > 3) return `${names.slice(0, 2).join(", ")} and ${countText(names.length - 2)} more`;
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** Every word a customer can be found by. */
 function customerWords(customer: PlannerCustomer): Array<string | null> {
   return [customer.name, customer.speciality, ...customer.places.flatMap((place) => [place.brick, place.label, place.zone, place.sharedPlaceName ?? null])];
@@ -150,7 +157,9 @@ export function PlanDayPanel({
   copyMenu,
   customers,
   day,
+  dayTargets,
   editing,
+  fillReport = null,
   filter,
   filterOptions,
   focus,
@@ -181,8 +190,15 @@ export function PlanDayPanel({
   copyMenu?: ReactNode;
   customers: ReadonlyArray<PlannerCustomer>;
   day: PlanDayView;
+  /**
+   * The day's share of this month's visits, AM and PM — what Suggest fills it to. The list's heading
+   * names it beside the cap when it is lower. Unset off the rep's own board.
+   */
+  dayTargets?: DayTargets;
   /** The rep is changing this day: its customers come from the draft and tick on and off. */
   editing: boolean;
+  /** What the step form's last "Suggest this day" did here, said under the buttons; null when nothing yet. */
+  fillReport?: CopyReport | null;
   filter: DoctorFilter;
   filterOptions: {
     bricks: ReadonlyArray<{ value: string; label: string }>;
@@ -233,6 +249,8 @@ export function PlanDayPanel({
   // The step form's two folds. Hooks first: the panel returns early for a day he is not changing.
   const [showOthers, setShowOthers] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  // The customers a brick's box could not place for want of room, named under that brick.
+  const [brickNote, setBrickNote] = useState<{ key: string; text: string } | null>(null);
   const weekday = weekdayOfIsoDay(day.date);
   const weekdayName = PHOENIX_CRM_WEEKDAY_NAMES[weekday];
   const dayName = dayLabel(day.date);
@@ -326,18 +344,25 @@ export function PlanDayPanel({
     seen[row.listType] += 1;
     order.set(row.customerId, seen[row.listType]);
   }
-  const allowed = new Set(filterPlannerCustomers(customers, { ...filter, ramadan: day.ramadan }).map((customer) => customer.customerId));
+  // The rep's AM or PM step is one list on one day (owner walk, 2026-10-28: "AM or PM" and "Receives on"
+  // were offered there and gave 0). Neither narrows it; a From / To reads this day's own weekday.
+  const timed = filter.fromMinute !== null || filter.toMinute !== null;
+  const shownFilter: DoctorFilter = focus ? { ...filter, session: "all", weekday: timed ? weekday : null } : filter;
+  const allowed = new Set(filterPlannerCustomers(customers, { ...shownFilter, ramadan: day.ramadan }).map((customer) => customer.customerId));
   // The week this day belongs to: a follow-up shows when it is due inside it.
   const weekStart = fieldWeekStart(day.date);
 
   const tickRows: TickRow[] = [];
   let offered = 0;
+  // Everyone the day could list, before any filter: the step's pickers are built from them.
+  const offeredCustomers: PlannerCustomer[] = [];
   for (const customer of customers) {
     const placed = placedById.get(customer.customerId) ?? null;
     if (!placed && !day.listTypes.includes(customer.listType)) continue;
     const fit = customerOnDay(customer, day.date, day.ramadan, placed?.placeId ?? null);
     if (!fit) continue;
     offered += 1;
+    offeredCustomers.push(customer);
     if (!placed && !(allowed.has(customer.customerId) && matchesWords(query, customerWords(customer)))) continue;
     const position = fit.place ? customer.places.findIndex((place) => place.placeId === fit.placeId) : -1;
     // The brick and area are the organogram's on both sides — the saved place's, or the sales master's
@@ -373,7 +398,14 @@ export function PlanDayPanel({
     });
   }
   const shownUnplaced = tickRows.filter((row) => !row.placed).length;
-  const filtering = query.trim() !== "" || filter.session !== "all" || filter.brick !== null || filter.venue !== null || filter.grade !== null || filter.speciality !== null || filter.weekday !== null;
+  const filtering =
+    query.trim() !== "" ||
+    shownFilter.session !== "all" ||
+    shownFilter.brick !== null ||
+    shownFilter.venue !== null ||
+    shownFilter.grade !== null ||
+    shownFilter.speciality !== null ||
+    shownFilter.weekday !== null;
   const sections = (["AM", "PM"] as const).filter((listType) => day.listTypes.includes(listType) || tickRows.some((row) => row.listType === listType));
 
   // A tick places him on the day, whatever hours are saved for it — never a reason to ask (owner, 2026-09-30).
@@ -389,11 +421,30 @@ export function PlanDayPanel({
   // A whole brick at once: exactly the ticks he would make one by one, through the same `toggle`, so a
   // brick carries no rule of its own (`brickTickPress` decides which). The board applies each over the
   // draft the one before it made, so none of them is lost.
-  function pressBrick(rows: ReadonlyArray<TickRow>, listType: PhoenixCrmDoctorListType) {
+  function pressBrick(rows: ReadonlyArray<TickRow>, listType: PhoenixCrmDoctorListType, groupKey: string) {
     if (locked) return;
     const press = brickTickPress(rows, room[listType]);
     for (const row of press.takeOff) toggle(row, false);
     for (const row of press.place) toggle(row, true);
+    // The ones the list had no room for are named, never left off in silence (the role walk, 2026-10-28).
+    setBrickNote(
+      press.left.length > 0
+        ? {
+            key: `${day.date}|${listType}|${groupKey}`,
+            text: `No room for ${namesText(press.left.map((row) => row.name))}: the ${listType} list on ${dayName} is full.`,
+          }
+        : null,
+    );
+  }
+
+  // The day's share of this month's visits — what Suggest fills it to — beside the cap when it is lower
+  // (the role walk, 2026-10-28: Suggest stopped at 2 of a cap of 5 and nothing said why). A half-day
+  // activity halves it as it halves the suggestion; a whole-day one leaves the heading as it was.
+  const goalCaps = suggestionCaps(caps, dayTargets);
+  function goalOf(listType: PhoenixCrmDoctorListType): number | null {
+    if (!dayTargets || activities.some((activity) => !activity.halfDay)) return null;
+    const goal = listType === "AM" ? goalCaps.amDailyCap : goalCaps.pmDailyCap;
+    return activities.length > 0 ? Math.floor(goal / 2) : goal;
   }
 
   const tickRowProps = { dayName, idPrefix, locked, onToggle: toggle, room };
@@ -401,9 +452,14 @@ export function PlanDayPanel({
   /** One list of the day — AM or PM — grouped by brick under its fill bar. `top` sits under the bar. */
   function listBlock(listType: PhoenixCrmDoctorListType, rows: ReadonlyArray<TickRow>, emptyText: string, top?: ReactNode) {
     const cap = listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
+    const goal = goalOf(listType);
     const groups = clusterByBrick(rows, (row) => row.brick, "alphabetical");
+    const title =
+      goal !== null && goal > 0 && goal < cap
+        ? `${listType} · ${countText(counts[listType])} of ${countText(goal)} placed (room for ${countText(cap)})`
+        : `${listType} · ${countText(counts[listType])} of ${countText(cap)} placed`;
     return (
-      <CrmBlock className="border-t border-slate-100" key={listType} title={`${listType} · ${countText(counts[listType])} of ${countText(cap)} placed`}>
+      <CrmBlock className="border-t border-slate-100" key={listType} title={title}>
         {/* The day filling up, in Today's own shape: orange as it fills, emerald at the cap. */}
         <CrmFillBar full={full[listType]} label={`${listType} on ${dayName}: ${counts[listType]} of ${cap} placed`} of={cap} value={counts[listType]} />
         {top}
@@ -426,13 +482,18 @@ export function PlanDayPanel({
                     <BrickTick
                       dayName={dayName}
                       label={group.label}
-                      onPress={() => pressBrick(group.rows, listType)}
+                      onPress={() => pressBrick(group.rows, listType, group.key)}
                       state={brickTickState(group.rows, room[listType], locked)}
                     />
                     <span className="text-xs font-bold text-slate-600">
                       {countText(ticked)} of {countText(group.rows.length)} placed
                     </span>
                   </div>
+                  {brickNote?.key === `${day.date}|${listType}|${group.key}` ? (
+                    <CrmNote className="mx-3 mt-3" tone="warn">
+                      {brickNote.text}
+                    </CrmNote>
+                  ) : null}
                   <CrmCardsOnPhone>
                     {group.rows.map((row) => (
                       <TickCard key={row.customerId} row={row} {...tickRowProps} />
@@ -480,18 +541,22 @@ export function PlanDayPanel({
       </CrmBlock>
     ) : null;
 
+  // On the step the choices are the list on screen's; the whole-day view keeps the board's.
+  const barOptions = focus ? plannerFilterOptions(offeredCustomers.filter((customer) => customer.listType === focus)) : filterOptions;
   const filterBar = (
     <PlanFilterBar
-      bricks={filterOptions.bricks}
+      bricks={barOptions.bricks}
       filter={filter}
-      grades={filterOptions.grades}
+      grades={barOptions.grades}
       idPrefix={`${idPrefix}-day`}
       locked={locked}
       onChange={onFilter}
       onQueryChange={onQuery}
       query={query}
-      specialities={filterOptions.specialities}
-      venues={filterOptions.venues}
+      showSession={!focus}
+      showWeekday={!focus}
+      specialities={barOptions.specialities}
+      venues={barOptions.venues}
     />
   );
 
@@ -543,6 +608,11 @@ export function PlanDayPanel({
                   </CrmButton>
                 ) : null}
               </div>
+              {fillReport ? (
+                <CrmNote className="mt-3" title={fillReport.title} tone={fillReport.tone}>
+                  {fillReport.message}
+                </CrmNote>
+              ) : null}
               {/* His own board saves itself as he ticks (owner, 2026-10-02): a fill is kept, and only Send sends it. */}
               <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
                 The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is sent until you press Send.
@@ -786,7 +856,13 @@ function BrickTick({ dayName, label, onPress, state }: { dayName: string; label:
   return (
     <label className={cn("flex min-w-0 cursor-pointer items-center gap-2.5", state.disabled && "cursor-not-allowed")}>
       <input
-        aria-label={state.all ? `Take every customer in ${label} off ${dayName}` : `Plan every customer in ${label} on ${dayName}`}
+        aria-label={
+          state.all
+            ? `Take every customer in ${label} off ${dayName}`
+            : state.takesOff
+              ? `No room for the rest: take the ones placed in ${label} off ${dayName}`
+              : `Plan every customer in ${label} on ${dayName}`
+        }
         checked={state.all}
         className="h-5 w-5 shrink-0 rounded-none accent-orange-600"
         disabled={state.disabled}

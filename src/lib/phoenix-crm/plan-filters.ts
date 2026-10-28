@@ -5,10 +5,12 @@
  * day between X and Y", by AM or PM, and — browsing the whole month as a doctor book — by grade and
  * speciality. These are independent narrowings, each satisfied by ANY of a customer's places (a doctor
  * with a clinic in the brick and another that receives on the day still shows). A customer not validated
- * yet has no brick and no days and hours, so a brick or day filter leaves him out; the AM / PM, grade
- * and speciality filters read his own fields.
+ * yet has no days and hours, so a day filter leaves him out; his brick is iReports360's (the list groups
+ * him under it, so the brick filter reads it too — owner walk, 2026-10-28), and the AM / PM, grade and
+ * speciality filters read his own fields.
  */
 
+import { foldSearchText } from "@/lib/phoenix-crm/name-fold";
 import { normalizeArea, type PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { receivesInRange } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
@@ -27,7 +29,7 @@ export type DoctorFilter = {
   venue: string | null;
   /** One grade, or null for any grade. */
   grade: PhoenixCrmGrade | null;
-  /** One speciality (exact), or null for any speciality. */
+  /** One speciality, its spellings folded together (specialityKey), or null for any speciality. */
   speciality: string | null;
   /** 0 = Sunday … 6 = Saturday, or null for any day. */
   weekday: number | null;
@@ -62,13 +64,18 @@ export function doctorFilterActive(filter: DoctorFilter): boolean {
   );
 }
 
+/** The bricks a customer is in: his places', and iReports360's while he is not validated yet. */
+function customerBricks(customer: PlannerCustomer): Array<string | null> {
+  return [...customer.places.map((place) => place.brick), customer.reference?.brick ?? null];
+}
+
 /** The bricks a set of customers cover, for the brick picker: normalized value with a display label. */
 export function plannerBricks(customers: ReadonlyArray<PlannerCustomer>): Array<{ value: string; label: string }> {
   const byValue = new Map<string, string>();
   for (const customer of customers) {
-    for (const place of customer.places) {
-      const value = normalizeArea(place.brick);
-      if (place.brick !== null && value !== null && !byValue.has(value)) byValue.set(value, place.brick.trim());
+    for (const brick of customerBricks(customer)) {
+      const value = normalizeArea(brick);
+      if (brick !== null && value !== null && !byValue.has(value)) byValue.set(value, brick.trim());
     }
   }
   return [...byValue.entries()].map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label));
@@ -91,14 +98,73 @@ export function plannerGrades(customers: ReadonlyArray<PlannerCustomer>): Phoeni
   return (["A", "B", "C"] as const).filter((grade) => present.has(grade));
 }
 
-/** The specialities present on a set of customers, sorted, for the speciality picker. */
+const BIDI_MARKS = /[\u200e\u200f\u061c\u202a-\u202e]/g;
+
+/**
+ * One speciality typed several ways (owner walk, 2026-10-28: "Uro" and "Urology" offered as two). Read on
+ * production that day: Uro 43 / Urology 516, IM 103 / Internal Medicine 4,373, GP 71 / General
+ * Practitioner 709, Pedia 117 / Pediatrics 2,805, Neuro and Nero / Neurology 2,262 — and "‏GP" with a
+ * hidden right-to-left mark. Only plain short forms of ONE speciality; a combined "GP + Pedia" stays apart.
+ */
+const SPECIALITY_SAME: Readonly<Record<string, string>> = {
+  uro: "urology",
+  im: "internal medicine",
+  gp: "general practitioner",
+  ped: "pediatrics",
+  pedia: "pediatrics",
+  neuro: "neurology",
+  nero: "neurology",
+  neurologist: "neurology",
+  neurological: "neurology",
+};
+
+/** The key one speciality's spellings share; null for none. For matching only — never shown. */
+export function specialityKey(value: string | null | undefined): string | null {
+  const folded = foldSearchText(value).replace(BIDI_MARKS, "").replace(/\s+/g, " ").trim();
+  if (!folded) return null;
+  return SPECIALITY_SAME[folded] ?? folded;
+}
+
+/**
+ * The specialities present on a set of customers, sorted, for the speciality picker: one choice per
+ * speciality, named by the spelling most of them carry.
+ */
 export function plannerSpecialities(customers: ReadonlyArray<PlannerCustomer>): string[] {
-  const present = new Set(customers.map((customer) => customer.speciality?.trim()).filter((value): value is string => Boolean(value)));
-  return [...present].sort((left, right) => left.localeCompare(right));
+  const byKey = new Map<string, Map<string, number>>();
+  for (const customer of customers) {
+    const label = customer.speciality?.replace(BIDI_MARKS, "").trim();
+    const key = specialityKey(label);
+    if (!label || !key) continue;
+    const spellings = byKey.get(key) ?? new Map<string, number>();
+    spellings.set(label, (spellings.get(label) ?? 0) + 1);
+    byKey.set(key, spellings);
+  }
+  return [...byKey.values()]
+    .map((spellings) => [...spellings.entries()].sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || right.length - left.length || left.localeCompare(right))[0][0])
+    .sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The pickers' choices for a set of customers. 🔴 The day screen passes the list ON SCREEN, never the
+ * whole list (owner walk, 2026-10-28: Wednesday afternoon's 7 bricks were missing from its Brick filter,
+ * and morning specialities were offered there and gave 0).
+ */
+export function plannerFilterOptions(customers: ReadonlyArray<PlannerCustomer>): {
+  bricks: Array<{ value: string; label: string }>;
+  grades: PhoenixCrmGrade[];
+  specialities: string[];
+  venues: Array<{ value: string; label: string }>;
+} {
+  return {
+    bricks: plannerBricks(customers).map((brick) => ({ value: brick.value, label: `Brick ${brick.label}` })),
+    grades: plannerGrades(customers),
+    specialities: plannerSpecialities(customers),
+    venues: plannerVenues(customers),
+  };
 }
 
 function matchesBrick(customer: PlannerCustomer, brick: string): boolean {
-  return customer.places.some((place) => normalizeArea(place.brick) === brick);
+  return customerBricks(customer).some((entry) => normalizeArea(entry) === brick);
 }
 
 function matchesVenue(customer: PlannerCustomer, venue: string): boolean {
@@ -121,7 +187,7 @@ export function filterPlannerCustomers(customers: ReadonlyArray<PlannerCustomer>
     if (filter.brick !== null && !matchesBrick(customer, filter.brick)) return false;
     if (filter.venue !== null && !matchesVenue(customer, filter.venue)) return false;
     if (filter.grade !== null && customer.grade !== filter.grade) return false;
-    if (filter.speciality !== null && (customer.speciality?.trim() ?? null) !== filter.speciality) return false;
+    if (filter.speciality !== null && specialityKey(customer.speciality) !== specialityKey(filter.speciality)) return false;
     if (!matchesDay(customer, filter)) return false;
     return true;
   });

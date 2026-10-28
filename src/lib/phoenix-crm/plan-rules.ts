@@ -80,14 +80,17 @@ export function planStatusLine(input: {
   reviewerName?: string | null;
   /** Who decided it last, for an approved week; falls back to the reviewer, then to the bare word. */
   deciderName?: string | null;
+  /** The reader is the rep himself: his own screen says "you", never his own name (owner walk, 2026-10-28). */
+  self?: boolean;
 }): string {
-  const rep = nameOrNull(input.repName);
+  const rep = input.self ? "you" : nameOrNull(input.repName);
   const reviewer = nameOrNull(input.reviewerName);
   const decider = nameOrNull(input.deciderName) ?? reviewer;
   if (input.status === "draft") return rep ? `Drafted by ${rep}` : planStatusLabel("draft");
   if (input.status === "submitted") return reviewer ? `Waiting for ${reviewer} to approve` : planStatusLabel("submitted");
   if (input.status === "returned") return rep ? `Waiting for ${rep} to edit and resend` : planStatusLabel("returned");
   if (input.status === "approved") return decider ? `Approved by ${decider}` : planStatusLabel("approved");
+  if (input.self) return "Not started — you draft it";
   return rep ? `Not started — ${rep} drafts it` : planStatusLabel(null);
 }
 
