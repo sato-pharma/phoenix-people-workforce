@@ -1,4 +1,5 @@
 import type { DirectOrderStuckVenue } from "@/lib/direct-orders/stuck-venues";
+import { humanizeCode } from "@/lib/format/code-label";
 import { venueTypeLabel } from "@/lib/venues/venue-type";
 import { adminPanelClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -90,8 +91,7 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
                   {venue.pharmacyName}
                 </p>
                 <p className="text-phx-xs text-slate-500">
-                  {venue.phoenixPharmacyCode} · {venueTypeLabel(venue.venueType)}
-                  {venue.areaCode ? ` · ${venue.areaCode}` : ""}
+                  {venueTypeLabel(venue.venueType)}
                 </p>
               </td>
               <td className="px-4 py-2.5 text-phx-sm text-slate-700" dir="auto">
@@ -103,7 +103,7 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
                 </p>
                 {venue.orderStates.length > 0 ? (
                   <p className="text-phx-xs text-slate-500">
-                    {venue.orders} · {venue.orderStates.join(", ")}
+                    {venue.orders} · {venue.orderStates.map(humanizeCode).join(", ")}
                   </p>
                 ) : null}
               </td>
@@ -121,8 +121,7 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
               {venue.pharmacyName}
             </p>
             <p className="text-phx-xs text-slate-500">
-              {venue.phoenixPharmacyCode} · {venueTypeLabel(venue.venueType)}
-              {venue.areaCode ? ` · ${venue.areaCode}` : ""}
+              {venueTypeLabel(venue.venueType)}
             </p>
             <p className="text-phx-sm text-slate-700" dir="auto">
               Raised by {venue.raisedByName ?? "—"} · {cairoDay(venue.createdAtIso)}
@@ -132,7 +131,7 @@ export function StuckVenuesPanel({ venues }: { venues: DirectOrderStuckVenue[] }
               {venue.orderStates.length > 0 ? (
                 <span className="font-normal text-slate-500">
                   {" "}
-                  · {venue.orders} · {venue.orderStates.join(", ")}
+                  · {venue.orders} · {venue.orderStates.map(humanizeCode).join(", ")}
                 </span>
               ) : null}
             </p>
