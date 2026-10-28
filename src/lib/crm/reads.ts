@@ -2336,16 +2336,31 @@ function withOwnRowColumns(columns: string): string {
   return parts.join(", ");
 }
 
+/** Vendor presence probes in flight at once — each is a single index probe that returns one row. */
+const MAPPED_AGENT_PROBE_CONCURRENCY = 6;
+
 /**
  * Presence check for the probation "CRM-unmapped" badge: of the given resolved hr ids, which
- * actually appear as an `agent_hr_id` on at least one visit. Returns the distinct raw
- * `agent_hr_id` values found (callers canonicalize).
+ * actually appear as an `agent_hr_id` on at least one visit. Returns ONE raw `agent_hr_id` per
+ * person found — the spelling a visit of theirs carries (callers canonicalize, and both do).
  *
  * Deliberately does NOT apply the resigned/owner-excluded filter — this asks "does the CRM feed
  * know this person at all", so an excluded-but-present agent must still count as mapped rather than
- * be mislabeled a data gap. Full keyset scan (no silent 1000-row cap): a rep with any visit is
- * mapped, so wider coverage only ever removes false "unmapped" flags, never adds them. Returns `[]`
- * if the schema is missing.
+ * be mislabeled a data gap. Complete, never capped: a rep with any visit is mapped, so wider
+ * coverage only ever removes false "unmapped" flags, never adds them. Returns `[]` if the schema is
+ * missing.
+ *
+ * 🔴 ONE VISIT PER PERSON, NEVER EVERY VISIT (speed, 2026-10-28). This used to page through every
+ * visit these people ever made, in `id` order, to learn which of them had any. Measured on
+ * production (28 Oct 2026) for the DSM no-record connector's 74 reps: 81,119 visits, 82 pages of
+ * 1,000, each page about 72,000 buffer reads and a third of a second (6 of the 82 replayed) — about
+ * 27 seconds of database time to answer 67 names. The read below answers the same 67 with 74
+ * one-row probes and one Phoenix question: about 1,400 buffer reads and 26 milliseconds.
+ * Now the vendor half asks each person for a single row (an index probe), and the Phoenix half is
+ * asked once for everybody still unanswered. The split is on the view's `source` column, which is
+ * a constant per branch, so each question prunes the other half of the view entirely — the
+ * Phoenix half has no index on its `agent_hr_id` (a COALESCE), so asking it per person would scan
+ * it once per person. Never "fix" it back to a scan of every visit.
  *
  * `notAfterDate` (YYYY-MM-DD, inclusive) bounds the question to "did CRM know this person BY then".
  * Omit it for the live "is this person mapped today" reading, which is what a badge wants. A caller
@@ -2360,31 +2375,70 @@ export async function getMappedAgentHrIds(
   options: { notAfterDate?: string } = {},
 ): Promise<string[]> {
   if (hrIds.length === 0) return [];
+  // Every spelling the door would match, grouped by the person it belongs to. Each spelling
+  // canonicalizes back to its own person, so a found row names exactly one of them.
+  const spellingsByPerson = new Map<string, Set<string>>();
+  for (const hrId of hrIds) {
+    const person = canonicalHrIdKey(hrId);
+    if (!person) continue;
+    const spellings = spellingsByPerson.get(person) ?? new Set<string>();
+    for (const spelling of hrIdLookupKeys(hrId)) spellings.add(spelling);
+    spellingsByPerson.set(person, spellings);
+  }
+  if (spellingsByPerson.size === 0) return [];
   const supabase = getSupabaseAdmin();
-  const present = new Set<string>();
-  let cursor: string | null = null;
-  for (;;) {
+  const found = new Map<string, string>();
+
+  // The vendor half: one row per person, each an index probe on agent_hr_id that stops at the first.
+  const vendorProbes = await mapWithConcurrency([...spellingsByPerson], MAPPED_AGENT_PROBE_CONCURRENCY, async ([person, spellings]) => {
     let query = supabase
       .from(CRM_VISITS_UNIFIED_VIEW)
-      .select("id, agent_hr_id")
-      .in("agent_hr_id", expandHrIdFilterValues(hrIds))
-      .order("id", { ascending: true })
+      .select("agent_hr_id")
+      .eq("source", IREPORTS360_VISIT_SOURCE)
+      .in("agent_hr_id", [...spellings])
+      .limit(1);
+    if (options.notAfterDate) query = query.lte("visit_date", options.notAfterDate);
+    const { data, error } = await query;
+    return { person, error, row: ((data ?? []) as Array<{ agent_hr_id: string | null }>)[0] };
+  });
+  for (const { person, error, row } of vendorProbes) {
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    if (row?.agent_hr_id) found.set(person, row.agent_hr_id);
+  }
+
+  // Everything else (the Phoenix half), asked once for everybody still unanswered. Every row it
+  // returns belongs to an unanswered person, so a full page answers at least one more and the
+  // next question is strictly smaller; a short page is the whole remainder, so whoever is still
+  // unanswered then has no visit at all.
+  const unanswered = new Set([...spellingsByPerson.keys()].filter((person) => !found.has(person)));
+  while (unanswered.size > 0) {
+    let query = supabase
+      .from(CRM_VISITS_UNIFIED_VIEW)
+      .select("agent_hr_id")
+      .neq("source", IREPORTS360_VISIT_SOURCE)
+      .in("agent_hr_id", [...unanswered].flatMap((person) => [...spellingsByPerson.get(person)!]))
       .limit(DEFAULT_PAGE_SIZE);
     if (options.notAfterDate) query = query.lte("visit_date", options.notAfterDate);
-    if (cursor) query = query.gt("id", cursor);
     const { data, error } = await query;
     if (error) {
       if (isCrmSchemaMissingError(error)) return [];
       throw new Error(error.message);
     }
-    const page = (data ?? []) as Array<{ id: string; agent_hr_id: string | null }>;
+    const page = (data ?? []) as Array<{ agent_hr_id: string | null }>;
+    const askedAbout = unanswered.size;
     for (const row of page) {
-      if (row.agent_hr_id) present.add(row.agent_hr_id);
+      const person = canonicalHrIdKey(row.agent_hr_id);
+      if (person && unanswered.delete(person)) found.set(person, row.agent_hr_id!);
     }
     if (page.length < DEFAULT_PAGE_SIZE) break;
-    cursor = page[page.length - 1].id;
+    // Cannot happen (see above) — but a full page that answers nobody would ask the same question
+    // forever, so it fails loudly instead.
+    if (unanswered.size === askedAbout) throw new Error("getMappedAgentHrIds: a full page answered nobody");
   }
-  return Array.from(present);
+  return [...found.values()];
 }
 
 /** The `(hr id, crm id)` pairs a mirror row carries, both sides of a double visit. */

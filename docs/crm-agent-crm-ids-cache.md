@@ -100,6 +100,23 @@ visit a set of reps ever made, with no lower date, to learn which of them has an
 guesses 3,744 rows and picks a plain index scan, one heap page per row, where it used to bitmap-scan
 each page once. Its cure is in that reader — it needs one visit per rep — never in the door.
 
+**That reader was cured the same day.** `getMappedAgentHrIds` now asks the vendor half of the door
+for ONE row per person (`source = ireports360`, `limit 1` — an index probe that stops at the first
+row) and the rest of the door ONCE for everybody still unanswered, asking again only while a page
+comes back full, each time without whoever that page answered. `source` is a constant per union
+branch, so each question prunes the other half outright; the Phoenix half has no index on its
+`agent_hr_id` (a COALESCE), which is why it is asked once for everybody, never once per person.
+Measured on production on 28 October 2026 with read-only replays, for the inputs of both callers:
+
+| Input | Old read | New read | Names |
+| --- | --- | --- | --- |
+| DSM no-record connector, 74 reps, to 31 Oct | 81,119 rows in 82 pages; about 72,000 buffer reads and 330 ms a page (6 pages replayed), so about 5.9 million reads and 27 s in all — computed from those 6, not run whole | 74 one-row probes and one Phoenix question: 1,382 buffer reads, 26 ms | 67 = 67, md5-identical |
+| Probation dashboard, 55 people, unbounded | 15,979 rows in 16 pages; the first page 11,951 reads and 125 ms, the next about 4,100 reads and 34 ms each (3 pages replayed) | 55 one-row probes and one Phoenix question: 1,231 buffer reads, 19 ms | 41 = 41, md5-identical |
+
+The answer is now ONE stored spelling per person found, not every spelling a visit carries; both
+callers canonicalize, so neither changes. Pinned by `tests/crm-mapped-agent-hr-ids.test.ts`, which
+drives the real function against an in-memory view and refuses an ordered or `id`-keyset question.
+
 🔴 **The two older indexes this one would replace STAY — the owner declined dropping them on
 28 October 2026** (`perf_ireports360_visits_agent_hr_id_visit_date_crm` and
 `ireports360_visits_agent_crm_id_idx`). Each one's keys are a prefix of its new neighbour's, so the

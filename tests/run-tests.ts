@@ -604,6 +604,7 @@ import { runCrmCampaignContactMatchTests } from "./crm-campaign-contact-match.te
 import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test.ts";
 import { runCrmDaySliceScanTests } from "./crm-day-slice-scan.test.ts";
+import { runCrmMappedAgentHrIdsTests } from "./crm-mapped-agent-hr-ids.test.ts";
 import { runCrmPlanEntryKeysetTests } from "./crm-plan-entry-keyset.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
@@ -4262,6 +4263,7 @@ await runTest(
 await runTest("crm checkin-match (agent+contact+day rule, crm_save_date tie-break)", runCrmCheckinMatchTests);
 await runTest("crm checkin page boundary (.gte cursor + id de-dupe across duplicate check_date)", runCrmCheckinPageBoundaryTests);
 await runTest("crm day-slice scan (company-wide CRM windows read per day, identical rows and order)", runCrmDaySliceScanTests);
+await runTest("crm mapped agent hr ids (one vendor row per person, then one shrinking question — never every visit)", runCrmMappedAgentHrIdsTests);
 await runTest("crm plan entry keyset (every paged plan read walks (day, entry id, hr id), every row once)", runCrmPlanEntryKeysetTests);
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
