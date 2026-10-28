@@ -52,6 +52,8 @@ import {
   parseGrade,
   parseProductAvailability,
   parseVisitDraft,
+  UNVALIDATED_CUSTOMER_VISIT_REFUSED,
+  unvalidatedVisitRefused,
   VISIT_AWAY_FROM_PLACE,
   VISIT_PRODUCTS_MAX,
   visitAwayFromValidatedPlace,
@@ -1428,7 +1430,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       offlineAnchorId = offlineClaim.anchorId;
     }
   }
-  const [placesResult, issuedAt, listedPharmacies] = await Promise.all([
+  const [placesResult, issuedAt, listedPharmacies, unvalidatedCustomer, earlierVisits] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
       // Both readings travel: the photograph's and the pin, the two a rep's visit is measured against below,
@@ -1443,6 +1445,21 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     // The pharmacy he named is a visit to that pharmacy too (owner, 2026-10-03): his list's pharmacies,
     // to find which one. No name, no read.
     visit.pharmacyName ? loadListedPharmacies(seat.seatId, isTest) : Promise.resolve([] as ListedPharmacy[]),
+    // The third-visit rule below is the rep's alone, so only his save reads the customer and his count.
+    enteredAs === "rep"
+      ? supabase.from("phoenix_crm_customers").select("validated_at, list_type").eq("id", visit.customerId).maybeSingle()
+      : Promise.resolve(null),
+    enteredAs === "rep"
+      ? supabase
+          .from("phoenix_crm_visits")
+          .select("id", { count: "exact", head: true })
+          .eq("seat_id", seat.seatId)
+          .eq("customer_id", visit.customerId)
+          .eq("is_test", isTest)
+          .is("linked_from_visit_id", null)
+          // The visit being saved never counts against itself, so a retried save is never refused.
+          .neq("id", visitId)
+      : Promise.resolve(null),
   ]);
   // Decided here, where it can be tested without a database; the function only checks each pharmacy is
   // his and files its visit. It is ignored when the customer he visited is himself a pharmacy. ONE BOX
@@ -1453,6 +1470,29 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   const placeRows = (placesResult.data ?? []) as Row[];
   const places = placeRows.map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
   const settings = viewer.config.settings;
+
+  // 🔴 TWO VISITS TO A CUSTOMER NOBODY HAS VALIDATED YET ARE SAVED; THE THIRD IS REFUSED (owner,
+  // 2026-10-28: "the third time if the customer/account is not validated do not accept or pass the
+  // visit"). A pharmacy is never counted — it needs no validation (owner, 2026-10-03). Asked of the REP's
+  // own save only, exactly as the far rule below — a visit a manager enters and the Super Admin's "Record
+  // a missed visit" still save — and asked before the recording is claimed and before anything is
+  // written, so a refused visit leaves nothing behind. A customer the read cannot find is left to the
+  // save, which refuses it in its own words.
+  if (enteredAs === "rep" && unvalidatedCustomer && earlierVisits) {
+    throwIfError(unvalidatedCustomer.error);
+    throwIfError(earlierVisits.error);
+    const customer = unvalidatedCustomer.data as Row | null;
+    if (
+      customer &&
+      unvalidatedVisitRefused({
+        listType: customer.list_type,
+        validated: customer.validated_at !== null && customer.validated_at !== undefined,
+        earlierVisits: earlierVisits.count ?? 0,
+      })
+    ) {
+      throw validationError(UNVALIDATED_CUSTOMER_VISIT_REFUSED);
+    }
+  }
 
   // 🔴 A MEDICAL REP'S VISIT IS LOGGED AT THE CUSTOMER'S VALIDATED PLACE, OR NOT AT ALL (owner,
   // 2026-10-20: "not accept medical reps visits logged away from the validated picture of the customer
