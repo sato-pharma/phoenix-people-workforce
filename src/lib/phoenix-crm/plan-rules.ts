@@ -82,6 +82,12 @@ export function planStatusLine(input: {
   deciderName?: string | null;
   /** The reader is the rep himself: his own screen says "you", never his own name (owner walk, 2026-10-28). */
   self?: boolean;
+  /**
+   * Every day of the week has passed. A week with no plan then can no longer be drafted, so it never
+   * says "drafts it" (the production smoke test, 2026-10-29: Weeks 1 to 3 of October read "Not started —
+   * Atef Sherif drafts it" on 29 October).
+   */
+  passed?: boolean;
 }): string {
   const rep = input.self ? "you" : nameOrNull(input.repName);
   const reviewer = nameOrNull(input.reviewerName);
@@ -90,9 +96,13 @@ export function planStatusLine(input: {
   if (input.status === "submitted") return reviewer ? `Waiting for ${reviewer} to approve` : planStatusLabel("submitted");
   if (input.status === "returned") return rep ? `Waiting for ${rep} to edit and resend` : planStatusLabel("returned");
   if (input.status === "approved") return decider ? `Approved by ${decider}` : planStatusLabel("approved");
+  if (input.passed) return PLAN_NEVER_PLANNED_TEXT;
   if (input.self) return "Not started — you draft it";
   return rep ? `Not started — ${rep} drafts it` : planStatusLabel(null);
 }
+
+/** A week that passed with no plan at all. */
+export const PLAN_NEVER_PLANNED_TEXT = "Never planned — the week has passed";
 
 function nameOrNull(value: string | null | undefined): string | null {
   const name = typeof value === "string" ? value.trim() : "";
@@ -330,7 +340,8 @@ export function planTurnSentence(input: {
     return `Sent for review. ${input.reviewerName ? `${input.reviewerName} approves it.` : "The manager above this territory approves it."}`;
   }
   if (input.status === "approved") return `Approved${when}${by}. Nothing is waiting on this week.`;
-  return `Not sent yet. ${rep} sends it by ${input.dueLabel}.`;
+  // It starts the sentence, so a vacant seat reads "The rep", never "the rep" (the smoke test, 2026-10-29).
+  return `Not sent yet. ${input.repName ?? "The rep"} sends it by ${input.dueLabel}.`;
 }
 
 export type PlanItemDraft = {
@@ -437,6 +448,17 @@ export function planDayOff(date: string, holidays?: ReadonlyMap<string, string>,
 /** "a public holiday (Armed Forces Day)" · "a day off on approved leave (Annual Vacation)" — one wording for the refusal and the board. */
 export function dayOffPhrase(off: PlanDayOff): string {
   return off.kind === "holiday" ? `a public holiday (${off.name})` : `a day off on approved leave (${off.name})`;
+}
+
+/**
+ * The note on a day off. A day off holds no customer — but a leave approved after the week was planned
+ * leaves its customers on the day, and the note must not say "it holds no customer" above them (the
+ * production smoke test, 2026-10-29: Monday 26 October in Assuit 1 · Anti Infective, 17 customers under it).
+ */
+export function dayOffNote(dayName: string, off: PlanDayOff, held: number): string {
+  if (held <= 0) return `${dayName} is ${dayOffPhrase(off)}: it holds no customer.`;
+  const customers = held === 1 ? "1 customer is" : `${held} customers are`;
+  return `${dayName} is ${dayOffPhrase(off)}. A day off holds no customer, yet ${customers} still planned on it.`;
 }
 
 /** A plan day's two counts. A pharmacy is never planned, so there is no third. */

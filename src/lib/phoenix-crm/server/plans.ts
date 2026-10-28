@@ -648,6 +648,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
           reviewerName: territory.reviewerName,
           deciderName: decidedBy ? nameOf(names, decidedBy) : null,
           self: selfReader,
+          passed: editablePlanDays(week, today).length === 0,
         }),
       };
     }),

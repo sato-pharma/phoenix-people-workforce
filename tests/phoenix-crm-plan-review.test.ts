@@ -21,6 +21,7 @@ import {
   type SentSnapshot,
 } from "../src/lib/phoenix-crm/plan-review-rules.ts";
 import {
+  dayOffNote,
   isPlanDaySent,
   isPlanSentForReview,
   onlyReturnedDayEditable,
@@ -677,6 +678,15 @@ function runWhoseTurnTests(): void {
   // A vacant seat and a plan nobody has decided yet: the sentence still reads as a sentence.
   const vacant = planTurnSentence({ ...base, deciderName: null, decidedStamp: null, repName: null, status: "returned", returnedDay: null });
   assert.equal(vacant, "This week went back to the rep. It is with the rep now — it comes back here for review when they send it again.");
+  // Where "the rep" starts a sentence it is capitalised (the smoke test, 2026-10-29: Alex Center · Anti
+  // Infective read "Not sent yet. the rep sends it by …").
+  for (const status of ["draft", null] as const) {
+    assert.equal(
+      planTurnSentence({ ...base, repName: null, status, returnedDay: null }),
+      "Not sent yet. The rep sends it by Thursday 8 October.",
+      `a ${status ?? "never sent"} week on a vacant seat starts its sentence with a capital`,
+    );
+  }
 
   // It is drawn exactly where the buttons would have been, and only when there are none.
   const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");
@@ -723,6 +733,24 @@ function runNamedStatusTests(): void {
   assert.equal(planStatusLine({ ...people, self: true, status: "draft" }), "Drafted by you");
   assert.equal(planStatusLine({ ...people, self: true, status: "returned" }), "Waiting for you to edit and resend");
   assert.equal(planStatusLine({ ...people, self: true, status: null }), "Not started — you draft it");
+
+  // A week that passed with no plan can no longer be drafted (the production smoke test, 2026-10-29:
+  // Weeks 1 to 3 of October read "Not started — Atef Sherif drafts it" on 29 October). A week that
+  // passed WITH a plan keeps its own words.
+  assert.equal(planStatusLine({ ...people, status: null, passed: true }), "Never planned — the week has passed");
+  assert.equal(planStatusLine({ ...people, self: true, status: null, passed: true }), "Never planned — the week has passed");
+  assert.equal(planStatusLine({ ...people, status: "approved", passed: true }), "Approved by Dr Taha");
+  assert.equal(planStatusLine({ ...people, status: "draft", passed: true }), "Drafted by Mostafa Galal");
+  assert.ok(source("src/lib/phoenix-crm/server/monthly-plans.ts").includes("passed: !open,"), "the month board tells the composer a week has passed");
+  assert.ok(source("src/lib/phoenix-crm/server/plans.ts").includes("passed: editablePlanDays(week, today).length === 0,"), "the week picker does too");
+
+  // A day off holds no customer — but a leave approved after the week was planned leaves its customers
+  // on it, and the note must not say "it holds no customer" above them (Assuit 1, Monday 26 October, 17).
+  const leave = { kind: "leave" as const, name: "Annual Vacation" };
+  assert.equal(dayOffNote("Mon 26 Oct", leave, 0), "Mon 26 Oct is a day off on approved leave (Annual Vacation): it holds no customer.");
+  assert.equal(dayOffNote("Mon 26 Oct", leave, 17), "Mon 26 Oct is a day off on approved leave (Annual Vacation). A day off holds no customer, yet 17 customers are still planned on it.");
+  assert.equal(dayOffNote("Mon 26 Oct", leave, 1), "Mon 26 Oct is a day off on approved leave (Annual Vacation). A day off holds no customer, yet 1 customer is still planned on it.");
+  assert.ok(source("src/components/phoenix-crm/plan-day-panel.tsx").includes("dayOffNote(dayName, off, held.AM + held.PM)"), "the day panel counts what the day still holds");
   assert.equal(planStatusLine({ ...people, self: true, status: "submitted" }), "Waiting for Dr Taha to approve", "the reviewer is still named");
   assert.ok(source("src/lib/phoenix-crm/server/plans.ts").includes("self: selfReader"), "the board tells the composer when the reader is the rep");
 

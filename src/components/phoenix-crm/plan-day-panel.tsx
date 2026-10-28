@@ -73,7 +73,7 @@ import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import { dayActivityLabel, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { describeDayStarts, startInputValue, startMinuteFromInput, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import { filterPlannerCustomers, plannerFilterOptions, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
-import { dayOffPhrase, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
+import { dayOffNote, dayOffPhrase, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { suggestionCaps, type DayTargets, type GradeTargets } from "@/lib/phoenix-crm/plan-suggest";
 import {
   brickTickPress,
@@ -261,7 +261,8 @@ export function PlanDayPanel({
   const byId = indexCustomers(customers);
   // Full: the day's rail turns emerald and the colour blooms off it (owner, 2026-09-30).
   const drafted = editing ? resolveDayRows(day, items, byId) : [];
-  const full = dayFullness(editing ? dayCounts(drafted) : day.counts, caps, day.listTypes);
+  const held = editing ? dayCounts(drafted) : day.counts;
+  const full = dayFullness(held, caps, day.listTypes);
   const startsText = describeDayStarts(starts);
 
   const header = (
@@ -292,7 +293,7 @@ export function PlanDayPanel({
       {!day.editable || off || day.pendingLeave || morning || day.ramadan ? (
         <div className="mt-3 grid min-w-0 gap-2">
           {!day.editable ? <CrmNote>This day has passed. It shows what was planned.</CrmNote> : null}
-          {off ? <CrmNote tone="warn">{`${dayName} is ${dayOffPhrase(off)}: it holds no customer.`}</CrmNote> : null}
+          {off ? <CrmNote tone="warn">{dayOffNote(dayName, off, held.AM + held.PM)}</CrmNote> : null}
           {day.pendingLeave ? (
             <CrmNote tone="info">{`${day.pendingLeave} is requested for ${dayName} and waiting for approval. You can still plan this day; once it is approved the day holds no customer.`}</CrmNote>
           ) : null}

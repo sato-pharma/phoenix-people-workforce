@@ -65,7 +65,8 @@ export async function loadPhoenixCrmPage(access: AccessContext): Promise<Phoenix
 export function phoenixCrmPageDescription(overview: PhoenixCrmOverview): string {
   const { viewer } = overview;
   if (viewer.isSuperAdmin) {
-    return "Try the module in test mode on any territory, read the field force's own entries, and set the numbers, line openings and Ramadan dates.";
+    // His test mode is retired (phoenix-crm-app.tsx `standingNote`), so the line no longer offers it.
+    return "Read the field force's own entries on any territory, and set the numbers, line openings and Ramadan dates.";
   }
   if (viewer.isRep && viewer.isManager) {
     return "Your own customer list, weekly plan and visits, and the plans and requests of the territories beneath you.";
