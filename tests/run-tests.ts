@@ -2116,6 +2116,7 @@ import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-reading
 import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-answers-401.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
+import { runPhoenixCrmUnvalidatedVisitCapTests } from "./phoenix-crm-unvalidated-visit-cap.test.ts";
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
@@ -7577,6 +7578,11 @@ await runTest(
 await runTest(
   "a medical rep visit logged more than 300 m from the customer validated photo is REFUSED (owner, 2026-10-20: \"not accept medical reps visits logged away from the validated picture of the customer with maximum 300 m apart\"; 97 of 2,558 measurable rep visits sat past the line on 6-19 October). Pinned: the nearest validated place decides; the photograph anchors only when its reading is within the place line, else the place point; no place refuses nobody; the line is visit_far_meters with 300 m behind it; only the REP save is asked, before the recording claim and before any write; the attempt is kept for the SFE board as far_from_place with its metres and place; and the rep reads his own work, never the line, his metres or a check)",
   runPhoenixCrmVisitFarRefusalTests,
+);
+
+await runTest(
+  "two visits to a Phoenix CRM customer nobody has validated yet are saved and the THIRD is REFUSED (owner, 2026-10-28: \"the third time if the customer/account is not validated do not accept or pass the visit\"; 203 doctors and accounts held two or more unvalidated visits that day). Pinned: a doctor or account with two earlier visits and no validation is refused, a validated one never is, and a pharmacy is never counted because it needs no validation; only the REP save asks it, before the recording claim and before any write; the count is the seat's own visits to the customer in the same test world, never a linked pharmacy row and never the visit being saved; and the rep reads his own work and the way out",
+  runPhoenixCrmUnvalidatedVisitCapTests,
 );
 
 await runTest(

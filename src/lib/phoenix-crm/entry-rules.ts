@@ -23,6 +23,7 @@ import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
@@ -428,6 +429,33 @@ export function visitAwayFromValidatedPlace(input: {
   }
   if (nearest === null) return { refused: false, metres: null, placeId: null, farMeters };
   return { refused: nearest.metres > farMeters, metres: nearest.metres, placeId: nearest.id, farMeters };
+}
+
+/**
+ * 🔴 TWO VISITS TO A CUSTOMER NOBODY HAS VALIDATED YET ARE SAVED; THE THIRD IS REFUSED (owner,
+ * 2026-10-28: "he can log a visit without validation and a second one but the third time if the
+ * customer/account is not validated do not accept or pass the visit").
+ *
+ * Until that day an unvalidated customer could take any number of visits: they saved and scored
+ * nothing, and the validation that would put the customer on the map never came. Measured on production
+ * 2026-10-28: 203 doctors and accounts already held two or more visits while still unvalidated (PM 161,
+ * AM 42), 25 of them three or more and one ten.
+ *
+ * 🔴 A PHARMACY IS NEVER COUNTED — its visit needs no validation (owner, 2026-10-03: "Pharmacy don't need
+ * a validation. It is visit is logged normally"), so it is never validated and this would close it for
+ * good. The earlier visits are the seat's own visits to the customer in the same test world, the visit
+ * being saved left out so a retried save is never refused by itself.
+ */
+export const UNVALIDATED_VISIT_LIMIT = 2;
+
+/** What the rep reads: his own work and the way out, never a count or a check. */
+export const UNVALIDATED_CUSTOMER_VISIT_REFUSED =
+  "You have already logged two visits to this customer before it was validated. Validate the customer first, then log this visit.";
+
+export function unvalidatedVisitRefused(input: { listType: unknown; validated: boolean; earlierVisits: number }): boolean {
+  if (isPharmacyListType(input.listType)) return false;
+  if (input.validated) return false;
+  return Number.isFinite(input.earlierVisits) && input.earlierVisits >= UNVALIDATED_VISIT_LIMIT;
 }
 
 /**
