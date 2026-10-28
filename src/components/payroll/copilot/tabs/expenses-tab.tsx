@@ -1,5 +1,6 @@
 "use client";
 
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { useCallback, useEffect, useState } from "react";
 
 type ExpenseCandidate = {
@@ -97,6 +98,39 @@ export function ExpensesTab({ runId }: { runId: string }) {
     }
   }
 
+  const decisionButtons = (row: ExpenseCandidate) => {
+    const busy = busyId === row.id;
+    const current = row.existingDecision?.decision ?? null;
+    return (
+      <div className="flex flex-wrap gap-1">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => decide(row, "include")}
+          className={`px-2 py-1 text-xs font-semibold disabled:opacity-50 ${
+            current === "include"
+              ? "bg-emerald-600 text-white"
+              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+          }`}
+        >
+          Include this run
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => decide(row, "defer")}
+          className={`px-2 py-1 text-xs font-semibold disabled:opacity-50 ${
+            current === "defer"
+              ? "bg-slate-900 text-white"
+              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+          }`}
+        >
+          Defer to next month
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
@@ -127,74 +161,77 @@ export function ExpensesTab({ runId }: { runId: string }) {
           No HR-approved expense requests for {sourceMonthLabel ?? "the prior month"}.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2">Employee</th>
-                <th className="px-4 py-2">Date From</th>
-                <th className="px-4 py-2">Date To</th>
-                <th className="px-4 py-2">Location From</th>
-                <th className="px-4 py-2">Location To</th>
-                <th className="px-4 py-2">KM</th>
-                <th className="px-4 py-2">Type</th>
-                <th className="px-4 py-2">Travel Cost</th>
-                <th className="px-4 py-2">Allowance</th>
-                <th className="px-4 py-2">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((row) => {
-                const busy = busyId === row.id;
-                const current = row.existingDecision?.decision ?? null;
-                return (
+        <PortalResponsiveDataList
+          empty={null}
+          getKey={(row) => row.id}
+          items={rows}
+          renderCard={(row) => (
+            <div className="space-y-1.5 px-4 py-3 text-sm">
+              <p className="break-words font-medium text-slate-800">{row.employeeName ?? "—"}</p>
+              <p className="break-words text-xs text-slate-600">
+                {row.dateFrom} → {row.dateTo} · {row.locationFrom} → {row.locationTo}
+              </p>
+              <p className="text-xs text-slate-600">
+                {row.type}
+                {row.km != null ? ` · ${row.km} km` : ""}
+              </p>
+              <p className="text-xs text-slate-900">
+                Travel cost <span className="font-medium">{egp(row.travelCost)}</span> · Allowance{" "}
+                <span className="font-medium">{egp(row.allowance)}</span>
+              </p>
+              {decisionButtons(row)}
+            </div>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[16%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[22%]" />
+                </colgroup>
+              }
+            >
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-2">Employee</th>
+                  <th className="px-4 py-2">Dates</th>
+                  <th className="px-4 py-2">Route</th>
+                  <th className="px-4 py-2">Type / KM</th>
+                  <th className="px-4 py-2">Travel cost / Allowance</th>
+                  <th className="px-4 py-2">Decision</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="px-4 py-2 text-slate-700">
-                      {row.employeeName ?? row.employeeHrId}{" "}
-                      <span className="text-slate-400">({row.employeeHrId})</span>
+                    <td className="break-words px-4 py-2 text-slate-700">{row.employeeName ?? "—"}</td>
+                    <td className="break-words px-4 py-2 text-slate-600">
+                      <p>{row.dateFrom}</p>
+                      <p>{row.dateTo}</p>
                     </td>
-                    <td className="px-4 py-2 text-slate-600">{row.dateFrom}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.dateTo}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.locationFrom}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.locationTo}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.km ?? "—"}</td>
-                    <td className="px-4 py-2 text-slate-600">{row.type}</td>
-                    <td className="px-4 py-2 font-medium text-slate-900">{egp(row.travelCost)}</td>
-                    <td className="px-4 py-2 font-medium text-slate-900">{egp(row.allowance)}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => decide(row, "include")}
-                          className={`px-2 py-1 text-xs font-semibold disabled:opacity-50 ${
-                            current === "include"
-                              ? "bg-emerald-600 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          Include this run
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => decide(row, "defer")}
-                          className={`px-2 py-1 text-xs font-semibold disabled:opacity-50 ${
-                            current === "defer"
-                              ? "bg-slate-900 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          Defer to next month
-                        </button>
-                      </div>
+                    <td className="break-words px-4 py-2 text-slate-600">
+                      <p>{row.locationFrom}</p>
+                      <p>{row.locationTo}</p>
                     </td>
+                    <td className="break-words px-4 py-2 text-slate-600">
+                      <p>{row.type}</p>
+                      <p>{row.km != null ? `${row.km} km` : "—"}</p>
+                    </td>
+                    <td className="break-words px-4 py-2 font-medium text-slate-900">
+                      <p>{egp(row.travelCost)}</p>
+                      <p>{egp(row.allowance)}</p>
+                    </td>
+                    <td className="px-4 py-2">{decisionButtons(row)}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       )}
     </div>
   );

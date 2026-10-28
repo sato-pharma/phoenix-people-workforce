@@ -254,7 +254,7 @@ function SortableHeader({
 }) {
   return (
     <th
-      className="cursor-pointer select-none whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100"
+      className="cursor-pointer select-none break-words border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100"
       onClick={() => onSort(sortKey)}
     >
       <span className="inline-flex items-center gap-1">
@@ -303,7 +303,7 @@ function ApproveControl({
   const halfDayLabel = row.dayPart === "am_only" ? " (AM)" : row.dayPart === "pm_only" ? " (PM)" : "";
   const handleClick = async () => {
     const confirmed = window.confirm(
-      `Approve this as a REAL vacation request for ${row.employeeName} (${row.hrId})?\n\n` +
+      `Approve this as a REAL vacation request for ${row.employeeName}?\n\n` +
       `${row.startDate}${row.endDate !== row.startDate ? ` – ${row.endDate}` : ""} · ${row.workingDays} day(s)${halfDayLabel}\n\n` +
       "This will create an approved vacation_requests record and deduct it from their actual leave entitlement. " +
       "This is not reversible from this page. Continue?",
@@ -367,7 +367,6 @@ function VacationRowCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
-          <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-500">{row.hrId}</p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {[row.jobTitle, row.lineName].filter(Boolean).join(" / ") || "—"}
           </p>
@@ -384,11 +383,11 @@ function VacationRowCard({
       <div className="mt-2.5 grid grid-cols-3 gap-2">
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
-          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+          <p className="mt-0.5 break-words text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
-          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+          <p className="mt-0.5 break-words text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Days</p>
@@ -651,7 +650,7 @@ export function CompanyVacationReportTable({
                   <option value="All">All employees</option>
                   {options.employees.map((employee) => (
                     <option key={employee.hrId} value={employee.hrId}>
-                      {employee.label} · {employee.hrId}
+                      {employee.label}
                     </option>
                   ))}
                 </SearchableSelect>
@@ -736,7 +735,7 @@ export function CompanyVacationReportTable({
                   <option value="All">All</option>
                   <option value="Yes">Yes</option>
                   <option value="No">No</option>
-                  <option value="N/A">N/A (CRM Signal)</option>
+                  <option value="N/A">Not tracked (CRM Signal)</option>
                 </select>
               </label>
               <label className="space-y-1.5">
@@ -899,63 +898,66 @@ export function CompanyVacationReportTable({
             ) : (
               <>
                 {/* Desktop table (md+) */}
-                <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full border-collapse text-left text-phx-sm">
+                <div className="hidden md:block">
+                  <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                    <colgroup>
+                      <col style={{ width: "19%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: canApprove ? "20%" : "33%" }} />
+                      {canApprove ? <col style={{ width: "13%" }} /> : null}
+                    </colgroup>
                     <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                       <tr>
                         <SortableHeader active={sortKey === "employee"} direction={sortDirection} onSort={toggleSort} sortKey="employee">
                           Employee
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5">Role</th>
                         <SortableHeader active={sortKey === "source"} direction={sortDirection} onSort={toggleSort} sortKey="source">
                           Source
                         </SortableHeader>
                         <SortableHeader active={sortKey === "start"} direction={sortDirection} onSort={toggleSort} sortKey="start">
-                          From
+                          From / To
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5">To</th>
                         <SortableHeader active={sortKey === "days"} direction={sortDirection} onSort={toggleSort} sortKey="days">
                           Days
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5">Balance</th>
+                        <th className="break-words border-b border-r border-slate-100 px-3 py-2.5">Balance</th>
                         <th
                           className={cn(
-                            "whitespace-nowrap border-b border-slate-100 px-3 py-2.5",
+                            "break-words border-b border-slate-100 px-3 py-2.5",
                             canApprove ? "border-r" : "",
                           )}
                         >
                           Detail
                         </th>
-                        {canApprove ? <th className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">Review</th> : null}
+                        {canApprove ? <th className="break-words border-b border-slate-100 px-3 py-2.5">Review</th> : null}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {pageRows.map((row, index) => (
                         <tr key={`${rowKey(row)}-${index}`} className="bg-white align-top transition hover:bg-orange-50/30">
-                          <td className="border-r border-slate-100 px-3 py-2.5">
-                            <p className="whitespace-nowrap font-bold text-slate-900">{row.employeeName}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-2xs font-medium text-slate-400">{row.hrId}</p>
+                          <td className="break-words border-r border-slate-100 px-3 py-2.5">
+                            <p className="font-bold text-slate-900">{row.employeeName}</p>
+                            <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                              {[row.jobTitle, row.lineName].filter(Boolean).join(" / ") || "—"}
+                            </p>
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-2.5">
-                            <p className="whitespace-nowrap font-semibold text-slate-800">{row.jobTitle ?? "—"}</p>
-                            <p className="mt-0.5 whitespace-nowrap text-phx-xs font-medium text-slate-500">{row.lineName ?? "—"}</p>
-                          </td>
-                          <td className="border-r border-slate-100 px-3 py-2.5">
+                          <td className="break-words border-r border-slate-100 px-3 py-2.5">
                             <SourceSystemBadge source={row.source} />
                             <div className="mt-1">
                               <SourceBadge source={row.source} />
                             </div>
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">
-                            {formatDate(row.startDate)}
+                          <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">
+                            <p>{formatDate(row.startDate)}</p>
+                            <p>{formatDate(row.endDate)}</p>
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">
-                            {formatDate(row.endDate)}
-                          </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">
+                          <td className="break-words border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">
                             {formatDays(row.workingDays)}
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5">
+                          <td className="break-words border-r border-slate-100 px-3 py-2.5">
                             <HasBalanceBadge hasBalance={row.hasBalance} />
                             {row.balanceAfterDays != null ? (
                               <p className="mt-0.5 text-phx-xs font-semibold text-slate-600">
@@ -963,14 +965,11 @@ export function CompanyVacationReportTable({
                               </p>
                             ) : null}
                           </td>
-                          <td className={cn("px-3 py-2.5 text-slate-600", canApprove ? "border-r border-slate-100" : "")}>
-                            {/* The one column that is prose rather than a label: a CRM Signal's detail is a
-                                sentence of evidence, so it wraps inside a bounded box the way the sibling
-                                report wraps a request note. Everything else in this table is nowrap. */}
-                            <p className="max-w-[280px] font-semibold leading-4">{companyVacationLeaveTypeLabel(row.detail)}</p>
+                          <td className={cn("break-words px-3 py-2.5 text-slate-600", canApprove ? "border-r border-slate-100" : "")}>
+                            <p className="font-semibold leading-4">{companyVacationLeaveTypeLabel(row.detail)}</p>
                           </td>
                           {canApprove ? (
-                            <td className="px-3 py-2.5">
+                            <td className="break-words px-3 py-2.5">
                               {isCrmSignalSource(row.source) ? (
                                 <ApproveControl onApprove={handleApprove} row={row} />
                               ) : (

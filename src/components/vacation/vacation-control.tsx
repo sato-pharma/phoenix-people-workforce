@@ -114,6 +114,9 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
       ) : null}
 
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
+        <p className="border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
+          Each job title&apos;s weekly days off are used by the vacation duration calculation for employees with that title.
+        </p>
         <div className="divide-y divide-slate-100 md:hidden">
           {policies.map((policy) => {
             const draft = drafts[policy.jobTitle] ?? policy;
@@ -122,9 +125,6 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
               <div className="bg-white p-4" key={policy.jobTitle}>
                 <div className="min-w-0">
                   <p className="break-words text-sm font-black text-slate-950">{policy.jobTitle}</p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                    Used by vacation duration calculation.
-                  </p>
                 </div>
                 <div className="mt-4 grid gap-3">
                   {dayFields.map((field) => (
@@ -143,7 +143,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                   ))}
                 </div>
                 <Button
-                  className="mt-4 w-full gap-2 rounded-lg bg-slate-950 font-black text-white hover:bg-slate-800"
+                  className="mt-4 w-full gap-2 bg-slate-950 font-black text-white hover:bg-slate-800"
                   disabled={!dirty || savingTitle === policy.jobTitle}
                   onClick={() => savePolicy(policy.jobTitle)}
                   type="button"
@@ -161,8 +161,15 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
           ) : null}
         </div>
 
-        <div className="hidden overflow-x-auto md:block">
-          <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              <col className="w-[25%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[15%]" />
+            </colgroup>
             <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Job title</th>
@@ -179,10 +186,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                 return (
                   <tr className="bg-white align-middle" key={policy.jobTitle}>
                     <td className="px-4 py-4">
-                      <p className="font-black text-slate-950">{policy.jobTitle}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">
-                        Used by vacation duration calculation for employees with this title.
-                      </p>
+                      <p className="break-words font-black text-slate-950">{policy.jobTitle}</p>
                     </td>
                     {dayFields.map((field) => (
                       <td className="px-4 py-4" key={field.key}>
@@ -199,7 +203,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                     ))}
                     <td className="px-4 py-4">
                       <Button
-                        className="gap-2 rounded-xl bg-slate-950 font-black text-white hover:bg-slate-800"
+                        className="gap-2 bg-slate-950 font-black text-white hover:bg-slate-800"
                         disabled={!dirty || savingTitle === policy.jobTitle}
                         onClick={() => savePolicy(policy.jobTitle)}
                         type="button"

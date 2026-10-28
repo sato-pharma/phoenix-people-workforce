@@ -1,5 +1,8 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
+import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Inbox } from "lucide-react";
@@ -194,7 +197,7 @@ function ApprovalTimeline({ steps }: { steps: LeaveDetail["approvalSteps"] }) {
           <div key={step.stepKey} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
             <div className="flex items-center gap-2">
               <span className={`h-2 w-2 shrink-0 rounded-full ${step.status === "approved" ? "bg-emerald-500" : step.status === "rejected" ? "bg-rose-500" : step.status === "pending" ? "bg-amber-400" : "bg-slate-300"}`} />
-              <span className="text-xs font-bold text-slate-700">{step.genericStep.replace(/_/g, " ")}</span>
+              <span className="text-xs font-bold text-slate-700">{humanizeCode(step.genericStep)}</span>
               {step.approverName && <span className="text-phx-xs text-slate-500">· {step.approverName}</span>}
               <span className={`ml-auto text-phx-xs font-black ${step.status === "approved" ? "text-emerald-700" : step.status === "rejected" ? "text-rose-700" : step.status === "pending" ? "text-amber-700" : "text-slate-500"}`}>
                 {step.status === "approved" ? "✓ approved" : step.status === "rejected" ? "✗ rejected" : step.status}
@@ -300,7 +303,7 @@ function OutstationDetailView({ detail }: { detail: OutstationDetail }) {
       <DetailRow label="Allowance" value={`${Number(detail.allowanceAmount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`} />
       <div className="col-span-2 flex items-center gap-2">
         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${recColor}`}>
-          {detail.approvalRecommendation.replace(/_/g, " ")}
+          {humanizeCode(detail.approvalRecommendation)}
         </span>
         {detail.approvalReason && <span className="text-xs text-slate-500">{detail.approvalReason}</span>}
       </div>
@@ -333,7 +336,7 @@ function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }
   return (
     <dl className="grid grid-cols-2 gap-4">
       <DetailRow label="Renewal date" value={detail.requestedRenewalDate} />
-      <DetailRow label="Status" value={detail.currentStatus.replace(/_/g, " ")} />
+      <DetailRow label="Status" value={requestStatusLabel(detail.currentStatus)} />
       <DetailRow label="Job title" value={detail.jobTitle} />
       <DetailRow label="Line" value={detail.lineName} />
       <DetailRow label="Area" value={detail.areaName} />
@@ -404,7 +407,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
                   <span className={d === "approved" ? "font-bold text-emerald-600" : d === "rejected" ? "font-bold text-rose-600" : "text-slate-400"}>
                     {d === "approved" ? "✓" : d === "rejected" ? "✗" : "–"}
                   </span>
-                  <span>{r.vacationType.replace(/_/g, " ")} · {r.startDate} – {r.endDate}</span>
+                  <span>{vacationTypeLabel(r.vacationType)} · {r.startDate} – {r.endDate}</span>
                 </div>
               );
             })}
@@ -421,7 +424,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
                 <span className={e.status === "approved" ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>
                   {e.status === "approved" ? "✓" : "✗"}
                 </span>
-                <span>{e.excuseType} · {e.excuseDate}</span>
+                <span>{humanizeCode(e.excuseType)} · {e.excuseDate}</span>
               </div>
             ))}
           </div>
@@ -994,14 +997,14 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   >
                     <option value="">My queue</option>
                     {managers.map((m) => (
-                      <option key={m.hrId} value={m.hrId}>{m.name} ({m.hrId})</option>
+                      <option key={m.hrId} value={m.hrId}>{m.name}</option>
                     ))}
                   </SearchableSelect>
                 )}
                 {viewAsHrId && (
                   <p className="mt-1 flex items-center gap-1 text-phx-2xs font-bold text-orange-600">
                     <span className="h-1 w-1 rounded-full bg-orange-500" />
-                    Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue
+                    Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? "this manager"}&apos;s queue
                   </p>
                 )}
               </div>
@@ -1141,7 +1144,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                           </div>
                           <p className="text-xs text-slate-500">{item.title}</p>
                           <p className="mt-0.5 text-phx-xs text-slate-400">
-                            {item.employeeHrId} · {item.statusLabel}
+                            {item.statusLabel}
                           </p>
                         </div>
                       </li>
@@ -1219,7 +1222,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                     <SlaBadge item={selected} />
                   </div>
                   <h2 className="text-lg font-black text-white">{selected.employeeName}</h2>
-                  <p className="text-sm text-slate-400">{selected.employeeHrId} · {selected.title}</p>
+                  <p className="text-sm text-slate-400">{selected.title}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
                     <span>Status: <span className="font-semibold text-slate-300">{selected.statusLabel}</span></span>
                     <span>Submitted {new Date(selected.submittedAt).toLocaleDateString("en", { day: "2-digit", month: "short", year: "numeric" })}</span>
