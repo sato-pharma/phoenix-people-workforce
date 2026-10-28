@@ -2895,6 +2895,7 @@ import { runDirectOrderShareLiveRateLimitTests } from "./direct-order-share-live
 import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test.ts";
 import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
 import { runMyCandidatesTidyTests } from "./my-candidates-tidy.test.ts";
+import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11472,6 +11473,8 @@ await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",
   runOutstationDuplicateTripGuardTests,
 );
+await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
+
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

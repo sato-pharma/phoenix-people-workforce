@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3dfa5eb2-1cfe-4ea8-b767-855d5e601f89
-  modified: 2026-10-12T00:00:00.000Z
+  modified: 2026-10-27T17:10:14.422Z
 ---
 
 `source_of_sales_import_rows` carries its **own** `brick_id` / `area_code` / `region_code` stamp, and
@@ -56,6 +56,8 @@ rows (CNS+Pedia 2026-09; all three lines 2026-08 and 2026-07). **Anti Infective 
 customer in the window, not the few it just moved, and that blast radius is the 1,070,845 EGP class of
 re-split recorded in migration `20260905003000`. The nightly job is narrower in effect (it writes only
 rows whose geography actually moved) and is the only path that honours the published-month rule.
+
+**Owner, 2026-10-27 ~20:10 Cairo:** "no donot touch dates". He said it when shown the 227 out-of-date rows in the published July to September months. Never offer to correct a published month, or suggest the Sync button for one. Report the leftover rows and leave them.
 
 **How to apply:** after a customer-map correction, **measure** the stale rows, say which periods the
 night run will reach and which stay as published, and run nothing. Only a deliberate human act —

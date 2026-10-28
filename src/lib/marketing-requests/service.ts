@@ -195,6 +195,8 @@ import {
   listRecordConversationAuthors,
   type RecordConversationComment,
 } from "@/lib/conversations/comments";
+import { loadSamePharmacyFlagForMarketingRequest } from "@/lib/direct-orders/same-pharmacy-cross-use-loader";
+import type { SamePharmacyCrossUseFlag } from "@/lib/direct-orders/same-pharmacy-cross-use";
 
 type MarketingProductDbRow = {
   active?: boolean | null;
@@ -396,6 +398,13 @@ export type MarketingRequestDecisionSummary = {
    * buttons; the approver still decides.
    */
   twinOf: MarketingDecisionTwin[];
+  /**
+   * The requester's live direct orders to a pharmacy this request targets (owner, 2026-10-28) — a
+   * direct order already carries its bonus or discount, so this money on top pays the pharmacy twice.
+   * Every approver sees it, the CEO included; flagged, never blocked. Null when none. Optional so
+   * hand-built summaries stay valid. See src/lib/direct-orders/same-pharmacy-cross-use.ts.
+   */
+  samePharmacyDirectOrders?: SamePharmacyCrossUseFlag | null;
   /** The customer's uuid, for evidence/history joins. Null when the request carries no customer. */
   customerId: string | null;
   /**
@@ -4338,6 +4347,12 @@ export async function getMarketingRequestDecisionSummary(
   })
     .then((twins) => twins.map(describeTwinForApprover))
     .catch(() => [] as MarketingDecisionTwin[]);
+  // Same pharmacy, same person, BOTH modules (owner, 2026-10-28) — named, never decided. Never throws.
+  const samePharmacyDirectOrders = await loadSamePharmacyFlagForMarketingRequest({
+    requestId: request.id,
+    requesterHrId: request.requesterHrId,
+    requesterName: employeeNameByHrId(employeeRows, request.requesterHrId) || null,
+  });
   const requester = employeeRowByHrId(employeeRows).get(normalizeHrId(request.requesterHrId) ?? "");
   const chain: MarketingDecisionChainStep[] = steps
     .filter((step) => !step.isCc)
@@ -4377,6 +4392,7 @@ export async function getMarketingRequestDecisionSummary(
     roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
     contestedBy,
     twinOf,
+    samePharmacyDirectOrders,
     areaName: requester?.areaName ?? null,
     customerAddress: cleanText(customerRow?.captured_address),
     customerArea: cleanText(customerRow?.extracted_area_name),

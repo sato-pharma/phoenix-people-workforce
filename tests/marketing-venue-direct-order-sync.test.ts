@@ -127,7 +127,7 @@ export async function runMarketingVenueDirectOrderSyncTests() {
   );
   assert.match(
     directOrderService,
-    /const venueValidationPhotos = await loadDirectOrderVenueValidationPhotos\(request\.pharmacyId\)/,
+    /const \[venueValidationPhotos, samePharmacyMarketingRequests\] = await Promise\.all\(\[\s+loadDirectOrderVenueValidationPhotos\(request\.pharmacyId\)/,
     "the approval detail must load every validation photo of the venue",
   );
   const detail = stripComments(readFileSync("src/components/approvals-hub/direct-order-request-detail.tsx", "utf8"));

@@ -9,6 +9,7 @@ import type { DirectOrderInvoiceContentType, DirectOrderInvoiceSlotCount } from 
 // Type-only, and hold-decision.ts imports type-only from here — a types-only cycle is erased at
 // compile time and has no runtime edge, which is why this does not need a third module.
 import type { DirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
+import type { SamePharmacyCrossUseFlag } from "@/lib/direct-orders/same-pharmacy-cross-use";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Order Request module — shared types.
@@ -882,6 +883,13 @@ export type DirectOrderApprovalDetail = {
    * customer validated at that pharmacy. Optional so hand-built details stay valid.
    */
   venueValidationPhotos?: DirectOrderVenueValidationPhoto[];
+  /**
+   * The requester's live marketing requests for this same pharmacy (owner, 2026-10-28) — a direct
+   * order already carries its bonus or discount, so a marketing request on top pays the pharmacy
+   * twice. Every approver sees it, the CEO included; flagged, never blocked. Null when none.
+   * Optional so hand-built details stay valid. See same-pharmacy-cross-use.ts.
+   */
+  samePharmacyMarketingRequests?: SamePharmacyCrossUseFlag | null;
   /**
    * The distributor invoice saved with THIS order (owner, 2026-09-14: the SFE Manager must clearly see
    * the invoice that was used). Null when the order carries none. Optional so hand-built details stay

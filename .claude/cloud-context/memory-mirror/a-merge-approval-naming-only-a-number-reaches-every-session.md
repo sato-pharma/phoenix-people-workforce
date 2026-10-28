@@ -57,7 +57,7 @@ see, that the reply matched the words IT had put there.
 
 **The merge race is safe and the production write is not.** `--match-head-commit` means the loser is
 told plainly and nothing is damaged — never retry, never re-merge, settle it with the PR state. A
-production apply has no equivalent, and `mergedBy` is `Gawish-1997` for every session here so it
+production apply has no equivalent, and `mergedBy` is the owner's one login for every session here (`it-gawish-hr` since the 27 Oct 2026 account move, `Gawish-1997` before) so it
 attributes nothing. Two things make it recoverable: **`ListAgents` before the action**, and **the PR
 number and reason written INTO the SQL statement**, which is what let the other session identify an
 unexplained production ACL change as a known apply rather than an incident.

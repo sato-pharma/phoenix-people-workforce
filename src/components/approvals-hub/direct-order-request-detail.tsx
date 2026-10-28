@@ -38,6 +38,7 @@ import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-dec
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { DirectOrderVenueValidationPhotos } from "@/components/approvals-hub/direct-order-venue-validation-photos";
+import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { utcDate } from "@/lib/format/cairo-datetime";
@@ -178,6 +179,7 @@ export function DirectOrderRequestDetail({
     pharmacyValidation = null,
     pharmacyFieldEvidenceGap = null,
     venueValidationPhotos = [],
+    samePharmacyMarketingRequests = null,
     possibleDistributorMatches,
     autoLinkRefusal,
     productPharmacyPrice,
@@ -353,6 +355,10 @@ export function DirectOrderRequestDetail({
             </p>
           </div>
         ) : null}
+
+        {/* Same pharmacy, same person, both modules (owner, 2026-10-28): the requester also raised a
+            marketing request for this pharmacy — the order already carries its bonus or discount. */}
+        <SamePharmacyCrossUseNotice className="border-x-0 border-t-0" flag={samePharmacyMarketingRequests} />
       </section>
 
       {/* The "already validated" stamp (owner, 2026-09-22): when this order stands on a pharmacy

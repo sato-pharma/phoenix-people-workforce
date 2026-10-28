@@ -18,6 +18,7 @@ import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
+import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -436,6 +437,10 @@ export function MarketingRequestDecisionConfirmation({
             another request (twin-request.ts). A possible double PAYMENT, so it sits above the
             double-count warning. Named, never decided: the approver still approves, returns or rejects.
           */}
+          {/* Same pharmacy, same person, both modules (owner, 2026-10-28) — the requester also raised a
+              direct order to a pharmacy this request targets. Named, never decided. */}
+          <SamePharmacyCrossUseNotice className="mt-6" flag={summary.samePharmacyDirectOrders} />
+
           {summary.twinOf.length > 0 ? (
             <div className="mt-6 border border-rose-300 bg-rose-50 p-3">
               <p className="text-sm font-semibold text-rose-900">

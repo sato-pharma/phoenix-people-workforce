@@ -30,7 +30,7 @@ publication** of everything in the diff.
 **How to apply:** scan for secrets and personal data BEFORE the push, never after. If something
 sensitive has already been pushed, deleting the branch is not the remedy — open a GitHub Support
 request to purge the object, and in the meantime judge the real exposure from repo visibility.
-This repo is **private** with exactly two collaborators (`Gawish-1997`, `Omar-3-xx`), which is what
+This repo is **private** with exactly two collaborators (`it-gawish-hr`, `Omar-3-xx`; `Gawish-1997` until the 27 Oct 2026 account move), which is what
 made the 2026-08-18 case tolerable rather than an incident.
 
 Related: [[recruitment-cv-reread-run-reports-live-outside-git]].
