@@ -530,6 +530,11 @@ function SummaryTable({
       <div className="hidden overflow-hidden border border-phx-line md:block">
         <div>
           <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              {columns.map((column) => (
+                <col key={column} style={{ width: `${100 / columns.length}%` }} />
+              ))}
+            </colgroup>
             <thead className="bg-phx-paper">
               <tr>
                 {columns.map((column, i) => (
@@ -559,7 +564,7 @@ function SummaryTable({
                       {entry.display.map((cell, cellIndex) => (
                         <td
                           className={cn(
-                            "px-4 py-2.5 align-top",
+                            "break-words px-4 py-2.5 align-top",
                             cellIndex === 0 ? "font-semibold text-phx-ink" : "",
                           )}
                           key={`${cell}:${cellIndex}`}
@@ -602,13 +607,7 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
       title="Rows To Fix"
     >
       <div className="p-4 md:p-5">
-        <table className="w-full table-fixed text-left text-sm">
-          <colgroup>
-            <col className="w-[12%]" />
-            <col className="w-[20%]" />
-            <col className="w-[30%]" />
-            <col className="w-[38%]" />
-          </colgroup>
+        <CrmTable columns={["12%", "20%", "30%", "38%"]}>
           <thead className="bg-phx-paper">
             <tr>
               <th className={tableHeaderClassName}>Row</th>
@@ -622,12 +621,24 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
               <tr className="text-phx-ink-soft" key={`${issue.rowNumber}:${issue.field}:${index}`}>
                 <td className="px-4 py-3 align-top font-semibold tabular-nums text-phx-ink">{issue.rowNumber}</td>
                 <td className="break-words px-4 py-3 align-top">{issue.field}</td>
-                <td className="break-words px-4 py-3 align-top">{issue.value ?? "-"}</td>
+                <td className="break-words px-4 py-3 align-top">{issue.value ?? "—"}</td>
                 <td className="break-words px-4 py-3 align-top">{issue.message}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
+        <CrmCardsOnPhone>
+          {failedIssues.slice(0, 100).map((issue, index) => (
+            <CrmCard key={`${issue.rowNumber}:${issue.field}:${index}:card`} title={`Row ${issue.rowNumber} · ${issue.field}`}>
+              <CrmFacts
+                facts={[
+                  ...(issue.value ? [{ label: "Value", value: issue.value }] : []),
+                  { label: "Error", value: issue.message },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </div>
     </AdminTableShell>
   );
