@@ -6516,11 +6516,14 @@ export async function getDirectOrderApprovalDetail(
   // Same pharmacy, same person, BOTH modules (owner, 2026-10-28): the requester's live marketing
   // requests for this venue, flagged to every rung of the chain, the CEO included — a direct order
   // already carries its bonus or discount, so a marketing request on top pays the pharmacy twice.
-  // Flagged, never blocked. Never throws.
+  // Only when a line is above its product's normal deal (Ivyronc over 20% bonus, Lacto Advanced over
+  // 15% discount, Guamusin over 10% bonus) — a normal order reads nothing. Flagged, never blocked.
+  // Never throws.
   const [venueValidationPhotos, samePharmacyMarketingRequests] = await Promise.all([
     loadDirectOrderVenueValidationPhotos(request.pharmacyId),
     loadSamePharmacyFlagForDirectOrder({
       orderId: request.id,
+      lines: items,
       marketingRequestId: request.marketingRequestId,
       pharmacyId: request.pharmacyId,
       pharmacyName: pharmacy?.pharmacyName ?? null,

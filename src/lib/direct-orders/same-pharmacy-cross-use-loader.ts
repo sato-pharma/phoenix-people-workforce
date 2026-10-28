@@ -3,9 +3,11 @@ import {
   buildSamePharmacyCrossUseFlag,
   describeDirectOrderUse,
   describeMarketingRequestUse,
+  extraDealsOnOrder,
   isLiveDirectOrderForCrossUse,
   isLiveMarketingRequestForCrossUse,
   isSameRequester,
+  type DirectOrderDealLine,
   type SamePharmacyCrossUse,
   type SamePharmacyCrossUseFlag,
 } from "@/lib/direct-orders/same-pharmacy-cross-use";
@@ -58,10 +60,13 @@ async function loadCurrentStepCodes(requestIds: string[]): Promise<Map<string, s
 
 /**
  * On a DIRECT ORDER's approval window: the live marketing requests the same requester raised for the
- * pharmacy this order goes to.
+ * pharmacy this order goes to — only when the order itself carries an extra deal, so a normal order
+ * costs no read at all.
  */
 export async function loadSamePharmacyFlagForDirectOrder(params: {
   orderId: string;
+  /** The order's own lines — the extra-deal test runs on these before anything is read. */
+  lines: readonly DirectOrderDealLine[];
   /** The campaign the order was raised from, if any — named on that request's line. */
   marketingRequestId: string | null | undefined;
   pharmacyId: string | null | undefined;
@@ -70,6 +75,8 @@ export async function loadSamePharmacyFlagForDirectOrder(params: {
   requesterName: string | null | undefined;
 }): Promise<SamePharmacyCrossUseFlag | null> {
   if (!params.pharmacyId || !params.requesterHrId) return null;
+  const thisOrderExtraDeals = extraDealsOnOrder(params.lines);
+  if (thisOrderExtraDeals.length === 0) return null;
   try {
     const supabase = getSupabaseAdmin();
     const marketingPharmacyIds = await findMarketingPharmacyIds(String(params.pharmacyId));
@@ -140,7 +147,12 @@ export async function loadSamePharmacyFlagForDirectOrder(params: {
         linkedAsCampaign: Boolean(params.marketingRequestId) && id === params.marketingRequestId,
       });
     });
-    return buildSamePharmacyCrossUseFlag({ viewing: "direct_order", requesterName: params.requesterName ?? null, uses });
+    return buildSamePharmacyCrossUseFlag({
+      viewing: "direct_order",
+      requesterName: params.requesterName ?? null,
+      uses,
+      thisOrderExtraDeals,
+    });
   } catch (error) {
     logError("Same-pharmacy marketing requests could not be read for a direct order's approval window", {
       labels: { event: "direct_order_same_pharmacy_flag_failed" },
@@ -191,9 +203,21 @@ async function findDirectOrderVenues(marketingPharmacyIds: string[]): Promise<Ma
   return marketingPharmacyByVenue;
 }
 
+/** A row of the lines table, or the order row itself, as one deal line. */
+function dealLine(row: Row): DirectOrderDealLine {
+  return {
+    productCode: text(row, "product_code"),
+    productName: text(row, "product_name"),
+    dealType: text(row, "deal_type"),
+    qty: num(row, "qty"),
+    bonus: num(row, "bonus"),
+    discountPct: num(row, "discount_pct"),
+  };
+}
+
 /**
  * On a MARKETING REQUEST's approval window: the live direct orders the same requester raised to any
- * pharmacy this request targets.
+ * pharmacy this request targets — only the ones with an extra deal on a line.
  */
 export async function loadSamePharmacyFlagForMarketingRequest(params: {
   requestId: string;
@@ -218,7 +242,7 @@ export async function loadSamePharmacyFlagForMarketingRequest(params: {
 
     const { data: orders, error: ordersError } = await supabase
       .from("direct_order_requests")
-      .select("id, requester_hr_id, status, sales_month, submitted_at, product_name, sales_value, deal_type, bonus, discount_pct, pharmacy_id, marketing_request_id")
+      .select("id, requester_hr_id, status, sales_month, submitted_at, product_code, product_name, qty, sales_value, deal_type, bonus, discount_pct, pharmacy_id, marketing_request_id")
       .in("pharmacy_id", Array.from(marketingPharmacyByVenue.keys()))
       .in("requester_hr_id", hrIdLookupKeys(params.requesterHrId))
       .order("submitted_at", { ascending: false, nullsFirst: false })
@@ -231,21 +255,35 @@ export async function loadSamePharmacyFlagForMarketingRequest(params: {
     );
     if (live.length === 0) return null;
 
-    const venueIds = Array.from(new Set(live.map((row) => text(row, "pharmacy_id")).filter((id): id is string => Boolean(id))));
+    // Each order's lines; an order with none reads as its own row, one line.
+    const { data: items, error: itemsError } = await supabase
+      .from("direct_order_request_items")
+      .select("request_id, line_no, product_code, product_name, deal_type, qty, bonus, discount_pct")
+      .in("request_id", live.map((row) => String(row.id)))
+      .order("line_no", { ascending: true });
+    if (itemsError) throw itemsError;
+    const linesByOrder = new Map<string, DirectOrderDealLine[]>();
+    for (const row of (items ?? []) as Row[]) {
+      const orderId = text(row, "request_id");
+      if (orderId) linesByOrder.set(orderId, [...(linesByOrder.get(orderId) ?? []), dealLine(row)]);
+    }
+    const extra = live
+      .map((row) => ({ row, extraDeals: extraDealsOnOrder(linesByOrder.get(String(row.id)) ?? [dealLine(row)]) }))
+      .filter((order) => order.extraDeals.length > 0);
+    if (extra.length === 0) return null;
+
+    const venueIds = Array.from(new Set(extra.map(({ row }) => text(row, "pharmacy_id")).filter((id): id is string => Boolean(id))));
     const { data: venues } = await supabase.from("direct_order_pharmacies").select("id, pharmacy_name").in("id", venueIds);
     const venueName = new Map(((venues ?? []) as Row[]).map((row) => [String(row.id), text(row, "pharmacy_name")]));
 
-    const uses: SamePharmacyCrossUse[] = live.map((row) =>
+    const uses: SamePharmacyCrossUse[] = extra.map(({ row, extraDeals }) =>
       describeDirectOrderUse({
         id: String(row.id),
         status: text(row, "status") ?? "",
         salesMonth: text(row, "sales_month"),
         submittedAt: text(row, "submitted_at"),
-        productName: text(row, "product_name"),
         salesValue: num(row, "sales_value"),
-        dealType: text(row, "deal_type"),
-        bonus: num(row, "bonus"),
-        discountPct: num(row, "discount_pct"),
+        extraDeals,
         pharmacyName: venueName.get(text(row, "pharmacy_id") ?? "") ?? "this pharmacy",
         linkedAsCampaign: text(row, "marketing_request_id") === params.requestId,
       }),

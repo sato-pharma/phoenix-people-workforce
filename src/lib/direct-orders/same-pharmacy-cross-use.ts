@@ -16,6 +16,13 @@
 // customer code pair, matched pairwise — the join the approval window's validation photos already use.
 // "The same person" is the requester of each, compared by canonical HR id (both tables store mixed case).
 //
+// ONLY AN EXTRA DEAL IS FLAGGED (owner, the same morning): "is the direct order going out with the normal
+// bonus or extra?" Every anti-infective goes out at 10% bonus, so Royafloxacin and Saginko are no problem.
+// What he looks for is a line above its product's normal level — Ivyronc above 20% bonus (its commercial
+// maximum at the distributors; a direct order can carry 30%), Lacto Advanced above 15% discount and
+// Guamusin above 10% bonus. A bonus product sold at a discount counts when the discount is worth more than
+// the bonus limit, and the other way round (his choice, the same morning). Any other product never flags.
+//
 // A request that never committed money cannot make anyone pay twice, so a draft, a rejected and a
 // cancelled one are left out on both sides — plus an expired or reversed direct order. A returned
 // one still counts: it is one resubmit from the chain.
@@ -55,6 +62,84 @@ export function isSameRequester(left: string | null | undefined, right: string |
   return Boolean(a) && a === b;
 }
 
+/** A product whose direct-order deal is "extra" above this level. Matched by product code. */
+export type ExtraDealLimit = {
+  productName: string;
+  productCodes: readonly string[];
+  kind: "bonus" | "discount";
+  limitPct: number;
+};
+
+export const EXTRA_DEAL_LIMITS: readonly ExtraDealLimit[] = [
+  { productName: "Ivyronc", productCodes: ["IV001"], kind: "bonus", limitPct: 20 },
+  { productName: "Lacto Advanced", productCodes: ["LA001", "LA002"], kind: "discount", limitPct: 15 },
+  { productName: "Guamusin", productCodes: ["GU001"], kind: "bonus", limitPct: 10 },
+];
+
+/** One line of a direct order, as the order lines table stores it. */
+export type DirectOrderDealLine = {
+  productCode: string | null;
+  productName: string | null;
+  dealType: string | null;
+  qty: number | null;
+  bonus: number | null;
+  discountPct: number | null;
+};
+
+function pct(value: number): string {
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+}
+
+/** Two decimals, the way a percentage is printed — so 16.6667% off reads as equal to a 20% bonus. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * The line's deal in words when it is above its product's normal level, else null. A bonus of b% gives
+ * 100 + b units for the price of 100, so it is worth b / (100 + b) off; that is how a deal of the other
+ * kind is compared with the limit.
+ */
+export function extraDealOnLine(line: DirectOrderDealLine): string | null {
+  const code = String(line.productCode ?? "").trim().toUpperCase();
+  const limit = EXTRA_DEAL_LIMITS.find((entry) => entry.productCodes.includes(code));
+  if (!limit) return null;
+  const name = line.productName?.trim() || limit.productName;
+  const normal = `the normal ${pct(limit.limitPct)} ${limit.kind}`;
+  if (String(line.dealType ?? "").trim().toLowerCase() === "discount") {
+    const discount = Number(line.discountPct);
+    if (!Number.isFinite(discount) || discount <= 0) return null;
+    if (limit.kind === "discount") {
+      return discount > limit.limitPct ? `${name} at ${pct(discount)} discount, above ${normal}` : null;
+    }
+    const worth = round2((100 * limit.limitPct) / (100 + limit.limitPct));
+    return round2(discount) > worth
+      ? `${name} at ${pct(discount)} discount, worth more than ${normal} (${pct(worth)} off)`
+      : null;
+  }
+  const qty = Number(line.qty);
+  const bonus = Number(line.bonus);
+  if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(bonus) || bonus <= 0) return null;
+  const bonusPct = (bonus * 100) / qty;
+  if (limit.kind === "bonus") {
+    return bonus * 100 > qty * limit.limitPct ? `${name} at ${pct(bonusPct)} bonus, above ${normal}` : null;
+  }
+  const worth = round2((100 * limit.limitPct) / (100 - limit.limitPct));
+  return round2(bonusPct) > worth
+    ? `${name} at ${pct(bonusPct)} bonus, worth more than ${normal} (${pct(worth)} bonus)`
+    : null;
+}
+
+/** Every extra line of an order, in line order. Empty = a normal deal, never flagged. */
+export function extraDealsOnOrder(lines: readonly DirectOrderDealLine[]): string[] {
+  return lines.map(extraDealOnLine).filter((deal): deal is string => deal !== null);
+}
+
+/** "Ivyronc above 20% bonus, Lacto Advanced above 15% discount, Guamusin above 10% bonus". */
+export const EXTRA_DEAL_LIMITS_TEXT = EXTRA_DEAL_LIMITS.map(
+  (limit) => `${limit.productName} above ${pct(limit.limitPct)} ${limit.kind}`,
+).join(", ");
+
 /** One use of the pharmacy in the OTHER module, in the words the approval window prints. */
 export type SamePharmacyCrossUse = {
   module: "marketing_request" | "direct_order";
@@ -65,6 +150,8 @@ export type SamePharmacyCrossUse = {
   statusLabel: string;
   pharmacyName: string;
   description: string;
+  /** A direct order's lines above their normal level, in words. Empty on a marketing request. */
+  extraDeals: string[];
 };
 
 /** The flag an approval window prints. Null when nothing crosses — the render gate. */
@@ -124,6 +211,7 @@ export function describeMarketingRequestUse(input: MarketingRequestUseInput): Sa
       `${what ? `${what} ` : ""}for ${customer ? `the customer ${customer}` : "a customer"} at ${input.pharmacyName}` +
       `${day ? `, submitted ${day}` : ""} — ${statusLabel}.` +
       (input.linkedAsCampaign ? " This order names it as the campaign it came from." : ""),
+    extraDeals: [],
   };
 }
 
@@ -132,29 +220,18 @@ export type DirectOrderUseInput = {
   status: string;
   salesMonth: string | null;
   submittedAt: string | null;
-  productName: string | null;
   salesValue: number | null;
-  dealType: string | null;
-  bonus: number | null;
-  discountPct: number | null;
+  /** The order's lines above their normal level — `extraDealsOnOrder`. */
+  extraDeals: string[];
   pharmacyName: string;
   /** The order names THIS marketing request as the campaign it came from. */
   linkedAsCampaign: boolean;
 };
 
-function dealText(input: Pick<DirectOrderUseInput, "dealType" | "bonus" | "discountPct">): string | null {
-  const deal = String(input.dealType ?? "").toLowerCase();
-  if (deal === "discount" && input.discountPct !== null && Number(input.discountPct) > 0) {
-    return `${Number(input.discountPct).toLocaleString("en-US", { maximumFractionDigits: 2 })}% discount`;
-  }
-  if (input.bonus !== null && Number(input.bonus) > 0) return `${Number(input.bonus)} bonus units`;
-  return null;
-}
-
 export function describeDirectOrderUse(input: DirectOrderUseInput): SamePharmacyCrossUse {
   const statusLabel = describeDirectOrderStatus(input.status, input.salesMonth).label;
   const day = crossUseDay(input.submittedAt);
-  const what = [input.productName?.trim(), dealText(input), egp(input.salesValue)].filter(Boolean).join(", ");
+  const what = [input.extraDeals.join("; "), egp(input.salesValue)].filter(Boolean).join(", ");
   return {
     module: "direct_order",
     id: input.id,
@@ -164,20 +241,27 @@ export function describeDirectOrderUse(input: DirectOrderUseInput): SamePharmacy
     description:
       `${what ? `${what} ` : ""}to ${input.pharmacyName} — ${statusLabel}.` +
       (input.linkedAsCampaign ? " The order names this marketing request as the campaign it came from." : ""),
+    extraDeals: input.extraDeals,
   };
 }
 
 /**
- * The flag for the approval window, or null when the requester used none of these pharmacies in the
- * other module. `viewing` is the module of the record being approved.
+ * The flag for the approval window, or null when nothing crosses. `viewing` is the module of the record
+ * being approved. Only an EXTRA deal counts: on a direct order, the order itself must carry one
+ * (`thisOrderExtraDeals`); on a marketing request, a direct order with no extra line is dropped.
  */
 export function buildSamePharmacyCrossUseFlag(params: {
   viewing: "direct_order" | "marketing_request";
   requesterName: string | null;
   uses: SamePharmacyCrossUse[];
+  /** On a direct order's window: that order's own lines above their normal level. */
+  thisOrderExtraDeals?: readonly string[];
 }): SamePharmacyCrossUseFlag | null {
+  const thisOrderExtraDeals = params.thisOrderExtraDeals ?? [];
+  if (params.viewing === "direct_order" && thisOrderExtraDeals.length === 0) return null;
   const seen = new Set<string>();
   const uses = params.uses.filter((use) => {
+    if (use.module === "direct_order" && use.extraDeals.length === 0) return false;
     const key = `${use.module}:${use.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -193,8 +277,11 @@ export function buildSamePharmacyCrossUseFlag(params: {
     requesterName,
     pharmacyNames,
     uses,
-    headline: `Same pharmacy, same person: ${requesterName} also used ${pharmacies} in ${count}`,
+    headline: `Same pharmacy, same person, extra deal: ${requesterName} also used ${pharmacies} in ${count}`,
     explanation:
+      (params.viewing === "direct_order"
+        ? `This order's deal is above the normal level: ${thisOrderExtraDeals.join("; ")}. `
+        : `The direct order's deal is above the normal level (${EXTRA_DEAL_LIMITS_TEXT}). `) +
       "A direct order already carries its own bonus or discount, and a marketing request is extra money for the " +
       "work and cooperation — approving both pays the doctor and the pharmacy itself an extra cost. " +
       "Flagged for every approver, the CEO included; it is not blocked.",
